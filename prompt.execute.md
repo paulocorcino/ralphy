@@ -5,7 +5,7 @@ If this session is cut short, a follow-up session resumes from `.ralph/plan.md`
 checkboxes + the git history, so committing each step is what makes progress
 durable.
 
-## Context on disk (in this worktree)
+## Context on disk (in this repo)
 - `.ralph/issue.json` — the GitHub issue (number, title, body, labels).
 - `.ralph/plan.md` — the checklist from the planning pass. Your source of truth.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
