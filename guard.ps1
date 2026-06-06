@@ -1,4 +1,4 @@
-# guard.ps1 — PreToolUse safety hook for the Ralph autonomous loop.
+# guard.ps1 — PreToolUse safety hook for the Ralphy autonomous loop.
 #
 # Claude Code runs this before every Bash/Edit/Write/MultiEdit/NotebookEdit
 # call. Because the loop runs with --dangerously-skip-permissions (no
@@ -26,7 +26,7 @@ $tool = [string]$payload.tool_name
 $ti = $payload.tool_input
 
 function Deny([string]$reason) {
-    [Console]::Error.WriteLine("BLOCKED by Ralph guard: $reason")
+    [Console]::Error.WriteLine("BLOCKED by Ralphy guard: $reason")
     exit 2
 }
 
@@ -80,11 +80,11 @@ if ($tool -in @('Edit','Write','MultiEdit','NotebookEdit')) {
         if ($p -like "*$b*") { Deny "writing to a protected path ($path)" }
     }
 
-    # The agent must never edit the loop's own tooling. Ralph now lives OUTSIDE
+    # The agent must never edit the loop's own tooling. Ralphy now lives OUTSIDE
     # the target repo, so anchor this on the tool dir's absolute path ($PSScriptRoot)
-    # instead of a fragile substring — works wherever Ralph is installed.
+    # instead of a fragile substring — works wherever Ralphy is installed.
     $toolDir = $PSScriptRoot.Replace('\','/').ToLowerInvariant().TrimEnd('/')
-    if ($p -like "$toolDir/*") { Deny "writing to Ralph's own tooling is not allowed ($path)" }
+    if ($p -like "$toolDir/*") { Deny "writing to Ralphy's own tooling is not allowed ($path)" }
 }
 
 exit 0

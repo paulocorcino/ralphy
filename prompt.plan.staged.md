@@ -1,20 +1,20 @@
-You are the PLANNING pass of a Ralph loop for one GitHub issue flagged for
+You are the PLANNING pass of a Ralphy loop for one GitHub issue flagged for
 STAGED PLANNING (label `stagedplan`). Use the **`staged-plan` skill** to design
-a thorough, multi-stage plan — but the final artifact must be `.ralph/plan.md`
+a thorough, multi-stage plan — but the final artifact must be `.ralphy/plan.md`
 in the exact shape the executor expects (below).
 
 ## Context on disk
-- `.ralph/issue.json` — the GitHub issue (number, title, body, labels).
+- `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain
   (a Rust + Slint desktop tray app). Read what is relevant.
 
 ## Your task
-1. Read `.ralph/issue.json` and the relevant project docs.
+1. Read `.ralphy/issue.json` and the relevant project docs.
 2. Invoke the `staged-plan` skill to design the implementation plan. It runs
    NON-INTERACTIVELY (`STAGED_PLAN_NONINTERACTIVE=1` is set): follow the skill's
    non-interactive branch — do NOT call `AskUserQuestion`, there is no human to
    answer. Let the skill do its deep, staged design work.
-3. Render the result into `.ralph/plan.md` with this exact shape:
+3. Render the result into `.ralphy/plan.md` with this exact shape:
 
    ```
    # Plan for #<number>: <title>
@@ -39,8 +39,8 @@ in the exact shape the executor expects (below).
    ```
 
 ## Rules
-- The authoritative artifact the executor reads is `.ralph/plan.md`. If the
-  skill also scaffolds a plan file elsewhere, fine — but `.ralph/plan.md` MUST
+- The authoritative artifact the executor reads is `.ralphy/plan.md`. If the
+  skill also scaffolds a plan file elsewhere, fine — but `.ralphy/plan.md` MUST
   exist and hold the shape above.
 - Every actionable item is a `- [ ]` checkbox; the LAST is the green-build gate.
 - Keep the staged ordering as the sequence of `- [ ]` steps (one per stage or

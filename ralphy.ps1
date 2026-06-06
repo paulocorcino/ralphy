@@ -1,7 +1,7 @@
 #requires -Version 7
 <#
 .SYNOPSIS
-    Ralph runner (Windows): work GitHub issues labelled "AFK" overnight onto a
+    Ralphy runner (Windows): work GitHub issues labelled "AFK" overnight onto a
     SINGLE run branch, on your Claude subscription quota (no Anthropic API key).
     This is a GLOBAL tool: it operates on the repo at -RepoPath (default: the
     current directory), in place, and lives outside any project it works on.
@@ -16,11 +16,11 @@
       repo itself, so the warm build cache (target/, node_modules, ...) is
       reused. Precondition: the target working tree must be clean. On a clean
       run the repo is returned to its original branch; on a stop it is left on
-      the run branch for inspection. Scratch + logs go to <repo>/.ralph/ (add
-      `.ralph/` to the target repo's .gitignore once).
-    * PLAN with `claude -p` (prompt piped via stdin) -> .ralph/plan.md.
+      the run branch for inspection. Scratch + logs go to <repo>/.ralphy/ (add
+      `.ralphy/` to the target repo's .gitignore once).
+    * PLAN with `claude -p` (prompt piped via stdin) -> .ralphy/plan.md.
     * EXECUTE by looping `claude -p` (headless, self-terminating) or an
-      interactive session. The runner reads RALPH_DONE_EXIT / RALPH_BLOCKED_EXIT
+      interactive session. The runner reads RALPHY_DONE_EXIT / RALPHY_BLOCKED_EXIT
       from the output to classify each issue's outcome.
     * Stop-at-first-block: the moment an issue does NOT finish green (block,
       timeout, stuck, usage limit), the run stops and hands you the branch as
@@ -33,11 +33,11 @@
     your global ~/.claude/settings.json is never touched.
 
 .EXAMPLE
-    pwsh -File ~\ralph\ralph.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13 -DryRun  # plan only
+    pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13 -DryRun  # plan only
 .EXAMPLE
-    pwsh -File ~\ralph\ralph.ps1 -RepoPath C:\Dev\foo -DeadlineHours 8       # overnight
+    pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -DeadlineHours 8       # overnight
 .EXAMPLE
-    cd C:\Dev\foo; pwsh -File ~\ralph\ralph.ps1 -BaseBranch feature/x        # -RepoPath defaults to CWD
+    cd C:\Dev\foo; pwsh -File ~\ralphy\ralphy.ps1 -BaseBranch feature/x        # -RepoPath defaults to CWD
 #>
 [CmdletBinding()]
 param(
@@ -106,13 +106,13 @@ if (-not (Test-Path $Claude)) { throw "claude CLI not found. Put it on PATH or e
 $null = (Get-Command gh -ErrorAction Stop)
 
 $RunStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-# Scratch + logs live under the target repo's (gitignored) .ralph/ dir, beside
+# Scratch + logs live under the target repo's (gitignored) .ralphy/ dir, beside
 # the plan/exec scratch the agent reads. Keeps each repo's run history with it.
-$RunDir   = Join-Path $RepoRoot ".ralph\runs\$RunStamp"
+$RunDir   = Join-Path $RepoRoot ".ralphy\runs\$RunStamp"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 
 $Deadline = (Get-Date).AddHours($DeadlineHours)
-$LogFile  = Join-Path $RunDir 'ralph.log'
+$LogFile  = Join-Path $RunDir 'ralphy.log'
 $script:LimitText = ''
 
 function Log([string]$msg) {
@@ -122,7 +122,7 @@ function Log([string]$msg) {
 
 # --- Hooks settings, scoped to the runner -------------------------------------
 # PreToolUse guard = destructive-command deny-list (both exec modes).
-# Stop hook = records RALPH_DONE_EXIT/BLOCKED to the flag file so the runner can
+# Stop hook = records RALPHY_DONE_EXIT/BLOCKED to the flag file so the runner can
 # reclaim an INTERACTIVE session (interactive Claude never exits on its own).
 $GuardCmd = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $ScriptDir 'guard.ps1')`""
 $StopCmd  = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $ScriptDir 'stop_exit_hook.ps1')`""
@@ -137,7 +137,7 @@ $Settings = @{
                           hooks   = @(@{ type = 'command'; command = $StopCmd }) })
     }
 }
-$SettingsPath = Join-Path $RunDir 'ralph.settings.json'
+$SettingsPath = Join-Path $RunDir 'ralphy.settings.json'
 $Settings | ConvertTo-Json -Depth 8 | Set-Content -Path $SettingsPath -Encoding utf8
 
 # Guarantee subscription billing: clear any inherited API key for this process tree.
@@ -177,7 +177,7 @@ function Get-ResetDateTime([string]$text) {
 }
 
 # PLAN: one-shot `claude -p`, prompt piped via STDIN (a positional prompt is
-# ignored when stdout is non-interactive). Writes .ralph/plan.md inside $Cwd.
+# ignored when stdout is non-interactive). Writes .ralphy/plan.md inside $Cwd.
 function Invoke-Plan {
     param([string]$Cwd, [string]$PromptText, [string]$OutLog, [switch]$Staged)
     $a = @('-p', '--dangerously-skip-permissions', '--settings', $SettingsPath)
@@ -227,9 +227,9 @@ function Invoke-ExecLoop {
         if (Test-LimitText $out) { $script:LimitText = $out; return 'limit' }
         if (-not $exited)        { return 'timeout' }
 
-        $m = [regex]::Match($out, 'RALPH_BLOCKED_EXIT\s*(.*)')
+        $m = [regex]::Match($out, 'RALPHY_BLOCKED_EXIT\s*(.*)')
         if ($m.Success) { return "BLOCKED $($m.Groups[1].Value.Trim())" }
-        if ($open -eq 0 -or $out -match 'RALPH_DONE_EXIT') { return 'DONE' }
+        if ($open -eq 0 -or $out -match 'RALPHY_DONE_EXIT') { return 'DONE' }
 
         if ($did) { $stuck = 0 } else { $stuck++ }
         if ($stuck -ge 2) { return 'stuck' }
@@ -244,7 +244,7 @@ function Invoke-ExecLoop {
 function Invoke-Interactive {
     param([string]$Cwd, [string]$InitialPrompt, [string]$FlagFile, [string]$Model, [string]$Name)
     Remove-Item -LiteralPath $FlagFile -ErrorAction SilentlyContinue
-    $env:RALPH_FLAG_FILE = $FlagFile           # inherited by claude -> the Stop hook
+    $env:RALPHY_FLAG_FILE = $FlagFile           # inherited by claude -> the Stop hook
 
     # Build a SINGLE pre-quoted command line. Passing -ArgumentList as an array
     # makes Start-Process drop/split a multi-word positional prompt (only the
@@ -269,7 +269,7 @@ function Invoke-Interactive {
         if ((Get-Date) -ge $issueDeadline) { $status = 'timeout';  try { $proc.Kill($true) } catch {}; break }
         if ((Get-Date) -ge $Deadline)      { $status = 'deadline'; try { $proc.Kill($true) } catch {}; break }
     }
-    Remove-Item Env:\RALPH_FLAG_FILE -ErrorAction SilentlyContinue
+    Remove-Item Env:\RALPHY_FLAG_FILE -ErrorAction SilentlyContinue
     return $status
 }
 
@@ -293,13 +293,13 @@ function Invoke-Issue {
     New-Item -ItemType Directory -Force -Path $issueRun | Out-Null
     Log "=== #$IssueNum  $Title"
 
-    $ralphDir = Join-Path $WorkDir '.ralph'
-    New-Item -ItemType Directory -Force -Path $ralphDir | Out-Null
-    gh issue view $IssueNum --json number,title,body,labels | Set-Content (Join-Path $ralphDir 'issue.json') -Encoding utf8
-    Copy-Item (Join-Path $ScriptDir 'prompt.execute.md') (Join-Path $ralphDir 'exec.md') -Force
+    $ralphyDir = Join-Path $WorkDir '.ralphy'
+    New-Item -ItemType Directory -Force -Path $ralphyDir | Out-Null
+    gh issue view $IssueNum --json number,title,body,labels | Set-Content (Join-Path $ralphyDir 'issue.json') -Encoding utf8
+    Copy-Item (Join-Path $ScriptDir 'prompt.execute.md') (Join-Path $ralphyDir 'exec.md') -Force
 
     # Plan fresh for every issue (fresh branch per run => no stale-plan reuse).
-    $planPath = Join-Path $ralphDir 'plan.md'
+    $planPath = Join-Path $ralphyDir 'plan.md'
     Remove-Item -LiteralPath $planPath -ErrorAction SilentlyContinue
     $planPrompt = if ($StagedPlan) { 'prompt.plan.staged.md' } else { 'prompt.plan.md' }
     Log "  planning… [$(if($StagedPlan){'staged-plan skill'}else{'standard'})]"
@@ -333,8 +333,8 @@ function Invoke-Issue {
     } else {
         Log "  executing [interactive$(if(-not $NoRemoteControl){' +remote'})]…"
         $flag = Join-Path $issueRun 'status.flag'
-        $status = Invoke-Interactive -Cwd $WorkDir -FlagFile $flag -Model $execModel -Name "ralph-$IssueNum" `
-            -InitialPrompt 'Read .ralph/exec.md and follow it exactly to implement .ralph/plan.md for this issue. Emit RALPH_DONE_EXIT when finished.'
+        $status = Invoke-Interactive -Cwd $WorkDir -FlagFile $flag -Model $execModel -Name "ralphy-$IssueNum" `
+            -InitialPrompt 'Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.'
         # Interactive sessions exit on a usage limit; detect it from the transcript.
         if ($status -in @('exited', 'timeout', 'deadline', 'unknown')) {
             $tr = Get-LatestTranscript
@@ -349,7 +349,7 @@ function Invoke-Issue {
 }
 
 # --- Main ---------------------------------------------------------------------
-Log "Ralph run $RunStamp | repo=$RepoRoot base=$BaseBranch deadline=$($Deadline.ToString('HH:mm')) perIssue=${MaxMinutesPerIssue}min plan=$PlanModel/$PlanEffort exec=$(if($ExecModel){$ExecModel}else{'auto'})/$ExecEffort$(if($HeadlessExec){' [headless]'}else{' [interactive]'})$(if($DryRun){' [DryRun]'})"
+Log "Ralphy run $RunStamp | repo=$RepoRoot base=$BaseBranch deadline=$($Deadline.ToString('HH:mm')) perIssue=${MaxMinutesPerIssue}min plan=$PlanModel/$PlanEffort exec=$(if($ExecModel){$ExecModel}else{'auto'})/$ExecEffort$(if($HeadlessExec){' [headless]'}else{' [interactive]'})$(if($DryRun){' [DryRun]'})"
 git -C $RepoRoot fetch origin --quiet 2>$null
 
 $issues = (gh issue list --label AFK --state open --json number,title,labels --limit 100) | ConvertFrom-Json
@@ -361,9 +361,9 @@ Log "Queue: $($issues.Count) issue(s) in order: $((($issues | ForEach-Object { '
 
 # One branch per run, created IN PLACE in the target repo off the chosen base.
 # Precondition: a clean working tree (we can't isolate a dirty checkout without
-# a worktree). .ralph/ is ignored for this check whether or not it is gitignored.
+# a worktree). .ralphy/ is ignored for this check whether or not it is gitignored.
 $Branch = "afk/run-$RunStamp"
-$dirty  = @(git -C $RepoRoot status --porcelain | Where-Object { $_ -notmatch '\.ralph[\\/]' })
+$dirty  = @(git -C $RepoRoot status --porcelain | Where-Object { $_ -notmatch '\.ralphy[\\/]' })
 if ($dirty.Count) { Log "! working tree at $RepoRoot is not clean — commit or stash first, aborting."; return }
 if (-not (git -C $RepoRoot rev-parse --verify --quiet "$BaseBranch^{commit}")) { Log "! base '$BaseBranch' not found — aborting."; return }
 $OrigBranch = (git -C $RepoRoot rev-parse --abbrev-ref HEAD).Trim()
@@ -407,7 +407,7 @@ finally {
 
     if ($DryRun) {
         # Plans only, no commits — return to the original branch and drop the
-        # empty run branch (the plans live under .ralph/runs, not in commits).
+        # empty run branch (the plans live under .ralphy/runs, not in commits).
         git -C $RepoRoot checkout $OrigBranch --quiet 2>$null
         if ($commits -eq 0) { git -C $RepoRoot branch -D $Branch --quiet 2>$null }
         Log "DryRun: returned $RepoRoot to '$OrigBranch'; empty run branch removed. Plans under $RunDir."
