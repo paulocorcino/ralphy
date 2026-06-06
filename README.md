@@ -172,3 +172,7 @@ branch so you can fix the stalled issue in place, then commit and continue.
 - **Usage limit = stop.** The runner reports the reset time; re-run manually
   after it. (The older auto-reschedule was dropped — it conflicts with the
   new-branch-per-run model.)
+
+## License
+
+GPLv3 — see [LICENSE](LICENSE). Copyright (C) 2026 Paulo Corcino.
