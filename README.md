@@ -109,9 +109,9 @@ first word survives):
   `%USERPROFILE%\.local\bin\claude.exe`.
 - `gh` authenticated (`gh auth status`).
 - PowerShell 7 (`pwsh`).
-- The target repo: a **clean** working tree, and `.ralphy/` in its `.gitignore`
-  (Ralphy writes scratch + logs there). A reachable `-BaseBranch` (default
+- The target repo: a **clean** working tree. A reachable `-BaseBranch` (default
   `origin/main`; the runner does a best-effort `git fetch origin` first).
+  (`.ralphy/` is auto-added to the repo's `.gitignore` on the first run.)
 - Per-project build toolchains as needed (e.g. an issue that builds an extra
   feature needs that feature's deps on `PATH`, or it will time out).
 
@@ -165,8 +165,8 @@ branch so you can fix the stalled issue in place, then commit and continue.
 
 - **Logs/scratch live in the target repo** at `<repo>/.ralphy/` — both the live
   per-issue scratch (`plan.md`, `exec.md`, `issue.json`) the agent reads and the
-  archived `runs/<stamp>/` logs. Add `.ralphy/` to the target repo's `.gitignore`
-  once.
+  archived `runs/<stamp>/` logs. The runner auto-adds `.ralphy/` to the target
+  repo's `.gitignore` on the first run, so artifacts never leak into commits.
 - **One base per run.** For issues that need different bases, run twice with
   different `-BaseBranch`.
 - **Usage limit = stop.** The runner reports the reset time; re-run manually

@@ -120,6 +120,17 @@ function Log([string]$msg) {
     $line | Tee-Object -FilePath $LogFile -Append | Write-Host
 }
 
+# Keep run artifacts self-contained: ensure the target repo ignores .ralphy/ so
+# scratch + logs never leak into commits (and never dirty the pre-run tree check).
+$GitIgnore = Join-Path $RepoRoot '.gitignore'
+$giText = if (Test-Path $GitIgnore) { Get-Content $GitIgnore -Raw } else { '' }
+if ($giText -notmatch '(?m)^\s*\.ralphy/?\s*$') {
+    if ($giText.Length -and -not $giText.EndsWith("`n")) { $giText += "`n" }
+    $giText += "# Ralphy run artifacts (scratch, logs, per-run plans)`n.ralphy/`n"
+    Set-Content -Path $GitIgnore -Value $giText -Encoding utf8 -NoNewline
+    Log ".ralphy/ added to $GitIgnore"
+}
+
 # --- Hooks settings, scoped to the runner -------------------------------------
 # PreToolUse guard = destructive-command deny-list (both exec modes).
 # Stop hook = records RALPHY_DONE_EXIT/BLOCKED to the flag file so the runner can
