@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ralphy-core",
+    "crates/ralphy-cli",
+    "crates/ralphy-agent-claude",
+    "crates/ralphy-pty",
+]
+
+[workspace.package]
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/paulocorcino/ralphy"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+ralphy-core = { path = "crates/ralphy-core" }
+ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
+ralphy-pty = { path = "crates/ralphy-pty" }
