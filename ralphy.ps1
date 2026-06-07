@@ -1,15 +1,15 @@
 #requires -Version 7
 <#
 .SYNOPSIS
-    Ralphy runner (Windows): work GitHub issues labelled "AFK" overnight onto a
-    SINGLE run branch, on your Claude subscription quota (no Anthropic API key).
+    Ralphy runner (Windows): work GitHub issues labelled "ready-for-agent" (or
+    "AFK") overnight, on your Claude subscription quota (no Anthropic API key).
     This is a GLOBAL tool: it operates on the repo at -RepoPath (default: the
     current directory), in place, and lives outside any project it works on.
 
 .DESCRIPTION
     * One branch per RUN: the runner creates `afk/run-<stamp>` from a base you
       choose (-BaseBranch, default origin/main) IN PLACE in the target repo
-      (-RepoPath), then works the AFK queue in order, committing every issue
+      (-RepoPath), then works the queue in order, committing every issue
       onto that same branch. At the end you have ONE branch to review and merge
       back into the base by hand. The runner never pushes and never opens a PR.
     * In place, no worktree: the run checks out `afk/run-<stamp>` in the target
@@ -74,8 +74,16 @@ param(
 
     # Base the run branch is cut from (and that you merge it back into by hand).
     # Any commit-ish: a remote-tracking branch (origin/main), a local branch, a
-    # tag, or a SHA. Defaults to origin/main.
+    # tag, or a SHA. Defaults to origin/main. Only used when -BranchMode is 'new'.
     [string]$BaseBranch = 'origin/main',
+
+    # Where commits land:
+    #   'new'     (default) cut a fresh afk/run-<stamp> off -BaseBranch and commit
+    #             onto it, leaving your current branch untouched.
+    #   'current' commit straight onto the branch the repo is already on. No new
+    #             branch, -BaseBranch is ignored. Working tree must still be clean.
+    [ValidateSet('new', 'current')]
+    [string]$BranchMode = 'new',
 
     # Plan only; do not execute. The run branch is still created so you can
     # inspect the plans, but no source changes are made.
@@ -88,8 +96,22 @@ param(
 
     # Interactive sessions enable Remote Control by default, so you can follow
     # and intervene from the Claude mobile app. -NoRemoteControl disables it.
-    [switch]$NoRemoteControl
+    [switch]$NoRemoteControl,
+
+    # The queue labels: an issue carrying ANY of these is picked up, in ascending
+    # #. Defaults to Matt Pocock's canonical `ready-for-agent` PLUS the `AFK`
+    # shorthand — they're treated as synonyms. When docs/agents/triage-labels.md
+    # exists, its `ready-for-agent` mapping is added too. Passing this param
+    # explicitly replaces the whole set with exactly what you give. The canonical
+    # `ready-for-human` (alias `HITL`) is never queried, so human-only issues are
+    # never picked up; a green queue issue is always closed to complete the cycle.
+    [string[]]$QueueLabel = @('ready-for-agent', 'AFK')
 )
+
+# Fixed flow-control label: an open queue issue carrying it halts the run BEFORE
+# it is worked (issues earlier in the sequence still run). Remove it and re-run
+# to continue. Not configurable and not part of the triage vocabulary.
+$StopBeforeLabel = 'stop-before'
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -119,6 +141,29 @@ function Log([string]$msg) {
     $line = "[{0:HH:mm:ss}] {1}" -f (Get-Date), $msg
     $line | Tee-Object -FilePath $LogFile -Append | Write-Host
 }
+
+# --- Triage label vocabulary --------------------------------------------------
+# Queue labels follow Matt Pocock's canonical `ready-for-agent`, with the `AFK`
+# shorthand treated as a synonym. An issue is picked up if it carries ANY queue
+# label. When the repo carries a docs/agents/triage-labels.md mapping (written by
+# his setup-*-skills), the label it maps `ready-for-agent` to is added to the set
+# so we also match whatever vocabulary the repo uses. Passing -QueueLabel
+# explicitly replaces the whole set.
+function Resolve-TriageLabels([string]$Canonical, [string[]]$Defaults) {
+    $set = [System.Collections.Generic.List[string]]::new()
+    foreach ($d in $Defaults) { if ($d -and -not $set.Contains($d)) { $set.Add($d) } }
+    $file = Join-Path $RepoRoot 'docs/agents/triage-labels.md'
+    if (Test-Path $file) {
+        foreach ($line in (Get-Content $file)) {
+            if ($line -notmatch '^\s*\|') { continue }                 # table rows only
+            $cells = $line.Split('|') | ForEach-Object { ($_ -replace '`', '').Trim() }
+            # cells: '', <canonical>, <our-tracker-label>, <meaning>, ''
+            if ($cells.Count -ge 3 -and $cells[1] -eq $Canonical -and $cells[2] -and -not $set.Contains($cells[2])) { $set.Add($cells[2]) }
+        }
+    }
+    return $set.ToArray()
+}
+if (-not $PSBoundParameters.ContainsKey('QueueLabel')) { $QueueLabel = Resolve-TriageLabels 'ready-for-agent' $QueueLabel }
 
 # Keep run artifacts self-contained: ensure the target repo ignores .ralphy/ so
 # scratch + logs never leak into commits (and never dirty the pre-run tree check).
@@ -360,27 +405,44 @@ function Invoke-Issue {
 }
 
 # --- Main ---------------------------------------------------------------------
-Log "Ralphy run $RunStamp | repo=$RepoRoot base=$BaseBranch deadline=$($Deadline.ToString('HH:mm')) perIssue=${MaxMinutesPerIssue}min plan=$PlanModel/$PlanEffort exec=$(if($ExecModel){$ExecModel}else{'auto'})/$ExecEffort$(if($HeadlessExec){' [headless]'}else{' [interactive]'})$(if($DryRun){' [DryRun]'})"
+Log "Ralphy run $RunStamp | repo=$RepoRoot branch=$(if($BranchMode -eq 'current'){'current'}else{"new off $BaseBranch"}) queue=[$($QueueLabel -join ',')] deadline=$($Deadline.ToString('HH:mm')) perIssue=${MaxMinutesPerIssue}min plan=$PlanModel/$PlanEffort exec=$(if($ExecModel){$ExecModel}else{'auto'})/$ExecEffort$(if($HeadlessExec){' [headless]'}else{' [interactive]'})$(if($DryRun){' [DryRun]'})"
 git -C $RepoRoot fetch origin --quiet 2>$null
 
-$issues = (gh issue list --label AFK --state open --json number,title,labels --limit 100) | ConvertFrom-Json
-if ($OnlyIssue -gt 0) { $issues = $issues | Where-Object { $_.number -eq $OnlyIssue } }
-if (-not $issues) { Log "No open AFK issues to process. Done."; return }
-# Respect task sequence: process in ascending issue-number order (#5, #6, #9 ...).
-$issues = @($issues | Sort-Object number)
+# An issue qualifies if it carries ANY queue label. `gh --label` is an AND filter,
+# so query each label separately and union the results (deduped by number).
+$issues = @()
+foreach ($ql in $QueueLabel) {
+    $batch = (gh issue list --label $ql --state open --json number,title,labels --limit 100) | ConvertFrom-Json
+    if ($batch) { $issues += $batch }
+}
+# Dedupe by number and respect task sequence: ascending order (#5, #6, #9 ...).
+$issues = @($issues | Sort-Object number -Unique)
+if ($OnlyIssue -gt 0) { $issues = @($issues | Where-Object { $_.number -eq $OnlyIssue }) }
+if (-not $issues) { Log "No open issues for queue [$($QueueLabel -join ',')] to process. Done."; return }
 Log "Queue: $($issues.Count) issue(s) in order: $((($issues | ForEach-Object { '#' + $_.number }) -join ' -> '))"
 
-# One branch per run, created IN PLACE in the target repo off the chosen base.
-# Precondition: a clean working tree (we can't isolate a dirty checkout without
-# a worktree). .ralphy/ is ignored for this check whether or not it is gitignored.
-$Branch = "afk/run-$RunStamp"
-$dirty  = @(git -C $RepoRoot status --porcelain | Where-Object { $_ -notmatch '\.ralphy[\\/]' })
+# Commits land IN PLACE in the target repo. Either on a fresh per-run branch
+# (BranchMode 'new') or directly on the branch the repo is already on ('current').
+# Precondition for both: a clean working tree (we can't isolate a dirty checkout
+# without a worktree). .ralphy/ is ignored for this check whether or not it is
+# gitignored.
+$dirty = @(git -C $RepoRoot status --porcelain | Where-Object { $_ -notmatch '\.ralphy[\\/]' })
 if ($dirty.Count) { Log "! working tree at $RepoRoot is not clean — commit or stash first, aborting."; return }
-if (-not (git -C $RepoRoot rev-parse --verify --quiet "$BaseBranch^{commit}")) { Log "! base '$BaseBranch' not found — aborting."; return }
 $OrigBranch = (git -C $RepoRoot rev-parse --abbrev-ref HEAD).Trim()
-git -C $RepoRoot checkout -b $Branch $BaseBranch --quiet
-if ($LASTEXITCODE -ne 0) { Log "! could not create run branch '$Branch' — aborting."; return }
-Log "Run branch: $Branch  (base: $BaseBranch, in place at: $RepoRoot; was on: $OrigBranch)"
+if ($BranchMode -eq 'current') {
+    if ($OrigBranch -eq 'HEAD') { Log "! repo is in detached HEAD — checkout a branch first, aborting."; return }
+    $Branch = $OrigBranch
+    # Count commits against where this branch stood before the run.
+    $CompareRef = (git -C $RepoRoot rev-parse HEAD).Trim()
+    Log "Run branch: $Branch  (current branch, in place at: $RepoRoot)"
+} else {
+    $Branch = "afk/run-$RunStamp"
+    $CompareRef = $BaseBranch
+    if (-not (git -C $RepoRoot rev-parse --verify --quiet "$BaseBranch^{commit}")) { Log "! base '$BaseBranch' not found — aborting."; return }
+    git -C $RepoRoot checkout -b $Branch $BaseBranch --quiet
+    if ($LASTEXITCODE -ne 0) { Log "! could not create run branch '$Branch' — aborting."; return }
+    Log "Run branch: $Branch  (base: $BaseBranch, in place at: $RepoRoot; was on: $OrigBranch)"
+}
 
 $stopped    = $false
 $stopStatus = ''
@@ -389,9 +451,27 @@ try {
     foreach ($issue in $issues) {
         if ((Get-Date) -ge $Deadline) { Log "DEADLINE reached. Stopping."; $stopped = $true; $stopStatus = 'deadline'; break }
 
+        # stop-before: a clean, intentional pause before this issue is worked.
+        # Issues earlier in the sequence already ran. -OnlyIssue is an explicit
+        # override, so it ignores the marker. The repo is left on the run branch
+        # for inspection; remove the label and re-run to continue.
+        if ($OnlyIssue -le 0 -and ($issue.labels.name -contains $StopBeforeLabel)) {
+            Log "PAUSED: #$($issue.number) carries '$StopBeforeLabel' — stopping before it. Remove the label and re-run to continue."
+            $stopped = $true; $stopStatus = 'paused'; break
+        }
+
         $staged = $issue.labels.name -contains 'stagedplan'
         $status = Invoke-Issue -IssueNum $issue.number -Title $issue.title -WorkDir $RepoRoot -StagedPlan:$staged
         $lastIssue = $issue.number
+
+        # Close the cycle: a green queue issue is closed by the runner so it leaves
+        # the queue (the label is left untouched; the branch is still merged by
+        # hand). DryRun never closes — no real work was done.
+        if ($status -eq 'DONE' -and -not $DryRun) {
+            gh issue close $issue.number --comment "Closed by Ralphy run $RunStamp (green on branch '$Branch'; merge by hand)." 2>$null
+            if ($LASTEXITCODE -eq 0) { Log "#$($issue.number) green — issue closed." }
+            else { Log "! #$($issue.number) green but 'gh issue close' failed — left open." }
+        }
 
         if ($status -eq 'DONE' -or $status -eq 'infeasible' -or $status -eq 'dryrun') { continue }
 
@@ -411,12 +491,22 @@ try {
 }
 catch { Log "! error on #${lastIssue}: $($_.Exception.Message)"; $stopped = $true; $stopStatus = 'error' }
 finally {
-    $commits = @(git -C $RepoRoot rev-list "$BaseBranch..$Branch" 2>$null).Count
+    $commits = @(git -C $RepoRoot rev-list "$CompareRef..$Branch" 2>$null).Count
     Log "----"
-    Log "Branch '$Branch' carries $commits commit(s) over $BaseBranch."
-    if ($commits -gt 0) { (git -C $RepoRoot log --oneline "$BaseBranch..$Branch") | ForEach-Object { Log "    $_" } }
+    Log "Branch '$Branch' carries $commits commit(s) over $CompareRef."
+    if ($commits -gt 0) { (git -C $RepoRoot log --oneline "$CompareRef..$Branch") | ForEach-Object { Log "    $_" } }
 
-    if ($DryRun) {
+    if ($BranchMode -eq 'current') {
+        # Commits landed on the branch the repo was already on — nothing to check
+        # out, nothing to merge. Just report.
+        if ($DryRun) {
+            Log "DryRun on '$Branch': no commits made. Plans under $RunDir."
+        } elseif ($stopped) {
+            Log "Left $RepoRoot on '$Branch' for inspection (stop: $stopStatus)."
+        } else {
+            Log "Clean run: $commits commit(s) added to '$Branch' in place."
+        }
+    } elseif ($DryRun) {
         # Plans only, no commits — return to the original branch and drop the
         # empty run branch (the plans live under .ralphy/runs, not in commits).
         git -C $RepoRoot checkout $OrigBranch --quiet 2>$null
@@ -431,7 +521,7 @@ finally {
         git -C $RepoRoot checkout $OrigBranch --quiet 2>$null
         Log "Clean run: returned $RepoRoot to '$OrigBranch'. Run branch '$Branch' kept."
     }
-    if (-not ($DryRun -and $commits -eq 0)) {
+    if ($BranchMode -eq 'new' -and -not ($DryRun -and $commits -eq 0)) {
         Log "Review, then merge '$Branch' into your target (base was $BaseBranch):  git -C $RepoRoot merge $Branch"
     }
     Log "Logs: $RunDir"

@@ -1,9 +1,24 @@
 # Ralphy runner — autonomous overnight issue worker (Windows)
 
-Works GitHub issues labelled **`AFK`** unattended, onto a **single run branch**,
-on your Claude **subscription quota** (no Anthropic API key, so no per-token
-bill). It never pushes and never opens a PR — you review the branch and **merge
-by hand** in the morning.
+Works GitHub issues labelled **`ready-for-agent`** (or **`AFK`**) unattended, on
+your Claude **subscription quota** (no Anthropic API key, so no per-token bill).
+It never pushes and never opens a PR — you review the branch and **merge by hand**
+in the morning.
+
+The queue vocabulary follows [Matt Pocock's canonical triage roles](https://github.com/mattpocock/skills/tree/main/skills/engineering/setup-matt-pocock-skills),
+with the `AFK` shorthand treated as a **synonym** for `ready-for-agent`:
+
+| Issue labels | Ralphy does |
+|---|---|
+| `ready-for-agent` **or** `AFK` | works it, **closes** it when green |
+| `ready-for-human` / `HITL` | **not in the queue** — never queried, never worked |
+| `stop-before` (on a queue issue) | **pauses the run before it** — see below |
+
+An issue qualifies if it carries **any** queue label. `ready-for-human` is the
+canonical human-only role; Ralphy never queries it, so those issues are never
+picked up. If the repo has a `docs/agents/triage-labels.md` mapping (written by
+his setup skill), the label it maps `ready-for-agent` to is added to the set too.
+`-QueueLabel` (a list) replaces the set entirely.
 
 This is a **global tool**: it lives outside any project (e.g. `~\ralphy\`) and
 operates on whatever repo you point it at with **`-RepoPath`** (default: the
@@ -22,14 +37,26 @@ plan-then-interactive-execute flow:
   session ends *itself* by printing `RALPHY_DONE_EXIT`; a **Stop hook** flags it
   and the runner reclaims the process. `-HeadlessExec` swaps this for a
   `claude -p` loop (premium-metered; use only where there's no console/TTY).
-- **One branch per run**: a fresh `afk/run-<stamp>` is cut from `-BaseBranch`
-  (default `origin/main`) **in the target repo itself**, and every issue is
-  committed onto it. No worktree — the warm build cache (`target/`,
-  `node_modules`, …) is reused.
+- **Branch, your choice** (`-BranchMode`): the default `new` cuts a fresh
+  `afk/run-<stamp>` from `-BaseBranch` (default `origin/main`) and commits every
+  issue onto it, leaving your current branch untouched. `-BranchMode current`
+  commits straight onto the branch the repo is already on (no new branch,
+  `-BaseBranch` ignored). Either way it works **in the target repo itself** — no
+  worktree, so the warm build cache (`target/`, `node_modules`, …) is reused. A
+  clean working tree is required in both modes.
 - **Stop at first non-green**: the moment an issue does **not** finish green
   (BLOCKED / timeout / stuck / usage limit), the whole run stops and hands you
   the branch as it stands. Completed issues stay committed; the stalled issue's
   partial commits are left in place to inspect.
+- **Closes the cycle on green**: a green queue issue is **closed** by the runner
+  (with a comment pointing at the run branch — the label is left untouched; you
+  still merge by hand). `-DryRun` never closes.
+- **Pause mid-sequence with `stop-before`**: label one queued issue `stop-before`
+  and the run stops **before** working it — every issue earlier in the sequence
+  still runs. Remove the label and re-run to continue. `stop-before` is a fixed
+  label (create it in your repo); `-OnlyIssue` overrides it. Use it to inspect or
+  test something before the agent reaches a particular issue, without unmarking
+  everything after it.
 - **Subscription-friendly**: no USD cap (there's no API spend). A usage limit is
   a normal **stop** — the runner reports the reset time and you re-run manually.
 
@@ -37,14 +64,15 @@ plan-then-interactive-execute flow:
 ralphy.ps1 -RepoPath <repo>
   └─ precondition: target working tree is clean
      create afk/run-<stamp>  (in place, off -BaseBranch)
-     for each open AFK issue, ascending #:
+     for each open ready-for-agent issue, ascending #:
+        STOP?    : issue labelled stop-before → PAUSE before it (earlier ones ran)
         PLAN     : claude -p (Opus/medium)  → .ralphy/plan.md
                    · emits "## Execution model: sonnet|opus" (complexity judgment)
                    · `stagedplan`-labelled issues plan via the staged-plan skill
         EXECUTE  : claude (interactive, chosen model, +Remote Control "ralphy-<n>")
                    → does every step, commits each → prints RALPHY_DONE_EXIT
                    → Stop hook flags it → runner reclaims the process
-        OUTCOME  : DONE       → continue to the next issue
+        OUTCOME  : DONE       → close the issue, next issue
                    non-green  → STOP the whole run, hand over the branch
      end: clean run → return repo to its original branch (run branch kept)
           stopped   → leave repo ON the run branch for inspection
@@ -125,7 +153,7 @@ pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13 -DryRun
 #    mobile app (session "ralphy-13"). Commits onto afk/run-<stamp>.
 pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13
 
-# 3) The overnight run across the whole AFK queue (ascending order).
+# 3) The overnight run across the whole ready-for-agent queue (ascending order).
 pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -DeadlineHours 8
 
 # -RepoPath defaults to the current directory:
@@ -172,6 +200,17 @@ branch so you can fix the stalled issue in place, then commit and continue.
 - **Usage limit = stop.** The runner reports the reset time; re-run manually
   after it. (The older auto-reschedule was dropped — it conflicts with the
   new-branch-per-run model.)
+
+## Credits
+
+- **Triage vocabulary** — the canonical roles (`ready-for-agent`,
+  `ready-for-human`, `needs-triage`, `needs-info`, `wontfix`) are
+  **[Matt Pocock](https://github.com/mattpocock)'s**, from his
+  [engineering skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/setup-matt-pocock-skills).
+  Ralphy adopts them as-is; see [docs/triage-roles.md](docs/triage-roles.md) and
+  [ADR-0001](docs/adr/0001-triage-vocabulary-and-stop-before.md).
+- **The Ralph loop** — the unattended plan-execute-commit pattern is
+  [Geoffrey Huntley](https://ghuntley.com/ralphy/)'s.
 
 ## License
 
