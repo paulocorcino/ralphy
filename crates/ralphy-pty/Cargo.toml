@@ -4,6 +4,12 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Shared PTY crate for Ralphy adapters (stub; portable-pty backing lands in a later slice)."
+description = "Shared PTY crate for Ralphy adapters: spawn a child inside a pseudo-terminal (ConPTY on Windows), stream its output, and send it input."
 
 [dependencies]
+anyhow.workspace = true
+portable-pty = "0.9"
+
+[[bin]]
+name = "ralphy-pty-demo"
+path = "src/bin/demo.rs"
