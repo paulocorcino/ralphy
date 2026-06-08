@@ -397,6 +397,70 @@ fn classify_outcome(flag: Option<&str>, timed_out: bool, transcript: Option<&str
     Outcome::Stuck
 }
 
+/// Terminal reason for one headless `-p` call, mirroring `Invoke-ExecLoop`'s
+/// returned strings. Mapped to a core [`Outcome`] by [`headless_reason_to_outcome`].
+#[derive(Debug, Clone, PartialEq)]
+enum HeadlessReason {
+    Done,
+    Blocked(String),
+    Limit(Option<String>),
+    Timeout,
+    Stuck,
+    MaxCalls,
+}
+
+/// Classify the result of a single headless `-p` call. Returns the terminal
+/// reason if this call ends the loop, or `None` to continue to the next call.
+///
+/// Priority order mirrors `Invoke-ExecLoop`:
+/// 1. Process did not exit (timed out): limit text → `Limit`, else → `Timeout`.
+/// 2. `RALPHY_BLOCKED_EXIT` in output → `Blocked`.
+/// 3. `RALPHY_DONE_EXIT` or zero open steps → `Done`.
+/// 4. Limit text on natural exit → `Limit`.
+/// 5. Otherwise → `None` (continue).
+fn classify_exec_call(
+    out: &str,
+    exited: bool,
+    open_steps: usize,
+    _committed: bool,
+) -> Option<HeadlessReason> {
+    if !exited {
+        if is_limit_text(out) {
+            return Some(HeadlessReason::Limit(parse_reset_hhmm(out)));
+        }
+        return Some(HeadlessReason::Timeout);
+    }
+    if out.contains("RALPHY_BLOCKED_EXIT") {
+        let reason = out
+            .lines()
+            .find(|l| l.contains("RALPHY_BLOCKED_EXIT"))
+            .and_then(|l| l.split("RALPHY_BLOCKED_EXIT").nth(1))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        return Some(HeadlessReason::Blocked(reason));
+    }
+    if out.contains("RALPHY_DONE_EXIT") || open_steps == 0 {
+        return Some(HeadlessReason::Done);
+    }
+    if is_limit_text(out) {
+        return Some(HeadlessReason::Limit(parse_reset_hhmm(out)));
+    }
+    None
+}
+
+/// Collapse a headless terminal reason onto an existing core [`Outcome`].
+/// `MaxCalls` maps to `Stuck` — it is a headless-only safety cap that does not
+/// warrant a new core variant (ADR-0002).
+fn headless_reason_to_outcome(r: HeadlessReason) -> Outcome {
+    match r {
+        HeadlessReason::Done => Outcome::Done,
+        HeadlessReason::Blocked(s) => Outcome::Blocked(s),
+        HeadlessReason::Limit(t) => Outcome::Limit(t),
+        HeadlessReason::Timeout => Outcome::Timeout,
+        HeadlessReason::Stuck | HeadlessReason::MaxCalls => Outcome::Stuck,
+    }
+}
+
 /// Whether text looks like a subscription usage/rate-limit notice. Ports the ps1
 /// `Test-LimitText` oracle.
 fn is_limit_text(text: &str) -> bool {
