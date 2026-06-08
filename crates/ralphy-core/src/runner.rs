@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
 use crate::{git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
@@ -178,6 +178,14 @@ fn close_comment(stamp: &str, branch: &str) -> String {
     format!("Closed by Ralphy run {stamp} (green on branch '{branch}'; merge by hand).")
 }
 
+/// Write the issue the planner reads to `.ralphy/issue.json`.
+fn write_issue_json(ws: &Workspace, issue: &Issue) -> Result<()> {
+    std::fs::create_dir_all(ws.ralphy_dir())?;
+    let json = serde_json::to_string_pretty(issue).context("serializing issue to JSON")?;
+    std::fs::write(ws.issue_json_path(), json).context("writing .ralphy/issue.json")?;
+    Ok(())
+}
+
 /// Work the whole queue in order: plan → execute each issue, close every green
 /// one, and stop the moment one finishes non-green — handing back the branch as
 /// it stands. The deadline is checked at the top of each iteration so a passed
@@ -207,6 +215,14 @@ pub fn run_queue(
             );
             stop = Some(StopReason::Deadline);
             break;
+        }
+
+        // Persist the current issue where the planner reads it. The adapter's
+        // prompt reads `.ralphy/issue.json`, so the loop must refresh it before
+        // each plan — `.ralphy/` is gitignored and survives the branch checkout.
+        if let Err(e) = write_issue_json(&ws, issue) {
+            restore(repo, &orig, &branch, &cfg.base_branch);
+            return Err(e);
         }
 
         // Plan, restoring on planning failure so a dry run never strands a branch.

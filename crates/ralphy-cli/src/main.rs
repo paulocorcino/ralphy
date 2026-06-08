@@ -1,13 +1,15 @@
 //! Ralphy's command-line entry point and composition root: parse flags, resolve
-//! the repo, fetch the issue, build the Claude adapter, and hand off to the core
-//! run lifecycle.
+//! the repo, build the queue, build the Claude adapter, and hand off to the core
+//! queue lifecycle.
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use ralphy_agent_claude::ClaudeAgent;
-use ralphy_core::{git, github, run, RunConfig, RunOutcome, Workspace};
+use ralphy_core::{
+    git, github, run_queue, GhTracker, QueueConfig, StopReason, WallClock, Workspace,
+};
 use tracing::info;
 
 mod guard;
@@ -47,9 +49,19 @@ struct RunArgs {
     #[arg(long, default_value = ".")]
     repo: PathBuf,
 
-    /// Work only this issue number.
+    /// Work only this issue number (filters the queue to it). Omit to work the
+    /// whole queue.
     #[arg(long)]
-    only_issue: u64,
+    only_issue: Option<u64>,
+
+    /// Queue label(s): an open issue carrying ANY of these is worked. Repeatable.
+    #[arg(long = "queue-label", default_values_t = [String::from("ready-for-agent"), String::from("AFK")])]
+    queue_label: Vec<String>,
+
+    /// Global wall-clock budget (hours): don't start a new issue past it. Omit
+    /// for no deadline.
+    #[arg(long)]
+    deadline_hours: Option<f64>,
 
     /// Plan only; make no source changes and drop the empty run branch.
     #[arg(long)]
@@ -114,13 +126,23 @@ fn run_cmd(args: RunArgs) -> Result<()> {
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
-    // Fetch the issue and persist it where the planner reads it (.ralphy/ is
-    // gitignored, so it survives the branch checkout the core does next).
+    // Build the queue: the whole queue by default, or just `--only-issue` when set
+    // (applied as a post-build filter, parity with the ps1 `$OnlyIssue`).
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
-    let issue_json = github::fetch_issue_json(args.only_issue)?;
-    std::fs::write(ws.issue_json_path(), &issue_json).context("writing .ralphy/issue.json")?;
-    let issue = github::parse_issue(&issue_json)?;
-    info!(number = issue.number, title = %issue.title, "issue fetched");
+    let mut queue = github::list_queue(&args.queue_label)?;
+    if let Some(only) = args.only_issue {
+        queue.retain(|i| i.number == only);
+    }
+    if queue.is_empty() {
+        let scope = match args.only_issue {
+            Some(n) => format!("issue #{n}"),
+            None => format!("labels [{}]", args.queue_label.join(", ")),
+        };
+        println!("No open issues for {scope} to process. Done.");
+        return Ok(());
+    }
+    let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
+    info!(count = queue.len(), order = %order.join(" -> "), "queue built");
 
     // Guarantee subscription billing: clear any inherited API key for this run
     // (as the ps1 oracle does), so the agent draws on the subscription quota.
@@ -138,27 +160,43 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         args.max_minutes_per_issue,
         !args.no_remote_control,
     );
-    let cfg = RunConfig {
+    let cfg = QueueConfig {
         repo_root,
         base_branch: args.base_branch,
         dry_run: args.dry_run,
         stamp,
     };
 
-    let report = run(&cfg, &issue, &agent)?;
-    match report.outcome {
-        RunOutcome::DryRun { open_steps } => {
-            info!(branch = %report.branch, open_steps, restored = %report.orig_branch, "dry-run complete");
-            println!(
-                "Dry-run complete: {} open step(s) planned in {} (repo restored to '{}').",
-                open_steps,
-                ws.plan_path().display(),
-                report.orig_branch
-            );
+    // Build the global deadline (if any) from --deadline-hours.
+    let clock = WallClock {
+        deadline: args
+            .deadline_hours
+            .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0)),
+    };
+    let tracker = GhTracker;
+
+    let report = run_queue(&cfg, &queue, &agent, &tracker, &clock)?;
+
+    // Per-issue summary, then how the run ended and where the branch stands.
+    println!(
+        "Run on '{}' (was on '{}'):",
+        report.branch, report.orig_branch
+    );
+    for r in &report.worked {
+        let status = match (&r.outcome, r.closed) {
+            (Some(o), true) => format!("{o:?}, closed"),
+            (Some(o), false) => format!("{o:?}"),
+            (None, _) if args.dry_run => "planned (dry-run)".to_string(),
+            (None, _) => "skipped (infeasible)".to_string(),
+        };
+        println!("  #{}: {status}", r.number);
+    }
+    match report.stop {
+        Some(StopReason::Deadline) => println!("Stopped: deadline reached before the next issue."),
+        Some(StopReason::NonGreen { number, outcome }) => {
+            println!("Stopped: #{number} finished non-green ({outcome:?}). Branch handed back.");
         }
-        RunOutcome::Executed(outcome) => {
-            println!("Run finished on '{}': {:?}", report.branch, outcome);
-        }
+        None => println!("Queue complete."),
     }
     Ok(())
 }
