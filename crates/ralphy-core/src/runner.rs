@@ -31,6 +31,16 @@ impl RunClock for WallClock {
     }
 }
 
+/// How the run places its commits. `New` cuts a fresh `afk/run-*` branch off the
+/// base; `Current` commits straight onto the branch the repo is already on (no
+/// new branch, `base_branch` ignored). A plain enum so `ralphy-core` stays free
+/// of any `clap` dependency — the CLI keeps its own value-enum and converts in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchMode {
+    New,
+    Current,
+}
+
 /// Everything the core needs for one run — model-free by construction (model and
 /// effort are adapter concerns, set when the adapter is built).
 pub struct RunConfig {

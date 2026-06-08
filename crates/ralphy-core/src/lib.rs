@@ -17,8 +17,8 @@ pub mod plan;
 
 pub use agent::Agent;
 pub use runner::{
-    run, run_queue, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig, RunOutcome,
-    RunReport, StopReason, WallClock,
+    run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
+    RunOutcome, RunReport, StopReason, WallClock,
 };
 pub use tracker::{GhTracker, IssueTracker};
 pub use types::{Issue, Outcome, Plan, Workspace};
