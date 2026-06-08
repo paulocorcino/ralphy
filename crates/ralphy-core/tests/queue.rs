@@ -1,0 +1,329 @@
+//! Queue-loop lifecycle tests over a throwaway git repo, with a `ScriptedAgent`,
+//! a `RecordingTracker`, and a `ScriptedClock` standing in for the real adapter,
+//! `gh`, and the wall clock. These prove the acceptance criteria the core owns:
+//! ascending/deduped order, close-on-green with a branch-pointing comment and no
+//! label mutation, stop-at-first-non-green with later issues untouched, dry-run
+//! closing nothing, and the deadline blocking the next issue.
+
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use ralphy_core::{
+    run_queue, Agent, Issue, IssueTracker, Outcome, Plan, QueueConfig, RunClock, StopReason,
+    Workspace,
+};
+
+/// Plans a feasible step for every issue and returns a scripted sequence of
+/// execution outcomes (one per `execute` call). It also records, in order, the
+/// issue numbers it was asked to plan and to execute — so a test can assert that
+/// issues past a stop were never touched. Each executed issue makes one real
+/// commit, so the run branch is non-empty (and is handed back, not dropped).
+struct ScriptedAgent {
+    outcomes: RefCell<VecDeque<Outcome>>,
+    planned: RefCell<Vec<u64>>,
+    executed: RefCell<Vec<u64>>,
+    /// Open steps written by `plan` — set to 0 to script an infeasible issue.
+    steps: usize,
+}
+
+impl ScriptedAgent {
+    fn new(outcomes: Vec<Outcome>) -> Self {
+        Self {
+            outcomes: RefCell::new(outcomes.into()),
+            planned: RefCell::new(Vec::new()),
+            executed: RefCell::new(Vec::new()),
+            steps: 1,
+        }
+    }
+}
+
+impl Agent for ScriptedAgent {
+    fn plan(&self, issue: &Issue, ws: &Workspace) -> anyhow::Result<Plan> {
+        self.planned.borrow_mut().push(issue.number);
+        fs::create_dir_all(ws.ralphy_dir())?;
+        let path = ws.plan_path();
+        let body = format!(
+            "# Plan for #{}\n\n## Steps\n{}",
+            issue.number,
+            "- [ ] do a thing\n".repeat(self.steps)
+        );
+        fs::write(&path, body)?;
+        Ok(Plan {
+            open_steps: self.steps,
+            recommended_model: None,
+            path,
+        })
+    }
+
+    fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Outcome> {
+        // The most recently planned issue is the one being executed.
+        let number = *self.planned.borrow().last().unwrap();
+        self.executed.borrow_mut().push(number);
+        // Make a real commit so the run branch carries work and is handed back.
+        let repo = ws.repo_root();
+        let marker = repo.join(format!("issue-{number}.txt"));
+        fs::write(&marker, "done\n").unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-q", "-m", &format!("work #{number}")]);
+        Ok(self
+            .outcomes
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(Outcome::Done))
+    }
+}
+
+/// Records every `(number, comment)` close so tests can assert exactly which
+/// issues were closed and what the comment said. Never mutates labels — there is
+/// no label API here, which is the point.
+#[derive(Default)]
+struct RecordingTracker {
+    closes: RefCell<Vec<(u64, String)>>,
+}
+
+impl IssueTracker for RecordingTracker {
+    fn close(&self, number: u64, comment: &str) -> anyhow::Result<()> {
+        self.closes.borrow_mut().push((number, comment.to_string()));
+        Ok(())
+    }
+}
+
+/// A clock that reports the deadline passed once it has been polled `after`
+/// times — letting a test fast-forward the budget deterministically.
+struct ScriptedClock {
+    polls: RefCell<usize>,
+    after: usize,
+}
+
+impl ScriptedClock {
+    /// Never expires.
+    fn never() -> Self {
+        Self {
+            polls: RefCell::new(0),
+            after: usize::MAX,
+        }
+    }
+
+    /// Reports the deadline passed starting from the `after`-th poll (0-based).
+    fn passes_after(after: usize) -> Self {
+        Self {
+            polls: RefCell::new(0),
+            after,
+        }
+    }
+}
+
+impl RunClock for ScriptedClock {
+    fn deadline_passed(&self) -> bool {
+        let mut p = self.polls.borrow_mut();
+        let passed = *p >= self.after;
+        *p += 1;
+        passed
+    }
+}
+
+fn git(repo: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .status()
+        .expect("spawn git");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+fn current_branch(repo: &Path) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .expect("spawn git");
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+fn branch_exists(repo: &Path, branch: &str) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--verify", "--quiet", branch])
+        .status()
+        .expect("spawn git")
+        .success()
+}
+
+fn init_repo(name: &str) -> PathBuf {
+    static N: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "ralphy-queue-{}-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed),
+        name
+    ));
+    fs::create_dir_all(&dir).unwrap();
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["config", "user.email", "t@example.com"]);
+    git(&dir, &["config", "user.name", "Test"]);
+    fs::write(dir.join(".gitignore"), ".ralphy/\n").unwrap();
+    fs::write(dir.join("README.md"), "hello\n").unwrap();
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "init"]);
+    dir
+}
+
+fn issue(number: u64) -> Issue {
+    Issue {
+        number,
+        title: format!("issue {number}"),
+        body: String::new(),
+        labels: vec![],
+    }
+}
+
+fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
+    QueueConfig {
+        repo_root: repo.to_path_buf(),
+        base_branch: "main".into(),
+        dry_run,
+        stamp: stamp.into(),
+    }
+}
+
+#[test]
+fn works_issues_in_order_and_closes_each_green() {
+    let repo = init_repo("green");
+    let queue = vec![issue(2), issue(5), issue(9)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done, Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-green", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // Worked ascending, all three executed.
+    assert_eq!(*agent.executed.borrow(), vec![2, 5, 9]);
+    assert!(report.stop.is_none(), "no stop on an all-green run");
+
+    // Each green issue closed exactly once, comment names the run branch, and no
+    // label mutation is even possible (the tracker has no label method).
+    let closes = tracker.closes.borrow();
+    let numbers: Vec<u64> = closes.iter().map(|(n, _)| *n).collect();
+    assert_eq!(numbers, vec![2, 5, 9], "every green issue closed once");
+    for (_, comment) in closes.iter() {
+        assert!(
+            comment.contains(&report.branch),
+            "comment must point at the run branch: {comment}"
+        );
+    }
+
+    // Branch carries work, so it is handed back (repo left on the run branch).
+    assert_eq!(current_branch(&repo), report.branch);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn first_non_green_stops_run_and_leaves_later_issues_untouched() {
+    let repo = init_repo("stop");
+    let queue = vec![issue(1), issue(2), issue(3)];
+    // #1 green, #2 blocked → #3 must never be touched.
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Blocked("nope".into())]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-stop", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(*agent.executed.borrow(), vec![1, 2], "#3 never executed");
+    assert_eq!(*agent.planned.borrow(), vec![1, 2], "#3 never planned");
+
+    // Earlier green issue stays closed; the blocked one is not closed.
+    let numbers: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(numbers, vec![1], "only the green issue closed");
+
+    match report.stop {
+        Some(StopReason::NonGreen { number, outcome }) => {
+            assert_eq!(number, 2);
+            assert_eq!(outcome, Outcome::Blocked("nope".into()));
+        }
+        other => panic!("expected NonGreen stop, got {other:?}"),
+    }
+
+    // Branch handed back with the green commit on it.
+    assert_eq!(current_branch(&repo), report.branch);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn dry_run_closes_nothing_and_restores() {
+    let repo = init_repo("dry");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-dry", true),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "dry run must never close an issue"
+    );
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "dry run plans only — never executes"
+    );
+    // Empty branch dropped, repo restored.
+    assert_eq!(current_branch(&repo), "main", "restored to original branch");
+    assert!(
+        !branch_exists(&repo, &report.branch),
+        "empty branch dropped"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn deadline_blocks_starting_the_next_issue() {
+    let repo = init_repo("deadline");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]);
+    let tracker = RecordingTracker::default();
+    // Clock: first poll (before #1) OK, second poll (before #2) reports passed.
+    let clock = ScriptedClock::passes_after(1);
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-deadline", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    assert_eq!(*agent.planned.borrow(), vec![1], "#2 never planned");
+    assert_eq!(*agent.executed.borrow(), vec![1], "#2 never executed");
+    assert!(matches!(report.stop, Some(StopReason::Deadline)));
+
+    fs::remove_dir_all(&repo).ok();
+}

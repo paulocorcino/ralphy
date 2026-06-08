@@ -7,6 +7,7 @@
 
 mod agent;
 mod runner;
+mod tracker;
 mod types;
 
 pub mod git;
@@ -15,5 +16,9 @@ pub mod gitignore;
 pub mod plan;
 
 pub use agent::Agent;
-pub use runner::{run, RunConfig, RunOutcome, RunReport};
+pub use runner::{
+    run, run_queue, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig, RunOutcome,
+    RunReport, StopReason, WallClock,
+};
+pub use tracker::{GhTracker, IssueTracker};
 pub use types::{Issue, Outcome, Plan, Workspace};
