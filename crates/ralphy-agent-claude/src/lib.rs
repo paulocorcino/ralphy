@@ -181,7 +181,7 @@ impl Agent for ClaudeAgent {
         }
 
         info!(model = ?self.plan_model, effort = ?self.plan_effort, "planning with claude -p");
-        let mut child = Command::new("claude")
+        let mut child = Command::new(resolve_claude_binary())
             .args(&args)
             .current_dir(ws.repo_root())
             .stdin(Stdio::piped())
@@ -227,6 +227,10 @@ impl Agent for ClaudeAgent {
         fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
             .context("writing .ralphy/exec.md")?;
 
+        // Grant the one-time workspace trust so the interactive session doesn't
+        // stall on Claude's first-run "do you trust this folder?" dialog.
+        ensure_workspace_trusted(ws.repo_root());
+
         let settings_path = self.write_exec_settings()?;
         let exec_model = self.resolve_exec_model(plan);
         let flag_file = self.run_dir.join("status.flag");
@@ -242,7 +246,7 @@ impl Agent for ClaudeAgent {
 
         // Build the claude argv: settings, skip-permissions, model, effort,
         // optional remote-control, then the charter as the positional prompt.
-        let mut cmd = PtyCommand::new("claude")
+        let mut cmd = PtyCommand::new(resolve_claude_binary())
             .cwd(ws.repo_root())
             .env("RALPHY_FLAG_FILE", &flag_file)
             .arg("--dangerously-skip-permissions")
@@ -376,6 +380,105 @@ fn dirs_home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Pre-accept Claude Code's workspace-trust dialog for `repo_root`. The headless
+/// `-p` planning path is exempt from that dialog, but an *interactive* session
+/// stalls on it forever waiting for a keypress — so an autonomous orchestrator
+/// must grant the one-time trust the operator would otherwise click. Best-effort:
+/// reads `~/.claude.json`, sets the flag for this workspace, and writes it back,
+/// preserving everything else. A failure here just means the live session may
+/// stall (surfaced as a Timeout), never a crash.
+fn ensure_workspace_trusted(repo_root: &Path) {
+    let Some(home) = dirs_home() else {
+        return;
+    };
+    let cfg_path = home.join(".claude.json");
+    let root = fs::read_to_string(&cfg_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    // Claude keys projects by the cwd it is launched with; we launch it at
+    // `repo_root`, whose display form uses forward slashes on every platform.
+    let key = repo_root.to_string_lossy().replace('\\', "/");
+    let updated = with_workspace_trusted(root, &key);
+    if let Ok(s) = serde_json::to_string_pretty(&updated) {
+        let _ = fs::write(&cfg_path, s);
+    }
+}
+
+/// Set `projects[key].hasTrustDialogAccepted = true` on a parsed `~/.claude.json`,
+/// creating the `projects` map and the per-project entry as needed and leaving
+/// all other content untouched. Pure, so it unit-tests without the filesystem.
+fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> serde_json::Value {
+    use serde_json::{json, Value};
+    if let Some(obj) = root.as_object_mut() {
+        let projects = obj.entry("projects").or_insert_with(|| json!({}));
+        if let Some(projects) = projects.as_object_mut() {
+            let entry = projects.entry(key.to_string()).or_insert_with(|| json!({}));
+            if let Some(entry) = entry.as_object_mut() {
+                entry.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
+            }
+        }
+    }
+    root
+}
+
+/// Resolve the `claude` executable to an absolute path, mirroring the ps1
+/// oracle's `$Claude` resolution. This matters because the PTY backend rebuilds
+/// `PATH` from the Windows registry and ignores runtime `PATH` edits, so a bare
+/// `"claude"` fails wherever the install dir isn't on the *persistent* PATH.
+/// Falls back to `~/.local/bin/claude[.exe]`, then to the bare name so the spawn
+/// error still names it.
+fn resolve_claude_binary() -> std::ffi::OsString {
+    if let Some(found) = find_program("claude", std::env::var_os("PATH"), std::env::var_os("PATHEXT"))
+    {
+        return found.into_os_string();
+    }
+    if let Some(home) = dirs_home() {
+        let mut cand = home.join(".local").join("bin").join("claude");
+        if cfg!(windows) {
+            cand.set_extension("exe");
+        }
+        if cand.is_file() {
+            return cand.into_os_string();
+        }
+    }
+    "claude".into()
+}
+
+/// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows. Pure
+/// over its inputs so it unit-tests against a temp dir.
+fn find_program(
+    name: &str,
+    path_var: Option<std::ffi::OsString>,
+    pathext: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    let path_var = path_var?;
+    let exts: Vec<String> = if cfg!(windows) {
+        pathext
+            .and_then(|p| p.into_string().ok())
+            .unwrap_or_else(|| ".EXE".into())
+            .split(';')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for dir in std::env::split_paths(&path_var) {
+        let direct = dir.join(name);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        for ext in &exts {
+            let cand = dir.join(name).with_extension(ext.trim_start_matches('.'));
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
 /// Recursively find the most-recently-modified `*.jsonl` under `base`, but only if
 /// it was modified within the last 5 minutes (a stale transcript is irrelevant).
 fn newest_jsonl(base: &Path) -> Option<PathBuf> {
@@ -502,6 +605,57 @@ mod tests {
             ),
             Outcome::Limit
         );
+    }
+
+    #[test]
+    fn workspace_trust_sets_flag_and_preserves_other_content() {
+        use serde_json::json;
+
+        // Existing config with an unrelated project and a top-level key.
+        let root = json!({
+            "numStartups": 7,
+            "projects": { "C:/other": { "hasTrustDialogAccepted": false, "keep": 1 } }
+        });
+        let out = with_workspace_trusted(root, "C:/ws");
+
+        // The new workspace is trusted...
+        assert_eq!(out["projects"]["C:/ws"]["hasTrustDialogAccepted"], true);
+        // ...and nothing else was disturbed.
+        assert_eq!(out["numStartups"], 7);
+        assert_eq!(out["projects"]["C:/other"]["hasTrustDialogAccepted"], false);
+        assert_eq!(out["projects"]["C:/other"]["keep"], 1);
+    }
+
+    #[test]
+    fn workspace_trust_bootstraps_empty_config() {
+        let out = with_workspace_trusted(serde_json::json!({}), "C:/ws");
+        assert_eq!(out["projects"]["C:/ws"]["hasTrustDialogAccepted"], true);
+    }
+
+    #[test]
+    fn find_program_locates_a_file_on_the_search_path() {
+        let dir = std::env::temp_dir().join(format!("ralphy-find-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = if cfg!(windows) { "tool.exe" } else { "tool" };
+        std::fs::write(dir.join(exe), b"x").unwrap();
+
+        let path_var = std::ffi::OsString::from(dir.to_string_lossy().into_owned());
+        let got = find_program("tool", Some(path_var), Some(".EXE".into()));
+        // Resolves to the real file (the extension casing follows PATHEXT, so
+        // compare by existence + parent rather than an exact path string).
+        let got = got.expect("tool should be found on the search path");
+        assert!(got.is_file());
+        assert_eq!(got.parent(), Some(dir.as_path()));
+        assert_eq!(
+            got.file_stem().and_then(|s| s.to_str()),
+            Some("tool")
+        );
+
+        // A name that isn't there resolves to nothing.
+        let path_var = std::ffi::OsString::from(dir.to_string_lossy().into_owned());
+        assert!(find_program("nope", Some(path_var), Some(".EXE".into())).is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
