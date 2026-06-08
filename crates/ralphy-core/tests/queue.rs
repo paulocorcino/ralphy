@@ -215,6 +215,17 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
     }
 }
 
+fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
+    QueueConfig {
+        repo_root: repo.to_path_buf(),
+        base_branch: "main".into(),
+        dry_run: false,
+        stamp: stamp.into(),
+        branch_mode: BranchMode::Current,
+        only_issue: None,
+    }
+}
+
 #[test]
 fn works_issues_in_order_and_closes_each_green() {
     let repo = init_repo("green");
@@ -441,6 +452,146 @@ fn limit_outcome_stops_as_limit() {
         }
         other => panic!("expected Limit stop, got {other:?}"),
     }
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn current_mode_commits_on_current_branch() {
+    let repo = init_repo("current");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg_current(&repo, "stamp-current"),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // No fresh run branch: commits land on the branch the repo was already on.
+    assert_eq!(report.branch, "main", "current mode commits onto main");
+    assert!(
+        !branch_exists(&repo, "afk/run-stamp-current"),
+        "current mode creates no run branch"
+    );
+    // The green commit landed, counted over the pre-run HEAD compare ref.
+    assert!(report.commits > 0, "current-mode work counted");
+    // The repo is left on the same branch — nothing is checked out or deleted.
+    assert_eq!(current_branch(&repo), "main");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn current_mode_refuses_detached_head() {
+    let repo = init_repo("detached");
+    git(&repo, &["checkout", "--detach", "--quiet"]);
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let result = run_queue(
+        &cfg_current(&repo, "stamp-detached"),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    );
+
+    assert!(result.is_err(), "detached HEAD must abort the run");
+    assert!(agent.planned.borrow().is_empty(), "nothing planned on abort");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn dirty_tree_aborts_before_branch_work() {
+    let repo = init_repo("dirty");
+    // A tracked, uncommitted change (not under .ralphy/) makes the tree dirty.
+    fs::write(repo.join("README.md"), "changed\n").unwrap();
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let result = run_queue(
+        &cfg(&repo, "stamp-dirty", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    );
+
+    assert!(result.is_err(), "dirty tree must abort before any branch work");
+    assert!(
+        !branch_exists(&repo, "afk/run-stamp-dirty"),
+        "no run branch created on a dirty-tree abort"
+    );
+    assert!(agent.planned.borrow().is_empty(), "nothing planned on abort");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn gitignore_gets_ralphy_on_first_run() {
+    let repo = init_repo("gitignore");
+    // Reset .gitignore to one that does NOT mention .ralphy/, and commit it so the
+    // tree starts clean.
+    fs::write(repo.join(".gitignore"), "target/\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "gitignore without ralphy"]);
+
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    // Current mode keeps commits in place, so the ensured `.gitignore` edit stays
+    // in the working tree — a New-mode run would commit it onto the run branch and
+    // then return to the original branch, hiding it from this observation point.
+    run_queue(
+        &cfg_current(&repo, "stamp-gitignore"),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let body = fs::read_to_string(repo.join(".gitignore")).unwrap();
+    assert!(
+        body.contains(".ralphy/"),
+        ".ralphy/ added to .gitignore on first run: {body}"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn report_carries_commit_count_and_oneline() {
+    let repo = init_repo("report");
+    // Three green issues → three commits over the base.
+    let queue = vec![issue(1), issue(2), issue(3)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done, Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-report", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(report.commits, 3, "one commit per green issue");
+    assert_eq!(
+        report.oneline.len(),
+        report.commits,
+        "one oneline entry per counted commit"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
