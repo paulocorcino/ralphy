@@ -131,6 +131,9 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
     })
 }
 
+/// The label that pauses the run before the tagged issue (flow-control, not triage).
+const STOP_BEFORE_LABEL: &str = "stop-before";
+
 /// Everything the core needs to work a whole queue. Like [`RunConfig`] but the
 /// issues come from the caller (built via [`crate::github::list_queue`]) so the
 /// loop itself stays `gh`-free and testable.
@@ -139,6 +142,9 @@ pub struct QueueConfig {
     pub base_branch: String,
     pub dry_run: bool,
     pub stamp: String,
+    /// When set, the `stop-before` label on this specific issue is ignored and
+    /// the issue runs normally. Mirrors ps1's `$OnlyIssue -le 0` guard.
+    pub only_issue: Option<u64>,
 }
 
 /// What happened to one issue in the queue.
@@ -160,6 +166,11 @@ pub enum StopReason {
     Deadline,
     /// An issue finished non-green; the run hands back the branch as it stands.
     NonGreen { number: u64, outcome: Outcome },
+    /// A `stop-before` label halted the run before the tagged issue.
+    StopBefore { number: u64 },
+    /// The agent hit a usage/rate limit; includes the parsed reset time when
+    /// present in the transcript.
+    Limit { number: u64, reset: Option<String> },
 }
 
 /// The result of working a queue: the branch the commits landed on, where the
@@ -214,6 +225,20 @@ pub fn run_queue(
                 "deadline passed — not starting issue"
             );
             stop = Some(StopReason::Deadline);
+            break;
+        }
+
+        // Stop-before: a flow-control label that pauses the run before the tagged
+        // issue. `only_issue` overrides it (the queue was pre-filtered to that
+        // issue, so the operator explicitly wants it to run).
+        if cfg.only_issue.is_none() && issue.labels.iter().any(|l| l == STOP_BEFORE_LABEL) {
+            info!(
+                number = issue.number,
+                "stop-before label — halting run before this issue"
+            );
+            stop = Some(StopReason::StopBefore {
+                number: issue.number,
+            });
             break;
         }
 
@@ -276,14 +301,18 @@ pub fn run_queue(
 
         // Any non-green outcome stops the whole run; later issues are untouched.
         info!(number = issue.number, ?outcome, "non-green — stopping run");
+        let number = issue.number;
         worked.push(IssueResult {
-            number: issue.number,
+            number,
             outcome: Some(outcome.clone()),
             closed: false,
         });
-        stop = Some(StopReason::NonGreen {
-            number: issue.number,
-            outcome,
+        stop = Some(match outcome {
+            Outcome::Limit(reset) => StopReason::Limit { number, reset },
+            other => StopReason::NonGreen {
+                number,
+                outcome: other,
+            },
         });
         break;
     }

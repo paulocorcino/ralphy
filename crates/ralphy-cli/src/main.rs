@@ -165,6 +165,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         base_branch: args.base_branch,
         dry_run: args.dry_run,
         stamp,
+        only_issue: args.only_issue,
     };
 
     // Build the global deadline (if any) from --deadline-hours.
@@ -195,6 +196,18 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         Some(StopReason::Deadline) => println!("Stopped: deadline reached before the next issue."),
         Some(StopReason::NonGreen { number, outcome }) => {
             println!("Stopped: #{number} finished non-green ({outcome:?}). Branch handed back.");
+        }
+        Some(StopReason::StopBefore { number }) => {
+            println!(
+                "Stopped: stop-before label on #{number}. Remove the label and re-run to continue."
+            );
+        }
+        Some(StopReason::Limit { number, reset }) => {
+            print!("Stopped: usage limit on #{number}.");
+            if let Some(t) = reset {
+                print!(" Resets ~{t}; re-run after that.");
+            }
+            println!();
         }
         None => println!("Queue complete."),
     }

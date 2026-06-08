@@ -345,8 +345,9 @@ impl ClaudeAgent {
 }
 
 /// Map the session's end state to an [`Outcome`]. The flag the Stop hook wrote is
-/// authoritative; otherwise a timeout is a [`Outcome::Timeout`], usage-limit text
-/// in the transcript is a [`Outcome::Limit`], and a quiet exit is [`Outcome::Stuck`].
+/// authoritative; otherwise a timeout is [`Outcome::Timeout`], usage-limit text
+/// in the transcript is [`Outcome::Limit`] (with a parsed reset hint), and a
+/// quiet exit is [`Outcome::Stuck`].
 fn classify_outcome(flag: Option<&str>, timed_out: bool, transcript: Option<&str>) -> Outcome {
     if let Some(f) = flag {
         let f = f.trim();
@@ -361,7 +362,7 @@ fn classify_outcome(flag: Option<&str>, timed_out: bool, transcript: Option<&str
         return Outcome::Timeout;
     }
     if transcript.is_some_and(is_limit_text) {
-        return Outcome::Limit;
+        return Outcome::Limit(transcript.and_then(parse_reset_hhmm));
     }
     Outcome::Stuck
 }
@@ -374,6 +375,24 @@ fn is_limit_text(text: &str) -> bool {
         Regex::new(r"(?i)(rate limit|usage limit|reached your .* limit|limit reached|resets\s+\d)")
             .expect("valid regex");
     re.is_match(text)
+}
+
+/// Parse a reset time from a usage-limit transcript. Looks for a pattern like
+/// "resets 3:00pm" or "resets Tue 12:30am" and converts it to 24h `HH:mm`.
+/// Returns `None` when no match is found. Ports `Get-ResetDateTime`.
+fn parse_reset_hhmm(text: &str) -> Option<String> {
+    use regex::Regex;
+    let re = Regex::new(r"(?i)resets\s+(?:[a-z]{3}\s+)?(\d{1,2}):(\d{2})\s*([ap]m)")
+        .expect("valid regex");
+    let caps = re.captures(text)?;
+    let hour: u32 = caps[1].parse().ok()?;
+    let min: u32 = caps[2].parse().ok()?;
+    let ampm = caps[3].to_lowercase();
+    let hour24 = match ampm.as_str() {
+        "am" => hour % 12,
+        _ => (hour % 12) + 12,
+    };
+    Some(format!("{:02}:{:02}", hour24, min))
 }
 
 /// The most recent `claude` transcript JSONL under `~/.claude/projects`, read in
@@ -621,10 +640,25 @@ mod tests {
             classify_outcome(
                 None,
                 false,
-                Some("You've reached your usage limit; resets 3pm")
+                Some("You've reached your usage limit; resets 3:00pm")
             ),
-            Outcome::Limit
+            Outcome::Limit(Some("15:00".into()))
         );
+    }
+
+    #[test]
+    fn parse_reset_hhmm_converts_pm() {
+        assert_eq!(parse_reset_hhmm("resets 3:00pm"), Some("15:00".into()));
+    }
+
+    #[test]
+    fn parse_reset_hhmm_midnight() {
+        assert_eq!(parse_reset_hhmm("resets 12:30am"), Some("00:30".into()));
+    }
+
+    #[test]
+    fn parse_reset_hhmm_no_match() {
+        assert_eq!(parse_reset_hhmm("no time here"), None);
     }
 
     #[test]

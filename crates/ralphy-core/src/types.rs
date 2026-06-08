@@ -45,7 +45,7 @@ pub enum Outcome {
     Blocked(String),
     Timeout,
     Stuck,
-    Limit,
+    Limit(Option<String>),
 }
 
 /// The repository a run operates on, in place. Owns the paths under the

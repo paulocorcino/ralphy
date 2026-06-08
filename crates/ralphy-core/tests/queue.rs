@@ -184,12 +184,32 @@ fn issue(number: u64) -> Issue {
     }
 }
 
+fn issue_labeled(number: u64, labels: &[&str]) -> Issue {
+    Issue {
+        number,
+        title: format!("issue {number}"),
+        body: String::new(),
+        labels: labels.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
 fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
     QueueConfig {
         repo_root: repo.to_path_buf(),
         base_branch: "main".into(),
         dry_run,
         stamp: stamp.into(),
+        only_issue: None,
+    }
+}
+
+fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
+    QueueConfig {
+        repo_root: repo.to_path_buf(),
+        base_branch: "main".into(),
+        dry_run: false,
+        stamp: stamp.into(),
+        only_issue: Some(only),
     }
 }
 
@@ -324,6 +344,96 @@ fn deadline_blocks_starting_the_next_issue() {
     assert_eq!(*agent.planned.borrow(), vec![1], "#2 never planned");
     assert_eq!(*agent.executed.borrow(), vec![1], "#2 never executed");
     assert!(matches!(report.stop, Some(StopReason::Deadline)));
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn stop_before_halts_before_labeled_issue() {
+    let repo = init_repo("stop-before");
+    // #1 is a normal issue; #2 carries the stop-before label; #3 must never be touched.
+    let queue = vec![issue(1), issue_labeled(2, &["stop-before"]), issue(3)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-stopbefore", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // #1 executed; #2 (labeled) and #3 never planned/executed.
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![1],
+        "#2 and #3 never executed"
+    );
+    assert_eq!(*agent.planned.borrow(), vec![1], "#2 and #3 never planned");
+
+    match report.stop {
+        Some(StopReason::StopBefore { number }) => assert_eq!(number, 2),
+        other => panic!("expected StopBefore, got {other:?}"),
+    }
+
+    // Branch has work (from #1), so it is handed back on the run branch.
+    assert_eq!(current_branch(&repo), report.branch);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn only_issue_ignores_stop_before() {
+    let repo = init_repo("only-stop-before");
+    // The queue is just the labeled issue; only_issue overrides the stop-before guard.
+    let queue = vec![issue_labeled(7, &["stop-before"])];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg_only(&repo, "stamp-only", 7),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // The issue was executed despite the label.
+    assert_eq!(*agent.executed.borrow(), vec![7]);
+    assert!(
+        report.stop.is_none(),
+        "no stop when only_issue overrides stop-before"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn limit_outcome_stops_as_limit() {
+    let repo = init_repo("limit");
+    let queue = vec![issue(10)];
+    let agent = ScriptedAgent::new(vec![Outcome::Limit(Some("15:00".into()))]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-limit", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    match report.stop {
+        Some(StopReason::Limit { number, reset }) => {
+            assert_eq!(number, 10);
+            assert_eq!(reset, Some("15:00".into()));
+        }
+        other => panic!("expected Limit stop, got {other:?}"),
+    }
 
     fs::remove_dir_all(&repo).ok();
 }
