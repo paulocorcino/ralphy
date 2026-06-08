@@ -101,7 +101,7 @@ pub fn list_queue(labels: &[String]) -> Result<Vec<Issue>> {
                 "--state",
                 "open",
                 "--json",
-                "number,title,labels",
+                "number,title,body,labels",
                 "--limit",
                 "100",
             ])

@@ -27,8 +27,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Plan (and, later, execute) one issue onto a fresh run branch.
-    Run(RunArgs),
+    /// Work the repo's issue queue onto a fresh run branch.
+    Run(Box<RunArgs>),
     /// Internal: agent-CLI hook handlers (invoked by the execution session, not
     /// by a human).
     #[command(subcommand)]
@@ -108,7 +108,7 @@ struct RunArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Run(args) => run_cmd(args),
+        Command::Run(args) => run_cmd(*args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
     }
