@@ -8,7 +8,7 @@
 //! reclaims the session on a per-issue wall timeout.
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -73,6 +73,10 @@ struct ExecConfig {
     max_minutes_per_issue: u64,
     /// Whether to enable Remote Control (follow/intervene from the mobile app).
     remote_control: bool,
+    /// When true, use a `claude -p` loop instead of an interactive PTY session.
+    headless_exec: bool,
+    /// Maximum number of `-p` calls before declaring MaxCalls (headless only).
+    max_exec_calls: u32,
 }
 
 impl Default for ExecConfig {
@@ -83,6 +87,8 @@ impl Default for ExecConfig {
             default_exec_model: "sonnet".into(),
             max_minutes_per_issue: 45,
             remote_control: true,
+            headless_exec: false,
+            max_exec_calls: 6,
         }
     }
 }
@@ -107,6 +113,8 @@ impl ClaudeAgent {
         default_exec_model: String,
         max_minutes_per_issue: u64,
         remote_control: bool,
+        headless_exec: bool,
+        max_exec_calls: u32,
     ) -> Self {
         self.exec = ExecConfig {
             exec_model,
@@ -114,6 +122,8 @@ impl ClaudeAgent {
             default_exec_model,
             max_minutes_per_issue,
             remote_control,
+            headless_exec,
+            max_exec_calls,
         };
         self
     }
@@ -631,6 +641,8 @@ mod tests {
             default.to_string(),
             45,
             true,
+            false,
+            6,
         )
     }
 

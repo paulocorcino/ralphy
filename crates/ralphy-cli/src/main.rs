@@ -111,6 +111,16 @@ struct RunArgs {
     /// Disable Remote Control for the execution session.
     #[arg(long = "no-remote-control", overrides_with = "remote_control")]
     no_remote_control: bool,
+
+    /// Use a `claude -p` loop instead of an interactive PTY session (for
+    /// environments with no TTY, e.g. CI).
+    #[arg(long)]
+    headless_exec: bool,
+
+    /// Maximum number of `claude -p` calls per issue before declaring stuck
+    /// (headless mode only).
+    #[arg(long, default_value_t = 6)]
+    max_exec_calls: u32,
 }
 
 /// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
@@ -185,6 +195,8 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         args.default_exec_model,
         args.max_minutes_per_issue,
         !args.no_remote_control,
+        args.headless_exec,
+        args.max_exec_calls,
     );
     let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
