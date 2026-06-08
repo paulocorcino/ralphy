@@ -6,3 +6,5 @@
 runs/
 worktrees/
 state/
+# Ralphy run artifacts (scratch, logs, per-run plans)
+.ralphy/
