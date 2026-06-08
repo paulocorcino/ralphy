@@ -585,12 +585,10 @@ fn classify_exec_call(
         }
         return Some(HeadlessReason::Timeout);
     }
-    if out.contains("RALPHY_BLOCKED_EXIT") {
-        let reason = out
-            .lines()
-            .find(|l| l.contains("RALPHY_BLOCKED_EXIT"))
-            .and_then(|l| l.split("RALPHY_BLOCKED_EXIT").nth(1))
-            .map(|s| s.trim().to_string())
+    if let Some(line) = out.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
+        let reason = line
+            .split_once("RALPHY_BLOCKED_EXIT")
+            .map(|(_, rest)| rest.trim().to_string())
             .unwrap_or_default();
         return Some(HeadlessReason::Blocked(reason));
     }
