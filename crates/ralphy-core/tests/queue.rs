@@ -437,3 +437,30 @@ fn limit_outcome_stops_as_limit() {
 
     fs::remove_dir_all(&repo).ok();
 }
+
+#[test]
+fn limit_outcome_with_no_reset_carries_none() {
+    let repo = init_repo("limit-noreset");
+    let queue = vec![issue(11)];
+    let agent = ScriptedAgent::new(vec![Outcome::Limit(None)]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-limit-none", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    match report.stop {
+        Some(StopReason::Limit { number, reset }) => {
+            assert_eq!(number, 11);
+            assert_eq!(reset, None);
+        }
+        other => panic!("expected Limit stop with None reset, got {other:?}"),
+    }
+
+    fs::remove_dir_all(&repo).ok();
+}
