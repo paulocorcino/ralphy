@@ -61,7 +61,9 @@ fn pump_until_exit(
     while start.elapsed() < timeout {
         while let Ok(chunk) = rx.try_recv() {
             if find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some() {
-                session.write_all(CURSOR_POSITION_REPLY).expect("answer DSR");
+                session
+                    .write_all(CURSOR_POSITION_REPLY)
+                    .expect("answer DSR");
             }
             out.push_str(&String::from_utf8_lossy(&chunk));
         }
@@ -96,7 +98,10 @@ fn captures_output_from_input_written_to_the_child() {
         rendered.contains("ralphy-pty-marker"),
         "expected the echoed marker in captured output, got:\n{rendered}"
     );
-    assert!(exit.success, "interactive shell should exit cleanly: {exit:?}");
+    assert!(
+        exit.success,
+        "interactive shell should exit cleanly: {exit:?}"
+    );
 }
 
 #[test]

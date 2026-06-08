@@ -202,10 +202,7 @@ impl PtySession {
 
     /// Report the exit if the child has already finished, without blocking.
     pub fn try_wait(&mut self) -> Result<Option<PtyExit>> {
-        let status = self
-            .child
-            .try_wait()
-            .context("polling the PTY child")?;
+        let status = self.child.try_wait().context("polling the PTY child")?;
         Ok(status.map(|s| PtyExit {
             success: s.success(),
             code: s.exit_code(),
