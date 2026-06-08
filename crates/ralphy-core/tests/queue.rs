@@ -503,7 +503,10 @@ fn current_mode_refuses_detached_head() {
     );
 
     assert!(result.is_err(), "detached HEAD must abort the run");
-    assert!(agent.planned.borrow().is_empty(), "nothing planned on abort");
+    assert!(
+        agent.planned.borrow().is_empty(),
+        "nothing planned on abort"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -525,12 +528,18 @@ fn dirty_tree_aborts_before_branch_work() {
         &ScriptedClock::never(),
     );
 
-    assert!(result.is_err(), "dirty tree must abort before any branch work");
+    assert!(
+        result.is_err(),
+        "dirty tree must abort before any branch work"
+    );
     assert!(
         !branch_exists(&repo, "afk/run-stamp-dirty"),
         "no run branch created on a dirty-tree abort"
     );
-    assert!(agent.planned.borrow().is_empty(), "nothing planned on abort");
+    assert!(
+        agent.planned.borrow().is_empty(),
+        "nothing planned on abort"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }

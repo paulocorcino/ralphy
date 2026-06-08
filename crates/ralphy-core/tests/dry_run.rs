@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use ralphy_core::{run, Agent, Issue, Outcome, Plan, RunConfig, RunOutcome, Workspace};
+use ralphy_core::{run, Agent, BranchMode, Issue, Outcome, Plan, RunConfig, RunOutcome, Workspace};
 
 /// Writes a plan with `steps` open items; never touches git, so a dry run stays
 /// empty and the branch is dropped on restore.
@@ -103,6 +103,7 @@ fn cfg(repo: &Path, base: &str, stamp: &str) -> RunConfig {
         base_branch: base.into(),
         dry_run: true,
         stamp: stamp.into(),
+        branch_mode: BranchMode::New,
     }
 }
 
