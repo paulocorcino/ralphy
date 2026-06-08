@@ -5,10 +5,10 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_agent_claude::ClaudeAgent;
 use ralphy_core::{
-    git, github, run_queue, GhTracker, QueueConfig, StopReason, WallClock, Workspace,
+    git, github, run_queue, BranchMode, GhTracker, QueueConfig, StopReason, WallClock, Workspace,
 };
 use tracing::info;
 
@@ -69,9 +69,15 @@ struct RunArgs {
     #[arg(long)]
     dry_run: bool,
 
-    /// Commit-ish the run branch is cut from.
+    /// Commit-ish the run branch is cut from. Only used with `--branch-mode new`.
     #[arg(long, default_value = "origin/main")]
     base_branch: String,
+
+    /// Where commits land: `new` cuts a fresh `afk/run-*` branch off
+    /// `--base-branch`; `current` commits straight onto the branch the repo is
+    /// already on (no new branch, `--base-branch` ignored).
+    #[arg(long = "branch-mode", value_enum, default_value_t = CliBranchMode::New)]
+    branch_mode: CliBranchMode,
 
     /// Planning model.
     #[arg(long, default_value = "opus")]
@@ -105,6 +111,23 @@ struct RunArgs {
     /// Disable Remote Control for the execution session.
     #[arg(long = "no-remote-control", overrides_with = "remote_control")]
     no_remote_control: bool,
+}
+
+/// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
+/// the core's `BranchMode` (see docs/adr/0002).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum CliBranchMode {
+    New,
+    Current,
+}
+
+impl From<CliBranchMode> for BranchMode {
+    fn from(m: CliBranchMode) -> Self {
+        match m {
+            CliBranchMode::New => BranchMode::New,
+            CliBranchMode::Current => BranchMode::Current,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -163,11 +186,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         args.max_minutes_per_issue,
         !args.no_remote_control,
     );
+    let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
         repo_root,
         base_branch: args.base_branch,
         dry_run: args.dry_run,
         stamp,
+        branch_mode,
         only_issue: args.only_issue,
     };
 
@@ -195,6 +220,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         };
         println!("  #{}: {status}", r.number);
     }
+    let stopped = report.stop.is_some();
     match report.stop {
         Some(StopReason::Deadline) => println!("Stopped: deadline reached before the next issue."),
         Some(StopReason::NonGreen { number, outcome }) => {
@@ -213,6 +239,54 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             println!();
         }
         None => println!("Queue complete."),
+    }
+
+    // Commit count over the compare ref and the oneline log, then the closing
+    // state per mode/outcome — mirrors the ps1 `finally` block.
+    println!(
+        "Branch '{}' carries {} commit(s).",
+        report.branch, report.commits
+    );
+    for line in &report.oneline {
+        println!("    {line}");
+    }
+    match branch_mode {
+        BranchMode::Current => {
+            if args.dry_run {
+                println!("DryRun on '{}': no commits made.", report.branch);
+            } else if stopped {
+                println!("Left repo on '{}' for inspection.", report.branch);
+            } else {
+                println!(
+                    "Clean run: {} commit(s) added to '{}' in place.",
+                    report.commits, report.branch
+                );
+            }
+        }
+        BranchMode::New => {
+            if args.dry_run {
+                println!(
+                    "DryRun: returned repo to '{}'; empty run branch removed.",
+                    report.orig_branch
+                );
+            } else if stopped {
+                println!(
+                    "Left repo checked out on '{}' for inspection.",
+                    report.branch
+                );
+            } else {
+                println!(
+                    "Clean run: returned repo to '{}'. Run branch '{}' kept.",
+                    report.orig_branch, report.branch
+                );
+            }
+            if !(args.dry_run && report.commits == 0) {
+                println!(
+                    "Review, then merge '{}' into your target:  git merge {}",
+                    report.branch, report.branch
+                );
+            }
+        }
     }
     Ok(())
 }
