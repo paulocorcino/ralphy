@@ -142,14 +142,14 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
     let plan = match agent.plan(issue, &ws) {
         Ok(p) => p,
         Err(e) => {
-            restore(repo, &orig, &branch, &cfg.base_branch);
+            restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
             return Err(e);
         }
     };
     info!(open_steps = plan.open_steps, "plan written");
 
     if cfg.dry_run {
-        restore(repo, &orig, &branch, &cfg.base_branch);
+        restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
         return Ok(RunReport {
             branch,
             orig_branch: orig,
@@ -291,7 +291,7 @@ pub fn run_queue(
         // prompt reads `.ralphy/issue.json`, so the loop must refresh it before
         // each plan — `.ralphy/` is gitignored and survives the branch checkout.
         if let Err(e) = write_issue_json(&ws, issue) {
-            restore(repo, &orig, &branch, &cfg.base_branch);
+            restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
             return Err(e);
         }
 
@@ -299,7 +299,7 @@ pub fn run_queue(
         let plan = match agent.plan(issue, &ws) {
             Ok(p) => p,
             Err(e) => {
-                restore(repo, &orig, &branch, &cfg.base_branch);
+                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
                 return Err(e);
             }
         };
@@ -378,7 +378,7 @@ pub fn run_queue(
         BranchMode::Current => {}
         BranchMode::New => {
             if cfg.dry_run {
-                restore(repo, &orig, &branch, &cfg.base_branch);
+                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
             } else if stop.is_none() {
                 if let Err(e) = git::checkout(repo, &orig) {
                     warn!("could not return to '{orig}': {e}");
@@ -400,7 +400,15 @@ pub fn run_queue(
 /// Return to the original branch and drop the run branch if it carries no
 /// commits over the base. Failures are logged, not propagated — restore runs in
 /// cleanup paths where the primary result is already decided.
-fn restore(repo: &Path, orig: &str, branch: &str, base: &str) {
+///
+/// A no-op in [`BranchMode::Current`]: there `orig == branch` is the live branch,
+/// so checking it out is pointless and the empty-branch delete would target the
+/// checked-out branch. Centralizing the guard here keeps every cleanup path —
+/// including the mid-loop error paths — from ever touching the live branch.
+fn restore(repo: &Path, orig: &str, branch: &str, base: &str, mode: BranchMode) {
+    if mode == BranchMode::Current {
+        return;
+    }
     if let Err(e) = git::checkout(repo, orig) {
         warn!("could not return to '{orig}': {e}");
         return;
