@@ -82,6 +82,19 @@ pub fn delete_branch(repo: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+/// The current HEAD commit SHA. Used as the compare ref in `current` branch mode,
+/// captured before any work so commit counts mean "work this run added".
+pub fn head_sha(repo: &Path) -> Result<String> {
+    git(repo, &["rev-parse", "HEAD"])
+}
+
+/// One-line log entries over `range` (e.g. `base..branch`), one per commit, in
+/// `git log --oneline` order. An empty range yields an empty vec.
+pub fn log_oneline(repo: &Path, range: &str) -> Result<Vec<String>> {
+    let out = git(repo, &["log", "--oneline", range])?;
+    Ok(out.lines().map(|l| l.to_string()).collect())
+}
+
 /// Number of commits in `range` (e.g. `base..branch`). Zero == empty branch.
 pub fn rev_list_count(repo: &Path, range: &str) -> Result<usize> {
     let out = git(repo, &["rev-list", "--count", range])?;
