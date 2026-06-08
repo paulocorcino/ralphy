@@ -16,7 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_core::{plan, Agent, Issue, Outcome, Plan, Workspace};
+use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
 
@@ -188,6 +188,157 @@ fn exec_settings_json(stop_command: &str, guard_command: &str) -> String {
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
+impl ClaudeAgent {
+    /// Spawn a single `claude -p` call for headless execution, piping
+    /// `PROMPT_EXECUTE` on stdin and draining stdout/stderr via reader threads
+    /// to avoid pipe-buffer deadlock. Polls `try_wait` until `timeout` fires;
+    /// kills the child on expiry and returns `exited = false`.
+    fn run_headless_call(
+        &self,
+        cmd_dir: &Path,
+        settings: &Path,
+        model: &str,
+        timeout: Duration,
+        call_index: u32,
+    ) -> Result<(bool, String)> {
+        let mut args: Vec<String> = vec![
+            "-p".into(),
+            "--dangerously-skip-permissions".into(),
+            "--settings".into(),
+            settings.to_string_lossy().into_owned(),
+            "--model".into(),
+            model.into(),
+        ];
+        if let Some(e) = &self.exec.exec_effort {
+            args.push("--effort".into());
+            args.push(e.clone());
+        }
+
+        let mut child = Command::new(resolve_claude_binary())
+            .args(&args)
+            .current_dir(cmd_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn the `claude` CLI for headless exec")?;
+
+        child
+            .stdin
+            .take()
+            .expect("stdin was piped")
+            .write_all(PROMPT_EXECUTE.as_bytes())
+            .context("piping exec prompt to claude")?;
+
+        let stdout = child.stdout.take().expect("stdout was piped");
+        let stderr = child.stderr.take().expect("stderr was piped");
+
+        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
+        let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = BufReader::new(stdout).read_to_end(&mut buf);
+            let _ = tx_out.send(buf);
+        });
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = BufReader::new(stderr).read_to_end(&mut buf);
+            let _ = tx_err.send(buf);
+        });
+
+        let deadline = Instant::now() + timeout;
+        let exited = loop {
+            if child.try_wait().context("polling claude child")?.is_some() {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+            thread::sleep(Duration::from_millis(500));
+        };
+
+        let collect = Duration::from_secs(5);
+        let stdout_bytes = rx_out.recv_timeout(collect).unwrap_or_default();
+        let stderr_bytes = rx_err.recv_timeout(collect).unwrap_or_default();
+        let mut text = String::from_utf8_lossy(&stdout_bytes).into_owned();
+        text.push_str(&String::from_utf8_lossy(&stderr_bytes));
+        let _ = fs::write(self.run_dir.join(format!("exec-{}.out", call_index)), &text);
+        Ok((exited, text))
+    }
+
+    /// Drive the issue with a `claude -p` loop (headless mode). Mirrors the
+    /// `Invoke-ExecLoop` ps1 oracle: writes `exec.md`, loops up to
+    /// `max_exec_calls` calls, and classifies the per-call output into a core
+    /// `Outcome` via `headless_reason_to_outcome`.
+    fn execute_headless(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
+        fs::create_dir_all(&self.run_dir).ok();
+        fs::create_dir_all(ws.ralphy_dir()).ok();
+
+        fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
+            .context("writing .ralphy/exec.md")?;
+
+        let settings_path = self.write_exec_settings()?;
+        let exec_model = self.resolve_exec_model(plan);
+        let deadline = Instant::now() + Duration::from_secs(self.exec.max_minutes_per_issue * 60);
+
+        info!(
+            model = %exec_model,
+            effort = ?self.exec.exec_effort,
+            max_calls = self.exec.max_exec_calls,
+            "executing with headless claude -p loop"
+        );
+
+        let mut no_commit_streak = 0u32;
+
+        for i in 1..=self.exec.max_exec_calls {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining <= Duration::from_secs(5) {
+                info!(
+                    call = i,
+                    "per-issue deadline reached before next headless call"
+                );
+                return Ok(headless_reason_to_outcome(HeadlessReason::Timeout));
+            }
+
+            let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
+            let (exited, out) =
+                self.run_headless_call(ws.repo_root(), &settings_path, &exec_model, remaining, i)?;
+
+            let plan_md = fs::read_to_string(&plan.path).unwrap_or_default();
+            let open_steps = plan::count_open_steps(&plan_md);
+            let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
+            let committed = before_sha != after_sha;
+
+            if let Some(reason) = classify_exec_call(&out, exited, open_steps, committed) {
+                info!(call = i, "headless call terminal");
+                return Ok(headless_reason_to_outcome(reason));
+            }
+
+            if committed {
+                no_commit_streak = 0;
+            } else {
+                no_commit_streak += 1;
+                info!(
+                    call = i,
+                    streak = no_commit_streak,
+                    "no commit this headless call"
+                );
+                if no_commit_streak >= 2 {
+                    return Ok(headless_reason_to_outcome(HeadlessReason::Stuck));
+                }
+            }
+        }
+
+        info!(
+            max_calls = self.exec.max_exec_calls,
+            "headless loop exhausted max calls"
+        );
+        Ok(headless_reason_to_outcome(HeadlessReason::MaxCalls))
+    }
+}
+
 impl Agent for ClaudeAgent {
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
@@ -260,6 +411,10 @@ impl Agent for ClaudeAgent {
     }
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
+        if self.exec.headless_exec {
+            return self.execute_headless(plan, ws);
+        }
+
         fs::create_dir_all(&self.run_dir).ok();
         fs::create_dir_all(ws.ralphy_dir()).ok();
 
