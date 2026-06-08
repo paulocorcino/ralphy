@@ -52,6 +52,9 @@ pub struct RunConfig {
     pub dry_run: bool,
     /// Run identifier, also the run branch suffix: `afk/run-<stamp>`.
     pub stamp: String,
+    /// Where commits land: a fresh run branch (`New`) or the current branch
+    /// (`Current`). The single-issue `run` path is effectively always `New`.
+    pub branch_mode: BranchMode,
 }
 
 #[derive(Debug)]
@@ -69,11 +72,22 @@ pub struct RunReport {
     pub outcome: RunOutcome,
 }
 
-/// Verify preconditions and cut a fresh run branch off the base, returning
-/// `(orig_branch, run_branch)`. Shared by [`run`] and [`run_queue`]: the
-/// clean-tree check, the `.gitignore` ensure, the detached-HEAD and missing-base
-/// guards, and the branch creation all live here so both entry points agree.
-fn prepare_branch(repo: &Path, base_branch: &str, stamp: &str) -> Result<(String, String)> {
+/// Verify preconditions and prepare the branch commits will land on, returning
+/// `(orig_branch, branch, compare_ref)`. Shared by [`run`] and [`run_queue`] so
+/// both entry points agree on the clean-tree check, the `.gitignore` ensure, and
+/// the detached-HEAD guard.
+///
+/// In `New` mode a fresh `afk/run-<stamp>` branch is cut off `base_branch` (which
+/// must exist) and `compare_ref == base_branch`. In `Current` mode no branch is
+/// created and no checkout happens: `branch == orig` and `compare_ref` is the
+/// HEAD SHA captured before any work, so the commit count means "work this run
+/// added" in both modes.
+fn prepare_branch(
+    repo: &Path,
+    base_branch: &str,
+    stamp: &str,
+    mode: BranchMode,
+) -> Result<(String, String, String)> {
     // Best-effort: make sure the base ref is up to date. A missing remote (e.g.
     // a local-only repo) is not fatal here — base existence is checked below.
     let _ = git::fetch_origin(repo);
@@ -95,14 +109,25 @@ fn prepare_branch(repo: &Path, base_branch: &str, stamp: &str) -> Result<(String
             repo.display()
         );
     }
-    if !git::commitish_exists(repo, base_branch) {
-        bail!("base branch '{base_branch}' not found");
-    }
 
-    let branch = format!("afk/run-{stamp}");
-    git::checkout_new_branch(repo, &branch, base_branch)?;
-    info!(%branch, base = %base_branch, was = %orig, "run branch created");
-    Ok((orig, branch))
+    match mode {
+        BranchMode::Current => {
+            // Commit straight onto the current branch — no new branch, base
+            // ignored. Compare against where this branch stood before the run.
+            let compare_ref = git::head_sha(repo)?;
+            info!(branch = %orig, "running in place on current branch");
+            Ok((orig.clone(), orig, compare_ref))
+        }
+        BranchMode::New => {
+            if !git::commitish_exists(repo, base_branch) {
+                bail!("base branch '{base_branch}' not found");
+            }
+            let branch = format!("afk/run-{stamp}");
+            git::checkout_new_branch(repo, &branch, base_branch)?;
+            info!(%branch, base = %base_branch, was = %orig, "run branch created");
+            Ok((orig, branch, base_branch.to_string()))
+        }
+    }
 }
 
 /// Plan (and, in a non-dry run, execute) a single issue onto a fresh run branch.
@@ -110,7 +135,8 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
     let repo = cfg.repo_root.as_path();
     let ws = Workspace::new(repo);
 
-    let (orig, branch) = prepare_branch(repo, &cfg.base_branch, &cfg.stamp)?;
+    let (orig, branch, _compare_ref) =
+        prepare_branch(repo, &cfg.base_branch, &cfg.stamp, cfg.branch_mode)?;
 
     // Plan, restoring the repo on any failure so a dry run never strands a branch.
     let plan = match agent.plan(issue, &ws) {
@@ -152,6 +178,9 @@ pub struct QueueConfig {
     pub base_branch: String,
     pub dry_run: bool,
     pub stamp: String,
+    /// Where commits land: a fresh `afk/run-*` branch (`New`) or the branch the
+    /// repo is already on (`Current`, which ignores `base_branch`).
+    pub branch_mode: BranchMode,
     /// When set, the `stop-before` label on this specific issue is ignored and
     /// the issue runs normally. Mirrors ps1's `$OnlyIssue -le 0` guard.
     pub only_issue: Option<u64>,
@@ -191,6 +220,11 @@ pub struct QueueReport {
     pub orig_branch: String,
     pub worked: Vec<IssueResult>,
     pub stop: Option<StopReason>,
+    /// Number of commits the run added over the compare ref (the base in `New`
+    /// mode, the pre-run HEAD in `Current` mode).
+    pub commits: usize,
+    /// One `git log --oneline` entry per counted commit.
+    pub oneline: Vec<String>,
 }
 
 /// The close comment the runner leaves on a green queue issue. Mirrors the ps1
@@ -221,7 +255,8 @@ pub fn run_queue(
     let repo = cfg.repo_root.as_path();
     let ws = Workspace::new(repo);
 
-    let (orig, branch) = prepare_branch(repo, &cfg.base_branch, &cfg.stamp)?;
+    let (orig, branch, compare_ref) =
+        prepare_branch(repo, &cfg.base_branch, &cfg.stamp, cfg.branch_mode)?;
 
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
@@ -327,17 +362,28 @@ pub fn run_queue(
         break;
     }
 
-    // On a dry run, or when nothing landed on the branch, return the repo to
-    // where it started and drop the empty run branch. Otherwise leave the repo on
-    // the run branch for the human to inspect and merge.
-    if cfg.dry_run {
-        restore(repo, &orig, &branch, &cfg.base_branch);
-    } else {
-        let empty = git::rev_list_count(repo, &format!("{}..{}", cfg.base_branch, branch))
-            .unwrap_or(1)
-            == 0;
-        if empty {
-            restore(repo, &orig, &branch, &cfg.base_branch);
+    // Count what the run added over the compare ref and capture the oneline log,
+    // matching the ps1 `finally` block. Failures here are non-fatal reporting
+    // concerns (e.g. a dropped branch in cleanup) — default to zero / empty.
+    let range = format!("{compare_ref}..{branch}");
+    let commits = git::rev_list_count(repo, &range).unwrap_or(0);
+    let oneline = git::log_oneline(repo, &range).unwrap_or_default();
+
+    // Closing-state matrix, keyed on mode × outcome × dry-run (ps1 `finally`):
+    //  - Current: commits already live on the branch — never check out or delete.
+    //  - New + dry-run: plans only — return to orig and drop the empty branch.
+    //  - New + stop: leave the repo on the run branch for inspection.
+    //  - New + clean run: return to orig; the run branch is kept (not deleted).
+    match cfg.branch_mode {
+        BranchMode::Current => {}
+        BranchMode::New => {
+            if cfg.dry_run {
+                restore(repo, &orig, &branch, &cfg.base_branch);
+            } else if stop.is_none() {
+                if let Err(e) = git::checkout(repo, &orig) {
+                    warn!("could not return to '{orig}': {e}");
+                }
+            }
         }
     }
 
@@ -346,6 +392,8 @@ pub fn run_queue(
         orig_branch: orig,
         worked,
         stop,
+        commits,
+        oneline,
     })
 }
 
