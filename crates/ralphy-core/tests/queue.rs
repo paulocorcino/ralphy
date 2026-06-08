@@ -13,8 +13,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use ralphy_core::{
-    run_queue, Agent, Issue, IssueTracker, Outcome, Plan, QueueConfig, RunClock, StopReason,
-    Workspace,
+    run_queue, Agent, BranchMode, Issue, IssueTracker, Outcome, Plan, QueueConfig, RunClock,
+    StopReason, Workspace,
 };
 
 /// Plans a feasible step for every issue and returns a scripted sequence of
@@ -199,6 +199,7 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         base_branch: "main".into(),
         dry_run,
         stamp: stamp.into(),
+        branch_mode: BranchMode::New,
         only_issue: None,
     }
 }
@@ -209,6 +210,7 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         base_branch: "main".into(),
         dry_run: false,
         stamp: stamp.into(),
+        branch_mode: BranchMode::New,
         only_issue: Some(only),
     }
 }
@@ -245,8 +247,13 @@ fn works_issues_in_order_and_closes_each_green() {
         );
     }
 
-    // Branch carries work, so it is handed back (repo left on the run branch).
-    assert_eq!(current_branch(&repo), report.branch);
+    // Clean New-mode run: the repo is returned to the original branch and the run
+    // branch is kept (not deleted) for the human to review and merge by hand.
+    assert_eq!(current_branch(&repo), "main", "returned to original branch");
+    assert!(
+        branch_exists(&repo, &report.branch),
+        "run branch kept after a clean run"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
