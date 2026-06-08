@@ -3,6 +3,7 @@
 //! driven.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
@@ -135,9 +136,130 @@ pub fn close_issue(number: u64, comment: &str) -> Result<()> {
     Ok(())
 }
 
+/// Parse a `docs/agents/triage-labels.md` table row. Scans `doc` for
+/// `|`-delimited rows, strips backticks, trims each cell, and returns cell[2]
+/// when cell[1] == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.
+pub fn parse_triage_mapping(doc: &str, canonical: &str) -> Option<String> {
+    for line in doc.lines() {
+        let line = line.trim();
+        if !line.starts_with('|') {
+            continue;
+        }
+        let cells: Vec<&str> = line
+            .split('|')
+            .map(|c| c.trim().trim_matches('`').trim())
+            .collect();
+        // After split on '|', a row like `| a | b |` yields
+        // ["", "a", "b", ""] — cell[1] and cell[2] are the first and
+        // second data columns. Skip separator rows (|---|---|).
+        let is_separator = |s: &str| s.trim_matches(['-', ':', ' ']).is_empty() && !s.is_empty();
+        if cells.len() >= 4 && cells[1] == canonical && !is_separator(cells[2]) {
+            let mapped = cells[2].to_string();
+            if !mapped.is_empty() {
+                return Some(mapped);
+            }
+        }
+    }
+    None
+}
+
+/// Build the effective queue label set. If `explicit` is non-empty, return it
+/// verbatim (explicit overrides everything). Otherwise start from the defaults
+/// `["ready-for-agent", "AFK"]`, read `docs/agents/triage-labels.md` under
+/// `repo_root` (absent is fine), and append the `parse_triage_mapping` result
+/// for `"ready-for-agent"`, deduped. Ports `Resolve-TriageLabels`.
+pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String> {
+    if !explicit.is_empty() {
+        return explicit.to_vec();
+    }
+    let mut labels: Vec<String> = vec!["ready-for-agent".into(), "AFK".into()];
+    let triage_path = repo_root
+        .join("docs")
+        .join("agents")
+        .join("triage-labels.md");
+    if let Ok(doc) = std::fs::read_to_string(&triage_path) {
+        if let Some(mapped) = parse_triage_mapping(&doc, "ready-for-agent") {
+            if !labels.contains(&mapped) {
+                labels.push(mapped);
+            }
+        }
+    }
+    labels
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_triage_mapping_finds_mapped_label() {
+        // Two-column format: | canonical | mapped |
+        let doc = "# Triage Labels\n\
+                   | Canonical | Mapped |\n\
+                   |-----------|--------|\n\
+                   | `ready-for-agent` | `afk-ready` |\n\
+                   | `other` | `other-mapped` |\n";
+        assert_eq!(
+            parse_triage_mapping(doc, "ready-for-agent"),
+            Some("afk-ready".into())
+        );
+    }
+
+    #[test]
+    fn parse_triage_mapping_returns_none_when_absent() {
+        let doc = "| `other` | `other-mapped` |\n";
+        assert_eq!(parse_triage_mapping(doc, "ready-for-agent"), None);
+    }
+
+    #[test]
+    fn parse_triage_mapping_returns_none_on_empty_doc() {
+        assert_eq!(parse_triage_mapping("", "ready-for-agent"), None);
+    }
+
+    #[test]
+    fn resolve_queue_labels_explicit_set_returned_verbatim() {
+        let explicit = vec!["my-label".to_string(), "other-label".to_string()];
+        let result = resolve_queue_labels(&explicit, Path::new("/nonexistent"));
+        assert_eq!(result, explicit, "explicit set should be returned verbatim");
+    }
+
+    #[test]
+    fn resolve_queue_labels_defaults_without_triage_file() {
+        let result = resolve_queue_labels(&[], Path::new("/nonexistent/repo"));
+        assert_eq!(result, vec!["ready-for-agent", "AFK"]);
+    }
+
+    #[test]
+    fn resolve_queue_labels_appends_mapped_label_from_triage_file() {
+        let dir = std::env::temp_dir().join(format!("ralphy-triage-{}", std::process::id()));
+        let docs_dir = dir.join("docs").join("agents");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        let triage_content = "| Canonical | Mapped |\n\
+                              |-----------|--------|\n\
+                              | `ready-for-agent` | `afk-extended` |\n";
+        std::fs::write(docs_dir.join("triage-labels.md"), triage_content).unwrap();
+
+        let result = resolve_queue_labels(&[], &dir);
+        assert_eq!(result, vec!["ready-for-agent", "AFK", "afk-extended"]);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_queue_labels_dedupes_mapped_label() {
+        let dir = std::env::temp_dir().join(format!("ralphy-triage-dedup-{}", std::process::id()));
+        let docs_dir = dir.join("docs").join("agents");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        // Mapping resolves to "AFK" which is already in defaults.
+        let triage_content = "| `ready-for-agent` | `AFK` |\n";
+        std::fs::write(docs_dir.join("triage-labels.md"), triage_content).unwrap();
+
+        let result = resolve_queue_labels(&[], &dir);
+        // "AFK" should appear only once.
+        assert_eq!(result, vec!["ready-for-agent", "AFK"]);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn parses_issue_with_labels() {

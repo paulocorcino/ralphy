@@ -55,7 +55,9 @@ struct RunArgs {
     only_issue: Option<u64>,
 
     /// Queue label(s): an open issue carrying ANY of these is worked. Repeatable.
-    #[arg(long = "queue-label", default_values_t = [String::from("ready-for-agent"), String::from("AFK")])]
+    /// When omitted, defaults to ["ready-for-agent", "AFK"] plus any label
+    /// mapped from "ready-for-agent" in docs/agents/triage-labels.md.
+    #[arg(long = "queue-label")]
     queue_label: Vec<String>,
 
     /// Global wall-clock budget (hours): don't start a new issue past it. Omit
@@ -129,14 +131,15 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // Build the queue: the whole queue by default, or just `--only-issue` when set
     // (applied as a post-build filter, parity with the ps1 `$OnlyIssue`).
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
-    let mut queue = github::list_queue(&args.queue_label)?;
+    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
+    let mut queue = github::list_queue(&effective_labels)?;
     if let Some(only) = args.only_issue {
         queue.retain(|i| i.number == only);
     }
     if queue.is_empty() {
         let scope = match args.only_issue {
             Some(n) => format!("issue #{n}"),
-            None => format!("labels [{}]", args.queue_label.join(", ")),
+            None => format!("labels [{}]", effective_labels.join(", ")),
         };
         println!("No open issues for {scope} to process. Done.");
         return Ok(());

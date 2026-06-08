@@ -24,6 +24,10 @@ use tracing::info;
 /// tool. Single source of truth lives at the repo root.
 const PROMPT_PLAN: &str = include_str!("../../../prompt.plan.md");
 
+/// The staged-plan planning prompt, used when the issue carries the
+/// `stagedplan` label.
+const PROMPT_PLAN_STAGED: &str = include_str!("../../../prompt.plan.staged.md");
+
 /// The execution charter, embedded for the same reason and copied to
 /// `.ralphy/exec.md` for the live session to read.
 const PROMPT_EXECUTE: &str = include_str!("../../../prompt.execute.md");
@@ -35,6 +39,16 @@ const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implem
 /// Minimal settings that keep a headless `claude -p` from hanging on a prompt.
 /// The Stop hook is an execution concern, added by [`exec_settings_json`].
 const SETTINGS_JSON: &str = r#"{"skipDangerousModePermissionPrompt":true,"skipAutoPermissionPrompt":true,"autoCompactEnabled":false}"#;
+
+/// Select the planning prompt for an issue. Returns `(prompt, staged)` where
+/// `staged` is `true` when the issue carries the `stagedplan` label.
+fn plan_prompt_for(issue: &Issue) -> (&'static str, bool) {
+    if issue.labels.iter().any(|l| l == "stagedplan") {
+        (PROMPT_PLAN_STAGED, true)
+    } else {
+        (PROMPT_PLAN, false)
+    }
+}
 
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
 /// the `exec_*` fields configure the interactive execution session. `run_dir` is
@@ -165,7 +179,7 @@ fn exec_settings_json(stop_command: &str, guard_command: &str) -> String {
 }
 
 impl Agent for ClaudeAgent {
-    fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
+    fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         fs::create_dir_all(&self.run_dir).ok();
 
@@ -175,6 +189,8 @@ impl Agent for ClaudeAgent {
 
         let settings_path = self.run_dir.join("ralphy.settings.json");
         fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+
+        let (prompt, staged) = plan_prompt_for(issue);
 
         // `--model` first (as the ps1 oracle does), then the headless flags.
         let mut args: Vec<String> = Vec::new();
@@ -191,13 +207,17 @@ impl Agent for ClaudeAgent {
             args.push(e.clone());
         }
 
-        info!(model = ?self.plan_model, effort = ?self.plan_effort, "planning with claude -p");
-        let mut child = Command::new(resolve_claude_binary())
-            .args(&args)
+        info!(model = ?self.plan_model, effort = ?self.plan_effort, staged, "planning with claude -p");
+        let mut cmd = Command::new(resolve_claude_binary());
+        cmd.args(&args)
             .current_dir(ws.repo_root())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        if staged {
+            cmd.env("STAGED_PLAN_NONINTERACTIVE", "1");
+        }
+        let mut child = cmd
             .spawn()
             .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
 
@@ -206,7 +226,7 @@ impl Agent for ClaudeAgent {
             .stdin
             .take()
             .expect("stdin was piped")
-            .write_all(PROMPT_PLAN.as_bytes())
+            .write_all(prompt.as_bytes())
             .context("piping the plan prompt to claude")?;
 
         let out = child.wait_with_output().context("waiting for claude")?;
@@ -555,8 +575,46 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ralphy_core::Plan;
+    use ralphy_core::{Issue, Plan};
     use std::path::PathBuf;
+
+    fn issue_with_labels(labels: &[&str]) -> Issue {
+        Issue {
+            number: 1,
+            title: "test".into(),
+            body: String::new(),
+            labels: labels.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn plan_prompt_for_selects_staged_when_label_present() {
+        let issue = issue_with_labels(&["bug", "stagedplan"]);
+        let (prompt, staged) = plan_prompt_for(&issue);
+        assert!(staged, "should be staged when 'stagedplan' label present");
+        assert_eq!(
+            prompt, PROMPT_PLAN_STAGED,
+            "should use the staged plan prompt"
+        );
+    }
+
+    #[test]
+    fn plan_prompt_for_selects_standard_without_label() {
+        let issue = issue_with_labels(&["bug", "ready-for-agent"]);
+        let (prompt, staged) = plan_prompt_for(&issue);
+        assert!(
+            !staged,
+            "should not be staged when 'stagedplan' label absent"
+        );
+        assert_eq!(prompt, PROMPT_PLAN, "should use the standard plan prompt");
+    }
+
+    #[test]
+    fn plan_prompt_for_not_staged_with_no_labels() {
+        let issue = issue_with_labels(&[]);
+        let (_, staged) = plan_prompt_for(&issue);
+        assert!(!staged);
+    }
 
     fn plan_with(recommended: Option<&str>) -> Plan {
         Plan {
