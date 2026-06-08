@@ -122,7 +122,7 @@ impl ClaudeAgent {
     fn write_exec_settings(&self) -> Result<PathBuf> {
         let exe =
             std::env::current_exe().context("locating the ralphy binary for the Stop hook")?;
-        let json = exec_settings_json(&stop_hook_command(&exe));
+        let json = exec_settings_json(&stop_hook_command(&exe), &guard_hook_command(&exe));
         let path = self.run_dir.join("ralphy.settings.json");
         fs::write(&path, json).context("writing exec settings")?;
         Ok(path)
@@ -134,9 +134,14 @@ fn stop_hook_command(exe: &Path) -> String {
     format!("\"{}\" hook stop", exe.display())
 }
 
-/// Build the execution settings JSON: the headless skip flags plus a `Stop` hook
-/// running `stop_command`. **No `PreToolUse` guard yet — that is #4.**
-fn exec_settings_json(stop_command: &str) -> String {
+/// Quote the guard-hook command line for the platform: `"<exe>" hook guard`.
+fn guard_hook_command(exe: &Path) -> String {
+    format!("\"{}\" hook guard", exe.display())
+}
+
+/// Build the execution settings JSON: the headless skip flags, a `Stop` hook
+/// running `stop_command`, and a `PreToolUse` guard running `guard_command`.
+fn exec_settings_json(stop_command: &str, guard_command: &str) -> String {
     let settings = serde_json::json!({
         "skipDangerousModePermissionPrompt": true,
         "skipAutoPermissionPrompt": true,
@@ -146,6 +151,12 @@ fn exec_settings_json(stop_command: &str) -> String {
                 {
                     "matcher": "",
                     "hooks": [ { "type": "command", "command": stop_command } ]
+                }
+            ],
+            "PreToolUse": [
+                {
+                    "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+                    "hooks": [ { "type": "command", "command": guard_command } ]
                 }
             ]
         }
@@ -429,8 +440,11 @@ fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> serde_json:
 /// Falls back to `~/.local/bin/claude[.exe]`, then to the bare name so the spawn
 /// error still names it.
 fn resolve_claude_binary() -> std::ffi::OsString {
-    if let Some(found) = find_program("claude", std::env::var_os("PATH"), std::env::var_os("PATHEXT"))
-    {
+    if let Some(found) = find_program(
+        "claude",
+        std::env::var_os("PATH"),
+        std::env::var_os("PATHEXT"),
+    ) {
         return found.into_os_string();
     }
     if let Some(home) = dirs_home() {
@@ -562,16 +576,22 @@ mod tests {
     }
 
     #[test]
-    fn settings_have_stop_hook_and_no_pretooluse() {
-        let json = exec_settings_json("\"ralphy.exe\" hook stop");
+    fn settings_have_stop_hook_and_pretooluse_guard() {
+        let json = exec_settings_json("\"ralphy.exe\" hook stop", "\"ralphy.exe\" hook guard");
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["skipDangerousModePermissionPrompt"], true);
         assert_eq!(v["skipAutoPermissionPrompt"], true);
         assert_eq!(v["autoCompactEnabled"], false);
-        assert!(v["hooks"].get("PreToolUse").is_none(), "no guard yet (#4)");
-        let cmd = &v["hooks"]["Stop"][0]["hooks"][0]["command"];
-        assert_eq!(cmd, "\"ralphy.exe\" hook stop");
+        // Stop hook still present.
+        let stop_cmd = &v["hooks"]["Stop"][0]["hooks"][0]["command"];
+        assert_eq!(stop_cmd, "\"ralphy.exe\" hook stop");
         assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["type"], "command");
+        // PreToolUse guard is wired.
+        let guard_matcher = &v["hooks"]["PreToolUse"][0]["matcher"];
+        assert_eq!(guard_matcher, "Bash|Edit|Write|MultiEdit|NotebookEdit");
+        let guard_cmd = &v["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
+        assert_eq!(guard_cmd, "\"ralphy.exe\" hook guard");
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["type"], "command");
     }
 
     #[test]
@@ -646,10 +666,7 @@ mod tests {
         let got = got.expect("tool should be found on the search path");
         assert!(got.is_file());
         assert_eq!(got.parent(), Some(dir.as_path()));
-        assert_eq!(
-            got.file_stem().and_then(|s| s.to_str()),
-            Some("tool")
-        );
+        assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("tool"));
 
         // A name that isn't there resolves to nothing.
         let path_var = std::ffi::OsString::from(dir.to_string_lossy().into_owned());

@@ -10,6 +10,7 @@ use ralphy_agent_claude::ClaudeAgent;
 use ralphy_core::{git, github, run, RunConfig, RunOutcome, Workspace};
 use tracing::info;
 
+mod guard;
 mod hook;
 
 #[derive(Parser)]
@@ -36,6 +37,8 @@ enum Command {
 enum HookCommand {
     /// Stop hook: record the session's exit sentinel to `$RALPHY_FLAG_FILE`.
     Stop,
+    /// PreToolUse guard: block destructive commands/writes.
+    Guard,
 }
 
 #[derive(Args)]
@@ -95,6 +98,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Run(args) => run_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
+        Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
     }
 }
 
