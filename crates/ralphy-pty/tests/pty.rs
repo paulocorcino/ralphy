@@ -47,6 +47,55 @@ fn spawn_drain(session: &PtySession) -> Receiver<Vec<u8>> {
     rx
 }
 
+/// Pump until the shell answers its start-up cursor-position query — its prompt
+/// is then drawn and it is listening for input — or `cap` elapses. This replaces
+/// a blind fixed sleep with a readiness signal, so input is never written into a
+/// shell that hasn't started reading yet (the source of the flakiness). Falling
+/// through on `cap` is a safe fallback: `pump_until_exit` also answers DSR.
+fn pump_until_ready(session: &mut PtySession, rx: &Receiver<Vec<u8>>, cap: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < cap {
+        while let Ok(chunk) = rx.try_recv() {
+            if find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some() {
+                session
+                    .write_all(CURSOR_POSITION_REPLY)
+                    .expect("answer DSR");
+                return;
+            }
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Pump (answering DSR) until `needle` appears in the accumulated output or
+/// `timeout` elapses. Returns the captured output and whether the needle was
+/// seen. Used to confirm a write reached the child *before* triggering teardown,
+/// so ConPTY can't close the output between the echo and the assertion.
+fn pump_until_contains(
+    session: &mut PtySession,
+    rx: &Receiver<Vec<u8>>,
+    needle: &str,
+    timeout: Duration,
+) -> (String, bool) {
+    let mut out = String::new();
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        while let Ok(chunk) = rx.try_recv() {
+            if find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some() {
+                session
+                    .write_all(CURSOR_POSITION_REPLY)
+                    .expect("answer DSR");
+            }
+            out.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        if out.contains(needle) {
+            return (out, true);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    (out, false)
+}
+
 /// Pump the session until the child exits (or `timeout` elapses), answering
 /// cursor-position queries along the way. Returns the captured output and
 /// whether the child exited on its own.
@@ -84,20 +133,31 @@ fn captures_output_from_input_written_to_the_child() {
     let mut session = PtySession::spawn(shell()).expect("spawn shell in PTY");
     let rx = spawn_drain(&session);
 
-    // Type a line the shell will echo back to its terminal, then exit.
+    // Wait until the shell has started up and is listening before sending input.
+    pump_until_ready(&mut session, &rx, Duration::from_secs(5));
     session
         .write_all(b"echo ralphy-pty-marker\r\n")
         .expect("write echo");
-    session.write_all(b"exit\r\n").expect("write exit");
 
-    let (rendered, exited) = pump_until_exit(&mut session, &rx, Duration::from_secs(15));
+    // Confirm the marker round-tripped through the PTY *before* asking the shell
+    // to exit — sending `exit` in the same breath races ConPTY closing the
+    // output before the echoed marker is rendered and drained.
+    let (rendered, saw_marker) = pump_until_contains(
+        &mut session,
+        &rx,
+        "ralphy-pty-marker",
+        Duration::from_secs(10),
+    );
+    assert!(
+        saw_marker,
+        "expected the echoed marker in captured output, got:\n{rendered}"
+    );
+
+    session.write_all(b"exit\r\n").expect("write exit");
+    let (_tail, exited) = pump_until_exit(&mut session, &rx, Duration::from_secs(15));
     assert!(exited, "shell should exit after the `exit` command");
 
     let exit = session.wait().expect("wait on child");
-    assert!(
-        rendered.contains("ralphy-pty-marker"),
-        "expected the echoed marker in captured output, got:\n{rendered}"
-    );
     assert!(
         exit.success,
         "interactive shell should exit cleanly: {exit:?}"

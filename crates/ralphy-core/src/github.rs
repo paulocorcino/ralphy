@@ -11,28 +11,6 @@ use serde::Deserialize;
 
 use crate::Issue;
 
-/// Fetch one issue as raw `gh` JSON (so the CLI can persist it byte-for-byte to
-/// `.ralphy/issue.json`, which the planner reads).
-pub fn fetch_issue_json(number: u64) -> Result<String> {
-    let out = Command::new("gh")
-        .args([
-            "issue",
-            "view",
-            &number.to_string(),
-            "--json",
-            "number,title,body,labels",
-        ])
-        .output()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue view {number}` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
 #[derive(Deserialize)]
 struct GhLabel {
     name: String,

@@ -184,6 +184,12 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // (as the ps1 oracle does), so the agent draws on the subscription quota.
     std::env::set_var("ANTHROPIC_API_KEY", "");
 
+    // The run's global wall-clock deadline (if any), shared by the agent — which
+    // clamps each issue's budget to it — and the queue's between-issue clock.
+    let run_deadline = args
+        .deadline_hours
+        .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0));
+
     let agent = ClaudeAgent::new(
         non_empty(args.plan_model),
         non_empty(args.plan_effort),
@@ -197,7 +203,8 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         !args.no_remote_control,
         args.headless_exec,
         args.max_exec_calls,
-    );
+    )
+    .with_run_deadline(run_deadline);
     let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
         repo_root,
@@ -208,11 +215,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         only_issue: args.only_issue,
     };
 
-    // Build the global deadline (if any) from --deadline-hours.
+    // The same deadline gates starting the next issue (between-issue clock).
     let clock = WallClock {
-        deadline: args
-            .deadline_hours
-            .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0)),
+        deadline: run_deadline,
     };
     let tracker = GhTracker;
 

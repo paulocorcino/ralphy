@@ -77,6 +77,11 @@ struct ExecConfig {
     headless_exec: bool,
     /// Maximum number of `-p` calls before declaring MaxCalls (headless only).
     max_exec_calls: u32,
+    /// The run's global wall-clock deadline, if any. Each issue's budget is
+    /// clamped to `min(per-issue, run_deadline)` so an issue started near the
+    /// global limit can't overrun it (mirrors `min(issueDeadline, $Deadline)`
+    /// in ralphy.ps1:270).
+    run_deadline: Option<Instant>,
 }
 
 impl Default for ExecConfig {
@@ -89,6 +94,7 @@ impl Default for ExecConfig {
             remote_control: true,
             headless_exec: false,
             max_exec_calls: 6,
+            run_deadline: None,
         }
     }
 }
@@ -124,8 +130,27 @@ impl ClaudeAgent {
             remote_control,
             headless_exec,
             max_exec_calls,
+            run_deadline: None,
         };
         self
+    }
+
+    /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
+    /// issue's execution budget is then clamped to it, so an issue started just
+    /// under the global limit can't overrun by a whole per-issue window.
+    pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
+        self.exec.run_deadline = run_deadline;
+        self
+    }
+
+    /// The deadline for the current issue: the per-issue budget, clamped to the
+    /// run's global deadline when one is set.
+    fn issue_deadline(&self) -> Instant {
+        let per_issue = Instant::now() + Duration::from_secs(self.exec.max_minutes_per_issue * 60);
+        match self.exec.run_deadline {
+            Some(rd) => per_issue.min(rd),
+            None => per_issue,
+        }
     }
 
     /// The single tier→model decision point: explicit override > the plan's
@@ -223,13 +248,10 @@ impl ClaudeAgent {
             .spawn()
             .context("failed to spawn the `claude` CLI for headless exec")?;
 
-        child
-            .stdin
-            .take()
-            .expect("stdin was piped")
-            .write_all(PROMPT_EXECUTE.as_bytes())
-            .context("piping exec prompt to claude")?;
-
+        // Spawn the stdout/stderr reader threads *before* writing stdin, so a
+        // prompt larger than the pipe buffer (~64KB) can't deadlock against a
+        // child that starts emitting output before it finishes draining stdin.
+        let mut stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");
         let stderr = child.stderr.take().expect("stderr was piped");
 
@@ -245,6 +267,11 @@ impl ClaudeAgent {
             let _ = BufReader::new(stderr).read_to_end(&mut buf);
             let _ = tx_err.send(buf);
         });
+
+        stdin
+            .write_all(PROMPT_EXECUTE.as_bytes())
+            .context("piping exec prompt to claude")?;
+        drop(stdin); // close stdin so claude sees EOF
 
         let deadline = Instant::now() + timeout;
         let exited = loop {
@@ -281,7 +308,7 @@ impl ClaudeAgent {
 
         let settings_path = self.write_exec_settings()?;
         let exec_model = self.resolve_exec_model(plan);
-        let deadline = Instant::now() + Duration::from_secs(self.exec.max_minutes_per_issue * 60);
+        let deadline = self.issue_deadline();
 
         info!(
             model = %exec_model,
@@ -311,22 +338,21 @@ impl ClaudeAgent {
             let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
             let committed = before_sha != after_sha;
 
-            if let Some(reason) = classify_exec_call(&out, exited, open_steps, committed) {
-                info!(call = i, "headless call terminal");
-                return Ok(headless_reason_to_outcome(reason));
-            }
-
-            if committed {
-                no_commit_streak = 0;
-            } else {
-                no_commit_streak += 1;
-                info!(
-                    call = i,
-                    streak = no_commit_streak,
-                    "no commit this headless call"
-                );
-                if no_commit_streak >= 2 {
-                    return Ok(headless_reason_to_outcome(HeadlessReason::Stuck));
+            let classified = classify_exec_call(&out, exited, open_steps);
+            match headless_step(no_commit_streak, classified, committed) {
+                LoopStep::Terminal(reason) => {
+                    info!(call = i, "headless call terminal");
+                    return Ok(headless_reason_to_outcome(reason));
+                }
+                LoopStep::Continue(streak) => {
+                    no_commit_streak = streak;
+                    if !committed {
+                        info!(
+                            call = i,
+                            streak = no_commit_streak,
+                            "no commit this headless call"
+                        );
+                    }
                 }
             }
         }
@@ -485,7 +511,7 @@ impl ClaudeAgent {
         });
 
         let mut log = fs::File::create(self.run_dir.join("exec.log")).ok();
-        let deadline = Instant::now() + Duration::from_secs(self.exec.max_minutes_per_issue * 60);
+        let deadline = self.issue_deadline();
 
         let mut timed_out = false;
         let mut child_exited = false;
@@ -530,8 +556,9 @@ impl ClaudeAgent {
 }
 
 /// Map the session's end state to an [`Outcome`]. The flag the Stop hook wrote is
-/// authoritative; otherwise a timeout is [`Outcome::Timeout`], usage-limit text
-/// in the transcript is [`Outcome::Limit`] (with a parsed reset hint), and a
+/// authoritative; otherwise usage-limit text in the transcript is
+/// [`Outcome::Limit`] (with a parsed reset hint) — it wins over a wall-timeout so
+/// the run can resume after the reset — a timeout is [`Outcome::Timeout`], and a
 /// quiet exit is [`Outcome::Stuck`].
 fn classify_outcome(flag: Option<&str>, timed_out: bool, transcript: Option<&str>) -> Outcome {
     if let Some(f) = flag {
@@ -543,11 +570,14 @@ fn classify_outcome(flag: Option<&str>, timed_out: bool, transcript: Option<&str
             return Outcome::Blocked(reason.trim().to_string());
         }
     }
-    if timed_out {
-        return Outcome::Timeout;
-    }
+    // A usage limit wins over a wall-timeout: the oracle reclassifies a
+    // timed-out/exited session to `limit` when the transcript shows one
+    // (ralphy.ps1:395-397), preserving the reset hint so the run can resume.
     if transcript.is_some_and(is_limit_text) {
         return Outcome::Limit(transcript.and_then(parse_reset_hhmm));
+    }
+    if timed_out {
+        return Outcome::Timeout;
     }
     Outcome::Stuck
 }
@@ -567,22 +597,20 @@ enum HeadlessReason {
 /// Classify the result of a single headless `-p` call. Returns the terminal
 /// reason if this call ends the loop, or `None` to continue to the next call.
 ///
-/// Priority order mirrors `Invoke-ExecLoop`:
-/// 1. Process did not exit (timed out): limit text → `Limit`, else → `Timeout`.
-/// 2. `RALPHY_BLOCKED_EXIT` in output → `Blocked`.
-/// 3. `RALPHY_DONE_EXIT` or zero open steps → `Done`.
-/// 4. Limit text on natural exit → `Limit`.
+/// Priority order mirrors `Invoke-ExecLoop` (ralphy.ps1:283), which checks
+/// `Test-LimitText` *first* — a usage limit wins over everything, including a
+/// `RALPHY_DONE_EXIT` emitted in the same output, so the run resumes after reset
+/// rather than closing the issue:
+/// 1. Limit text anywhere → `Limit`.
+/// 2. Process did not exit (timed out) → `Timeout`.
+/// 3. `RALPHY_BLOCKED_EXIT` in output → `Blocked`.
+/// 4. `RALPHY_DONE_EXIT` or zero open steps → `Done`.
 /// 5. Otherwise → `None` (continue).
-fn classify_exec_call(
-    out: &str,
-    exited: bool,
-    open_steps: usize,
-    _committed: bool,
-) -> Option<HeadlessReason> {
+fn classify_exec_call(out: &str, exited: bool, open_steps: usize) -> Option<HeadlessReason> {
+    if is_limit_text(out) {
+        return Some(HeadlessReason::Limit(parse_reset_hhmm(out)));
+    }
     if !exited {
-        if is_limit_text(out) {
-            return Some(HeadlessReason::Limit(parse_reset_hhmm(out)));
-        }
         return Some(HeadlessReason::Timeout);
     }
     if let Some(line) = out.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
@@ -595,10 +623,34 @@ fn classify_exec_call(
     if out.contains("RALPHY_DONE_EXIT") || open_steps == 0 {
         return Some(HeadlessReason::Done);
     }
-    if is_limit_text(out) {
-        return Some(HeadlessReason::Limit(parse_reset_hhmm(out)));
-    }
     None
+}
+
+/// One transition of the headless loop's decision logic, factored out of
+/// [`ClaudeAgent::execute_headless`] so the code the loop runs *is* the code the
+/// tests exercise — no transcribed copy that can silently drift.
+#[derive(Debug, Clone, PartialEq)]
+enum LoopStep {
+    /// This call ends the loop with the given reason.
+    Terminal(HeadlessReason),
+    /// Continue to the next call carrying this no-commit streak.
+    Continue(u32),
+}
+
+/// Decide the loop's next step from a call's classification and whether it
+/// committed. A terminal `classified` reason ends the loop immediately;
+/// otherwise the no-commit streak advances and two consecutive no-commit calls
+/// are `Stuck` (mirrors `Invoke-ExecLoop`'s `$stuck -ge 2`).
+fn headless_step(streak: u32, classified: Option<HeadlessReason>, committed: bool) -> LoopStep {
+    if let Some(reason) = classified {
+        return LoopStep::Terminal(reason);
+    }
+    let streak = if committed { 0 } else { streak + 1 };
+    if streak >= 2 {
+        LoopStep::Terminal(HeadlessReason::Stuck)
+    } else {
+        LoopStep::Continue(streak)
+    }
 }
 
 /// Collapse a headless terminal reason onto an existing core [`Outcome`].
@@ -625,15 +677,16 @@ fn is_limit_text(text: &str) -> bool {
 }
 
 /// Parse a reset time from a usage-limit transcript. Looks for a pattern like
-/// "resets 3:00pm" or "resets Tue 12:30am" and converts it to 24h `HH:mm`.
-/// Returns `None` when no match is found. Ports `Get-ResetDateTime`.
+/// "resets 3pm", "resets 3:00pm", or "resets Tue 12:30am" and converts it to 24h
+/// `HH:mm` (minutes default to `00` when absent). Returns `None` when no match is
+/// found. Ports `Get-ResetDateTime`.
 fn parse_reset_hhmm(text: &str) -> Option<String> {
     use regex::Regex;
-    let re = Regex::new(r"(?i)resets\s+(?:[a-z]{3}\s+)?(\d{1,2}):(\d{2})\s*([ap]m)")
+    let re = Regex::new(r"(?i)resets\s+(?:[a-z]{3}\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)")
         .expect("valid regex");
     let caps = re.captures(text)?;
     let hour: u32 = caps[1].parse().ok()?;
-    let min: u32 = caps[2].parse().ok()?;
+    let min: u32 = caps.get(2).map_or(Ok(0), |m| m.as_str().parse()).ok()?;
     let ampm = caps[3].to_lowercase();
     let hour24 = match ampm.as_str() {
         "am" => hour % 12,
@@ -914,9 +967,19 @@ mod tests {
     }
 
     #[test]
-    fn classify_timeout_beats_transcript() {
+    fn classify_limit_beats_timeout() {
+        // A timed-out session whose transcript shows a usage limit classifies as
+        // Limit (oracle parity, ralphy.ps1:395-397) so the run resumes after reset.
         assert_eq!(
             classify_outcome(None, true, Some("usage limit reached")),
+            Outcome::Limit(None)
+        );
+    }
+
+    #[test]
+    fn classify_timeout_when_no_limit_in_transcript() {
+        assert_eq!(
+            classify_outcome(None, true, Some("just a normal log")),
             Outcome::Timeout
         );
     }
@@ -941,6 +1004,12 @@ mod tests {
     #[test]
     fn parse_reset_hhmm_midnight() {
         assert_eq!(parse_reset_hhmm("resets 12:30am"), Some("00:30".into()));
+    }
+
+    #[test]
+    fn parse_reset_hhmm_without_minutes() {
+        assert_eq!(parse_reset_hhmm("resets 3pm"), Some("15:00".into()));
+        assert_eq!(parse_reset_hhmm("resets 12am"), Some("00:00".into()));
     }
 
     #[test]
@@ -1011,7 +1080,7 @@ mod tests {
     fn classify_exec_not_exited_with_limit_text_is_limit() {
         let out = "You've reached your usage limit; resets 3:00pm";
         assert_eq!(
-            classify_exec_call(out, false, 5, false),
+            classify_exec_call(out, false, 5),
             Some(HeadlessReason::Limit(Some("15:00".into())))
         );
     }
@@ -1019,7 +1088,7 @@ mod tests {
     #[test]
     fn classify_exec_not_exited_without_limit_is_timeout() {
         assert_eq!(
-            classify_exec_call("partial output", false, 5, false),
+            classify_exec_call("partial output", false, 5),
             Some(HeadlessReason::Timeout)
         );
     }
@@ -1028,7 +1097,7 @@ mod tests {
     fn classify_exec_blocked_sentinel() {
         let out = "some work\nRALPHY_BLOCKED_EXIT missing key\nmore text";
         assert_eq!(
-            classify_exec_call(out, true, 5, false),
+            classify_exec_call(out, true, 5),
             Some(HeadlessReason::Blocked("missing key".into()))
         );
     }
@@ -1036,16 +1105,13 @@ mod tests {
     #[test]
     fn classify_exec_done_via_done_sentinel() {
         let out = "all done\nRALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_exec_call(out, true, 3, true),
-            Some(HeadlessReason::Done)
-        );
+        assert_eq!(classify_exec_call(out, true, 3), Some(HeadlessReason::Done));
     }
 
     #[test]
     fn classify_exec_done_via_zero_open_steps() {
         assert_eq!(
-            classify_exec_call("no sentinel", true, 0, true),
+            classify_exec_call("no sentinel", true, 0),
             Some(HeadlessReason::Done)
         );
     }
@@ -1054,7 +1120,19 @@ mod tests {
     fn classify_exec_limit_on_natural_exit() {
         let out = "You've reached your usage limit; resets 3:00pm";
         assert_eq!(
-            classify_exec_call(out, true, 2, false),
+            classify_exec_call(out, true, 2),
+            Some(HeadlessReason::Limit(Some("15:00".into())))
+        );
+    }
+
+    #[test]
+    fn classify_exec_limit_beats_done_sentinel() {
+        // The oracle checks Test-LimitText first (ralphy.ps1:283): a usage limit
+        // wins even when the same exited call emitted RALPHY_DONE_EXIT, so the
+        // run resumes after reset instead of closing the issue.
+        let out = "RALPHY_DONE_EXIT\nYou've reached your usage limit; resets 3:00pm";
+        assert_eq!(
+            classify_exec_call(out, true, 0),
             Some(HeadlessReason::Limit(Some("15:00".into())))
         );
     }
@@ -1062,7 +1140,7 @@ mod tests {
     #[test]
     fn classify_exec_continue_when_no_terminal_condition() {
         assert_eq!(
-            classify_exec_call("partial progress, no sentinel", true, 3, true),
+            classify_exec_call("partial progress, no sentinel", true, 3),
             None
         );
     }
@@ -1111,27 +1189,44 @@ mod tests {
 
     // ── loop-driver: stuck counter and MaxCalls ─────────────────────────────
 
-    /// Pure simulation of execute_headless's decision loop, used to verify the
-    /// stuck-counter and MaxCalls logic without spawning real processes.
-    fn simulate_headless_loop(
+    /// Drive the *production* `headless_step` over a scripted sequence, mirroring
+    /// only the trivial `for i in 1..=max` bound in `execute_headless`. The
+    /// decision logic under test is the real `headless_step`, not a copy — so a
+    /// change to the loop's branching can't pass green here while diverging.
+    fn run_headless_steps(
         calls: &[(Option<HeadlessReason>, bool)], // (classify result, committed) per call
         max_exec_calls: u32,
     ) -> HeadlessReason {
-        let mut no_commit_streak = 0u32;
-        for (reason_opt, committed) in calls.iter().take(max_exec_calls as usize) {
-            if let Some(r) = reason_opt.clone() {
-                return r;
-            }
-            if *committed {
-                no_commit_streak = 0;
-            } else {
-                no_commit_streak += 1;
-                if no_commit_streak >= 2 {
-                    return HeadlessReason::Stuck;
-                }
+        let mut streak = 0u32;
+        for (classified, committed) in calls.iter().take(max_exec_calls as usize) {
+            match headless_step(streak, classified.clone(), *committed) {
+                LoopStep::Terminal(r) => return r,
+                LoopStep::Continue(s) => streak = s,
             }
         }
         HeadlessReason::MaxCalls
+    }
+
+    #[test]
+    fn headless_step_passes_through_terminal_reason() {
+        assert_eq!(
+            headless_step(0, Some(HeadlessReason::Done), false),
+            LoopStep::Terminal(HeadlessReason::Done)
+        );
+    }
+
+    #[test]
+    fn headless_step_commit_resets_streak() {
+        assert_eq!(headless_step(1, None, true), LoopStep::Continue(0));
+    }
+
+    #[test]
+    fn headless_step_second_no_commit_is_stuck() {
+        assert_eq!(headless_step(0, None, false), LoopStep::Continue(1));
+        assert_eq!(
+            headless_step(1, None, false),
+            LoopStep::Terminal(HeadlessReason::Stuck)
+        );
     }
 
     #[test]
@@ -1140,7 +1235,7 @@ mod tests {
             (None, false), // call 1: streak = 1
             (None, false), // call 2: streak = 2 → Stuck
         ];
-        assert_eq!(simulate_headless_loop(&calls, 6), HeadlessReason::Stuck);
+        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::Stuck);
     }
 
     #[test]
@@ -1151,20 +1246,20 @@ mod tests {
             (None, false), // streak = 1
             (None, false), // streak = 2 → Stuck
         ];
-        assert_eq!(simulate_headless_loop(&calls, 6), HeadlessReason::Stuck);
+        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::Stuck);
     }
 
     #[test]
     fn loop_exhaustion_yields_maxcalls() {
         let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
-        assert_eq!(simulate_headless_loop(&calls, 6), HeadlessReason::MaxCalls);
+        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::MaxCalls);
     }
 
     #[test]
     fn maxcalls_outcome_is_stuck() {
         // End-to-end: loop exhaustion maps to Outcome::Stuck via headless_reason_to_outcome.
         let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
-        let reason = simulate_headless_loop(&calls, 6);
+        let reason = run_headless_steps(&calls, 6);
         assert_eq!(headless_reason_to_outcome(reason), Outcome::Stuck);
     }
 }
