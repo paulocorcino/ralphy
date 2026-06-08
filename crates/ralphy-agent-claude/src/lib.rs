@@ -1006,4 +1006,167 @@ mod tests {
         );
         assert_eq!(classify_outcome(None, false, None), Outcome::Stuck);
     }
+
+    // ── classify_exec_call ──────────────────────────────────────────────────
+
+    #[test]
+    fn classify_exec_not_exited_with_limit_text_is_limit() {
+        let out = "You've reached your usage limit; resets 3:00pm";
+        assert_eq!(
+            classify_exec_call(out, false, 5, false),
+            Some(HeadlessReason::Limit(Some("15:00".into())))
+        );
+    }
+
+    #[test]
+    fn classify_exec_not_exited_without_limit_is_timeout() {
+        assert_eq!(
+            classify_exec_call("partial output", false, 5, false),
+            Some(HeadlessReason::Timeout)
+        );
+    }
+
+    #[test]
+    fn classify_exec_blocked_sentinel() {
+        let out = "some work\nRALPHY_BLOCKED_EXIT missing key\nmore text";
+        assert_eq!(
+            classify_exec_call(out, true, 5, false),
+            Some(HeadlessReason::Blocked("missing key".into()))
+        );
+    }
+
+    #[test]
+    fn classify_exec_done_via_done_sentinel() {
+        let out = "all done\nRALPHY_DONE_EXIT\n";
+        assert_eq!(
+            classify_exec_call(out, true, 3, true),
+            Some(HeadlessReason::Done)
+        );
+    }
+
+    #[test]
+    fn classify_exec_done_via_zero_open_steps() {
+        assert_eq!(
+            classify_exec_call("no sentinel", true, 0, true),
+            Some(HeadlessReason::Done)
+        );
+    }
+
+    #[test]
+    fn classify_exec_limit_on_natural_exit() {
+        let out = "You've reached your usage limit; resets 3:00pm";
+        assert_eq!(
+            classify_exec_call(out, true, 2, false),
+            Some(HeadlessReason::Limit(Some("15:00".into())))
+        );
+    }
+
+    #[test]
+    fn classify_exec_continue_when_no_terminal_condition() {
+        assert_eq!(
+            classify_exec_call("partial progress, no sentinel", true, 3, true),
+            None
+        );
+    }
+
+    // ── headless_reason_to_outcome ──────────────────────────────────────────
+
+    #[test]
+    fn headless_reason_done_maps_to_done() {
+        assert_eq!(
+            headless_reason_to_outcome(HeadlessReason::Done),
+            Outcome::Done
+        );
+    }
+
+    #[test]
+    fn headless_reason_blocked_maps_to_blocked() {
+        assert_eq!(
+            headless_reason_to_outcome(HeadlessReason::Blocked("reason".into())),
+            Outcome::Blocked("reason".into())
+        );
+    }
+
+    #[test]
+    fn headless_reason_timeout_maps_to_timeout() {
+        assert_eq!(
+            headless_reason_to_outcome(HeadlessReason::Timeout),
+            Outcome::Timeout
+        );
+    }
+
+    #[test]
+    fn headless_reason_stuck_maps_to_stuck() {
+        assert_eq!(
+            headless_reason_to_outcome(HeadlessReason::Stuck),
+            Outcome::Stuck
+        );
+    }
+
+    #[test]
+    fn headless_reason_maxcalls_maps_to_stuck() {
+        assert_eq!(
+            headless_reason_to_outcome(HeadlessReason::MaxCalls),
+            Outcome::Stuck
+        );
+    }
+
+    // ── loop-driver: stuck counter and MaxCalls ─────────────────────────────
+
+    /// Pure simulation of execute_headless's decision loop, used to verify the
+    /// stuck-counter and MaxCalls logic without spawning real processes.
+    fn simulate_headless_loop(
+        calls: &[(Option<HeadlessReason>, bool)], // (classify result, committed) per call
+        max_exec_calls: u32,
+    ) -> HeadlessReason {
+        let mut no_commit_streak = 0u32;
+        for (reason_opt, committed) in calls.iter().take(max_exec_calls as usize) {
+            if let Some(r) = reason_opt.clone() {
+                return r;
+            }
+            if *committed {
+                no_commit_streak = 0;
+            } else {
+                no_commit_streak += 1;
+                if no_commit_streak >= 2 {
+                    return HeadlessReason::Stuck;
+                }
+            }
+        }
+        HeadlessReason::MaxCalls
+    }
+
+    #[test]
+    fn stuck_fires_after_two_consecutive_no_commit_calls() {
+        let calls = vec![
+            (None, false), // call 1: streak = 1
+            (None, false), // call 2: streak = 2 → Stuck
+        ];
+        assert_eq!(simulate_headless_loop(&calls, 6), HeadlessReason::Stuck);
+    }
+
+    #[test]
+    fn commit_resets_no_commit_streak() {
+        let calls = vec![
+            (None, false), // streak = 1
+            (None, true),  // committed → streak reset to 0
+            (None, false), // streak = 1
+            (None, false), // streak = 2 → Stuck
+        ];
+        assert_eq!(simulate_headless_loop(&calls, 6), HeadlessReason::Stuck);
+    }
+
+    #[test]
+    fn loop_exhaustion_yields_maxcalls() {
+        let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
+        assert_eq!(simulate_headless_loop(&calls, 6), HeadlessReason::MaxCalls);
+    }
+
+    #[test]
+    fn maxcalls_outcome_is_stuck() {
+        // End-to-end: loop exhaustion maps to Outcome::Stuck via headless_reason_to_outcome.
+        let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
+        let reason = simulate_headless_loop(&calls, 6);
+        assert_eq!(headless_reason_to_outcome(reason), Outcome::Stuck);
+    }
 }
