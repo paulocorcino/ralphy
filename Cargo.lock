@@ -412,6 +412,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ralphy-core",
+ "ralphy-pty",
+ "regex",
+ "serde_json",
  "tracing",
 ]
 
@@ -424,6 +427,8 @@ dependencies = [
  "clap",
  "ralphy-agent-claude",
  "ralphy-core",
+ "regex",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
 ]

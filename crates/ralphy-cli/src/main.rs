@@ -10,6 +10,8 @@ use ralphy_agent_claude::ClaudeAgent;
 use ralphy_core::{git, github, run, RunConfig, RunOutcome, Workspace};
 use tracing::info;
 
+mod hook;
+
 #[derive(Parser)]
 #[command(
     name = "ralphy",
@@ -24,6 +26,16 @@ struct Cli {
 enum Command {
     /// Plan (and, later, execute) one issue onto a fresh run branch.
     Run(RunArgs),
+    /// Internal: agent-CLI hook handlers (invoked by the execution session, not
+    /// by a human).
+    #[command(subcommand)]
+    Hook(HookCommand),
+}
+
+#[derive(Subcommand)]
+enum HookCommand {
+    /// Stop hook: record the session's exit sentinel to `$RALPHY_FLAG_FILE`.
+    Stop,
 }
 
 #[derive(Args)]
@@ -51,12 +63,38 @@ struct RunArgs {
     /// Planning effort.
     #[arg(long, default_value = "medium")]
     plan_effort: String,
+
+    /// Force the execution model for the issue (overrides the plan's judgment).
+    #[arg(long)]
+    exec_model: Option<String>,
+
+    /// Execution effort.
+    #[arg(long, default_value = "medium")]
+    exec_effort: String,
+
+    /// Execution model used when the plan emits no complexity judgment.
+    #[arg(long, default_value = "sonnet")]
+    default_exec_model: String,
+
+    /// Per-issue wall-clock budget (minutes) before the session is reclaimed.
+    #[arg(long, default_value_t = 45)]
+    max_minutes_per_issue: u64,
+
+    /// Enable Remote Control so you can follow/intervene from the mobile app
+    /// (the default).
+    #[arg(long, overrides_with = "no_remote_control")]
+    remote_control: bool,
+
+    /// Disable Remote Control for the execution session.
+    #[arg(long = "no-remote-control", overrides_with = "remote_control")]
+    no_remote_control: bool,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Run(args) => run_cmd(args),
+        Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
     }
 }
 
@@ -80,10 +118,21 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let issue = github::parse_issue(&issue_json)?;
     info!(number = issue.number, title = %issue.title, "issue fetched");
 
+    // Guarantee subscription billing: clear any inherited API key for this run
+    // (as the ps1 oracle does), so the agent draws on the subscription quota.
+    std::env::set_var("ANTHROPIC_API_KEY", "");
+
     let agent = ClaudeAgent::new(
         non_empty(args.plan_model),
         non_empty(args.plan_effort),
         run_dir,
+    )
+    .with_exec_config(
+        non_empty(args.exec_model.unwrap_or_default()),
+        non_empty(args.exec_effort),
+        args.default_exec_model,
+        args.max_minutes_per_issue,
+        !args.no_remote_control,
     );
     let cfg = RunConfig {
         repo_root,
