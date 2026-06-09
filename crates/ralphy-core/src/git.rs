@@ -77,6 +77,15 @@ pub fn checkout(repo: &Path, refname: &str) -> Result<()> {
     Ok(())
 }
 
+/// Switch to `refname`, discarding any uncommitted tracked changes. Used when
+/// abandoning a run (dry-run cleanup or a plan failure): the run branch may carry
+/// the uncommitted `.gitignore` edit, which must not follow us back to the
+/// original branch.
+pub fn checkout_force(repo: &Path, refname: &str) -> Result<()> {
+    git(repo, &["checkout", "-f", refname, "--quiet"])?;
+    Ok(())
+}
+
 pub fn delete_branch(repo: &Path, branch: &str) -> Result<()> {
     git(repo, &["branch", "-D", branch, "--quiet"])?;
     Ok(())

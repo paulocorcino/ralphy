@@ -232,6 +232,32 @@ fn branch_exists(repo: &Path, branch: &str) -> bool {
         .success()
 }
 
+/// The tracked file paths at `refname` (recursive), one per entry.
+fn git_ls(repo: &Path, refname: &str) -> Vec<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["ls-tree", "-r", "--name-only", refname])
+        .output()
+        .expect("spawn git");
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// The contents of `path` as committed at `refname` (empty if absent).
+fn git_show(repo: &Path, refname: &str, path: &str) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["show", &format!("{refname}:{path}")])
+        .output()
+        .expect("spawn git");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
 fn init_repo(name: &str) -> PathBuf {
     static N: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -687,6 +713,47 @@ fn gitignore_gets_ralphy_on_first_run() {
     assert!(
         body.contains(".ralphy/"),
         ".ralphy/ added to .gitignore on first run: {body}"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn new_mode_does_not_leak_ralphy_when_base_lacks_ignore() {
+    // Regression: the run branch is cut from a base whose `.gitignore` does NOT
+    // ignore `.ralphy/`, while the original branch already does (from a prior run).
+    // `ensure_ralphy_ignored` must run on the run branch's working tree, not the
+    // original's — otherwise it no-ops and the agent's `git add` sweeps scratch
+    // (`.ralphy/plan.md`) into the deliverable.
+    let repo = init_repo("noleak");
+    // `init_repo` committed a `.gitignore` that ignores `.ralphy/` on `main` (orig).
+    // Cut a `base` branch whose `.gitignore` does NOT mention `.ralphy/`.
+    git(&repo, &["checkout", "-q", "-b", "base"]);
+    fs::write(repo.join(".gitignore"), "target/\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "base without ralphy ignore"]);
+    git(&repo, &["checkout", "-q", "main"]);
+
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let mut cfg = cfg(&repo, "stamp-noleak", false);
+    cfg.base_branch = "base".into();
+    run_queue(&cfg, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
+
+    // The run branch must carry the work but none of the `.ralphy/` scratch.
+    let branch = "afk/run-stamp-noleak";
+    let tracked = git_ls(&repo, branch);
+    assert!(
+        !tracked.iter().any(|f| f.starts_with(".ralphy/")),
+        "run branch must not track .ralphy/ scratch, got: {tracked:?}"
+    );
+    // And the ensure landed on the run branch: its `.gitignore` now ignores `.ralphy/`.
+    let gi = git_show(&repo, branch, ".gitignore");
+    assert!(
+        gi.contains(".ralphy/"),
+        ".ralphy/ must be ignored on the run branch: {gi:?}"
     );
 
     fs::remove_dir_all(&repo).ok();

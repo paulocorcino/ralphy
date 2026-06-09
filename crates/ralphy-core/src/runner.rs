@@ -214,15 +214,14 @@ fn prepare_branch(
     // a local-only repo) is not fatal here — base existence is checked below.
     let _ = git::fetch_origin(repo);
 
-    // Precondition: a clean tree. Checked *before* we touch `.gitignore`, so our
-    // own ignore edit on a first run can never trip this.
+    // Precondition: a clean tree, checked before any mutation (our own `.gitignore`
+    // edit included) so a first run can never trip this.
     if !git::is_clean_ignoring_ralphy(repo)? {
         bail!(
             "working tree at {} is not clean — commit or stash first",
             repo.display()
         );
     }
-    gitignore::ensure_ralphy_ignored(repo)?;
 
     let orig = git::current_branch(repo)?;
     if orig == "HEAD" {
@@ -232,13 +231,13 @@ fn prepare_branch(
         );
     }
 
-    match mode {
+    let prepared = match mode {
         BranchMode::Current => {
             // Commit straight onto the current branch — no new branch, base
             // ignored. Compare against where this branch stood before the run.
             let compare_ref = git::head_sha(repo)?;
             info!(branch = %orig, "running in place on current branch");
-            Ok((orig.clone(), orig, compare_ref))
+            (orig.clone(), orig, compare_ref)
         }
         BranchMode::New => {
             if !git::commitish_exists(repo, base_branch) {
@@ -247,9 +246,19 @@ fn prepare_branch(
             let branch = format!("afk/run-{stamp}");
             git::checkout_new_branch(repo, &branch, base_branch)?;
             info!(%branch, base = %base_branch, was = %orig, "run branch created");
-            Ok((orig, branch, base_branch.to_string()))
+            (orig, branch, base_branch.to_string())
         }
-    }
+    };
+
+    // Ignore `.ralphy/` *after* the run branch is checked out, so the edit lands on
+    // the working tree the agent commits from. Doing it before the checkout would
+    // inspect the original branch's `.gitignore` — which may already ignore
+    // `.ralphy/` from a prior run — and no-op; the run branch, cut from a base that
+    // does NOT ignore it, would then let the agent's `git add` sweep scratch
+    // (`plan.md`, logs) into the deliverable.
+    gitignore::ensure_ralphy_ignored(repo)?;
+
+    Ok(prepared)
 }
 
 /// Plan (and, in a non-dry run, execute) a single issue onto a fresh run branch.
@@ -644,7 +653,9 @@ fn restore(repo: &Path, orig: &str, branch: &str, base: &str, mode: BranchMode) 
     if mode == BranchMode::Current {
         return;
     }
-    if let Err(e) = git::checkout(repo, orig) {
+    // Force: the run branch may carry the uncommitted `.gitignore` edit (a dry run
+    // never commits it), which must be discarded rather than dragged onto `orig`.
+    if let Err(e) = git::checkout_force(repo, orig) {
         warn!("could not return to '{orig}': {e}");
         return;
     }
