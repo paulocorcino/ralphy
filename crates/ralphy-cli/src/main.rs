@@ -185,8 +185,22 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
     info!(count = queue.len(), order = %order.join(" -> "), "queue built");
 
-    // Guarantee subscription billing: clear any inherited API key for this run
-    // (as the ps1 oracle does), so the agent draws on the subscription quota.
+    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
+    // quota (matching the ps1 oracle behaviour).
+    //
+    // Why `""` and not `remove_var`: setting to the empty string deliberately
+    // mirrors the PowerShell oracle, which assigns `""` rather than unsetting.
+    // Claude's handling of an absent key vs. an empty key is not verified, so we
+    // keep the same sentinel value to stay on the tested path.
+    //
+    // Single-threaded safety: `set_var` is safe to call here because this point
+    // in `main` is reached before any threads are spawned; no concurrent reader
+    // can observe a torn environment state.
+    //
+    // Edition-2024 migration note: in Rust edition 2024, `std::env::set_var` (and
+    // `remove_var`) become `unsafe` functions. When the crate migrates to edition
+    // 2024, this call must be wrapped in an `unsafe` block with a comment
+    // reiterating the single-threaded safety argument above.
     std::env::set_var("ANTHROPIC_API_KEY", "");
 
     // The run's global wall-clock deadline (if any), shared by the agent — which

@@ -26,30 +26,28 @@ struct GhIssue {
     labels: Vec<GhLabel>,
 }
 
+impl From<GhIssue> for Issue {
+    fn from(g: GhIssue) -> Self {
+        Issue {
+            number: g.number,
+            title: g.title,
+            body: g.body,
+            labels: g.labels.into_iter().map(|l| l.name).collect(),
+        }
+    }
+}
+
 /// Parse `gh issue view --json` output into the domain [`Issue`].
 pub fn parse_issue(json: &str) -> Result<Issue> {
     let g: GhIssue = serde_json::from_str(json).context("parsing `gh issue view` JSON")?;
-    Ok(Issue {
-        number: g.number,
-        title: g.title,
-        body: g.body,
-        labels: g.labels.into_iter().map(|l| l.name).collect(),
-    })
+    Ok(Issue::from(g))
 }
 
 /// Parse `gh issue list --json` output (a JSON array) into domain [`Issue`]s.
 fn parse_issue_list(json: &str) -> Result<Vec<Issue>> {
     let raw: Vec<GhIssue> =
         serde_json::from_str(json).context("parsing `gh issue list` JSON array")?;
-    Ok(raw
-        .into_iter()
-        .map(|g| Issue {
-            number: g.number,
-            title: g.title,
-            body: g.body,
-            labels: g.labels.into_iter().map(|l| l.name).collect(),
-        })
-        .collect())
+    Ok(raw.into_iter().map(Issue::from).collect())
 }
 
 /// Flatten per-label issue batches into one queue: union all batches, dedupe by
@@ -369,6 +367,24 @@ mod tests {
         let queue = build_queue(vec![vec![issue(3)], vec![issue(3)], vec![issue(1)]]);
         let numbers: Vec<u64> = queue.iter().map(|i| i.number).collect();
         assert_eq!(numbers, vec![1, 3]);
+    }
+
+    #[test]
+    fn from_ghissue_maps_all_fields() {
+        let g = GhIssue {
+            number: 42,
+            title: "some title".into(),
+            body: "some body".into(),
+            labels: vec![
+                GhLabel { name: "AFK".into() },
+                GhLabel { name: "bug".into() },
+            ],
+        };
+        let issue = Issue::from(g);
+        assert_eq!(issue.number, 42);
+        assert_eq!(issue.title, "some title");
+        assert_eq!(issue.body, "some body");
+        assert_eq!(issue.labels, vec!["AFK", "bug"]);
     }
 
     #[test]

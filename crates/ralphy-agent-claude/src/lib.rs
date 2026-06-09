@@ -531,10 +531,11 @@ impl Agent for ClaudeAgent {
 
         let mut session =
             PtySession::spawn(cmd).context("spawning the claude execution session")?;
-        let outcome = self.drive_session(&mut session, &flag_file)?;
+        let result = self.drive_session(&mut session, &flag_file);
         // Reclaim: kill the tree and drop the session (closes the ConPTY).
+        // Kill unconditionally so the child never outlives us on error paths.
         let _ = session.kill();
-        Ok(outcome)
+        result
     }
 }
 
@@ -559,10 +560,11 @@ impl ClaudeAgent {
 
         let mut timed_out = false;
         let mut child_exited = false;
+        let mut dsr_carry: Vec<u8> = Vec::new();
         loop {
             // Act as the terminal: tee output and answer cursor-position queries.
             while let Ok(chunk) = rx.try_recv() {
-                if find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some() {
+                if scan_dsr_request(&mut dsr_carry, &chunk) {
                     let _ = session.write_all(CURSOR_POSITION_REPLY);
                 }
                 if let Some(f) = log.as_mut() {
@@ -915,11 +917,53 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+/// Rolling-tail DSR scanner. Appends `chunk` to `carry`, searches the combined
+/// buffer for `CURSOR_POSITION_REQUEST`, then truncates `carry` to the last
+/// `CURSOR_POSITION_REQUEST.len() - 1` bytes so a split sequence spanning the
+/// next chunk can still match. Returns `true` if the sequence was found.
+fn scan_dsr_request(carry: &mut Vec<u8>, chunk: &[u8]) -> bool {
+    carry.extend_from_slice(chunk);
+    let found = find_subslice(carry, CURSOR_POSITION_REQUEST).is_some();
+    let keep = CURSOR_POSITION_REQUEST.len().saturating_sub(1);
+    if carry.len() > keep {
+        carry.drain(..carry.len() - keep);
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ralphy_core::{Issue, Plan};
     use std::path::PathBuf;
+
+    #[test]
+    fn scan_dsr_request_detects_split_sequence() {
+        // Sequence split across two chunks: first call must return false, second true.
+        let mut carry = Vec::new();
+        assert!(
+            !scan_dsr_request(&mut carry, b"\x1b["),
+            "partial prefix should not fire"
+        );
+        assert!(
+            scan_dsr_request(&mut carry, b"6n"),
+            "completing the sequence should fire"
+        );
+
+        // Unsplit: a single chunk containing the full sequence fires immediately.
+        let mut carry2 = Vec::new();
+        assert!(
+            scan_dsr_request(&mut carry2, CURSOR_POSITION_REQUEST),
+            "full sequence in one chunk should fire"
+        );
+
+        // No sequence at all: never fires.
+        let mut carry3 = Vec::new();
+        assert!(
+            !scan_dsr_request(&mut carry3, b"hello world"),
+            "unrelated bytes should not fire"
+        );
+    }
 
     fn issue_with_labels(labels: &[&str]) -> Issue {
         Issue {

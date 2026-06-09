@@ -26,3 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-pty = { path = "crates/ralphy-pty" }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

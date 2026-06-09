@@ -6,6 +6,7 @@
 //! adapter. See docs/adr/0002 for the boundary this enforces.
 
 mod agent;
+pub(crate) mod markdown;
 mod runner;
 mod tracker;
 mod types;
