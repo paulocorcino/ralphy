@@ -126,16 +126,17 @@ pub fn edit_issue_body(number: u64, body: &str) -> Result<()> {
         .spawn()
         .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
 
-    child
-        .stdin
-        .take()
-        .expect("stdin was piped")
-        .write_all(body.as_bytes())
-        .context("writing body to `gh` stdin")?;
+    // Store the write result rather than short-circuiting with `?`: dropping
+    // `child` without calling `wait` would leave a zombie process on write failure.
+    let mut stdin = child.stdin.take().expect("stdin was piped");
+    let write_result = stdin.write_all(body.as_bytes());
+    drop(stdin); // close stdin (EOF) before waiting
 
     let out = child
         .wait_with_output()
         .context("waiting for `gh issue edit`")?;
+
+    write_result.context("writing body to `gh` stdin")?;
     if !out.status.success() {
         bail!(
             "`gh issue edit {number}` failed: {}",

@@ -330,7 +330,12 @@ some note
         let unmatched = vec!["Verified but missing".to_string()];
         let comment = evidence_comment(&verdicts, &unmatched);
 
-        assert!(comment.contains("[verified]") || comment.contains("verified"));
+        // The exact tag format must appear for verified entries.
+        assert!(
+            comment.contains("**[verified]**"),
+            "verified tag must appear in bold-bracket form"
+        );
+        // Review-only and unmatched entries must be flagged for human review.
         assert!(
             comment.contains("NEEDS REVIEW"),
             "review-only must be flagged"
@@ -343,9 +348,21 @@ some note
             comment.contains("Unmatched criteria"),
             "unmatched section present"
         );
-        // Matched verified criterion must NOT be flagged.
-        assert!(
-            !comment.contains("Verified and matched\n  Evidence: test passes  \n  [NEEDS REVIEW")
-        );
+        // The matched verified criterion must NOT carry a NEEDS REVIEW flag.
+        // Split on the criterion text and check only the line that follows it.
+        if let Some(idx) = comment.find("Verified and matched") {
+            let tail = &comment[idx..];
+            let line_end = tail.find('\n').unwrap_or(tail.len());
+            // The criterion line plus the next evidence line must not contain the flag.
+            let two_lines_end = tail[line_end + 1..]
+                .find('\n')
+                .map(|n| line_end + 1 + n)
+                .unwrap_or(tail.len());
+            assert!(
+                !tail[..two_lines_end].contains("[NEEDS REVIEW"),
+                "matched verified criterion must not be flagged: {}",
+                &tail[..two_lines_end]
+            );
+        }
     }
 }

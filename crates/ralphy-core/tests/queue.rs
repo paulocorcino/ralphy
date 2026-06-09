@@ -656,6 +656,8 @@ fn green_close_calls_write_evidence_with_parsed_verdicts() {
     assert_eq!(*number, 1);
     assert_eq!(verdicts.len(), 1);
     assert_eq!(verdicts[0].criterion, "Some AC");
+    assert_eq!(verdicts[0].kind, ralphy_core::VerdictKind::Verified);
+    assert_eq!(verdicts[0].evidence, "unit test proves it");
 
     fs::remove_dir_all(&repo).ok();
 }
