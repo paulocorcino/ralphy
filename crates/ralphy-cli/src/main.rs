@@ -249,7 +249,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     }
     let stopped = report.stop.is_some();
     match report.stop {
-        Some(StopReason::Deadline) => println!("Stopped: deadline reached before the next issue."),
+        Some(StopReason::Deadline) => {
+            println!("Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).")
+        }
         Some(StopReason::NonGreen { number, outcome }) => {
             println!("Stopped: #{number} finished non-green ({outcome:?}). Branch handed back.");
         }

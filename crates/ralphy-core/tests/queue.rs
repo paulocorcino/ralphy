@@ -960,6 +960,12 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
             vec![30, 30],
             "two resumes then cap"
         );
+        // The cap is reached via the resume path, not by skipping the wait.
+        assert_eq!(
+            *clock.waited_for.borrow(),
+            vec!["09:00".to_string()],
+            "the first limit waited for its reset before the cap fired"
+        );
         match report.stop {
             Some(StopReason::Limit { number, reset }) => {
                 assert_eq!(number, 30);
