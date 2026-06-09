@@ -678,21 +678,40 @@ fn is_limit_text(text: &str) -> bool {
 
 /// Parse a reset time from a usage-limit transcript. Looks for a pattern like
 /// "resets 3pm", "resets 3:00pm", or "resets Tue 12:30am" and converts it to 24h
-/// `HH:mm` (minutes default to `00` when absent). Returns `None` when no match is
-/// found. Ports `Get-ResetDateTime`.
+/// `HH:mm` (minutes default to `00` when absent). When a day-of-week prefixes the
+/// time it is captured, Title-cased, and prepended (`"Tue 00:30"`); a bare time
+/// stays bare (`"15:00"`). Returns `None` when no match is found. Ports
+/// `Get-ResetDateTime`; the optional weekday lets the core compute the next
+/// correct occurrence rather than assuming "today".
 fn parse_reset_hhmm(text: &str) -> Option<String> {
     use regex::Regex;
-    let re = Regex::new(r"(?i)resets\s+(?:[a-z]{3}\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)")
+    let re = Regex::new(r"(?i)resets\s+(?:([a-z]{3})\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)")
         .expect("valid regex");
     let caps = re.captures(text)?;
-    let hour: u32 = caps[1].parse().ok()?;
-    let min: u32 = caps.get(2).map_or(Ok(0), |m| m.as_str().parse()).ok()?;
-    let ampm = caps[3].to_lowercase();
+    let hour: u32 = caps[2].parse().ok()?;
+    let min: u32 = caps.get(3).map_or(Ok(0), |m| m.as_str().parse()).ok()?;
+    let ampm = caps[4].to_lowercase();
     let hour24 = match ampm.as_str() {
         "am" => hour % 12,
         _ => (hour % 12) + 12,
     };
-    Some(format!("{:02}:{:02}", hour24, min))
+    let hhmm = format!("{:02}:{:02}", hour24, min);
+    match caps.get(1) {
+        Some(wd) => Some(format!("{} {}", title_case_weekday(wd.as_str()), hhmm)),
+        None => Some(hhmm),
+    }
+}
+
+/// Title-case a three-letter weekday abbreviation (`"tue"` → `"Tue"`).
+fn title_case_weekday(wd: &str) -> String {
+    let mut chars = wd.chars();
+    match chars.next() {
+        Some(first) => first
+            .to_uppercase()
+            .chain(chars.flat_map(|c| c.to_lowercase()))
+            .collect(),
+        None => String::new(),
+    }
 }
 
 /// The most recent `claude` transcript JSONL under `~/.claude/projects`, read in
@@ -1015,6 +1034,17 @@ mod tests {
     #[test]
     fn parse_reset_hhmm_no_match() {
         assert_eq!(parse_reset_hhmm("no time here"), None);
+    }
+
+    #[test]
+    fn parse_reset_hhmm_captures_weekday() {
+        // A weekday-qualified reset is captured and prefixed, Title-cased; the
+        // bare-time form is unchanged.
+        assert_eq!(
+            parse_reset_hhmm("You've reached your usage limit; resets Tue 12:30am"),
+            Some("Tue 00:30".into())
+        );
+        assert_eq!(parse_reset_hhmm("resets 3:00pm"), Some("15:00".into()));
     }
 
     #[test]
