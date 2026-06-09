@@ -162,7 +162,8 @@ fn build_codex_command(model: &str, effort: &str, root: &Path, out_path: &Path) 
 
 /// Return `true` when `text` contains a Codex usage-limit message (case-insensitive).
 fn is_codex_limit_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
+    // to_ascii_lowercase is used so byte offsets are preserved (ASCII-only pattern).
+    let lower = text.to_ascii_lowercase();
     lower.contains("you've hit your usage limit")
         || lower.contains("usage limit")
         || lower.contains("rate limit reached")
@@ -172,7 +173,9 @@ fn is_codex_limit_text(text: &str) -> bool {
 /// `try again at ` (trimmed, to end of line). Returns `None` when absent.
 fn parse_codex_reset_hint(text: &str) -> Option<String> {
     for line in text.lines() {
-        let lower = line.to_lowercase();
+        // to_ascii_lowercase preserves byte positions so the pos from find()
+        // can safely index back into line (no Unicode expansion hazard).
+        let lower = line.to_ascii_lowercase();
         if let Some(pos) = lower.find("try again at ") {
             let rest = line[pos + "try again at ".len()..].trim();
             if !rest.is_empty() {
