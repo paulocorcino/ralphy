@@ -85,4 +85,12 @@ impl Workspace {
     pub fn run_dir(&self, stamp: &str) -> PathBuf {
         self.ralphy_dir().join("runs").join(stamp)
     }
+
+    /// `<repo>/.ralphy/plugin` — the Claude Code plugin Ralphy materializes each
+    /// run (the `reviewer` / `staged-plan` skills the prompts depend on). Passed
+    /// to every `claude` call via `--plugin-dir`, so a run never depends on
+    /// whatever skills happen to be installed globally on the machine.
+    pub fn plugin_dir(&self) -> PathBuf {
+        self.ralphy_dir().join("plugin")
+    }
 }

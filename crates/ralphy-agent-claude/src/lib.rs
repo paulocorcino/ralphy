@@ -16,21 +16,22 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use include_dir::{include_dir, Dir};
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
 
 /// The planning prompt, embedded so the binary is self-contained as a global
-/// tool. Single source of truth lives at the repo root.
-const PROMPT_PLAN: &str = include_str!("../../../prompt.plan.md");
+/// tool. Single source of truth lives at `assets/prompts/`.
+const PROMPT_PLAN: &str = include_str!("../../../assets/prompts/prompt.plan.md");
 
 /// The staged-plan planning prompt, used when the issue carries the
 /// `stagedplan` label.
-const PROMPT_PLAN_STAGED: &str = include_str!("../../../prompt.plan.staged.md");
+const PROMPT_PLAN_STAGED: &str = include_str!("../../../assets/prompts/prompt.plan.staged.md");
 
 /// The execution charter, embedded for the same reason and copied to
 /// `.ralphy/exec.md` for the live session to read.
-const PROMPT_EXECUTE: &str = include_str!("../../../prompt.execute.md");
+const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
 
 /// The one-line charter the interactive session is launched with; it points the
 /// agent at the embedded charter and the plan, and names the exit sentinel.
@@ -39,6 +40,30 @@ const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implem
 /// Minimal settings that keep a headless `claude -p` from hanging on a prompt.
 /// The Stop hook is an execution concern, added by [`exec_settings_json`].
 const SETTINGS_JSON: &str = r#"{"skipDangerousModePermissionPrompt":true,"skipAutoPermissionPrompt":true,"autoCompactEnabled":false}"#;
+
+/// The operational Claude Code plugin, embedded at build time so the binary is a
+/// self-contained global tool. It bundles the `reviewer` and `staged-plan`
+/// skills the planning/execution prompts depend on; the single source of truth
+/// lives at the repo root under `assets/plugin`.
+static PLUGIN: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin");
+
+/// Materialize the embedded plugin into the workspace's `.ralphy/plugin` so it
+/// can be handed to `claude` via `--plugin-dir`. Re-extracted from scratch each
+/// call (the tree is tiny) so a stale or partly-written copy never lingers, and
+/// the run never depends on whatever skills are installed globally. Returns the
+/// plugin directory to pass on the command line.
+fn materialize_plugin(ws: &Workspace) -> Result<PathBuf> {
+    let dir = ws.plugin_dir();
+    // Clear any prior copy so a removed skill doesn't survive between runs.
+    if dir.exists() {
+        fs::remove_dir_all(&dir).context("clearing the stale .ralphy/plugin")?;
+    }
+    fs::create_dir_all(&dir).context("creating .ralphy/plugin")?;
+    PLUGIN
+        .extract(&dir)
+        .context("extracting the embedded plugin to .ralphy/plugin")?;
+    Ok(dir)
+}
 
 /// Select the planning prompt for an issue. Returns `(prompt, staged)` where
 /// `staged` is `true` when the issue carries the `stagedplan` label.
@@ -222,6 +247,7 @@ impl ClaudeAgent {
         &self,
         cmd_dir: &Path,
         settings: &Path,
+        plugin_dir: &Path,
         model: &str,
         timeout: Duration,
         call_index: u32,
@@ -231,6 +257,8 @@ impl ClaudeAgent {
             "--dangerously-skip-permissions".into(),
             "--settings".into(),
             settings.to_string_lossy().into_owned(),
+            "--plugin-dir".into(),
+            plugin_dir.to_string_lossy().into_owned(),
             "--model".into(),
             model.into(),
         ];
@@ -307,6 +335,7 @@ impl ClaudeAgent {
             .context("writing .ralphy/exec.md")?;
 
         let settings_path = self.write_exec_settings()?;
+        let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
         let deadline = self.issue_deadline();
 
@@ -330,8 +359,14 @@ impl ClaudeAgent {
             }
 
             let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
-            let (exited, out) =
-                self.run_headless_call(ws.repo_root(), &settings_path, &exec_model, remaining, i)?;
+            let (exited, out) = self.run_headless_call(
+                ws.repo_root(),
+                &settings_path,
+                &plugin_dir,
+                &exec_model,
+                remaining,
+                i,
+            )?;
 
             let plan_md = fs::read_to_string(&plan.path).unwrap_or_default();
             let open_steps = plan::count_open_steps(&plan_md);
@@ -377,6 +412,10 @@ impl Agent for ClaudeAgent {
         let settings_path = self.run_dir.join("ralphy.settings.json");
         fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
 
+        // Provision the reviewer/staged-plan skills the prompt depends on, scoped
+        // to this run via --plugin-dir (no reliance on globally-installed skills).
+        let plugin_dir = materialize_plugin(ws)?;
+
         let (prompt, staged) = plan_prompt_for(issue);
 
         // `--model` first (as the ps1 oracle does), then the headless flags.
@@ -389,6 +428,8 @@ impl Agent for ClaudeAgent {
         args.push("--dangerously-skip-permissions".into());
         args.push("--settings".into());
         args.push(settings_path.to_string_lossy().into_owned());
+        args.push("--plugin-dir".into());
+        args.push(plugin_dir.to_string_lossy().into_owned());
         if let Some(e) = &self.plan_effort {
             args.push("--effort".into());
             args.push(e.clone());
@@ -454,6 +495,7 @@ impl Agent for ClaudeAgent {
         ensure_workspace_trusted(ws.repo_root());
 
         let settings_path = self.write_exec_settings()?;
+        let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
         let flag_file = self.run_dir.join("status.flag");
         let _ = fs::remove_file(&flag_file);
@@ -473,7 +515,9 @@ impl Agent for ClaudeAgent {
             .env("RALPHY_FLAG_FILE", &flag_file)
             .arg("--dangerously-skip-permissions")
             .arg("--settings")
-            .arg(settings_path.as_os_str());
+            .arg(settings_path.as_os_str())
+            .arg("--plugin-dir")
+            .arg(plugin_dir.as_os_str());
         cmd = cmd.arg("--model").arg(&exec_model);
         if let Some(e) = &self.exec.exec_effort {
             cmd = cmd.arg("--effort").arg(e);
@@ -895,6 +939,43 @@ mod tests {
             prompt, PROMPT_PLAN_STAGED,
             "should use the staged plan prompt"
         );
+    }
+
+    #[test]
+    fn materialize_plugin_extracts_required_skills() {
+        // The embedded plugin must carry the skills the prompts invoke; a run
+        // provisions them into .ralphy/plugin so claude finds them via
+        // --plugin-dir without depending on globally-installed skills.
+        let base = std::env::temp_dir().join(format!("ralphy-plugin-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+
+        let dir = materialize_plugin(&ws).expect("materialize");
+        assert_eq!(dir, ws.plugin_dir());
+        assert!(
+            dir.join(".claude-plugin/plugin.json").is_file(),
+            "plugin manifest must be materialized"
+        );
+        assert!(
+            dir.join("skills/reviewer/SKILL.md").is_file(),
+            "reviewer skill must be materialized"
+        );
+        assert!(
+            dir.join("skills/staged-plan/SKILL.md").is_file(),
+            "staged-plan skill must be materialized"
+        );
+        // Multi-file skills must come through whole, not just the SKILL.md.
+        assert!(
+            dir.join("skills/reviewer/scripts/audit.py").is_file(),
+            "reviewer helper scripts must be materialized"
+        );
+
+        // Idempotent: a second call clears and re-extracts cleanly.
+        materialize_plugin(&ws).expect("re-materialize");
+        assert!(dir.join("skills/reviewer/SKILL.md").is_file());
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

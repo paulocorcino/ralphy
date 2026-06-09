@@ -118,7 +118,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- Locate tools + target repo -----------------------------------------------
-$ScriptDir = $PSScriptRoot                                  # the global tool dir
+$ScriptDir = $PSScriptRoot                                  # legacy/ — hooks (guard/stop) live beside this script
+$PromptDir = Join-Path (Split-Path $ScriptDir -Parent) 'assets/prompts'  # prompt.*.md (also compiled into the Rust port)
 $RepoPath  = if ($RepoPath) { $RepoPath } else { (Get-Location).Path }
 $RepoRoot  = (git -C $RepoPath rev-parse --show-toplevel 2>$null)
 if (-not $RepoRoot) { throw "Not a git repository: $RepoPath (pass -RepoPath <repo>)." }
@@ -353,14 +354,14 @@ function Invoke-Issue {
     $ralphyDir = Join-Path $WorkDir '.ralphy'
     New-Item -ItemType Directory -Force -Path $ralphyDir | Out-Null
     gh issue view $IssueNum --json number,title,body,labels | Set-Content (Join-Path $ralphyDir 'issue.json') -Encoding utf8
-    Copy-Item (Join-Path $ScriptDir 'prompt.execute.md') (Join-Path $ralphyDir 'exec.md') -Force
+    Copy-Item (Join-Path $PromptDir 'prompt.execute.md') (Join-Path $ralphyDir 'exec.md') -Force
 
     # Plan fresh for every issue (fresh branch per run => no stale-plan reuse).
     $planPath = Join-Path $ralphyDir 'plan.md'
     Remove-Item -LiteralPath $planPath -ErrorAction SilentlyContinue
     $planPrompt = if ($StagedPlan) { 'prompt.plan.staged.md' } else { 'prompt.plan.md' }
     Log "  planning… [$(if($StagedPlan){'staged-plan skill'}else{'standard'})]"
-    Invoke-Plan -Cwd $WorkDir -PromptText (Get-Content (Join-Path $ScriptDir $planPrompt) -Raw) -OutLog (Join-Path $issueRun 'plan.log') -Staged:$StagedPlan
+    Invoke-Plan -Cwd $WorkDir -PromptText (Get-Content (Join-Path $PromptDir $planPrompt) -Raw) -OutLog (Join-Path $issueRun 'plan.log') -Staged:$StagedPlan
 
     $open = Get-OpenSteps $planPath
     if ($open -lt 0) { Log "  no plan written — skipping issue."; return 'infeasible' }
@@ -384,7 +385,7 @@ function Invoke-Issue {
     $before = (git -C $WorkDir rev-parse HEAD).Trim()
     if ($HeadlessExec) {
         $promptFile = Join-Path $issueRun 'exec-prompt.in'
-        Get-Content (Join-Path $ScriptDir 'prompt.execute.md') -Raw | Set-Content $promptFile -Encoding utf8
+        Get-Content (Join-Path $PromptDir 'prompt.execute.md') -Raw | Set-Content $promptFile -Encoding utf8
         Log "  executing [headless -p]…"
         $status = Invoke-ExecLoop -Cwd $WorkDir -PlanPath $planPath -IssueRun $issueRun -PromptFile $promptFile -Model $execModel
     } else {

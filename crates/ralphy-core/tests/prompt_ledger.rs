@@ -7,7 +7,7 @@ use ralphy_core::VerdictKind;
 const VERIFIED_CRITERION: &str = "cargo test passes with new test covering parse_ledger";
 const REVIEW_ONLY_CRITERION: &str = "a dry-run plan mirrors the issue criteria verbatim";
 
-/// Read the root-level `prompt.plan.md` and verify that the canonical ledger
+/// Read `assets/prompts/prompt.plan.md` and verify that the canonical ledger
 /// example embedded in it is parseable and produces the expected `Verdict`s.
 ///
 /// This test FAILS when the example is absent from the prompt (i.e. before
@@ -15,9 +15,9 @@ const REVIEW_ONLY_CRITERION: &str = "a dry-run plan mirrors the issue criteria v
 /// documented format is exactly what the #12 parser accepts.
 #[test]
 fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
-    let prompt_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../prompt.plan.md");
+    let prompt_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/prompts/prompt.plan.md");
     let content =
-        std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at the repo root");
+        std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
 
     let verdicts = parse_ledger(&content);
 
@@ -65,9 +65,9 @@ fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
 /// assertion proves that apply_ledger matches the specific canonical criterion text.
 #[test]
 fn prompt_plan_verified_example_ticks_matching_issue_body_line() {
-    let prompt_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../prompt.plan.md");
+    let prompt_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/prompts/prompt.plan.md");
     let content =
-        std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at the repo root");
+        std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
 
     let verdicts = parse_ledger(&content);
 

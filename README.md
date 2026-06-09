@@ -66,7 +66,7 @@ plan-then-interactive-execute flow:
   `--stop-on-limit` restores the old stop-and-report behaviour.
 
 ```
-ralphy.ps1 -RepoPath <repo>
+legacy/ralphy.ps1 -RepoPath <repo>
   └─ precondition: target working tree is clean
      create afk/run-<stamp>  (in place, off -BaseBranch)
      for each open ready-for-agent issue, ascending #:
@@ -87,17 +87,24 @@ ralphy.ps1 -RepoPath <repo>
 
 | File | Role |
 |------|------|
-| `ralphy.ps1` | Orchestrator: `-RepoPath`, queue, in-place run branch, plan, interactive/headless execute. |
-| `prompt.plan.md` | Standard planning pass (`-p`) → `.ralphy/plan.md`. |
-| `prompt.plan.staged.md` | Planning pass for `stagedplan`-labelled issues — uses the `staged-plan` skill. |
-| `prompt.execute.md` | The execution session's charter (copied to `.ralphy/exec.md`). |
-| `execplans.md` | The planning philosophy the prompts encode (observable acceptance, anchored steps, decide-and-justify). |
-| `guard.ps1` | `PreToolUse` hook — destructive-command deny-list + tooling self-protection. |
-| `stop_exit_hook.ps1` | `Stop` hook — writes the exit signal to the flag file. |
+| `legacy/ralphy.ps1` | Original PowerShell orchestrator (being superseded by the Rust `ralphy run`): `-RepoPath`, queue, in-place run branch, plan, interactive/headless execute. |
+| `assets/prompts/prompt.plan.md` | Standard planning pass (`-p`) → `.ralphy/plan.md`. |
+| `assets/prompts/prompt.plan.staged.md` | Planning pass for `stagedplan`-labelled issues — uses the `staged-plan` skill. |
+| `assets/prompts/prompt.execute.md` | The execution session's charter (copied to `.ralphy/exec.md`). |
+| `docs/execplans.md` | The planning philosophy the prompts encode (observable acceptance, anchored steps, decide-and-justify). |
+| `assets/plugin/` | The operational Claude Code plugin (the `reviewer` + `staged-plan` skills the prompts invoke). Embedded into the binary at build time and provisioned per run. |
+| `legacy/guard.ps1` | `PreToolUse` hook — destructive-command deny-list + tooling self-protection (ported to `ralphy hook guard`). |
+| `legacy/stop_exit_hook.ps1` | `Stop` hook — writes the exit signal to the flag file (ported to `ralphy hook stop`). |
 | `<repo>/.ralphy/runs/<stamp>/` | Per-run logs + generated `ralphy.settings.json`, under the **target** repo (gitignore `.ralphy/`). |
+| `<repo>/.ralphy/plugin/` | The plugin materialized from `assets/plugin/` each run and passed to every `claude` call via `--plugin-dir` (gitignored scratch). |
 
 The hooks are injected only into the runner's `claude` calls via `--settings`,
-so your normal interactive Claude use is untouched.
+so your normal interactive Claude use is untouched. The skills the prompts depend
+on (`reviewer`, `staged-plan`) ship **inside the binary** (`assets/plugin/`):
+every run materializes them to the target's `.ralphy/plugin/` and hands them to
+`claude` with `--plugin-dir`, so a run never relies on whatever skills happen to
+be installed globally on the machine — and your global `~/.claude/skills/` is
+never touched.
 
 ## How the interactive session self-terminates
 
@@ -109,7 +116,7 @@ first word survives):
 
 1. The agent works the plan, then prints `RALPHY_DONE_EXIT` (or
    `RALPHY_BLOCKED_EXIT <reason>`).
-2. On its next turn-end, the **Stop hook** (`stop_exit_hook.ps1`) sees the token
+2. On its next turn-end, the **Stop hook** (`legacy/stop_exit_hook.ps1`) sees the token
    (from the payload or the transcript) and writes `DONE`/`BLOCKED …` to
    `RALPHY_FLAG_FILE`. It does **not** kill anything.
 3. The orchestrator polls that file (every 3s). When it appears, it kills the
@@ -118,7 +125,7 @@ first word survives):
 
 ## Safeguards (unattended)
 
-- **`guard.ps1` deny-list** (`PreToolUse`): blocks `git push`, `reset --hard`,
+- **`legacy/guard.ps1` deny-list** (`PreToolUse`): blocks `git push`, `reset --hard`,
   `clean`, `rebase`, branch switches, `git worktree`, `gh pr merge/close`,
   recursive deletes, pipe-to-shell, and writes to secrets / `.git/` / **Ralphy's
   own tooling** (anchored on the tool dir's absolute path). Required because the
@@ -152,24 +159,24 @@ first word survives):
 
 ```powershell
 # 1) Plan only, one issue. No execution, no commits. Inspect .ralphy/plan.md.
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13 -DryRun
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13 -DryRun
 
 # 2) One issue, full plan + interactive execution. Follow it from the Claude
 #    mobile app (session "ralphy-13"). Commits onto afk/run-<stamp>.
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -OnlyIssue 13
 
 # 3) The overnight run across the whole ready-for-agent queue (ascending order).
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -DeadlineHours 8
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -DeadlineHours 8
 
 # -RepoPath defaults to the current directory:
-cd C:\Dev\foo; pwsh -File ~\ralphy\ralphy.ps1 -OnlyIssue 13
+cd C:\Dev\foo; pwsh -File ~\ralphy\legacy\ralphy.ps1 -OnlyIssue 13
 
 # Cut the run from a different base; force a model for every issue (overrides the
 # plan's judgment); disable Remote Control; or use headless -p (premium-metered):
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -BaseBranch feature/x
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -ExecModel opus
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -NoRemoteControl
-pwsh -File ~\ralphy\ralphy.ps1 -RepoPath C:\Dev\foo -HeadlessExec
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -BaseBranch feature/x
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -ExecModel opus
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -NoRemoteControl
+pwsh -File ~\ralphy\legacy\ralphy.ps1 -RepoPath C:\Dev\foo -HeadlessExec
 ```
 
 Morning review (in the target repo):

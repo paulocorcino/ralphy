@@ -10,6 +10,7 @@ description = "Claude Code adapter for Ralphy: drives `claude -p` behind the cor
 anyhow.workspace = true
 tracing.workspace = true
 regex.workspace = true
+include_dir.workspace = true
 serde_json.workspace = true
 ralphy-core.workspace = true
 ralphy-pty.workspace = true

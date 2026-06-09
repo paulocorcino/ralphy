@@ -1,0 +1,6 @@
+{
+  "name": "ralphy-ops",
+  "version": "0.1.0",
+  "description": "Operational skills Ralphy provisions into the target repo's .ralphy/plugin for each run: the reviewer self-review skill and the staged-plan design skill the planning/execution prompts depend on.",
+  "author": { "name": "Ralphy" }
+}
