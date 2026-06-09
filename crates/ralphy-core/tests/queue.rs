@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use ralphy_core::{
     run_queue, Agent, BranchMode, Issue, IssueTracker, Outcome, Plan, QueueConfig, RunClock,
-    StopReason, Workspace,
+    StopReason, Verdict, Workspace,
 };
 
 /// Plans a feasible step for every issue and returns a scripted sequence of
@@ -28,6 +28,8 @@ struct ScriptedAgent {
     executed: RefCell<Vec<u64>>,
     /// Open steps written by `plan` — set to 0 to script an infeasible issue.
     steps: usize,
+    /// If set, appended to the plan as a `## Acceptance ledger` section.
+    ledger: Option<String>,
 }
 
 impl ScriptedAgent {
@@ -37,7 +39,13 @@ impl ScriptedAgent {
             planned: RefCell::new(Vec::new()),
             executed: RefCell::new(Vec::new()),
             steps: 1,
+            ledger: None,
         }
+    }
+
+    fn with_ledger(mut self, ledger: impl Into<String>) -> Self {
+        self.ledger = Some(ledger.into());
+        self
     }
 }
 
@@ -46,10 +54,16 @@ impl Agent for ScriptedAgent {
         self.planned.borrow_mut().push(issue.number);
         fs::create_dir_all(ws.ralphy_dir())?;
         let path = ws.plan_path();
+        let ledger_section = self
+            .ledger
+            .as_deref()
+            .map(|l| format!("\n## Acceptance ledger\n\n{l}"))
+            .unwrap_or_default();
         let body = format!(
-            "# Plan for #{}\n\n## Steps\n{}",
+            "# Plan for #{}\n\n## Steps\n{}{}",
             issue.number,
-            "- [ ] do a thing\n".repeat(self.steps)
+            "- [ ] do a thing\n".repeat(self.steps),
+            ledger_section,
         );
         fs::write(&path, body)?;
         Ok(Plan {
@@ -77,17 +91,25 @@ impl Agent for ScriptedAgent {
     }
 }
 
-/// Records every `(number, comment)` close so tests can assert exactly which
-/// issues were closed and what the comment said. Never mutates labels — there is
-/// no label API here, which is the point.
+/// Records every `(number, comment)` close and every `write_evidence` call so
+/// tests can assert exactly which issues were closed and what evidence was
+/// written. Never mutates labels — there is no label API here, which is the point.
 #[derive(Default)]
 struct RecordingTracker {
     closes: RefCell<Vec<(u64, String)>>,
+    evidence_writes: RefCell<Vec<(u64, Vec<Verdict>)>>,
 }
 
 impl IssueTracker for RecordingTracker {
     fn close(&self, number: u64, comment: &str) -> anyhow::Result<()> {
         self.closes.borrow_mut().push((number, comment.to_string()));
+        Ok(())
+    }
+
+    fn write_evidence(&self, number: u64, _body: &str, verdicts: &[Verdict]) -> anyhow::Result<()> {
+        self.evidence_writes
+            .borrow_mut()
+            .push((number, verdicts.to_vec()));
         Ok(())
     }
 }
@@ -600,6 +622,66 @@ fn report_carries_commit_count_and_oneline() {
         report.oneline.len(),
         report.commits,
         "one oneline entry per counted commit"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_close_calls_write_evidence_with_parsed_verdicts() {
+    let repo = init_repo("evidence-write");
+    // The ledger contains one verified criterion: the runner must call
+    // write_evidence with it after the green close.
+    let ledger = "- [verified] Some AC — evidence: unit test proves it\n";
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
+    let tracker = RecordingTracker::default();
+
+    run_queue(
+        &cfg(&repo, "stamp-evidence", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let writes = tracker.evidence_writes.borrow();
+    assert_eq!(
+        writes.len(),
+        1,
+        "write_evidence called once for the green issue"
+    );
+    let (number, verdicts) = &writes[0];
+    assert_eq!(*number, 1);
+    assert_eq!(verdicts.len(), 1);
+    assert_eq!(verdicts[0].criterion, "Some AC");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_close_with_no_ledger_skips_write_evidence() {
+    let repo = init_repo("evidence-noop");
+    // No ledger section in the plan — write_evidence must not be called.
+    let queue = vec![issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]); // no ledger
+    let tracker = RecordingTracker::default();
+
+    run_queue(
+        &cfg(&repo, "stamp-noop", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // Issue was closed (green) but write_evidence was never called.
+    assert_eq!(tracker.closes.borrow().len(), 1, "issue still closed");
+    assert!(
+        tracker.evidence_writes.borrow().is_empty(),
+        "no evidence-write when ledger is absent"
     );
 
     fs::remove_dir_all(&repo).ok();

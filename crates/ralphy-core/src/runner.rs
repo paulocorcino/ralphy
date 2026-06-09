@@ -8,7 +8,7 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
-use crate::{git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
+use crate::{acceptance, git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
 
 /// The run's global deadline, behind a trait so "don't start a new issue past
 /// the budget" is deterministically testable — an [`Instant`] can't be
@@ -335,6 +335,16 @@ pub fn run_queue(
             // Close the cycle: a green queue issue is closed so it leaves the
             // queue; its labels are untouched and the branch is merged by hand.
             tracker.close(issue.number, &close_comment(&cfg.stamp, &branch))?;
+
+            // Write acceptance evidence when the plan carries a ledger. A
+            // missing or empty ledger is a graceful no-op.
+            if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
+                let verdicts = acceptance::parse_ledger(&plan_md);
+                if !verdicts.is_empty() {
+                    tracker.write_evidence(issue.number, &issue.body, &verdicts)?;
+                }
+            }
+
             info!(number = issue.number, "green — issue closed");
             worked.push(IssueResult {
                 number: issue.number,

@@ -114,6 +114,52 @@ pub fn close_issue(number: u64, comment: &str) -> Result<()> {
     Ok(())
 }
 
+/// Edit a GitHub issue's body by sending the new content via stdin to
+/// `gh issue edit <n> --body-file -`. Mirrors `close_issue`'s spawn/error pattern.
+pub fn edit_issue_body(number: u64, body: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = Command::new("gh")
+        .args(["issue", "edit", &number.to_string(), "--body-file", "-"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+
+    child
+        .stdin
+        .take()
+        .expect("stdin was piped")
+        .write_all(body.as_bytes())
+        .context("writing body to `gh` stdin")?;
+
+    let out = child
+        .wait_with_output()
+        .context("waiting for `gh issue edit`")?;
+    if !out.status.success() {
+        bail!(
+            "`gh issue edit {number}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// Post a comment on a GitHub issue via `gh issue comment <n> --body <comment>`.
+pub fn comment_issue(number: u64, comment: &str) -> Result<()> {
+    let out = Command::new("gh")
+        .args(["issue", "comment", &number.to_string(), "--body", comment])
+        .output()
+        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`gh issue comment {number}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Parse a `docs/agents/triage-labels.md` table row. Scans `doc` for
 /// `|`-delimited rows, strips backticks, trims each cell, and returns cell[2]
 /// when cell[1] == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.

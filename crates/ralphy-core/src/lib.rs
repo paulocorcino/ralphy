@@ -10,11 +10,13 @@ mod runner;
 mod tracker;
 mod types;
 
+pub mod acceptance;
 pub mod git;
 pub mod github;
 pub mod gitignore;
 pub mod plan;
 
+pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
 pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
