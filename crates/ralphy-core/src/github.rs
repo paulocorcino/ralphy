@@ -63,13 +63,23 @@ pub fn build_queue(batches: Vec<Vec<Issue>>) -> Vec<Issue> {
     by_number.into_values().collect()
 }
 
+/// A `gh` command rooted at `repo_root`. Ralphy is a global tool driven with
+/// `--repo`, so the process cwd need not be the target repo; `gh` resolves the
+/// repository from its working directory, so every GitHub call must be pinned to
+/// `repo_root` or it would silently target the wrong repo (or none).
+fn gh(repo_root: &Path) -> Command {
+    let mut cmd = Command::new("gh");
+    cmd.current_dir(repo_root);
+    cmd
+}
+
 /// Build the run queue from GitHub. `gh --label` is an AND filter, so query each
 /// label separately and union the batches — an issue carrying ANY queue label
 /// qualifies. Returns the deduped, ascending queue.
-pub fn list_queue(labels: &[String]) -> Result<Vec<Issue>> {
+pub fn list_queue(labels: &[String], repo_root: &Path) -> Result<Vec<Issue>> {
     let mut batches = Vec::with_capacity(labels.len());
     for label in labels {
-        let out = Command::new("gh")
+        let out = gh(repo_root)
             .args([
                 "issue",
                 "list",
@@ -98,8 +108,8 @@ pub fn list_queue(labels: &[String]) -> Result<Vec<Issue>> {
 /// Close a green queue issue with a comment pointing at the run branch. The
 /// issue's labels are left untouched — closing alone removes it from the queue
 /// (the cycle); the human still merges the branch by hand.
-pub fn close_issue(number: u64, comment: &str) -> Result<()> {
-    let out = Command::new("gh")
+pub fn close_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
+    let out = gh(repo_root)
         .args(["issue", "close", &number.to_string(), "--comment", comment])
         .output()
         .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
@@ -114,11 +124,11 @@ pub fn close_issue(number: u64, comment: &str) -> Result<()> {
 
 /// Edit a GitHub issue's body by sending the new content via stdin to
 /// `gh issue edit <n> --body-file -`. Mirrors `close_issue`'s spawn/error pattern.
-pub fn edit_issue_body(number: u64, body: &str) -> Result<()> {
+pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> {
     use std::io::Write;
     use std::process::Stdio;
 
-    let mut child = Command::new("gh")
+    let mut child = gh(repo_root)
         .args(["issue", "edit", &number.to_string(), "--body-file", "-"])
         .stdin(Stdio::piped())
         .spawn()
@@ -145,8 +155,8 @@ pub fn edit_issue_body(number: u64, body: &str) -> Result<()> {
 }
 
 /// Post a comment on a GitHub issue via `gh issue comment <n> --body <comment>`.
-pub fn comment_issue(number: u64, comment: &str) -> Result<()> {
-    let out = Command::new("gh")
+pub fn comment_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
+    let out = gh(repo_root)
         .args(["issue", "comment", &number.to_string(), "--body", comment])
         .output()
         .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
@@ -172,8 +182,8 @@ fn parse_issue_state(json: &str) -> Result<bool> {
 
 /// Return `true` when the given issue number is closed, by running
 /// `gh issue view <n> --json state`.
-pub fn issue_is_closed(number: u64) -> Result<bool> {
-    let out = Command::new("gh")
+pub fn issue_is_closed(number: u64, repo_root: &Path) -> Result<bool> {
+    let out = gh(repo_root)
         .args(["issue", "view", &number.to_string(), "--json", "state"])
         .output()
         .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;

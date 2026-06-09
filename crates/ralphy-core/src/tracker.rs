@@ -2,6 +2,8 @@
 //! behind a trait — the way [`crate::Agent`] isolates the agent CLI — lets the
 //! whole queue loop be exercised in tests without touching `gh`.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 
 use crate::acceptance::{self, Verdict};
@@ -30,24 +32,37 @@ pub trait IssueTracker {
 }
 
 /// The production tracker: closes issues and writes acceptance evidence through
-/// the `gh` CLI.
-pub struct GhTracker;
+/// the `gh` CLI, pinned to the `--repo` target so every call hits the right
+/// repository regardless of the process's working directory.
+pub struct GhTracker {
+    repo_root: PathBuf,
+}
+
+impl GhTracker {
+    /// Create a tracker whose `gh` calls run against `repo_root` (the `--repo`
+    /// target), not the process cwd.
+    pub fn new(repo_root: impl Into<PathBuf>) -> Self {
+        Self {
+            repo_root: repo_root.into(),
+        }
+    }
+}
 
 impl IssueTracker for GhTracker {
     fn close(&self, number: u64, comment: &str) -> Result<()> {
-        github::close_issue(number, comment)
+        github::close_issue(number, comment, &self.repo_root)
     }
 
     fn write_evidence(&self, number: u64, body: &str, verdicts: &[Verdict]) -> Result<()> {
         let tick = acceptance::apply_ledger(body, verdicts);
         if !tick.ticked.is_empty() {
-            github::edit_issue_body(number, &tick.new_body)?;
+            github::edit_issue_body(number, &tick.new_body, &self.repo_root)?;
         }
         let comment = acceptance::evidence_comment(verdicts, &tick.unmatched);
-        github::comment_issue(number, &comment)
+        github::comment_issue(number, &comment, &self.repo_root)
     }
 
     fn is_closed(&self, number: u64) -> Result<bool> {
-        github::issue_is_closed(number)
+        github::issue_is_closed(number, &self.repo_root)
     }
 }

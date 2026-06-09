@@ -186,7 +186,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // (applied as a post-build filter, parity with the ps1 `$OnlyIssue`).
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
     let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
-    let mut queue = github::list_queue(&effective_labels)?;
+    let mut queue = github::list_queue(&effective_labels, &repo_root)?;
     if let Some(only) = args.only_issue {
         queue.retain(|i| i.number == only);
     }
@@ -265,7 +265,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let clock = WallClock {
         deadline: run_deadline,
     };
-    let tracker = GhTracker;
+    let tracker = GhTracker::new(cfg.repo_root.clone());
 
     let report = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock)?;
 
