@@ -26,8 +26,9 @@
       timeout, stuck, usage limit), the run stops and hands you the branch as
       it stands. Completed issues stay committed; the stalled issue's partial
       commits are left in place for you to inspect.
-    * Subscription-friendly: no USD cap (no API spend). A usage limit is treated
-      as a stop — the runner reports the reset time and you re-run manually.
+    * Subscription-friendly: no USD cap (no API spend). On a usage limit the
+      runner waits for the reset and auto-resumes the same issue by default
+      (--stop-on-limit restores the old stop-and-report behaviour).
 
     Hooks (guard deny-list) are injected via --settings, scoped to the runner;
     your global ~/.claude/settings.json is never touched.

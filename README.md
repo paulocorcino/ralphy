@@ -45,9 +45,9 @@ plan-then-interactive-execute flow:
   worktree, so the warm build cache (`target/`, `node_modules`, …) is reused. A
   clean working tree is required in both modes.
 - **Stop at first non-green**: the moment an issue does **not** finish green
-  (BLOCKED / timeout / stuck / usage limit), the whole run stops and hands you
-  the branch as it stands. Completed issues stay committed; the stalled issue's
-  partial commits are left in place to inspect.
+  (BLOCKED / timeout / stuck), the whole run stops and hands you the branch as it
+  stands. Completed issues stay committed; the stalled issue's partial commits are
+  left in place to inspect. (A usage limit is the exception — see below.)
 - **Closes the cycle on green**: a green queue issue is **closed** by the runner
   (with a comment pointing at the run branch — the label is left untouched; you
   still merge by hand). `-DryRun` never closes.
@@ -57,8 +57,13 @@ plan-then-interactive-execute flow:
   label (create it in your repo); `-OnlyIssue` overrides it. Use it to inspect or
   test something before the agent reaches a particular issue, without unmarking
   everything after it.
-- **Subscription-friendly**: no USD cap (there's no API spend). A usage limit is
-  a normal **stop** — the runner reports the reset time and you re-run manually.
+- **Subscription-friendly**: no USD cap (there's no API spend). On a usage limit
+  the runner **waits for the reset and auto-resumes the same issue** by default —
+  re-running `execute()` against the committed history and the live `plan.md`
+  (never `claude --resume`; see [ADR-0003](docs/adr/0003-usage-limit-handling.md)).
+  A progress-aware cap abandons an issue after two consecutive resumes that commit
+  nothing, and a reset beyond the run deadline stops instead of waiting.
+  `--stop-on-limit` restores the old stop-and-report behaviour.
 
 ```
 ralphy.ps1 -RepoPath <repo>
@@ -197,9 +202,11 @@ branch so you can fix the stalled issue in place, then commit and continue.
   repo's `.gitignore` on the first run, so artifacts never leak into commits.
 - **One base per run.** For issues that need different bases, run twice with
   different `-BaseBranch`.
-- **Usage limit = stop.** The runner reports the reset time; re-run manually
-  after it. (The older auto-reschedule was dropped — it conflicts with the
-  new-branch-per-run model.)
+- **Usage limit = wait and resume.** By default the runner blocks until the
+  parsed reset (plus a 5-minute buffer), then re-runs the same issue in-process
+  from git + `plan.md` — bounded by the run deadline and a progress-aware cap.
+  `--stop-on-limit` restores stop-and-report. Resume is never `claude --resume`
+  (see [ADR-0003](docs/adr/0003-usage-limit-handling.md)).
 
 ## Credits
 
