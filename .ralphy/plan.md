@@ -1,49 +1,39 @@
-# Plan for #20: Add a release profile to shrink the distributed binary
+# Plan for #21: Document the edition-2024 migration for env::set_var
 
 ## Feasible: yes
-The workspace `Cargo.toml` has no `[profile.release]`. Adding one with the three
-requested keys is a single, localized edit verifiable by a successful release build.
+The call site (`crates/ralphy-cli/src/main.rs:190`) already exists with a partial
+comment; the task is to expand that comment to capture the three documented
+points. Purely a comment change, no behavior touched.
 
 ## Execution model: sonnet
-Mechanical edit — append a fixed `[profile.release]` table to one file; no logic,
-concurrency, or design judgment involved.
+Single-file, localized comment edit at a known line with no logic change — the
+most mechanical kind of task. Sonnet handles this trivially.
 
 ## Done when
-- `cargo build --release` succeeds with the new profile in place.
-- `[profile.release]` is present in the workspace `C:\Dev\ralphy\Cargo.toml` with
-  `strip = true`, `lto = "thin"`, and `codegen-units = 1`.
-- Review-only: the release binary is smaller than before the change (record the
-  before/after byte size of the produced binary in the PR description). This is
-  not asserted by `cargo test`; a human confirms the size reduction in the PR.
+- `cargo test --workspace` is clean (no behavior change; this is the issue's own
+  acceptance criterion).
+- `cargo fmt` leaves the file unchanged and no new warnings appear.
+- Review-only: the comment at the `set_var` call states (a) why `""` and not
+  `remove_var` (claude's empty-vs-absent handling is unverified; `""` is the
+  intentional ps1-parity behavior), (b) the single-threaded safety precondition
+  that makes the 2021-edition call sound, and (c) that edition-2024 migration
+  must wrap the call in `unsafe`. Only a human can confirm the prose conveys
+  these three points.
+
+## Decisions
+- Decision: do not add a test for this change. Why: it is documentation-only with
+  no observable behavior to assert; the verifiable gate is that `cargo test`
+  stays clean, per the issue's own acceptance criteria. (Adding a "failing"
+  test would be artificial and is not what the issue asks for.)
 
 ## Steps
-- [x] In `C:\Dev\ralphy\Cargo.toml`, append a `[profile.release]` section after the
-      `[workspace.dependencies]` block with `strip = true`, `lto = "thin"`, and
-      `codegen-units = 1`.
-- [x] Build the release artifact (`cargo build --release`) and record the binary
-      size; note the before-size (build at the parent commit if needed) and
-      after-size for the PR description (review-only acceptance evidence).
-- [x] Add/confirm a test that proves the profile is wired correctly: in
-      `crates/ralphy-core/tests/` add an integration test that parses the
-      workspace `Cargo.toml` (e.g. via `toml`/`serde_json` over `cargo metadata`,
-      or a simple string check on the file) asserting the three release-profile
-      keys are present — failing before the edit, passing after. If no parsing
-      dependency is readily available, gate on a `#[test]` that reads
-      `../../Cargo.toml` and asserts the substrings `strip = true`,
-      `lto = "thin"`, `codegen-units = 1`.
-- [x] Self-review: spawn the `reviewer` skill as an independent subagent over ONLY
-      the commits made for this issue. Resolve every HIGH finding; if one cannot
-      be fixed autonomously, record it under `## Notes & decisions` and block
-      instead of declaring done.
-- [x] cargo fmt && cargo test pass with no new warnings.
-
-## Notes for review
-- After-size of `ralphy.exe`: **3,644,928 bytes** (3.5 MB). Before-size could not
-  be recorded without `git checkout` (forbidden by exec rules); the PR reviewer
-  should compare against the prior release build from `main`.
-
-## Notes & decisions
-- Before-size unavailable in this session: `git checkout` is forbidden by exec
-  rules, so the parent-commit baseline build was skipped. After-size is 3,644,928 B.
-- Self-review step: no HIGH findings — the change is a single TOML append plus a
-  one-assertion integration test; no logic, no unsafe, no API surface changes.
+- [x] In `crates/ralphy-cli/src/main.rs`, replace the existing two-line comment
+      above `std::env::set_var("ANTHROPIC_API_KEY", "")` (lines 188-189) with an
+      expanded comment covering: (a) why `""` not `remove_var`, (b) the
+      single-threaded safety precondition, (c) the edition-2024 `unsafe`-wrap
+      requirement. Leave the `set_var` line itself unchanged.
+- [ ] Self-review: spawn the `reviewer` skill as an independent subagent over
+      ONLY this run's own commits for issue #21 (not the whole branch). Resolve
+      every HIGH finding before finishing; if one cannot be fixed autonomously,
+      record it under `## Notes & decisions` and block instead of declaring done.
+- [ ] cargo fmt && cargo test --workspace pass with no new warnings.
