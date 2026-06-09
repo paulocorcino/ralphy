@@ -20,7 +20,9 @@ pub fn parse_blocked_by(body: &str) -> Vec<u64> {
     let end = end_re.find(after).map(|m| m.start()).unwrap_or(after.len());
     let section = &after[..end];
 
-    let ref_re = Regex::new(r"#(\d+)").expect("valid regex");
+    // Match only bullet-list items: `- #N` (leading whitespace optional).
+    // This avoids treating prose references like "step #3" as issue refs.
+    let ref_re = Regex::new(r"(?m)^\s*-\s*#(\d+)").expect("valid regex");
     ref_re
         .captures_iter(section)
         .map(|c| c[1].parse::<u64>().expect("matched digits"))
@@ -53,5 +55,12 @@ mod tests {
     fn stops_at_next_heading() {
         let body = "## Blocked by\n- #3\n## Other\n- #9\n";
         assert_eq!(parse_blocked_by(body), vec![3]);
+    }
+
+    #[test]
+    fn prose_refs_are_not_collected() {
+        // "#3" appears in prose, not as a bullet item — must be ignored.
+        let body = "## Blocked by\nStep #3 must finish before #7 merges\n- #7\n";
+        assert_eq!(parse_blocked_by(body), vec![7]);
     }
 }

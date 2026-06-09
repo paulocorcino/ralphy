@@ -374,6 +374,16 @@ pub fn run_queue(
             // queue; its labels are untouched and the branch is merged by hand.
             tracker.close(issue.number, &close_comment(&cfg.stamp, &branch))?;
 
+            // Record the closed issue before writing evidence so the result is
+            // always present in the report even if write_evidence errors out.
+            info!(number = issue.number, "green — issue closed");
+            worked.push(IssueResult {
+                number: issue.number,
+                outcome: Some(Outcome::Done),
+                closed: true,
+                blocked_by: Vec::new(),
+            });
+
             // Write acceptance evidence when the plan carries a ledger. A
             // missing or empty ledger is a graceful no-op.
             if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
@@ -383,13 +393,6 @@ pub fn run_queue(
                 }
             }
 
-            info!(number = issue.number, "green — issue closed");
-            worked.push(IssueResult {
-                number: issue.number,
-                outcome: Some(Outcome::Done),
-                closed: true,
-                blocked_by: Vec::new(),
-            });
             continue;
         }
 
