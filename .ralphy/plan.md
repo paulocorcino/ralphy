@@ -1,64 +1,38 @@
-# Plan for #17: Harden the interactive PTY execute() session lifecycle
+# Plan for #18: Dedup GhIssue to Issue mapping with impl From
 
 ## Feasible: yes
-Both fixes are localized to `crates/ralphy-agent-claude/src/lib.rs` and the
-acceptance criteria are directly test-verifiable (a unit test for the split DSR
-sequence; the kill-before-propagate reorder is a small, mechanical change).
+`crates/ralphy-core/src/github.rs` duplicates the `GhIssue -> Issue` field
+closure in `parse_issue` (lines 32-37) and `parse_issue_list` (lines 46-51).
+Both can collapse onto a single `impl From<GhIssue> for Issue`, and the existing
+tests (`parses_issue_with_labels`, `parse_issue_list_reads_array`, etc.) verify
+behavior is unchanged.
 
 ## Execution model: sonnet
-Two small, well-understood, localized changes in one file — a rolling-tail scan
-helper with a unit test and a 3-line reorder on the error path. No tricky
-concurrency, lifetimes, or design ambiguity.
+Localized, mechanical refactor in one file: extract one `From` impl and rewire
+two call sites. No design ambiguity or cross-cutting concerns.
 
 ## Done when
-- `cargo test --workspace` passes, including a new unit test proving a
-  `CURSOR_POSITION_REQUEST` (`ESC[6n`) split across two consecutive chunks is
-  detected by the pure scan helper (and that an unsplit/absent sequence behaves
-  as expected).
-- `cargo clippy --workspace --all-targets` is clean with no new warnings.
-- Review-only: in `execute()`, the PTY child is killed even when
-  `drive_session` returns an `Err` — verified by reading the reordered code in
-  the PR (the result is captured, `session.kill()` runs, then the result is
-  propagated).
-
-## Decisions
-- Decision: model the rolling tail as a pure free function
-  `scan_dsr_request(carry: &mut Vec<u8>, chunk: &[u8]) -> bool` that appends the
-  chunk to `carry`, searches the combined buffer with the existing
-  `find_subslice`, then truncates `carry` to its last
-  `CURSOR_POSITION_REQUEST.len() - 1` bytes (so a future split match is still
-  possible but the just-matched bytes can't re-fire). Why: keeps the scan pure
-  and unit-testable without a live PTY while owning the carry-over state in one
-  place, matching the issue's "factor the scan into a pure helper" instruction.
+- `cargo test -p ralphy-core` passes with all existing github tests green,
+  including `parses_issue_with_labels`, `tolerates_missing_body_and_labels`, and
+  `parse_issue_list_reads_array`.
+- A new test asserts `Issue::from(GhIssue { .. })` maps every field (number,
+  title, body, labels) — fails to compile before the impl exists, passes after.
 
 ## Steps
-- [x] In `crates/ralphy-agent-claude/src/lib.rs`, add the pure helper
-      `fn scan_dsr_request(carry: &mut Vec<u8>, chunk: &[u8]) -> bool` near
-      `find_subslice` (line ~912): extend `carry` with `chunk`, compute
-      `found = find_subslice(carry, CURSOR_POSITION_REQUEST).is_some()`, then
-      drain `carry` down to its last `CURSOR_POSITION_REQUEST.len() - 1` bytes;
-      return `found`.
-- [x] In `drive_session` (line ~545), declare a `let mut dsr_carry: Vec<u8> =
-      Vec::new();` before the poll `loop`, and in the `while let Ok(chunk) =
-      rx.try_recv()` block (line ~564) replace the per-chunk
-      `find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some()` check with
-      `if scan_dsr_request(&mut dsr_carry, &chunk) { let _ =
-      session.write_all(CURSOR_POSITION_REPLY); }` (keep the existing log tee
-      untouched).
-- [x] In `execute()` (line ~534), change
-      `let outcome = self.drive_session(&mut session, &flag_file)?;` to capture
-      the result without `?`: `let result = self.drive_session(&mut session,
-      &flag_file);`, then `let _ = session.kill();`, then `result` (i.e.
-      `result` is the function's return, killing first). Remove the now-duplicate
-      trailing `Ok(outcome)`.
-- [x] In the `#[cfg(test)] mod tests` block (line ~918), add a test
-      `scan_dsr_request_detects_split_sequence` that feeds the 4-byte
-      `CURSOR_POSITION_REQUEST` across two chunks (e.g. `b"\x1b["` then
-      `b"6n"`), asserts the second call returns `true` and the first returns
-      `false`; also assert an unsplit chunk containing the sequence returns
-      `true` and a chunk with no sequence returns `false`. This FAILS before the
-      helper exists / with the old per-chunk logic and PASSES after.
-- [x] Self-review: no HIGH findings. Kill-before-propagate reorder is correct;
-      `scan_dsr_request` drain logic is verified by the unit test.
-- [x] `cargo fmt` && `cargo test --workspace` && `cargo clippy --workspace
-      --all-targets` pass with no new warnings.
+- [x] In `crates/ralphy-core/src/github.rs`, add `impl From<GhIssue> for Issue`
+      below the `GhIssue` struct (after line 27) that moves `number`, `title`,
+      `body`, and maps `labels` via `.into_iter().map(|l| l.name).collect()`.
+- [x] Rewrite `parse_issue` (lines 30-38) to return `Ok(Issue::from(g))`,
+      removing the inline field map.
+- [x] Rewrite `parse_issue_list` (lines 41-53) to use
+      `raw.into_iter().map(Issue::from).collect()`, removing the inline closure.
+- [x] In the `#[cfg(test)] mod tests`, add `from_ghissue_maps_all_fields` that
+      builds a `GhIssue` (with at least one `GhLabel`) and asserts
+      `Issue::from(g)` carries number, title, body, and labels through. This
+      test references `Issue::from` / the `From` impl, so it fails to build
+      before the impl is added and passes after.
+- [x] Self-review: spawn the `reviewer` skill as an independent subagent over
+      ONLY this issue's commits. Resolve every HIGH finding; if one cannot be
+      fixed autonomously, record it under `## Notes & decisions` and block
+      instead of declaring done.
+- [x] cargo fmt && cargo test pass with no new warnings.
