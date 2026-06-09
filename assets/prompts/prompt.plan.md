@@ -47,7 +47,7 @@ you only produce a plan that a later execution loop will consume.
    - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
 
    Example (two criteria, one of each kind):
-   - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
+   - [verified] cargo test passes with new test covering parse_ledger — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
    - [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR
 
    ## Decisions
@@ -108,5 +108,5 @@ you only produce a plan that a later execution loop will consume.
 Canonical format reference — the executor's `parse_ledger` function matches
 exactly these two line shapes (em dash `—`, literal `evidence:` key):
 
-- [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
+- [verified] cargo test passes with new test covering parse_ledger — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
 - [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR

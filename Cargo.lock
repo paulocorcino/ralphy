@@ -443,6 +443,7 @@ name = "ralphy-agent-codex"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "include_dir",
  "ralphy-core",
  "regex",
  "tracing",

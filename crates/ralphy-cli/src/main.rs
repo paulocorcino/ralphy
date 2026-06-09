@@ -258,7 +258,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stamp,
         branch_mode,
         only_issue: args.only_issue,
-        stop_on_limit: args.stop_on_limit,
+        stop_on_limit: effective_stop_on_limit(args.stop_on_limit, args.agent),
     };
 
     // The same deadline gates starting the next issue (between-issue clock).
@@ -366,6 +366,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
+/// Force `stop_on_limit` for Codex runs: Codex's rolling reset window is not
+/// parseable, so auto-resume is never useful there. Claude passes the flag
+/// through unchanged.
+fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
+    flag || matches!(agent, CliAgent::Codex)
+}
+
 fn non_empty(s: String) -> Option<String> {
     if s.is_empty() {
         None
@@ -392,5 +399,22 @@ fn init_tracing(log_file: Option<std::fs::File>) {
             registry.with(file_layer).init();
         }
         None => registry.init(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effective_stop_on_limit_codex_forces_true() {
+        assert!(effective_stop_on_limit(false, CliAgent::Codex));
+        assert!(effective_stop_on_limit(true, CliAgent::Codex));
+    }
+
+    #[test]
+    fn effective_stop_on_limit_claude_passes_flag_through() {
+        assert!(!effective_stop_on_limit(false, CliAgent::Claude));
+        assert!(effective_stop_on_limit(true, CliAgent::Claude));
     }
 }

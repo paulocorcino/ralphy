@@ -19,8 +19,33 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use include_dir::{include_dir, Dir};
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use tracing::info;
+
+/// The skills subtree, embedded at build time so the binary is self-contained.
+/// Codex auto-discovers skills in `.agents/skills/`; we extract this tree there
+/// before every plan and execute call so a run never depends on globally-installed
+/// skills (mirrors `materialize_plugin` in the Claude adapter).
+static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
+
+/// Materialize the embedded skills into `<repo>/.agents/skills/` so Codex's
+/// auto-discovery finds them. Clears any prior copy, re-extracts fresh, and
+/// writes `<repo>/.agents/.gitignore` (`*`) to keep the materialized tree out of
+/// the executor's commits. Returns the `.agents/skills` path.
+fn materialize_codex_skills(ws: &Workspace) -> Result<PathBuf> {
+    let agents_dir = ws.repo_root().join(".agents");
+    let skills_dir = agents_dir.join("skills");
+    if skills_dir.exists() {
+        fs::remove_dir_all(&skills_dir).context("clearing stale .agents/skills")?;
+    }
+    fs::create_dir_all(&skills_dir).context("creating .agents/skills")?;
+    SKILLS
+        .extract(&skills_dir)
+        .context("extracting the embedded skills to .agents/skills")?;
+    fs::write(agents_dir.join(".gitignore"), "*\n").context("writing .agents/.gitignore")?;
+    Ok(skills_dir)
+}
 
 /// The default Codex model. The latest coding model; operator-overridable via the
 /// `--exec-model` flag so "latest Codex model" stays a one-line change.
@@ -135,6 +160,29 @@ fn build_codex_command(model: &str, effort: &str, root: &Path, out_path: &Path) 
     cmd
 }
 
+/// Return `true` when `text` contains a Codex usage-limit message (case-insensitive).
+fn is_codex_limit_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("you've hit your usage limit")
+        || lower.contains("usage limit")
+        || lower.contains("rate limit reached")
+}
+
+/// Extract the reset hint from a Codex limit message: the text following
+/// `try again at ` (trimmed, to end of line). Returns `None` when absent.
+fn parse_codex_reset_hint(text: &str) -> Option<String> {
+    for line in text.lines() {
+        let lower = line.to_lowercase();
+        if let Some(pos) = lower.find("try again at ") {
+            let rest = line[pos + "try again at ".len()..].trim();
+            if !rest.is_empty() {
+                return Some(rest.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Map an execution call's end state onto a core [`Outcome`] (ADR-0004 D2):
 /// the wall timeout wins (`Timeout`); a `RALPHY_BLOCKED_EXIT <reason>` sentinel is
 /// `Blocked(reason)`; a clean exit that both committed and emitted
@@ -147,6 +195,7 @@ fn classify_codex_outcome(
     timed_out: bool,
     committed: bool,
     out: &str,
+    log: &str,
 ) -> Outcome {
     if timed_out {
         return Outcome::Timeout;
@@ -161,6 +210,9 @@ fn classify_codex_outcome(
     if exited_cleanly && committed && out.contains("RALPHY_DONE_EXIT") {
         return Outcome::Done;
     }
+    if is_codex_limit_text(log) {
+        return Outcome::Limit(parse_codex_reset_hint(log));
+    }
     Outcome::Stuck
 }
 
@@ -168,10 +220,15 @@ impl CodexAgent {
     /// Spawn a single `codex exec` call, piping `prompt` on stdin and draining
     /// stdout/stderr via reader threads to avoid pipe-buffer deadlock (mirrors
     /// `ClaudeAgent::run_headless_call`). Polls `try_wait` until `timeout`; kills
-    /// the child on expiry. Returns `(exited_cleanly, timed_out)` — the captured
-    /// logs are written to `run_dir/codex.log`; the agent's final message is read
-    /// from the `-o` file by the caller.
-    fn run_codex(&self, mut cmd: Command, prompt: &str, timeout: Duration) -> Result<(bool, bool)> {
+    /// the child on expiry. Returns `(exited_cleanly, timed_out, combined_log)` —
+    /// the combined log is also written to `run_dir/codex.log`; the agent's final
+    /// message is read from the `-o` file by the caller.
+    fn run_codex(
+        &self,
+        mut cmd: Command,
+        prompt: &str,
+        timeout: Duration,
+    ) -> Result<(bool, bool, String)> {
         let mut child = cmd
             .spawn()
             .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
@@ -224,7 +281,7 @@ impl CodexAgent {
         let _ = fs::write(self.run_dir.join("codex.log"), &text);
 
         let exited_cleanly = status.map(|s| s.success()).unwrap_or(false);
-        Ok((exited_cleanly, timed_out))
+        Ok((exited_cleanly, timed_out, text))
     }
 }
 
@@ -232,6 +289,7 @@ impl Agent for CodexAgent {
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         fs::create_dir_all(&self.run_dir).ok();
+        materialize_codex_skills(ws)?;
 
         let plan_path = ws.plan_path();
         // Plan fresh every run; never reuse a stale artifact.
@@ -247,7 +305,7 @@ impl Agent for CodexAgent {
             .issue_deadline()
             .saturating_duration_since(Instant::now());
         info!(model = %model, effort = "high", "planning with codex exec");
-        self.run_codex(cmd, PROMPT_PLAN_CODEX, timeout)?;
+        let _ = self.run_codex(cmd, PROMPT_PLAN_CODEX, timeout)?;
 
         if !plan_path.exists() {
             bail!(
@@ -267,6 +325,7 @@ impl Agent for CodexAgent {
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
         fs::create_dir_all(&self.run_dir).ok();
         fs::create_dir_all(ws.ralphy_dir()).ok();
+        materialize_codex_skills(ws)?;
 
         let model = self.resolve_model().to_string();
         // Execution takes the plan's neutral complexity tier as reasoning effort.
@@ -281,13 +340,13 @@ impl Agent for CodexAgent {
             .saturating_duration_since(Instant::now());
         let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
         info!(model = %model, effort, "executing with codex exec");
-        let (exited_cleanly, timed_out) = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
+        let (exited_cleanly, timed_out, log) = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let out = fs::read_to_string(&out_path).unwrap_or_default();
 
-        let outcome = classify_codex_outcome(exited_cleanly, timed_out, committed, &out);
+        let outcome = classify_codex_outcome(exited_cleanly, timed_out, committed, &out, &log);
         info!(
             ?outcome,
             exited_cleanly, timed_out, committed, "codex execution ended"
@@ -307,7 +366,7 @@ mod tests {
     fn classify_done_on_clean_exit_commit_and_sentinel() {
         let out = "all steps green\nRALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_codex_outcome(true, false, true, out),
+            classify_codex_outcome(true, false, true, out, ""),
             Outcome::Done
         );
     }
@@ -316,7 +375,7 @@ mod tests {
     fn classify_blocked_on_blocked_sentinel() {
         let out = "did some work\nRALPHY_BLOCKED_EXIT missing upstream crate\n";
         assert_eq!(
-            classify_codex_outcome(true, false, true, out),
+            classify_codex_outcome(true, false, true, out, ""),
             Outcome::Blocked("missing upstream crate".into())
         );
     }
@@ -326,7 +385,7 @@ mod tests {
         // A non-zero exit is Stuck even when the output carries a DONE sentinel.
         let out = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_codex_outcome(false, false, true, out),
+            classify_codex_outcome(false, false, true, out, ""),
             Outcome::Stuck
         );
     }
@@ -336,7 +395,7 @@ mod tests {
         // A DONE claim with no new commit is distrusted (HEAD-diff progress guard).
         let out = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_codex_outcome(true, false, false, out),
+            classify_codex_outcome(true, false, false, out, ""),
             Outcome::Stuck
         );
     }
@@ -344,7 +403,7 @@ mod tests {
     #[test]
     fn classify_stuck_on_no_sentinel() {
         assert_eq!(
-            classify_codex_outcome(true, false, true, "quiet exit, no sentinel"),
+            classify_codex_outcome(true, false, true, "quiet exit, no sentinel", ""),
             Outcome::Stuck
         );
     }
@@ -354,7 +413,7 @@ mod tests {
         // The wall timeout wins over everything, including a DONE sentinel.
         let out = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_codex_outcome(false, true, false, out),
+            classify_codex_outcome(false, true, false, out, ""),
             Outcome::Timeout
         );
     }
@@ -467,5 +526,113 @@ mod tests {
         // `&dyn Agent` (the core never learns the vendor).
         let agent = CodexAgent::new(None, PathBuf::from("/run"));
         let _as_dyn: &dyn Agent = &agent;
+    }
+
+    // ── materialize_codex_skills ────────────────────────────────────────────
+
+    #[test]
+    fn materialize_codex_skills_extracts_required_skills() {
+        let base = std::env::temp_dir().join(format!("ralphy-codex-skills-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+
+        let skills_dir = materialize_codex_skills(&ws).expect("materialize");
+        assert_eq!(skills_dir, ws.repo_root().join(".agents").join("skills"));
+        assert!(
+            skills_dir.join("reviewer/SKILL.md").is_file(),
+            "reviewer/SKILL.md must be materialized"
+        );
+        assert!(
+            skills_dir.join("staged-plan/SKILL.md").is_file(),
+            "staged-plan/SKILL.md must be materialized"
+        );
+        assert!(
+            skills_dir.join("reviewer/scripts/audit.py").is_file(),
+            "reviewer/scripts/audit.py must be materialized"
+        );
+        assert!(
+            ws.repo_root().join(".agents/.gitignore").is_file(),
+            ".agents/.gitignore must be written"
+        );
+
+        // Idempotent: a second call clears and re-extracts cleanly.
+        materialize_codex_skills(&ws).expect("re-materialize");
+        assert!(skills_dir.join("reviewer/SKILL.md").is_file());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    // ── is_codex_limit_text ─────────────────────────────────────────────────
+
+    #[test]
+    fn is_codex_limit_text_matches_known_phrases() {
+        assert!(is_codex_limit_text(
+            "Sorry, you've hit your usage limit for today."
+        ));
+        assert!(is_codex_limit_text("You've Hit Your Usage Limit"));
+        assert!(is_codex_limit_text("usage limit exceeded"));
+        assert!(is_codex_limit_text(
+            "Error: Rate Limit Reached. Please try again later."
+        ));
+        assert!(!is_codex_limit_text("all steps green\nRALPHY_DONE_EXIT\n"));
+    }
+
+    // ── parse_codex_reset_hint ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_codex_reset_hint_extracts_datetime() {
+        let text = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
+        assert_eq!(
+            parse_codex_reset_hint(text).as_deref(),
+            Some("2026-06-09T18:00:00Z.")
+        );
+    }
+
+    #[test]
+    fn parse_codex_reset_hint_returns_none_when_absent() {
+        assert_eq!(
+            parse_codex_reset_hint("usage limit exceeded, no reset info"),
+            None
+        );
+    }
+
+    // ── classify_codex_outcome — limit branch ───────────────────────────────
+
+    #[test]
+    fn classify_limit_with_reset_hint() {
+        let log = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
+        assert_eq!(
+            classify_codex_outcome(false, false, false, "", log),
+            Outcome::Limit(Some("2026-06-09T18:00:00Z.".into()))
+        );
+    }
+
+    #[test]
+    fn classify_limit_bare_when_no_hint() {
+        let log = "Error: usage limit exceeded.";
+        assert_eq!(
+            classify_codex_outcome(false, false, false, "", log),
+            Outcome::Limit(None)
+        );
+    }
+
+    // ── PROMPT_PLAN_CODEX reviewer step ────────────────────────────────────
+
+    #[test]
+    fn prompt_plan_codex_contains_reviewer_step() {
+        assert!(
+            PROMPT_PLAN_CODEX.contains("reviewer"),
+            "planning prompt must reference the reviewer skill"
+        );
+        let lower = PROMPT_PLAN_CODEX.to_lowercase();
+        assert!(
+            lower.contains("only") && lower.contains("commits you made"),
+            "reviewer step must scope to this issue's own commits"
+        );
+        assert!(
+            !PROMPT_PLAN_CODEX.contains("independent subagent"),
+            "must not use Claude 'independent subagent' phrasing"
+        );
     }
 }
