@@ -102,7 +102,14 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF#refs/tags/}"
           ls -l out
+          # A semver pre-release tag (contains a hyphen, e.g. v0.1.0-rc1) is
+          # published as a GitHub pre-release so it is not flagged "Latest".
+          prerelease_flag=""
+          if [[ "$version" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
           gh release create "$version" out/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "$version" \
-            --generate-notes
+            --generate-notes \
+            $prerelease_flag
