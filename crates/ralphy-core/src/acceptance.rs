@@ -30,15 +30,7 @@ pub struct Verdict {
 /// Evidence text may be empty.
 pub fn parse_ledger(md: &str) -> Vec<Verdict> {
     let heading_re = Regex::new(r"(?im)^##\s+Acceptance ledger\s*$").expect("valid regex");
-    let end_re = Regex::new(r"(?m)^##\s+").expect("valid regex");
-
-    let Some(start_m) = heading_re.find(md) else {
-        return Vec::new();
-    };
-
-    let after = &md[start_m.end()..];
-    let end = end_re.find(after).map(|m| m.start()).unwrap_or(after.len());
-    let section = &after[..end];
+    let section = crate::markdown::section_after_heading(md, &heading_re);
 
     // Match lines: `- [verified|review-only] <criterion> — evidence: <evidence>`
     // \u{2014} is the em dash (—).

@@ -10,15 +10,10 @@ use regex::Regex;
 /// Stops at the next `##` heading so refs in unrelated sections are not collected.
 pub fn parse_blocked_by(body: &str) -> Vec<u64> {
     let heading_re = Regex::new(r"(?im)^##\s+Blocked by\s*$").expect("valid regex");
-    let end_re = Regex::new(r"(?m)^##\s+").expect("valid regex");
-
-    let Some(start_m) = heading_re.find(body) else {
+    let section = crate::markdown::section_after_heading(body, &heading_re);
+    if section.is_empty() {
         return Vec::new();
-    };
-
-    let after = &body[start_m.end()..];
-    let end = end_re.find(after).map(|m| m.start()).unwrap_or(after.len());
-    let section = &after[..end];
+    }
 
     // Match only bullet-list items: `- #N` (leading whitespace optional).
     // This avoids treating prose references like "step #3" as issue refs.
