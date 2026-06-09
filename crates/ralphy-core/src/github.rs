@@ -161,6 +161,33 @@ pub fn comment_issue(number: u64, comment: &str) -> Result<()> {
     Ok(())
 }
 
+/// Parse `{"state":"CLOSED"}` / `{"state":"OPEN"}` JSON from `gh issue view --json state`.
+fn parse_issue_state(json: &str) -> Result<bool> {
+    #[derive(serde::Deserialize)]
+    struct StateJson {
+        state: String,
+    }
+    let s: StateJson =
+        serde_json::from_str(json).context("parsing `gh issue view --json state`")?;
+    Ok(s.state == "CLOSED")
+}
+
+/// Return `true` when the given issue number is closed, by running
+/// `gh issue view <n> --json state`.
+pub fn issue_is_closed(number: u64) -> Result<bool> {
+    let out = Command::new("gh")
+        .args(["issue", "view", &number.to_string(), "--json", "state"])
+        .output()
+        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`gh issue view {number} --json state` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    parse_issue_state(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Parse a `docs/agents/triage-labels.md` table row. Scans `doc` for
 /// `|`-delimited rows, strips backticks, trims each cell, and returns cell[2]
 /// when cell[1] == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.
@@ -215,6 +242,16 @@ pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_issue_state_closed() {
+        assert!(parse_issue_state(r#"{"state":"CLOSED"}"#).unwrap());
+    }
+
+    #[test]
+    fn parse_issue_state_open() {
+        assert!(!parse_issue_state(r#"{"state":"OPEN"}"#).unwrap());
+    }
 
     #[test]
     fn parse_triage_mapping_finds_mapped_label() {

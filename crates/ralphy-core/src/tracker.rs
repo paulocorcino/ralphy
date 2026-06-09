@@ -19,6 +19,14 @@ pub trait IssueTracker {
         let _ = (number, body, verdicts);
         Ok(())
     }
+
+    /// Return `true` when the given issue number is closed. The default impl
+    /// returns `Ok(true)` so non-`gh` test fakes that do not override it
+    /// never block on any issue.
+    fn is_closed(&self, number: u64) -> Result<bool> {
+        let _ = number;
+        Ok(true)
+    }
 }
 
 /// The production tracker: closes issues and writes acceptance evidence through
@@ -37,5 +45,9 @@ impl IssueTracker for GhTracker {
         }
         let comment = acceptance::evidence_comment(verdicts, &tick.unmatched);
         github::comment_issue(number, &comment)
+    }
+
+    fn is_closed(&self, number: u64) -> Result<bool> {
+        github::issue_is_closed(number)
     }
 }
