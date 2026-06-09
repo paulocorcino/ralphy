@@ -15,7 +15,10 @@ const REVIEW_ONLY_CRITERION: &str = "a dry-run plan mirrors the issue criteria v
 /// documented format is exactly what the #12 parser accepts.
 #[test]
 fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
-    let prompt_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/prompts/prompt.plan.md");
+    let prompt_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../assets/prompts/prompt.plan.md"
+    );
     let content =
         std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
 
@@ -65,7 +68,10 @@ fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
 /// assertion proves that apply_ledger matches the specific canonical criterion text.
 #[test]
 fn prompt_plan_verified_example_ticks_matching_issue_body_line() {
-    let prompt_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/prompts/prompt.plan.md");
+    let prompt_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../assets/prompts/prompt.plan.md"
+    );
     let content =
         std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
 
