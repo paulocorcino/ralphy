@@ -12,18 +12,19 @@ durable.
 
 ## Do this
 1. Read `.ralphy/plan.md`. Work the `- [ ]` steps top to bottom.
-2. For each step: implement it, run `cargo fmt` and the NARROWEST relevant
-   `cargo test` (or `cargo build` if not yet testable). When green, tick the
-   step `- [x]` in `.ralphy/plan.md` and make ONE focused commit (Conventional
-   Commits, reference the issue, e.g. `feat: ... (#<number>)`).
-3. When EVERY step is `- [x]` and `cargo test` is green, print this on its own
-   line and then STOP — the runner reads this token to mark the issue done:
+2. For each step: implement it, run the project's format command and the
+   NARROWEST relevant test command (or a build if not yet testable), as defined
+   in CLAUDE.md/CONTEXT.md. When green, tick the step `- [x]` in `.ralphy/plan.md`
+   and make ONE focused commit (Conventional Commits, reference the issue, e.g.
+   `feat: ... (#<number>)`).
+3. When EVERY step is `- [x]` and the project's tests are green, print this on
+   its own line and then STOP — the runner reads this token to mark the issue done:
 
        RALPHY_DONE_EXIT
 
 ## Prove behavior, not just compilation
 - A step that changes what the user can see or do is NOT done when it merely
-  compiles. Add or extend a test that FAILS before your change and PASSES after,
+  builds. Add or extend a test that FAILS before your change and PASSES after,
   in the SAME commit as the step. This is what stops a plan from "meeting the
   letter of a feature" while doing nothing meaningful.
 - Only the test-verifiable part of the plan's "Done when" gates the DONE token.
@@ -74,7 +75,7 @@ regardless of the ledger's review-only entries.
 - Commit BEFORE emitting the exit token — uncommitted work is lost when the
   session is terminated.
 - Emit the exit token EXACTLY ONCE, as the very last thing you output.
-- All code/comments/commits/UI strings in English (project rule).
-- Follow CLAUDE.md: UI uses `Theme.*` (no hardcoded colors/sizes) and the
-  Fluent/`Strings.*` i18n pipeline (no literal UI text). Never edit `.ralphy/`
-  except `plan.md`.
+- Write code, comments, commits, and user-facing strings in the project's
+  working language (English unless CLAUDE.md/CONTEXT.md says otherwise).
+- Follow the project's conventions in CLAUDE.md/CONTEXT.md (style, formatting,
+  theming, i18n, and any other rules). Never edit `.ralphy/` except `plan.md`.

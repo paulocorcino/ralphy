@@ -5,13 +5,14 @@ you only produce a plan that a later execution loop will consume.
 ## Context on disk
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
-  is relevant. This is a Rust + Slint desktop tray app.
+  is relevant; they define the project's language, toolchain, and how tests
+  and builds run.
 
 ## Your task
 1. Read `.ralphy/issue.json` and the relevant project docs.
 2. Decide whether the issue is well-specified enough to implement
-   autonomously, end to end, with a clear "done" criterion that `cargo test`
-   (or a build) can verify.
+   autonomously, end to end, with a clear "done" criterion that the project's
+   tests (or a build) can verify.
 3. Write `.ralphy/plan.md` with this exact shape:
 
    ```
@@ -31,9 +32,9 @@ you only produce a plan that a later execution loop will consume.
    complexity makes `opus` necessary.>
 
    ## Done when
-   - <test-verifiable condition(s) — what `cargo test` (or a build) proves, e.g.
-     "cargo test passes, including new test `xyz` covering ...". Phrase
-     acceptance as observable behavior, not internal attributes.>
+   - <test-verifiable condition(s) — what the project's tests (or a build)
+     prove, e.g. "the test suite passes, including new test `xyz` covering ...".
+     Phrase acceptance as observable behavior, not internal attributes.>
    - Review-only (omit if none): <behavior only a human can confirm in the PR,
      e.g. "the row disappears immediately before the refresh completes">. State
      these separately — the executor gates the done token on the test-verifiable
@@ -46,7 +47,7 @@ you only produce a plan that a later execution loop will consume.
    - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
 
    Example (two criteria, one of each kind):
-   - [verified] cargo test passes with new test covering parse_ledger — evidence: new test `tests/prompt_ledger.rs` feeds the prompt example through parse_ledger and asserts typed verdicts
+   - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
    - [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR
 
    ## Decisions
@@ -56,19 +57,19 @@ you only produce a plan that a later execution loop will consume.
 
    ## Steps
    - [ ] <smallest sensible step 1 — one focused change. NAME the real file and
-         the function/module it touches, e.g. "in `src/main.rs`, add
+         the function/module it touches, e.g. "in `path/to/file`, add
          `hide_delete` to `LiveState`">
    - [ ] <step 2>
    - [ ] <...>
    - [ ] <at least one step adds a test that FAILS before the change and PASSES
-         after — proving the behavior, not merely that the code compiles>
+         after — proving the behavior, not merely that the code builds>
    - [ ] Self-review: spawn the `reviewer` skill as an independent subagent over
          ONLY the commits you made for this issue (this run's branch may already
          carry earlier issues — review just your own commits, not the whole
          branch). Resolve every HIGH finding before finishing; if one cannot be
          fixed autonomously, record it under `## Notes & decisions` and block
          instead of declaring done.
-   - [ ] cargo fmt && cargo test pass with no new warnings
+   - [ ] the project's format and test commands pass with no new warnings
    ```
 
 ## Rules
@@ -97,14 +98,15 @@ you only produce a plan that a later execution loop will consume.
   green-build/test gate.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
-- All text in English (project rule). Do not modify anything other than
+- Write the plan in the project's working language (English unless
+  CLAUDE.md/CONTEXT.md says otherwise). Do not modify anything other than
   `.ralphy/plan.md` in this pass.
-- Do not run git, cargo build, or edit source files now. Just plan.
+- Do not run git, builds, or edit source files now. Just plan.
 
 ## Acceptance ledger
 
 Canonical format reference — the executor's `parse_ledger` function matches
 exactly these two line shapes (em dash `—`, literal `evidence:` key):
 
-- [verified] cargo test passes with new test covering parse_ledger — evidence: new test `tests/prompt_ledger.rs` feeds the prompt example through parse_ledger and asserts typed verdicts
+- [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
 - [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR

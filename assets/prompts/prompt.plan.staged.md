@@ -5,8 +5,9 @@ in the exact shape the executor expects (below).
 
 ## Context on disk
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
-- `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain
-  (a Rust + Slint desktop tray app). Read what is relevant.
+- `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
+  is relevant; they define the project's language, toolchain, and how tests
+  and builds run.
 
 ## Your task
 1. Read `.ralphy/issue.json` and the relevant project docs.
@@ -35,7 +36,7 @@ in the exact shape the executor expects (below).
    - [ ] <stage 1 / sub-step — small, focused, committable in one iteration>
    - [ ] <stage 2 ...>
    - [ ] <...>
-   - [ ] cargo fmt && cargo test pass with no new warnings
+   - [ ] the project's format and test commands pass with no new warnings
    ```
 
 ## Rules
@@ -45,5 +46,6 @@ in the exact shape the executor expects (below).
 - Every actionable item is a `- [ ]` checkbox; the LAST is the green-build gate.
 - Keep the staged ordering as the sequence of `- [ ]` steps (one per stage or
   sub-step), so the executor implements them in order.
-- All text in English (project rule). Do not edit source files or run git/cargo
-  in this pass — just plan.
+- Write the plan in the project's working language (English unless
+  CLAUDE.md/CONTEXT.md says otherwise). Do not edit source files or run
+  git/builds in this pass — just plan.
