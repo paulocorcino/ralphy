@@ -22,7 +22,7 @@ pub use agent::Agent;
 pub use blocked::parse_blocked_by;
 pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
-    RunOutcome, RunReport, StopReason, WallClock,
+    RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,
 };
 pub use tracker::{GhTracker, IssueTracker};
 pub use types::{Issue, Outcome, Plan, Workspace};

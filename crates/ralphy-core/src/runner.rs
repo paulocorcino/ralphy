@@ -3,18 +3,38 @@
 //! run branch. Execution is a later slice; this slice stops after planning.
 
 use std::path::Path;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
 use crate::{acceptance, blocked, git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
 
+/// How a [`RunClock::wait_for_reset`] wait ended: the reset time arrived and the
+/// run may resume, or the global deadline cut the wait short (deadline beats
+/// resume).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitOutcome {
+    Resumed,
+    DeadlinePassed,
+}
+
 /// The run's global deadline, behind a trait so "don't start a new issue past
 /// the budget" is deterministically testable — an [`Instant`] can't be
-/// fast-forwarded in a unit test, but a scripted clock can.
+/// fast-forwarded in a unit test, but a scripted clock can. The same indirection
+/// lets [`wait_for_reset`](RunClock::wait_for_reset) return instantly under a
+/// scripted clock instead of sleeping until a real reset time.
 pub trait RunClock {
     fn deadline_passed(&self) -> bool;
+
+    /// Block until the parsed `reset` time (plus a wait-policy buffer), polling so
+    /// the wait stays interruptible and emits a heartbeat. Returns
+    /// [`WaitOutcome::Resumed`] once the reset arrives, or
+    /// [`WaitOutcome::DeadlinePassed`] if the global deadline is already past or
+    /// passes during the wait (deadline beats resume).
+    fn wait_for_reset(&self, reset: &str) -> WaitOutcome;
 }
 
 /// The production clock: a wall-clock deadline. `None` never expires.
@@ -28,6 +48,108 @@ impl RunClock for WallClock {
             Some(d) => Instant::now() >= d,
             None => false,
         }
+    }
+
+    fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
+        // The 5-minute buffer is a wait policy (wake a little after the reset to
+        // avoid re-limiting), applied here rather than baked into `next_reset`.
+        let buffer = chrono::Duration::minutes(5);
+        let target = match next_reset(reset, Local::now()) {
+            Some(t) => t + buffer,
+            // An unparseable reset should never reach here (the loop only calls
+            // wait_for_reset when a reset was parsed); resume immediately rather
+            // than sleep on a guess.
+            None => return WaitOutcome::Resumed,
+        };
+
+        if self.deadline_passed() {
+            return WaitOutcome::DeadlinePassed;
+        }
+        // A reset beyond the global deadline never sleeps — the deadline wins the
+        // moment it would pass.
+        if let Some(d) = self.deadline {
+            let until_target = (target - Local::now()).num_milliseconds().max(0) as u64;
+            if Instant::now() + Duration::from_millis(until_target) >= d {
+                info!(%reset, "reset lands beyond the run deadline — not waiting");
+                return WaitOutcome::DeadlinePassed;
+            }
+        }
+
+        info!(%reset, target = %target.format("%Y-%m-%d %H:%M"), "usage limit — waiting for reset");
+        let mut last_heartbeat = Instant::now();
+        loop {
+            if self.deadline_passed() {
+                return WaitOutcome::DeadlinePassed;
+            }
+            if Local::now() >= target {
+                info!("reset reached — resuming");
+                return WaitOutcome::Resumed;
+            }
+            if last_heartbeat.elapsed() >= Duration::from_secs(60) {
+                let remaining = (target - Local::now()).num_minutes().max(0);
+                info!(remaining_min = remaining, "waiting for usage-limit reset");
+                last_heartbeat = Instant::now();
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+/// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
+/// either a bare `"HH:mm"` or a weekday-qualified `"Wkd HH:mm"`. A bare time
+/// resolves to today, rolled to tomorrow when already past `now`; a
+/// weekday-qualified time resolves to the next date carrying that weekday (today
+/// only when the time is still ahead, else next week). Pure over its inputs so the
+/// rollover edge cases unit-test without sleeping. Returns `None` on an
+/// unparseable hint.
+fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
+    let (weekday, hhmm) = match reset.trim().split_once(char::is_whitespace) {
+        Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
+        None => (None, reset.trim()),
+    };
+    let (h, m) = hhmm.split_once(':')?;
+    let hour: u32 = h.parse().ok()?;
+    let min: u32 = m.parse().ok()?;
+    let time = NaiveTime::from_hms_opt(hour, min, 0)?;
+
+    let today = now.date_naive();
+    let target_date = match weekday {
+        None => {
+            if now.time() < time {
+                today
+            } else {
+                today + chrono::Duration::days(1)
+            }
+        }
+        Some(wd) => {
+            let cur = today.weekday().num_days_from_monday() as i64;
+            let tgt = wd.num_days_from_monday() as i64;
+            let mut days = (tgt - cur).rem_euclid(7);
+            // Same weekday today: keep today only if the time is still ahead.
+            if days == 0 && now.time() >= time {
+                days = 7;
+            }
+            today + chrono::Duration::days(days)
+        }
+    };
+    target_date
+        .and_time(time)
+        .and_local_timezone(Local)
+        .single()
+}
+
+/// Parse a three-letter weekday abbreviation (case-insensitive) into a chrono
+/// [`Weekday`]. Returns `None` for anything else.
+fn parse_weekday(s: &str) -> Option<Weekday> {
+    match s.to_lowercase().as_str() {
+        "mon" => Some(Weekday::Mon),
+        "tue" => Some(Weekday::Tue),
+        "wed" => Some(Weekday::Wed),
+        "thu" => Some(Weekday::Thu),
+        "fri" => Some(Weekday::Fri),
+        "sat" => Some(Weekday::Sat),
+        "sun" => Some(Weekday::Sun),
+        _ => None,
     }
 }
 
@@ -471,5 +593,65 @@ fn restore(repo: &Path, orig: &str, branch: &str, base: &str, mode: BranchMode) 
         if let Err(e) = git::delete_branch(repo, branch) {
             warn!("could not delete empty run branch '{branch}': {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    /// Build a fixed `DateTime<Local>` for deterministic `next_reset` tests.
+    fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
+        Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
+    }
+
+    #[test]
+    fn next_reset_same_day_past_rolls_to_tomorrow() {
+        // 2026-06-09 is a Tuesday. Now 16:00, bare reset 15:00 already past today.
+        let now = at(2026, 6, 9, 16, 0);
+        let got = next_reset("15:00", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 10, 15, 0),
+            "bare past time rolls to tomorrow"
+        );
+    }
+
+    #[test]
+    fn next_reset_future_same_day_stays_today() {
+        let now = at(2026, 6, 9, 10, 0);
+        let got = next_reset("15:00", now).unwrap();
+        assert_eq!(got, at(2026, 6, 9, 15, 0), "bare future time stays today");
+    }
+
+    #[test]
+    fn next_reset_weekday_picks_next_matching_date() {
+        // Now is Tuesday 2026-06-09; the next Friday is 2026-06-12.
+        let now = at(2026, 6, 9, 10, 0);
+        let got = next_reset("Fri 09:00", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 12, 9, 0),
+            "weekday picks the next matching date"
+        );
+    }
+
+    #[test]
+    fn next_reset_same_weekday_past_rolls_a_week() {
+        // Today is Tuesday; a Tuesday reset already past today lands next Tuesday.
+        let now = at(2026, 6, 9, 16, 0);
+        let got = next_reset("Tue 15:00", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 16, 15, 0),
+            "same weekday past rolls a week"
+        );
+    }
+
+    #[test]
+    fn next_reset_unparseable_is_none() {
+        let now = at(2026, 6, 9, 10, 0);
+        assert_eq!(next_reset("not a time", now), None);
     }
 }
