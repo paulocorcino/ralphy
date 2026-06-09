@@ -233,6 +233,10 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             (Some(o), true) => format!("{o:?}, closed"),
             (Some(o), false) => format!("{o:?}"),
             (None, _) if args.dry_run => "planned (dry-run)".to_string(),
+            (None, _) if !r.blocked_by.is_empty() => {
+                let refs: Vec<String> = r.blocked_by.iter().map(|n| format!("#{n}")).collect();
+                format!("skipped (blocked by {})", refs.join(", "))
+            }
             (None, _) => "skipped (infeasible)".to_string(),
         };
         println!("  #{}: {status}", r.number);

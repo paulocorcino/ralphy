@@ -8,7 +8,7 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
-use crate::{acceptance, git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
+use crate::{acceptance, blocked, git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
 
 /// The run's global deadline, behind a trait so "don't start a new issue past
 /// the budget" is deterministically testable — an [`Instant`] can't be
@@ -191,11 +191,14 @@ pub struct QueueConfig {
 pub struct IssueResult {
     pub number: u64,
     /// The execution outcome, or `None` when the issue was skipped (infeasible
-    /// plan) or only planned (dry run).
+    /// plan, blocked, or dry run).
     pub outcome: Option<Outcome>,
     /// Whether the runner closed the issue (the cycle). Only ever true for a
     /// green, non-dry-run issue.
     pub closed: bool,
+    /// Open blocker issue numbers that caused this issue to be skipped. Empty
+    /// when the issue was not blocked.
+    pub blocked_by: Vec<u64>,
 }
 
 /// Why the queue loop stopped before reaching the end.
@@ -287,6 +290,39 @@ pub fn run_queue(
             break;
         }
 
+        // Blocked-by gate: skip any issue whose declared blockers are still open.
+        // Checked before write_issue_json so a blocked issue never touches the
+        // planner. is_closed errors are fatal (the tracker is authoritative).
+        let open_blockers: Vec<u64> = {
+            let refs = blocked::parse_blocked_by(&issue.body);
+            let mut open = Vec::new();
+            for n in refs {
+                match tracker.is_closed(n) {
+                    Ok(true) => {}
+                    Ok(false) => open.push(n),
+                    Err(e) => {
+                        restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
+                        return Err(e);
+                    }
+                }
+            }
+            open
+        };
+        if !open_blockers.is_empty() {
+            info!(
+                number = issue.number,
+                blockers = ?open_blockers,
+                "blocked by open issue(s) — skipping"
+            );
+            worked.push(IssueResult {
+                number: issue.number,
+                outcome: None,
+                closed: false,
+                blocked_by: open_blockers,
+            });
+            continue;
+        }
+
         // Persist the current issue where the planner reads it. The adapter's
         // prompt reads `.ralphy/issue.json`, so the loop must refresh it before
         // each plan — `.ralphy/` is gitignored and survives the branch checkout.
@@ -316,6 +352,7 @@ pub fn run_queue(
                 number: issue.number,
                 outcome: None,
                 closed: false,
+                blocked_by: Vec::new(),
             });
             continue;
         }
@@ -326,6 +363,7 @@ pub fn run_queue(
                 number: issue.number,
                 outcome: None,
                 closed: false,
+                blocked_by: Vec::new(),
             });
             continue;
         }
@@ -350,6 +388,7 @@ pub fn run_queue(
                 number: issue.number,
                 outcome: Some(Outcome::Done),
                 closed: true,
+                blocked_by: Vec::new(),
             });
             continue;
         }
@@ -361,6 +400,7 @@ pub fn run_queue(
             number,
             outcome: Some(outcome.clone()),
             closed: false,
+            blocked_by: Vec::new(),
         });
         stop = Some(match outcome {
             Outcome::Limit(reset) => StopReason::Limit { number, reset },

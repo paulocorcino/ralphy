@@ -6,7 +6,7 @@
 //! closing nothing, and the deadline blocking the next issue.
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -94,10 +94,14 @@ impl Agent for ScriptedAgent {
 /// Records every `(number, comment)` close and every `write_evidence` call so
 /// tests can assert exactly which issues were closed and what evidence was
 /// written. Never mutates labels — there is no label API here, which is the point.
+///
+/// `closed_issues` is a set of issue numbers to report as closed when `is_closed`
+/// is called — numbers absent from the set are reported as open.
 #[derive(Default)]
 struct RecordingTracker {
     closes: RefCell<Vec<(u64, String)>>,
     evidence_writes: RefCell<Vec<(u64, Vec<Verdict>)>>,
+    closed_issues: HashSet<u64>,
 }
 
 impl IssueTracker for RecordingTracker {
@@ -111,6 +115,10 @@ impl IssueTracker for RecordingTracker {
             .borrow_mut()
             .push((number, verdicts.to_vec()));
         Ok(())
+    }
+
+    fn is_closed(&self, number: u64) -> anyhow::Result<bool> {
+        Ok(self.closed_issues.contains(&number))
     }
 }
 
@@ -212,6 +220,15 @@ fn issue_labeled(number: u64, labels: &[&str]) -> Issue {
         title: format!("issue {number}"),
         body: String::new(),
         labels: labels.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+fn issue_with_body(number: u64, body: impl Into<String>) -> Issue {
+    Issue {
+        number,
+        title: format!("issue {number}"),
+        body: body.into(),
+        labels: vec![],
     }
 }
 
@@ -687,6 +704,93 @@ fn green_close_with_no_ledger_skips_write_evidence() {
     );
 
     fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn open_blocker_skips_then_closed_blocker_runs() {
+    // Pass 1: #5 declares "## Blocked by\n- #2" and #2 is NOT in the closed set.
+    // Expected: #5 skipped (blocked_by == [2]), not closed, no stop; #2 runs normally.
+    {
+        let repo = init_repo("blocker-open");
+        let blocked_body = "## Blocked by\n- #2\n";
+        let queue = vec![issue_with_body(5, blocked_body), issue(2)];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #2 executes
+                                                             // #2 is NOT in closed_issues → is_closed(2) returns false → #5 is skipped.
+        let tracker = RecordingTracker::default();
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-blocker-open", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        // #5 must have been skipped with blocked_by == [2].
+        let r5 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 5)
+            .expect("#5 in worked");
+        assert!(r5.outcome.is_none(), "#5 outcome must be None (skipped)");
+        assert!(!r5.closed, "#5 must not be closed");
+        assert_eq!(r5.blocked_by, vec![2], "#5 blocked_by must be [2]");
+
+        // #2 must have been planned, executed, and closed.
+        assert!(
+            agent.planned.borrow().contains(&2),
+            "#2 must have been planned"
+        );
+        assert!(
+            agent.executed.borrow().contains(&2),
+            "#2 must have been executed"
+        );
+        let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+        assert_eq!(closes, vec![2], "only #2 closed");
+
+        assert!(report.stop.is_none(), "no stop — later issues continue");
+
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // Pass 2: same queue but #2 IS in the closed set.
+    // Expected: #5 is no longer blocked and runs normally (planned, executed, closed).
+    {
+        let repo = init_repo("blocker-closed");
+        let blocked_body = "## Blocked by\n- #2\n";
+        let queue = vec![issue_with_body(5, blocked_body), issue(2)];
+        let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([2]),
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-blocker-closed", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        // #5 must have run (not blocked).
+        let r5 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 5)
+            .expect("#5 in worked");
+        assert!(
+            r5.blocked_by.is_empty(),
+            "#5 must not be blocked when #2 is closed"
+        );
+        assert!(r5.closed, "#5 must be closed green");
+
+        assert!(report.stop.is_none());
+
+        fs::remove_dir_all(&repo).ok();
+    }
 }
 
 #[test]
