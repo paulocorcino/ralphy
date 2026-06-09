@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_agent_claude::ClaudeAgent;
+use ralphy_agent_codex::CodexAgent;
 use ralphy_core::{
-    git, github, run_queue, BranchMode, GhTracker, QueueConfig, StopReason, WallClock, Workspace,
+    git, github, run_queue, Agent, BranchMode, GhTracker, QueueConfig, StopReason, WallClock,
+    Workspace,
 };
 use tracing::info;
 
@@ -48,6 +50,12 @@ struct RunArgs {
     /// Any path inside the target repo; resolved to its git toplevel.
     #[arg(long, default_value = ".")]
     repo: PathBuf,
+
+    /// Which agent CLI drives the run: `claude` (the default, a live PTY session)
+    /// or `codex` (headless `codex exec`). Selected per run; the core never learns
+    /// which vendor it holds.
+    #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
+    agent: CliAgent,
 
     /// Work only this issue number (filters the queue to it). Omit to work the
     /// whole queue.
@@ -126,6 +134,14 @@ struct RunArgs {
     /// (wait for the reset and auto-resume the same issue). See docs/adr/0003.
     #[arg(long)]
     stop_on_limit: bool,
+}
+
+/// The CLI's own agent-selector enum so `clap` stays a CLI concern; the composition
+/// root maps it to the boxed `&dyn Agent` it hands the core (docs/adr/0004 D1).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum CliAgent {
+    Claude,
+    Codex,
 }
 
 /// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
@@ -209,21 +225,31 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         .deadline_hours
         .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0));
 
-    let agent = ClaudeAgent::new(
-        non_empty(args.plan_model),
-        non_empty(args.plan_effort),
-        run_dir,
-    )
-    .with_exec_config(
-        non_empty(args.exec_model.unwrap_or_default()),
-        non_empty(args.exec_effort),
-        args.default_exec_model,
-        args.max_minutes_per_issue,
-        !args.no_remote_control,
-        args.headless_exec,
-        args.max_exec_calls,
-    )
-    .with_run_deadline(run_deadline);
+    // Select the adapter per run and box it as `&dyn Agent`; the core takes a
+    // single `&dyn Agent` and never learns which vendor it holds (docs/adr/0004).
+    let agent: Box<dyn Agent> = match args.agent {
+        CliAgent::Claude => Box::new(
+            ClaudeAgent::new(
+                non_empty(args.plan_model),
+                non_empty(args.plan_effort),
+                run_dir,
+            )
+            .with_exec_config(
+                non_empty(args.exec_model.unwrap_or_default()),
+                non_empty(args.exec_effort),
+                args.default_exec_model,
+                args.max_minutes_per_issue,
+                !args.no_remote_control,
+                args.headless_exec,
+                args.max_exec_calls,
+            )
+            .with_run_deadline(run_deadline),
+        ),
+        CliAgent::Codex => Box::new(
+            CodexAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
+                .with_run_deadline(run_deadline),
+        ),
+    };
     let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
         repo_root,
@@ -241,7 +267,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     };
     let tracker = GhTracker;
 
-    let report = run_queue(&cfg, &queue, &agent, &tracker, &clock)?;
+    let report = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock)?;
 
     // Per-issue summary, then how the run ended and where the branch stands.
     println!(

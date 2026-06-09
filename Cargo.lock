@@ -456,6 +456,7 @@ dependencies = [
  "chrono",
  "clap",
  "ralphy-agent-claude",
+ "ralphy-agent-codex",
  "ralphy-core",
  "regex",
  "serde_json",
