@@ -121,6 +121,11 @@ struct RunArgs {
     /// (headless mode only).
     #[arg(long, default_value_t = 6)]
     max_exec_calls: u32,
+
+    /// On a usage limit, stop and report the reset instead of the default
+    /// (wait for the reset and auto-resume the same issue). See docs/adr/0003.
+    #[arg(long)]
+    stop_on_limit: bool,
 }
 
 /// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
@@ -213,6 +218,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stamp,
         branch_mode,
         only_issue: args.only_issue,
+        stop_on_limit: args.stop_on_limit,
     };
 
     // The same deadline gates starting the next issue (between-issue clock).
@@ -253,9 +259,15 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             );
         }
         Some(StopReason::Limit { number, reset }) => {
+            // With auto-resume the default, a surfaced Limit means either
+            // `--stop-on-limit` was set, the reset was unparseable, or the
+            // progress-aware cap abandoned the issue.
             print!("Stopped: usage limit on #{number}.");
-            if let Some(t) = reset {
-                print!(" Resets ~{t}; re-run after that.");
+            match reset {
+                Some(t) => {
+                    print!(" Reset ~{t}; re-run to continue (or it stalled with no progress).")
+                }
+                None => print!(" No parseable reset time; re-run after the limit clears."),
             }
             println!();
         }

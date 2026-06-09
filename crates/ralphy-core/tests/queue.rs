@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use ralphy_core::{
     run_queue, Agent, BranchMode, Issue, IssueTracker, Outcome, Plan, QueueConfig, RunClock,
-    StopReason, Verdict, Workspace,
+    StopReason, Verdict, WaitOutcome, Workspace,
 };
 
 /// Plans a feasible step for every issue and returns a scripted sequence of
@@ -23,7 +23,10 @@ use ralphy_core::{
 /// issues past a stop were never touched. Each executed issue makes one real
 /// commit, so the run branch is non-empty (and is handed back, not dropped).
 struct ScriptedAgent {
-    outcomes: RefCell<VecDeque<Outcome>>,
+    /// Each entry is `(outcome, commits)`: when `commits` is false the execute
+    /// makes no commit, leaving `HEAD` unchanged (used to drive the
+    /// progress-aware cap on limit-resumes).
+    outcomes: RefCell<VecDeque<(Outcome, bool)>>,
     planned: RefCell<Vec<u64>>,
     executed: RefCell<Vec<u64>>,
     /// Open steps written by `plan` — set to 0 to script an infeasible issue.
@@ -33,7 +36,14 @@ struct ScriptedAgent {
 }
 
 impl ScriptedAgent {
+    /// Script a sequence of outcomes where every execute makes a commit.
     fn new(outcomes: Vec<Outcome>) -> Self {
+        Self::scripted(outcomes.into_iter().map(|o| (o, true)).collect())
+    }
+
+    /// Script a sequence of `(outcome, commits)` pairs, controlling whether each
+    /// execute leaves a commit behind.
+    fn scripted(outcomes: Vec<(Outcome, bool)>) -> Self {
         Self {
             outcomes: RefCell::new(outcomes.into()),
             planned: RefCell::new(Vec::new()),
@@ -76,18 +86,28 @@ impl Agent for ScriptedAgent {
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Outcome> {
         // The most recently planned issue is the one being executed.
         let number = *self.planned.borrow().last().unwrap();
+        let n = self.executed.borrow().len();
         self.executed.borrow_mut().push(number);
-        // Make a real commit so the run branch carries work and is handed back.
-        let repo = ws.repo_root();
-        let marker = repo.join(format!("issue-{number}.txt"));
-        fs::write(&marker, "done\n").unwrap();
-        git(repo, &["add", "."]);
-        git(repo, &["commit", "-q", "-m", &format!("work #{number}")]);
-        Ok(self
+        let (outcome, commits) = self
             .outcomes
             .borrow_mut()
             .pop_front()
-            .unwrap_or(Outcome::Done))
+            .unwrap_or((Outcome::Done, true));
+        // Make a real commit so the run branch carries work and is handed back —
+        // unless this call is scripted to make no progress (HEAD unchanged).
+        if commits {
+            let repo = ws.repo_root();
+            // A unique path per execute so a resumed retry still produces a new
+            // commit when scripted to.
+            let marker = repo.join(format!("issue-{number}-{n}.txt"));
+            fs::write(&marker, "done\n").unwrap();
+            git(repo, &["add", "."]);
+            git(
+                repo,
+                &["commit", "-q", "-m", &format!("work #{number} ({n})")],
+            );
+        }
+        Ok(outcome)
     }
 }
 
@@ -123,10 +143,16 @@ impl IssueTracker for RecordingTracker {
 }
 
 /// A clock that reports the deadline passed once it has been polled `after`
-/// times — letting a test fast-forward the budget deterministically.
+/// times — letting a test fast-forward the budget deterministically. It also
+/// records every `wait_for_reset` call (the reset string) and returns a scripted
+/// [`WaitOutcome`] (default [`WaitOutcome::Resumed`]) without sleeping.
 struct ScriptedClock {
     polls: RefCell<usize>,
     after: usize,
+    /// The reset string passed to each `wait_for_reset`, in call order.
+    waited_for: RefCell<Vec<String>>,
+    /// What each `wait_for_reset` returns (defaults to `Resumed`).
+    wait_result: WaitOutcome,
 }
 
 impl ScriptedClock {
@@ -135,6 +161,8 @@ impl ScriptedClock {
         Self {
             polls: RefCell::new(0),
             after: usize::MAX,
+            waited_for: RefCell::new(Vec::new()),
+            wait_result: WaitOutcome::Resumed,
         }
     }
 
@@ -143,6 +171,19 @@ impl ScriptedClock {
         Self {
             polls: RefCell::new(0),
             after,
+            waited_for: RefCell::new(Vec::new()),
+            wait_result: WaitOutcome::Resumed,
+        }
+    }
+
+    /// A never-expiring clock whose `wait_for_reset` reports the deadline passed
+    /// (the reset lands beyond the run deadline).
+    fn deadline_on_wait() -> Self {
+        Self {
+            polls: RefCell::new(0),
+            after: usize::MAX,
+            waited_for: RefCell::new(Vec::new()),
+            wait_result: WaitOutcome::DeadlinePassed,
         }
     }
 }
@@ -153,6 +194,11 @@ impl RunClock for ScriptedClock {
         let passed = *p >= self.after;
         *p += 1;
         passed
+    }
+
+    fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
+        self.waited_for.borrow_mut().push(reset.to_string());
+        self.wait_result
     }
 }
 
@@ -240,6 +286,7 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
         only_issue: None,
+        stop_on_limit: false,
     }
 }
 
@@ -251,6 +298,7 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
         only_issue: Some(only),
+        stop_on_limit: false,
     }
 }
 
@@ -262,6 +310,20 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::Current,
         only_issue: None,
+        stop_on_limit: false,
+    }
+}
+
+/// A New-mode config with the auto-resume opt-out (`--stop-on-limit`) enabled.
+fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
+    QueueConfig {
+        repo_root: repo.to_path_buf(),
+        base_branch: "main".into(),
+        dry_run: false,
+        stamp: stamp.into(),
+        branch_mode: BranchMode::New,
+        only_issue: None,
+        stop_on_limit: true,
     }
 }
 
@@ -469,18 +531,21 @@ fn only_issue_ignores_stop_before() {
 }
 
 #[test]
-fn limit_outcome_stops_as_limit() {
+fn stop_on_limit_opt_out_stops_as_limit() {
+    // With `--stop-on-limit`, a usage limit stops and reports the reset (the
+    // pre-auto-resume behaviour) instead of waiting.
     let repo = init_repo("limit");
     let queue = vec![issue(10)];
     let agent = ScriptedAgent::new(vec![Outcome::Limit(Some("15:00".into()))]);
     let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
 
     let report = run_queue(
-        &cfg(&repo, "stamp-limit", false),
+        &cfg_stop_on_limit(&repo, "stamp-limit"),
         &queue,
         &agent,
         &tracker,
-        &ScriptedClock::never(),
+        &clock,
     )
     .unwrap();
 
@@ -491,6 +556,16 @@ fn limit_outcome_stops_as_limit() {
         }
         other => panic!("expected Limit stop, got {other:?}"),
     }
+    // The opt-out never waits.
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![10],
+        "executed once, no resume"
+    );
+    assert!(
+        clock.waited_for.borrow().is_empty(),
+        "stop-on-limit never calls wait_for_reset"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -816,6 +891,154 @@ fn limit_outcome_with_no_reset_carries_none() {
         }
         other => panic!("expected Limit stop with None reset, got {other:?}"),
     }
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn limit_resume_reexecutes_same_issue_only() {
+    // A scripted `Limit(Some(reset))` then `Done` must re-run execute() for the
+    // SAME issue (executed [n, n]) without advancing the queue or re-planning,
+    // and the issue closes green. The clock records the parsed reset it waited on.
+    let repo = init_repo("limit-resume");
+    let queue = vec![issue(20)];
+    let agent = ScriptedAgent::scripted(vec![
+        (Outcome::Limit(Some("15:00".into())), true),
+        (Outcome::Done, true),
+    ]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-resume", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    // execute() ran twice for #20; plan() ran once (never re-planned).
+    assert_eq!(*agent.executed.borrow(), vec![20, 20], "execute-only retry");
+    assert_eq!(*agent.planned.borrow(), vec![20], "plan() never re-run");
+    // The queue was not advanced and the issue closed green.
+    assert!(report.stop.is_none(), "resume → green, no stop");
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![20], "same issue closed green after resume");
+    // wait_for_reset was called once, with the parsed reset string.
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn two_no_commit_limit_resumes_abandon_the_issue() {
+    // Two consecutive limit-resumes that commit nothing abandon the issue with
+    // StopReason::Limit; a commit between resumes resets the counter.
+    {
+        let repo = init_repo("limit-cap");
+        let queue = vec![issue(30)];
+        // Both resumes make no commit (HEAD unchanged) → cap fires.
+        let agent = ScriptedAgent::scripted(vec![
+            (Outcome::Limit(Some("09:00".into())), false),
+            (Outcome::Limit(Some("09:00".into())), false),
+        ]);
+        let tracker = RecordingTracker::default();
+        let clock = ScriptedClock::never();
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-cap", false),
+            &queue,
+            &agent,
+            &tracker,
+            &clock,
+        )
+        .unwrap();
+
+        assert_eq!(
+            *agent.executed.borrow(),
+            vec![30, 30],
+            "two resumes then cap"
+        );
+        match report.stop {
+            Some(StopReason::Limit { number, reset }) => {
+                assert_eq!(number, 30);
+                assert_eq!(reset, Some("09:00".into()));
+            }
+            other => panic!("expected Limit stop from the progress cap, got {other:?}"),
+        }
+        assert!(tracker.closes.borrow().is_empty(), "abandoned, not closed");
+
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // A commit between the two no-commit resumes resets the counter, so the cap
+    // does not fire at the second resume; the run continues to green.
+    {
+        let repo = init_repo("limit-cap-reset");
+        let queue = vec![issue(31)];
+        let agent = ScriptedAgent::scripted(vec![
+            (Outcome::Limit(Some("09:00".into())), false), // streak 1
+            (Outcome::Limit(Some("09:00".into())), true),  // commit → streak 0
+            (Outcome::Limit(Some("09:00".into())), false), // streak 1
+            (Outcome::Done, true),                         // green before cap
+        ]);
+        let tracker = RecordingTracker::default();
+        let clock = ScriptedClock::never();
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-cap-reset", false),
+            &queue,
+            &agent,
+            &tracker,
+            &clock,
+        )
+        .unwrap();
+
+        assert_eq!(
+            *agent.executed.borrow(),
+            vec![31, 31, 31, 31],
+            "commit between resumes lets the run continue"
+        );
+        assert!(report.stop.is_none(), "reached green, no abandon");
+        let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+        assert_eq!(closes, vec![31], "issue closed green");
+
+        fs::remove_dir_all(&repo).ok();
+    }
+}
+
+#[test]
+fn deadline_during_wait_short_circuits_with_deadline() {
+    // A reset that lands beyond the run deadline (clock reports DeadlinePassed
+    // from wait_for_reset) stops the run with StopReason::Deadline, without a
+    // further execute.
+    let repo = init_repo("limit-deadline");
+    let queue = vec![issue(40)];
+    let agent = ScriptedAgent::scripted(vec![(Outcome::Limit(Some("15:00".into())), true)]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::deadline_on_wait();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-deadline-wait", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![40],
+        "no resume past the deadline"
+    );
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert!(
+        matches!(report.stop, Some(StopReason::Deadline)),
+        "deadline beats resume: {:?}",
+        report.stop
+    );
 
     fs::remove_dir_all(&repo).ok();
 }

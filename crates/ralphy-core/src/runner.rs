@@ -306,6 +306,10 @@ pub struct QueueConfig {
     /// When set, the `stop-before` label on this specific issue is ignored and
     /// the issue runs normally. Mirrors ps1's `$OnlyIssue -le 0` guard.
     pub only_issue: Option<u64>,
+    /// When true, a usage limit stops the run and reports the reset (the old
+    /// behaviour). The default (`false`) waits for the reset and auto-resumes the
+    /// same issue. See docs/adr/0003.
+    pub stop_on_limit: bool,
 }
 
 /// What happened to one issue in the queue.
@@ -490,7 +494,59 @@ pub fn run_queue(
             continue;
         }
 
-        let outcome = agent.execute(&plan, &ws)?;
+        // Execute the issue, auto-resuming through usage-limit reset windows by
+        // default. On `Outcome::Limit` with a parsed reset (and not
+        // `stop_on_limit`), wait for the reset and re-run `execute()` only —
+        // never `plan()`, which would delete the on-disk `plan.md` the resume
+        // depends on (ADR-0003). A progress-aware cap abandons the issue after
+        // two consecutive resumes that commit nothing; any commit resets it.
+        let mut no_commit_streak = 0u32;
+        let mut deadline_cut = false;
+        let outcome = loop {
+            let before_sha = git::head_sha(repo).unwrap_or_default();
+            let outcome = agent.execute(&plan, &ws)?;
+
+            let reset = match &outcome {
+                Outcome::Limit(Some(r)) if !cfg.stop_on_limit => r.clone(),
+                // Done, any non-limit outcome, a bare `Limit(None)`, or
+                // `stop_on_limit` all leave the loop with the outcome as-is.
+                _ => break outcome,
+            };
+
+            // Deadline beats resume: a reset beyond the deadline, or a deadline
+            // already/just passed, stops the run instead of waiting.
+            if clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
+                info!(
+                    number = issue.number,
+                    "deadline beats resume — stopping the run"
+                );
+                deadline_cut = true;
+                break outcome;
+            }
+
+            // Progress-aware cap: count consecutive resumes that made no commit;
+            // a commit resets the streak, two no-commit resumes abandon the issue.
+            let after_sha = git::head_sha(repo).unwrap_or_default();
+            if before_sha != after_sha {
+                no_commit_streak = 0;
+            } else {
+                no_commit_streak += 1;
+                info!(
+                    number = issue.number,
+                    streak = no_commit_streak,
+                    "limit resume made no commit"
+                );
+                if no_commit_streak >= 2 {
+                    info!(
+                        number = issue.number,
+                        "progress-aware cap reached — abandoning issue"
+                    );
+                    break outcome;
+                }
+            }
+            // Otherwise loop: re-run execute() against the same on-disk plan.md.
+        };
+
         if outcome == Outcome::Done {
             // Close the cycle: a green queue issue is closed so it leaves the
             // queue; its labels are untouched and the branch is merged by hand.
@@ -527,12 +583,16 @@ pub fn run_queue(
             closed: false,
             blocked_by: Vec::new(),
         });
-        stop = Some(match outcome {
-            Outcome::Limit(reset) => StopReason::Limit { number, reset },
-            other => StopReason::NonGreen {
-                number,
-                outcome: other,
-            },
+        stop = Some(if deadline_cut {
+            StopReason::Deadline
+        } else {
+            match outcome {
+                Outcome::Limit(reset) => StopReason::Limit { number, reset },
+                other => StopReason::NonGreen {
+                    number,
+                    outcome: other,
+                },
+            }
         });
         break;
     }
