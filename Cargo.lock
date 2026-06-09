@@ -439,6 +439,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-agent-codex"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ralphy-core",
+ "regex",
+ "tracing",
+]
+
+[[package]]
 name = "ralphy-cli"
 version = "0.1.0"
 dependencies = [
