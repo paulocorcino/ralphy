@@ -30,6 +30,23 @@ as opposed to a non-green stop (blocked / timeout / stuck / usage limit).
 A green queue issue is closed by the runner so it leaves the queue; its label is
 left untouched and the human still merges the branch by hand.
 
+**Acceptance ledger**:
+The per-issue mapping of each of the issue's Acceptance criteria to a verdict —
+*verified* (backed by a passing test) or *review-only* (only a human can confirm)
+— plus the evidence (the commit/test that proves it). The planner emits it from
+the issue's criteria verbatim; the executor fills the evidence as it works; the
+runner transcribes it onto the issue at close. It does **not** gate green —
+green stays defined by the plan's test-verifiable "Done when". The ledger is the
+honesty record that the green gate's outcome maps back to what the issue asked.
+_Avoid_: acceptance check (sounds like a gate), checklist.
+
+**Evidence (close handoff)**:
+What the runner writes onto a closed green issue beyond the bare close: it ticks
+the issue body's verifiable Acceptance-criteria checkboxes (matching each line
+verbatim — only ticking, never rewriting) and posts a comment pairing each
+criterion with its verdict and proof from the **acceptance ledger**. Review-only
+criteria are left unticked and flagged for the human merging the branch.
+
 **Run branch**:
 Where commits land. `BranchMode new` cuts a fresh `afk/run-<stamp>` off the base;
 `BranchMode current` commits onto the branch the repo is already on.
@@ -63,6 +80,14 @@ The human is in the loop while the agent works. Distinct from the **Human label*
 triage role: there the agent never works the issue at all.
 _Avoid_: HITL (reserved for the triage role), human-in-the-loop.
 
+**Blocked by / dependency gating**:
+An issue's `## Blocked by` section names other issues (`#N`) it depends on. The
+runner gates on it: if any named blocker is still **open**, the blocked issue is
+*skipped* this run (not closed, not a stop) and picked up by a later run once the
+blocker clears. A blocker counts as satisfied when simply **closed** — safe only
+because every issue in a run shares one branch (see ADR-0002).
+_Avoid_: depends-on, prerequisite, stop-before (that's flow control, not a dependency).
+
 **stop-before**:
 A fixed control label (not configurable) on one queued issue that halts the run
 **before** that issue is worked — everything earlier in the sequence is done
@@ -77,6 +102,9 @@ _Avoid_: pause, hold, breakpoint.
   stops the whole run and hands over the **run branch** for inspection.
 - A **human label** issue is never in the **queue**.
 - A **stop-before** issue halts the run before itself; the issues before it still run.
+- A **blocked-by** issue with an open blocker is skipped (not stopped); later
+  unrelated issues still run. Closing a green issue also writes its **acceptance
+  ledger** back as **evidence** — without changing what makes it **green**.
 - The **core** is execution-mode-agnostic: it asks an **adapter** to work an issue
   and receives an outcome. PTY, interactive sessions, and completion sentinels
   live inside the **adapter**, never in the core.
