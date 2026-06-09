@@ -4,8 +4,8 @@ on:
   push:
     tags:
       - "v*"
-  # Allow building a release zip on demand (uploaded as a run artifact only;
-  # no GitHub Release is published unless triggered by a tag).
+  # Build the packages on demand (uploaded as run artifacts only; no GitHub
+  # Release is published unless the run was triggered by a v* tag).
   workflow_dispatch:
 
 env:
@@ -15,9 +15,21 @@ permissions:
   contents: write # needed to create the GitHub Release and upload assets
 
 jobs:
-  package:
-    name: Build and package windows-x64 zip
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.target_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target_name: windows-x64
+            bin: ralphy.exe
+            archive: zip
+          - os: ubuntu-latest
+            target_name: linux-x64
+            bin: ralphy
+            archive: tar.gz
     steps:
       - uses: actions/checkout@v4
 
@@ -32,56 +44,65 @@ jobs:
 
       - name: Determine version
         id: version
-        shell: pwsh
+        shell: bash
         run: |
-          if ($env:GITHUB_REF -like 'refs/tags/*') {
-            $version = $env:GITHUB_REF -replace '^refs/tags/', ''
-          } else {
-            $version = git describe --tags --always
-          }
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "name=ralphy-$version-windows-x64" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version="${GITHUB_REF#refs/tags/}"
+          else
+            version="$(git describe --tags --always)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=ralphy-$version-${{ matrix.target_name }}" >> "$GITHUB_OUTPUT"
 
-      - name: Stage release files
-        shell: pwsh
+      - name: Package archive
+        shell: bash
         run: |
-          $stage = "dist/${{ steps.version.outputs.name }}"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          set -euo pipefail
+          name="${{ steps.version.outputs.name }}"
+          stage="dist/$name"
+          mkdir -p "$stage" out
           # The binary embeds its prompts and skills at build time, so it is
           # self-contained — these are the docs a user needs alongside it.
-          Copy-Item "target/release/ralphy.exe" $stage
-          Copy-Item "README.md"                 $stage
-          Copy-Item "LICENSE"                    $stage
-          Copy-Item "docs/BUILDING.md"           $stage
-          Get-ChildItem $stage
+          cp "target/release/${{ matrix.bin }}" "$stage/"
+          cp README.md LICENSE docs/BUILDING.md "$stage/"
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            ( cd dist && 7z a -tzip "../out/$name.zip" "$name" >/dev/null )
+            archive="$name.zip"
+          else
+            # tar preserves the executable bit so the user can run it directly.
+            tar -czf "out/$name.tar.gz" -C dist "$name"
+            archive="$name.tar.gz"
+          fi
+          ( cd out && sha256sum "$archive" > "$archive.sha256" )
+          ls -l out
 
-      - name: Create zip
-        shell: pwsh
-        run: |
-          $name = "${{ steps.version.outputs.name }}"
-          Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/$name.zip" -Force
-          Get-FileHash "dist/$name.zip" -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash)  $name.zip" } |
-            Out-File -FilePath "dist/$name.zip.sha256" -Encoding ascii
-
-      - name: Upload run artifact
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.version.outputs.name }}
-          path: |
-            dist/${{ steps.version.outputs.name }}.zip
-            dist/${{ steps.version.outputs.name }}.zip.sha256
+          name: pkg-${{ matrix.target_name }}
+          path: out/
 
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: out
+          merge-multiple: true
+
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $name = "${{ steps.version.outputs.name }}"
-          $version = "${{ steps.version.outputs.version }}"
-          gh release create $version `
-            "dist/$name.zip" `
-            "dist/$name.zip.sha256" `
-            --title $version `
+          set -euo pipefail
+          version="${GITHUB_REF#refs/tags/}"
+          ls -l out
+          gh release create "$version" out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$version" \
             --generate-notes

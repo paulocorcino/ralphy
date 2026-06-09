@@ -16,11 +16,10 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  check:
-    name: fmt · clippy · test
-    # Ralphy is a Windows-only tool (ConPTY, %USERPROFILE% paths), so it is
-    # built and tested on Windows exclusively.
-    runs-on: windows-latest
+  lint:
+    name: fmt · clippy
+    # Formatting and lints are platform-independent, so run them once.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +37,25 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  test:
+    name: build · test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
       - name: Build
         run: cargo build --workspace --release
 
       - name: Test
+        # PTY tests drive cmd.exe on Windows and sh on Linux (portable-pty).
         run: cargo test --workspace --release
