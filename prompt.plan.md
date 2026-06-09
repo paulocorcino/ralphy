@@ -39,6 +39,16 @@ you only produce a plan that a later execution loop will consume.
      these separately — the executor gates the done token on the test-verifiable
      conditions and flags review-only ones for the PR reviewer.
 
+   ## Acceptance ledger
+   <One bullet per issue Acceptance criterion, copied verbatim (without the
+   issue's `- [ ]` prefix). Tag each line [verified] or [review-only]:>
+   - [verified] <criterion prose> — evidence: <step or test that will prove it>
+   - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
+
+   Example (two criteria, one of each kind):
+   - [verified] cargo test passes with new test covering parse_ledger — evidence: new test `tests/prompt_ledger.rs` feeds the prompt example through parse_ledger and asserts typed verdicts
+   - [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR
+
    ## Decisions
    <Only if the issue left a design choice open. Resolve it yourself — never
    defer to a human or hide it behind a vague step. One bullet per decision:>
@@ -68,6 +78,12 @@ you only produce a plan that a later execution loop will consume.
   human and do not paper over it with a vague step. Reserve `Feasible: no` for
   issues genuinely under-specified to implement or not autonomously verifiable,
   never for a choice you could simply make.
+- For the `## Acceptance ledger`: copy each issue criterion's prose verbatim
+  (without the issue's `- [ ]` checkbox prefix). Tag verifiable criteria
+  `[verified]` and name the step or test that will prove them; tag criteria
+  that require human judgment `[review-only]` and describe how a reviewer
+  confirms them. The ledger does NOT change the green gate — `RALPHY_DONE_EXIT`
+  is still keyed to the plan's test-verifiable "Done when", not to the ledger.
 - Anchor every step in real code: name the actual file and function/module to
   edit, found by reading the tree NOW. If a step cannot point at concrete code
   even after you have made the open design decisions, the issue is too
@@ -84,3 +100,11 @@ you only produce a plan that a later execution loop will consume.
 - All text in English (project rule). Do not modify anything other than
   `.ralphy/plan.md` in this pass.
 - Do not run git, cargo build, or edit source files now. Just plan.
+
+## Acceptance ledger
+
+Canonical format reference — the executor's `parse_ledger` function matches
+exactly these two line shapes (em dash `—`, literal `evidence:` key):
+
+- [verified] cargo test passes with new test covering parse_ledger — evidence: new test `tests/prompt_ledger.rs` feeds the prompt example through parse_ledger and asserts typed verdicts
+- [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR

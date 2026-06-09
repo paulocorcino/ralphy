@@ -42,6 +42,23 @@ honest at every stopping point, not only when blocked:
   (create it if absent), recording the WHY briefly. The plan must explain not
   just what changed but why, so a fresh session can restart from it alone.
 
+## Fill the acceptance ledger
+
+`.ralphy/plan.md` contains a `## Acceptance ledger` section (placed there by the
+planner). As you complete each step, update the matching ledger line:
+
+1. Replace the `evidence:` text with the real commit hash, test name, or other
+   concrete backing for that criterion.
+2. Keep `[verified]` only when a **passing test** backs the criterion. If you
+   cannot produce a passing test, downgrade the line to `[review-only]` and add
+   a one-line entry under `## Notes & decisions` explaining why.
+3. Leave `[review-only]` lines as-is — do not promote them to `[verified]`.
+
+**The ledger does NOT gate `RALPHY_DONE_EXIT`.** The green gate stays keyed to
+the plan's test-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT` when
+every test-verifiable "Done when" condition is green and every step is `- [x]`,
+regardless of the ledger's review-only entries.
+
 ## If you get blocked
 - Do not thrash and do not ask questions. Record what you learned under
   `## Notes & decisions` in `.ralphy/plan.md`, then print this on its own line
