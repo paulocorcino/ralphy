@@ -47,8 +47,10 @@ fn materialize_codex_skills(ws: &Workspace) -> Result<PathBuf> {
     Ok(skills_dir)
 }
 
-/// The default Codex model. The latest coding model; operator-overridable via the
-/// `--exec-model` flag so "latest Codex model" stays a one-line change.
+/// The last-resort Codex model, used only when neither `--exec-model` nor the
+/// user's Codex config names one. ChatGPT-auth accounts reject `gpt-5-codex`, so
+/// in practice the config-derived model (see [`codex_config_model`]) is what most
+/// subscription runs use; this constant is the floor for an unconfigured setup.
 const DEFAULT_CODEX_MODEL: &str = "gpt-5-codex";
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
@@ -102,12 +104,55 @@ impl CodexAgent {
         }
     }
 
-    /// The single model decision point: the explicit override, else the default.
-    /// Codex routes complexity by reasoning effort, not a model swap (ADR-0004 D3),
-    /// so the model is one fixed, operator-parametrizable value.
-    fn resolve_model(&self) -> &str {
-        self.model.as_deref().unwrap_or(DEFAULT_CODEX_MODEL)
+    /// The single model decision point, in precedence order: the explicit
+    /// `--exec-model` override, then the `model` from the user's Codex config, then
+    /// [`DEFAULT_CODEX_MODEL`]. Honouring the config means a ChatGPT-auth account —
+    /// which rejects `gpt-5-codex` — picks up the model it is actually entitled to
+    /// with no explicit flag. Codex routes complexity by reasoning effort, not a
+    /// model swap (ADR-0004 D3), so this stays a single value.
+    fn resolve_model(&self) -> String {
+        if let Some(m) = self.model.as_deref() {
+            return m.to_string();
+        }
+        codex_config_model().unwrap_or_else(|| DEFAULT_CODEX_MODEL.to_string())
     }
+}
+
+/// Locate the Codex config file: `$CODEX_HOME/config.toml` when `CODEX_HOME` is
+/// set (matching Codex's own resolution), else `<home>/.codex/config.toml`
+/// (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when no home is known.
+fn codex_config_path() -> Option<PathBuf> {
+    if let Some(codex_home) = std::env::var_os("CODEX_HOME") {
+        return Some(PathBuf::from(codex_home).join("config.toml"));
+    }
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    Some(PathBuf::from(home).join(".codex").join("config.toml"))
+}
+
+/// The top-level `model = "..."` from the user's Codex config, if present and
+/// readable. `None` when the file or the key is absent — the caller then falls
+/// back to [`DEFAULT_CODEX_MODEL`].
+fn codex_config_model() -> Option<String> {
+    let text = fs::read_to_string(codex_config_path()?).ok()?;
+    parse_codex_config_model(&text)
+}
+
+/// Extract the root-table `model` key from Codex `config.toml` text. Only the
+/// root table is considered (scanning stops at the first `[section]` header) so a
+/// `model` under e.g. `[mcp_servers.x]` can't be mistaken for the active default.
+/// `model_reasoning_effort` is not matched: the `=` must follow `model` directly.
+fn parse_codex_config_model(toml: &str) -> Option<String> {
+    use regex::Regex;
+    let re = Regex::new(r#"(?m)^\s*model\s*=\s*"([^"]+)""#).expect("valid regex");
+    for line in toml.lines() {
+        if line.trim_start().starts_with('[') {
+            break; // left the root table
+        }
+        if let Some(c) = re.captures(line) {
+            return Some(c[1].to_string());
+        }
+    }
+    None
 }
 
 /// The planner's `## Execution model: low|medium|high` complexity tier, lowercased,
@@ -148,8 +193,6 @@ fn build_codex_command(model: &str, effort: &str, root: &Path, out_path: &Path) 
         .arg(format!("model_reasoning_effort=\"{effort}\""))
         .arg("-s")
         .arg("danger-full-access")
-        .arg("-a")
-        .arg("never")
         .arg("-o")
         .arg(out_path)
         .arg("-")
@@ -298,7 +341,7 @@ impl Agent for CodexAgent {
         // Plan fresh every run; never reuse a stale artifact.
         let _ = fs::remove_file(&plan_path);
 
-        let model = self.resolve_model().to_string();
+        let model = self.resolve_model();
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let _ = fs::remove_file(&out_path);
 
@@ -330,7 +373,7 @@ impl Agent for CodexAgent {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         materialize_codex_skills(ws)?;
 
-        let model = self.resolve_model().to_string();
+        let model = self.resolve_model();
         // Execution takes the plan's neutral complexity tier as reasoning effort.
         let effort = tier_to_effort(plan.recommended_model.as_deref());
         let out_path = ws.ralphy_dir().join("codex-last.txt");
@@ -445,9 +488,10 @@ mod tests {
             args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
             "effort arg missing: {args:?}"
         );
-        // Sandbox/approval posture and the trailing stdin marker.
+        // Sandbox posture and the trailing stdin marker. `codex exec` defaults to
+        // approval=never, so no explicit `-a` flag is passed (it is rejected by
+        // codex-cli ≥0.138).
         assert!(args.contains(&"danger-full-access".to_string()));
-        assert!(args.contains(&"never".to_string()));
         assert!(args.contains(&"-".to_string()));
 
         // OPENAI_API_KEY is removed on the child so an inherited key can't switch
@@ -513,12 +557,34 @@ mod tests {
     // ── resolve_model ───────────────────────────────────────────────────────
 
     #[test]
-    fn resolve_model_default_vs_override() {
-        let default = CodexAgent::new(None, PathBuf::from("/run"));
-        assert_eq!(default.resolve_model(), DEFAULT_CODEX_MODEL);
-
+    fn resolve_model_override_wins() {
+        // The explicit --exec-model override wins over config and default, with no
+        // dependence on the machine's Codex config.
         let overridden = CodexAgent::new(Some("gpt-5".into()), PathBuf::from("/run"));
         assert_eq!(overridden.resolve_model(), "gpt-5");
+    }
+
+    // ── parse_codex_config_model ────────────────────────────────────────────
+
+    #[test]
+    fn parse_codex_config_model_reads_root_model() {
+        let toml = "model = \"gpt-5.5\"\nmodel_reasoning_effort = \"high\"\n\n[features]\nx = true\n";
+        assert_eq!(parse_codex_config_model(toml).as_deref(), Some("gpt-5.5"));
+    }
+
+    #[test]
+    fn parse_codex_config_model_ignores_effort_and_non_root() {
+        // model_reasoning_effort is a different key, not the model.
+        assert_eq!(
+            parse_codex_config_model("model_reasoning_effort = \"high\"\n"),
+            None
+        );
+        // A `model` under a section is not the root default.
+        assert_eq!(
+            parse_codex_config_model("[mcp_servers.x]\nmodel = \"other\"\n"),
+            None
+        );
+        assert_eq!(parse_codex_config_model("no keys here\n"), None);
     }
 
     // ── trait binding (compile-level) ───────────────────────────────────────
