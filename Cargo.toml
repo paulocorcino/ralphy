@@ -23,7 +23,9 @@ include_dir = "0.7"
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
+indicatif = "0.17"
+console = "0.15"
 
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
