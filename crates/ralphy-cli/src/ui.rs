@@ -3,12 +3,10 @@
 //! local-timestamped lines. The entire UI lives here (ADR-0006); the core stays a
 //! queue engine that happens to log.
 //!
-//! The seam is deliberately thin: a pure [`classify_event`] maps an event's
-//! `(target, message, fields)` to a [`UiAction`], unit-tested in isolation in the
-//! same style as the adapters' `classify_*` functions, so an event/UI drift fails
-//! a test rather than silently breaking the display. The [`Presenter`] then owns
-//! the side effects — timestamps, per-issue duration, and writing through
-//! `indicatif`'s `MultiProgress` so `warn`/`error` lines never corrupt live output.
+//! The seam is thin: [`on_event`] calls `runstate::event_to_runevent` to decode the
+//! raw tracing event into a [`RunEvent`], then passes it to [`Presenter::apply`].
+//! The presenter owns the side effects — timestamps, per-issue duration, and writing
+//! through `indicatif`'s `MultiProgress` so warn/error lines never corrupt live output.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -16,9 +14,10 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Local};
 use console::Style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
+
+use crate::runstate::{event_to_runevent, EventFields, RunEvent, SkipKind};
 
 /// Which phase the active issue is in, for the live active-line icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,206 +62,9 @@ impl FinishOutcome {
     }
 }
 
-/// Why an issue was skipped (not worked, not a run stop).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkipKind {
-    BlockedBy,
-    StopBefore,
-}
-
-impl SkipKind {
-    fn label(self) -> &'static str {
-        match self {
-            SkipKind::BlockedBy => "skipped (blocked)",
-            SkipKind::StopBefore => "skipped (stop-before)",
-        }
-    }
-}
-
-/// What the presenter should do with one event. The mapping from an event to a
-/// `UiAction` is the entire consumed contract (ADR-0006 D1); everything the
-/// presenter does is keyed off this enum.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UiAction {
-    QueueBuilt {
-        count: u64,
-        /// The issue numbers in queue order, parsed from the `#a -> #b` string.
-        order: Vec<u64>,
-    },
-    IssueStarted {
-        number: u64,
-        title: String,
-    },
-    /// The active issue moved from planning into execution; carries the resolved
-    /// model and per-issue budget for the live active line. Live-region only — it
-    /// renders no permanent line.
-    Executing {
-        number: u64,
-        model: String,
-        budget_min: u64,
-    },
-    PlanWritten {
-        number: u64,
-        open_steps: u64,
-    },
-    Finished {
-        number: u64,
-        outcome: FinishOutcome,
-    },
-    Skipped {
-        number: u64,
-        kind: SkipKind,
-    },
-    Warn {
-        message: String,
-    },
-    Error {
-        message: String,
-    },
-    /// An event the presenter does not surface (its full text still reaches
-    /// `ralphy.log`).
-    Ignore,
-}
-
-/// The typed fields extracted off one `tracing` event, plus its level. Populated
-/// by the [`Visit`] impl below; consumed by [`classify_event`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventFields {
-    pub level: Level,
-    pub message: String,
-    pub number: Option<u64>,
-    pub title: Option<String>,
-    pub open_steps: Option<u64>,
-    pub count: Option<u64>,
-    pub outcome: Option<String>,
-    pub order: Option<String>,
-    pub model: Option<String>,
-    pub budget_min: Option<u64>,
-}
-
-impl Default for EventFields {
-    fn default() -> Self {
-        EventFields {
-            level: Level::INFO,
-            message: String::new(),
-            number: None,
-            title: None,
-            open_steps: None,
-            count: None,
-            outcome: None,
-            order: None,
-            model: None,
-            budget_min: None,
-        }
-    }
-}
-
-impl Visit for EventFields {
-    fn record_u64(&mut self, field: &Field, value: u64) {
-        match field.name() {
-            "number" => self.number = Some(value),
-            "open_steps" => self.open_steps = Some(value),
-            "count" => self.count = Some(value),
-            "budget_min" => self.budget_min = Some(value),
-            _ => {}
-        }
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        match field.name() {
-            "message" => self.message = value.to_string(),
-            "title" => self.title = Some(value.to_string()),
-            "outcome" => self.outcome = Some(value.to_string()),
-            "order" => self.order = Some(value.to_string()),
-            "model" => self.model = Some(value.to_string()),
-            _ => {}
-        }
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        // `%field` (Display) and `?field` (Debug) both arrive here; the message
-        // literal also arrives as a `format_args!` debug value.
-        let rendered = format!("{value:?}");
-        match field.name() {
-            "message" => self.message = rendered,
-            "title" => self.title = Some(rendered),
-            "outcome" => self.outcome = Some(rendered),
-            "order" => self.order = Some(rendered),
-            "model" => self.model = Some(rendered),
-            _ => {}
-        }
-    }
-}
-
-/// Map an event's `(target, message, fields)` to a [`UiAction`]. Pure over its
-/// inputs and unit-tested per lifecycle event so an event/UI drift fails a test
-/// rather than silently breaking the display (ADR-0006 D1).
-///
-/// `target` is currently informational — the message + fields uniquely identify
-/// every consumed event — but kept in the signature so a future disambiguation
-/// (two crates, same message) has the discriminator on hand.
-pub fn classify_event(target: &str, message: &str, fields: &EventFields) -> UiAction {
-    let _ = target;
-
-    // Level wins over message: any WARN/ERROR surfaces as a styled line so a
-    // future warning can never silently vanish from the terminal (ADR-0006 D3).
-    if fields.level == Level::ERROR {
-        return UiAction::Error {
-            message: message.to_string(),
-        };
-    }
-    if fields.level == Level::WARN {
-        return UiAction::Warn {
-            message: message.to_string(),
-        };
-    }
-
-    let number = fields.number.unwrap_or(0);
-    match message {
-        "queue built" => UiAction::QueueBuilt {
-            count: fields.count.unwrap_or(0),
-            order: parse_order(fields.order.as_deref()),
-        },
-        "issue started" => UiAction::IssueStarted {
-            number,
-            title: fields.title.clone().unwrap_or_default(),
-        },
-        // The adapter's execution events carry no issue number (the adapter never
-        // receives it, ADR-0006 D2); the presenter applies this to whichever issue
-        // is currently active. `number` is therefore 0 here.
-        "executing with interactive claude over the PTY"
-        | "executing with headless claude -p loop" => UiAction::Executing {
-            number,
-            model: fields.model.clone().unwrap_or_default(),
-            budget_min: fields.budget_min.unwrap_or(0),
-        },
-        "plan written" => UiAction::PlanWritten {
-            number,
-            open_steps: fields.open_steps.unwrap_or(0),
-        },
-        "green — issue closed" => UiAction::Finished {
-            number,
-            outcome: FinishOutcome::Done,
-        },
-        "non-green — stopping run" => UiAction::Finished {
-            number,
-            outcome: parse_outcome(fields.outcome.as_deref()),
-        },
-        "blocked by open issue(s) — skipping" => UiAction::Skipped {
-            number,
-            kind: SkipKind::BlockedBy,
-        },
-        "stop-before label — halting run before this issue" => UiAction::Skipped {
-            number,
-            kind: SkipKind::StopBefore,
-        },
-        _ => UiAction::Ignore,
-    }
-}
-
 /// Map the `?outcome` Debug string off `non-green — stopping run` to a
 /// [`FinishOutcome`]. An unrecognised non-green outcome is treated as `Stuck`
-/// rather than dropped, so the run never finishes a line-less.
+/// rather than dropped, so the run never finishes line-less.
 fn parse_outcome(debug: Option<&str>) -> FinishOutcome {
     match debug {
         Some(s) if s.starts_with("Done") => FinishOutcome::Done,
@@ -273,21 +75,12 @@ fn parse_outcome(debug: Option<&str>) -> FinishOutcome {
     }
 }
 
-/// Parse the `queue built` `order` field (`#30 -> #31 -> #32`) into the issue
-/// numbers in queue order. Tolerant of spacing and a missing/empty field.
-fn parse_order(order: Option<&str>) -> Vec<u64> {
-    let Some(s) = order else {
-        return Vec::new();
-    };
-    s.split("->")
-        .filter_map(|tok| {
-            tok.trim()
-                .trim_start_matches('#')
-                .trim()
-                .parse::<u64>()
-                .ok()
-        })
-        .collect()
+/// Label for a skipped issue: a UI-local string keyed off `runstate::SkipKind`.
+fn skip_label(kind: SkipKind) -> &'static str {
+    match kind {
+        SkipKind::BlockedBy => "skipped (blocked)",
+        SkipKind::StopBefore => "skipped (stop-before)",
+    }
 }
 
 /// The pure state behind the queue progress bar: a fixed `total`, the ordered
@@ -441,11 +234,11 @@ pub struct PanelData {
     pub dry_run: bool,
 }
 
-/// Render a [`UiAction`] to a single line, or `None` for [`UiAction::Ignore`].
+/// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
 /// The local timestamp and the outcome glyph are always present on a surfaced
 /// line; colour is applied only when `opts.color` is set.
 fn render_line(
-    action: &UiAction,
+    event: &RunEvent,
     ts: &DateTime<Local>,
     duration: Option<Duration>,
     opts: RenderOpts,
@@ -455,26 +248,27 @@ fn render_line(
         .map(|d| format!(" ({})", fmt_duration(d)))
         .unwrap_or_default();
 
-    let (glyph, style, body) = match action {
-        UiAction::QueueBuilt { count, .. } => (
+    let (glyph, style, body) = match event {
+        RunEvent::QueueBuilt { count, .. } => (
             pick("📋", "[queue]", opts.emoji),
             Style::new().cyan(),
             format!("queue built: {count} issue(s)"),
         ),
         // Live-region only: the active line carries the execution phase; no
         // permanent scroll-up line is drawn for it.
-        UiAction::Executing { .. } => return None,
-        UiAction::IssueStarted { number, title } => (
+        RunEvent::Executing { .. } => return None,
+        RunEvent::IssueStarted { number, title } => (
             pick("🧠", "[plan]", opts.emoji),
             Style::new().cyan(),
             format!("#{number} {title} — planning"),
         ),
-        UiAction::PlanWritten { number, open_steps } => (
+        RunEvent::PlanWritten { number, open_steps } => (
             pick("📝", "[plan]", opts.emoji),
             Style::new().cyan(),
             format!("#{number} plan written ({open_steps} step(s))"),
         ),
-        UiAction::Finished { number, outcome } => {
+        RunEvent::IssueClosed { number } => {
+            let outcome = FinishOutcome::Done;
             let (emoji, ascii, style) = outcome.glyph();
             (
                 pick(emoji, ascii, opts.emoji),
@@ -482,22 +276,50 @@ fn render_line(
                 format!("#{number} {}{dur}", outcome.label()),
             )
         }
-        UiAction::Skipped { number, kind } => (
+        RunEvent::NonGreen { number, outcome } => {
+            let fo = parse_outcome(Some(outcome));
+            let (emoji, ascii, style) = fo.glyph();
+            (
+                pick(emoji, ascii, opts.emoji),
+                style,
+                format!("#{number} {}{dur}", fo.label()),
+            )
+        }
+        RunEvent::Skipped { number, kind } => (
             pick("⏭️", "[skip]", opts.emoji),
             Style::new().dim(),
-            format!("#{number} {}{dur}", kind.label()),
+            format!("#{number} {}{dur}", skip_label(*kind)),
         ),
-        UiAction::Warn { message } => (
-            pick("⚠️", "[warn]", opts.emoji),
+        RunEvent::Notice { level, message } => {
+            if *level == Level::ERROR {
+                (
+                    pick("💥", "[error]", opts.emoji),
+                    Style::new().red(),
+                    message.clone(),
+                )
+            } else {
+                (
+                    pick("⚠️", "[warn]", opts.emoji),
+                    Style::new().yellow(),
+                    message.clone(),
+                )
+            }
+        }
+        RunEvent::SleepStarted { reset, .. } => (
+            pick("🌙", "[limit]", opts.emoji),
             Style::new().yellow(),
-            message.clone(),
+            format!("usage limit — sleeping until {reset}"),
         ),
-        UiAction::Error { message } => (
-            pick("💥", "[error]", opts.emoji),
-            Style::new().red(),
-            message.clone(),
+        RunEvent::SleepEnded => (
+            pick("🌙", "[limit]", opts.emoji),
+            Style::new().yellow(),
+            "usage limit reset — resuming".to_string(),
         ),
-        UiAction::Ignore => return None,
+        RunEvent::DeadlinePassed { number } => (
+            pick("⏱️", "[timeout]", opts.emoji),
+            Style::new().yellow(),
+            format!("deadline reached before #{number}"),
+        ),
     };
 
     Some(if opts.color {
@@ -512,16 +334,16 @@ fn render_line(
     })
 }
 
-/// Render a [`UiAction`] to a plain, ANSI-free line (local timestamp + outcome
+/// Render a [`RunEvent`] to a plain, ANSI-free line (local timestamp + outcome
 /// glyph + body). The non-TTY / `NO_COLOR` clean-line path; also the public seam
 /// the unit tests assert against.
 pub fn render_plain_line(
-    action: &UiAction,
+    event: &RunEvent,
     ts: &DateTime<Local>,
     duration: Option<Duration>,
 ) -> Option<String> {
     render_line(
-        action,
+        event,
         ts,
         duration,
         RenderOpts {
@@ -728,23 +550,23 @@ impl Presenter {
         }
     }
 
-    /// Apply one classified action: drive the live region + active-issue tracking,
+    /// Apply one decoded run event: drive the live region + active-issue tracking,
     /// then emit the permanent line (if any).
-    fn apply(&self, action: UiAction) {
+    fn apply(&self, event: RunEvent) {
         let ts = Local::now();
         // Recover from poison rather than panic: this runs inside `on_event`, so a
         // panic here would corrupt the run on a tracing call.
         let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
-        let duration = self.drive(&mut s, &action);
+        let duration = self.drive(&mut s, &event);
 
         // Styled lines on a colour TTY (routed through `MultiProgress` so they
         // never tear the live region); one clean, ANSI-free line per event
         // otherwise (the non-TTY / `NO_COLOR` path, ADR-0006 D3).
         let line = if self.opts.color {
-            render_line(&action, &ts, duration, self.opts)
+            render_line(&event, &ts, duration, self.opts)
         } else {
-            render_plain_line(&action, &ts, duration)
+            render_plain_line(&event, &ts, duration)
         };
         if let Some(line) = line {
             if self.opts.color {
@@ -755,12 +577,12 @@ impl Presenter {
         }
     }
 
-    /// Update the live region for one action and return a finishing duration when
-    /// the action closes the active issue. The live-region (`indicatif`) calls are
+    /// Update the live region for one event and return a finishing duration when
+    /// the event closes the active issue. The live-region (`indicatif`) calls are
     /// guarded behind `self.opts.color`, so `--verbose`/non-TTY draw nothing.
-    fn drive(&self, s: &mut LiveState, action: &UiAction) -> Option<Duration> {
-        match action {
-            UiAction::QueueBuilt { count, order } => {
+    fn drive(&self, s: &mut LiveState, event: &RunEvent) -> Option<Duration> {
+        match event {
+            RunEvent::QueueBuilt { count, order } => {
                 s.queue = Some(QueueState::built(*count, order.clone()));
                 if self.opts.color {
                     let bar = self.multi.add(ProgressBar::new_spinner());
@@ -772,7 +594,7 @@ impl Presenter {
                 }
                 None
             }
-            UiAction::IssueStarted { number, title } => {
+            RunEvent::IssueStarted { number, title } => {
                 // A new active issue supersedes a still-pending prior one that
                 // emitted no terminal event (infeasible / dry-run plan).
                 if let Some(prev) = s.active.take() {
@@ -792,7 +614,7 @@ impl Presenter {
                 self.refresh_active_bar(s);
                 None
             }
-            UiAction::Executing {
+            RunEvent::Executing {
                 model, budget_min, ..
             } => {
                 // The event carries no number; it applies to the active issue.
@@ -804,7 +626,9 @@ impl Presenter {
                 self.refresh_active_bar(s);
                 None
             }
-            UiAction::Finished { number, .. } | UiAction::Skipped { number, .. } => {
+            RunEvent::IssueClosed { number }
+            | RunEvent::NonGreen { number, .. }
+            | RunEvent::Skipped { number, .. } => {
                 let d = s
                     .active
                     .as_ref()
@@ -942,171 +766,21 @@ impl<S: Subscriber> Layer<S> for Presenter {
             ..EventFields::default()
         };
         event.record(&mut fields);
-        let action = classify_event(event.metadata().target(), &fields.message, &fields);
-        self.apply(action);
+        let Some(run_event) =
+            event_to_runevent(event.metadata().target(), &fields.message, &fields)
+        else {
+            return;
+        };
+        self.apply(run_event);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runstate::{RunEvent, SkipKind};
     use chrono::TimeZone;
-
-    fn fields(level: Level, message: &str) -> EventFields {
-        EventFields {
-            level,
-            message: message.to_string(),
-            ..EventFields::default()
-        }
-    }
-
-    #[test]
-    fn classify_queue_built() {
-        let f = EventFields {
-            count: Some(3),
-            order: Some("#30 -> #31 -> #32".to_string()),
-            ..fields(Level::INFO, "queue built")
-        };
-        assert_eq!(
-            classify_event("ralphy", "queue built", &f),
-            UiAction::QueueBuilt {
-                count: 3,
-                order: vec![30, 31, 32],
-            }
-        );
-    }
-
-    #[test]
-    fn classify_issue_started() {
-        let f = EventFields {
-            number: Some(30),
-            title: Some("Console UI".to_string()),
-            ..fields(Level::INFO, "issue started")
-        };
-        assert_eq!(
-            classify_event("ralphy_core::runner", "issue started", &f),
-            UiAction::IssueStarted {
-                number: 30,
-                title: "Console UI".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn classify_plan_written() {
-        let f = EventFields {
-            number: Some(30),
-            open_steps: Some(7),
-            ..fields(Level::INFO, "plan written")
-        };
-        assert_eq!(
-            classify_event("ralphy_core::runner", "plan written", &f),
-            UiAction::PlanWritten {
-                number: 30,
-                open_steps: 7,
-            }
-        );
-    }
-
-    #[test]
-    fn classify_green_closed_is_done() {
-        let f = EventFields {
-            number: Some(30),
-            ..fields(Level::INFO, "green — issue closed")
-        };
-        assert_eq!(
-            classify_event("ralphy_core::runner", "green — issue closed", &f),
-            UiAction::Finished {
-                number: 30,
-                outcome: FinishOutcome::Done,
-            }
-        );
-    }
-
-    #[test]
-    fn classify_non_green_maps_outcome() {
-        for (debug, expected) in [
-            ("Timeout", FinishOutcome::Timeout),
-            ("Stuck", FinishOutcome::Stuck),
-            ("Blocked(\"reason\")", FinishOutcome::Blocked),
-            ("Limit(Some(\"15:00\"))", FinishOutcome::Limit),
-        ] {
-            let f = EventFields {
-                number: Some(30),
-                outcome: Some(debug.to_string()),
-                ..fields(Level::INFO, "non-green — stopping run")
-            };
-            assert_eq!(
-                classify_event("ralphy_core::runner", "non-green — stopping run", &f),
-                UiAction::Finished {
-                    number: 30,
-                    outcome: expected,
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn classify_blocked_skip() {
-        let f = EventFields {
-            number: Some(30),
-            ..fields(Level::INFO, "blocked by open issue(s) — skipping")
-        };
-        assert_eq!(
-            classify_event(
-                "ralphy_core::runner",
-                "blocked by open issue(s) — skipping",
-                &f
-            ),
-            UiAction::Skipped {
-                number: 30,
-                kind: SkipKind::BlockedBy,
-            }
-        );
-    }
-
-    #[test]
-    fn classify_stop_before_skip() {
-        let msg = "stop-before label — halting run before this issue";
-        let f = EventFields {
-            number: Some(30),
-            ..fields(Level::INFO, msg)
-        };
-        assert_eq!(
-            classify_event("ralphy_core::runner", msg, &f),
-            UiAction::Skipped {
-                number: 30,
-                kind: SkipKind::StopBefore,
-            }
-        );
-    }
-
-    #[test]
-    fn classify_warn_and_error_by_level() {
-        let w = fields(Level::WARN, "could not return to 'main'");
-        assert_eq!(
-            classify_event("ralphy_core::runner", &w.message.clone(), &w),
-            UiAction::Warn {
-                message: "could not return to 'main'".to_string(),
-            }
-        );
-        let e = fields(Level::ERROR, "boom");
-        assert_eq!(
-            classify_event("ralphy", &e.message.clone(), &e),
-            UiAction::Error {
-                message: "boom".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn classify_unknown_info_is_ignored() {
-        let f = fields(Level::INFO, "run branch created");
-        assert_eq!(
-            classify_event("ralphy_core::runner", "run branch created", &f),
-            UiAction::Ignore
-        );
-    }
+    use tracing::Level;
 
     #[test]
     fn render_plain_finished_carries_timestamp_glyph_and_no_ansi() {
@@ -1114,11 +788,8 @@ mod tests {
             .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
             .single()
             .unwrap();
-        let action = UiAction::Finished {
-            number: 30,
-            outcome: FinishOutcome::Done,
-        };
-        let line = render_plain_line(&action, &ts, Some(Duration::from_secs(133))).expect("a line");
+        let event = RunEvent::IssueClosed { number: 30 };
+        let line = render_plain_line(&event, &ts, Some(Duration::from_secs(133))).expect("a line");
 
         assert!(
             line.contains("2026-06-10 14:03:21"),
@@ -1134,12 +805,147 @@ mod tests {
     }
 
     #[test]
-    fn render_plain_ignore_is_none() {
+    fn render_plain_executing_is_none() {
         let ts = Local
             .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
             .single()
             .unwrap();
-        assert_eq!(render_plain_line(&UiAction::Ignore, &ts, None), None);
+        assert_eq!(
+            render_plain_line(
+                &RunEvent::Executing {
+                    number: 0,
+                    model: String::new(),
+                    budget_min: 0,
+                },
+                &ts,
+                None
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn render_plain_notice_shows_warn_and_error_glyphs() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let warn_line = render_plain_line(
+            &RunEvent::Notice {
+                level: Level::WARN,
+                message: "could not return to 'main'".to_string(),
+            },
+            &ts,
+            None,
+        )
+        .expect("warn renders a line");
+        assert!(warn_line.contains('⚠'), "warn glyph: {warn_line}");
+        assert!(
+            warn_line.contains("could not return to 'main'"),
+            "warn message: {warn_line}"
+        );
+
+        let error_line = render_plain_line(
+            &RunEvent::Notice {
+                level: Level::ERROR,
+                message: "boom".to_string(),
+            },
+            &ts,
+            None,
+        )
+        .expect("error renders a line");
+        assert!(error_line.contains('💥'), "error glyph: {error_line}");
+        assert!(error_line.contains("boom"), "error message: {error_line}");
+    }
+
+    #[test]
+    fn render_plain_sleep_started_ended_deadline_return_some_and_executing_none() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+
+        let sleep_start = render_plain_line(
+            &RunEvent::SleepStarted {
+                reset: "15:30".to_string(),
+                target_epoch: 1_000_000,
+            },
+            &ts,
+            None,
+        )
+        .expect("SleepStarted renders a line");
+        assert!(
+            sleep_start.contains("usage limit"),
+            "SleepStarted body: {sleep_start}"
+        );
+        assert!(
+            sleep_start.contains("15:30"),
+            "SleepStarted reset time: {sleep_start}"
+        );
+
+        let sleep_end =
+            render_plain_line(&RunEvent::SleepEnded, &ts, None).expect("SleepEnded renders a line");
+        assert!(
+            sleep_end.contains("resuming"),
+            "SleepEnded body: {sleep_end}"
+        );
+
+        let deadline = render_plain_line(&RunEvent::DeadlinePassed { number: 42 }, &ts, None)
+            .expect("DeadlinePassed renders a line");
+        assert!(
+            deadline.contains("deadline"),
+            "DeadlinePassed body: {deadline}"
+        );
+        assert!(
+            deadline.contains("#42"),
+            "DeadlinePassed number: {deadline}"
+        );
+
+        // Executing is live-region only — no permanent line.
+        assert_eq!(
+            render_plain_line(
+                &RunEvent::Executing {
+                    number: 0,
+                    model: String::new(),
+                    budget_min: 0,
+                },
+                &ts,
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn render_plain_skipped_shows_skip_label() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let blocked = render_plain_line(
+            &RunEvent::Skipped {
+                number: 7,
+                kind: SkipKind::BlockedBy,
+            },
+            &ts,
+            None,
+        )
+        .expect("Skipped renders a line");
+        assert!(blocked.contains("skipped (blocked)"), "{blocked}");
+
+        let stop_before = render_plain_line(
+            &RunEvent::Skipped {
+                number: 8,
+                kind: SkipKind::StopBefore,
+            },
+            &ts,
+            None,
+        )
+        .expect("StopBefore renders a line");
+        assert!(
+            stop_before.contains("skipped (stop-before)"),
+            "{stop_before}"
+        );
     }
 
     #[test]
@@ -1147,37 +953,6 @@ mod tests {
         assert_eq!(fmt_duration(Duration::from_secs(13)), "13s");
         assert_eq!(fmt_duration(Duration::from_secs(133)), "2m13s");
         assert_eq!(fmt_duration(Duration::from_secs(120)), "2m00s");
-    }
-
-    #[test]
-    fn classify_both_execution_events_map_to_executing() {
-        for msg in [
-            "executing with interactive claude over the PTY",
-            "executing with headless claude -p loop",
-        ] {
-            // The adapter event carries no `number`; it carries model + budget_min.
-            let f = EventFields {
-                model: Some("sonnet".to_string()),
-                budget_min: Some(45),
-                ..fields(Level::INFO, msg)
-            };
-            assert_eq!(
-                classify_event("ralphy_agent_claude", msg, &f),
-                UiAction::Executing {
-                    number: 0,
-                    model: "sonnet".to_string(),
-                    budget_min: 45,
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn parse_order_round_trips_and_tolerates_edges() {
-        assert_eq!(parse_order(Some("#30 -> #31 -> #32")), vec![30, 31, 32]);
-        assert_eq!(parse_order(Some("#7")), vec![7]);
-        assert_eq!(parse_order(None), Vec::<u64>::new());
-        assert_eq!(parse_order(Some("")), Vec::<u64>::new());
     }
 
     #[test]
