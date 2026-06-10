@@ -634,10 +634,15 @@ const CLAUDE_AUTH_ERROR_MSG: &str =
     "Claude Code is not authenticated — run `claude login` and retry";
 
 /// Return `true` when `text` shows a Claude Code authentication failure.
-/// A logged-out `claude` (both `-p` and interactive) prints
-/// `Not logged in · Please run /login` and exits with code 1, so without this
-/// the failure masquerades as a generic "no plan" (planning) or
-/// `Outcome::Stuck` (execution) — both of which hide the real cause.
+/// A logged-out headless `claude -p` prints `Not logged in · Please run /login`
+/// on stdout and exits with code 1 (verified against CLI v2.1.170), so without
+/// this the failure masquerades as a generic "no plan" (planning) or
+/// `Outcome::Stuck` (headless execution) — both of which hide the real cause.
+/// The line is a `-p`-only signal: an *interactive* logged-out session instead
+/// renders the onboarding/login TUI and stalls, so the live path detects auth
+/// failure only when it surfaces in the transcript (mid-session revocation).
+/// That gap is benign because `plan` runs headless first and bails here before
+/// `execute` is ever reached.
 fn is_claude_auth_error(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.contains("not logged in") && lower.contains("please run /login")
