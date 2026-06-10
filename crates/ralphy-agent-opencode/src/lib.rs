@@ -22,15 +22,13 @@
 //! one is seen; `--stop-on-limit` is forced for OpenCode in `main.rs`.
 
 use std::fs;
-use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::run_headless;
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use tracing::info;
 
@@ -362,66 +360,25 @@ impl OpenCodeAgent {
     /// detector (auth failures often print only to stderr).
     fn run_opencode(
         &self,
-        mut cmd: Command,
+        cmd: Command,
         prompt: &str,
         timeout: Duration,
     ) -> Result<(bool, bool, String, String)> {
-        let mut child = cmd
-            .spawn()
+        // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
+        // shared headless runner; `exited_cleanly` is a *successful* exit (the
+        // status is `None` exactly when the child was killed on the wall timeout).
+        let r = run_headless(cmd, prompt, timeout)
             .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
 
-        // Spawn the reader threads *before* writing stdin, so a prompt larger than
-        // the pipe buffer (~64KB) can't deadlock against a child that starts
-        // emitting output before it finishes draining stdin.
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let stdout = child.stdout.take().expect("stdout was piped");
-        let stderr = child.stderr.take().expect("stderr was piped");
-
-        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
-        let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stdout).read_to_end(&mut buf);
-            let _ = tx_out.send(buf);
-        });
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stderr).read_to_end(&mut buf);
-            let _ = tx_err.send(buf);
-        });
-
-        stdin
-            .write_all(prompt.as_bytes())
-            .context("piping the prompt to opencode")?;
-        drop(stdin); // close stdin so opencode sees EOF
-
-        let deadline = Instant::now() + timeout;
-        let mut timed_out = false;
-        let status = loop {
-            if let Some(s) = child.try_wait().context("polling opencode child")? {
-                break Some(s);
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                timed_out = true;
-                break None;
-            }
-            thread::sleep(Duration::from_millis(500));
-        };
-
-        let collect = Duration::from_secs(5);
-        let stdout_bytes = rx_out.recv_timeout(collect).unwrap_or_default();
-        let stderr_bytes = rx_err.recv_timeout(collect).unwrap_or_default();
-        let stdout_text = String::from_utf8_lossy(&stdout_bytes).into_owned();
+        let stdout_text = r.stdout;
         // The combined log keeps stderr too — the JSON stream lives on stdout, but
         // a crash or auth failure often only prints to stderr.
         let mut log = stdout_text.clone();
-        log.push_str(&String::from_utf8_lossy(&stderr_bytes));
+        log.push_str(&r.stderr);
         let _ = fs::write(self.run_dir.join("opencode.log"), &log);
 
-        let exited_cleanly = status.map(|s| s.success()).unwrap_or(false);
-        Ok((exited_cleanly, timed_out, stdout_text, log))
+        let exited_cleanly = r.exit.map(|s| s.success()).unwrap_or(false);
+        Ok((exited_cleanly, r.timed_out, stdout_text, log))
     }
 }
 
