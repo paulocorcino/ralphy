@@ -215,23 +215,112 @@ fn parse_opencode_events(stdout: &str) -> (String, bool) {
     (text, saw_error)
 }
 
+/// Extract a reset hint from an OpenCode error event or message text (best-effort).
+/// Looks for a `retryAfter` field value, or a `Retry-After` / "try again" substring
+/// in the message. Returns `None` when absent (D9: reset hint is not guaranteed).
+fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
+    // retryAfter field on the event object.
+    if let Some(v) = event.get("retryAfter") {
+        let s = match v {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        if !s.is_empty() && s != "null" {
+            return Some(s);
+        }
+    }
+    // "try again" or "Retry-After" in the message text.
+    if let Some(msg) = event.get("message").and_then(|v| v.as_str()) {
+        let lower = msg.to_ascii_lowercase();
+        // "retry-after: <value>"
+        if let Some(pos) = lower.find("retry-after:") {
+            let rest = msg[pos + "retry-after:".len()..].trim();
+            let hint = rest.split_whitespace().next().unwrap_or("").trim_end_matches(',');
+            if !hint.is_empty() {
+                return Some(hint.to_string());
+            }
+        }
+        // "try again at <value>" or "try again in <value>"
+        for prefix in &["try again at ", "try again in "] {
+            if let Some(pos) = lower.find(prefix) {
+                let rest = msg[pos + prefix.len()..].trim();
+                let hint: String = rest.chars().take_while(|c| *c != '.' && *c != '\n').collect();
+                let hint = hint.trim().to_string();
+                if !hint.is_empty() {
+                    return Some(hint);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Scan the line-delimited JSON event stream for a usage-limit signal (ADR-0005 D9).
+///
+/// Returns:
+/// - `Some(Some(hint))` — a limit event was seen and carries a reset hint.
+/// - `Some(None)` — a limit event was seen but no reset hint was found.
+/// - `None` — no limit event was seen.
+///
+/// Detects three documented shapes:
+/// 1. `name:"APIError"` + `statusCode:429` (the SDK's rate-limit error).
+/// 2. Literal rate-limit strings from OpenCode's `retryable()` function
+///    (`retry.ts`): "rate_limit_error", "rate limit exceeded", "too many requests",
+///    "quota exceeded".
+/// 3. Zen provider `*UsageLimitError` name suffix.
+fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            continue;
+        };
+        if val.get("type").and_then(|v| v.as_str()) != Some("error") {
+            continue;
+        }
+        let name = val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let status = val.get("statusCode").and_then(|v| v.as_u64()).unwrap_or(0);
+        let msg = val
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        let is_limit = (name == "APIError" && status == 429)
+            || name.ends_with("UsageLimitError")
+            || msg.contains("rate_limit_error")
+            || msg.contains("rate limit exceeded")
+            || msg.contains("too many requests")
+            || msg.contains("quota exceeded");
+
+        if is_limit {
+            return Some(parse_opencode_reset_hint(&val));
+        }
+    }
+    None
+}
+
 /// Map an execution call's end state onto a core [`Outcome`] (ADR-0005 D2): the
-/// wall timeout wins (`Timeout`); a `RALPHY_BLOCKED_EXIT <reason>` sentinel in the
-/// `text` parts is `Blocked(reason)`; a clean exit that committed, saw no `error`
-/// event, and emitted `RALPHY_DONE_EXIT` is `Done`; anything else — a non-zero
-/// exit, a JSON `error` event, no new commit, or no sentinel — is `Stuck`. The
-/// HEAD-diff `committed` check is the progress guard the Claude headless loop and
-/// the Codex adapter already use: OpenCode makes internal snapshots, not git
-/// commits, so a `Done` claim with no commit is distrusted and downgraded.
+/// wall timeout wins, but a `limit` event (D9) upgrades `Timeout` to
+/// `Outcome::Limit(reset)` and the `Stuck` fallthrough to `Outcome::Limit` when
+/// present; a `RALPHY_BLOCKED_EXIT <reason>` sentinel is `Blocked(reason)`; a
+/// clean exit that committed, saw no `error` event, and emitted `RALPHY_DONE_EXIT`
+/// is `Done`; anything else is `Stuck`. The HEAD-diff `committed` check is the
+/// progress guard the Claude headless loop and the Codex adapter already use:
+/// OpenCode makes internal snapshots, not git commits, so a `Done` claim with no
+/// commit is distrusted and downgraded.
 fn classify_opencode_outcome(
     exited_cleanly: bool,
     timed_out: bool,
     committed: bool,
     text: &str,
     saw_error: bool,
+    limit: Option<Option<String>>,
 ) -> Outcome {
     if timed_out {
-        return Outcome::Timeout;
+        return limit.map(Outcome::Limit).unwrap_or(Outcome::Timeout);
     }
     if let Some(line) = text.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
         let reason = line
@@ -242,6 +331,9 @@ fn classify_opencode_outcome(
     }
     if exited_cleanly && committed && !saw_error && text.contains("RALPHY_DONE_EXIT") {
         return Outcome::Done;
+    }
+    if let Some(reset) = limit {
+        return Outcome::Limit(reset);
     }
     Outcome::Stuck
 }
@@ -397,9 +489,16 @@ impl Agent for OpenCodeAgent {
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let (text, saw_error) = parse_opencode_events(&stdout_text);
+        let limit = parse_opencode_limit(&stdout_text);
 
-        let outcome =
-            classify_opencode_outcome(exited_cleanly, timed_out, committed, &text, saw_error);
+        let outcome = classify_opencode_outcome(
+            exited_cleanly,
+            timed_out,
+            committed,
+            &text,
+            saw_error,
+            limit,
+        );
         info!(
             ?outcome,
             exited_cleanly, timed_out, committed, saw_error, "opencode execution ended"
@@ -473,7 +572,7 @@ mod tests {
     fn classify_done_on_clean_exit_commit_and_sentinel() {
         let text = "all steps green\nRALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(true, false, true, text, false),
+            classify_opencode_outcome(true, false, true, text, false, None),
             Outcome::Done
         );
     }
@@ -483,7 +582,7 @@ mod tests {
         // A DONE claim with no new commit is distrusted (HEAD-diff progress guard).
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(true, false, false, text, false),
+            classify_opencode_outcome(true, false, false, text, false, None),
             Outcome::Stuck
         );
     }
@@ -492,7 +591,7 @@ mod tests {
     fn classify_blocked_on_blocked_sentinel() {
         let text = "did some work\nRALPHY_BLOCKED_EXIT missing upstream crate\n";
         assert_eq!(
-            classify_opencode_outcome(true, false, true, text, false),
+            classify_opencode_outcome(true, false, true, text, false, None),
             Outcome::Blocked("missing upstream crate".into())
         );
     }
@@ -502,7 +601,7 @@ mod tests {
         // A non-zero exit is Stuck even when the output carries a DONE sentinel.
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(false, false, true, text, false),
+            classify_opencode_outcome(false, false, true, text, false, None),
             Outcome::Stuck
         );
     }
@@ -512,7 +611,7 @@ mod tests {
         // A JSON `error` event downgrades an otherwise-clean DONE claim to Stuck.
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(true, false, true, text, true),
+            classify_opencode_outcome(true, false, true, text, true, None),
             Outcome::Stuck
         );
     }
@@ -520,7 +619,7 @@ mod tests {
     #[test]
     fn classify_stuck_on_no_sentinel() {
         assert_eq!(
-            classify_opencode_outcome(true, false, true, "quiet exit, no sentinel", false),
+            classify_opencode_outcome(true, false, true, "quiet exit, no sentinel", false, None),
             Outcome::Stuck
         );
     }
@@ -530,9 +629,102 @@ mod tests {
         // The wall timeout wins over everything, including a DONE sentinel.
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(false, true, false, text, false),
+            classify_opencode_outcome(false, true, false, text, false, None),
             Outcome::Timeout
         );
+    }
+
+    #[test]
+    fn classify_timeout_upgrades_to_limit_when_seen() {
+        // A timed-out run with a limit event is upgraded to Limit(reset) (D9).
+        let text = "some output\n";
+        assert_eq!(
+            classify_opencode_outcome(false, true, false, text, false, Some(Some("2026-06-10T18:00:00Z".into()))),
+            Outcome::Limit(Some("2026-06-10T18:00:00Z".into()))
+        );
+    }
+
+    #[test]
+    fn classify_timeout_stays_timeout_without_limit() {
+        // No limit event means a hung run stays Timeout.
+        let text = "some output\n";
+        assert_eq!(
+            classify_opencode_outcome(false, true, false, text, false, None),
+            Outcome::Timeout
+        );
+    }
+
+    #[test]
+    fn classify_stuck_upgrades_to_limit_when_seen() {
+        // A Stuck outcome is upgraded to Limit when a limit event was seen.
+        let text = "no sentinel\n";
+        assert_eq!(
+            classify_opencode_outcome(true, false, true, text, false, Some(None)),
+            Outcome::Limit(None)
+        );
+    }
+
+    // ── parse_opencode_limit ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_limit_apierror_429_with_reset_hint() {
+        // Representative captured JSON: APIError + statusCode:429 + retryAfter field.
+        let stream = r#"{"type":"text","text":"working"}
+{"type":"error","name":"APIError","statusCode":429,"message":"rate limited","retryAfter":"2026-06-10T18:00:00Z"}
+"#;
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(Some("2026-06-10T18:00:00Z".into()))
+        );
+    }
+
+    #[test]
+    fn parse_limit_apierror_429_without_reset_hint() {
+        // APIError + 429 but no reset hint → Some(None).
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"too many requests"}
+"#;
+        assert_eq!(parse_opencode_limit(stream), Some(None));
+    }
+
+    #[test]
+    fn parse_limit_retryable_literal_string() {
+        // Documented retryable() literal: "rate limit exceeded".
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"Rate limit exceeded. Try again at 2026-06-10T19:00:00Z"}
+"#;
+        // Should detect as limit and extract a reset hint from the message.
+        let result = parse_opencode_limit(stream);
+        assert!(result.is_some(), "must detect as limit: {result:?}");
+        // The reset hint is extracted from "try again at <value>".
+        assert_eq!(result, Some(Some("2026-06-10T19:00:00Z".into())));
+    }
+
+    #[test]
+    fn parse_limit_zen_usage_limit_error() {
+        // Zen provider emits a *UsageLimitError name.
+        let stream = r#"{"type":"error","name":"KimiUsageLimitError","message":"usage limit reached"}
+"#;
+        assert!(
+            parse_opencode_limit(stream).is_some(),
+            "must detect Zen *UsageLimitError"
+        );
+    }
+
+    #[test]
+    fn parse_limit_non_limit_status_500() {
+        // A 500 error must not be classified as a limit.
+        let stream = r#"{"type":"error","name":"APIError","statusCode":500,"message":"internal server error"}
+"#;
+        assert_eq!(parse_opencode_limit(stream), None);
+    }
+
+    #[test]
+    fn parse_limit_clean_stream_no_limit() {
+        // A clean stream with no error events yields None.
+        let stream = r#"{"type":"text","text":"working on it"}
+{"type":"text","text":"RALPHY_DONE_EXIT"}
+{"type":"step_finish","reason":"stop"}
+"#;
+        assert_eq!(parse_opencode_limit(stream), None);
     }
 
     // ── build_opencode_command ──────────────────────────────────────────────
