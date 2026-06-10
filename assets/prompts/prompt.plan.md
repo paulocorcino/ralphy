@@ -30,7 +30,10 @@ you only produce a plan that a later execution loop will consume.
    lifetimes, behavior shared between callers). Otherwise choose `sonnet` —
    including for broad-but-mechanical changes (renames, adding a field or
    string everywhere, straightforward refactors); breadth alone is not
-   complexity.>
+   complexity. Decide this LAST, after writing the Steps: price the residual
+   difficulty of executing the plan you just wrote — a highly prescriptive
+   plan (decisions made, signatures given, traps named) lowers the tier the
+   executor needs — not the difficulty of the raw issue.>
 
    ## Done when
    - <test-verifiable condition(s) — what the project's tests (or a build)
@@ -63,7 +66,9 @@ you only produce a plan that a later execution loop will consume.
    - [ ] <step 2>
    - [ ] <...>
    - [ ] <at least one step adds a test that FAILS before the change and PASSES
-         after — proving the behavior, not merely that the code builds>
+         after — proving the behavior, not merely that the code builds. Name
+         the exact assertion (literal string or value) the test checks, so a
+         weak implementation cannot pass it>
    - [ ] Self-review: spawn the `reviewer` skill as an independent subagent over
          ONLY the commits you made for this issue (this run's branch may already
          carry earlier issues — review just your own commits, not the whole
@@ -95,6 +100,19 @@ you only produce a plan that a later execution loop will consume.
   whether the issue is already partially or fully implemented on the current
   branch (read-only `git log` and tree inspection); if so, say so under
   `## Feasible` and plan only the residue.
+- Anchor new shapes too: any NEW signature, struct, or field you specify must
+  be validated against the consuming code you read in this pass (does the
+  caller actually have that data at that point?). If you cannot validate it,
+  mark it `(indicative — refine at implementation)` instead of stating it
+  with the same confident voice as verified facts.
+- Make cross-path invariants explicit: when the work touches lifecycle,
+  teardown, error handling, shared resources, or concurrency, state the
+  invariant that must hold on EVERY return path — including errors and early
+  exits (e.g. "finalize() runs before any print on all paths") — as its own
+  step or a constraint inside the relevant step, never only as a narrative
+  Decision. The language's idiomatic form (e.g. Rust's `?`) often violates
+  such guarantees silently; plans must spend ink where the risk is, not
+  where the description is easiest.
 - Anchor every step in real code: name the actual file and function/module to
   edit, found by reading the tree NOW. If a step cannot point at concrete code
   even after you have made the open design decisions, the issue is too
