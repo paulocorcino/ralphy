@@ -25,6 +25,57 @@
 //! returned [`HeadlessOutput`] into the adapter's own local return shape.
 
 use std::io::{BufReader, Read, Write};
+
+/// Returns `true` when `text` contains the `RALPHY_DONE_EXIT` sentinel, as
+/// defined by `assets/prompts/prompt.execute.md`.
+pub fn done_sentinel(text: &str) -> bool {
+    text.contains("RALPHY_DONE_EXIT")
+}
+
+/// Returns the trimmed reason from the first `RALPHY_BLOCKED_EXIT <reason>` line
+/// in `text`, or `None` when no such line is present. A bare marker with no
+/// trailing text yields `Some("")`.
+pub fn blocked_reason(text: &str) -> Option<String> {
+    let line = text.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT"))?;
+    Some(
+        line.split_once("RALPHY_BLOCKED_EXIT")
+            .map(|(_, rest)| rest.trim().to_string())
+            .unwrap_or_default(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blocked_reason_extracts_trimmed_reason() {
+        assert_eq!(
+            blocked_reason("RALPHY_BLOCKED_EXIT missing key"),
+            Some("missing key".into())
+        );
+    }
+
+    #[test]
+    fn done_sentinel_detects_bare_done() {
+        assert!(done_sentinel("some output\nRALPHY_DONE_EXIT\n"));
+    }
+
+    #[test]
+    fn neither_sentinel_yields_none_and_false() {
+        let text = "no sentinel here";
+        assert_eq!(blocked_reason(text), None);
+        assert!(!done_sentinel(text));
+    }
+
+    #[test]
+    fn blocked_reason_with_surrounding_whitespace_is_trimmed() {
+        assert_eq!(
+            blocked_reason("  RALPHY_BLOCKED_EXIT   need crate X  "),
+            Some("need crate X".into())
+        );
+    }
+}
 use std::process::{Command, ExitStatus};
 use std::sync::mpsc;
 use std::thread;
