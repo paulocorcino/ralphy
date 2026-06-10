@@ -410,7 +410,7 @@ pub fn run_queue(
         // Don't start a new issue past the global budget. Work already committed
         // for earlier issues is kept; the branch is handed back as it stands.
         if clock.deadline_passed() {
-            // message consumed by the CLI presenter — keep stable
+            // consumed by the telegram notifier / presenter — keep stable
             info!(
                 number = issue.number,
                 "deadline passed — not starting issue"
@@ -423,7 +423,7 @@ pub fn run_queue(
         // issue. `only_issue` overrides it (the queue was pre-filtered to that
         // issue, so the operator explicitly wants it to run).
         if cfg.only_issue.is_none() && issue.labels.iter().any(|l| l == STOP_BEFORE_LABEL) {
-            // message consumed by the CLI presenter — keep stable
+            // consumed by the telegram notifier / presenter — keep stable
             info!(
                 number = issue.number,
                 "stop-before label — halting run before this issue"
@@ -453,7 +453,7 @@ pub fn run_queue(
             open
         };
         if !open_blockers.is_empty() {
-            // message consumed by the CLI presenter — keep stable
+            // consumed by the telegram notifier / presenter — keep stable
             info!(
                 number = issue.number,
                 blockers = ?open_blockers,
@@ -468,7 +468,7 @@ pub fn run_queue(
             continue;
         }
 
-        // message consumed by the CLI presenter — keep stable
+        // consumed by the telegram notifier / presenter — keep stable
         info!(number = issue.number, title = %issue.title, "issue started");
 
         // Persist the current issue where the planner reads it. The adapter's
@@ -535,7 +535,7 @@ pub fn run_queue(
             }
             // Otherwise loop: re-plan after the reset window.
         };
-        // message consumed by the CLI presenter — keep stable
+        // consumed by the telegram notifier / presenter — keep stable
         info!(
             number = issue.number,
             open_steps = plan.open_steps,
@@ -625,7 +625,7 @@ pub fn run_queue(
 
             // Record the closed issue before writing evidence so the result is
             // always present in the report even if write_evidence errors out.
-            // message consumed by the CLI presenter — keep stable
+            // consumed by the telegram notifier / presenter — keep stable
             info!(number = issue.number, "green — issue closed");
             worked.push(IssueResult {
                 number: issue.number,
@@ -647,7 +647,7 @@ pub fn run_queue(
         }
 
         // Any non-green outcome stops the whole run; later issues are untouched.
-        // message consumed by the CLI presenter — keep stable
+        // consumed by the telegram notifier / presenter — keep stable
         info!(number = issue.number, ?outcome, "non-green — stopping run");
         let number = issue.number;
         worked.push(IssueResult {
