@@ -26,7 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 indicatif = "0.17"
 console = "0.15"
-ureq = "2"
+ureq = { version = "2", features = ["json"] }
 directories = "5"
 toml = "0.8"
 

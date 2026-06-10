@@ -3,4 +3,5 @@
 //! and transport spine; the run-time notifier Layer (D1/D6) lands in a later
 //! slice.
 
+pub mod client;
 pub mod config;
