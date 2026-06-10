@@ -176,11 +176,15 @@ Claude/Codex assets stay untouched.
 truth stays under `assets/prompts/`; the new prompt is embedded with `include_str!`
 the same way the Codex plan prompt is.
 
-- *Deferred until live*: the **exact** OpenCode reviewer-subagent dispatch shape —
-  skill self-dispatch via OpenCode's Task tool, a materialized `.opencode/agent/
-  reviewer.md` (`mode: subagent`), or an `@reviewer` mention. The prompt uses
-  non-committal OpenCode-neutral phrasing until this is observed, the mirror of
-  ADR-0004's deferred `$reviewer` vs `.codex/agents/reviewer.toml`.
+- *Resolved (live-probed against opencode 1.16.2, 2026-06-10)*: the reviewer
+  self-review runs as the **inline `reviewer` skill** (auto-discovered via
+  `skills.paths`), **not** a subagent. True headless custom-subagent dispatch is
+  blocked upstream: the Task tool's `subagent_type` enum is hardcoded to
+  `explore`/`general` and `@name` routing does not fire for custom agents
+  (`opencode#29616`, `opencode#20059`), independent of config- vs markdown-defined
+  agents. The inline skill is the only working headless mechanism today;
+  subagent isolation awaits the upstream fix. `prompt.plan.opencode.md` now names
+  this mechanism (the mirror of ADR-0004's `$reviewer` resolution).
 
 ## D9 — A usage limit is caught by the wall timeout, not a text matcher
 
