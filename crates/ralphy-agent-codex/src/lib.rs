@@ -203,6 +203,24 @@ fn build_codex_command(model: &str, effort: &str, root: &Path, out_path: &Path) 
     cmd
 }
 
+/// The actionable message surfaced when a run hits a Codex authentication
+/// failure — the account is signed out or its credentials were revoked.
+const CODEX_AUTH_ERROR_MSG: &str =
+    "Codex is not authenticated (401 Unauthorized) — run `codex login` and retry";
+
+/// Return `true` when `text` shows a Codex authentication failure (account
+/// signed out / credentials revoked). A logged-out `codex exec` prints a `401
+/// Unauthorized` with `Missing bearer or basic authentication in header` and
+/// writes no `-o` file, so without this the failure masquerades as a generic
+/// "no plan" (planning) or `Outcome::Stuck` (execution) — both of which hide the
+/// real cause. Either signal alone is auth-specific; matching either keeps the
+/// detector robust to Codex reformatting one of the two lines.
+fn is_codex_auth_error(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("401 unauthorized")
+        || lower.contains("missing bearer or basic authentication")
+}
+
 /// Return `true` when `text` contains a Codex usage-limit message (case-insensitive).
 fn is_codex_limit_text(text: &str) -> bool {
     // to_ascii_lowercase is used so byte offsets are preserved (ASCII-only pattern).
@@ -364,6 +382,14 @@ impl Agent for CodexAgent {
                 }
                 .into());
             }
+            // An auth failure won't self-heal (unlike a usage limit), so stop the
+            // run with an actionable message instead of a generic "no plan".
+            if is_codex_auth_error(&log) {
+                bail!(
+                    "{CODEX_AUTH_ERROR_MSG} (see {})",
+                    self.run_dir.join("codex.log").display()
+                );
+            }
             bail!(
                 "codex produced no plan at {} (see {})",
                 plan_path.display(),
@@ -397,6 +423,15 @@ impl Agent for CodexAgent {
         let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
         info!(model = %model, effort, "executing with codex exec");
         let (exited_cleanly, timed_out, log) = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
+
+        // A signed-out account never makes progress: stop the run with an
+        // actionable message rather than letting it fall through to `Stuck`.
+        if is_codex_auth_error(&log) {
+            bail!(
+                "{CODEX_AUTH_ERROR_MSG} (see {})",
+                self.run_dir.join("codex.log").display()
+            );
+        }
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
@@ -656,6 +691,39 @@ mod tests {
             "Error: Rate Limit Reached. Please try again later."
         ));
         assert!(!is_codex_limit_text("all steps green\nRALPHY_DONE_EXIT\n"));
+    }
+
+    // ── is_codex_auth_error ─────────────────────────────────────────────────
+
+    #[test]
+    fn is_codex_auth_error_matches_real_logged_out_log() {
+        // The verbatim stderr a `codex exec` (v0.138.0) emitted with the account
+        // signed out: a 401 with the missing-bearer body and reconnect attempts.
+        let log = "ERROR codex_api::endpoint::responses_websocket: failed to connect \
+                   to websocket: HTTP error: 401 Unauthorized, url: \
+                   wss://api.openai.com/v1/responses\nERROR: Reconnecting... 5/5\n\
+                   ERROR: unexpected status 401 Unauthorized: Missing bearer or basic \
+                   authentication in header, url: https://api.openai.com/v1/responses";
+        assert!(is_codex_auth_error(log));
+    }
+
+    #[test]
+    fn is_codex_auth_error_matches_either_signal_alone() {
+        assert!(is_codex_auth_error("HTTP error: 401 Unauthorized"));
+        assert!(is_codex_auth_error(
+            "Missing bearer or basic authentication in header"
+        ));
+        // Case-insensitive.
+        assert!(is_codex_auth_error("401 UNAUTHORIZED"));
+    }
+
+    #[test]
+    fn is_codex_auth_error_ignores_unrelated_and_limit_text() {
+        assert!(!is_codex_auth_error("all steps green\nRALPHY_DONE_EXIT\n"));
+        // A usage limit is a different failure, not an auth error.
+        assert!(!is_codex_auth_error(
+            "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
+        ));
     }
 
     // ── parse_codex_reset_hint ──────────────────────────────────────────────
