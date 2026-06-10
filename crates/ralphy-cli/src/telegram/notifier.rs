@@ -509,24 +509,27 @@ pub fn run_worker<T: Transport>(
             queue.drain_blocking(POLL_INTERVAL)
         };
         let changed = !events.is_empty();
+        // Detect the sleep edge per applied event, not once per drained batch: a
+        // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain
+        // would net to `sleep = None` and silently swallow both pushes if compared
+        // only batch-to-batch. Per-event a false→true edge buzzes on entering a
+        // sleep and a true→false edge buzzes on resuming; comparing against the
+        // folded state keeps it idempotent, so a drop under back-pressure cannot
+        // double-fire.
         for event in events {
             state.apply(event);
-        }
-
-        // A false→true sleep transition buzzes the phone on entering a sleep; a
-        // true→false transition buzzes on resuming. Detected on the folded state
-        // so a drop under back-pressure cannot double-fire.
-        let now_sleeping = state.sleep.is_some();
-        if now_sleeping && !prev_sleeping {
-            if let Err(e) = client.send_message(chat_id, &render_sleep_push(&state)) {
-                warn!("telegram: sleep push failed: {e}");
+            let now_sleeping = state.sleep.is_some();
+            if now_sleeping && !prev_sleeping {
+                if let Err(e) = client.send_message(chat_id, &render_sleep_push(&state)) {
+                    warn!("telegram: sleep push failed: {e}");
+                }
+            } else if !now_sleeping && prev_sleeping {
+                if let Err(e) = client.send_message(chat_id, &render_resume_push(&state)) {
+                    warn!("telegram: resume push failed: {e}");
+                }
             }
-        } else if !now_sleeping && prev_sleeping {
-            if let Err(e) = client.send_message(chat_id, &render_resume_push(&state)) {
-                warn!("telegram: resume push failed: {e}");
-            }
+            prev_sleeping = now_sleeping;
         }
-        prev_sleeping = now_sleeping;
 
         if let Some(mid) = message_id {
             if should_edit(changed, last_edit.elapsed(), REFRESH_INTERVAL) {
@@ -1061,6 +1064,39 @@ mod tests {
         );
         // initial card + start + sleep + resume + final = five sendMessage calls.
         assert!(texts.len() >= 5, "expected ≥5 sendMessage, got {texts:?}");
+    }
+
+    #[test]
+    fn worker_fires_both_pushes_when_sleep_events_co_batch() {
+        // A SleepStarted immediately followed by a SleepEnded drained in ONE batch
+        // nets to `sleep = None`; per-event edge detection must still fire both the
+        // sleep-in and the resume push (a batch-to-batch compare would swallow them).
+        let transport = RecordingTransport::new();
+        let calls = transport.calls.clone();
+        let client = BotClient::new(transport);
+        let queue = Arc::new(EventQueue::new());
+        // Inline run: shutdown already set, so the first drain takes both events.
+        let shutdown = Arc::new(AtomicBool::new(true));
+
+        queue.push(RunEvent::SleepStarted {
+            reset: "14:30".into(),
+            target_epoch: 1_700_000_000,
+        });
+        queue.push(RunEvent::SleepEnded);
+
+        run_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+
+        let calls = calls.lock().unwrap();
+        let texts = send_texts(&calls);
+        let sleep_idx = texts
+            .iter()
+            .position(|t| t.contains("usage limit"))
+            .expect("sleep push fired");
+        let resume_idx = texts
+            .iter()
+            .position(|t| t.contains("resuming"))
+            .expect("resume push fired");
+        assert!(sleep_idx < resume_idx, "order: {texts:?}");
     }
 
     #[test]
