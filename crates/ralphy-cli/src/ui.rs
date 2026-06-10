@@ -383,14 +383,17 @@ impl Presenter {
         let ts = Local::now();
 
         if let UiAction::IssueStarted { number, .. } = &action {
-            *self.active.lock().expect("presenter mutex") = Some((*number, Instant::now()));
+            // Recover from poison rather than panic: this runs inside `on_event`,
+            // so a panic here would corrupt the run on a tracing call.
+            *self.active.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some((*number, Instant::now()));
         }
 
         // A finishing or skipping line closes out the active issue and carries its
         // duration when the numbers match.
         let duration = match &action {
             UiAction::Finished { number, .. } | UiAction::Skipped { number, .. } => {
-                let mut active = self.active.lock().expect("presenter mutex");
+                let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
                 let d = active
                     .filter(|(n, _)| n == number)
                     .map(|(_, start)| start.elapsed());
