@@ -724,6 +724,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-adapter-support"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "ralphy-agent-claude"
 version = "0.1.0"
 dependencies = [

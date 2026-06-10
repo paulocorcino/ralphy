@@ -1,0 +1,10 @@
+[package]
+name = "ralphy-adapter-support"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared, vendor-neutral adapter machinery for Ralphy: the headless child-driving loop (spawn/drain/poll/kill/collect). Owns no completion protocol and produces no Outcome."
+
+[dependencies]
+anyhow.workspace = true
