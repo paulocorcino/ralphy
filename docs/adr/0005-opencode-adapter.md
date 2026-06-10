@@ -1,0 +1,240 @@
+# The OpenCode adapter: a per-run peer of Claude/Codex, native to `opencode run`
+
+Ralphy gains a third — and final — agent CLI vendor, `opencode` (opencode.ai),
+as a new isolated crate `ralphy-agent-opencode` that implements the same PTY-free
+`Agent` trait (docs/adr/0002). It is selected **per run** by `--agent opencode`;
+the core keeps taking a single `&dyn Agent` and never learns which vendor it holds
+(docs/adr/0004 D1). As with Codex, the only shared surface is the core's `Agent`
+trait and `Outcome` enum — there is no shared "headless runner" the two bend to
+fit. The adapter is built to OpenCode's best-fit mechanism even where that makes
+it internally divergent, because the only thing that must match is the `Outcome`
+the core receives, not how it was produced.
+
+This is grounded in the installed `opencode 1.16.2` CLI, against which the
+invocation, the JSON event stream, the `--variant`/`--dangerously-skip-permissions`
+flags, the `skills.paths` config key, and the auth model below were verified
+directly, plus a source-level study of OpenCode's retry/limit handling
+(`packages/opencode/src/session/retry.ts`, `cli/cmd/run.ts`, the SDK error types,
+and issues #8203/#10432/#15562).
+
+Status: proposed. No code is written by this ADR; it is the contract a later
+implementation session follows, the way ADR-0004 preceded the Codex crate.
+
+## D1 — Selection is per run, via `--agent`; the core is untouched
+
+`main.rs` adds `OpenCode` to the `CliAgent` enum and boxes `OpenCodeAgent` as
+`Box<dyn Agent>`; `run_queue(&cfg, &queue, agent.as_ref(), …)` is unchanged. This
+is the same stance ADR-0004 D1 settled for Codex and is not re-litigated here:
+per-run is the smallest surface, keeps the choice out of the core, and matches
+ADR-0002's stance that an adapter is the isolated unit. Per-issue routing and a
+global env/config switch were already rejected there.
+
+## D2 — Completion is the sentinel for *intent*, with OpenCode's native JSON as the net
+
+Both `plan` and `execute` run headless `opencode run --format json
+--dangerously-skip-permissions`, prompt piped on stdin, child cwd = the repo root,
+driven by the same reader-thread + poll-`try_wait` + kill-on-timeout loop the
+Codex adapter uses (`run_codex`). `--format json` emits line-delimited events
+(verified: `step_start`, `text`, `tool_use`, `step_finish` with a `reason`,
+`error`, `session.idle`); the assistant's message arrives as `text` parts.
+
+OpenCode gives a *native* terminal signal — `step_finish reason:"stop"` and an
+`error` event — so a "did it finish" sentinel is technically redundant. But the
+native signal does **not** distinguish a clean finish from a deliberate
+"I'm blocked, giving up": both look like `reason:"stop"`. So the sentinel stays
+the source of **intent**, and the native signal is the **safety net**:
+
+- `RALPHY_BLOCKED_EXIT <reason>` in the concatenated `text` parts → `Blocked(reason)`.
+- exit 0 **and** a HEAD-diff commit **and** `RALPHY_DONE_EXIT` → `Done`.
+- a usage/rate match (D9) → `Limit`.
+- the per-issue wall timeout → `Timeout`.
+- anything else — a JSON `error` event, a non-zero exit, no new commit, or no
+  sentinel → `Stuck`.
+
+The HEAD-diff `committed` check is load-bearing: OpenCode creates its own internal
+**snapshots** (the `snapshot` hash seen in `step_start`/`step_finish`), **not** git
+commits, so a `Done` claim with no new commit is distrusted and downgraded to
+`Stuck` — the same progress guard the Claude headless loop and the Codex adapter
+already use. `PROMPT_EXECUTE` is reused **verbatim**; it already names both
+sentinels and is not Claude-specific. We rejected "native JSON only" (it loses the
+Blocked-vs-Done distinction and the blocked reason, and would force an
+OpenCode-specific charter) and "sentinel only like Codex" (it would ignore the
+`error` event that catches a crash emitting no sentinel).
+
+## D3 — Deterministic: a fixed model, with `--variant` only as an operator knob
+
+Claude routes complexity by swapping `sonnet`/`opus`; Codex routes by
+`model_reasoning_effort` (ADR-0004 D3). OpenCode's analog is `--variant`, but its
+vocabulary is **provider-specific and non-portable** (Anthropic `high`/`max`;
+OpenAI `none`…`xhigh`; providers such as `kimi-for-coding` expose none). Auto-
+routing a neutral `low|medium|high` tier onto `--variant` would need a fragile
+provider-aware table and would silently break on a provider that rejects the
+chosen value.
+
+So the OpenCode adapter is **deterministic — no auto complexity routing.** A fixed
+model (D4), with `--variant` passed through **only when the operator sets it**
+(`--exec-variant` / equivalent) and omitted otherwise, so the adapter never sends
+a value the provider rejects. This is the **effort** knob of CONTEXT.md — a
+deterministic value the operator sets — not auto-judged **complexity routing**,
+and CONTEXT.md already blesses a deterministic adapter (fixed model + fixed effort)
+as a first-class citizen. The OpenCode plan prompt therefore emits **no**
+`## Execution model` tier line at all (the mirror-image of why the Codex prompt
+emits one).
+
+## D4 — Model resolution defers to OpenCode; `--exec-model` overrides
+
+Claude defaults to `sonnet`; Codex parses its `config.toml` then falls back to
+`gpt-5-codex` (ADR-0004). OpenCode has **no natural default** — the provider is
+the operator's choice (`-m provider/model`) — and it *already* resolves a default
+itself: explicit `-m` → config `model` key → last-used → first-by-priority.
+
+The adapter therefore **omits `-m` entirely unless `--exec-model` is set**,
+deferring to OpenCode's own resolution. Re-implementing config parsing (as Codex
+does for `config.toml`) would only duplicate OpenCode's native logic and risk
+drifting from it, and there is no portable hardcoded fallback to justify it. The
+operator owns their `opencode.json` and auth; the adapter respects them. A setup
+with no resolvable model surfaces OpenCode's `error` event as an actionable
+"configure a model or pass `--exec-model`" stop — the same shape as the auth-error
+path (D6).
+
+## D5 — Full autonomy via `--dangerously-skip-permissions`; safety is the isolated branch
+
+This is the one OpenCode-specific hazard with no Claude/Codex analog: in
+non-interactive `run` mode any permission left at `ask` (`external_directory` and
+`doom_loop` default to `ask`) **blocks the session forever** with no UI to answer
+it (issues #14473/#16367). The adapter therefore always passes
+`--dangerously-skip-permissions` (auto-approve everything not explicitly denied) —
+the flag OpenCode documents *as* the automation escape hatch. There is no Codex-
+style OS sandbox in OpenCode; safety rests on Ralphy's existing net: every issue
+commits onto an isolated run branch a human merges by hand, plus the reviewer
+self-review. The Claude `PreToolUse` guard is not ported.
+
+We rejected injecting an `OPENCODE_CONFIG_CONTENT` permission map (more moving
+parts for the same effective full-autonomy) and "flag + config" belt-and-suspenders
+(complexity unwarranted for v1). The only config we inject is the skills path (D7).
+
+## D6 — Auth is the operator's; the adapter scrubs the keys OpenCode auto-detects
+
+OpenCode is multi-provider; the operator owns `opencode auth login` (credentials
+in `~/.local/share/opencode/auth.json`) and the adapter manages no provider key —
+the same stance ADR-0004 D5 took for Codex. The defensive twist OpenCode forces:
+it auto-detects **both** `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` from the
+environment *and* a project `.env`, either of which can silently override the
+operator's chosen provider and switch the run to **metered API billing**. The
+adapter therefore `env_remove`s both keys on the child `Command` — the mirror of
+Codex's defensive `OPENAI_API_KEY` removal, extended to the two keys OpenCode
+actually picks up — so the operator's `auth.json` choice (including a subscription
+OAuth) stays authoritative. (`main.rs` already sets `ANTHROPIC_API_KEY=""`
+globally; scrubbing on the child is adapter-local and unambiguous regardless.)
+
+A signed-out / revoked account surfaces as a `ProviderAuthError` (or the
+logged-out error on stderr) and is mapped to an actionable "run `opencode auth
+login` and retry" stop, taking precedence over generic classification because it
+won't self-heal — the same precedence the Claude and Codex auth-error detectors
+use. Per issue #15562, a Claude-OAuth-via-OpenCode usage-limit *reset* can itself
+masquerade as a `ProviderAuthError` requiring re-login; this path handles that
+correctly (the operator re-auths and re-runs). The **exact** auth-error strings
+are deferred until observed against a live signed-out run.
+
+## D7 — Skills ride under `.ralphy/`, pointed at via injected `skills.paths`
+
+OpenCode auto-discovers Claude-format `SKILL.md` skills from `.opencode/skills/`,
+`.claude/skills/`, and `.agents/skills/`, but Ralphy keeps all of its working
+state under `.ralphy/` (the Claude adapter's `.ralphy/plugin`, the run dir). To
+stay consistent and avoid a stray `.opencode/` or `.agents/` dir in the target
+repo, the adapter materializes the **same embedded `reviewer` + `staged-plan`
+skill content** into **`.ralphy/skills/`** (clearing and re-extracting each call,
+a retargeted near-clone of `materialize_codex_skills`) and points OpenCode at it
+by injecting per-run
+
+```
+OPENCODE_CONFIG_CONTENT={"skills":{"paths":["<abs>/.ralphy/skills"]}}
+```
+
+`skills.paths` ("Additional paths to skill folders") is a real key in OpenCode's
+config schema (`https://opencode.ai/config.json`), and `OPENCODE_CONFIG_CONTENT`
+is the highest-precedence config source — so this provisions the skills **without
+touching the operator's global `~/.config/opencode`** and without depending on
+whatever skills happen to be installed globally (the self-contained-binary
+guarantee). It is the only config the adapter injects (permissions are the flag,
+D5).
+
+Two prompt spots are vendor-isms and get OpenCode variants (D8). All existing
+Claude/Codex assets stay untouched.
+
+- *Deferred until live*: whether each `skills.paths` entry is the **container**
+  dir (`.ralphy/skills`, the natural reading) or each individual skill dir — fix
+  the materialized layout / injected path to match once observed.
+
+## D8 — Reuse the skill content; re-target only the plan prompt's two vendor-isms
+
+`PROMPT_EXECUTE` is reused verbatim across all three vendors. Planning gets a new
+`assets/prompts/prompt.plan.opencode.md` — a variant of the plan prompt that
+(a) emits **no** `## Execution model` tier line (routing is dropped, D3), and
+(b) rephrases the reviewer step's "spawn the reviewer as an independent subagent"
+(a Claude Task-tool idiom) to OpenCode-neutral dispatch. The single source of
+truth stays under `assets/prompts/`; the new prompt is embedded with `include_str!`
+the same way the Codex plan prompt is.
+
+- *Deferred until live*: the **exact** OpenCode reviewer-subagent dispatch shape —
+  skill self-dispatch via OpenCode's Task tool, a materialized `.opencode/agent/
+  reviewer.md` (`mode: subagent`), or an `@reviewer` mention. The prompt uses
+  non-committal OpenCode-neutral phrasing until this is observed, the mirror of
+  ADR-0004's deferred `$reviewer` vs `.codex/agents/reviewer.toml`.
+
+## D9 — A usage limit is caught by the wall timeout, not a text matcher
+
+This is where OpenCode diverges most from Codex's D6, and the divergence is
+evidence-based, not assumed. OpenCode's retry engine
+(`packages/opencode/src/session/retry.ts`) backs off on retryable errors
+(429s are flagged `isRetryable`) **honoring `Retry-After`, with no attempt cap and
+`RETRY_MAX_DELAY ≈ 24.8 days`.** Consequences:
+
+- A **short** limit → OpenCode silently waits and self-recovers inside the
+  per-issue window. Invisible; no adapter action needed.
+- A **long** limit → OpenCode hangs inside the retry loop past the per-issue wall
+  budget, frequently emitting **no error event at all** (issue #10432, closed
+  not-planned: 429 surfaces no detectable plugin/JSON event). Our existing
+  timeout-kill reclaims it → `Outcome::Timeout`.
+
+So the **per-issue wall timeout is the primary limit backstop** — the same
+`issue_deadline()` mechanism already in the design, clamped to the run deadline.
+A Codex-style limit-*text* matcher cannot be the primary path because the common
+case emits nothing to match. The adapter adds only a **best-effort upgrade** of
+`Timeout`/`Stuck` to `Outcome::Limit` *when* the JSON stream does emit an `error`
+with `name:"APIError"` + `statusCode:429` (or the literal rate-limit strings
+OpenCode's own `retryable()` matches, or Zen's `*UsageLimitError`), extracting a
+reset hint only if one is present. `--stop-on-limit` is **forced** for OpenCode
+(extend `effective_stop_on_limit` exactly as it is forced for Codex): auto-resume
+is pointless when OpenCode is already self-waiting short limits and long ones carry
+no parseable reset. We rejected auto-resume (ADR-0003's hours-long-hang failure
+mode) and treating a limit as plain `Stuck` (loses the actionable re-run signal).
+
+- *Deferred until live*: the exact limit-string set and any reset parser.
+
+## Consequences
+
+- The core, `ralphy-agent-claude`, `ralphy-agent-codex`, the existing
+  prompts/plugin, `hook.rs`, `guard.rs`, and the `ANTHROPIC_API_KEY` clearing all
+  stay untouched. Core-side changes are limited to `main.rs`: the `OpenCode`
+  `--agent` arm and extending `effective_stop_on_limit` to force it for OpenCode.
+  No-regression for Claude and Codex is structural, not tested-in.
+- `plan::count_open_steps` is vendor-neutral and reused. Because routing is
+  dropped (D3), the OpenCode adapter leaves `Plan.recommended_model` `None` and the
+  core `Plan` shape is unchanged.
+- Not ported, by design: the PTY, the Stop hook + flag file, `guard.rs`'s
+  `PreToolUse` guard, the workspace-trust shim, Codex's `-o` final-message file
+  (replaced by parsing the `--format json` stream), and complexity routing — none
+  apply to `opencode run`, and importing them would be the compatibility-shaped
+  code this design avoids.
+- A known residual risk: if the model invokes OpenCode's interactive `question`
+  tool, `--dangerously-skip-permissions` does not suppress it and the run can hang
+  (issue #11899) — caught by the per-issue wall timeout (→ `Timeout`), the same
+  backstop as the limit hang (D9). A future hardening could deny the `question`
+  tool via the injected config.
+- Five items are deferred until observed against a live OpenCode run, none
+  blocking: the `skills.paths` entry granularity (D7), the reviewer-subagent
+  dispatch shape (D8), the exact auth-error strings (D6), and the exact
+  usage-limit string set + reset parser (D9). Until each is firmed up the adapter
+  takes the conservative branch (best-effort match, timeout backstop, actionable
+  stop).
