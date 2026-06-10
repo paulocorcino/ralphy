@@ -82,7 +82,7 @@ impl RunClock for WallClock {
             }
         }
 
-        info!(%reset, target = %target.format("%Y-%m-%d %H:%M"), "usage limit — waiting for reset");
+        info!(%reset, target = %target.format("%Y-%m-%d %H:%M"), target_epoch = target.timestamp(), "usage limit — waiting for reset");
         let mut last_heartbeat = Instant::now();
         loop {
             if self.deadline_passed() {
