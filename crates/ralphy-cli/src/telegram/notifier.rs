@@ -25,8 +25,10 @@ use tracing::field::{Field, Visit};
 use tracing::{warn, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
+use chrono::Local;
+
 use super::client::{BotClient, Transport};
-use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState};
+use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState, SleepState};
 
 /// Telegram's hard per-message character limit.
 const TELEGRAM_LIMIT: usize = 4096;
@@ -95,16 +97,41 @@ fn counters_line(state: &RunState) -> String {
     )
 }
 
+/// The live sleep line (ADR-0007 D3): `🌙 waiting for reset ~HH:MM · resumes in
+/// ~Xh Ym`. The `HH:MM` is the event's raw reset hint; the countdown is
+/// `max(0, target_epoch - now_epoch)` so it degrades to `~0m` once the reset is
+/// due rather than going negative.
+fn render_sleep_line(sleep: &SleepState, now_epoch: i64) -> String {
+    let remaining = (sleep.target_epoch - now_epoch).max(0);
+    let total_min = remaining / 60;
+    let (h, m) = (total_min / 60, total_min % 60);
+    let countdown = if h > 0 {
+        format!("~{h}h {m}m")
+    } else {
+        format!("~{m}m")
+    };
+    format!(
+        "🌙 waiting for reset ~{} · resumes in {}",
+        sleep.reset, countdown
+    )
+}
+
 /// Render the live card from a [`RunState`], guaranteed within Telegram's
 /// 4096-char limit. A small queue renders one line per issue; a large one (over
 /// [`FULL_LIST_MAX`]) collapses to the counters plus the active issue and the
-/// most-recently-finished one (ADR-0007 D6).
-pub fn render_card(state: &RunState) -> String {
+/// most-recently-finished one (ADR-0007 D6). `now_epoch` (Unix seconds) anchors
+/// the live sleep countdown.
+pub fn render_card(state: &RunState, now_epoch: i64) -> String {
     let mut out = String::new();
     out.push_str(&state.title);
     out.push('\n');
     out.push_str(&counters_line(state));
     out.push('\n');
+
+    if let Some(sleep) = &state.sleep {
+        out.push_str(&render_sleep_line(sleep, now_epoch));
+        out.push('\n');
+    }
 
     if state.issues.len() <= FULL_LIST_MAX {
         for entry in &state.issues {
@@ -154,6 +181,27 @@ pub fn render_final_push(state: &RunState) -> String {
             "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped",
             state.title, head, c.done, c.skipped
         ),
+        TELEGRAM_LIMIT,
+    )
+}
+
+/// The push sent on entering a usage-limit sleep (a new message so the phone
+/// buzzes, ADR-0007 D3). Bounded like the other pushes.
+pub fn render_sleep_push(state: &RunState) -> String {
+    let reset = state.sleep.as_ref().map(|s| s.reset.as_str()).unwrap_or("");
+    truncate_chars(
+        format!(
+            "🌙 {} — usage limit, waiting for reset ~{}",
+            state.title, reset
+        ),
+        TELEGRAM_LIMIT,
+    )
+}
+
+/// The push sent on resuming from a usage-limit sleep. Bounded like the others.
+pub fn render_resume_push(state: &RunState) -> String {
+    truncate_chars(
+        format!("⏰ {} — reset reached, resuming", state.title),
         TELEGRAM_LIMIT,
     )
 }
@@ -274,6 +322,8 @@ pub struct NotifierFields {
     pub budget_min: Option<u64>,
     pub order: Option<String>,
     pub outcome: Option<String>,
+    pub reset: Option<String>,
+    pub target_epoch: Option<i64>,
 }
 
 impl Visit for NotifierFields {
@@ -287,12 +337,19 @@ impl Visit for NotifierFields {
         }
     }
 
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        if field.name() == "target_epoch" {
+            self.target_epoch = Some(value);
+        }
+    }
+
     fn record_str(&mut self, field: &Field, value: &str) {
         match field.name() {
             "message" => self.message = value.to_string(),
             "title" => self.title = Some(value.to_string()),
             "order" => self.order = Some(value.to_string()),
             "outcome" => self.outcome = Some(value.to_string()),
+            "reset" => self.reset = Some(value.to_string()),
             _ => {}
         }
     }
@@ -306,6 +363,7 @@ impl Visit for NotifierFields {
             "title" => self.title = Some(rendered),
             "order" => self.order = Some(rendered),
             "outcome" => self.outcome = Some(rendered),
+            "reset" => self.reset = Some(rendered),
             _ => {}
         }
     }
@@ -351,6 +409,13 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &NotifierFields) -
             Some(RunEvent::Skipped { number })
         }
         "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
+        // The run entered a usage-limit sleep; the fold carries the reset hint and
+        // the wake anchor for a live countdown.
+        "usage limit — waiting for reset" => Some(RunEvent::SleepStarted {
+            reset: fields.reset.clone().unwrap_or_default(),
+            target_epoch: fields.target_epoch.unwrap_or(0),
+        }),
+        "reset reached — resuming" => Some(RunEvent::SleepEnded),
         _ => None,
     }
 }
@@ -420,7 +485,7 @@ pub fn run_worker<T: Transport>(
     shutdown: Arc<AtomicBool>,
 ) {
     // Initial card: capture its message_id so every later edit targets it.
-    let message_id = match client.send_message(chat_id, &render_card(&state)) {
+    let message_id = match client.send_message(chat_id, &render_card(&state, now_epoch())) {
         Ok(v) => v.get("message_id").and_then(Value::as_i64),
         Err(e) => {
             warn!("telegram: initial card failed: {e}");
@@ -433,38 +498,73 @@ pub fn run_worker<T: Transport>(
     }
 
     let mut last_edit = Instant::now();
+    let mut prev_sleeping = state.sleep.is_some();
     loop {
-        if shutdown.load(Ordering::SeqCst) {
-            // Drain anything still pending before the terminal render.
-            for event in queue.drain_blocking(Duration::from_millis(0)) {
-                state.apply(event);
-            }
-            break;
-        }
-        let events = queue.drain_blocking(POLL_INTERVAL);
+        let stopping = shutdown.load(Ordering::SeqCst);
+        // On shutdown, drain everything still pending (non-blocking) for a final
+        // fold; otherwise wait up to a poll interval for the next batch.
+        let events = if stopping {
+            queue.drain_blocking(Duration::from_millis(0))
+        } else {
+            queue.drain_blocking(POLL_INTERVAL)
+        };
         let changed = !events.is_empty();
         for event in events {
             state.apply(event);
         }
+
+        // A false→true sleep transition buzzes the phone on entering a sleep; a
+        // true→false transition buzzes on resuming. Detected on the folded state
+        // so a drop under back-pressure cannot double-fire.
+        let now_sleeping = state.sleep.is_some();
+        if now_sleeping && !prev_sleeping {
+            if let Err(e) = client.send_message(chat_id, &render_sleep_push(&state)) {
+                warn!("telegram: sleep push failed: {e}");
+            }
+        } else if !now_sleeping && prev_sleeping {
+            if let Err(e) = client.send_message(chat_id, &render_resume_push(&state)) {
+                warn!("telegram: resume push failed: {e}");
+            }
+        }
+        prev_sleeping = now_sleeping;
+
         if let Some(mid) = message_id {
-            if changed || last_edit.elapsed() >= REFRESH_INTERVAL {
-                if let Err(e) = client.edit_message_text(chat_id, mid, &render_card(&state)) {
+            if should_edit(changed, last_edit.elapsed(), REFRESH_INTERVAL) {
+                if let Err(e) =
+                    client.edit_message_text(chat_id, mid, &render_card(&state, now_epoch()))
+                {
                     warn!("telegram: edit failed: {e}");
                 }
                 last_edit = Instant::now();
             }
         }
+
+        if stopping {
+            break;
+        }
     }
 
     // Terminal state: a final edit to the card, then the final push.
     if let Some(mid) = message_id {
-        if let Err(e) = client.edit_message_text(chat_id, mid, &render_card(&state)) {
+        if let Err(e) = client.edit_message_text(chat_id, mid, &render_card(&state, now_epoch())) {
             warn!("telegram: final edit failed: {e}");
         }
     }
     if let Err(e) = client.send_message(chat_id, &render_final_push(&state)) {
         warn!("telegram: final push failed: {e}");
     }
+}
+
+/// The current wall-clock Unix-seconds anchor for the live card countdown.
+fn now_epoch() -> i64 {
+    Local::now().timestamp()
+}
+
+/// The worker's edit gate, factored out so the ~60s cadence is testable without
+/// real-time sleeping (ADR-0007 D4): edit when something changed, or when the
+/// idle refresh interval has elapsed since the last edit.
+fn should_edit(changed: bool, since_last_edit: Duration, interval: Duration) -> bool {
+    changed || since_last_edit >= interval
 }
 
 // ---------------------------------------------------------------------------
@@ -607,7 +707,7 @@ mod tests {
             number: 2,
             title: "second".into(),
         });
-        let card = render_card(&state);
+        let card = render_card(&state, 0);
         assert!(card.contains("✅ #1 first"), "card: {card}");
         assert!(card.contains("🧠 #2 second"), "card: {card}");
         assert!(card.len() <= TELEGRAM_LIMIT);
@@ -625,11 +725,52 @@ mod tests {
                 state.apply(RunEvent::IssueClosed { number: n });
             }
         }
-        let card = render_card(&state);
+        let card = render_card(&state, 0);
         assert!(card.len() <= TELEGRAM_LIMIT, "len {}", card.len());
         assert!(card.contains("200 issues"), "card: {card}");
         // Collapsed: active issue #200 and a last-finished line are shown.
         assert!(card.contains("#200"), "card: {card}");
+    }
+
+    #[test]
+    fn render_card_shows_sleep_line_with_live_countdown() {
+        use crate::runstate::SleepState;
+        let mut state = RunState::new("Repo", 1);
+        state.sleep = Some(SleepState {
+            reset: "14:30".into(),
+            // 2h13m ahead of `now`.
+            target_epoch: 1_700_000_000 + 2 * 3600 + 13 * 60,
+        });
+        let card = render_card(&state, 1_700_000_000);
+        assert!(card.contains('🌙'), "card: {card}");
+        assert!(card.contains("14:30"), "card: {card}");
+        assert!(card.contains("resumes in ~"), "card: {card}");
+        assert!(card.contains("~2h 13m"), "card: {card}");
+    }
+
+    #[test]
+    fn render_sleep_line_clamps_to_zero_when_reset_due() {
+        use crate::runstate::SleepState;
+        // `now` is past the target: the countdown degrades to `~0m`, not negative.
+        let sleep = SleepState {
+            reset: "09:00".into(),
+            target_epoch: 1_700_000_000,
+        };
+        let line = render_sleep_line(&sleep, 1_700_000_500);
+        assert!(line.contains("~0m"), "line: {line}");
+        assert!(!line.contains('-'), "line should not go negative: {line}");
+    }
+
+    #[test]
+    fn should_edit_respects_change_and_60s_floor() {
+        let interval = Duration::from_secs(60);
+        // A change always edits, regardless of elapsed time.
+        assert!(should_edit(true, Duration::from_secs(0), interval));
+        // Idle below the floor does not edit.
+        assert!(!should_edit(false, Duration::from_secs(59), interval));
+        // Idle at/after the floor edits.
+        assert!(should_edit(false, Duration::from_secs(60), interval));
+        assert!(should_edit(false, Duration::from_secs(120), interval));
     }
 
     #[test]
@@ -760,6 +901,25 @@ mod tests {
             }),
             Some(RunEvent::DeadlinePassed { number: 7 })
         );
+        assert_eq!(
+            f(NotifierFields {
+                message: "usage limit — waiting for reset".into(),
+                reset: Some("14:30".into()),
+                target_epoch: Some(1_700_000_000),
+                ..Default::default()
+            }),
+            Some(RunEvent::SleepStarted {
+                reset: "14:30".into(),
+                target_epoch: 1_700_000_000
+            })
+        );
+        assert_eq!(
+            f(NotifierFields {
+                message: "reset reached — resuming".into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::SleepEnded)
+        );
         // An unrelated event is ignored.
         assert_eq!(
             f(NotifierFields {
@@ -822,6 +982,85 @@ mod tests {
             .collect();
         assert!(!edit_ids.is_empty());
         assert!(edit_ids.iter().all(|&id| id == 100));
+    }
+
+    /// Block (bounded) until `pred` holds over the recorded calls, so the sleep
+    /// test waits for the worker to fold one event before enqueuing the next
+    /// without a fixed sleep. Panics if it never holds (a real regression).
+    fn wait_until(
+        calls: &Arc<Mutex<Vec<(String, Value)>>>,
+        pred: impl Fn(&[(String, Value)]) -> bool,
+    ) {
+        for _ in 0..200 {
+            if pred(&calls.lock().unwrap()) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("condition never held within timeout");
+    }
+
+    fn send_texts(calls: &[(String, Value)]) -> Vec<String> {
+        calls
+            .iter()
+            .filter(|(m, _)| m == "sendMessage")
+            .map(|(_, b)| b["text"].as_str().unwrap_or("").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn worker_pushes_on_sleep_enter_and_resume() {
+        let transport = RecordingTransport::new();
+        let calls = transport.calls.clone();
+        let client = BotClient::new(transport);
+        let queue = Arc::new(EventQueue::new());
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        let worker_queue = queue.clone();
+        let worker_shutdown = shutdown.clone();
+        let state = RunState::new("title", 1);
+        let handle =
+            std::thread::spawn(move || run_worker(client, 7, state, worker_queue, worker_shutdown));
+
+        // Enter a sleep, then wait for the worker to fold it and buzz the phone.
+        queue.push(RunEvent::SleepStarted {
+            reset: "14:30".into(),
+            target_epoch: 1_700_000_000,
+        });
+        queue.wake();
+        wait_until(&calls, |c| {
+            send_texts(c).iter().any(|t| t.contains("usage limit"))
+        });
+
+        // Resume, then wait for the resume buzz.
+        queue.push(RunEvent::SleepEnded);
+        queue.wake();
+        wait_until(&calls, |c| {
+            send_texts(c).iter().any(|t| t.contains("resuming"))
+        });
+
+        shutdown.store(true, Ordering::SeqCst);
+        queue.wake();
+        handle.join().unwrap();
+
+        let calls = calls.lock().unwrap();
+        let texts = send_texts(&calls);
+        let sleep_idx = texts
+            .iter()
+            .position(|t| t.contains("usage limit"))
+            .expect("sleep push");
+        let resume_idx = texts
+            .iter()
+            .position(|t| t.contains("resuming"))
+            .expect("resume push");
+        // Order: the sleep-in push fires before the resume push, both beyond the
+        // initial card + start push and before the final push.
+        assert!(
+            sleep_idx < resume_idx,
+            "sleep push must precede resume push: {texts:?}"
+        );
+        // initial card + start + sleep + resume + final = five sendMessage calls.
+        assert!(texts.len() >= 5, "expected ≥5 sendMessage, got {texts:?}");
     }
 
     #[test]
