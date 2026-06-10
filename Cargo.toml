@@ -26,6 +26,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 indicatif = "0.17"
 console = "0.15"
+ureq = "2"
+directories = "5"
+toml = "0.8"
 
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
