@@ -13,10 +13,13 @@
 //! Skills materialization (ADR-0005 D7) is implemented here: before every `plan`
 //! and `execute` call the embedded skills tree is extracted to `<repo>/.ralphy/skills`
 //! and the absolute path is injected as `OPENCODE_CONFIG_CONTENT` so OpenCode's
-//! `skills.paths` config key points at it. Usage-limit (D9) is deferred-until-live
-//! in ADR-0005. Auth-error (D6) is implemented: `is_opencode_auth_error` detects
-//! `ProviderAuthError` in the combined log and an actionable bail fires in both
-//! `plan` and `execute` before any generic classification.
+//! `skills.paths` config key points at it. Auth-error (D6) is implemented:
+//! `is_opencode_auth_error` detects `ProviderAuthError` in the combined log and an
+//! actionable bail fires in both `plan` and `execute` before any generic
+//! classification. Usage-limit (D9) is implemented: `parse_opencode_limit` scans
+//! the JSON stream for a 429/`APIError` or documented rate-limit string and
+//! `classify_opencode_outcome` upgrades `Timeout`/`Stuck` to `Outcome::Limit` when
+//! one is seen; `--stop-on-limit` is forced for OpenCode in `main.rs`.
 
 use std::fs;
 use std::io::{BufReader, Read, Write};
