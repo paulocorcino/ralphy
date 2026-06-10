@@ -192,7 +192,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     std::fs::create_dir_all(&run_dir).ok();
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
-    init_tracing(log_file, args.verbose);
+    let presenter = init_tracing(log_file, args.verbose);
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
@@ -288,6 +288,12 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let tracker = GhTracker::new(cfg.repo_root.clone());
 
     let report = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock)?;
+
+    // Flush the queue bar to N/N and clear the live region before the summary
+    // `println!`s, so they are never tangled with a live bar (ADR-0006).
+    if let Some(presenter) = &presenter {
+        presenter.finalize();
+    }
 
     // Per-issue summary, then how the run ended and where the branch stands.
     println!(
@@ -411,7 +417,10 @@ fn non_empty(s: String) -> Option<String> {
 /// Local timestamps everywhere fix the reported UTC-vs-local bug at the source:
 /// the `fmt` layers use `ChronoLocal`, and the presenter composes its own local
 /// timestamps via `chrono::Local`.
-fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) {
+/// Returns the presenter's teardown handle when the animated presenter is
+/// installed (a colour TTY, not `--verbose`); `None` for the raw-`fmt` path. The
+/// caller flushes/clears the live region via the handle after the queue returns.
+fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) -> Option<ui::PresenterHandle> {
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -438,8 +447,12 @@ fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) {
     if raw_stderr {
         let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);
         registry.with(stderr_layer).init();
+        None
     } else {
-        registry.with(ui::Presenter::new()).init();
+        let presenter = ui::Presenter::new();
+        let handle = presenter.handle();
+        registry.with(presenter).init();
+        Some(handle)
     }
 }
 

@@ -10,15 +10,22 @@
 //! the side effects — timestamps, per-issue duration, and writing through
 //! `indicatif`'s `MultiProgress` so `warn`/`error` lines never corrupt live output.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local};
 use console::Style;
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
+
+/// Which phase the active issue is in, for the live active-line icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Planning,
+    Executing,
+}
 
 /// The terminal outcome of a finished issue, derived from the lifecycle event.
 /// Mirrors `ralphy_core::Outcome` but kept UI-local so the presenter never
@@ -79,10 +86,20 @@ impl SkipKind {
 pub enum UiAction {
     QueueBuilt {
         count: u64,
+        /// The issue numbers in queue order, parsed from the `#a -> #b` string.
+        order: Vec<u64>,
     },
     IssueStarted {
         number: u64,
         title: String,
+    },
+    /// The active issue moved from planning into execution; carries the resolved
+    /// model and per-issue budget for the live active line. Live-region only — it
+    /// renders no permanent line.
+    Executing {
+        number: u64,
+        model: String,
+        budget_min: u64,
     },
     PlanWritten {
         number: u64,
@@ -118,6 +135,9 @@ pub struct EventFields {
     pub open_steps: Option<u64>,
     pub count: Option<u64>,
     pub outcome: Option<String>,
+    pub order: Option<String>,
+    pub model: Option<String>,
+    pub budget_min: Option<u64>,
 }
 
 impl Default for EventFields {
@@ -130,6 +150,9 @@ impl Default for EventFields {
             open_steps: None,
             count: None,
             outcome: None,
+            order: None,
+            model: None,
+            budget_min: None,
         }
     }
 }
@@ -140,6 +163,7 @@ impl Visit for EventFields {
             "number" => self.number = Some(value),
             "open_steps" => self.open_steps = Some(value),
             "count" => self.count = Some(value),
+            "budget_min" => self.budget_min = Some(value),
             _ => {}
         }
     }
@@ -149,6 +173,8 @@ impl Visit for EventFields {
             "message" => self.message = value.to_string(),
             "title" => self.title = Some(value.to_string()),
             "outcome" => self.outcome = Some(value.to_string()),
+            "order" => self.order = Some(value.to_string()),
+            "model" => self.model = Some(value.to_string()),
             _ => {}
         }
     }
@@ -161,6 +187,8 @@ impl Visit for EventFields {
             "message" => self.message = rendered,
             "title" => self.title = Some(rendered),
             "outcome" => self.outcome = Some(rendered),
+            "order" => self.order = Some(rendered),
+            "model" => self.model = Some(rendered),
             _ => {}
         }
     }
@@ -193,10 +221,20 @@ pub fn classify_event(target: &str, message: &str, fields: &EventFields) -> UiAc
     match message {
         "queue built" => UiAction::QueueBuilt {
             count: fields.count.unwrap_or(0),
+            order: parse_order(fields.order.as_deref()),
         },
         "issue started" => UiAction::IssueStarted {
             number,
             title: fields.title.clone().unwrap_or_default(),
+        },
+        // The adapter's execution events carry no issue number (the adapter never
+        // receives it, ADR-0006 D2); the presenter applies this to whichever issue
+        // is currently active. `number` is therefore 0 here.
+        "executing with interactive claude over the PTY"
+        | "executing with headless claude -p loop" => UiAction::Executing {
+            number,
+            model: fields.model.clone().unwrap_or_default(),
+            budget_min: fields.budget_min.unwrap_or(0),
         },
         "plan written" => UiAction::PlanWritten {
             number,
@@ -235,6 +273,133 @@ fn parse_outcome(debug: Option<&str>) -> FinishOutcome {
     }
 }
 
+/// Parse the `queue built` `order` field (`#30 -> #31 -> #32`) into the issue
+/// numbers in queue order. Tolerant of spacing and a missing/empty field.
+fn parse_order(order: Option<&str>) -> Vec<u64> {
+    let Some(s) = order else {
+        return Vec::new();
+    };
+    s.split("->")
+        .filter_map(|tok| {
+            tok.trim()
+                .trim_start_matches('#')
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .collect()
+}
+
+/// The pure state behind the queue progress bar: a fixed `total`, the ordered
+/// `pending` issue numbers, and a `completed` count. Every terminal outcome
+/// advances it by one; [`finish`](Self::finish) flushes it to `N/N`. Kept pure
+/// (no `indicatif`) so the advancement logic is unit-tested directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueState {
+    total: u64,
+    pending: Vec<u64>,
+    completed: u64,
+}
+
+impl QueueState {
+    /// Build from the `queue built` `count` and parsed `order`.
+    pub fn built(count: u64, order: Vec<u64>) -> Self {
+        QueueState {
+            total: count,
+            pending: order,
+            completed: 0,
+        }
+    }
+
+    /// A terminal outcome for `number` (done / non-green / blocked / stop-before):
+    /// drop it from `pending` and bump `completed`. Idempotent — a `number` not in
+    /// `pending` (already advanced, or superseded) is a no-op, so a double event
+    /// never over-counts.
+    pub fn advance(&mut self, number: u64) {
+        if let Some(pos) = self.pending.iter().position(|&n| n == number) {
+            self.pending.remove(pos);
+            self.completed += 1;
+        }
+    }
+
+    /// A new active issue started, so a still-pending prior issue that emitted no
+    /// terminal event (infeasible / dry-run plan) is complete. Same as
+    /// [`advance`](Self::advance).
+    pub fn supersede(&mut self, number: u64) {
+        self.advance(number);
+    }
+
+    /// Flush to `N/N` at the end of the run — covers a trailing infeasible/dry-run
+    /// issue whose completion has no following `issue started` to supersede it.
+    pub fn finish(&mut self) {
+        self.completed = self.total;
+        self.pending.clear();
+    }
+
+    /// Render `▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)`. ANSI-free by construction.
+    pub fn bar_label(&self) -> String {
+        let done = self.completed.min(self.total) as usize;
+        let left = (self.total.saturating_sub(self.completed)) as usize;
+        let filled = "▰".repeat(done);
+        let empty = "▱".repeat(left);
+        let pending = if self.pending.is_empty() {
+            String::new()
+        } else {
+            let nums: Vec<String> = self.pending.iter().map(|n| format!("#{n}")).collect();
+            format!(" (pending {})", nums.join(" "))
+        };
+        format!("{filled}{empty} {}/{}{pending}", self.completed, self.total)
+    }
+}
+
+/// Render the live active-issue line: phase icon · `#n` title · model · `elapsed`
+/// (or `elapsed / budget`). Pure over its inputs; the emoji/ASCII and colour
+/// choice come from `opts`. The non-colour path emits no ANSI byte.
+fn render_active_line(
+    phase: Phase,
+    number: u64,
+    title: &str,
+    model: Option<&str>,
+    elapsed: Duration,
+    budget_min: Option<u64>,
+    opts: RenderOpts,
+) -> String {
+    let icon = match phase {
+        Phase::Planning => pick("🧠", "[plan]", opts.emoji),
+        Phase::Executing => pick("⚙️", "[exec]", opts.emoji),
+    };
+    let mut parts: Vec<String> = vec![format!("{icon} #{number} {title}")];
+    if let Some(m) = model {
+        parts.push(if opts.color {
+            Style::new().cyan().apply_to(m).to_string()
+        } else {
+            m.to_string()
+        });
+    }
+    let clock = match budget_min {
+        Some(b) => format!(
+            "{} / {}",
+            fmt_clock(elapsed),
+            fmt_clock(Duration::from_secs(b * 60))
+        ),
+        None => fmt_clock(elapsed),
+    };
+    parts.push(if opts.color {
+        Style::new().dim().apply_to(clock).to_string()
+    } else {
+        clock
+    });
+    parts.join(" · ")
+}
+
+/// `MM:SS` clock form (minutes may exceed 59), e.g. `12:43`, `45:00`. The
+/// active-line/budget form; distinct from [`fmt_duration`]'s `2m13s` finished-line
+/// form.
+fn fmt_clock(d: Duration) -> String {
+    let secs = d.as_secs();
+    format!("{}:{:02}", secs / 60, secs % 60)
+}
+
 /// How a line is rendered: whether ANSI colour and emoji are available. The
 /// non-TTY / `NO_COLOR` path sets both `false`, guaranteeing no ANSI ever reaches
 /// a redirected file (ADR-0006 D3).
@@ -259,11 +424,14 @@ fn render_line(
         .unwrap_or_default();
 
     let (glyph, style, body) = match action {
-        UiAction::QueueBuilt { count } => (
+        UiAction::QueueBuilt { count, .. } => (
             pick("📋", "[queue]", opts.emoji),
             Style::new().cyan(),
             format!("queue built: {count} issue(s)"),
         ),
+        // Live-region only: the active line carries the execution phase; no
+        // permanent scroll-up line is drawn for it.
+        UiAction::Executing { .. } => return None,
         UiAction::IssueStarted { number, title } => (
             pick("🧠", "[plan]", opts.emoji),
             Style::new().cyan(),
@@ -350,13 +518,36 @@ fn fmt_duration(d: Duration) -> String {
     }
 }
 
+/// The active issue's live state, tracked so the finishing line can show its
+/// wall-clock duration and the active spinner line its phase/model/budget.
+struct ActiveIssue {
+    number: u64,
+    title: String,
+    start: Instant,
+    phase: Phase,
+    model: Option<String>,
+    budget_min: Option<u64>,
+}
+
+/// The mutable live-region state behind the presenter's single `Mutex`: the active
+/// issue, the pure queue state, and the two `indicatif` bars (only present on a
+/// colour TTY). Shared with the [`PresenterHandle`] via `Arc` so `main` can flush
+/// and clear the region after the queue returns.
+#[derive(Default)]
+struct LiveState {
+    active: Option<ActiveIssue>,
+    queue: Option<QueueState>,
+    queue_bar: Option<ProgressBar>,
+    active_bar: Option<ProgressBar>,
+}
+
 /// The console presenter: a `tracing` Layer that renders the run's lifecycle. It
-/// holds the active issue (number + monotonic start) so a finishing line can show
-/// the issue's wall-clock duration, and a `MultiProgress` writer so on-screen
-/// lines never corrupt one another.
+/// holds the active issue (so a finishing line can show the issue's wall-clock
+/// duration) and a live `MultiProgress` region (queue bar + active spinner) behind
+/// a shared `Mutex`, so on-screen lines never corrupt one another.
 pub struct Presenter {
     multi: MultiProgress,
-    active: Mutex<Option<(u64, Instant)>>,
+    state: Arc<Mutex<LiveState>>,
     opts: RenderOpts,
 }
 
@@ -369,7 +560,7 @@ impl Presenter {
         let styled = is_tty && !no_color;
         Presenter {
             multi: MultiProgress::new(),
-            active: Mutex::new(None),
+            state: Arc::new(Mutex::new(LiveState::default())),
             opts: RenderOpts {
                 color: styled,
                 emoji: styled,
@@ -377,33 +568,29 @@ impl Presenter {
         }
     }
 
-    /// Apply one classified action: track the active issue, compute a finishing
-    /// duration, and emit the rendered line (if any).
+    /// A teardown handle over the shared live region. `init_tracing` hands this to
+    /// `run_cmd` so the queue bar is flushed to `N/N` and the live region cleared
+    /// before the summary prints (ADR-0006: the presenter owns teardown).
+    pub fn handle(&self) -> PresenterHandle {
+        PresenterHandle {
+            multi: self.multi.clone(),
+            state: Arc::clone(&self.state),
+            color: self.opts.color,
+        }
+    }
+
+    /// Apply one classified action: drive the live region + active-issue tracking,
+    /// then emit the permanent line (if any).
     fn apply(&self, action: UiAction) {
         let ts = Local::now();
+        // Recover from poison rather than panic: this runs inside `on_event`, so a
+        // panic here would corrupt the run on a tracing call.
+        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
-        if let UiAction::IssueStarted { number, .. } = &action {
-            // Recover from poison rather than panic: this runs inside `on_event`,
-            // so a panic here would corrupt the run on a tracing call.
-            *self.active.lock().unwrap_or_else(|e| e.into_inner()) =
-                Some((*number, Instant::now()));
-        }
+        let duration = self.drive(&mut s, &action);
 
-        // A finishing or skipping line closes out the active issue and carries its
-        // duration when the numbers match.
-        let duration = match &action {
-            UiAction::Finished { number, .. } | UiAction::Skipped { number, .. } => {
-                let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
-                let d = active
-                    .filter(|(n, _)| n == number)
-                    .map(|(_, start)| start.elapsed());
-                *active = None;
-                d
-            }
-            _ => None,
-        };
-
-        // Styled lines on a colour TTY; one clean, ANSI-free line per event
+        // Styled lines on a colour TTY (routed through `MultiProgress` so they
+        // never tear the live region); one clean, ANSI-free line per event
         // otherwise (the non-TTY / `NO_COLOR` path, ADR-0006 D3).
         let line = if self.opts.color {
             render_line(&action, &ts, duration, self.opts)
@@ -411,24 +598,164 @@ impl Presenter {
             render_plain_line(&action, &ts, duration)
         };
         if let Some(line) = line {
-            self.emit(&line);
+            if self.opts.color {
+                let _ = self.multi.println(line);
+            } else {
+                eprintln!("{line}");
+            }
         }
     }
 
-    /// Write one permanent line. On a TTY it goes through `MultiProgress` so it
-    /// never tears a live region; otherwise straight to stderr.
-    fn emit(&self, line: &str) {
-        if self.opts.color {
-            let _ = self.multi.println(line);
-        } else {
-            eprintln!("{line}");
+    /// Update the live region for one action and return a finishing duration when
+    /// the action closes the active issue. The live-region (`indicatif`) calls are
+    /// guarded behind `self.opts.color`, so `--verbose`/non-TTY draw nothing.
+    fn drive(&self, s: &mut LiveState, action: &UiAction) -> Option<Duration> {
+        match action {
+            UiAction::QueueBuilt { count, order } => {
+                s.queue = Some(QueueState::built(*count, order.clone()));
+                if self.opts.color {
+                    let bar = self.multi.add(ProgressBar::new_spinner());
+                    bar.set_style(ProgressStyle::with_template("{msg}").expect("static template"));
+                    if let Some(q) = s.queue.as_ref() {
+                        bar.set_message(q.bar_label());
+                    }
+                    s.queue_bar = Some(bar);
+                }
+                None
+            }
+            UiAction::IssueStarted { number, title } => {
+                // A new active issue supersedes a still-pending prior one that
+                // emitted no terminal event (infeasible / dry-run plan).
+                if let Some(prev) = s.active.take() {
+                    if let Some(q) = s.queue.as_mut() {
+                        q.supersede(prev.number);
+                    }
+                    self.refresh_queue_bar(s);
+                }
+                s.active = Some(ActiveIssue {
+                    number: *number,
+                    title: title.clone(),
+                    start: Instant::now(),
+                    phase: Phase::Planning,
+                    model: None,
+                    budget_min: None,
+                });
+                self.refresh_active_bar(s);
+                None
+            }
+            UiAction::Executing {
+                model, budget_min, ..
+            } => {
+                // The event carries no number; it applies to the active issue.
+                if let Some(a) = s.active.as_mut() {
+                    a.phase = Phase::Executing;
+                    a.model = Some(model.clone());
+                    a.budget_min = Some(*budget_min);
+                }
+                self.refresh_active_bar(s);
+                None
+            }
+            UiAction::Finished { number, .. } | UiAction::Skipped { number, .. } => {
+                let d = s
+                    .active
+                    .as_ref()
+                    .filter(|a| a.number == *number)
+                    .map(|a| a.start.elapsed());
+                s.active = None;
+                if let Some(q) = s.queue.as_mut() {
+                    q.advance(*number);
+                }
+                self.refresh_queue_bar(s);
+                if let Some(bar) = s.active_bar.take() {
+                    bar.finish_and_clear();
+                }
+                d
+            }
+            _ => None,
         }
+    }
+
+    /// Repaint the queue bar's label from the current [`QueueState`]. No-op off a
+    /// colour TTY.
+    fn refresh_queue_bar(&self, s: &LiveState) {
+        if !self.opts.color {
+            return;
+        }
+        if let (Some(bar), Some(q)) = (s.queue_bar.as_ref(), s.queue.as_ref()) {
+            bar.set_message(q.bar_label());
+        }
+    }
+
+    /// Repaint (creating on first use) the self-ticking active-issue spinner from
+    /// the current [`ActiveIssue`]. No-op off a colour TTY.
+    fn refresh_active_bar(&self, s: &mut LiveState) {
+        if !self.opts.color {
+            return;
+        }
+        let msg = match s.active.as_ref() {
+            Some(a) => render_active_line(
+                a.phase,
+                a.number,
+                &a.title,
+                a.model.as_deref(),
+                a.start.elapsed(),
+                a.budget_min,
+                self.opts,
+            ),
+            None => return,
+        };
+        let bar = s.active_bar.get_or_insert_with(|| {
+            let b = self.multi.add(ProgressBar::new_spinner());
+            b.set_style(
+                ProgressStyle::with_template("{spinner:.cyan} {msg}").expect("static template"),
+            );
+            // Self-tick so the spinner keeps moving through quiet multi-minute
+            // execution stretches that emit no events (ADR-0006 D4).
+            b.enable_steady_tick(Duration::from_millis(120));
+            b
+        });
+        bar.set_message(msg);
     }
 }
 
 impl Default for Presenter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A teardown handle over the presenter's shared live region. `run_cmd` calls
+/// [`finalize`](Self::finalize) after `run_queue` returns to flush the queue bar to
+/// `N/N` and clear the bars, so the final summary `println!`s are not tangled with
+/// a live region (ADR-0006 consequences).
+pub struct PresenterHandle {
+    multi: MultiProgress,
+    state: Arc<Mutex<LiveState>>,
+    color: bool,
+}
+
+impl PresenterHandle {
+    /// Flush the queue bar to `N/N` (covering a trailing infeasible/dry-run issue
+    /// with no following event) and clear the live region. No-op off a colour TTY.
+    pub fn finalize(&self) {
+        if !self.color {
+            return;
+        }
+        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(q) = s.queue.as_mut() {
+            q.finish();
+        }
+        let label = s.queue.as_ref().map(|q| q.bar_label());
+        if let (Some(bar), Some(label)) = (s.queue_bar.as_ref(), label) {
+            bar.set_message(label);
+        }
+        if let Some(bar) = s.active_bar.take() {
+            bar.finish_and_clear();
+        }
+        if let Some(bar) = s.queue_bar.take() {
+            bar.finish_and_clear();
+        }
+        let _ = self.multi.clear();
     }
 }
 
@@ -461,11 +788,15 @@ mod tests {
     fn classify_queue_built() {
         let f = EventFields {
             count: Some(3),
+            order: Some("#30 -> #31 -> #32".to_string()),
             ..fields(Level::INFO, "queue built")
         };
         assert_eq!(
             classify_event("ralphy", "queue built", &f),
-            UiAction::QueueBuilt { count: 3 }
+            UiAction::QueueBuilt {
+                count: 3,
+                order: vec![30, 31, 32],
+            }
         );
     }
 
@@ -640,5 +971,165 @@ mod tests {
         assert_eq!(fmt_duration(Duration::from_secs(13)), "13s");
         assert_eq!(fmt_duration(Duration::from_secs(133)), "2m13s");
         assert_eq!(fmt_duration(Duration::from_secs(120)), "2m00s");
+    }
+
+    #[test]
+    fn classify_both_execution_events_map_to_executing() {
+        for msg in [
+            "executing with interactive claude over the PTY",
+            "executing with headless claude -p loop",
+        ] {
+            // The adapter event carries no `number`; it carries model + budget_min.
+            let f = EventFields {
+                model: Some("sonnet".to_string()),
+                budget_min: Some(45),
+                ..fields(Level::INFO, msg)
+            };
+            assert_eq!(
+                classify_event("ralphy_agent_claude", msg, &f),
+                UiAction::Executing {
+                    number: 0,
+                    model: "sonnet".to_string(),
+                    budget_min: 45,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn parse_order_round_trips_and_tolerates_edges() {
+        assert_eq!(parse_order(Some("#30 -> #31 -> #32")), vec![30, 31, 32]);
+        assert_eq!(parse_order(Some("#7")), vec![7]);
+        assert_eq!(parse_order(None), Vec::<u64>::new());
+        assert_eq!(parse_order(Some("")), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn queue_state_advances_through_all_terminal_outcomes_to_n_over_n() {
+        // A queue of five issues, each leaving via a distinct terminal transition:
+        // done, non-green, blocked, stop-before, and a superseded infeasible plan.
+        let mut q = QueueState::built(5, vec![10, 11, 12, 13, 14]);
+        assert_eq!(q.bar_label(), "▱▱▱▱▱ 0/5 (pending #10 #11 #12 #13 #14)");
+
+        // done
+        q.advance(10);
+        // non-green (stopping run)
+        q.advance(11);
+        // blocked-by skip
+        q.advance(12);
+        // stop-before skip
+        q.advance(13);
+        assert_eq!(q.bar_label(), "▰▰▰▰▱ 4/5 (pending #14)");
+
+        // #14 is an infeasible/dry-run plan: no terminal event, completed only when
+        // a following `issue started` supersedes it.
+        q.supersede(14);
+        assert_eq!(q.completed, 5);
+        assert_eq!(q.bar_label(), "▰▰▰▰▰ 5/5");
+
+        // Idempotent: a stray repeat never over-counts past N/N.
+        q.advance(14);
+        assert_eq!(q.completed, 5);
+
+        // `finish` is a safe flush even when already complete.
+        q.finish();
+        assert_eq!(q.bar_label(), "▰▰▰▰▰ 5/5");
+    }
+
+    #[test]
+    fn queue_state_finish_flushes_trailing_issue_to_n_over_n() {
+        // A trailing infeasible issue with no following `issue started`: only the
+        // end-of-run `finish` flushes the bar to N/N.
+        let mut q = QueueState::built(3, vec![1, 2, 3]);
+        q.advance(1);
+        q.advance(2);
+        assert_eq!(q.bar_label(), "▰▰▱ 2/3 (pending #3)");
+        q.finish();
+        assert_eq!(q.bar_label(), "▰▰▰ 3/3");
+    }
+
+    #[test]
+    fn render_active_line_executing_shows_icon_number_title_model_and_budget() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let line = render_active_line(
+            Phase::Executing,
+            31,
+            "Console UI",
+            Some("sonnet"),
+            Duration::from_secs(12 * 60 + 43),
+            Some(45),
+            opts,
+        );
+        assert!(line.contains('⚙'), "executing phase icon: {line}");
+        assert!(line.contains("#31"), "issue number: {line}");
+        assert!(line.contains("Console UI"), "title: {line}");
+        assert!(line.contains("sonnet"), "model: {line}");
+        assert!(line.contains("12:43 / 45:00"), "elapsed / budget: {line}");
+        assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
+    }
+
+    #[test]
+    fn render_active_line_planning_shows_brain_icon_and_no_budget() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let line = render_active_line(
+            Phase::Planning,
+            31,
+            "Console UI",
+            None,
+            Duration::from_secs(12),
+            None,
+            opts,
+        );
+        assert!(line.contains('🧠'), "planning phase icon: {line}");
+        assert!(line.contains("0:12"), "elapsed clock: {line}");
+        assert!(
+            !line.contains('/'),
+            "no budget slash while planning: {line}"
+        );
+        assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
+    }
+
+    #[test]
+    fn render_active_line_no_colour_emits_no_ansi() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: false,
+        };
+        let line = render_active_line(
+            Phase::Executing,
+            31,
+            "title",
+            Some("opus"),
+            Duration::from_secs(63),
+            Some(45),
+            opts,
+        );
+        assert!(line.contains("[exec]"), "ascii phase fallback: {line}");
+        assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
+    }
+
+    #[test]
+    fn bar_label_no_colour_emits_no_ansi() {
+        let mut q = QueueState::built(6, vec![1, 2, 3, 4, 5, 6]);
+        q.advance(1);
+        q.advance(2);
+        q.advance(3);
+        let label = q.bar_label();
+        assert_eq!(label, "▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)");
+        assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
+    }
+
+    #[test]
+    fn fmt_clock_formats_mm_ss() {
+        assert_eq!(fmt_clock(Duration::from_secs(12 * 60 + 43)), "12:43");
+        assert_eq!(fmt_clock(Duration::from_secs(45 * 60)), "45:00");
+        assert_eq!(fmt_clock(Duration::from_secs(5)), "0:05");
+        assert_eq!(fmt_clock(Duration::from_secs(72 * 60 + 5)), "72:05");
     }
 }
