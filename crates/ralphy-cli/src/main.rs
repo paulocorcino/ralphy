@@ -3,6 +3,7 @@
 //! queue lifecycle.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -152,6 +153,15 @@ struct RunArgs {
     /// (wait for the reset and auto-resume the same issue). See docs/adr/0003.
     #[arg(long)]
     stop_on_limit: bool,
+
+    /// Mute the Telegram run notifier for this run (no card, no pushes), even
+    /// when Telegram is configured. See docs/adr/0007.
+    #[arg(long)]
+    no_telegram: bool,
+
+    /// Override the auto-derived Telegram card title for this run.
+    #[arg(long)]
+    title: Option<String>,
 }
 
 /// The CLI's own agent-selector enum so `clap` stays a CLI concern; the composition
@@ -198,7 +208,24 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     std::fs::create_dir_all(&run_dir).ok();
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
-    let presenter = init_tracing(log_file, args.verbose);
+
+    // Decide up front whether this run notifies (ADR-0007 D1/D7): only when
+    // Telegram is configured (a token AND a captured chat) and the run is neither
+    // `--no-telegram` nor a `--dry-run`. When it does, create the shared event ring
+    // and install the notifier Layer alongside the file/presenter layers so it sees
+    // the lifecycle from `queue built` onward. The worker is started later, once the
+    // queue (and thus the title) is known.
+    let tg_cfg = telegram::config::TelegramConfig::load().ok().flatten();
+    let configured = tg_cfg.as_ref().is_some_and(|c| {
+        c.chat_id.is_some() && telegram::config::effective_token(Some(&c.token)).is_some()
+    });
+    let notify = telegram::notifier::should_notify(configured, args.no_telegram, args.dry_run);
+    let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
+    let notifier_layer = event_queue
+        .as_ref()
+        .map(|q| telegram::notifier::NotifierLayer::new(q.clone()));
+
+    let presenter = init_tracing(log_file, args.verbose, notifier_layer);
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
@@ -221,8 +248,39 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         return Ok(());
     }
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
-    // message consumed by the CLI presenter — keep stable
+    // message consumed by the telegram notifier / presenter — keep stable
     info!(count = queue.len(), order = %order.join(" -> "), "queue built");
+
+    // Start the Telegram notifier worker now that the queue (and thus the title)
+    // is known. `try_start_notifier` runs `getMe`; on failure it warns once and
+    // returns `None`, leaving the installed Layer inert and the run unaffected
+    // (ADR-0007 D7). Events emitted before this point (just `queue built`) are
+    // buffered in the ring and drained by the worker on start.
+    let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
+    if let (Some(event_queue), Some(cfg)) = (event_queue.as_ref(), tg_cfg.as_ref()) {
+        if let (Some(chat_id), Some(token)) = (
+            cfg.chat_id,
+            telegram::config::effective_token(Some(&cfg.token)),
+        ) {
+            let repo_name = repo_root
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("repo");
+            let only_issue_title = args.only_issue.and(queue.first()).map(|i| i.title.clone());
+            let title = telegram::notifier::derive_title(
+                repo_name,
+                queue.len(),
+                &effective_labels,
+                only_issue_title.as_deref(),
+                args.title.as_deref(),
+            );
+            let state = runstate::RunState::new(title, queue.len());
+            let client =
+                telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
+            notifier =
+                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
+        }
+    }
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
     // quota (matching the ps1 oracle behaviour).
@@ -302,6 +360,15 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // propagation. Finalizing first keeps a `bail!` from being torn by a live bar
     // (ADR-0006: the presenter owns teardown).
     presenter.finalize();
+
+    // Tear down the notifier (ADR-0007 D4): signal the worker to render the
+    // terminal state, send the final push, and flush, joined under a bounded
+    // timeout so a wedged network never holds the process open. Done before the
+    // `?` so a non-green result still triggers the final push.
+    if let Some(notifier) = notifier.take() {
+        notifier.shutdown();
+    }
+
     let report = result?;
 
     // Bucket the worked issues into the three-way triad defined in the plan.
@@ -376,7 +443,11 @@ fn non_empty(s: String) -> Option<String> {
 /// Always returns a `PresenterHandle` — `plain()` on the raw-stderr path (no colour,
 /// no bars, no-op `finalize`), or the animated presenter's handle otherwise. The
 /// caller routes the early-exit notice and the final panel through it uniformly.
-fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) -> ui::PresenterHandle {
+fn init_tracing(
+    log_file: Option<std::fs::File>,
+    verbose: bool,
+    notifier: Option<telegram::notifier::NotifierLayer>,
+) -> ui::PresenterHandle {
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -398,7 +469,12 @@ fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) -> ui::Presenter
             .with_writer(move || file.try_clone().expect("clone ralphy.log handle"))
     });
 
-    let registry = tracing_subscriber::registry().with(filter).with(file_layer);
+    // The notifier Layer (when installed) composes alongside the file/presenter
+    // layers so it sees every consumed event; `Option<Layer>` is a no-op when None.
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(file_layer)
+        .with(notifier);
 
     if raw_stderr {
         let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);

@@ -492,13 +492,16 @@ pub fn try_start_notifier<T: Transport + Send + 'static>(
         .spawn(move || run_worker(client, chat_id, state, worker_queue, worker_shutdown))
         .ok()?;
     Some(NotifierHandle {
+        queue,
         shutdown,
         join: Some(join),
     })
 }
 
-/// A handle to the running notifier: its shutdown flag and the worker thread.
+/// A handle to the running notifier: the shared event queue, its shutdown flag,
+/// and the worker thread.
 pub struct NotifierHandle {
+    queue: Arc<EventQueue>,
     shutdown: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
 }
@@ -514,6 +517,9 @@ impl NotifierHandle {
     /// short one). If the worker does not finish in time it is detached.
     pub fn shutdown_within(mut self, timeout: Duration) {
         self.shutdown.store(true, Ordering::SeqCst);
+        // Wake the worker if it is parked waiting for events, so it observes the
+        // shutdown flag at once rather than after the next poll.
+        self.queue.wake();
         if let Some(join) = self.join.take() {
             // Join on a helper thread and bound the wait, so a worker wedged in a
             // blocking network call can never hold the process open.
@@ -883,6 +889,7 @@ mod tests {
             )
         });
         let handle = NotifierHandle {
+            queue,
             shutdown,
             join: Some(join),
         };
