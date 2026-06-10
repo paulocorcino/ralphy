@@ -209,6 +209,8 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             Some(n) => format!("issue #{n}"),
             None => format!("labels [{}]", effective_labels.join(", ")),
         };
+        // finalize before printing so the live region is cleared first (ADR-0006).
+        presenter.finalize();
         presenter.print_notice(&format!("No open issues for {scope} to process. Done."));
         return Ok(());
     }
