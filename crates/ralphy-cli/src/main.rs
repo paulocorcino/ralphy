@@ -287,13 +287,16 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     };
     let tracker = GhTracker::new(cfg.repo_root.clone());
 
-    let report = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock)?;
+    let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 
-    // Flush the queue bar to N/N and clear the live region before the summary
-    // `println!`s, so they are never tangled with a live bar (ADR-0006).
+    // Flush the queue bar to N/N and clear the live region before anything else
+    // prints — whether that is the summary `println!`s below or `anyhow`'s error
+    // on the `?` propagation. Finalizing first keeps a `bail!` from being torn by
+    // a live bar (ADR-0006: the presenter owns teardown).
     if let Some(presenter) = &presenter {
         presenter.finalize();
     }
+    let report = result?;
 
     // Per-issue summary, then how the run ended and where the branch stands.
     println!(
