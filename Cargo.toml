@@ -5,6 +5,7 @@ members = [
     "crates/ralphy-cli",
     "crates/ralphy-agent-claude",
     "crates/ralphy-agent-codex",
+    "crates/ralphy-agent-opencode",
     "crates/ralphy-pty",
 ]
 
@@ -27,6 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-agent-codex = { path = "crates/ralphy-agent-codex" }
+ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
 
 [profile.release]

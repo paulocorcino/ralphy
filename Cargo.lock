@@ -450,6 +450,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-agent-opencode"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ralphy-core",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "ralphy-cli"
 version = "0.1.0"
 dependencies = [
@@ -458,6 +468,7 @@ dependencies = [
  "clap",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
+ "ralphy-agent-opencode",
  "ralphy-core",
  "regex",
  "serde_json",
