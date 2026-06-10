@@ -34,14 +34,7 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 fn materialize_codex_skills(ws: &Workspace) -> Result<PathBuf> {
     let agents_dir = ws.repo_root().join(".agents");
     let skills_dir = agents_dir.join("skills");
-    if skills_dir.exists() {
-        fs::remove_dir_all(&skills_dir).context("clearing stale .agents/skills")?;
-    }
-    fs::create_dir_all(&skills_dir).context("creating .agents/skills")?;
-    SKILLS
-        .extract(&skills_dir)
-        .context("extracting the embedded skills to .agents/skills")?;
-    fs::write(agents_dir.join(".gitignore"), "*\n").context("writing .agents/.gitignore")?;
+    ralphy_adapter_support::materialize_assets(&SKILLS, &skills_dir, Some(&agents_dir))?;
     Ok(skills_dir)
 }
 

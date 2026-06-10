@@ -45,14 +45,7 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 fn materialize_opencode_skills(ws: &Workspace) -> Result<PathBuf> {
     let ralphy_dir = ws.ralphy_dir();
     let skills_dir = ralphy_dir.join("skills");
-    if skills_dir.exists() {
-        fs::remove_dir_all(&skills_dir).context("clearing stale .ralphy/skills")?;
-    }
-    fs::create_dir_all(&skills_dir).context("creating .ralphy/skills")?;
-    SKILLS
-        .extract(&skills_dir)
-        .context("extracting the embedded skills to .ralphy/skills")?;
-    fs::write(ralphy_dir.join(".gitignore"), "*\n").context("writing .ralphy/.gitignore")?;
+    ralphy_adapter_support::materialize_assets(&SKILLS, &skills_dir, Some(&ralphy_dir))?;
     Ok(skills_dir)
 }
 

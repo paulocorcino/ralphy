@@ -55,14 +55,7 @@ static PLUGIN: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin")
 /// plugin directory to pass on the command line.
 fn materialize_plugin(ws: &Workspace) -> Result<PathBuf> {
     let dir = ws.plugin_dir();
-    // Clear any prior copy so a removed skill doesn't survive between runs.
-    if dir.exists() {
-        fs::remove_dir_all(&dir).context("clearing the stale .ralphy/plugin")?;
-    }
-    fs::create_dir_all(&dir).context("creating .ralphy/plugin")?;
-    PLUGIN
-        .extract(&dir)
-        .context("extracting the embedded plugin to .ralphy/plugin")?;
+    ralphy_adapter_support::materialize_assets(&PLUGIN, &dir, None)?;
     Ok(dir)
 }
 
