@@ -26,7 +26,7 @@
 
 use std::fs;
 use std::io::{BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Returns `true` when `text` contains the `RALPHY_DONE_EXIT` sentinel, as
 /// defined by `assets/prompts/prompt.execute.md`.
@@ -98,6 +98,89 @@ mod tests {
     }
 
     #[test]
+    fn find_program_locates_a_file_on_the_search_path() {
+        let tmp = std::env::temp_dir().join(format!("ralphy-find-prog-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        // A file with the searched extension (".EXE" via PATHEXT on Windows; on
+        // non-Windows the bare name is what is matched).
+        let bare = tmp.join("tool");
+        let exe = tmp.join("tool.exe");
+        let target = if cfg!(windows) { &exe } else { &bare };
+        fs::write(target, b"x").unwrap();
+
+        let path_var = tmp.clone().into_os_string();
+        let got = find_program("tool", Some(path_var), Some(".EXE".into()))
+            .expect("must locate the file on PATH");
+        // The resolved path must point at a real file whose stem is `tool` (the
+        // extension casing may follow PATHEXT, which is harmless on Windows'
+        // case-insensitive filesystem).
+        assert!(got.is_file(), "resolved path must exist: {got:?}");
+        assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("tool"));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn find_program_resolves_a_windows_cmd_shim() {
+        // The defect this guards: an npm CLI present only as `name.cmd` (no
+        // `.exe`) must still resolve, since `Command::new("name")` would not find
+        // it. On non-Windows there is no PATHEXT, so this asserts the bare-name
+        // branch instead.
+        let tmp = std::env::temp_dir().join(format!("ralphy-find-cmd-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let path_var = tmp.clone().into_os_string();
+
+        if cfg!(windows) {
+            let shim = tmp.join("opencode.cmd");
+            fs::write(&shim, b"@echo off").unwrap();
+            let got = find_program("opencode", Some(path_var), Some(".EXE;.CMD".into()))
+                .expect("must resolve the .cmd shim");
+            assert!(got.is_file(), "resolved shim must exist: {got:?}");
+            assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("opencode"));
+            assert!(
+                got.extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("cmd")),
+                "must resolve the .cmd extension, not .exe: {got:?}"
+            );
+        } else {
+            let bare = tmp.join("opencode");
+            fs::write(&bare, b"#!/bin/sh").unwrap();
+            let got = find_program("opencode", Some(path_var), None);
+            assert_eq!(got.as_deref(), Some(bare.as_path()));
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn find_program_skips_extensionless_shim_when_cmd_present() {
+        // The exact npm-on-Windows layout: a bare `opencode` shell shim sits next
+        // to `opencode.cmd`. The bare file is not a valid Win32 application
+        // (os error 193), so the resolver must return the `.cmd`, not the shim.
+        let tmp = std::env::temp_dir().join(format!("ralphy-find-pair-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("opencode"), b"#!/bin/sh\n").unwrap();
+        fs::write(tmp.join("opencode.cmd"), b"@echo off\n").unwrap();
+
+        let got = find_program("opencode", Some(tmp.clone().into_os_string()), Some(".EXE;.CMD".into()))
+            .expect("must resolve a runnable candidate");
+        assert!(
+            got.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd")),
+            "must return the .cmd, not the extensionless shim: {got:?}"
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn find_program_returns_none_when_absent() {
+        let path_var = std::env::temp_dir().into_os_string();
+        assert!(find_program("definitely-not-a-real-prog-xyz", Some(path_var), Some(".EXE".into())).is_none());
+    }
+
+    #[test]
     fn blocked_reason_extracts_trimmed_reason() {
         assert_eq!(
             blocked_reason("RALPHY_BLOCKED_EXIT missing key"),
@@ -157,6 +240,73 @@ pub fn materialize_assets(
         fs::write(dir.join(".gitignore"), "*\n").context("writing .gitignore")?;
     }
     Ok(())
+}
+
+/// Resolve `name` to the path of the executable a headless `Command` should
+/// spawn, searching `PATH` and — on Windows — every `PATHEXT` extension. Falls
+/// back to the bare `name` so the spawn error still names the missing program.
+///
+/// This exists because Windows ships many agent CLIs as npm shims with **no**
+/// `.exe` (e.g. `opencode.cmd`): `Command::new("opencode")` only ever tries
+/// `opencode` and `opencode.exe`, so it reports "program not found" even though
+/// `opencode.cmd` is on `PATH`. Resolving the full path (including the `.cmd`
+/// extension) lets `std`'s `Command` launch the batch shim directly — modern
+/// `std` routes `.bat`/`.cmd` through the command processor with safe argument
+/// escaping. A native `.exe` (the common case off Windows, and for Codex) is
+/// found first and returned unchanged.
+pub fn resolve_program(name: &str) -> std::ffi::OsString {
+    find_program(name, std::env::var_os("PATH"), std::env::var_os("PATHEXT"))
+        .map(PathBuf::into_os_string)
+        .unwrap_or_else(|| name.into())
+}
+
+/// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows. Pure
+/// over its inputs so it unit-tests against a temp dir. Mirrors the Claude
+/// adapter's private resolver; lives here so every headless adapter shares it.
+pub fn find_program(
+    name: &str,
+    path_var: Option<std::ffi::OsString>,
+    pathext: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    let path_var = path_var?;
+    let exts: Vec<String> = if cfg!(windows) {
+        pathext
+            .and_then(|p| p.into_string().ok())
+            .unwrap_or_else(|| ".EXE".into())
+            .split(';')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for dir in std::env::split_paths(&path_var) {
+        let direct = dir.join(name);
+        // On Windows a file is only executable when its extension is in PATHEXT,
+        // so a bare extensionless `direct` must be skipped — npm ships agent CLIs
+        // as a pair (`opencode` shell shim + `opencode.cmd`), and returning the
+        // extensionless shim yields "not a valid Win32 application" (os error 193).
+        // Off Windows, any existing file on PATH is a candidate as-is.
+        let direct_ok = if cfg!(windows) {
+            direct.is_file()
+                && direct
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| exts.iter().any(|x| x.trim_start_matches('.').eq_ignore_ascii_case(e)))
+        } else {
+            direct.is_file()
+        };
+        if direct_ok {
+            return Some(direct);
+        }
+        for ext in &exts {
+            let cand = dir.join(name).with_extension(ext.trim_start_matches('.'));
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
 }
 
 /// The raw result of driving one headless child to completion or timeout.

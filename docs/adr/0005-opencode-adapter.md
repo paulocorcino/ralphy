@@ -136,6 +136,20 @@ masquerade as a `ProviderAuthError` requiring re-login; this path handles that
 correctly (the operator re-auths and re-runs). The **exact** auth-error strings
 are deferred until observed against a live signed-out run.
 
+- *Attempted, not reproducible (live, 2026-06-10, issue #29)*: a genuine
+  `ProviderAuthError` could **not** be provoked in the validation environment.
+  Moving `auth.json` aside still let `opencode run` succeed (the credential
+  resolves from a resilient/cached source), and requesting an unconfigured
+  provider returned the same opaque `UnknownError` the gateway emits for any
+  failure — **not** a typed `ProviderAuthError`. So the matcher
+  (`is_opencode_auth_error`, keyed on the documented case-insensitive
+  `providerautherror` substring) stays as-designed and unverified-against-live,
+  the conservative branch. A practical corollary surfaced: against the Kimi/Zen
+  hosted gateway, an auth failure may arrive as `UnknownError` and therefore fall
+  through to the generic "no plan" / `Stuck` path rather than the actionable auth
+  stop — acceptable, since `UnknownError` is also the transient-blip shape and
+  must not be force-mapped to "run `opencode auth login`".
+
 ## D7 — Skills ride under `.ralphy/`, pointed at via injected `skills.paths`
 
 OpenCode auto-discovers Claude-format `SKILL.md` skills from `.opencode/skills/`,
@@ -162,9 +176,13 @@ D5).
 Two prompt spots are vendor-isms and get OpenCode variants (D8). All existing
 Claude/Codex assets stay untouched.
 
-- *Deferred until live*: whether each `skills.paths` entry is the **container**
-  dir (`.ralphy/skills`, the natural reading) or each individual skill dir — fix
-  the materialized layout / injected path to match once observed.
+- *Resolved (live-validated against opencode 1.16.2 on the real repo, 2026-06-10,
+  issue #29)*: each `skills.paths` entry is the **container** dir
+  (`.ralphy/skills`) — opencode discovers the individual skills inside it. A live
+  execute run loaded the reviewer skill (a `tool_use` whose `part` is
+  `{"tool":"skill","state":{"title":"Loaded skill: reviewer-v2"}}`) from the
+  injected container path, confirming the natural reading. The materialized layout
+  and injected path are unchanged.
 
 ## D8 — Reuse the skill content; re-target only the plan prompt's two vendor-isms
 
@@ -214,7 +232,21 @@ is pointless when OpenCode is already self-waiting short limits and long ones ca
 no parseable reset. We rejected auto-resume (ADR-0003's hours-long-hang failure
 mode) and treating a limit as plain `Stuck` (loses the actionable re-run signal).
 
-- *Deferred until live*: the exact limit-string set and any reset parser.
+- *Partially resolved (live against opencode 1.16.2, 2026-06-10, issue #29)*: the
+  **error-event envelope** is now observed and the parser is fixed to it — a real
+  error event is `{"type":"error","error":{"name":<n>,"data":{"message":<m>,…}}}`
+  (the `name`/`statusCode`/`message`/`retryAfter` live under `error.data`, not at
+  the top level), captured live as
+  `{"type":"error","error":{"name":"UnknownError","data":{"message":"Unexpected
+  server error.…","ref":"err_…"}}}`. `parse_opencode_limit`/`parse_opencode_events`
+  now read fields through `error_detail()`/`error_name()` so the 429 matcher works
+  against this shape (the previous code read top-level `name`/`statusCode` and would
+  have missed every real limit). A genuine **429 was not reproducible** — the
+  Kimi/Zen hosted gateway surfaced *all* transient failures as an opaque
+  `UnknownError` rather than a typed `APIError`/`429`. This **reinforces D9's
+  thesis**: the text matcher cannot be the primary path, the per-issue wall timeout
+  is. The exact 429 string set / reset parser stays best-effort until a real
+  rate-limit event is captured.
 
 ## Consequences
 
@@ -236,9 +268,44 @@ mode) and treating a limit as plain `Stuck` (loses the actionable re-run signal)
   (issue #11899) — caught by the per-issue wall timeout (→ `Timeout`), the same
   backstop as the limit hang (D9). A future hardening could deny the `question`
   tool via the injected config.
-- Five items are deferred until observed against a live OpenCode run, none
-  blocking: the `skills.paths` entry granularity (D7), the reviewer-subagent
-  dispatch shape (D8), the exact auth-error strings (D6), and the exact
-  usage-limit string set + reset parser (D9). Until each is firmed up the adapter
-  takes the conservative branch (best-effort match, timeout backstop, actionable
-  stop).
+- Deferred-until-live items, status after the issue #29 capstone (live against
+  opencode 1.16.2 on a real repo, 2026-06-10): **resolved** — the reviewer
+  dispatch shape (D8, inline skill) and the `skills.paths` granularity (D7,
+  container dir, reviewer skill loaded live); **partially resolved** — the
+  error-event envelope is now observed and parsed (`error.data` nesting, D9);
+  **attempted but not reproducible** — the exact auth-error strings (D6) and a
+  real 429 (D9), because the Kimi/Zen hosted gateway surfaced every failure as an
+  opaque `UnknownError`. For the unreproduced items the adapter keeps the
+  conservative branch (documented-substring match, timeout backstop).
+- Corrections folded back from the issue #29 live validation, none re-opening a
+  decision:
+  - The `--agent` value is pinned to `opencode` (one word) in `main.rs`; clap
+    would otherwise derive the kebab-cased `open-code` from the `OpenCode` variant
+    and reject the documented invocation. The derived spelling is kept as an alias.
+  - The binary is resolved through a shared `resolve_program("opencode")` (new in
+    `ralphy-adapter-support`, mirroring the Claude adapter's private resolver)
+    rather than a bare `Command::new("opencode")`: on Windows opencode ships as an
+    npm `.cmd` shim with no `.exe`, so the bare name was "program not found", and
+    the extensionless `opencode` shell shim next to it was "not a valid Win32
+    application" (os error 193) — the resolver honours `PATHEXT` and skips the
+    extensionless shim. This is shared OS plumbing, the same seam as `run_headless`
+    (it does not reopen ADR-0004).
+  - The `--format json` event parsing is fixed to the real envelope: every event
+    is `{type, timestamp, sessionID, part:{…}}` with the payload (text, tool,
+    reason) under `part`, and an error carries `{error:{name,data:{…}}}`. The
+    adapter previously read these fields at the top level and would have extracted
+    **empty** assistant text (breaking every execute-path sentinel scan) and
+    missed every typed error; `event_payload()`/`error_detail()`/`error_name()`
+    now read through both the live and the flat shapes. This resolves the "exact
+    event JSON deferred until live" caveat in D2.
+- One defect surfaced that is **not** opencode-specific and is filed as a
+  follow-up: when `.ralphy/plan.md` is *tracked* in the base branch (it was
+  accidentally committed to the real repo's `origin/main` by an earlier run),
+  `.gitignore` cannot un-track it, so the planner's overwrite leaves a modified
+  tracked file and the clean-run return-to-orig — a **non-force** `git checkout`
+  in `ralphy-core` (unlike the dry-run/error `restore()`, which forces) — aborts,
+  stranding the repo on the run branch. The green deliverable and close-on-green
+  are unaffected; only the final branch hand-back is. Fix is repo hygiene
+  (`git rm --cached .ralphy/plan.md`) plus optionally hardening the core
+  checkout-back to tolerate tracked scratch
+  ([#41](https://github.com/paulocorcino/ralphy/issues/41)).

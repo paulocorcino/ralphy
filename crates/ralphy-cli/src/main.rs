@@ -170,6 +170,10 @@ struct RunArgs {
 enum CliAgent {
     Claude,
     Codex,
+    // The ADR-0005 contract and the documented invocation are `--agent opencode`
+    // (one word). Clap would otherwise derive the kebab-cased `open-code` from the
+    // variant name; pin the spelling and keep that derivation as an alias.
+    #[value(name = "opencode", alias = "open-code")]
     OpenCode,
 }
 
@@ -502,6 +506,22 @@ mod tests {
     fn effective_stop_on_limit_claude_passes_flag_through() {
         assert!(!effective_stop_on_limit(false, CliAgent::Claude));
         assert!(effective_stop_on_limit(true, CliAgent::Claude));
+    }
+
+    #[test]
+    fn cli_agent_accepts_opencode_spelling() {
+        // The documented invocation is `--agent opencode` (one word, ADR-0005 D1).
+        // Guard against clap silently reverting to the kebab-cased `open-code`.
+        use clap::ValueEnum;
+        assert_eq!(
+            CliAgent::from_str("opencode", false).ok(),
+            Some(CliAgent::OpenCode)
+        );
+        // The derived kebab spelling stays accepted as an alias.
+        assert_eq!(
+            CliAgent::from_str("open-code", false).ok(),
+            Some(CliAgent::OpenCode)
+        );
     }
 
     #[test]

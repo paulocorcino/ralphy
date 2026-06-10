@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
-use ralphy_adapter_support::run_headless;
+use ralphy_adapter_support::{resolve_program, run_headless};
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use tracing::info;
 
@@ -161,7 +161,9 @@ fn build_opencode_command(
     root: &Path,
     skills_config: &str,
 ) -> Command {
-    let mut cmd = Command::new("opencode");
+    // Resolve `opencode` to its real path: on Windows it ships as an npm `.cmd`
+    // shim with no `.exe`, which a bare `Command::new("opencode")` cannot find.
+    let mut cmd = Command::new(resolve_program("opencode"));
     cmd.arg("run")
         .arg("--format")
         .arg("json")
@@ -182,12 +184,58 @@ fn build_opencode_command(
     cmd
 }
 
+/// The payload object a single event's fields live in. opencode 1.16.2 wraps
+/// every event in an envelope `{type, timestamp, sessionID, part:{…}}` and puts
+/// the real fields (`text`, `tool`, `reason`, …) under `part`; the older/SDK
+/// shape this adapter was first written against is flat (the fields sit at the
+/// top level). Returning `part` when present and the value itself otherwise lets
+/// every parser read fields from one place and stay correct under both shapes
+/// (ADR-0005 D2 — the exact event JSON, observed live against opencode 1.16.2).
+fn event_payload(val: &serde_json::Value) -> &serde_json::Value {
+    val.get("part").unwrap_or(val)
+}
+
+/// Whether an event (envelope `val`) is an error event under any observed shape:
+/// the flat `type:"error"`, a `part:{type:"error"}`, or the opencode 1.16.2
+/// envelope that carries a top-level `error` object (`{type:"error", error:{…}}`).
+fn is_error_event(val: &serde_json::Value) -> bool {
+    let top = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let inner = event_payload(val)
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    top == "error" || inner == "error" || val.get("error").is_some()
+}
+
+/// The object an error event's `name`/`statusCode`/`message`/`retryAfter` fields
+/// live in. opencode 1.16.2 nests them as `error.data` under a top-level `error`
+/// object (`{type:"error", error:{name, data:{message, …}}}`, captured live); the
+/// flat/SDK shape puts them directly on the payload. Returns the most specific
+/// object available so the limit matcher and reset parser read fields from one
+/// place under either shape (ADR-0005 D6/D9 — exact error JSON, observed live).
+fn error_detail(val: &serde_json::Value) -> &serde_json::Value {
+    if let Some(err) = val.get("error") {
+        return err.get("data").unwrap_or(err);
+    }
+    event_payload(val)
+}
+
+/// The error event's `name`, reading `error.name` (opencode 1.16.2) before the
+/// flat `name` on the payload.
+fn error_name(val: &serde_json::Value) -> &str {
+    val.get("error")
+        .and_then(|e| e.get("name"))
+        .or_else(|| event_payload(val).get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
 /// Parse OpenCode's `--format json` line-delimited event stream: concatenate the
 /// assistant `text` parts into the returned string (the source the sentinel scan
 /// reads) and set the bool when any line is an `error` event. Tolerant of
-/// unparseable lines (skipped) — the exact event JSON is "deferred until live" in
-/// ADR-0005, so this keys only on the documented `type:"text"` / `type:"error"`
-/// shapes and ignores everything else.
+/// unparseable lines (skipped). Reads the text from the event's `part` payload
+/// (opencode 1.16.2) and falls back to the top level (flat shape), so the
+/// sentinel scan sees the assistant's real output under both envelopes.
 fn parse_opencode_events(stdout: &str) -> (String, bool) {
     let mut text = String::new();
     let mut saw_error = false;
@@ -199,12 +247,14 @@ fn parse_opencode_events(stdout: &str) -> (String, bool) {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
             continue; // tolerate non-JSON noise on the stream
         };
-        let kind = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if kind == "error" {
+        if is_error_event(&val) {
             saw_error = true;
         }
-        if kind == "text" {
-            if let Some(t) = val.get("text").and_then(|v| v.as_str()) {
+        let payload = event_payload(&val);
+        let is_text = val.get("type").and_then(|v| v.as_str()) == Some("text")
+            || payload.get("type").and_then(|v| v.as_str()) == Some("text");
+        if is_text {
+            if let Some(t) = payload.get("text").and_then(|v| v.as_str()) {
                 text.push_str(t);
                 text.push('\n');
             }
@@ -282,12 +332,18 @@ fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
             continue;
         };
-        if val.get("type").and_then(|v| v.as_str()) != Some("error") {
+        if !is_error_event(&val) {
             continue;
         }
-        let name = val.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let status = val.get("statusCode").and_then(|v| v.as_u64()).unwrap_or(0);
-        let msg = val
+        // Read the error fields from wherever this shape carries them: `error.data`
+        // (opencode 1.16.2), `error`, or the flat payload (`part`/top level).
+        let name = error_name(&val);
+        let detail = error_detail(&val);
+        let status = detail
+            .get("statusCode")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let msg = detail
             .get("message")
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -301,7 +357,7 @@ fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
             || msg.contains("quota exceeded");
 
         if is_limit {
-            return Some(parse_opencode_reset_hint(&val));
+            return Some(parse_opencode_reset_hint(detail));
         }
     }
     None
@@ -677,6 +733,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_limit_ignores_real_unknown_error_envelope() {
+        // The exact error event captured live from opencode 1.16.2: a transient
+        // backend failure, NOT a usage limit. It must not be misread as a limit.
+        let stream = r#"{"type":"error","timestamp":1781088576836,"sessionID":"ses_x","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_7391de1e"}}}"#;
+        assert_eq!(
+            parse_opencode_limit(stream),
+            None,
+            "an UnknownError backend blip is not a usage limit"
+        );
+        // But it IS an error event (downgrades a Done claim to Stuck on execute).
+        let (_t, saw_error) = parse_opencode_events(stream);
+        assert!(saw_error, "the real error envelope must flag saw_error");
+    }
+
+    #[test]
+    fn parse_limit_detects_429_in_real_error_data_envelope() {
+        // A 429 carried in the opencode 1.16.2 envelope: name + statusCode +
+        // retryAfter live under `error.data`, not at the top level.
+        let stream = r#"{"type":"error","sessionID":"s","error":{"name":"APIError","data":{"statusCode":429,"message":"rate limit exceeded","retryAfter":"2026-06-10T20:00:00Z"}}}"#;
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(Some("2026-06-10T20:00:00Z".into())),
+            "must read name/statusCode/retryAfter from error.data"
+        );
+    }
+
+    #[test]
     fn parse_limit_non_limit_status_500() {
         // A 500 error must not be classified as a limit.
         let stream = r#"{"type":"error","name":"APIError","statusCode":500,"message":"internal server error"}
@@ -705,7 +788,15 @@ mod tests {
     #[test]
     fn build_command_omits_model_when_none() {
         let cmd = build_opencode_command(None, None, Path::new("/repo"), "{}");
-        assert_eq!(cmd.get_program().to_string_lossy(), "opencode");
+        // The program is `resolve_program("opencode")`: a full path (e.g.
+        // `opencode.cmd` on Windows) when found on PATH, else the bare name. Either
+        // way the file stem is `opencode`.
+        let program = PathBuf::from(cmd.get_program());
+        assert_eq!(
+            program.file_stem().and_then(|s| s.to_str()),
+            Some("opencode"),
+            "program: {program:?}"
+        );
         let args = argv(&cmd);
         assert!(args.contains(&"run".to_string()), "argv: {args:?}");
         // No -m flag is passed; OpenCode resolves its own model (ADR-0005 D4).
@@ -800,6 +891,58 @@ mod tests {
         let (text, saw_error) = parse_opencode_events(stream);
         assert!(text.contains("trying"));
         assert!(saw_error, "an error event must set the flag");
+    }
+
+    #[test]
+    fn parse_extracts_text_from_nested_part_envelope() {
+        // The real opencode 1.16.2 `--format json` shape, captured live: every
+        // event is wrapped `{type, timestamp, sessionID, part:{…}}` and the text
+        // lives under `part.text`. The sentinel scan must see it through the
+        // envelope, or every execute run misclassifies as Stuck.
+        let stream = concat!(
+            r#"{"type":"step_start","sessionID":"s","part":{"type":"step-start","snapshot":"abc"}}"#,
+            "\n",
+            r#"{"type":"tool_use","sessionID":"s","part":{"type":"tool","tool":"read","callID":"c1"}}"#,
+            "\n",
+            r#"{"type":"text","sessionID":"s","part":{"type":"text","text":"did the work\nRALPHY_DONE_EXIT"}}"#,
+            "\n",
+            r#"{"type":"step_finish","sessionID":"s","part":{"type":"step-finish","reason":"stop"}}"#,
+            "\n",
+        );
+        let (text, saw_error) = parse_opencode_events(stream);
+        assert!(
+            text.contains("RALPHY_DONE_EXIT"),
+            "must extract the sentinel from part.text: {text:?}"
+        );
+        assert!(
+            ralphy_adapter_support::done_sentinel(&text),
+            "done_sentinel must fire on the extracted text"
+        );
+        // A `tool` part must not be mistaken for text or an error.
+        assert!(!saw_error, "a tool_use envelope is not an error");
+    }
+
+    #[test]
+    fn parse_flags_error_event_in_nested_part() {
+        // An error carried inside the `part` envelope must still set saw_error.
+        let stream =
+            r#"{"type":"error","sessionID":"s","part":{"type":"error","name":"APIError","statusCode":500}}"#;
+        let (_text, saw_error) = parse_opencode_events(stream);
+        assert!(saw_error, "a nested error part must flag saw_error");
+    }
+
+    #[test]
+    fn parse_limit_detects_429_in_nested_part() {
+        // The limit scan must read name/statusCode/retryAfter from `part` too.
+        let stream = concat!(
+            r#"{"type":"error","sessionID":"s","part":{"type":"error","name":"APIError","statusCode":429,"message":"rate limited","retryAfter":"2026-06-10T18:00:00Z"}}"#,
+            "\n",
+        );
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(Some("2026-06-10T18:00:00Z".into())),
+            "must detect a 429 nested under part and extract the reset"
+        );
     }
 
     #[test]
