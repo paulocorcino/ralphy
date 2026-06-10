@@ -75,6 +75,15 @@ you only produce a plan that a later execution loop will consume.
   that require human judgment `[review-only]` and describe how a reviewer
   confirms them. The ledger does NOT change the green gate — `RALPHY_DONE_EXIT`
   is still keyed to the plan's test-verifiable "Done when", not to the ledger.
+  The test-verifiable "Done when" bullets must be the union of the ledger's
+  `[verified]` lines — reference the same conditions in both; do not invent a
+  criterion in one that is absent from the other.
+- Anchor every claim about existing code, not just steps: any "already
+  exists / already present" statement in `## Feasible` or `## Decisions` must
+  cite the file and function you read in THIS pass. Before planning, check
+  whether the issue is already partially or fully implemented on the current
+  branch (read-only `git log` and tree inspection); if so, say so under
+  `## Feasible` and plan only the residue.
 - Anchor every step in real code: name the actual file and function/module to
   edit, found by reading the tree NOW. If a step cannot point at concrete code
   even after you have made the open design decisions, the issue is too
@@ -82,7 +91,10 @@ you only produce a plan that a later execution loop will consume.
   plan whose steps pass the checkbox count but name no real code is worse than
   an honest `no`.
 - Each step must be small enough to complete and commit in one short
-  iteration. Prefer many tiny steps over a few large ones.
+  iteration. Prefer many tiny steps over a few large ones. If a genuinely
+  atomic unit of work cannot fit one short commit, split it into explicit
+  red/green/refactor sub-steps rather than faking granularity or hiding the
+  whole unit behind one bullet.
 - The penultimate step is always a self-review: run the **inline `reviewer`
   skill** (auto-discovered via `skills.paths`) over ONLY the commits you made
   for this issue — **not** a subagent, and not the whole branch. Resolve every
@@ -93,7 +105,9 @@ you only produce a plan that a later execution loop will consume.
 - Write the plan in the project's working language (English unless
   CLAUDE.md/CONTEXT.md says otherwise). Do not modify anything other than
   `.ralphy/plan.md` in this pass.
-- Do not run git, builds, or edit source files now. Just plan.
+- Do not commit, run builds, or edit source files now. Read-only git
+  inspection (`git log`, `git show`, `git diff`) IS allowed — and expected,
+  to verify the branch's pre-existing state. Just plan.
 
 ## Acceptance ledger
 

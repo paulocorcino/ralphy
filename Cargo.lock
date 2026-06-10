@@ -728,6 +728,7 @@ name = "ralphy-adapter-support"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "include_dir",
 ]
 
 [[package]]

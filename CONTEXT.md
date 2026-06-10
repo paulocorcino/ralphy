@@ -123,6 +123,15 @@ _Avoid_: pause, hold, breakpoint.
   and receives an outcome. PTY, interactive sessions, and completion sentinels
   live inside the **adapter**, never in the core.
 
+## Testing conventions
+
+- **Subprocess/PTY plumbing is tested against a dedicated helper bin**, located
+  via `CARGO_BIN_EXE_<name>` from an integration test under `tests/` — see
+  `ralphy-adapter-support`'s `headless_test_child` driven by `tests/headless.rs`.
+  `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
+  and shell-script children are not portable to Windows CI; plans that test
+  child-process behavior should follow this pattern.
+
 ## Flagged ambiguities
 
 - "AFK" and "ready-for-agent" are treated as synonyms (same for "HITL" /
