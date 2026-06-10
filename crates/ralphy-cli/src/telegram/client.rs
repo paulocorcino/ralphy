@@ -41,19 +41,33 @@ impl UreqTransport {
 
 impl Transport for UreqTransport {
     fn get(&self, method: &str) -> Result<Value> {
-        ureq::get(&self.url(method))
-            .call()
-            .with_context(|| format!("GET {method}"))?
-            .into_json()
-            .with_context(|| format!("parsing {method} response"))
+        let resp = ureq::get(&self.url(method)).call();
+        envelope(resp, method)
     }
 
     fn post(&self, method: &str, body: Value) -> Result<Value> {
-        ureq::post(&self.url(method))
-            .send_json(body)
-            .with_context(|| format!("POST {method}"))?
+        let resp = ureq::post(&self.url(method)).send_json(body);
+        envelope(resp, method)
+    }
+}
+
+/// Turn a `ureq` result into the Bot API's JSON envelope.
+///
+/// The Bot API reports failures (bad token, bad request) with a non-2xx status
+/// AND an `{ "ok": false, "description": ... }` body. `ureq` treats a non-2xx
+/// status as `Err(Error::Status(_, resp))` by default, so we must read the body
+/// off that error too — otherwise the human-readable `description` is lost and
+/// callers only see an opaque HTTP error. Both the success and error-status
+/// bodies are parsed and returned for [`result_of`] to interpret.
+fn envelope(resp: Result<ureq::Response, ureq::Error>, method: &str) -> Result<Value> {
+    match resp {
+        Ok(r) => r
             .into_json()
-            .with_context(|| format!("parsing {method} response"))
+            .with_context(|| format!("parsing {method} response")),
+        Err(ureq::Error::Status(_, r)) => r
+            .into_json()
+            .with_context(|| format!("parsing {method} error response")),
+        Err(e) => Err(e).with_context(|| format!("{method} request failed")),
     }
 }
 
@@ -115,23 +129,36 @@ fn result_of(resp: Value, method: &str) -> Result<Value> {
     bail!("{method} failed: {desc}")
 }
 
-/// Find the `chat.id` of the first inbound `/start` in a `getUpdates` response.
+/// Find the `chat.id` of the most recent inbound `/start` in a `getUpdates`
+/// response.
 ///
 /// `setup` prompts the operator to send `/start` to the bot, then polls
-/// `getUpdates`; this scans the returned updates for the first message whose
-/// text begins with `/start` and returns its originating chat. Restricting to
-/// `/start` avoids auto-capturing any chat that happens to message the bot
-/// (ADR-0007 D2).
+/// `getUpdates`; this scans the returned updates for messages whose text begins
+/// with `/start` and returns the chat of the LAST such message, so a fresh
+/// `/start` from a new chat wins over a stale one in the same backlog. Updates
+/// that carry no plain `message` (edited messages, channel posts) are skipped
+/// rather than aborting the scan. Restricting to `/start` avoids auto-capturing
+/// any chat that merely messages the bot (ADR-0007 D2).
 pub fn detect_chat_id(updates: &Value) -> Option<i64> {
     let arr = updates.get("result")?.as_array()?;
+    let mut found = None;
     for update in arr {
-        let msg = update.get("message")?;
+        let Some(msg) = update.get("message") else {
+            continue;
+        };
         let text = msg.get("text").and_then(Value::as_str).unwrap_or("");
-        if text.trim_start().starts_with("/start") {
-            return msg.get("chat")?.get("id")?.as_i64();
+        if !text.trim_start().starts_with("/start") {
+            continue;
+        }
+        if let Some(id) = msg
+            .get("chat")
+            .and_then(|c| c.get("id"))
+            .and_then(Value::as_i64)
+        {
+            found = Some(id);
         }
     }
-    None
+    found
 }
 
 #[cfg(test)]
@@ -227,6 +254,21 @@ mod tests {
             ]
         });
         assert_eq!(detect_chat_id(&updates), Some(4242));
+    }
+
+    #[test]
+    fn detect_chat_id_takes_last_start_and_skips_non_messages() {
+        let updates = json!({
+            "ok": true,
+            "result": [
+                { "update_id": 1, "message": { "text": "/start", "chat": { "id": 1 } } },
+                // A non-message update must not abort the scan.
+                { "update_id": 2, "edited_message": { "text": "/start", "chat": { "id": 2 } } },
+                // A later /start from a different chat wins.
+                { "update_id": 3, "message": { "text": "/start@bot", "chat": { "id": 3 } } }
+            ]
+        });
+        assert_eq!(detect_chat_id(&updates), Some(3));
     }
 
     #[test]
