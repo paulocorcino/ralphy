@@ -804,7 +804,7 @@ mod tests {
         // card, then start push, then at least one edit, then the final push.
         assert_eq!(m.first(), Some(&"sendMessage"));
         assert_eq!(m[1], "sendMessage");
-        assert!(m.iter().any(|x| *x == "editMessageText"));
+        assert!(m.contains(&"editMessageText"));
         assert_eq!(m.last(), Some(&"sendMessage"));
 
         // Every edit targets the card's message_id (the first sendMessage's id).
@@ -840,7 +840,7 @@ mod tests {
         let calls = calls.lock().unwrap();
         let m = methods(&calls);
         // The failing edit did not abort the worker: the final push still went out.
-        assert!(m.iter().any(|x| *x == "editMessageText"));
+        assert!(m.contains(&"editMessageText"));
         assert_eq!(m.last(), Some(&"sendMessage"));
     }
 
