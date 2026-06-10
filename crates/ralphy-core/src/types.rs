@@ -48,6 +48,27 @@ pub enum Outcome {
     Limit(Option<String>),
 }
 
+/// A usage/rate limit hit during *planning* — before any plan artifact was
+/// produced. Adapters return this (wrapped in `anyhow::Error`) instead of a
+/// generic "no plan" failure, so the runner can route a plan-time limit into the
+/// same wait-and-resume / stop-and-report machinery as an execute-time
+/// [`Outcome::Limit`]. `reset` carries the parsed reset hint when present.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanLimit {
+    pub reset: Option<String>,
+}
+
+impl std::fmt::Display for PlanLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.reset {
+            Some(r) => write!(f, "usage limit hit during planning (reset ~{r})"),
+            None => write!(f, "usage limit hit during planning"),
+        }
+    }
+}
+
+impl std::error::Error for PlanLimit {}
+
 /// The repository a run operates on, in place. Owns the paths under the
 /// gitignored `.ralphy/` scratch dir that planner and executor read and write.
 #[derive(Debug, Clone)]

@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
-use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
+use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, PlanLimit, Workspace};
 use tracing::info;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -351,9 +351,19 @@ impl Agent for CodexAgent {
             .issue_deadline()
             .saturating_duration_since(Instant::now());
         info!(model = %model, effort = "high", "planning with codex exec");
-        let _ = self.run_codex(cmd, PROMPT_PLAN_CODEX, timeout)?;
+        let (_, _, log) = self.run_codex(cmd, PROMPT_PLAN_CODEX, timeout)?;
 
         if !plan_path.exists() {
+            // A usage limit during planning is not a generic failure: surface it
+            // as a typed `PlanLimit` (with the parsed reset hint) so the runner
+            // routes it through the same stop-and-report / auto-resume path as an
+            // execute-time `Outcome::Limit`, rather than aborting the whole run.
+            if is_codex_limit_text(&log) {
+                return Err(PlanLimit {
+                    reset: parse_codex_reset_hint(&log),
+                }
+                .into());
+            }
             bail!(
                 "codex produced no plan at {} (see {})",
                 plan_path.display(),
@@ -568,7 +578,8 @@ mod tests {
 
     #[test]
     fn parse_codex_config_model_reads_root_model() {
-        let toml = "model = \"gpt-5.5\"\nmodel_reasoning_effort = \"high\"\n\n[features]\nx = true\n";
+        let toml =
+            "model = \"gpt-5.5\"\nmodel_reasoning_effort = \"high\"\n\n[features]\nx = true\n";
         assert_eq!(parse_codex_config_model(toml).as_deref(), Some("gpt-5.5"));
     }
 
@@ -663,6 +674,21 @@ mod tests {
         assert_eq!(
             parse_codex_reset_hint("usage limit exceeded, no reset info"),
             None
+        );
+    }
+
+    #[test]
+    fn detects_real_codex_plan_limit_log() {
+        // The exact ERROR line a `codex exec` plan emitted on a usage limit: the
+        // adapter's plan() classifies this into a PlanLimit carrying the hint.
+        let log = "ERROR: You've hit your usage limit. Upgrade to Pro \
+                   (https://chatgpt.com/explore/pro), visit \
+                   https://chatgpt.com/codex/settings/usage to purchase more \
+                   credits or try again at Jun 10th, 2026 12:23 AM.";
+        assert!(is_codex_limit_text(log));
+        assert_eq!(
+            parse_codex_reset_hint(log).as_deref(),
+            Some("Jun 10th, 2026 12:23 AM.")
         );
     }
 

@@ -13,9 +13,16 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use ralphy_core::{
-    run_queue, Agent, BranchMode, Issue, IssueTracker, Outcome, Plan, QueueConfig, RunClock,
-    StopReason, Verdict, WaitOutcome, Workspace,
+    run_queue, Agent, BranchMode, Issue, IssueTracker, Outcome, Plan, PlanLimit, QueueConfig,
+    RunClock, StopReason, Verdict, WaitOutcome, Workspace,
 };
+
+/// A scripted planning result. `Limit(reset)` makes `plan()` return a
+/// `PlanLimit` error (a usage limit before any plan was written); once the
+/// queue drains, `plan()` succeeds normally.
+enum PlanScript {
+    Limit(Option<String>),
+}
 
 /// Plans a feasible step for every issue and returns a scripted sequence of
 /// execution outcomes (one per `execute` call). It also records, in order, the
@@ -29,6 +36,11 @@ struct ScriptedAgent {
     outcomes: RefCell<VecDeque<(Outcome, bool)>>,
     planned: RefCell<Vec<u64>>,
     executed: RefCell<Vec<u64>>,
+    /// Scripted planning results consumed before a `plan` succeeds. Each entry
+    /// makes one `plan` call fail with a `PlanLimit`; an empty queue plans normally.
+    plan_scripts: RefCell<VecDeque<PlanScript>>,
+    /// Every `plan` call (including the failing limit attempts), in order.
+    plan_attempts: RefCell<usize>,
     /// Open steps written by `plan` — set to 0 to script an infeasible issue.
     steps: usize,
     /// If set, appended to the plan as a `## Acceptance ledger` section.
@@ -48,6 +60,8 @@ impl ScriptedAgent {
             outcomes: RefCell::new(outcomes.into()),
             planned: RefCell::new(Vec::new()),
             executed: RefCell::new(Vec::new()),
+            plan_scripts: RefCell::new(VecDeque::new()),
+            plan_attempts: RefCell::new(0),
             steps: 1,
             ledger: None,
         }
@@ -57,10 +71,23 @@ impl ScriptedAgent {
         self.ledger = Some(ledger.into());
         self
     }
+
+    /// Script planning failures: each [`PlanScript`] makes one `plan` call return
+    /// a `PlanLimit`; once exhausted, `plan` succeeds.
+    fn with_plan_scripts(self, scripts: Vec<PlanScript>) -> Self {
+        *self.plan_scripts.borrow_mut() = scripts.into();
+        self
+    }
 }
 
 impl Agent for ScriptedAgent {
     fn plan(&self, issue: &Issue, ws: &Workspace) -> anyhow::Result<Plan> {
+        *self.plan_attempts.borrow_mut() += 1;
+        // A scripted limit fails this plan call before any artifact is written,
+        // mirroring a usage limit hit mid-planning.
+        if let Some(PlanScript::Limit(reset)) = self.plan_scripts.borrow_mut().pop_front() {
+            return Err(PlanLimit { reset }.into());
+        }
         self.planned.borrow_mut().push(issue.number);
         fs::create_dir_all(ws.ralphy_dir())?;
         let path = ws.plan_path();
@@ -592,6 +619,164 @@ fn stop_on_limit_opt_out_stops_as_limit() {
         clock.waited_for.borrow().is_empty(),
         "stop-on-limit never calls wait_for_reset"
     );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn plan_limit_with_stop_on_limit_stops_and_reports() {
+    // A usage limit during *planning* (before any plan is written) under
+    // `--stop-on-limit` (always the case for Codex) stops the run and reports the
+    // reset — it never waits and never executes.
+    let repo = init_repo("plan-limit-stop");
+    let queue = vec![issue(10)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done])
+        .with_plan_scripts(vec![PlanScript::Limit(Some("12:23 AM".into()))]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
+
+    let report = run_queue(
+        &cfg_stop_on_limit(&repo, "stamp-plan-limit"),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    match report.stop {
+        Some(StopReason::Limit { number, reset }) => {
+            assert_eq!(number, 10);
+            assert_eq!(reset, Some("12:23 AM".into()));
+        }
+        other => panic!("expected Limit stop, got {other:?}"),
+    }
+    assert_eq!(*agent.plan_attempts.borrow(), 1, "planned once, no resume");
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "a plan-time limit never reaches execute"
+    );
+    assert!(
+        clock.waited_for.borrow().is_empty(),
+        "stop-on-limit never waits for a plan-time reset"
+    );
+    // The limit is recorded on the issue result, not swallowed as a hard error.
+    let worked = &report.worked;
+    assert_eq!(worked.len(), 1);
+    assert_eq!(worked[0].number, 10);
+    assert_eq!(
+        worked[0].outcome,
+        Some(Outcome::Limit(Some("12:23 AM".into())))
+    );
+    assert!(!worked[0].closed);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn plan_limit_auto_resumes_by_replanning() {
+    // With auto-resume (the default), a plan-time limit waits for the reset and
+    // re-plans the SAME issue, then proceeds to execute and close it green.
+    let repo = init_repo("plan-limit-resume");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done])
+        .with_plan_scripts(vec![PlanScript::Limit(Some("15:00".into()))]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-plan-resume", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    assert!(report.stop.is_none(), "resume then green leaves no stop");
+    assert_eq!(
+        *agent.plan_attempts.borrow(),
+        2,
+        "planned twice: limit, then success after the reset"
+    );
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert_eq!(*agent.executed.borrow(), vec![7], "executed after re-plan");
+    let closed: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closed, vec![7], "green issue closed after the resume");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn repeated_plan_limits_hit_the_cap_and_stop() {
+    // A reset that never actually clears (e.g. a past/garbage hint) must not spin
+    // the resume loop forever: after MAX_PLAN_LIMIT_RESUMES no-progress waits the
+    // runner stops and reports the limit.
+    let repo = init_repo("plan-limit-cap");
+    let queue = vec![issue(3)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_scripts(vec![
+        PlanScript::Limit(Some("09:00".into())),
+        PlanScript::Limit(Some("09:00".into())),
+        PlanScript::Limit(Some("09:00".into())),
+    ]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-plan-cap", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.plan_attempts.borrow(),
+        3,
+        "two resumes then the third limit hits the cap"
+    );
+    assert_eq!(
+        *clock.waited_for.borrow(),
+        vec!["09:00".to_string(), "09:00".to_string()],
+        "waited twice before the cap stopped it"
+    );
+    assert!(agent.executed.borrow().is_empty(), "never executed");
+    match report.stop {
+        Some(StopReason::Limit { number, reset }) => {
+            assert_eq!(number, 3);
+            assert_eq!(reset, Some("09:00".into()));
+        }
+        other => panic!("expected Limit stop, got {other:?}"),
+    }
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn plan_limit_deadline_beats_resume() {
+    // A plan-time reset landing past the run deadline stops the run (deadline beats
+    // resume) instead of waiting, just like an execute-time limit.
+    let repo = init_repo("plan-limit-deadline");
+    let queue = vec![issue(4)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done])
+        .with_plan_scripts(vec![PlanScript::Limit(Some("15:00".into()))]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::deadline_on_wait();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-plan-deadline", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    assert!(matches!(report.stop, Some(StopReason::Deadline)));
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert_eq!(*agent.plan_attempts.borrow(), 1, "planned once, then cut");
+    assert!(agent.executed.borrow().is_empty(), "never executed");
 
     fs::remove_dir_all(&repo).ok();
 }

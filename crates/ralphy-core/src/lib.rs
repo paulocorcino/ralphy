@@ -26,4 +26,4 @@ pub use runner::{
     RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,
 };
 pub use tracker::{GhTracker, IssueTracker};
-pub use types::{Issue, Outcome, Plan, Workspace};
+pub use types::{Issue, Outcome, Plan, PlanLimit, Workspace};

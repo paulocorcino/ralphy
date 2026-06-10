@@ -10,7 +10,14 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
-use crate::{acceptance, blocked, git, gitignore, Agent, Issue, IssueTracker, Outcome, Workspace};
+use crate::{
+    acceptance, blocked, git, gitignore, Agent, Issue, IssueTracker, Outcome, PlanLimit, Workspace,
+};
+
+/// Consecutive plan-time usage limits that make no progress before the runner
+/// gives up and stops-and-reports. Guards a past or unparseable reset hint from
+/// spinning the resume loop, mirroring the execute-path no-commit cap.
+const MAX_PLAN_LIMIT_RESUMES: u32 = 2;
 
 /// How a [`RunClock::wait_for_reset`] wait ended: the reset time arrived and the
 /// run may resume, or the global deadline cut the wait short (deadline beats
@@ -399,7 +406,7 @@ pub fn run_queue(
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
 
-    for issue in queue {
+    'queue: for issue in queue {
         // Don't start a new issue past the global budget. Work already committed
         // for earlier issues is kept; the branch is handed back as it stands.
         if clock.deadline_passed() {
@@ -466,13 +473,61 @@ pub fn run_queue(
             return Err(e);
         }
 
-        // Plan, restoring on planning failure so a dry run never strands a branch.
-        let plan = match agent.plan(issue, &ws) {
-            Ok(p) => p,
-            Err(e) => {
-                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                return Err(e);
+        // Plan, auto-resuming through usage-limit reset windows the same way
+        // execution does. A usage limit during planning surfaces as a typed
+        // `PlanLimit` (not a generic failure): wait for the reset and re-plan,
+        // unless `stop_on_limit`, no reset was parsed, or repeated no-progress
+        // limits hit the cap — any of which stops and reports the limit. A
+        // genuine (non-limit) planning failure still restores and propagates.
+        let mut plan_limit_streak = 0u32;
+        let plan = loop {
+            let e = match agent.plan(issue, &ws) {
+                Ok(p) => break p,
+                Err(e) => e,
+            };
+            let limit = match e.downcast::<PlanLimit>() {
+                Ok(limit) => limit,
+                Err(e) => {
+                    restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
+                    return Err(e);
+                }
+            };
+
+            plan_limit_streak += 1;
+            let capped = plan_limit_streak > MAX_PLAN_LIMIT_RESUMES;
+            // Stop-and-report when configured, when no reset was parsed (nothing
+            // to wait for), or when the cap is hit — never delete the branch, so
+            // it is handed back exactly like an execute-time limit stop.
+            if cfg.stop_on_limit || limit.reset.is_none() || capped {
+                info!(
+                    number = issue.number,
+                    reset = ?limit.reset,
+                    "usage limit while planning — stopping run"
+                );
+                worked.push(IssueResult {
+                    number: issue.number,
+                    outcome: Some(Outcome::Limit(limit.reset.clone())),
+                    closed: false,
+                    blocked_by: Vec::new(),
+                });
+                stop = Some(StopReason::Limit {
+                    number: issue.number,
+                    reset: limit.reset,
+                });
+                break 'queue;
             }
+
+            // Deadline beats resume: a reset past the deadline stops the run.
+            let reset = limit.reset.expect("reset present: checked above");
+            if clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
+                info!(
+                    number = issue.number,
+                    "deadline beats resume while planning — stopping run"
+                );
+                stop = Some(StopReason::Deadline);
+                break 'queue;
+            }
+            // Otherwise loop: re-plan after the reset window.
         };
         info!(
             number = issue.number,
