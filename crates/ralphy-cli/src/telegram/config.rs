@@ -41,8 +41,8 @@ impl TelegramConfig {
         let path = Self::config_path()?;
         match std::fs::read_to_string(&path) {
             Ok(text) => {
-                let cfg = toml::from_str(&text)
-                    .with_context(|| format!("parsing {}", path.display()))?;
+                let cfg =
+                    toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
                 Ok(Some(cfg))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),

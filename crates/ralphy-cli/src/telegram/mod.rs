@@ -117,7 +117,9 @@ fn status() -> Result<()> {
             let token = effective_token(Some(&cfg.token)).unwrap_or_default();
             match cfg.chat_id {
                 Some(id) => println!("Telegram: configured (chat {id}, notifications on)."),
-                None => println!("Telegram: token stored but no chat captured — run `telegram setup`."),
+                None => {
+                    println!("Telegram: token stored but no chat captured — run `telegram setup`.")
+                }
             }
             println!("Token: {}", masked_token(&token));
         }
