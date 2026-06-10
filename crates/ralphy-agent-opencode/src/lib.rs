@@ -235,7 +235,11 @@ fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
         // "retry-after: <value>"
         if let Some(pos) = lower.find("retry-after:") {
             let rest = msg[pos + "retry-after:".len()..].trim();
-            let hint = rest.split_whitespace().next().unwrap_or("").trim_end_matches(',');
+            let hint = rest
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_end_matches(',');
             if !hint.is_empty() {
                 return Some(hint.to_string());
             }
@@ -244,7 +248,10 @@ fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
         for prefix in &["try again at ", "try again in "] {
             if let Some(pos) = lower.find(prefix) {
                 let rest = msg[pos + prefix.len()..].trim();
-                let hint: String = rest.chars().take_while(|c| *c != '.' && *c != '\n').collect();
+                let hint: String = rest
+                    .chars()
+                    .take_while(|c| *c != '.' && *c != '\n')
+                    .collect();
                 let hint = hint.trim().to_string();
                 if !hint.is_empty() {
                     return Some(hint);
@@ -639,7 +646,14 @@ mod tests {
         // A timed-out run with a limit event is upgraded to Limit(reset) (D9).
         let text = "some output\n";
         assert_eq!(
-            classify_opencode_outcome(false, true, false, text, false, Some(Some("2026-06-10T18:00:00Z".into()))),
+            classify_opencode_outcome(
+                false,
+                true,
+                false,
+                text,
+                false,
+                Some(Some("2026-06-10T18:00:00Z".into()))
+            ),
             Outcome::Limit(Some("2026-06-10T18:00:00Z".into()))
         );
     }
