@@ -320,6 +320,15 @@ impl ClaudeAgent {
         let mut text = String::from_utf8_lossy(&stdout_bytes).into_owned();
         text.push_str(&String::from_utf8_lossy(&stderr_bytes));
         let _ = fs::write(self.run_dir.join(format!("exec-{}.out", call_index)), &text);
+
+        if is_claude_auth_error(&text) {
+            bail!(
+                "{} (see {})",
+                CLAUDE_AUTH_ERROR_MSG,
+                self.run_dir.join(format!("exec-{}.out", call_index)).display()
+            );
+        }
+
         Ok((exited, text))
     }
 
@@ -462,6 +471,14 @@ impl Agent for ClaudeAgent {
         log.push_str(&String::from_utf8_lossy(&out.stderr));
         let _ = fs::write(self.run_dir.join("plan.log"), &log);
 
+        if is_claude_auth_error(&log) {
+            bail!(
+                "{} (see {})",
+                CLAUDE_AUTH_ERROR_MSG,
+                self.run_dir.join("plan.log").display()
+            );
+        }
+
         if !plan_path.exists() {
             bail!(
                 "claude produced no plan at {} (see {})",
@@ -595,10 +612,35 @@ impl ClaudeAgent {
             None
         };
 
+        // An auth failure in the transcript takes precedence over classification:
+        // it won't self-heal (unlike a usage limit), so surface it immediately.
+        if child_exited && flag.is_none() {
+            if let Some(ref t) = transcript {
+                if is_claude_auth_error(t) {
+                    bail!("{CLAUDE_AUTH_ERROR_MSG}");
+                }
+            }
+        }
+
         let outcome = classify_outcome(flag.as_deref(), timed_out, transcript.as_deref());
         info!(?outcome, child_exited, timed_out, "execution session ended");
         Ok(outcome)
     }
+}
+
+/// The actionable message surfaced when a run hits a Claude Code authentication
+/// failure — the account is signed out or has never been logged in.
+const CLAUDE_AUTH_ERROR_MSG: &str =
+    "Claude Code is not authenticated — run `claude login` and retry";
+
+/// Return `true` when `text` shows a Claude Code authentication failure.
+/// A logged-out `claude` (both `-p` and interactive) prints
+/// `Not logged in · Please run /login` and exits with code 1, so without this
+/// the failure masquerades as a generic "no plan" (planning) or
+/// `Outcome::Stuck` (execution) — both of which hide the real cause.
+fn is_claude_auth_error(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("not logged in") && lower.contains("please run /login")
 }
 
 /// Map the session's end state to an [`Outcome`]. The flag the Stop hook wrote is
@@ -1227,6 +1269,25 @@ mod tests {
             Outcome::Stuck
         );
         assert_eq!(classify_outcome(None, false, None), Outcome::Stuck);
+    }
+
+    // ── is_claude_auth_error ────────────────────────────────────────────────
+
+    #[test]
+    fn is_claude_auth_error_matches_logged_out_output() {
+        assert!(is_claude_auth_error("Not logged in \u{00b7} Please run /login"));
+    }
+
+    #[test]
+    fn is_claude_auth_error_matches_case_insensitive() {
+        assert!(is_claude_auth_error("NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN"));
+    }
+
+    #[test]
+    fn is_claude_auth_error_requires_both_signals() {
+        assert!(!is_claude_auth_error("Not logged in"));
+        assert!(!is_claude_auth_error("Please run /login"));
+        assert!(!is_claude_auth_error("all steps green\nRALPHY_DONE_EXIT\n"));
     }
 
     // ── classify_exec_call ──────────────────────────────────────────────────
