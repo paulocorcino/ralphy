@@ -21,14 +21,15 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tracing::field::{Field, Visit};
 use tracing::{warn, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 use chrono::Local;
 
 use super::client::{BotClient, Transport};
-use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState, SleepState};
+use crate::runstate::{
+    event_to_runevent, EventFields, IssueEntry, IssueStatus, RunEvent, RunState, SleepState,
+};
 
 /// Telegram's hard per-message character limit.
 const TELEGRAM_LIMIT: usize = 4096;
@@ -307,134 +308,8 @@ impl Default for EventQueue {
 }
 
 // ---------------------------------------------------------------------------
-// The tracing Layer + the pure event mapping
+// The tracing Layer
 // ---------------------------------------------------------------------------
-
-/// The typed fields extracted off one `tracing` event, populated by the [`Visit`]
-/// impl below and consumed by the pure [`event_to_runevent`].
-#[derive(Debug, Default)]
-pub struct NotifierFields {
-    pub message: String,
-    pub number: Option<u64>,
-    pub title: Option<String>,
-    pub open_steps: Option<u64>,
-    pub count: Option<u64>,
-    pub budget_min: Option<u64>,
-    pub order: Option<String>,
-    pub outcome: Option<String>,
-    pub reset: Option<String>,
-    pub target_epoch: Option<i64>,
-}
-
-impl Visit for NotifierFields {
-    fn record_u64(&mut self, field: &Field, value: u64) {
-        match field.name() {
-            "number" => self.number = Some(value),
-            "open_steps" => self.open_steps = Some(value),
-            "count" => self.count = Some(value),
-            "budget_min" => self.budget_min = Some(value),
-            _ => {}
-        }
-    }
-
-    fn record_i64(&mut self, field: &Field, value: i64) {
-        if field.name() == "target_epoch" {
-            self.target_epoch = Some(value);
-        }
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        match field.name() {
-            "message" => self.message = value.to_string(),
-            "title" => self.title = Some(value.to_string()),
-            "order" => self.order = Some(value.to_string()),
-            "outcome" => self.outcome = Some(value.to_string()),
-            "reset" => self.reset = Some(value.to_string()),
-            _ => {}
-        }
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        // `%field` (Display), `?field` (Debug), and the message literal all arrive
-        // here as `format_args!` debug values.
-        let rendered = format!("{value:?}");
-        match field.name() {
-            "message" => self.message = rendered,
-            "title" => self.title = Some(rendered),
-            "order" => self.order = Some(rendered),
-            "outcome" => self.outcome = Some(rendered),
-            "reset" => self.reset = Some(rendered),
-            _ => {}
-        }
-    }
-}
-
-/// Map an event's `(target, message, fields)` to a [`RunEvent`], or `None` for an
-/// event the notifier ignores. Pure over its inputs and unit-tested per consumed
-/// event so an event/model drift fails a test (ADR-0007 D6).
-///
-/// `target` is currently informational — the message + fields uniquely identify
-/// every consumed event — but kept in the signature for a future disambiguation.
-pub fn event_to_runevent(target: &str, message: &str, fields: &NotifierFields) -> Option<RunEvent> {
-    let _ = target;
-    let number = fields.number.unwrap_or(0);
-    match message {
-        "queue built" => Some(RunEvent::QueueBuilt {
-            count: fields.count.unwrap_or(0),
-            order: parse_order(fields.order.as_deref()),
-        }),
-        "issue started" => Some(RunEvent::IssueStarted {
-            number,
-            title: fields.title.clone().unwrap_or_default(),
-        }),
-        "plan written" => Some(RunEvent::PlanWritten {
-            number,
-            open_steps: fields.open_steps.unwrap_or(0),
-        }),
-        // The adapter's execution events carry no issue number; the fold applies
-        // this to the active issue.
-        "executing with interactive claude over the PTY"
-        | "executing with headless claude -p loop" => Some(RunEvent::Executing {
-            number,
-            budget_min: fields.budget_min.unwrap_or(0),
-        }),
-        "green — issue closed" => Some(RunEvent::IssueClosed { number }),
-        "non-green — stopping run" => Some(RunEvent::NonGreen {
-            number,
-            outcome: fields.outcome.clone().unwrap_or_default(),
-        }),
-        // Both a blocked-by skip and a stop-before halt render as ⏭️ skipped.
-        "blocked by open issue(s) — skipping"
-        | "stop-before label — halting run before this issue" => {
-            Some(RunEvent::Skipped { number })
-        }
-        "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
-        // The run entered a usage-limit sleep; the fold carries the reset hint and
-        // the wake anchor for a live countdown.
-        "usage limit — waiting for reset" => Some(RunEvent::SleepStarted {
-            reset: fields.reset.clone().unwrap_or_default(),
-            target_epoch: fields.target_epoch.unwrap_or(0),
-        }),
-        "reset reached — resuming" => Some(RunEvent::SleepEnded),
-        _ => None,
-    }
-}
-
-/// Parse the `queue built` `order` field (`#30 -> #31 -> #32`) into issue numbers.
-fn parse_order(order: Option<&str>) -> Vec<u64> {
-    let Some(s) = order else {
-        return Vec::new();
-    };
-    s.split("->")
-        .filter_map(|tok| {
-            tok.trim()
-                .trim_start_matches('#')
-                .trim()
-                .parse::<u64>()
-                .ok()
-        })
-        .collect()
-}
 
 /// The substring identifying the notifier's own `tracing` target, so the worker's
 /// runtime `warn!`s never feed back into the Layer and loop (ADR-0007 decision).
@@ -460,7 +335,10 @@ impl<S: Subscriber> Layer<S> for NotifierLayer {
         if target.contains(SELF_TARGET_MARKER) {
             return;
         }
-        let mut fields = NotifierFields::default();
+        let mut fields = EventFields {
+            level: *event.metadata().level(),
+            ..Default::default()
+        };
         event.record(&mut fields);
         if let Some(run_event) = event_to_runevent(target, &fields.message, &fields) {
             self.queue.push(run_event);
@@ -817,123 +695,6 @@ mod tests {
     }
 
     #[test]
-    fn event_to_runevent_maps_each_consumed_shape() {
-        let f = |fields: NotifierFields| {
-            event_to_runevent("ralphy_core::runner", &fields.message.clone(), &fields)
-        };
-        assert_eq!(
-            f(NotifierFields {
-                message: "queue built".into(),
-                count: Some(3),
-                order: Some("#1 -> #2 -> #3".into()),
-                ..Default::default()
-            }),
-            Some(RunEvent::QueueBuilt {
-                count: 3,
-                order: vec![1, 2, 3]
-            })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "issue started".into(),
-                number: Some(7),
-                title: Some("hello".into()),
-                ..Default::default()
-            }),
-            Some(RunEvent::IssueStarted {
-                number: 7,
-                title: "hello".into()
-            })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "plan written".into(),
-                number: Some(7),
-                open_steps: Some(0),
-                ..Default::default()
-            }),
-            Some(RunEvent::PlanWritten {
-                number: 7,
-                open_steps: 0
-            })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "executing with interactive claude over the PTY".into(),
-                budget_min: Some(45),
-                ..Default::default()
-            }),
-            Some(RunEvent::Executing {
-                number: 0,
-                budget_min: 45
-            })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "green — issue closed".into(),
-                number: Some(7),
-                ..Default::default()
-            }),
-            Some(RunEvent::IssueClosed { number: 7 })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "non-green — stopping run".into(),
-                number: Some(7),
-                outcome: Some("Stuck".into()),
-                ..Default::default()
-            }),
-            Some(RunEvent::NonGreen {
-                number: 7,
-                outcome: "Stuck".into()
-            })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "blocked by open issue(s) — skipping".into(),
-                number: Some(7),
-                ..Default::default()
-            }),
-            Some(RunEvent::Skipped { number: 7 })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "deadline passed — not starting issue".into(),
-                number: Some(7),
-                ..Default::default()
-            }),
-            Some(RunEvent::DeadlinePassed { number: 7 })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "usage limit — waiting for reset".into(),
-                reset: Some("14:30".into()),
-                target_epoch: Some(1_700_000_000),
-                ..Default::default()
-            }),
-            Some(RunEvent::SleepStarted {
-                reset: "14:30".into(),
-                target_epoch: 1_700_000_000
-            })
-        );
-        assert_eq!(
-            f(NotifierFields {
-                message: "reset reached — resuming".into(),
-                ..Default::default()
-            }),
-            Some(RunEvent::SleepEnded)
-        );
-        // An unrelated event is ignored.
-        assert_eq!(
-            f(NotifierFields {
-                message: "some other log".into(),
-                ..Default::default()
-            }),
-            None
-        );
-    }
-
-    #[test]
     fn should_notify_truth_table() {
         assert!(should_notify(true, false, false));
         assert!(!should_notify(false, false, false));
@@ -956,6 +717,7 @@ mod tests {
         queue.push(RunEvent::Executing {
             number: 1,
             budget_min: 45,
+            model: String::new(),
         });
         queue.push(RunEvent::IssueClosed { number: 1 });
 
