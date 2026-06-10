@@ -14,3 +14,4 @@ include_dir.workspace = true
 serde_json.workspace = true
 ralphy-core.workspace = true
 ralphy-pty.workspace = true
+ralphy-adapter-support.workspace = true

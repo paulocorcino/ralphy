@@ -8,7 +8,7 @@
 //! reclaims the session on a per-issue wall timeout.
 
 use std::fs;
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::run_headless;
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
@@ -267,58 +268,21 @@ impl ClaudeAgent {
             args.push(e.clone());
         }
 
-        let mut child = Command::new(resolve_claude_binary())
-            .args(&args)
+        let mut cmd = Command::new(resolve_claude_binary());
+        cmd.args(&args)
             .current_dir(cmd_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+
+        // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
+        // shared headless runner; `exited` (here "the child exited rather than
+        // being killed on the wall timeout") is recovered from `timed_out`.
+        let r = run_headless(cmd, PROMPT_EXECUTE, timeout)
             .context("failed to spawn the `claude` CLI for headless exec")?;
-
-        // Spawn the stdout/stderr reader threads *before* writing stdin, so a
-        // prompt larger than the pipe buffer (~64KB) can't deadlock against a
-        // child that starts emitting output before it finishes draining stdin.
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let stdout = child.stdout.take().expect("stdout was piped");
-        let stderr = child.stderr.take().expect("stderr was piped");
-
-        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
-        let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stdout).read_to_end(&mut buf);
-            let _ = tx_out.send(buf);
-        });
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stderr).read_to_end(&mut buf);
-            let _ = tx_err.send(buf);
-        });
-
-        stdin
-            .write_all(PROMPT_EXECUTE.as_bytes())
-            .context("piping exec prompt to claude")?;
-        drop(stdin); // close stdin so claude sees EOF
-
-        let deadline = Instant::now() + timeout;
-        let exited = loop {
-            if child.try_wait().context("polling claude child")?.is_some() {
-                break true;
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                break false;
-            }
-            thread::sleep(Duration::from_millis(500));
-        };
-
-        let collect = Duration::from_secs(5);
-        let stdout_bytes = rx_out.recv_timeout(collect).unwrap_or_default();
-        let stderr_bytes = rx_err.recv_timeout(collect).unwrap_or_default();
-        let mut text = String::from_utf8_lossy(&stdout_bytes).into_owned();
-        text.push_str(&String::from_utf8_lossy(&stderr_bytes));
+        let exited = !r.timed_out;
+        let mut text = r.stdout;
+        text.push_str(&r.stderr);
         let _ = fs::write(self.run_dir.join(format!("exec-{}.out", call_index)), &text);
 
         if is_claude_auth_error(&text) {
