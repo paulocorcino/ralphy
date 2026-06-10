@@ -5,6 +5,7 @@
 
 pub mod client;
 pub mod config;
+pub mod notifier;
 
 use std::time::Duration;
 
