@@ -34,6 +34,12 @@ pub enum RunEvent {
     Skipped { number: u64 },
     /// The deadline passed before this issue could be started.
     DeadlinePassed { number: u64 },
+    /// The run hit a usage limit and is sleeping until `reset`; `target_epoch` is
+    /// the Unix-seconds wake anchor (the reset plus the wait-policy buffer) for a
+    /// live countdown.
+    SleepStarted { reset: String, target_epoch: i64 },
+    /// The reset arrived and the run resumed; clears any active sleep.
+    SleepEnded,
 }
 
 /// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
@@ -62,6 +68,14 @@ impl IssueStatus {
                 | IssueStatus::NonGreen
         )
     }
+}
+
+/// An active usage-limit sleep: the reset-time hint shown on the card and the
+/// Unix-seconds wake anchor the live countdown is computed against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SleepState {
+    pub reset: String,
+    pub target_epoch: i64,
 }
 
 /// One issue in the run, in queue order.
@@ -98,6 +112,8 @@ pub struct RunState {
     pub active: Option<u64>,
     /// The terminal summary, set when the run stops non-green or on the deadline.
     pub final_summary: Option<String>,
+    /// The active usage-limit sleep, if the run is currently waiting for a reset.
+    pub sleep: Option<SleepState>,
 }
 
 impl RunState {
@@ -191,6 +207,18 @@ impl RunState {
             }
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
+            }
+            RunEvent::SleepStarted {
+                reset,
+                target_epoch,
+            } => {
+                self.sleep = Some(SleepState {
+                    reset,
+                    target_epoch,
+                });
+            }
+            RunEvent::SleepEnded => {
+                self.sleep = None;
             }
         }
     }
@@ -347,6 +375,21 @@ mod tests {
             budget_min: 45,
         });
         assert!(state.issues.is_empty());
+    }
+
+    #[test]
+    fn sleep_started_sets_state_and_sleep_ended_clears_it() {
+        let mut state = RunState::new("t", 1);
+        assert!(state.sleep.is_none());
+        state.apply(RunEvent::SleepStarted {
+            reset: "14:30".into(),
+            target_epoch: 1_700_000_000,
+        });
+        let sleep = state.sleep.as_ref().expect("sleep set on start");
+        assert_eq!(sleep.reset, "14:30");
+        assert_eq!(sleep.target_epoch, 1_700_000_000);
+        state.apply(RunEvent::SleepEnded);
+        assert!(state.sleep.is_none(), "resume clears the sleep");
     }
 
     #[test]
