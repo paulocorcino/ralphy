@@ -350,10 +350,12 @@ impl ClaudeAgent {
         let exec_model = self.resolve_exec_model(plan);
         let deadline = self.issue_deadline();
 
+        // budget_min field consumed by the CLI presenter — keep stable
         info!(
             model = %exec_model,
             effort = ?self.exec.exec_effort,
             max_calls = self.exec.max_exec_calls,
+            budget_min = self.exec.max_minutes_per_issue,
             "executing with headless claude -p loop"
         );
 
@@ -546,7 +548,8 @@ impl Agent for ClaudeAgent {
         }
         cmd = cmd.arg(EXEC_CHARTER);
 
-        info!(model = %exec_model, effort = ?self.exec.exec_effort, remote_control = self.exec.remote_control, "executing with interactive claude over the PTY");
+        // budget_min field consumed by the CLI presenter — keep stable
+        info!(model = %exec_model, effort = ?self.exec.exec_effort, remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
 
         let mut session =
             PtySession::spawn(cmd).context("spawning the claude execution session")?;
