@@ -10,9 +10,11 @@
 //! `text` parts, a JSON `error` event, the process exit code, and a HEAD-diff
 //! commit check — mapped onto the same core [`Outcome`].
 //!
-//! This is the tracer slice (issue #24): it covers `Done`/`Stuck`/`Blocked`/
-//! `Timeout` only. Usage-limit (D9), auth-error (D6), and skills materialization
-//! (D7) are deferred-until-live in ADR-0005 and are intentionally not handled here.
+//! Skills materialization (ADR-0005 D7) is implemented here: before every `plan`
+//! and `execute` call the embedded skills tree is extracted to `<repo>/.ralphy/skills`
+//! and the absolute path is injected as `OPENCODE_CONFIG_CONTENT` so OpenCode's
+//! `skills.paths` config key points at it. Usage-limit (D9) and auth-error (D6)
+//! are deferred-until-live in ADR-0005 and are intentionally not handled here.
 
 use std::fs;
 use std::io::{BufReader, Read, Write};
@@ -23,8 +25,48 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use include_dir::{include_dir, Dir};
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use tracing::info;
+
+/// The skills subtree, embedded at build time so the binary is self-contained.
+/// OpenCode discovers skills via `skills.paths` in its config; we extract this
+/// tree to `.ralphy/skills` and inject the path via `OPENCODE_CONFIG_CONTENT`
+/// before every plan and execute call (ADR-0005 D7, mirrors Codex adapter).
+static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
+
+/// Materialize the embedded skills into `<repo>/.ralphy/skills/` so OpenCode can
+/// discover them via the injected `skills.paths` config. Clears any prior copy,
+/// re-extracts fresh, and writes `<repo>/.ralphy/.gitignore` (`*`) to keep the
+/// materialized tree out of executor commits. Returns the `.ralphy/skills` path.
+fn materialize_opencode_skills(ws: &Workspace) -> Result<PathBuf> {
+    let ralphy_dir = ws.ralphy_dir();
+    let skills_dir = ralphy_dir.join("skills");
+    if skills_dir.exists() {
+        fs::remove_dir_all(&skills_dir).context("clearing stale .ralphy/skills")?;
+    }
+    fs::create_dir_all(&skills_dir).context("creating .ralphy/skills")?;
+    SKILLS
+        .extract(&skills_dir)
+        .context("extracting the embedded skills to .ralphy/skills")?;
+    fs::write(ralphy_dir.join(".gitignore"), "*\n").context("writing .ralphy/.gitignore")?;
+    Ok(skills_dir)
+}
+
+/// Build the JSON string injected as `OPENCODE_CONFIG_CONTENT` so OpenCode's
+/// `skills.paths` points at the materialized skills container. The path is
+/// canonicalized for robustness; on failure the original path is used as-is.
+fn opencode_skills_config(skills_dir: &Path) -> String {
+    let abs = skills_dir
+        .canonicalize()
+        .unwrap_or_else(|_| skills_dir.to_path_buf());
+    serde_json::json!({
+        "skills": {
+            "paths": [abs]
+        }
+    })
+    .to_string()
+}
 
 /// The OpenCode planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with the `## Execution model` tier
@@ -95,10 +137,16 @@ impl OpenCodeAgent {
 /// — the single point that fixes the invocation, always passes
 /// `--dangerously-skip-permissions` (the headless-hang guard, ADR-0005 D5) and
 /// `--format json`, omits `-m` unless the operator set one (D4), passes
-/// `--variant` only when set (D3), runs in the repo root, and defensively removes
-/// both `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` so an inherited key can't switch
+/// `--variant` only when set (D3), injects `OPENCODE_CONFIG_CONTENT` with the
+/// skills path (D7), runs in the repo root, and defensively removes both
+/// `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` so an inherited key can't switch
 /// the run to metered API billing (D6). The prompt is written on stdin.
-fn build_opencode_command(model: Option<&str>, variant: Option<&str>, root: &Path) -> Command {
+fn build_opencode_command(
+    model: Option<&str>,
+    variant: Option<&str>,
+    root: &Path,
+    skills_config: &str,
+) -> Command {
     let mut cmd = Command::new("opencode");
     cmd.arg("run")
         .arg("--format")
@@ -114,6 +162,7 @@ fn build_opencode_command(model: Option<&str>, variant: Option<&str>, root: &Pat
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env("OPENCODE_CONFIG_CONTENT", skills_config)
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("OPENAI_API_KEY");
     cmd
@@ -257,6 +306,8 @@ impl Agent for OpenCodeAgent {
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         fs::create_dir_all(&self.run_dir).ok();
+        let skills_dir = materialize_opencode_skills(ws)?;
+        let skills_config = opencode_skills_config(&skills_dir);
 
         let plan_path = ws.plan_path();
         // Plan fresh every run; never reuse a stale artifact.
@@ -266,6 +317,7 @@ impl Agent for OpenCodeAgent {
             self.model.as_deref(),
             self.variant.as_deref(),
             ws.repo_root(),
+            &skills_config,
         );
         let timeout = self
             .issue_deadline()
@@ -292,6 +344,8 @@ impl Agent for OpenCodeAgent {
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Outcome> {
         fs::create_dir_all(&self.run_dir).ok();
         fs::create_dir_all(ws.ralphy_dir()).ok();
+        let skills_dir = materialize_opencode_skills(ws)?;
+        let skills_config = opencode_skills_config(&skills_dir);
 
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
@@ -302,6 +356,7 @@ impl Agent for OpenCodeAgent {
             self.model.as_deref(),
             self.variant.as_deref(),
             ws.repo_root(),
+            &skills_config,
         );
         info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
         let (exited_cleanly, timed_out, stdout_text) =
@@ -404,7 +459,7 @@ mod tests {
 
     #[test]
     fn build_command_omits_model_when_none() {
-        let cmd = build_opencode_command(None, None, Path::new("/repo"));
+        let cmd = build_opencode_command(None, None, Path::new("/repo"), "{}");
         assert_eq!(cmd.get_program().to_string_lossy(), "opencode");
         let args = argv(&cmd);
         assert!(args.contains(&"run".to_string()), "argv: {args:?}");
@@ -427,6 +482,7 @@ mod tests {
             Some("anthropic/claude-sonnet-4-6"),
             None,
             Path::new("/repo"),
+            "{}",
         );
         let args = argv(&cmd);
         assert!(args.contains(&"-m".to_string()), "argv: {args:?}");
@@ -438,10 +494,10 @@ mod tests {
 
     #[test]
     fn build_command_includes_variant_only_when_some() {
-        let without = build_opencode_command(None, None, Path::new("/repo"));
+        let without = build_opencode_command(None, None, Path::new("/repo"), "{}");
         assert!(!argv(&without).contains(&"--variant".to_string()));
 
-        let with = build_opencode_command(None, Some("high"), Path::new("/repo"));
+        let with = build_opencode_command(None, Some("high"), Path::new("/repo"), "{}");
         let args = argv(&with);
         assert!(args.contains(&"--variant".to_string()), "argv: {args:?}");
         assert!(args.contains(&"high".to_string()), "argv: {args:?}");
@@ -449,7 +505,7 @@ mod tests {
 
     #[test]
     fn build_command_removes_both_api_keys() {
-        let cmd = build_opencode_command(None, None, Path::new("/repo"));
+        let cmd = build_opencode_command(None, None, Path::new("/repo"), "{}");
         let anthropic_removed = cmd
             .get_envs()
             .any(|(k, v)| k == "ANTHROPIC_API_KEY" && v.is_none());
@@ -464,6 +520,18 @@ mod tests {
             openai_removed,
             "OPENAI_API_KEY should be removed on the child"
         );
+    }
+
+    #[test]
+    fn build_command_injects_skills_config() {
+        let cfg = r#"{"skills":{"paths":["/some/skills"]}}"#;
+        let cmd = build_opencode_command(None, None, Path::new("/repo"), cfg);
+        let injected = cmd
+            .get_envs()
+            .find(|(k, _)| *k == "OPENCODE_CONFIG_CONTENT")
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().into_owned());
+        assert_eq!(injected.as_deref(), Some(cfg));
     }
 
     // ── parse_opencode_events ────────────────────────────────────────────────
@@ -535,5 +603,63 @@ mod tests {
         // `&dyn Agent` (the core never learns the vendor).
         let agent = OpenCodeAgent::new(None, PathBuf::from("/run")).with_variant(None);
         let _as_dyn: &dyn Agent = &agent;
+    }
+
+    // ── materialize_opencode_skills ────────────────────────────────────────
+
+    #[test]
+    fn materialize_opencode_skills_extracts_required_skills() {
+        let base =
+            std::env::temp_dir().join(format!("ralphy-opencode-skills-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+
+        let skills_dir = materialize_opencode_skills(&ws).expect("materialize");
+        assert_eq!(skills_dir, ws.ralphy_dir().join("skills"));
+        assert!(
+            skills_dir.join("reviewer/SKILL.md").is_file(),
+            "reviewer/SKILL.md must be materialized"
+        );
+        assert!(
+            skills_dir.join("staged-plan/SKILL.md").is_file(),
+            "staged-plan/SKILL.md must be materialized"
+        );
+        assert!(
+            skills_dir.join("reviewer/scripts/audit.py").is_file(),
+            "reviewer/scripts/audit.py must be materialized"
+        );
+        assert!(
+            ws.ralphy_dir().join(".gitignore").is_file(),
+            ".ralphy/.gitignore must be written"
+        );
+
+        // Idempotent: a second call clears and re-extracts cleanly.
+        materialize_opencode_skills(&ws).expect("re-materialize");
+        assert!(skills_dir.join("reviewer/SKILL.md").is_file());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    // ── opencode_skills_config ─────────────────────────────────────────────
+
+    #[test]
+    fn opencode_skills_config_is_well_formed_json() {
+        let dir = std::env::temp_dir().join("ralphy-skills-cfg-test");
+        fs::create_dir_all(&dir).unwrap();
+        let json_str = opencode_skills_config(&dir);
+        let val: serde_json::Value = serde_json::from_str(&json_str).expect("must be valid JSON");
+        let paths = val["skills"]["paths"]
+            .as_array()
+            .expect("skills.paths must be an array");
+        assert_eq!(paths.len(), 1, "exactly one path entry");
+        let entry = paths[0].as_str().expect("path entry must be a string");
+        let expected = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        assert_eq!(
+            PathBuf::from(entry),
+            expected,
+            "path entry must equal the canonicalized skills dir"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -325,7 +325,9 @@ impl ClaudeAgent {
             bail!(
                 "{} (see {})",
                 CLAUDE_AUTH_ERROR_MSG,
-                self.run_dir.join(format!("exec-{}.out", call_index)).display()
+                self.run_dir
+                    .join(format!("exec-{}.out", call_index))
+                    .display()
             );
         }
 
@@ -1280,12 +1282,16 @@ mod tests {
 
     #[test]
     fn is_claude_auth_error_matches_logged_out_output() {
-        assert!(is_claude_auth_error("Not logged in \u{00b7} Please run /login"));
+        assert!(is_claude_auth_error(
+            "Not logged in \u{00b7} Please run /login"
+        ));
     }
 
     #[test]
     fn is_claude_auth_error_matches_case_insensitive() {
-        assert!(is_claude_auth_error("NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN"));
+        assert!(is_claude_auth_error(
+            "NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN"
+        ));
     }
 
     #[test]

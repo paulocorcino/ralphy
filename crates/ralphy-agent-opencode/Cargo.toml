@@ -10,4 +10,5 @@ description = "OpenCode CLI adapter for Ralphy: drives `opencode run` behind the
 anyhow.workspace = true
 tracing.workspace = true
 serde_json.workspace = true
+include_dir.workspace = true
 ralphy-core.workspace = true

@@ -454,6 +454,7 @@ name = "ralphy-agent-opencode"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "include_dir",
  "ralphy-core",
  "serde_json",
  "tracing",

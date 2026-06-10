@@ -217,8 +217,7 @@ const CODEX_AUTH_ERROR_MSG: &str =
 /// detector robust to Codex reformatting one of the two lines.
 fn is_codex_auth_error(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    lower.contains("401 unauthorized")
-        || lower.contains("missing bearer or basic authentication")
+    lower.contains("401 unauthorized") || lower.contains("missing bearer or basic authentication")
 }
 
 /// Return `true` when `text` contains a Codex usage-limit message (case-insensitive).
