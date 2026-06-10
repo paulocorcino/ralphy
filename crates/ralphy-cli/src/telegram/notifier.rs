@@ -80,7 +80,7 @@ fn issue_line(entry: &IssueEntry) -> String {
             "{emoji} #{} {} · {}",
             entry.number,
             entry.title,
-            fmt_clock(budget_min * 60)
+            fmt_clock(budget_min.saturating_mul(60))
         ),
         _ => format!("{emoji} #{} {}", entry.number, entry.title),
     }
@@ -133,21 +133,28 @@ pub fn render_card(state: &RunState) -> String {
 }
 
 /// The push sent at run start (a new message, so the phone buzzes — an edit does
-/// not, ADR-0007 D3).
+/// not, ADR-0007 D3). Bounded to the message limit so an over-long `--title`
+/// cannot make Telegram reject (and thus silently drop) the start buzz.
 pub fn render_start_push(state: &RunState) -> String {
-    format!("▶️ {} — {} issues queued", state.title, state.total)
+    truncate_chars(
+        format!("▶️ {} — {} issues queued", state.title, state.total),
+        TELEGRAM_LIMIT,
+    )
 }
 
-/// The push sent at the final outcome.
+/// The push sent at the final outcome. Bounded like the start push.
 pub fn render_final_push(state: &RunState) -> String {
     let c = state.counts();
     let head = state
         .final_summary
         .clone()
         .unwrap_or_else(|| "run finished".to_string());
-    format!(
-        "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped",
-        state.title, head, c.done, c.skipped
+    truncate_chars(
+        format!(
+            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped",
+            state.title, head, c.done, c.skipped
+        ),
+        TELEGRAM_LIMIT,
     )
 }
 

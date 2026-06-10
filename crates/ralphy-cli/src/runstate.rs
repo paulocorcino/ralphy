@@ -112,12 +112,14 @@ impl RunState {
     }
 
     /// Resolve a possibly-zero issue number (the adapter's execution events carry
-    /// no number) to the active issue.
-    fn resolve(&self, number: u64) -> u64 {
+    /// no number) to the active issue. `None` when it is zero and there is no
+    /// active issue — e.g. an `IssueStarted` was dropped under back-pressure — so
+    /// callers skip rather than materialize a phantom issue `#0`.
+    fn resolve(&self, number: u64) -> Option<u64> {
         if number == 0 {
-            self.active.unwrap_or(0)
+            self.active
         } else {
-            number
+            Some(number)
         }
     }
 
@@ -148,7 +150,9 @@ impl RunState {
                 e.status = IssueStatus::Planning;
             }
             RunEvent::PlanWritten { number, open_steps } => {
-                let n = self.resolve(number);
+                let Some(n) = self.resolve(number) else {
+                    return;
+                };
                 let e = self.entry_mut(n);
                 e.status = if open_steps == 0 {
                     IssueStatus::Infeasible
@@ -157,15 +161,21 @@ impl RunState {
                 };
             }
             RunEvent::Executing { number, budget_min } => {
-                let n = self.resolve(number);
+                let Some(n) = self.resolve(number) else {
+                    return;
+                };
                 self.entry_mut(n).status = IssueStatus::Executing { budget_min };
             }
             RunEvent::IssueClosed { number } => {
-                let n = self.resolve(number);
+                let Some(n) = self.resolve(number) else {
+                    return;
+                };
                 self.entry_mut(n).status = IssueStatus::Done;
             }
             RunEvent::NonGreen { number, outcome } => {
-                let n = self.resolve(number);
+                let Some(n) = self.resolve(number) else {
+                    return;
+                };
                 // A `Blocked` execution outcome is its own status; everything else
                 // non-green collapses to NonGreen.
                 let status = if outcome.starts_with("Blocked") {
@@ -325,6 +335,18 @@ mod tests {
         let mut state = RunState::new("t", 3);
         state.apply(RunEvent::DeadlinePassed { number: 7 });
         assert!(state.final_summary.as_deref().unwrap().contains("#7"));
+    }
+
+    #[test]
+    fn zero_numbered_event_without_active_is_ignored() {
+        // An `Executing` (number 0) whose `IssueStarted` was dropped under
+        // back-pressure must not materialize a phantom issue `#0`.
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::Executing {
+            number: 0,
+            budget_min: 45,
+        });
+        assert!(state.issues.is_empty());
     }
 
     #[test]
