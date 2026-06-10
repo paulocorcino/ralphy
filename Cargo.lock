@@ -750,6 +750,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "include_dir",
+ "ralphy-adapter-support",
  "ralphy-core",
  "regex",
  "tracing",
