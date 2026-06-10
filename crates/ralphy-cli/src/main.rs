@@ -17,6 +17,7 @@ use tracing::info;
 
 mod guard;
 mod hook;
+mod telegram;
 mod ui;
 
 #[derive(Parser)]
