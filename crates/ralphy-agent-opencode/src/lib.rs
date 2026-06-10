@@ -76,8 +76,12 @@ fn opencode_skills_config(skills_dir: &Path) -> String {
 /// The OpenCode planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with the `## Execution model` tier
 /// line removed (OpenCode drops complexity routing, ADR-0005 D3/D8a) and the
-/// reviewer step rephrased to vendor-neutral dispatch. Single source of truth
-/// lives at `assets/prompts/`.
+/// reviewer step committed to the **inline `reviewer` skill** — auto-discovered
+/// via `skills.paths`, **not** a subagent. Headless custom-subagent dispatch is
+/// blocked upstream (`opencode#29616`/`#20059`: Task tool `subagent_type` is
+/// hardcoded to `explore`/`general`), so the inline skill is the only working
+/// headless mechanism (ADR-0005 D8). Single source of truth lives at
+/// `assets/prompts/`.
 const PROMPT_PLAN_OPENCODE: &str = include_str!("../../../assets/prompts/prompt.plan.opencode.md");
 
 /// The actionable message shown when `is_opencode_auth_error` fires — tells the
