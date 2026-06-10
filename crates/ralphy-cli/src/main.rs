@@ -379,11 +379,12 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
-/// Force `stop_on_limit` for Codex runs: Codex's rolling reset window is not
-/// parseable, so auto-resume is never useful there. Claude passes the flag
-/// through unchanged.
+/// Force `stop_on_limit` for Codex and OpenCode runs: Codex's rolling reset
+/// window is not parseable; OpenCode already self-waits short limits and long
+/// ones carry no parseable reset, so auto-resume is never useful for either.
+/// Claude passes the flag through unchanged.
 fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
-    flag || matches!(agent, CliAgent::Codex)
+    flag || matches!(agent, CliAgent::Codex | CliAgent::OpenCode)
 }
 
 fn non_empty(s: String) -> Option<String> {
@@ -429,5 +430,11 @@ mod tests {
     fn effective_stop_on_limit_claude_passes_flag_through() {
         assert!(!effective_stop_on_limit(false, CliAgent::Claude));
         assert!(effective_stop_on_limit(true, CliAgent::Claude));
+    }
+
+    #[test]
+    fn effective_stop_on_limit_opencode_forces_true() {
+        assert!(effective_stop_on_limit(false, CliAgent::OpenCode));
+        assert!(effective_stop_on_limit(true, CliAgent::OpenCode));
     }
 }
