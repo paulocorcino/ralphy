@@ -13,8 +13,10 @@
 //! Skills materialization (ADR-0005 D7) is implemented here: before every `plan`
 //! and `execute` call the embedded skills tree is extracted to `<repo>/.ralphy/skills`
 //! and the absolute path is injected as `OPENCODE_CONFIG_CONTENT` so OpenCode's
-//! `skills.paths` config key points at it. Usage-limit (D9) and auth-error (D6)
-//! are deferred-until-live in ADR-0005 and are intentionally not handled here.
+//! `skills.paths` config key points at it. Usage-limit (D9) is deferred-until-live
+//! in ADR-0005. Auth-error (D6) is implemented: `is_opencode_auth_error` detects
+//! `ProviderAuthError` in the combined log and an actionable bail fires in both
+//! `plan` and `execute` before any generic classification.
 
 use std::fs;
 use std::io::{BufReader, Read, Write};
@@ -74,6 +76,20 @@ fn opencode_skills_config(skills_dir: &Path) -> String {
 /// reviewer step rephrased to vendor-neutral dispatch. Single source of truth
 /// lives at `assets/prompts/`.
 const PROMPT_PLAN_OPENCODE: &str = include_str!("../../../assets/prompts/prompt.plan.opencode.md");
+
+/// The actionable message shown when `is_opencode_auth_error` fires — tells the
+/// operator exactly what to do to recover (run `opencode auth login`).
+const OPENCODE_AUTH_ERROR_MSG: &str =
+    "OpenCode is not authenticated (ProviderAuthError) — run `opencode auth login` and retry";
+
+/// Return `true` when `text` (the combined stdout+stderr log) shows an OpenCode
+/// authentication failure. A signed-out `opencode run` emits a `ProviderAuthError`
+/// SDK error event (ADR-0005 D6). Keying on the case-insensitive substring
+/// `providerautherror` is specific enough to avoid false positives from our own
+/// prompt text mentioning `opencode auth login`.
+fn is_opencode_auth_error(text: &str) -> bool {
+    text.to_ascii_lowercase().contains("providerautherror")
+}
 
 /// The vendor-neutral execution charter, piped to `opencode run` on stdin. Shared
 /// verbatim with the Claude and Codex paths — it already names the
@@ -234,15 +250,16 @@ impl OpenCodeAgent {
     /// Spawn a single `opencode run` call, piping `prompt` on stdin and draining
     /// stdout/stderr via reader threads to avoid pipe-buffer deadlock (mirrors
     /// `CodexAgent::run_codex`). Polls `try_wait` until `timeout`; kills the child
-    /// on expiry. Returns `(exited_cleanly, timed_out, stdout_text)` — stdout is
-    /// the JSON event stream the caller parses; the combined stdout+stderr is also
-    /// written to `run_dir/opencode.log` for inspection.
+    /// on expiry. Returns `(exited_cleanly, timed_out, stdout_text, log)` — stdout
+    /// is the JSON event stream the caller parses; `log` is the combined
+    /// stdout+stderr written to `run_dir/opencode.log` and used by the auth
+    /// detector (auth failures often print only to stderr).
     fn run_opencode(
         &self,
         mut cmd: Command,
         prompt: &str,
         timeout: Duration,
-    ) -> Result<(bool, bool, String)> {
+    ) -> Result<(bool, bool, String, String)> {
         let mut child = cmd
             .spawn()
             .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
@@ -298,7 +315,7 @@ impl OpenCodeAgent {
         let _ = fs::write(self.run_dir.join("opencode.log"), &log);
 
         let exited_cleanly = status.map(|s| s.success()).unwrap_or(false);
-        Ok((exited_cleanly, timed_out, stdout_text))
+        Ok((exited_cleanly, timed_out, stdout_text, log))
     }
 }
 
@@ -323,9 +340,15 @@ impl Agent for OpenCodeAgent {
             .issue_deadline()
             .saturating_duration_since(Instant::now());
         info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
-        let _ = self.run_opencode(cmd, PROMPT_PLAN_OPENCODE, timeout)?;
+        let (_, _, _, log) = self.run_opencode(cmd, PROMPT_PLAN_OPENCODE, timeout)?;
 
         if !plan_path.exists() {
+            if is_opencode_auth_error(&log) {
+                bail!(
+                    "{OPENCODE_AUTH_ERROR_MSG} (see {})",
+                    self.run_dir.join("opencode.log").display()
+                );
+            }
             bail!(
                 "opencode produced no plan at {} (see {})",
                 plan_path.display(),
@@ -359,8 +382,17 @@ impl Agent for OpenCodeAgent {
             &skills_config,
         );
         info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
-        let (exited_cleanly, timed_out, stdout_text) =
+        let (exited_cleanly, timed_out, stdout_text, log) =
             self.run_opencode(cmd, PROMPT_EXECUTE, timeout)?;
+
+        // A signed-out account never makes progress: stop the run with an
+        // actionable message rather than letting it fall through to Stuck/Timeout.
+        if is_opencode_auth_error(&log) {
+            bail!(
+                "{OPENCODE_AUTH_ERROR_MSG} (see {})",
+                self.run_dir.join("opencode.log").display()
+            );
+        }
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
@@ -380,6 +412,60 @@ impl Agent for OpenCodeAgent {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    // ── is_opencode_auth_error ──────────────────────────────────────────────
+
+    #[test]
+    fn is_opencode_auth_error_matches_captured_provider_auth_error() {
+        // Representative captured log from a signed-out `opencode run`: the SDK
+        // emits a `ProviderAuthError` event name in the JSON error event and may
+        // also print it to stderr. Either occurrence triggers the detector.
+        let json_event =
+            r#"{"type":"error","name":"ProviderAuthError","message":"Not authenticated"}"#;
+        assert!(
+            is_opencode_auth_error(json_event),
+            "must match a ProviderAuthError JSON event"
+        );
+
+        // Mixed log with stderr text (case-insensitive check).
+        let mixed_log = "some init output\nError: ProviderAuthError: not signed in\n";
+        assert!(
+            is_opencode_auth_error(mixed_log),
+            "must match ProviderAuthError in stderr text"
+        );
+
+        // Upper-cased variant — to_ascii_lowercase makes it case-insensitive.
+        assert!(
+            is_opencode_auth_error("PROVIDERAUTHERROR"),
+            "must be case-insensitive"
+        );
+    }
+
+    #[test]
+    fn is_opencode_auth_error_ignores_unrelated_text() {
+        assert!(
+            !is_opencode_auth_error("all steps green\nRALPHY_DONE_EXIT\n"),
+            "must not match a clean DONE sentinel"
+        );
+        assert!(
+            !is_opencode_auth_error("timeout waiting for response"),
+            "must not match an unrelated error"
+        );
+        assert!(!is_opencode_auth_error(""), "must not match empty text");
+    }
+
+    #[test]
+    fn is_opencode_auth_error_takes_precedence_over_done_sentinel() {
+        // A log that carries both a ProviderAuthError and a RALPHY_DONE_EXIT
+        // sentinel must still be detected as an auth error — the auth signal wins.
+        let log = "some work\n\
+                   {\"type\":\"error\",\"name\":\"ProviderAuthError\",\"message\":\"signed out\"}\n\
+                   RALPHY_DONE_EXIT\n";
+        assert!(
+            is_opencode_auth_error(log),
+            "auth error must win over a co-present DONE sentinel"
+        );
+    }
 
     // ── classify_opencode_outcome ───────────────────────────────────────────
 

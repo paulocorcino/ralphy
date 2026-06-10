@@ -1,101 +1,53 @@
-# Plan for #25: OpenCode adapter — skills provisioned under `.ralphy/skills` via injected `skills.paths`
+# Plan for #26: OpenCode adapter — auth-error stop + provider-key scrubbing
 
 ## Feasible: yes
-The work is a retargeted near-clone of the existing `materialize_codex_skills`
-(`crates/ralphy-agent-codex/src/lib.rs:36`) plus an env injection on the child
-`Command`, both with direct prior art in the Codex adapter and ADR-0005 D7. All
-touch points are concrete and unit-test-verifiable.
+The work mirrors the Codex adapter's existing auth-error prior art
+(`is_codex_auth_error` + the actionable `bail!` in `plan`/`execute`) onto the
+OpenCode adapter; the provider-key scrubbing it also asks for is already in place
+(`build_opencode_command` `env_remove`s both keys, with a passing test). All
+behavior is unit-test verifiable except confirming the exact `ProviderAuthError`
+string against a true live signed-out run, which is review-only.
 
 ## Execution model: sonnet
-Mechanical, localized work mirroring an existing function: embed an asset tree,
-clear-and-re-extract it, write a `.gitignore`, build a small JSON config string,
-and inject it as an env var — all confined to one crate with an established
-template. No tricky design or cross-cutting concerns.
+Localized, single-file change with a direct, well-understood template in the
+Codex adapter (detector fn + precedence-ordered `bail!`); mechanical, no tricky
+design judgment.
 
 ## Done when
-- `cargo test -p ralphy-agent-opencode` passes, including a new test that
-  asserts `materialize_opencode_skills` extracts `reviewer/SKILL.md`,
-  `staged-plan/SKILL.md`, and the multi-file `reviewer/scripts/audit.py` under
-  `<repo>/.ralphy/skills`, writes `<repo>/.ralphy/.gitignore`, and is idempotent
-  across a second call.
-- `cargo test -p ralphy-agent-opencode` passes, including a new test that parses
-  the injected `OPENCODE_CONFIG_CONTENT` string back as JSON and asserts
-  `skills.paths` contains the materialized `.ralphy/skills` directory (proving
-  the content is well-formed and the path matches the materialized layout).
-- `cargo build` succeeds and `cargo fmt --check` / `cargo clippy` produce no new
-  warnings.
-- Review-only: a live `opencode run` discovers and can invoke the `reviewer`
-  and `staged-plan` skills from `.ralphy/skills/`, and no file is written
-  outside `.ralphy/`.
+- `cargo test -p ralphy-agent-opencode` passes, including a new test
+  `is_opencode_auth_error_matches_captured_provider_auth_error` that feeds a
+  representative captured `ProviderAuthError` error event (and stderr text)
+  through the detector and asserts it matches, plus a test asserting the detector
+  ignores unrelated and `RALPHY_DONE_EXIT` text.
+- A new test asserts the detector still fires when the same text also carries a
+  `RALPHY_DONE_EXIT` sentinel (the auth signal wins over a clean-looking finish),
+  proving precedence at the detector level; the `bail!` is placed before
+  `classify_opencode_outcome` in `execute` and before the generic "no plan"
+  `bail!` in `plan`, so auth takes precedence over generic/limit/timeout
+  classification.
+- The existing `build_command_removes_both_api_keys` test continues to pass
+  (both `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` scrubbed on the child).
+- Review-only: the exact `ProviderAuthError` / logged-out string used by the
+  detector matches what a true live signed-out `opencode run` emits (the ADR-0005
+  D6 "deferred until live" string); a human confirms this against a real
+  signed-out run in the PR.
 
 ## Acceptance ledger
-- [review-only] A run shows OpenCode discovering and able to invoke the `reviewer` skill (and `staged-plan`) from `.ralphy/skills/`. — evidence: a human runs `opencode run` against this branch and confirms the reviewer/staged-plan skills are invocable; the unit test proves the files materialize and the path is injected, but only a live run proves OpenCode discovers them.
-- [review-only] Nothing is written outside `.ralphy/`; the materialized tree is git-ignored and never appears in an executor commit. — evidence: the unit test asserts the tree lands under `.ralphy/skills` and `.ralphy/.gitignore` (`*`) is written; a human confirms in the PR that no executor commit contains `.ralphy/skills` files.
-- [verified] The deferred `skills.paths` granularity is resolved: confirm whether each entry is the container dir (`.ralphy/skills`) or a per-skill dir, and the materialized layout + injected path match. — evidence: resolved under `## Decisions` (container dir); the config test asserts the single injected path equals the materialized container `.ralphy/skills`.
-- [verified] A unit test asserts the skills (incl. multi-file `reviewer/scripts/*`) materialize and the injected config content is well-formed, mirroring `materialize_codex_skills`'s test. — evidence: the two new tests above (materialize + config) cover exactly this.
+- [verified] A signed-out `opencode run` stops the run with the actionable "run `opencode auth login`" message (both during `plan` and `execute`), not a generic "no plan" / `Stuck`. — evidence: `is_opencode_auth_error` gates an actionable `bail!` placed before the generic "no plan" bail in `plan` and before `classify_opencode_outcome` in `execute`; a unit test asserts the detector matches the captured signed-out text
+- [verified] `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are removed on the child; a unit test asserts both are scrubbed. — evidence: already implemented in `build_opencode_command` (`env_remove` both keys); existing test `build_command_removes_both_api_keys` asserts both are scrubbed and stays green
+- [review-only] The deferred exact auth-error string(s) are firmed up from an observed signed-out run, with a unit test over the real captured text. — evidence: the detector keys on OpenCode's documented `ProviderAuthError` SDK error name (ADR-0005 D6) with a unit test over representative captured text; a human confirms the string against a true live signed-out run in the PR
+- [verified] The auth-error check takes precedence over usage-limit and generic classification. — evidence: the auth `bail!` runs before `classify_opencode_outcome` (which returns `Timeout`/`Stuck`); OpenCode has no usage-limit classifier yet (D9 deferred), so precedence is structural; a unit test asserts the detector fires even when the text also contains `RALPHY_DONE_EXIT`
 
 ## Decisions
-- Decision: each `skills.paths` entry is the single **container** dir
-  (`<abs>/.ralphy/skills`), not a per-skill dir. Why: it is the natural reading
-  of OpenCode's "Additional paths to skill folders" schema key and mirrors how
-  `materialize_codex_skills` lays skills out as subdirs under one container;
-  per-skill entries would need enumeration logic for no benefit (ADR-0005 D7).
-- Decision: write `<repo>/.ralphy/.gitignore` with `*` (mirroring Codex's
-  `.agents/.gitignore`). Why: makes the materialized tree self-contained-ignored
-  even though the core already adds `.ralphy/` to the target repo's root
-  `.gitignore`, exactly as the issue asks.
+- Decision: the detector keys on the case-insensitive substring `providerautherror` (OpenCode's documented SDK error name, named in ADR-0005 D6). Why: it is the firm signal from the source-level study, covers the issue-#15562 Claude-OAuth-reset masquerade (same error name), and avoids false positives from our own prompt text mentioning `opencode auth login`.
+- Decision: the auth detector reads the combined stdout+stderr log, not just the JSON stdout stream. Why: the issue requires detection "over the JSON stream / stderr" and a logged-out error often prints only to stderr; `run_opencode` already writes the combined log to `opencode.log`, so it returns it for in-memory detection too.
 
 ## Steps
-- [x] In `crates/ralphy-agent-opencode/Cargo.toml`, add `include_dir.workspace = true`
-      to `[dependencies]` (Codex's Cargo.toml already has it).
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, add
-      `use include_dir::{include_dir, Dir};` and a
-      `static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");`
-      embedding the skills tree at build time (clone of the Codex `SKILLS`).
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, add
-      `fn materialize_opencode_skills(ws: &Workspace) -> Result<PathBuf>` that
-      clears `<repo>/.ralphy/skills`, re-extracts `SKILLS` into it, writes
-      `<repo>/.ralphy/.gitignore` (`*`), and returns the `.ralphy/skills` path —
-      a retarget of `materialize_codex_skills`.
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, add
-      `fn opencode_skills_config(skills_dir: &Path) -> String` that builds
-      `{"skills":{"paths":["<abs skills_dir>"]}}` via `serde_json::json!`/
-      `to_string` (canonicalizing `skills_dir`, falling back to the path as-is),
-      returning the string injected as `OPENCODE_CONFIG_CONTENT`.
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, extend
-      `build_opencode_command` with a `skills_config: &str` parameter and add
-      `.env("OPENCODE_CONFIG_CONTENT", skills_config)`, so the injection is the
-      single shared invocation point; update its existing unit-test call sites
-      to pass a value.
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, in `OpenCodeAgent::plan` and
-      `OpenCodeAgent::execute`, call `materialize_opencode_skills(ws)?`, build
-      the config via `opencode_skills_config`, and pass it into
-      `build_opencode_command`.
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, update the module-level doc
-      comment (the `tracer slice` note at lines ~13–15 stating skills
-      materialization D7 is "deferred-until-live ... not handled here") to
-      reflect that D7 is now implemented.
-- [x] Add a unit test `materialize_opencode_skills_extracts_required_skills`
-      (mirroring the Codex test at `crates/ralphy-agent-codex/src/lib.rs:649`):
-      assert `reviewer/SKILL.md`, `staged-plan/SKILL.md`, and
-      `reviewer/scripts/audit.py` materialize under `.ralphy/skills`, that
-      `.ralphy/.gitignore` is written, and that a second call is idempotent.
-      (Fails to compile/pass before the new function exists; passes after.)
-- [x] Add a unit test `opencode_skills_config_is_well_formed_json` that parses
-      the `opencode_skills_config` output with `serde_json::from_str`, then
-      asserts `["skills"]["paths"]` is a one-element array whose entry ends with
-      the `.ralphy/skills` segment. (Fails before; passes after.)
-- [x] Self-review: spawn the `reviewer` skill as an independent subagent over
-      ONLY the commits made for this issue (#25) on this run's branch — not the
-      whole branch, which carries earlier issues. Resolve every HIGH finding
-      before finishing; if one cannot be fixed autonomously, record it under
-      `## Notes & decisions` and block instead of declaring done.
-- [x] Run `cargo fmt`, `cargo clippy`, and `cargo test -p ralphy-agent-opencode`
-      (and a workspace `cargo build`); all pass with no new warnings.
-
-## Notes & decisions
-- Self-review found HIGH-1: `opencode_skills_config_is_well_formed_json` used a
-  substring contains-check (`entry.contains("skills")`) that a non-conformant
-  implementation could satisfy without injecting the correct path. Fixed in the
-  same commit by replacing with `assert_eq!(PathBuf::from(entry), expected)` where
-  `expected = dir.canonicalize().unwrap_or(dir)`. All 20 tests still pass.
+- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, add `OPENCODE_AUTH_ERROR_MSG` const ("OpenCode is not authenticated (ProviderAuthError) — run `opencode auth login` and retry") and `fn is_opencode_auth_error(text: &str) -> bool` keyed on the lowercased substring `providerautherror`, mirroring `is_codex_auth_error`.
+- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, change `OpenCodeAgent::run_opencode` to also return the combined stdout+stderr log (e.g. return `(exited_cleanly, timed_out, stdout_text, log)`), so the auth detector can see stderr; update both call sites in `plan` and `execute`.
+- [x] In `OpenCodeAgent::execute`, after `run_opencode`, check `is_opencode_auth_error(&log)` and `bail!("{OPENCODE_AUTH_ERROR_MSG} (see {})", self.run_dir.join("opencode.log").display())` BEFORE calling `classify_opencode_outcome` — so auth takes precedence over timeout/generic classification.
+- [x] In `OpenCodeAgent::plan`, inside the `if !plan_path.exists()` branch, check `is_opencode_auth_error(&log)` and `bail!` with the actionable message BEFORE the generic "opencode produced no plan" bail.
+- [x] In the `tests` module of `crates/ralphy-agent-opencode/src/lib.rs`, add `is_opencode_auth_error_matches_captured_provider_auth_error` over a representative captured `ProviderAuthError` JSON error event plus stderr text, and a test that it ignores unrelated / `RALPHY_DONE_EXIT`-only text — these reference the not-yet-existing fn so they FAIL to compile before the change and PASS after.
+- [x] Add a test `is_opencode_auth_error_takes_precedence_over_done_sentinel` asserting the detector returns `true` for text that also contains `RALPHY_DONE_EXIT`, proving the auth signal wins over a clean-looking finish (precedence at the detector level).
+- [ ] Self-review: spawn the `reviewer` skill as an independent subagent over ONLY this issue's commits (not the whole branch). Resolve every HIGH finding before finishing; if one cannot be fixed autonomously, record it under `## Notes & decisions` and block instead of declaring done.
+- [ ] Run `cargo fmt --all` and `cargo test -p ralphy-agent-opencode` (and `cargo clippy` if used by the project); all pass with no new warnings.
