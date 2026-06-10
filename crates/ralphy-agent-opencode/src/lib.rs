@@ -888,6 +888,19 @@ mod tests {
             !PROMPT_PLAN_OPENCODE.contains("independent subagent"),
             "must not use Claude 'independent subagent' phrasing"
         );
+        // The reviewer step commits to the concrete working mechanism: the
+        // inline `reviewer` skill, not a subagent (opencode#29616/#20059 block
+        // headless custom-subagent dispatch — see ADR-0005 D8).
+        assert!(
+            lower.contains("inline") && lower.contains("skill"),
+            "reviewer step must name the inline reviewer skill mechanism"
+        );
+        // No subagent-dispatch phrasing for the reviewer: the prompt must not
+        // claim the reviewer runs "as a subagent".
+        assert!(
+            !lower.contains("as a subagent"),
+            "reviewer step must not describe the reviewer as running as a subagent"
+        );
     }
 
     // ── trait binding (compile-level) ─────────────────────────────────────────

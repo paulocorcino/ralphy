@@ -1,95 +1,93 @@
-# Plan for #27: OpenCode adapter — usage-limit handling (timeout backstop + best-effort Limit)
+# Plan for #28: OpenCode adapter — finalize reviewer-subagent dispatch from a live run
 
 ## Feasible: yes
-The change is localized and mirrors the existing Codex limit handling: force
-`stop_on_limit` for OpenCode in `main.rs`, and add a best-effort upgrade of
-`Timeout`/`Stuck` to `Outcome::Limit` in the OpenCode adapter when the JSON
-stream emits a 429/`APIError` (or the documented rate-limit strings), with the
-per-issue wall timeout remaining the primary backstop. Every step names real
-code and is unit-test verifiable.
+The dispatch shape is now resolved (live-probed against opencode 1.16.2): true
+subagent dispatch is blocked upstream, so the reviewer runs as the **inline
+`reviewer` skill**. The remaining work is a prompt reword, an ADR note, a doc-comment,
+and a prompt-asset test — all small, code-anchored, and test-verifiable. Acceptance
+criterion #1's "not inline" wording is the one part being relaxed by the decision
+below (review-only / waived).
 
 ## Execution model: sonnet
-Mechanical, well-understood change that closely follows the Codex pattern
-(`is_codex_limit_text` / `parse_codex_reset_hint` / `classify_codex_outcome`)
-and the one-line `effective_stop_on_limit` extension — no cross-cutting design,
-concurrency, or subtle correctness. Sonnet handles this reliably.
+Mechanical, localized edits to a prompt asset, an ADR, a doc-comment, and one unit
+test — no cross-cutting logic, concurrency, or tricky types. Sonnet handles this.
 
 ## Done when
-- `cargo test` passes across the workspace, including a new test asserting
-  `effective_stop_on_limit(false, CliAgent::OpenCode)` and
-  `effective_stop_on_limit(true, CliAgent::OpenCode)` both return `true`.
-- `cargo test` includes new tests over `parse_opencode_limit` proving: an
-  `error` event with `name:"APIError"` + `statusCode:429` is detected (with a
-  reset hint when one is present, `None` when absent); a documented literal
-  rate-limit string is detected; a Zen `*UsageLimitError` is detected; and a
-  non-limit error (e.g. `statusCode:500`) or no error yields no limit.
-- `cargo test` includes new `classify_opencode_outcome` cases proving a hung
-  run with a limit event upgrades `Timeout` → `Outcome::Limit(reset)`, a hung
-  run with no limit event stays `Outcome::Timeout`, and a would-be `Stuck`
-  with a limit event becomes `Outcome::Limit`.
-- `cargo fmt --check` and `cargo clippy` (or the project's format/lint commands)
-  pass with no new warnings.
+- `cargo test -p ralphy-agent-opencode` passes, including the updated
+  `prompt_plan_opencode_keeps_reviewer_step` test, which now asserts the OpenCode
+  plan prompt names the concrete inline-skill mechanism (mentions the reviewer
+  `skill` running inline) and carries no subagent-dispatch phrasing for the reviewer
+  step.
+- `cargo fmt --check` and the full `cargo test` workspace pass with no new warnings.
+- Review-only (waived from criterion #1): the reviewer self-review runs as the
+  inline `reviewer` skill (not a subagent) during an OpenCode execution — confirmed
+  by a human on a working provider; not test-verifiable, and subagent isolation is
+  deferred to upstream `opencode#20059`.
 
 ## Acceptance ledger
-- [verified] `effective_stop_on_limit` returns `true` for OpenCode regardless of the `--stop-on-limit` flag (unit test). — evidence: commit 64b7920; test `effective_stop_on_limit_opencode_forces_true` in `main.rs`
-- [verified] An `error` event carrying `statusCode:429` / `APIError` classifies as `Outcome::Limit` (with a reset hint when present); absent any limit event, a hung run is reclaimed as `Timeout` by the wall budget. — evidence: commit e718459; `parse_limit_apierror_429_with_reset_hint`, `parse_limit_apierror_429_without_reset_hint`, `classify_timeout_upgrades_to_limit_when_seen`, `classify_timeout_stays_timeout_without_limit`
-- [verified] The deferred exact limit-string set + any reset parser are firmed up from observed output, with unit tests over the captured text. — evidence: commit e718459; `parse_opencode_limit` keys on ADR-0005 D9 shapes; tests `parse_limit_retryable_literal_string`, `parse_limit_zen_usage_limit_error`, `parse_limit_non_limit_status_500`, `parse_limit_clean_stream_no_limit`
-- [review-only] No auto-resume path is introduced for OpenCode. — evidence: human confirms in the PR that forcing `stop_on_limit` routes OpenCode `Limit` through `runner.rs`'s `_ => break outcome` arm (no wait/resume) and that no new resume code was added
+- [review-only] During an OpenCode execution, the reviewer self-review actually runs as a subagent (not inline) and scopes to only the commits this issue made — evidence: RELAXED by decision — true subagent dispatch is blocked upstream (opencode#29616/#20059), so the reviewer runs as the inline `reviewer` skill scoped to this issue's commits; a human confirms the inline skill fires on a working provider
+- [verified] `prompt.plan.opencode.md` names the working dispatch mechanism; no leftover placeholder/neutral phrasing for the reviewer step — evidence: `prompt_plan_opencode_keeps_reviewer_step` (lib.rs) now asserts the reworded prompt contains `inline`+`skill` and rejects `as a subagent` phrasing; green in the step-1+4 commit
+- [verified] The chosen mechanism is documented (a short note in the ADR's deferred-items section or the crate's module docs) so the decision is traceable — evidence: the ADR-0005 D8 deferred note is replaced with the resolved decision + upstream-block rationale, and the `PROMPT_PLAN_OPENCODE` doc-comment states "inline skill, not subagent"; a reviewer reads the diff
 
 ## Decisions
-- Decision: source the limit-string set from ADR-0005 D9's documented shapes
-  rather than a live capture. Why: this autonomous pass cannot trigger a live
-  429; the ADR's source-level study (`retryable()`, SDK `APIError`+429, Zen
-  `*UsageLimitError`) is the authoritative reference and the tests use
-  representative captured JSON — the same conservative branch the auth-error
-  detector (D6) took with a representative log.
-- Decision: extract the reset hint best-effort from a `retryAfter` field or a
-  `Retry-After` / "try again" substring in the error message, returning `None`
-  when absent. Why: D9 says extract a reset "only when one is present"; 429
-  hints are not guaranteed and the wall timeout is the real backstop.
-- Decision: model the limit signal as `Option<Option<String>>` (outer `Some`
-  = a limit event was seen; inner = optional reset hint), threaded into
-  `classify_opencode_outcome`. Why: it distinguishes "limit, no reset" from
-  "no limit" without a new struct, and maps cleanly to `Outcome::Limit(reset)`.
+- Decision: the OpenCode reviewer self-review runs as the **inline `reviewer`
+  skill** (auto-discovered via `skills.paths`), **not** as a subagent. Why: in
+  opencode 1.16.2 custom subagents cannot be dispatched headless — the Task tool's
+  `subagent_type` is hardcoded to `explore`/`general` and `@name` routing does not
+  fire for custom agents (`opencode#29616`, `opencode#20059`), so the inline skill
+  is the only working headless mechanism; subagent isolation awaits the upstream fix.
 
 ## Steps
-- [x] In `crates/ralphy-cli/src/main.rs`, extend `effective_stop_on_limit` to
-      force `true` for OpenCode too: change `matches!(agent, CliAgent::Codex)`
-      to `matches!(agent, CliAgent::Codex | CliAgent::OpenCode)` and update its
-      doc comment to name OpenCode (D9: long limits carry no parseable reset).
-- [x] In `main.rs` `#[cfg(test)] mod tests`, add `effective_stop_on_limit_opencode_forces_true`
-      asserting both `effective_stop_on_limit(false, CliAgent::OpenCode)` and
-      `(true, CliAgent::OpenCode)` are `true` (fails before the step-1 change,
-      passes after).
-- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, add `fn parse_opencode_limit(stdout: &str) -> Option<Option<String>>`
-      that scans the line-delimited JSON `error` events and returns `Some(reset)`
-      when one matches a usage limit — `name:"APIError"` with `statusCode == 429`,
-      or a documented `retryable()` literal rate-limit string, or a Zen
-      `*UsageLimitError` name — extracting the reset hint via a small helper
-      (e.g. `parse_opencode_reset_hint`) and `None` otherwise.
-- [x] In `lib.rs`, change `classify_opencode_outcome` to take an added
-      `limit: Option<Option<String>>` parameter: when `timed_out`, return
-      `limit.map(Outcome::Limit).unwrap_or(Outcome::Timeout)`; at the final
-      `Stuck` fallthrough, return `Outcome::Limit(reset)` when `limit` is
-      `Some`. Update its doc comment to note the best-effort upgrade (D9).
-- [x] In `lib.rs` `execute`, call `parse_opencode_limit(&stdout_text)` and pass
-      the result into `classify_opencode_outcome(...)`; add it to the `info!`
-      end-of-run log fields.
-- [x] In `lib.rs` tests, update the existing `classify_*` call sites for the new
-      parameter (pass `None`) and add: `classify_timeout_upgrades_to_limit_when_seen`
-      (timed_out + `Some(Some(reset))` → `Outcome::Limit(Some(reset))`),
-      `classify_timeout_stays_timeout_without_limit` (timed_out + `None` →
-      `Outcome::Timeout`), and `classify_stuck_upgrades_to_limit_when_seen`.
-- [x] In `lib.rs` tests, add `parse_opencode_limit` cases over representative
-      captured JSON: an `APIError`+`statusCode:429` event with a reset hint →
-      `Some(Some(...))`; the same without a hint → `Some(None)`; a documented
-      literal rate-limit string → `Some(_)`; a Zen `*UsageLimitError` → `Some(_)`;
-      a `statusCode:500` error and a clean stream → `None` (this test fails
-      before step 3 and passes after — proving the behavior).
-- [x] Self-review: spawn the `reviewer` skill as an independent subagent over
-      ONLY the commits this run made for issue #27 (not earlier issues on the
-      branch). Resolve every HIGH finding before finishing; if one cannot be
-      fixed autonomously, record it under `## Notes & decisions` and block
-      instead of declaring done.
-- [x] Run the project's format and test commands (`cargo fmt`, `cargo clippy`,
-      `cargo test`) and confirm they pass with no new warnings.
+- [x] In `assets/prompts/prompt.plan.opencode.md`, reword the reviewer self-review
+      step (the `- [ ] Self-review: dispatch the auto-discovered reviewer skill ...`
+      line) to commit to the inline mechanism: the reviewer runs as the **inline
+      `reviewer` skill** (auto-discovered via `skills.paths`), invoked by name over
+      ONLY the commits made for this issue — explicitly **not** as a subagent and not
+      the whole branch. Drop the non-committal "dispatch" neutral phrasing.
+- [ ] In `docs/adr/0005-opencode-adapter.md`, replace the D8 `*Deferred until live*`
+      bullet (the reviewer-subagent dispatch shape, lines ~179-183) with the resolved
+      decision: reviewer runs as the inline skill; true subagent dispatch is blocked
+      by `opencode#29616`/`#20059` (Task tool `subagent_type` hardcoded to
+      `explore`/`general`); note this was probed against opencode 1.16.2.
+- [ ] In `crates/ralphy-agent-opencode/src/lib.rs`, update the `PROMPT_PLAN_OPENCODE`
+      doc-comment (and the module-level note if it references the deferred reviewer
+      shape) to state the reviewer step uses the inline `reviewer` skill, not a
+      subagent, citing the upstream block.
+- [x] In `crates/ralphy-agent-opencode/src/lib.rs`, extend the existing
+      `prompt_plan_opencode_keeps_reviewer_step` test so it FAILS before the prompt
+      reword and PASSES after: assert the prompt names the inline `reviewer` skill
+      (e.g. contains `inline` and `skill` near the reviewer step) and that it carries
+      no subagent-dispatch phrasing for the reviewer (must not say the reviewer runs
+      "as a subagent").
+- [ ] Self-review: dispatch the auto-discovered `reviewer` skill scoped to ONLY the
+      commits made for this issue — not the whole branch. Resolve every HIGH finding
+      before finishing; if one cannot be fixed autonomously, record it under
+      `## Notes & decisions` and block.
+- [ ] `cargo fmt --check` and the project's `cargo test` pass with no new warnings.
+
+## Notes & decisions
+- Steps 1 (prompt reword) and 4 (test extension) were committed together so the
+  new `prompt_plan_opencode_keeps_reviewer_step` assertions (`inline`+`skill`,
+  no `as a subagent`) are a genuine red→before/green→after proof of the reword.
+- **Human action required on the issue:** acceptance criterion #1 literally says the
+  reviewer must run "as a subagent (not inline)". The decision above relaxes that to
+  inline. Before close, a human should amend issue #28's criterion #1 wording
+  (`gh issue edit 28`) so the acceptance ledger / green gate map to what's actually
+  shipped; otherwise the criterion reads as unmet.
+
+- **Live probing (2026-06-10, opencode 1.16.2, Kimi-For-Coding auth)** established
+  the decision:
+  - A reviewer `SKILL.md` via `skills.paths` does not become a subagent (absent from
+    `opencode agent list`); it loads inline into the primary agent.
+  - Injecting `agent.reviewer.mode=subagent` via `OPENCODE_CONFIG_CONTENT` registers
+    `reviewer (subagent)` but it is not dispatchable: the Task tool's `subagent_type`
+    enum is hardcoded to `explore`/`general` and `@name` routing does not fire for
+    custom subagents — open upstream `opencode#29616` and feature request
+    `opencode#20059`, independent of config- vs markdown-defined agents.
+  - A full live agent run could not be observed: the Kimi provider request hangs after
+    VCS init in this environment, so empirical dispatch confirmation cannot be produced
+    here regardless. This is why criterion #1 stays review-only.
+
+- The adapter already ships the other four D8-era deferred items in
+  `crates/ralphy-agent-opencode/src/lib.rs` (skills materialization, auth-error
+  detection, limit parsing). Only this reviewer-dispatch note remains.

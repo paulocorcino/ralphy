@@ -54,9 +54,10 @@ you only produce a plan that a later execution loop will consume.
    - [ ] <...>
    - [ ] <at least one step adds a test that FAILS before the change and PASSES
          after — proving the behavior, not merely that the code builds>
-   - [ ] Self-review: dispatch the auto-discovered `reviewer` skill scoped to
-         ONLY the commits you made for this issue — not the whole branch.
-         Resolve every HIGH finding before finishing; if one cannot be fixed
+   - [ ] Self-review: run the **inline `reviewer` skill** (auto-discovered via
+         `skills.paths`), invoked by name over ONLY the commits you made for
+         this issue — **not** a subagent, and not the whole branch. Resolve
+         every HIGH finding before finishing; if one cannot be fixed
          autonomously, record it under `## Notes & decisions` and block.
    - [ ] the project's format and test commands pass with no new warnings
    ```
@@ -82,9 +83,10 @@ you only produce a plan that a later execution loop will consume.
   an honest `no`.
 - Each step must be small enough to complete and commit in one short
   iteration. Prefer many tiny steps over a few large ones.
-- The penultimate step is always a self-review: dispatch the auto-discovered
-  `reviewer` skill scoped to ONLY the commits you made for this issue — not the
-  whole branch. Resolve every HIGH finding before declaring done.
+- The penultimate step is always a self-review: run the **inline `reviewer`
+  skill** (auto-discovered via `skills.paths`) over ONLY the commits you made
+  for this issue — **not** a subagent, and not the whole branch. Resolve every
+  HIGH finding before declaring done.
 - The LAST step is always a green-build/test gate.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
