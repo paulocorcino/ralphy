@@ -21,3 +21,4 @@ tracing-subscriber.workspace = true
 ralphy-core.workspace = true
 ralphy-agent-claude.workspace = true
 ralphy-agent-codex.workspace = true
+ralphy-agent-opencode.workspace = true

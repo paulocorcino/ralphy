@@ -8,6 +8,7 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
+use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{
     git, github, run_queue, Agent, BranchMode, GhTracker, QueueConfig, StopReason, WallClock,
     Workspace,
@@ -99,6 +100,12 @@ struct RunArgs {
     #[arg(long)]
     exec_model: Option<String>,
 
+    /// OpenCode `--variant` (effort) passed through to `opencode run`. Omitted
+    /// when unset so the adapter never sends a value the provider rejects
+    /// (docs/adr/0005 D3). Only used by `--agent opencode`.
+    #[arg(long)]
+    exec_variant: Option<String>,
+
     /// Execution effort.
     #[arg(long, default_value = "medium")]
     exec_effort: String,
@@ -142,6 +149,7 @@ struct RunArgs {
 enum CliAgent {
     Claude,
     Codex,
+    OpenCode,
 }
 
 /// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
@@ -247,6 +255,11 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         ),
         CliAgent::Codex => Box::new(
             CodexAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
+                .with_run_deadline(run_deadline),
+        ),
+        CliAgent::OpenCode => Box::new(
+            OpenCodeAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
+                .with_variant(non_empty(args.exec_variant.unwrap_or_default()))
                 .with_run_deadline(run_deadline),
         ),
     };
