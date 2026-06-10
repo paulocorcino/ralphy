@@ -404,9 +404,41 @@ fn fmt_clock(d: Duration) -> String {
 /// non-TTY / `NO_COLOR` path sets both `false`, guaranteeing no ANSI ever reaches
 /// a redirected file (ADR-0006 D3).
 #[derive(Debug, Clone, Copy)]
-struct RenderOpts {
-    color: bool,
-    emoji: bool,
+pub struct RenderOpts {
+    pub color: bool,
+    pub emoji: bool,
+}
+
+/// UI-local mirror of `BranchMode` — the panel renderer never depends on a core type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelBranchMode {
+    New,
+    Current,
+}
+
+/// UI-local mirror of `StopReason`, with `outcome` pre-formatted as a string so the
+/// panel never imports a core enum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PanelStop {
+    Deadline,
+    NonGreen { number: u64, outcome: String },
+    StopBefore { number: u64 },
+    Limit { number: u64, reset: Option<String> },
+}
+
+/// Input data for [`render_totals_panel`]. Derived from `QueueReport` in `main.rs`
+/// and passed to `PresenterHandle::print_panel`.
+#[derive(Debug, Clone)]
+pub struct PanelData {
+    pub branch: String,
+    pub orig_branch: String,
+    pub done: u64,
+    pub blocked: u64,
+    pub skipped: u64,
+    pub commits: usize,
+    pub stop: Option<PanelStop>,
+    pub branch_mode: PanelBranchMode,
+    pub dry_run: bool,
 }
 
 /// Render a [`UiAction`] to a single line, or `None` for [`UiAction::Ignore`].
@@ -497,6 +529,123 @@ pub fn render_plain_line(
             emoji: true,
         },
     )
+}
+
+/// Render the end-of-run totals panel as a `Vec<String>` of lines ready to
+/// `println!`. Produces: a counts line (`✅/⛔/⏭️`), a commits line, an optional
+/// stop-reason line, a per-mode/dry-run closing-state line, and — only for `New`
+/// mode when not `(dry_run && commits == 0)` — a `➜  git merge <branch>` next-step
+/// line. ANSI colour is applied only when `opts.color`; the non-TTY path is
+/// guaranteed to contain no `\u{1b}` byte.
+pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+
+    // Counts line
+    let done_icon = pick("✅", "[ok]", opts.emoji);
+    let blocked_icon = pick("⛔", "[blocked]", opts.emoji);
+    let skipped_icon = pick("⏭️", "[skip]", opts.emoji);
+    let done_part = format!("{done_icon} {} done", data.done);
+    let blocked_part = format!("{blocked_icon} {} blocked", data.blocked);
+    let skipped_part = format!("{skipped_icon} {} skipped", data.skipped);
+    lines.push(if opts.color {
+        format!(
+            "{} · {} · {}",
+            Style::new().green().apply_to(&done_part),
+            Style::new().red().apply_to(&blocked_part),
+            Style::new().dim().apply_to(&skipped_part),
+        )
+    } else {
+        format!("{done_part} · {blocked_part} · {skipped_part}")
+    });
+
+    // Commits line
+    let commits_raw = format!("{} commit(s) on '{}'", data.commits, data.branch);
+    lines.push(if opts.color {
+        Style::new().dim().apply_to(&commits_raw).to_string()
+    } else {
+        commits_raw
+    });
+
+    // Stop-reason line (reuses wording from the old main.rs match arms)
+    if let Some(stop) = &data.stop {
+        let stop_raw = match stop {
+            PanelStop::Deadline => {
+                "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).".to_string()
+            }
+            PanelStop::NonGreen { number, outcome } => {
+                format!("Stopped: #{number} finished non-green ({outcome}). Branch handed back.")
+            }
+            PanelStop::StopBefore { number } => {
+                format!("Stopped: stop-before label on #{number}. Remove the label and re-run to continue.")
+            }
+            PanelStop::Limit {
+                number,
+                reset: Some(t),
+            } => {
+                format!("Stopped: usage limit on #{number}. Reset ~{t}; re-run to continue (or it stalled with no progress).")
+            }
+            PanelStop::Limit {
+                number,
+                reset: None,
+            } => {
+                format!("Stopped: usage limit on #{number}. No parseable reset time; re-run after the limit clears.")
+            }
+        };
+        lines.push(if opts.color {
+            Style::new().yellow().apply_to(&stop_raw).to_string()
+        } else {
+            stop_raw
+        });
+    }
+
+    // Per-mode/dry-run closing-state line
+    let stopped = data.stop.is_some();
+    let closing_raw = match data.branch_mode {
+        PanelBranchMode::Current => {
+            if data.dry_run {
+                format!("DryRun on '{}': no commits made.", data.branch)
+            } else if stopped {
+                format!("Left repo on '{}' for inspection.", data.branch)
+            } else {
+                format!(
+                    "Clean run: {} commit(s) added to '{}' in place.",
+                    data.commits, data.branch
+                )
+            }
+        }
+        PanelBranchMode::New => {
+            if data.dry_run {
+                format!(
+                    "DryRun: returned repo to '{}'; empty run branch removed.",
+                    data.orig_branch
+                )
+            } else if stopped {
+                format!("Left repo checked out on '{}' for inspection.", data.branch)
+            } else {
+                format!(
+                    "Clean run: returned repo to '{}'. Run branch '{}' kept.",
+                    data.orig_branch, data.branch
+                )
+            }
+        }
+    };
+    lines.push(if opts.color {
+        Style::new().dim().apply_to(&closing_raw).to_string()
+    } else {
+        closing_raw
+    });
+
+    // Next-step line: New mode only, absent when dry-run + zero commits
+    if data.branch_mode == PanelBranchMode::New && !(data.dry_run && data.commits == 0) {
+        let next_raw = format!("➜  git merge {}", data.branch);
+        lines.push(if opts.color {
+            Style::new().cyan().apply_to(&next_raw).to_string()
+        } else {
+            next_raw
+        });
+    }
+
+    lines
 }
 
 /// Choose the emoji or its ASCII fallback.
@@ -735,6 +884,33 @@ pub struct PresenterHandle {
 }
 
 impl PresenterHandle {
+    /// A plain (colour off, no bars) handle for the `--verbose` / raw-stderr path.
+    /// `finalize` is a no-op; `print_panel`/`print_notice` produce uncoloured lines.
+    pub fn plain() -> PresenterHandle {
+        PresenterHandle {
+            multi: MultiProgress::new(),
+            state: Arc::new(Mutex::new(LiveState::default())),
+            color: false,
+        }
+    }
+
+    /// Print a single notice line to stdout (no colour, no ANSI).
+    pub fn print_notice(&self, text: &str) {
+        println!("{text}");
+    }
+
+    /// Print the end-of-run totals panel to stdout, coloured when the handle is
+    /// styled. Called after `finalize` has cleared the live region.
+    pub fn print_panel(&self, data: &PanelData) {
+        let opts = RenderOpts {
+            color: self.color,
+            emoji: self.color,
+        };
+        for line in render_totals_panel(data, opts) {
+            println!("{line}");
+        }
+    }
+
     /// Flush the queue bar to `N/N` (covering a trailing infeasible/dry-run issue
     /// with no following event) and clear the live region. No-op off a colour TTY.
     pub fn finalize(&self) {
@@ -1131,5 +1307,120 @@ mod tests {
         assert_eq!(fmt_clock(Duration::from_secs(45 * 60)), "45:00");
         assert_eq!(fmt_clock(Duration::from_secs(5)), "0:05");
         assert_eq!(fmt_clock(Duration::from_secs(72 * 60 + 5)), "72:05");
+    }
+
+    fn panel_base() -> PanelData {
+        PanelData {
+            branch: "afk/run-20260610-120000".to_string(),
+            orig_branch: "main".to_string(),
+            done: 3,
+            blocked: 1,
+            skipped: 2,
+            commits: 5,
+            stop: None,
+            branch_mode: PanelBranchMode::New,
+            dry_run: false,
+        }
+    }
+
+    #[test]
+    fn render_totals_panel_counts_line_and_no_per_issue_relisting() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let lines = render_totals_panel(&panel_base(), opts);
+        let all = lines.join("\n");
+
+        // Counts line has the correct triad and numbers.
+        assert!(lines[0].contains("✅ 3 done"), "done count: {}", lines[0]);
+        assert!(
+            lines[0].contains("⛔ 1 blocked"),
+            "blocked count: {}",
+            lines[0]
+        );
+        assert!(
+            lines[0].contains("⏭️ 2 skipped"),
+            "skipped count: {}",
+            lines[0]
+        );
+        // No per-issue `#N:` re-listing — the old format was `  #N: Done`.
+        assert!(!all.contains(": Done"), "no per-issue Done line: {all}");
+        assert!(
+            !all.contains(": Blocked"),
+            "no per-issue Blocked line: {all}"
+        );
+        assert!(
+            !all.contains(": Timeout"),
+            "no per-issue Timeout line: {all}"
+        );
+    }
+
+    #[test]
+    fn render_totals_panel_git_merge_line_presence_rules() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+
+        // New + commits > 0: merge line present.
+        let lines = render_totals_panel(&panel_base(), opts);
+        let all = lines.join("\n");
+        assert!(
+            all.contains("git merge afk/run-20260610-120000"),
+            "merge line present for New+commits: {all}"
+        );
+
+        // New + dry_run + 0 commits: no merge line.
+        let dry_zero = PanelData {
+            dry_run: true,
+            commits: 0,
+            ..panel_base()
+        };
+        let all2 = render_totals_panel(&dry_zero, opts).join("\n");
+        assert!(
+            !all2.contains("git merge"),
+            "no merge line for New+dry_run+0-commits: {all2}"
+        );
+
+        // Current mode: no merge line regardless of commits.
+        let current = PanelData {
+            branch_mode: PanelBranchMode::Current,
+            ..panel_base()
+        };
+        let all3 = render_totals_panel(&current, opts).join("\n");
+        assert!(
+            !all3.contains("git merge"),
+            "no merge line for Current mode: {all3}"
+        );
+    }
+
+    #[test]
+    fn render_totals_panel_plain_no_ansi_and_stop_reason_present() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let data = PanelData {
+            stop: Some(PanelStop::NonGreen {
+                number: 42,
+                outcome: "Blocked(\"reason\")".to_string(),
+            }),
+            ..panel_base()
+        };
+        let lines = render_totals_panel(&data, opts);
+        let all = lines.join("\n");
+
+        // No ANSI escape bytes on the plain path.
+        assert!(!all.contains('\u{1b}'), "no ANSI in plain render: {all:?}");
+
+        // Stop-reason line is present and references the issue.
+        assert!(all.contains("Stopped:"), "stop-reason line present: {all}");
+        assert!(all.contains("#42"), "issue number in stop line: {all}");
+
+        // Done/blocked/skipped counts from the supplied PanelData match.
+        assert!(all.contains("3 done"), "done count preserved: {all}");
+        assert!(all.contains("1 blocked"), "blocked count preserved: {all}");
+        assert!(all.contains("2 skipped"), "skipped count preserved: {all}");
     }
 }

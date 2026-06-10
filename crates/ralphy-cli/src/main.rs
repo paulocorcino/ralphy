@@ -10,8 +10,8 @@ use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
 use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{
-    git, github, run_queue, Agent, BranchMode, GhTracker, QueueConfig, StopReason, WallClock,
-    Workspace,
+    git, github, run_queue, Agent, BranchMode, GhTracker, Outcome, QueueConfig, StopReason,
+    WallClock, Workspace,
 };
 use tracing::info;
 
@@ -209,7 +209,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             Some(n) => format!("issue #{n}"),
             None => format!("labels [{}]", effective_labels.join(", ")),
         };
-        println!("No open issues for {scope} to process. Done.");
+        presenter.print_notice(&format!("No open issues for {scope} to process. Done."));
         return Ok(());
     }
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
@@ -290,108 +290,52 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 
     // Flush the queue bar to N/N and clear the live region before anything else
-    // prints — whether that is the summary `println!`s below or `anyhow`'s error
-    // on the `?` propagation. Finalizing first keeps a `bail!` from being torn by
-    // a live bar (ADR-0006: the presenter owns teardown).
-    if let Some(presenter) = &presenter {
-        presenter.finalize();
-    }
+    // prints — whether that is the panel below or `anyhow`'s error on the `?`
+    // propagation. Finalizing first keeps a `bail!` from being torn by a live bar
+    // (ADR-0006: the presenter owns teardown).
+    presenter.finalize();
     let report = result?;
 
-    // Per-issue summary, then how the run ended and where the branch stands.
-    println!(
-        "Run on '{}' (was on '{}'):",
-        report.branch, report.orig_branch
-    );
-    for r in &report.worked {
-        let status = match (&r.outcome, r.closed) {
-            (Some(o), true) => format!("{o:?}, closed"),
-            (Some(o), false) => format!("{o:?}"),
-            (None, _) if !r.blocked_by.is_empty() => {
-                let refs: Vec<String> = r.blocked_by.iter().map(|n| format!("#{n}")).collect();
-                format!("skipped (blocked by {})", refs.join(", "))
-            }
-            (None, _) if args.dry_run => "planned (dry-run)".to_string(),
-            (None, _) => "skipped (infeasible)".to_string(),
-        };
-        println!("  #{}: {status}", r.number);
-    }
-    let stopped = report.stop.is_some();
-    match report.stop {
-        Some(StopReason::Deadline) => {
-            println!("Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).")
-        }
-        Some(StopReason::NonGreen { number, outcome }) => {
-            println!("Stopped: #{number} finished non-green ({outcome:?}). Branch handed back.");
-        }
-        Some(StopReason::StopBefore { number }) => {
-            println!(
-                "Stopped: stop-before label on #{number}. Remove the label and re-run to continue."
-            );
-        }
-        Some(StopReason::Limit { number, reset }) => {
-            // With auto-resume the default, a surfaced Limit means either
-            // `--stop-on-limit` was set, the reset was unparseable, or the
-            // progress-aware cap abandoned the issue.
-            print!("Stopped: usage limit on #{number}.");
-            match reset {
-                Some(t) => {
-                    print!(" Reset ~{t}; re-run to continue (or it stalled with no progress).")
-                }
-                None => print!(" No parseable reset time; re-run after the limit clears."),
-            }
-            println!();
-        }
-        None => println!("Queue complete."),
-    }
+    // Bucket the worked issues into the three-way triad defined in the plan.
+    let done = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome == Some(Outcome::Done))
+        .count() as u64;
+    let num_blocked = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome.is_some() && r.outcome != Some(Outcome::Done))
+        .count() as u64;
+    let skipped = report.worked.iter().filter(|r| r.outcome.is_none()).count() as u64;
 
-    // Commit count over the compare ref and the oneline log, then the closing
-    // state per mode/outcome — mirrors the ps1 `finally` block.
-    println!(
-        "Branch '{}' carries {} commit(s).",
-        report.branch, report.commits
-    );
-    for line in &report.oneline {
-        println!("    {line}");
-    }
-    match branch_mode {
-        BranchMode::Current => {
-            if args.dry_run {
-                println!("DryRun on '{}': no commits made.", report.branch);
-            } else if stopped {
-                println!("Left repo on '{}' for inspection.", report.branch);
-            } else {
-                println!(
-                    "Clean run: {} commit(s) added to '{}' in place.",
-                    report.commits, report.branch
-                );
-            }
-        }
-        BranchMode::New => {
-            if args.dry_run {
-                println!(
-                    "DryRun: returned repo to '{}'; empty run branch removed.",
-                    report.orig_branch
-                );
-            } else if stopped {
-                println!(
-                    "Left repo checked out on '{}' for inspection.",
-                    report.branch
-                );
-            } else {
-                println!(
-                    "Clean run: returned repo to '{}'. Run branch '{}' kept.",
-                    report.orig_branch, report.branch
-                );
-            }
-            if !(args.dry_run && report.commits == 0) {
-                println!(
-                    "Review, then merge '{}' into your target:  git merge {}",
-                    report.branch, report.branch
-                );
-            }
-        }
-    }
+    let panel_stop = report.stop.map(|s| match s {
+        StopReason::Deadline => ui::PanelStop::Deadline,
+        StopReason::NonGreen { number, outcome } => ui::PanelStop::NonGreen {
+            number,
+            outcome: format!("{outcome:?}"),
+        },
+        StopReason::StopBefore { number } => ui::PanelStop::StopBefore { number },
+        StopReason::Limit { number, reset } => ui::PanelStop::Limit { number, reset },
+    });
+
+    let panel_mode = match branch_mode {
+        BranchMode::New => ui::PanelBranchMode::New,
+        BranchMode::Current => ui::PanelBranchMode::Current,
+    };
+
+    let data = ui::PanelData {
+        branch: report.branch,
+        orig_branch: report.orig_branch,
+        done,
+        blocked: num_blocked,
+        skipped,
+        commits: report.commits,
+        stop: panel_stop,
+        branch_mode: panel_mode,
+        dry_run: args.dry_run,
+    };
+    presenter.print_panel(&data);
     Ok(())
 }
 
@@ -420,10 +364,11 @@ fn non_empty(s: String) -> Option<String> {
 /// Local timestamps everywhere fix the reported UTC-vs-local bug at the source:
 /// the `fmt` layers use `ChronoLocal`, and the presenter composes its own local
 /// timestamps via `chrono::Local`.
-/// Returns the presenter's teardown handle when the animated presenter is
-/// installed (a colour TTY, not `--verbose`); `None` for the raw-`fmt` path. The
-/// caller flushes/clears the live region via the handle after the queue returns.
-fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) -> Option<ui::PresenterHandle> {
+///
+/// Always returns a `PresenterHandle` — `plain()` on the raw-stderr path (no colour,
+/// no bars, no-op `finalize`), or the animated presenter's handle otherwise. The
+/// caller routes the early-exit notice and the final panel through it uniformly.
+fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) -> ui::PresenterHandle {
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -450,12 +395,12 @@ fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) -> Option<ui::Pr
     if raw_stderr {
         let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);
         registry.with(stderr_layer).init();
-        None
+        ui::PresenterHandle::plain()
     } else {
         let presenter = ui::Presenter::new();
         let handle = presenter.handle();
         registry.with(presenter).init();
-        Some(handle)
+        handle
     }
 }
 
