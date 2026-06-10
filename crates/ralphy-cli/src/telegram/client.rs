@@ -90,7 +90,8 @@ impl<T: Transport> BotClient<T> {
     }
 
     /// `editMessageText` — replace the text of an existing message. Added now so
-    /// the next slice's live card (ADR-0007 D3) reuses it.
+    /// the next slice's live card (ADR-0007 D3) reuses it; unused this slice.
+    #[allow(dead_code)]
     pub fn edit_message_text(&self, chat_id: i64, message_id: i64, text: &str) -> Result<Value> {
         let resp = self.transport.post(
             "editMessageText",

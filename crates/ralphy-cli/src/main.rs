@@ -38,6 +38,9 @@ enum Command {
     /// by a human).
     #[command(subcommand)]
     Hook(HookCommand),
+    /// Configure the optional Telegram run monitor (token, chat, status).
+    #[command(subcommand)]
+    Telegram(telegram::TelegramCommand),
 }
 
 #[derive(Subcommand)]
@@ -182,6 +185,7 @@ fn main() -> Result<()> {
         Command::Run(args) => run_cmd(*args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
+        Command::Telegram(cmd) => telegram::run(cmd),
     }
 }
 
