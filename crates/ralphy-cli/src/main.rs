@@ -17,6 +17,7 @@ use tracing::info;
 
 mod guard;
 mod hook;
+mod ui;
 
 #[derive(Parser)]
 #[command(
@@ -77,6 +78,11 @@ struct RunArgs {
     /// Plan only; make no source changes and drop the empty run branch.
     #[arg(long)]
     dry_run: bool,
+
+    /// Drop the animated presenter and print raw INFO `tracing` lines instead
+    /// (also engaged by `RUST_LOG`/`RALPHY_LOG`). Useful for debugging or CI.
+    #[arg(long)]
+    verbose: bool,
 
     /// Commit-ish the run branch is cut from. Only used with `--branch-mode new`.
     #[arg(long, default_value = "origin/main")]
@@ -186,7 +192,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     std::fs::create_dir_all(&run_dir).ok();
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
-    init_tracing(log_file);
+    init_tracing(log_file, args.verbose);
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
@@ -207,6 +213,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         return Ok(());
     }
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
+    // message consumed by the CLI presenter — keep stable
     info!(count = queue.len(), order = %order.join(" -> "), "queue built");
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
@@ -395,24 +402,44 @@ fn non_empty(s: String) -> Option<String> {
     }
 }
 
-/// Log to stderr, and additionally to the run's `ralphy.log` when available.
-fn init_tracing(log_file: Option<std::fs::File>) {
+/// Install the tracing stack. The full structured log always goes to the run's
+/// `ralphy.log` (no colour, local timestamps). On screen, the animated presenter
+/// (ADR-0006) renders the run's lifecycle by default; `--verbose` (or a set
+/// `RUST_LOG`/`RALPHY_LOG`) drops to raw INFO `fmt` lines and disables animation
+/// so debugging is unobstructed.
+///
+/// Local timestamps everywhere fix the reported UTC-vs-local bug at the source:
+/// the `fmt` layers use `ChronoLocal`, and the presenter composes its own local
+/// timestamps via `chrono::Local`.
+fn init_tracing(log_file: Option<std::fs::File>, verbose: bool) {
+    use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let stderr_layer = fmt::layer().with_writer(std::io::stderr);
-    let registry = tracing_subscriber::registry()
-        .with(filter)
-        .with(stderr_layer);
 
-    match log_file {
-        Some(file) => {
-            let file_layer = fmt::layer()
-                .with_ansi(false)
-                .with_writer(move || file.try_clone().expect("clone ralphy.log handle"));
-            registry.with(file_layer).init();
-        }
-        None => registry.init(),
+    // `--verbose`, or any explicit env filter, means the operator wants the raw
+    // log on screen — drop the presenter and disable animation (ADR-0006 D3).
+    let raw_stderr = verbose
+        || std::env::var_os("RUST_LOG").is_some()
+        || std::env::var_os("RALPHY_LOG").is_some();
+
+    let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string());
+
+    // `ralphy.log` always carries the full uncoloured, local-time log.
+    let file_layer = log_file.map(|file| {
+        fmt::layer()
+            .with_ansi(false)
+            .with_timer(timer.clone())
+            .with_writer(move || file.try_clone().expect("clone ralphy.log handle"))
+    });
+
+    let registry = tracing_subscriber::registry().with(filter).with(file_layer);
+
+    if raw_stderr {
+        let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);
+        registry.with(stderr_layer).init();
+    } else {
+        registry.with(ui::Presenter::new()).init();
     }
 }
 
