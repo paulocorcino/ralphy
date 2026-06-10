@@ -1,45 +1,155 @@
-# Plan for #23: Codex adapter parity: skills in .agents/skills, reviewer self-review, and usage-limit stop-and-report
+# Plan for #24: OpenCode adapter — tracer: `--agent opencode` drives a headless run end-to-end
 
 ## Feasible: yes
-The three deliverables (materialize skills into `.agents/skills/`, a Codex-native reviewer self-review step in the Codex plan prompt, and a Codex usage-limit matcher mapping to `Outcome::Limit`) all anchor on existing patterns in `crates/ralphy-agent-codex/src/lib.rs` and the sibling Claude adapter; each is unit-test verifiable.
+The work is a near-clone of the existing `ralphy-agent-codex` crate with the
+divergences fully specified in `docs/adr/0005-opencode-adapter.md` (D1–D5, D8a);
+every step anchors to concrete code. The live end-to-end criterion needs a real
+`opencode` CLI and is review-only, but the classifier and model/variant
+resolution — the substance — are unit-testable, matching the Codex adapter's
+test depth.
 
-## Execution model: sonnet
-Localized to the Codex adapter plus one prompt file and one composition-root line in `main.rs`; the design decisions below are all made, and every step mirrors an existing pattern in `ralphy-agent-claude` — mechanical, well-anchored work Sonnet handles reliably.
+## Execution model: opus
+A new workspace crate with a line-delimited-JSON event-stream classifier (with a
+HEAD-diff commit downgrade and an error-event override), cross-cutting wiring
+(workspace `Cargo.toml`, `main.rs` enum + arm + new `--exec-variant` arg), a new
+prompt asset, and ~15 mirrored tests — cross-cutting breadth plus a classifier
+whose JSON shape needs judgment, beyond a mechanical localized change.
 
 ## Done when
-- `cargo test` is green across the workspace, including: a new `materialize_codex_skills` test proving `reviewer/SKILL.md`, `staged-plan/SKILL.md`, and a multi-file helper (e.g. `reviewer/scripts/audit.py`) land under `<repo>/.agents/skills/`; new `is_codex_limit_text` / `parse_codex_reset_hint` tests over fixtures asserting the three limit phrases classify and a `try again at <datetime>` hint is extracted (else `None`); a `classify_codex_outcome` test proving a limit log yields `Outcome::Limit(...)`; and an `effective_stop_on_limit` test proving a Codex run forces stop-and-report.
-- A new test asserts the embedded `PROMPT_PLAN_CODEX` contains a reviewer self-review step that reviews only this issue's own commits and uses Codex-native subagent phrasing (no Claude `Task`-tool / "independent subagent" wording).
-- `cargo fmt --check` and `cargo clippy` pass with no new warnings.
-- Review-only: the materialized `.agents/skills/reviewer/SKILL.md` is actually auto-discovered and dispatched by a live `codex exec` run, and the surfaced reset hint reads correctly to the operator — confirmable only against a real Codex CLI.
+- `cargo test` passes, including new tests in `ralphy-agent-opencode` that prove:
+  (a) a clean exit + new commit + `RALPHY_DONE_EXIT` → `Done`, and the same
+  claim with no commit → `Stuck`; (b) `RALPHY_BLOCKED_EXIT <reason>` →
+  `Blocked(reason)`, a non-zero exit → `Stuck`, a JSON `error` event → `Stuck`,
+  and the wall timeout → `Timeout`; (c) `build_opencode_command` omits `-m` when
+  no `--exec-model` and includes `-m <model>` when set; (d) `--variant` is
+  present only when the operator sets it, and `--dangerously-skip-permissions`
+  and `--format json` are always present.
+- `cargo build --release` succeeds (the `OpenCode` `--agent` arm compiles and
+  boxes `OpenCodeAgent` as `Box<dyn Agent>`).
+- `cargo fmt --check` and `cargo clippy -D warnings` are clean with no new
+  warnings.
+- Review-only: `ralphy run --agent opencode --only-issue <N>` plans and executes
+  a trivial issue end-to-end against a live `opencode run` (needs the installed
+  CLI; cannot run in CI). Review-only: the diff touches only the new crate, the
+  workspace `Cargo.toml`, `crates/ralphy-cli/src/main.rs`, and the new prompt
+  asset — `ralphy-core`, `ralphy-agent-claude`, and `ralphy-agent-codex` source
+  is untouched.
 
 ## Acceptance ledger
-- [verified] the `reviewer` and `staged-plan` skills are materialized into `.agents/skills/<name>/` for a Codex run (same content as the `assets/plugin` skills) and are auto-discovered by `codex exec` — evidence: commit 032170c; `materialize_codex_skills_extracts_required_skills` test passes
-- [verified] the Codex prompt's reviewer self-review step uses Codex-native subagent dispatch (not Claude's Task-tool phrasing) and reviews only the issue's own commits — evidence: commit 032170c; `prompt_plan_codex_contains_reviewer_step` test passes
-- [verified] a Codex usage-limit message classifies to `Outcome::Limit`; a `try again at <datetime>` hint is parsed when present, otherwise `Limit(None)` (unit-tested over fixtures) — evidence: commit 032170c; `is_codex_limit_text_matches_known_phrases`, `parse_codex_reset_hint_extracts_datetime`, `parse_codex_reset_hint_returns_none_when_absent`, `classify_limit_with_reset_hint`, `classify_limit_bare_when_no_hint` tests pass
-- [verified] the default behavior on `Limit` is stop-and-report (no auto-resume); the run surfaces the reset hint for the operator — evidence: commit 032170c; `effective_stop_on_limit_codex_forces_true` and `effective_stop_on_limit_claude_passes_flag_through` tests pass; operator-facing wording is review-only
-- [verified] Claude path untouched: `assets/plugin`, existing prompts, `hook.rs`, `guard.rs` unchanged; full `cargo test` is green — evidence: no edits to those files; `cargo test` green across all 15 test suites
+- [review-only] `ralphy run --agent opencode --only-issue <N>` plans and executes a trivial issue end-to-end against a live `opencode run`. — evidence: a human runs the command against the installed `opencode 1.16.2` and confirms a plan and an executed commit on the run branch
+- [verified] A clean finish with a git commit + `RALPHY_DONE_EXIT` classifies as `Done`; a `Done` claim with no commit downgrades to `Stuck`. — evidence: tests `classify_done_on_clean_exit_commit_and_sentinel` (→ `Done`) and `classify_stuck_on_no_commit` (committed=false → `Stuck`) in `crates/ralphy-agent-opencode/src/lib.rs` pass
+- [verified] `RALPHY_BLOCKED_EXIT <reason>` classifies as `Blocked(reason)`; a non-zero exit / JSON `error` event classifies as `Stuck`; the per-issue timeout classifies as `Timeout`. — evidence: tests `classify_blocked_on_blocked_sentinel`, `classify_stuck_on_non_zero_exit`, `classify_stuck_on_error_event`, and `classify_timeout_wins` pass
+- [verified] With no `--exec-model`, the adapter passes no `-m` and OpenCode resolves its own model; `--exec-model` overrides it. — evidence: tests `build_command_omits_model_when_none` (no `-m`) and `build_command_includes_model_when_some` (`-m <model>` present) pass
+- [review-only] The core crate, `ralphy-agent-claude`, and `ralphy-agent-codex` are unchanged except for the `main.rs` `--agent opencode` arm. — evidence: a reviewer confirms `git diff` touches no source under those three crates; the full suite (24+ passing) shows no regression
+- [verified] Unit tests cover the classifier and the model/variant resolution, mirroring the Codex adapter's test depth. — evidence: the new `#[cfg(test)] mod tests` (17 tests) covers `classify_opencode_outcome`, `build_opencode_command` (model + variant + always-on flags + both API keys removed), `parse_opencode_events` (text parts + error flag + tolerance), the prompt-asset assertions, and the `OpenCodeAgent: Agent` binding
 
 ## Decisions
-- Decision: embed `assets/plugin/skills` (the skills subtree only, not `.claude-plugin/`) via `include_dir!` and extract it into `<repo>/.agents/skills/`. Why: that subtree's `reviewer/` + `staged-plan/` dirs are already Codex's exact layout, and excluding `.claude-plugin/plugin.json` keeps the Claude manifest out of the Codex tree.
-- Decision: materialize the skills in BOTH `plan()` and `execute()` (clearing any stale copy first), mirroring `materialize_plugin`. Why: keeps the run self-contained and never depends on globally-installed skills.
-- Decision: also write `<repo>/.agents/.gitignore` containing `*` when materializing. Why: `.agents/` lives at the repo root (unlike gitignored `.ralphy/`), so this keeps the materialized skills out of the executor's commits without touching core `gitignore.rs`.
-- Decision: the Codex reviewer self-review step is phrased as Codex-native subagent dispatch of the auto-discovered `reviewer` skill (no Claude `Task`-tool wording), scoped to "ONLY the commits you made for this issue". Why: resolves ADR-0004's deferred `$reviewer`-vs-`.codex/agents/*.toml` question toward the auto-discovered `.agents/skills/reviewer` already materialized.
-- Decision: achieve stop-and-report by forcing `stop_on_limit = true` for a Codex run in `main.rs` (the composition root), leaving the shared runner and `Outcome::Limit(Some(hint))` untouched. Why: D1 keeps the core vendor-agnostic; with `stop_on_limit` set, the runner reports `StopReason::Limit { reset: hint }` immediately and never waits on Codex's unparseable rolling reset (D6), while still surfacing the hint.
+- Decision: scope this tracer to `Done`/`Stuck`/`Blocked`/`Timeout` only — no
+  `Limit`, auth-error, or skills-materialization handling. Why: the issue's
+  acceptance criteria name only these four outcomes; usage-limit (D9), auth (D6),
+  and `skills.paths` (D7) are explicitly deferred-until-live in the ADR and are
+  not asked for here, so adding them would invent scope.
+- Decision: still `env_remove` both `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` on
+  the child `Command` (ADR-0005 D6). Why: OpenCode auto-detects either key and
+  silently switches the run to metered API billing — a cheap, defensive part of
+  cloning `run_codex`'s command builder that a reviewer would otherwise flag.
+- Decision: classify from a tolerant line-delimited-JSON parse — concatenate
+  `text` parts for the sentinel scan and flag any `error` event — rather than a
+  full typed event model. Why: the exact event JSON is "deferred until live" in
+  the ADR; a tolerant parser keyed on the documented `text`/`error` shapes is
+  unit-testable now and refinable when observed against a live run.
+- Decision: leave `Plan.recommended_model` `None` and emit no `## Execution
+  model` line in the OpenCode plan prompt (ADR-0005 D3/D8a). Why: OpenCode drops
+  complexity routing, so there is no tier to parse or thread into execution.
 
 ## Steps
-- [x] In `crates/ralphy-agent-codex/Cargo.toml`, add `include_dir.workspace = true` to `[dependencies]`.
-- [x] In `crates/ralphy-agent-codex/src/lib.rs`, embed the skills subtree: `static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");` and add `fn materialize_codex_skills(ws: &Workspace) -> Result<PathBuf>` that clears `<repo>/.agents/skills`, re-extracts `SKILLS` into it, writes `<repo>/.agents/.gitignore` (`*`), and returns the `.agents/skills` path.
-- [x] In `lib.rs`, add a unit test `materialize_codex_skills_extracts_required_skills` asserting `.agents/skills/reviewer/SKILL.md`, `.agents/skills/staged-plan/SKILL.md`, and `.agents/skills/reviewer/scripts/audit.py` exist, that `.agents/.gitignore` is written, and that a second call re-extracts cleanly (idempotent).
-- [x] In `lib.rs`, call `materialize_codex_skills(ws)` near the top of both `Agent::plan` and `Agent::execute` (after the existing `create_dir_all`), so the skills are present for planning and the execution-time reviewer dispatch.
-- [x] In `lib.rs`, add `fn is_codex_limit_text(text: &str) -> bool` matching (case-insensitive) `you've hit your usage limit`, `usage limit`, and `rate limit reached`; add a unit test over fixtures for each phrase (and a non-match).
-- [x] In `lib.rs`, add `fn parse_codex_reset_hint(text: &str) -> Option<String>` extracting the text following `try again at ` (trimmed, to end of line) and returning `None` when absent; add fixture tests for the present and absent cases.
-- [x] In `lib.rs`, thread the captured log through `run_codex`: change its return to `(bool, bool, String)` (also returning the combined stdout/stderr `text` it already builds), and update the `plan`/`execute` call sites accordingly.
-- [x] In `lib.rs`, give `classify_codex_outcome` a new `log: &str` param and, after the Done/Blocked/Timeout checks and before the `Stuck` fallthrough, return `Outcome::Limit(parse_codex_reset_hint(log))` when `is_codex_limit_text(log)`; pass the captured log from `execute`. Update existing `classify_codex_outcome` test call sites for the new arg, and add a test that a limit log yields `Outcome::Limit(Some("<datetime>"))` and a bare limit yields `Outcome::Limit(None)`.
-- [x] In `crates/ralphy-cli/src/main.rs`, add `fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool` returning `flag || matches!(agent, CliAgent::Codex)`, set `stop_on_limit: effective_stop_on_limit(args.stop_on_limit, args.agent)` in the `QueueConfig`, and add a `#[cfg(test)]` test asserting Codex forces it on while Claude passes the flag through.
-- [x] In `assets/prompts/prompt.plan.codex.md`, add the reviewer self-review as the penultimate `- [ ]` step (before the green-build/test gate) in the `## Steps` template and a matching `## Rules` line, phrased as Codex-native subagent dispatch of the auto-discovered `reviewer` skill over "ONLY the commits you made for this issue" — with NO Claude `Task`-tool / "independent subagent" wording. (Leaves `assets/prompts/prompt.execute.md`, and `prompt.plan.staged.md` untouched; `prompt.plan.md` had a pre-existing test-constant mismatch fixed as part of this step.)
-- [x] In `lib.rs`, add a test asserting the embedded `PROMPT_PLAN_CODEX` contains a reviewer self-review step, references reviewing only this issue's own commits, and does NOT contain Claude-isms (`Task` tool / "independent subagent").
-- [x] Self-review: spawn the `reviewer` skill as an independent subagent over ONLY the commits you made for this issue (this run's branch may already carry earlier issues — review just your own commits, not the whole branch). Resolve every HIGH finding before finishing; if one cannot be fixed autonomously, record it under `## Notes & decisions` and block instead of declaring done.
-- [x] `cargo fmt`, `cargo clippy`, and `cargo test` pass across the workspace with no new warnings.
+- [x] Scaffold the crate: create `crates/ralphy-agent-opencode/Cargo.toml`
+      (name `ralphy-agent-opencode`, deps `anyhow`, `tracing`, `serde_json`,
+      `ralphy-core`, all `.workspace = true`), mirroring
+      `crates/ralphy-agent-codex/Cargo.toml`.
+- [x] Register the crate in the workspace root `Cargo.toml`: add
+      `"crates/ralphy-agent-opencode"` to `members` and
+      `ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }` to
+      `[workspace.dependencies]`.
+- [x] Add the new prompt asset `assets/prompts/prompt.plan.opencode.md` — a copy
+      of `assets/prompts/prompt.plan.codex.md` with the entire `## Execution
+      model: ...` block removed (D3/D8a) and the reviewer step rephrased from the
+      Codex-subagent wording to OpenCode-neutral dispatch (no "independent
+      subagent"/Claude Task-tool idiom; keep the "ONLY the commits you made"
+      scoping).
+- [x] Create `crates/ralphy-agent-opencode/src/lib.rs` with the `OpenCodeAgent`
+      struct (`model: Option<String>`, `variant: Option<String>`,
+      `run_dir: PathBuf`, `max_minutes_per_issue: u64`,
+      `run_deadline: Option<Instant>`), `new(model, run_dir)`,
+      `with_variant(variant)`, `with_run_deadline(...)`, and `issue_deadline()`
+      — cloned from `CodexAgent`; embed `PROMPT_EXECUTE` (verbatim, reused) and
+      `PROMPT_PLAN_OPENCODE` via `include_str!` to the two assets.
+- [x] In `lib.rs`, add `build_opencode_command(model: Option<&str>, variant:
+      Option<&str>, root: &Path) -> Command`: `Command::new("opencode")` with
+      `run`, `--format json`, `--dangerously-skip-permissions` (always),
+      conditional `-m <model>` (only when `model.is_some()`), conditional
+      `--variant <variant>` (only when `variant.is_some()`), piped
+      stdin/stdout/stderr, and `.env_remove("ANTHROPIC_API_KEY")` +
+      `.env_remove("OPENAI_API_KEY")` (D5/D6).
+- [x] In `lib.rs`, add `run_opencode(&self, cmd, prompt, timeout) -> Result<(bool,
+      bool, String)>` — a clone of `run_codex`: reader threads before stdin
+      write, `try_wait` poll loop, kill-on-timeout, combined log written to
+      `run_dir/opencode.log`, returning `(exited_cleanly, timed_out, stdout_text)`.
+- [x] In `lib.rs`, add `parse_opencode_events(stdout: &str) -> (String, bool)`:
+      parse each non-blank line as `serde_json::Value`, concatenate assistant
+      `text` parts into the returned string, and set the bool when a line is an
+      `error` event; tolerant of unparseable lines (skip them).
+- [x] In `lib.rs`, add `classify_opencode_outcome(exited_cleanly, timed_out,
+      committed, text, saw_error) -> Outcome` (ADR-0005 D2, no `Limit` branch):
+      `Timeout` if `timed_out`; `Blocked(reason)` if `text` carries
+      `RALPHY_BLOCKED_EXIT`; `Done` only if `exited_cleanly && committed &&
+      !saw_error && text.contains("RALPHY_DONE_EXIT")`; else `Stuck`.
+- [x] In `lib.rs`, implement `Agent for OpenCodeAgent`: `plan` runs
+      `build_opencode_command(self.model, self.variant, repo_root)` with
+      `PROMPT_PLAN_OPENCODE`, then reads `plan.md` into a `Plan` with
+      `open_steps = plan::count_open_steps(md)` and `recommended_model: None`;
+      `execute` records `head_sha` before/after, runs `PROMPT_EXECUTE`, calls
+      `parse_opencode_events` then `classify_opencode_outcome`, and returns the
+      `Outcome` (mirrors `CodexAgent::plan`/`execute`, minus the limit/auth paths).
+- [x] In `crates/ralphy-cli/src/main.rs`, add `OpenCode` to the `CliAgent` enum
+      (line ~142) and a `--exec-variant` `Option<String>` field to `RunArgs`
+      (near `exec_model`, line ~99).
+- [x] In `crates/ralphy-cli/src/main.rs`, add the `CliAgent::OpenCode` arm to the
+      `match args.agent` adapter selection (line ~230): box
+      `OpenCodeAgent::new(non_empty(args.exec_model...), run_dir)
+      .with_variant(non_empty(args.exec_variant...)).with_run_deadline(...)` as
+      `Box<dyn Agent>`; add `use ralphy_agent_opencode::OpenCodeAgent;`.
+- [x] Add `#[cfg(test)] mod tests` to `lib.rs` mirroring the Codex adapter's
+      depth — these FAIL before the impls exist and PASS after:
+      `classify_opencode_outcome` (Done; Stuck-on-no-commit; Blocked;
+      Stuck-on-non-zero-exit; Stuck-on-error-event; Stuck-on-no-sentinel;
+      Timeout-wins); `build_opencode_command` (no `-m` when `model=None`; `-m`
+      present when `Some`; `--variant` only when `Some`;
+      `--dangerously-skip-permissions` + `--format json` always; both API keys
+      `env_remove`d); `parse_opencode_events` (extracts text parts, flags an
+      `error` event); `prompt.plan.opencode` has no `## Execution model` line and
+      keeps the reviewer step; and `OpenCodeAgent: Agent` (a `&dyn Agent` bind).
+- [x] Self-review: spawn the `reviewer` skill as an independent subagent over
+      ONLY the commits made for this issue (this run's branch may carry earlier
+      issues — review just these commits). Resolve every HIGH finding before
+      finishing; if one cannot be fixed autonomously, record it under `## Notes &
+      decisions` and block instead of declaring done.
+- [x] Run `cargo fmt --check`, `cargo clippy -D warnings`, and `cargo test` — all
+      pass with no new warnings.
 
 ## Notes & decisions
-- `prompt.plan.md` had a pre-existing mismatch: the `## Acceptance ledger` example said "the test suite passes with a new test covering the ledger parser" but the `prompt_ledger` integration tests expected "cargo test passes with new test covering parse_ledger". Fixed by aligning the prompt to the test constants (they are declared the authoritative "test contract" in a comment).
+- `cargo fmt --check` reports pre-existing formatting drift in
+  `crates/ralphy-agent-claude/src/lib.rs` (lines 325, 1280, 1287) and
+  `crates/ralphy-agent-codex/src/lib.rs` (line 217) that is present in committed
+  `HEAD` before this issue. Those files are out of scope (the "untouched"
+  criterion), so they were left as-is rather than reformatted. The new crate,
+  the new prompt asset, and `main.rs` are all fmt-clean — this issue introduces
+  no new fmt/clippy warnings. Reviewer to confirm the pre-existing drift is not a
+  regression from this work.
+- Self-review (general-purpose reviewer over commits 5024304..44c8446): no HIGH
+  or MEDIUM defects. One deferred-D9 item surfaced for the follow-up — `main.rs`
+  `effective_stop_on_limit` is not yet forced for `CliAgent::OpenCode` (ADR-0005
+  D9 wants it forced, alongside the Limit detection this tracer scopes out). It
+  is correctly absent here (no Limit handling in the tracer); the PR reviewer
+  should track it for the D9 slice so an OpenCode limit never attempts the
+  ADR-0003 auto-resume hang.
