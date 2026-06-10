@@ -5,7 +5,9 @@ members = [
     "crates/ralphy-cli",
     "crates/ralphy-agent-claude",
     "crates/ralphy-agent-codex",
+    "crates/ralphy-agent-opencode",
     "crates/ralphy-pty",
+    "crates/ralphy-adapter-support",
 ]
 
 [workspace.package]
@@ -22,12 +24,19 @@ include_dir = "0.7"
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
+indicatif = "0.17"
+console = "0.15"
+ureq = { version = "2", features = ["json"] }
+directories = "5"
+toml = "0.8"
 
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-agent-codex = { path = "crates/ralphy-agent-codex" }
+ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
+ralphy-adapter-support = { path = "crates/ralphy-adapter-support" }
 
 [profile.release]
 strip = true

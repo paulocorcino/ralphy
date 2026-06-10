@@ -3,19 +3,24 @@
 //! queue lifecycle.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
+use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{
-    git, github, run_queue, Agent, BranchMode, GhTracker, QueueConfig, StopReason, WallClock,
-    Workspace,
+    git, github, run_queue, Agent, BranchMode, GhTracker, Outcome, QueueConfig, StopReason,
+    WallClock, Workspace,
 };
 use tracing::info;
 
 mod guard;
 mod hook;
+mod runstate;
+mod telegram;
+mod ui;
 
 #[derive(Parser)]
 #[command(
@@ -35,6 +40,9 @@ enum Command {
     /// by a human).
     #[command(subcommand)]
     Hook(HookCommand),
+    /// Configure the optional Telegram run monitor (token, chat, status).
+    #[command(subcommand)]
+    Telegram(telegram::TelegramCommand),
 }
 
 #[derive(Subcommand)]
@@ -77,6 +85,11 @@ struct RunArgs {
     #[arg(long)]
     dry_run: bool,
 
+    /// Drop the animated presenter and print raw INFO `tracing` lines instead
+    /// (also engaged by `RUST_LOG`/`RALPHY_LOG`). Useful for debugging or CI.
+    #[arg(long)]
+    verbose: bool,
+
     /// Commit-ish the run branch is cut from. Only used with `--branch-mode new`.
     #[arg(long, default_value = "origin/main")]
     base_branch: String,
@@ -98,6 +111,12 @@ struct RunArgs {
     /// Force the execution model for the issue (overrides the plan's judgment).
     #[arg(long)]
     exec_model: Option<String>,
+
+    /// OpenCode `--variant` (effort) passed through to `opencode run`. Omitted
+    /// when unset so the adapter never sends a value the provider rejects
+    /// (docs/adr/0005 D3). Only used by `--agent opencode`.
+    #[arg(long)]
+    exec_variant: Option<String>,
 
     /// Execution effort.
     #[arg(long, default_value = "medium")]
@@ -134,6 +153,15 @@ struct RunArgs {
     /// (wait for the reset and auto-resume the same issue). See docs/adr/0003.
     #[arg(long)]
     stop_on_limit: bool,
+
+    /// Mute the Telegram run notifier for this run (no card, no pushes), even
+    /// when Telegram is configured. See docs/adr/0007.
+    #[arg(long)]
+    no_telegram: bool,
+
+    /// Override the auto-derived Telegram card title for this run.
+    #[arg(long)]
+    title: Option<String>,
 }
 
 /// The CLI's own agent-selector enum so `clap` stays a CLI concern; the composition
@@ -142,6 +170,11 @@ struct RunArgs {
 enum CliAgent {
     Claude,
     Codex,
+    // The ADR-0005 contract and the documented invocation are `--agent opencode`
+    // (one word). Clap would otherwise derive the kebab-cased `open-code` from the
+    // variant name; pin the spelling and keep that derivation as an alias.
+    #[value(name = "opencode", alias = "open-code")]
+    OpenCode,
 }
 
 /// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
@@ -167,6 +200,7 @@ fn main() -> Result<()> {
         Command::Run(args) => run_cmd(*args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
+        Command::Telegram(cmd) => telegram::run(cmd),
     }
 }
 
@@ -178,7 +212,24 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     std::fs::create_dir_all(&run_dir).ok();
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
-    init_tracing(log_file);
+
+    // Decide up front whether this run notifies (ADR-0007 D1/D7): only when
+    // Telegram is configured (a token AND a captured chat) and the run is neither
+    // `--no-telegram` nor a `--dry-run`. When it does, create the shared event ring
+    // and install the notifier Layer alongside the file/presenter layers so it sees
+    // the lifecycle from `queue built` onward. The worker is started later, once the
+    // queue (and thus the title) is known.
+    let tg_cfg = telegram::config::TelegramConfig::load().ok().flatten();
+    let configured = tg_cfg.as_ref().is_some_and(|c| {
+        c.chat_id.is_some() && telegram::config::effective_token(Some(&c.token)).is_some()
+    });
+    let notify = telegram::notifier::should_notify(configured, args.no_telegram, args.dry_run);
+    let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
+    let notifier_layer = event_queue
+        .as_ref()
+        .map(|q| telegram::notifier::NotifierLayer::new(q.clone()));
+
+    let presenter = init_tracing(log_file, args.verbose, notifier_layer);
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
@@ -195,11 +246,45 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             Some(n) => format!("issue #{n}"),
             None => format!("labels [{}]", effective_labels.join(", ")),
         };
-        println!("No open issues for {scope} to process. Done.");
+        // finalize before printing so the live region is cleared first (ADR-0006).
+        presenter.finalize();
+        presenter.print_notice(&format!("No open issues for {scope} to process. Done."));
         return Ok(());
     }
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
+    // message consumed by the telegram notifier / presenter — keep stable
     info!(count = queue.len(), order = %order.join(" -> "), "queue built");
+
+    // Start the Telegram notifier worker now that the queue (and thus the title)
+    // is known. `try_start_notifier` runs `getMe`; on failure it warns once and
+    // returns `None`, leaving the installed Layer inert and the run unaffected
+    // (ADR-0007 D7). Events emitted before this point (just `queue built`) are
+    // buffered in the ring and drained by the worker on start.
+    let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
+    if let (Some(event_queue), Some(cfg)) = (event_queue.as_ref(), tg_cfg.as_ref()) {
+        if let (Some(chat_id), Some(token)) = (
+            cfg.chat_id,
+            telegram::config::effective_token(Some(&cfg.token)),
+        ) {
+            let repo_name = repo_root
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("repo");
+            let only_issue_title = args.only_issue.and(queue.first()).map(|i| i.title.clone());
+            let title = telegram::notifier::derive_title(
+                repo_name,
+                queue.len(),
+                &effective_labels,
+                only_issue_title.as_deref(),
+                args.title.as_deref(),
+            );
+            let state = runstate::RunState::new(title, queue.len());
+            let client =
+                telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
+            notifier =
+                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
+        }
+    }
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
     // quota (matching the ps1 oracle behaviour).
@@ -249,6 +334,11 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             CodexAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
                 .with_run_deadline(run_deadline),
         ),
+        CliAgent::OpenCode => Box::new(
+            OpenCodeAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
+                .with_variant(non_empty(args.exec_variant.unwrap_or_default()))
+                .with_run_deadline(run_deadline),
+        ),
     };
     let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
@@ -267,110 +357,73 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     };
     let tracker = GhTracker::new(cfg.repo_root.clone());
 
-    let report = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock)?;
+    let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 
-    // Per-issue summary, then how the run ended and where the branch stands.
-    println!(
-        "Run on '{}' (was on '{}'):",
-        report.branch, report.orig_branch
-    );
-    for r in &report.worked {
-        let status = match (&r.outcome, r.closed) {
-            (Some(o), true) => format!("{o:?}, closed"),
-            (Some(o), false) => format!("{o:?}"),
-            (None, _) if !r.blocked_by.is_empty() => {
-                let refs: Vec<String> = r.blocked_by.iter().map(|n| format!("#{n}")).collect();
-                format!("skipped (blocked by {})", refs.join(", "))
-            }
-            (None, _) if args.dry_run => "planned (dry-run)".to_string(),
-            (None, _) => "skipped (infeasible)".to_string(),
-        };
-        println!("  #{}: {status}", r.number);
-    }
-    let stopped = report.stop.is_some();
-    match report.stop {
-        Some(StopReason::Deadline) => {
-            println!("Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).")
-        }
-        Some(StopReason::NonGreen { number, outcome }) => {
-            println!("Stopped: #{number} finished non-green ({outcome:?}). Branch handed back.");
-        }
-        Some(StopReason::StopBefore { number }) => {
-            println!(
-                "Stopped: stop-before label on #{number}. Remove the label and re-run to continue."
-            );
-        }
-        Some(StopReason::Limit { number, reset }) => {
-            // With auto-resume the default, a surfaced Limit means either
-            // `--stop-on-limit` was set, the reset was unparseable, or the
-            // progress-aware cap abandoned the issue.
-            print!("Stopped: usage limit on #{number}.");
-            match reset {
-                Some(t) => {
-                    print!(" Reset ~{t}; re-run to continue (or it stalled with no progress).")
-                }
-                None => print!(" No parseable reset time; re-run after the limit clears."),
-            }
-            println!();
-        }
-        None => println!("Queue complete."),
+    // Flush the queue bar to N/N and clear the live region before anything else
+    // prints — whether that is the panel below or `anyhow`'s error on the `?`
+    // propagation. Finalizing first keeps a `bail!` from being torn by a live bar
+    // (ADR-0006: the presenter owns teardown).
+    presenter.finalize();
+
+    // Tear down the notifier (ADR-0007 D4): signal the worker to render the
+    // terminal state, send the final push, and flush, joined under a bounded
+    // timeout so a wedged network never holds the process open. Done before the
+    // `?` so a non-green result still triggers the final push.
+    if let Some(notifier) = notifier.take() {
+        notifier.shutdown();
     }
 
-    // Commit count over the compare ref and the oneline log, then the closing
-    // state per mode/outcome — mirrors the ps1 `finally` block.
-    println!(
-        "Branch '{}' carries {} commit(s).",
-        report.branch, report.commits
-    );
-    for line in &report.oneline {
-        println!("    {line}");
-    }
-    match branch_mode {
-        BranchMode::Current => {
-            if args.dry_run {
-                println!("DryRun on '{}': no commits made.", report.branch);
-            } else if stopped {
-                println!("Left repo on '{}' for inspection.", report.branch);
-            } else {
-                println!(
-                    "Clean run: {} commit(s) added to '{}' in place.",
-                    report.commits, report.branch
-                );
-            }
-        }
-        BranchMode::New => {
-            if args.dry_run {
-                println!(
-                    "DryRun: returned repo to '{}'; empty run branch removed.",
-                    report.orig_branch
-                );
-            } else if stopped {
-                println!(
-                    "Left repo checked out on '{}' for inspection.",
-                    report.branch
-                );
-            } else {
-                println!(
-                    "Clean run: returned repo to '{}'. Run branch '{}' kept.",
-                    report.orig_branch, report.branch
-                );
-            }
-            if !(args.dry_run && report.commits == 0) {
-                println!(
-                    "Review, then merge '{}' into your target:  git merge {}",
-                    report.branch, report.branch
-                );
-            }
-        }
-    }
+    let report = result?;
+
+    // Bucket the worked issues into the three-way triad defined in the plan.
+    let done = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome == Some(Outcome::Done))
+        .count() as u64;
+    let num_blocked = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome.is_some() && r.outcome != Some(Outcome::Done))
+        .count() as u64;
+    let skipped = report.worked.iter().filter(|r| r.outcome.is_none()).count() as u64;
+
+    let panel_stop = report.stop.map(|s| match s {
+        StopReason::Deadline => ui::PanelStop::Deadline,
+        StopReason::NonGreen { number, outcome } => ui::PanelStop::NonGreen {
+            number,
+            outcome: format!("{outcome:?}"),
+        },
+        StopReason::StopBefore { number } => ui::PanelStop::StopBefore { number },
+        StopReason::Limit { number, reset } => ui::PanelStop::Limit { number, reset },
+    });
+
+    let panel_mode = match branch_mode {
+        BranchMode::New => ui::PanelBranchMode::New,
+        BranchMode::Current => ui::PanelBranchMode::Current,
+    };
+
+    let data = ui::PanelData {
+        branch: report.branch,
+        orig_branch: report.orig_branch,
+        done,
+        blocked: num_blocked,
+        skipped,
+        commits: report.commits,
+        stop: panel_stop,
+        branch_mode: panel_mode,
+        dry_run: args.dry_run,
+    };
+    presenter.print_panel(&data);
     Ok(())
 }
 
-/// Force `stop_on_limit` for Codex runs: Codex's rolling reset window is not
-/// parseable, so auto-resume is never useful there. Claude passes the flag
-/// through unchanged.
+/// Force `stop_on_limit` for Codex and OpenCode runs: Codex's rolling reset
+/// window is not parseable; OpenCode already self-waits short limits and long
+/// ones carry no parseable reset, so auto-resume is never useful for either.
+/// Claude passes the flag through unchanged.
 fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
-    flag || matches!(agent, CliAgent::Codex)
+    flag || matches!(agent, CliAgent::Codex | CliAgent::OpenCode)
 }
 
 fn non_empty(s: String) -> Option<String> {
@@ -381,24 +434,61 @@ fn non_empty(s: String) -> Option<String> {
     }
 }
 
-/// Log to stderr, and additionally to the run's `ralphy.log` when available.
-fn init_tracing(log_file: Option<std::fs::File>) {
+/// Install the tracing stack. The full structured log always goes to the run's
+/// `ralphy.log` (no colour, local timestamps). On screen, the animated presenter
+/// (ADR-0006) renders the run's lifecycle by default; `--verbose` (or a set
+/// `RUST_LOG`/`RALPHY_LOG`) drops to raw INFO `fmt` lines and disables animation
+/// so debugging is unobstructed.
+///
+/// Local timestamps everywhere fix the reported UTC-vs-local bug at the source:
+/// the `fmt` layers use `ChronoLocal`, and the presenter composes its own local
+/// timestamps via `chrono::Local`.
+///
+/// Always returns a `PresenterHandle` — `plain()` on the raw-stderr path (no colour,
+/// no bars, no-op `finalize`), or the animated presenter's handle otherwise. The
+/// caller routes the early-exit notice and the final panel through it uniformly.
+fn init_tracing(
+    log_file: Option<std::fs::File>,
+    verbose: bool,
+    notifier: Option<telegram::notifier::NotifierLayer>,
+) -> ui::PresenterHandle {
+    use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let stderr_layer = fmt::layer().with_writer(std::io::stderr);
+
+    // `--verbose`, or any explicit env filter, means the operator wants the raw
+    // log on screen — drop the presenter and disable animation (ADR-0006 D3).
+    let raw_stderr = verbose
+        || std::env::var_os("RUST_LOG").is_some()
+        || std::env::var_os("RALPHY_LOG").is_some();
+
+    let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string());
+
+    // `ralphy.log` always carries the full uncoloured, local-time log.
+    let file_layer = log_file.map(|file| {
+        fmt::layer()
+            .with_ansi(false)
+            .with_timer(timer.clone())
+            .with_writer(move || file.try_clone().expect("clone ralphy.log handle"))
+    });
+
+    // The notifier Layer (when installed) composes alongside the file/presenter
+    // layers so it sees every consumed event; `Option<Layer>` is a no-op when None.
     let registry = tracing_subscriber::registry()
         .with(filter)
-        .with(stderr_layer);
+        .with(file_layer)
+        .with(notifier);
 
-    match log_file {
-        Some(file) => {
-            let file_layer = fmt::layer()
-                .with_ansi(false)
-                .with_writer(move || file.try_clone().expect("clone ralphy.log handle"));
-            registry.with(file_layer).init();
-        }
-        None => registry.init(),
+    if raw_stderr {
+        let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);
+        registry.with(stderr_layer).init();
+        ui::PresenterHandle::plain()
+    } else {
+        let presenter = ui::Presenter::new();
+        let handle = presenter.handle();
+        registry.with(presenter).init();
+        handle
     }
 }
 
@@ -416,5 +506,27 @@ mod tests {
     fn effective_stop_on_limit_claude_passes_flag_through() {
         assert!(!effective_stop_on_limit(false, CliAgent::Claude));
         assert!(effective_stop_on_limit(true, CliAgent::Claude));
+    }
+
+    #[test]
+    fn cli_agent_accepts_opencode_spelling() {
+        // The documented invocation is `--agent opencode` (one word, ADR-0005 D1).
+        // Guard against clap silently reverting to the kebab-cased `open-code`.
+        use clap::ValueEnum;
+        assert_eq!(
+            CliAgent::from_str("opencode", false).ok(),
+            Some(CliAgent::OpenCode)
+        );
+        // The derived kebab spelling stays accepted as an alias.
+        assert_eq!(
+            CliAgent::from_str("open-code", false).ok(),
+            Some(CliAgent::OpenCode)
+        );
+    }
+
+    #[test]
+    fn effective_stop_on_limit_opencode_forces_true() {
+        assert!(effective_stop_on_limit(false, CliAgent::OpenCode));
+        assert!(effective_stop_on_limit(true, CliAgent::OpenCode));
     }
 }

@@ -8,7 +8,7 @@
 //! reclaims the session on a per-issue wall timeout.
 
 use std::fs;
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::run_headless;
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
@@ -54,14 +55,7 @@ static PLUGIN: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin")
 /// plugin directory to pass on the command line.
 fn materialize_plugin(ws: &Workspace) -> Result<PathBuf> {
     let dir = ws.plugin_dir();
-    // Clear any prior copy so a removed skill doesn't survive between runs.
-    if dir.exists() {
-        fs::remove_dir_all(&dir).context("clearing the stale .ralphy/plugin")?;
-    }
-    fs::create_dir_all(&dir).context("creating .ralphy/plugin")?;
-    PLUGIN
-        .extract(&dir)
-        .context("extracting the embedded plugin to .ralphy/plugin")?;
+    ralphy_adapter_support::materialize_assets(&PLUGIN, &dir, None)?;
     Ok(dir)
 }
 
@@ -267,65 +261,30 @@ impl ClaudeAgent {
             args.push(e.clone());
         }
 
-        let mut child = Command::new(resolve_claude_binary())
-            .args(&args)
+        let mut cmd = Command::new(resolve_claude_binary());
+        cmd.args(&args)
             .current_dir(cmd_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+
+        // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
+        // shared headless runner; `exited` (here "the child exited rather than
+        // being killed on the wall timeout") is recovered from `timed_out`.
+        let r = run_headless(cmd, PROMPT_EXECUTE, timeout)
             .context("failed to spawn the `claude` CLI for headless exec")?;
-
-        // Spawn the stdout/stderr reader threads *before* writing stdin, so a
-        // prompt larger than the pipe buffer (~64KB) can't deadlock against a
-        // child that starts emitting output before it finishes draining stdin.
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let stdout = child.stdout.take().expect("stdout was piped");
-        let stderr = child.stderr.take().expect("stderr was piped");
-
-        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
-        let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stdout).read_to_end(&mut buf);
-            let _ = tx_out.send(buf);
-        });
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stderr).read_to_end(&mut buf);
-            let _ = tx_err.send(buf);
-        });
-
-        stdin
-            .write_all(PROMPT_EXECUTE.as_bytes())
-            .context("piping exec prompt to claude")?;
-        drop(stdin); // close stdin so claude sees EOF
-
-        let deadline = Instant::now() + timeout;
-        let exited = loop {
-            if child.try_wait().context("polling claude child")?.is_some() {
-                break true;
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                break false;
-            }
-            thread::sleep(Duration::from_millis(500));
-        };
-
-        let collect = Duration::from_secs(5);
-        let stdout_bytes = rx_out.recv_timeout(collect).unwrap_or_default();
-        let stderr_bytes = rx_err.recv_timeout(collect).unwrap_or_default();
-        let mut text = String::from_utf8_lossy(&stdout_bytes).into_owned();
-        text.push_str(&String::from_utf8_lossy(&stderr_bytes));
+        let exited = !r.timed_out;
+        let mut text = r.stdout;
+        text.push_str(&r.stderr);
         let _ = fs::write(self.run_dir.join(format!("exec-{}.out", call_index)), &text);
 
         if is_claude_auth_error(&text) {
             bail!(
                 "{} (see {})",
                 CLAUDE_AUTH_ERROR_MSG,
-                self.run_dir.join(format!("exec-{}.out", call_index)).display()
+                self.run_dir
+                    .join(format!("exec-{}.out", call_index))
+                    .display()
             );
         }
 
@@ -348,10 +307,12 @@ impl ClaudeAgent {
         let exec_model = self.resolve_exec_model(plan);
         let deadline = self.issue_deadline();
 
+        // budget_min field consumed by the telegram notifier / presenter — keep stable
         info!(
             model = %exec_model,
             effort = ?self.exec.exec_effort,
             max_calls = self.exec.max_exec_calls,
+            budget_min = self.exec.max_minutes_per_issue,
             "executing with headless claude -p loop"
         );
 
@@ -544,7 +505,8 @@ impl Agent for ClaudeAgent {
         }
         cmd = cmd.arg(EXEC_CHARTER);
 
-        info!(model = %exec_model, effort = ?self.exec.exec_effort, remote_control = self.exec.remote_control, "executing with interactive claude over the PTY");
+        // budget_min field consumed by the telegram notifier / presenter — keep stable
+        info!(model = %exec_model, effort = ?self.exec.exec_effort, remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
 
         let mut session =
             PtySession::spawn(cmd).context("spawning the claude execution session")?;
@@ -706,14 +668,10 @@ fn classify_exec_call(out: &str, exited: bool, open_steps: usize) -> Option<Head
     if !exited {
         return Some(HeadlessReason::Timeout);
     }
-    if let Some(line) = out.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
-        let reason = line
-            .split_once("RALPHY_BLOCKED_EXIT")
-            .map(|(_, rest)| rest.trim().to_string())
-            .unwrap_or_default();
+    if let Some(reason) = ralphy_adapter_support::blocked_reason(out) {
         return Some(HeadlessReason::Blocked(reason));
     }
-    if out.contains("RALPHY_DONE_EXIT") || open_steps == 0 {
+    if ralphy_adapter_support::done_sentinel(out) || open_steps == 0 {
         return Some(HeadlessReason::Done);
     }
     None
@@ -1280,12 +1238,16 @@ mod tests {
 
     #[test]
     fn is_claude_auth_error_matches_logged_out_output() {
-        assert!(is_claude_auth_error("Not logged in \u{00b7} Please run /login"));
+        assert!(is_claude_auth_error(
+            "Not logged in \u{00b7} Please run /login"
+        ));
     }
 
     #[test]
     fn is_claude_auth_error_matches_case_insensitive() {
-        assert!(is_claude_auth_error("NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN"));
+        assert!(is_claude_auth_error(
+            "NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN"
+        ));
     }
 
     #[test]

@@ -11,15 +11,13 @@
 //! check — mapped onto the same core [`Outcome`].
 
 use std::fs;
-use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::run_headless;
 use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, PlanLimit, Workspace};
 use tracing::info;
 
@@ -36,14 +34,7 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 fn materialize_codex_skills(ws: &Workspace) -> Result<PathBuf> {
     let agents_dir = ws.repo_root().join(".agents");
     let skills_dir = agents_dir.join("skills");
-    if skills_dir.exists() {
-        fs::remove_dir_all(&skills_dir).context("clearing stale .agents/skills")?;
-    }
-    fs::create_dir_all(&skills_dir).context("creating .agents/skills")?;
-    SKILLS
-        .extract(&skills_dir)
-        .context("extracting the embedded skills to .agents/skills")?;
-    fs::write(agents_dir.join(".gitignore"), "*\n").context("writing .agents/.gitignore")?;
+    ralphy_adapter_support::materialize_assets(&SKILLS, &skills_dir, Some(&agents_dir))?;
     Ok(skills_dir)
 }
 
@@ -217,8 +208,7 @@ const CODEX_AUTH_ERROR_MSG: &str =
 /// detector robust to Codex reformatting one of the two lines.
 fn is_codex_auth_error(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    lower.contains("401 unauthorized")
-        || lower.contains("missing bearer or basic authentication")
+    lower.contains("401 unauthorized") || lower.contains("missing bearer or basic authentication")
 }
 
 /// Return `true` when `text` contains a Codex usage-limit message (case-insensitive).
@@ -264,14 +254,10 @@ fn classify_codex_outcome(
     if timed_out {
         return Outcome::Timeout;
     }
-    if let Some(line) = out.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
-        let reason = line
-            .split_once("RALPHY_BLOCKED_EXIT")
-            .map(|(_, rest)| rest.trim().to_string())
-            .unwrap_or_default();
+    if let Some(reason) = ralphy_adapter_support::blocked_reason(out) {
         return Outcome::Blocked(reason);
     }
-    if exited_cleanly && committed && out.contains("RALPHY_DONE_EXIT") {
+    if exited_cleanly && committed && ralphy_adapter_support::done_sentinel(out) {
         return Outcome::Done;
     }
     if is_codex_limit_text(log) {
@@ -289,63 +275,23 @@ impl CodexAgent {
     /// message is read from the `-o` file by the caller.
     fn run_codex(
         &self,
-        mut cmd: Command,
+        cmd: Command,
         prompt: &str,
         timeout: Duration,
     ) -> Result<(bool, bool, String)> {
-        let mut child = cmd
-            .spawn()
+        // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
+        // shared headless runner; Codex's `exited_cleanly` (a *successful* exit,
+        // not merely "not timed out") is recovered from the returned exit status,
+        // which is `None` exactly when the child was killed on the wall timeout.
+        let r = run_headless(cmd, prompt, timeout)
             .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
 
-        // Spawn the reader threads *before* writing stdin, so a prompt larger than
-        // the pipe buffer (~64KB) can't deadlock against a child that starts
-        // emitting output before it finishes draining stdin.
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let stdout = child.stdout.take().expect("stdout was piped");
-        let stderr = child.stderr.take().expect("stderr was piped");
-
-        let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
-        let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stdout).read_to_end(&mut buf);
-            let _ = tx_out.send(buf);
-        });
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = BufReader::new(stderr).read_to_end(&mut buf);
-            let _ = tx_err.send(buf);
-        });
-
-        stdin
-            .write_all(prompt.as_bytes())
-            .context("piping the prompt to codex")?;
-        drop(stdin); // close stdin so codex sees EOF
-
-        let deadline = Instant::now() + timeout;
-        let mut timed_out = false;
-        let status = loop {
-            if let Some(s) = child.try_wait().context("polling codex child")? {
-                break Some(s);
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                timed_out = true;
-                break None;
-            }
-            thread::sleep(Duration::from_millis(500));
-        };
-
-        let collect = Duration::from_secs(5);
-        let stdout_bytes = rx_out.recv_timeout(collect).unwrap_or_default();
-        let stderr_bytes = rx_err.recv_timeout(collect).unwrap_or_default();
-        let mut text = String::from_utf8_lossy(&stdout_bytes).into_owned();
-        text.push_str(&String::from_utf8_lossy(&stderr_bytes));
+        let mut text = r.stdout;
+        text.push_str(&r.stderr);
         let _ = fs::write(self.run_dir.join("codex.log"), &text);
 
-        let exited_cleanly = status.map(|s| s.success()).unwrap_or(false);
-        Ok((exited_cleanly, timed_out, text))
+        let exited_cleanly = r.exit.map(|s| s.success()).unwrap_or(false);
+        Ok((exited_cleanly, r.timed_out, text))
     }
 }
 

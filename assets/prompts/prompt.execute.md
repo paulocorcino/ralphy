@@ -42,6 +42,11 @@ honest at every stopping point, not only when blocked:
   a one-line entry under a `## Notes & decisions` section in `.ralphy/plan.md`
   (create it if absent), recording the WHY briefly. The plan must explain not
   just what changed but why, so a fresh session can restart from it alone.
+- Before emitting the exit token (done OR blocked), append a `## Plan friction`
+  section to `.ralphy/plan.md` — at most 3 bullets: what the plan got wrong,
+  what it missed, what you had to improvise. Write `- none` if the plan held
+  up. Be blunt, not polite — this feeds the next revision of the planning
+  prompt, and a silent improvisation is lost learning.
 
 ## Fill the acceptance ledger
 

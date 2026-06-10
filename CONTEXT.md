@@ -57,6 +57,20 @@ Code today; Codex, OpenCode later), behind the core's agent contract. Each
 adapter owns its own execution mode and completion protocol.
 _Avoid_: driver, plugin, backend.
 
+**Adapter support**:
+The shared machinery every **adapter** leans on but that is specific to *no*
+vendor — the headless child-driving loop (spawn, drain stdout/stderr, poll to
+completion-or-timeout, kill on deadline), the `RALPHY_DONE_EXIT` /
+`RALPHY_BLOCKED_EXIT` sentinel parser, and skill/plugin materialization. It is
+the deliberate counterpart of **Adapter**: where an adapter holds what is
+vendor-specific, adapter support holds what is common. It owns **no** completion
+protocol and produces **no** `Outcome` — it hands back raw captured output and
+each adapter still classifies it (the seam ADR-0004 protects). Lives in
+`ralphy-adapter-support`; depended on by the vendor adapter crates, never by the
+core.
+_Avoid_: shared runner, headless runner (ADR-0004 forbids a shared *Outcome*
+runner — this is only the plumbing), utils, helpers.
+
 **Execution mode** (interactive vs headless):
 How an adapter drives its CLI — an adapter/billing concern, **never** the core's.
 For Claude Code, interactive (over a PTY) bills against the subscription, while
@@ -108,6 +122,15 @@ _Avoid_: pause, hold, breakpoint.
 - The **core** is execution-mode-agnostic: it asks an **adapter** to work an issue
   and receives an outcome. PTY, interactive sessions, and completion sentinels
   live inside the **adapter**, never in the core.
+
+## Testing conventions
+
+- **Subprocess/PTY plumbing is tested against a dedicated helper bin**, located
+  via `CARGO_BIN_EXE_<name>` from an integration test under `tests/` — see
+  `ralphy-adapter-support`'s `headless_test_child` driven by `tests/headless.rs`.
+  `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
+  and shell-script children are not portable to Windows CI; plans that test
+  child-process behavior should follow this pattern.
 
 ## Flagged ambiguities
 

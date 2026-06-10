@@ -22,16 +22,6 @@ you only produce a plan that a later execution loop will consume.
    <one or two sentences. If "no", explain what is missing — the loop will
    skip the issue and leave a comment.>
 
-   ## Execution model: low | medium | high
-   <one line justifying the choice. This is a vendor-neutral COMPLEXITY tier
-   that maps to the executor's reasoning effort. Pick the SMALLEST that will do
-   this reliably: `low` for mechanical, localized, well-understood changes (add
-   a string, a field, a UI binding, a straightforward refactor); `medium` is the
-   default for ordinary feature work; `high` only when the work is genuinely
-   complex (cross-cutting changes, tricky concurrency/lifetimes/type-plumbing,
-   subtle correctness, or ambiguous design needing judgment). Default to
-   `medium` unless a concrete reason makes `low` or `high` the right call.>
-
    ## Done when
    - <test-verifiable condition(s) — what the project's tests (or a build)
      prove, e.g. "the test suite passes, including new test `xyz` covering ...".
@@ -66,10 +56,10 @@ you only produce a plan that a later execution loop will consume.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
-   - [ ] Self-review: dispatch the auto-discovered `reviewer` skill
-         (`.agents/skills/reviewer/SKILL.md`) as a Codex subagent scoped to
-         ONLY the commits you made for this issue — not the whole branch.
-         Resolve every HIGH finding before finishing; if one cannot be fixed
+   - [ ] Self-review: run the **inline `reviewer` skill** (auto-discovered via
+         `skills.paths`), invoked by name over ONLY the commits you made for
+         this issue — **not** a subagent, and not the whole branch. Resolve
+         every HIGH finding before finishing; if one cannot be fixed
          autonomously, record it under `## Notes & decisions` and block.
    - [ ] the project's format and test commands pass with no new warnings
    ```
@@ -120,10 +110,10 @@ you only produce a plan that a later execution loop will consume.
   atomic unit of work cannot fit one short commit, split it into explicit
   red/green/refactor sub-steps rather than faking granularity or hiding the
   whole unit behind one bullet.
-- The penultimate step is always a Codex-native self-review: dispatch
-  `.agents/skills/reviewer/` as a Codex subagent scoped to ONLY the commits you
-  made for this issue. Resolve every HIGH finding before declaring done. Phrase
-  it as a Codex subagent dispatch — not as a Claude Task-tool invocation.
+- The penultimate step is always a self-review: run the **inline `reviewer`
+  skill** (auto-discovered via `skills.paths`) over ONLY the commits you made
+  for this issue — **not** a subagent, and not the whole branch. Resolve every
+  HIGH finding before declaring done.
 - The LAST step is always a green-build/test gate.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
