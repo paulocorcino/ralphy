@@ -261,14 +261,10 @@ fn classify_codex_outcome(
     if timed_out {
         return Outcome::Timeout;
     }
-    if let Some(line) = out.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
-        let reason = line
-            .split_once("RALPHY_BLOCKED_EXIT")
-            .map(|(_, rest)| rest.trim().to_string())
-            .unwrap_or_default();
+    if let Some(reason) = ralphy_adapter_support::blocked_reason(out) {
         return Outcome::Blocked(reason);
     }
-    if exited_cleanly && committed && out.contains("RALPHY_DONE_EXIT") {
+    if exited_cleanly && committed && ralphy_adapter_support::done_sentinel(out) {
         return Outcome::Done;
     }
     if is_codex_limit_text(log) {
