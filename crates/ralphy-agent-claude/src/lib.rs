@@ -675,14 +675,10 @@ fn classify_exec_call(out: &str, exited: bool, open_steps: usize) -> Option<Head
     if !exited {
         return Some(HeadlessReason::Timeout);
     }
-    if let Some(line) = out.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT")) {
-        let reason = line
-            .split_once("RALPHY_BLOCKED_EXIT")
-            .map(|(_, rest)| rest.trim().to_string())
-            .unwrap_or_default();
+    if let Some(reason) = ralphy_adapter_support::blocked_reason(out) {
         return Some(HeadlessReason::Blocked(reason));
     }
-    if out.contains("RALPHY_DONE_EXIT") || open_steps == 0 {
+    if ralphy_adapter_support::done_sentinel(out) || open_steps == 0 {
         return Some(HeadlessReason::Done);
     }
     None
