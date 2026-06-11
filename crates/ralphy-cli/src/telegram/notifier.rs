@@ -362,14 +362,21 @@ pub fn run_worker<T: Transport>(
     queue: Arc<EventQueue>,
     shutdown: Arc<AtomicBool>,
 ) {
-    // Initial card: capture its message_id so every later edit targets it.
-    let message_id = match client.send_message(chat_id, &render_card(&state, now_epoch())) {
+    // Initial card: capture its message_id so every later edit targets it, and
+    // remember its rendered text so the idle refresh can skip a no-op edit.
+    let initial_card = render_card(&state, now_epoch());
+    let message_id = match client.send_message(chat_id, &initial_card) {
         Ok(v) => v.get("message_id").and_then(Value::as_i64),
         Err(e) => {
             warn!("telegram: initial card failed: {e}");
             None
         }
     };
+    // The last card text actually pushed to Telegram. The idle ~60s refresh re-runs
+    // `should_edit` on the time floor even when nothing changed; editing with an
+    // identical body makes the Bot API reject it ("message is not modified"), so we
+    // compare against this and only edit when the render genuinely differs.
+    let mut last_card = initial_card;
     // The start push is a new message so the phone buzzes once at run start.
     if let Err(e) = client.send_message(chat_id, &render_start_push(&state)) {
         warn!("telegram: start push failed: {e}");
@@ -411,10 +418,16 @@ pub fn run_worker<T: Transport>(
 
         if let Some(mid) = message_id {
             if should_edit(changed, last_edit.elapsed(), REFRESH_INTERVAL) {
-                if let Err(e) =
-                    client.edit_message_text(chat_id, mid, &render_card(&state, now_epoch()))
-                {
-                    warn!("telegram: edit failed: {e}");
+                let card = render_card(&state, now_epoch());
+                // Skip the round-trip when the body is unchanged: Telegram rejects an
+                // identical edit, which would otherwise warn! once per idle refresh.
+                if card != last_card {
+                    match client.edit_message_text(chat_id, mid, &card) {
+                        // Only record the card as shown on success, so a transient
+                        // failure is retried on the next refresh rather than masked.
+                        Ok(_) => last_card = card,
+                        Err(e) => warn!("telegram: edit failed: {e}"),
+                    }
                 }
                 last_edit = Instant::now();
             }
@@ -425,10 +438,15 @@ pub fn run_worker<T: Transport>(
         }
     }
 
-    // Terminal state: a final edit to the card, then the final push.
+    // Terminal state: a final edit to the card, then the final push. Skip the edit
+    // when the terminal render matches what's already shown, for the same
+    // "message is not modified" reason as the idle refresh above.
     if let Some(mid) = message_id {
-        if let Err(e) = client.edit_message_text(chat_id, mid, &render_card(&state, now_epoch())) {
-            warn!("telegram: final edit failed: {e}");
+        let card = render_card(&state, now_epoch());
+        if card != last_card {
+            if let Err(e) = client.edit_message_text(chat_id, mid, &card) {
+                warn!("telegram: final edit failed: {e}");
+            }
         }
     }
     if let Err(e) = client.send_message(chat_id, &render_final_push(&state)) {
@@ -529,6 +547,150 @@ mod tests {
     use anyhow::{bail, Result};
     use serde_json::json;
     use std::sync::atomic::AtomicI64;
+
+    /// Live, opt-in demo that the notifier updates ONE message in place: it sends a
+    /// card then edits it repeatedly with visibly-changing content (issues advancing
+    /// + a live clock), ~2s apart, so the operator watches it animate on their phone.
+    /// Run with `cargo test -p ralphy-cli -- --ignored live_animate_card --nocapture`.
+    #[test]
+    #[ignore = "hits the live Telegram Bot API; needs `telegram setup` first"]
+    fn live_animate_card() {
+        use crate::telegram::client::UreqTransport;
+        use crate::telegram::config::{effective_token, TelegramConfig};
+
+        let Some(cfg) = TelegramConfig::load().expect("load config") else {
+            eprintln!("SKIP: Telegram not configured — run `ralphy telegram setup`");
+            return;
+        };
+        let Some(chat_id) = cfg.chat_id else {
+            eprintln!("SKIP: no chat captured — run `ralphy telegram setup`");
+            return;
+        };
+        let token = effective_token(Some(&cfg.token)).expect("a token");
+        let client = BotClient::new(UreqTransport::new(token));
+
+        // Three issues; we walk them through planning → executing → done so each
+        // rendered card differs from the last (no "message is not modified").
+        let total = 3u64;
+        let mut state = RunState::new("🔬 ralphy live card", total as usize);
+        let card0 = render_card(&state, now_epoch());
+        let sent = client.send_message(chat_id, &card0).expect("send card");
+        let mid = sent["message_id"].as_i64().expect("message_id");
+        eprintln!("animating message_id={mid}");
+
+        let mut last_card = card0;
+        // A helper that edits only when the render actually changed — the same guard
+        // the worker uses — and reports each attempt.
+        let push = |client: &BotClient<UreqTransport>, state: &RunState, last: &mut String| {
+            let card = render_card(state, now_epoch());
+            if &card == last {
+                eprintln!("  (unchanged — skipped, as the worker would)");
+                return;
+            }
+            match client.edit_message_text(chat_id, mid, &card) {
+                Ok(_) => {
+                    *last = card;
+                    eprintln!("  edit OK");
+                }
+                Err(e) => eprintln!("  edit FAILED: {e}"),
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        };
+
+        for n in 1..=total {
+            state.apply(RunEvent::IssueStarted {
+                number: n,
+                title: format!("W{} live step", n - 1),
+            });
+            push(&client, &state, &mut last_card);
+
+            state.apply(RunEvent::Executing {
+                number: n,
+                budget_min: 45,
+                model: String::new(),
+            });
+            push(&client, &state, &mut last_card);
+
+            state.apply(RunEvent::IssueClosed { number: n });
+            push(&client, &state, &mut last_card);
+        }
+
+        state.final_summary = Some("✅ live demo finished".into());
+        push(&client, &state, &mut last_card);
+        eprintln!("done — final card left on the message");
+    }
+
+    /// Live, opt-in proof against the real Bot API that the no-op-edit fix holds:
+    /// run with `cargo test -p ralphy-cli -- --ignored live_edit_dedup_against_real_telegram --nocapture`.
+    /// It uses the operator's stored token + chat (auto-skips if unconfigured),
+    /// sends a card, edits it with CHANGED text (must succeed), then edits with
+    /// IDENTICAL text (the Bot API rejects this with "message is not modified" —
+    /// the exact bug), and finally confirms `render_card` is byte-identical across
+    /// two unchanged renders, so the worker's `card != last_card` guard skips it.
+    #[test]
+    #[ignore = "hits the live Telegram Bot API; needs `telegram setup` first"]
+    fn live_edit_dedup_against_real_telegram() {
+        use crate::telegram::client::UreqTransport;
+        use crate::telegram::config::{effective_token, TelegramConfig};
+
+        let Some(cfg) = TelegramConfig::load().expect("load config") else {
+            eprintln!("SKIP: Telegram not configured — run `ralphy telegram setup`");
+            return;
+        };
+        let Some(chat_id) = cfg.chat_id else {
+            eprintln!("SKIP: no chat captured — run `ralphy telegram setup`");
+            return;
+        };
+        let token = effective_token(Some(&cfg.token)).expect("a token");
+        let client = BotClient::new(UreqTransport::new(token));
+
+        // A run state matching the stuck-in-planning scenario from the bug report.
+        let mut state = RunState::new("🔬 ralphy dedup self-test", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "W0: planning (live notifier self-test)".into(),
+        });
+
+        // 1) Send the initial card and capture its message_id.
+        let card_v1 = render_card(&state, now_epoch());
+        let sent = client.send_message(chat_id, &card_v1).expect("send card");
+        let mid = sent["message_id"].as_i64().expect("message_id");
+        eprintln!("sent card message_id={mid}");
+
+        // 2) A genuinely changed render must edit successfully.
+        state.apply(RunEvent::Executing {
+            number: 1,
+            budget_min: 45,
+            model: String::new(),
+        });
+        let card_v2 = render_card(&state, now_epoch());
+        assert_ne!(card_v1, card_v2, "state change should alter the render");
+        client
+            .edit_message_text(chat_id, mid, &card_v2)
+            .expect("changed edit must succeed");
+        eprintln!("changed edit OK");
+
+        // 3) Re-editing with the SAME body is exactly what Telegram rejects — this
+        // documents the root cause the guard exists to avoid.
+        let err = client
+            .edit_message_text(chat_id, mid, &card_v2)
+            .expect_err("identical edit must be rejected by Telegram");
+        let msg = err.to_string();
+        eprintln!("identical edit rejected as expected: {msg}");
+        assert!(
+            msg.contains("message is not modified"),
+            "expected the not-modified rejection, got: {msg}"
+        );
+
+        // 4) The guard's premise: two unchanged renders are byte-identical, so
+        // `card != last_card` is false and the worker never makes call (3).
+        let card_again = render_card(&state, now_epoch());
+        assert_eq!(
+            card_v2, card_again,
+            "unchanged state must render identically — the guard relies on this"
+        );
+        eprintln!("PASS: unchanged render is identical → idle refresh is skipped");
+    }
 
     /// A recording transport: records every call and returns a fresh `message_id`
     /// for each `sendMessage`. Cloning shares the call log and id counter so a test
@@ -885,6 +1047,32 @@ mod tests {
         let m = methods(&calls);
         // The failing edit did not abort the worker: the final push still went out.
         assert!(m.contains(&"editMessageText"));
+        assert_eq!(m.last(), Some(&"sendMessage"));
+    }
+
+    #[test]
+    fn worker_skips_redundant_edit_when_card_unchanged() {
+        // With no state-changing events, the idle refresh must NOT re-edit the card:
+        // the body would be identical and Telegram rejects "message is not modified".
+        // The worker runs inline (shutdown preset) so the single drain finds nothing
+        // to fold; the only edit attempt would be the final terminal edit, which must
+        // also be skipped because the terminal render equals the initial card.
+        let transport = RecordingTransport::new();
+        let calls = transport.calls.clone();
+        let client = BotClient::new(transport);
+        let queue = Arc::new(EventQueue::new());
+        let shutdown = Arc::new(AtomicBool::new(true));
+
+        run_worker(client, 7, RunState::new("idle", 1), queue, shutdown);
+
+        let calls = calls.lock().unwrap();
+        let m = methods(&calls);
+        // Only the initial card and the final push went out — no editMessageText.
+        assert!(
+            !m.contains(&"editMessageText"),
+            "unchanged card must not be edited: {m:?}"
+        );
+        assert_eq!(m.first(), Some(&"sendMessage"));
         assert_eq!(m.last(), Some(&"sendMessage"));
     }
 
