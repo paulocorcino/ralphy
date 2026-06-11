@@ -14,7 +14,13 @@ durable.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## Do this
-1. Read `.ralphy/plan.md`. Work the `- [ ]` steps top to bottom.
+1. Read `.ralphy/plan.md` AND, if present, `.ralphy/handoffs.md` — predecessors
+   paid real effort for what is in it (expected probe outputs, environment
+   traps, working commands); skipping it re-buys their diagnoses at full
+   price. Then work the plan's `- [ ]` steps top to bottom. When an
+   observation contradicts a handoff entry (e.g. a probe returns a different
+   status than the handoff documents), investigate the delta first — "what
+   changed since the predecessor" is usually the shortest path to the fault.
 2. For each step: implement it, run the project's format command and the
    NARROWEST relevant test command (or a build if not yet testable), as defined
    in CLAUDE.md/CONTEXT.md. When green, tick the step `- [x]` in `.ralphy/plan.md`
@@ -36,6 +42,13 @@ durable.
   interventions) — not the individual repairs you applied by hand while
   debugging. Repairs transcribed into a script are "proved by construction";
   only the from-zero run proves the script.
+- The plan's Self-review step is done only when the reviewer actually ran:
+  tick it ONLY after appending a `## Self-review findings` section to
+  `.ralphy/plan.md` recording the subagent's finding counts by severity
+  (write `0 HIGH, 0 MEDIUM, 0 LOW` if clean) and how each HIGH was resolved.
+  Ticking the step without that section is a protocol violation — a checkbox
+  with no artifact proves nothing, and "no HIGH findings expected" is a
+  prediction, not a review.
 - Only the machine-verifiable part of the plan's "Done when" gates the DONE
   token. Machine-verifiable means a test, a build, OR a command sequence you
   can run whose output proves the behavior (e.g. `docker compose up -d` plus
