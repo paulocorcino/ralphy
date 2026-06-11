@@ -8,6 +8,9 @@ durable.
 ## Context on disk (in this repo)
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
 - `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth.
+- `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
+  depends on: environment traps, working command sequences, residue. Treat them
+  as leads from predecessors, not truths — verify before relying on one.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## Do this
@@ -27,6 +30,12 @@ durable.
   builds. Add or extend a test that FAILS before your change and PASSES after,
   in the SAME commit as the step. This is what stops a plan from "meeting the
   letter of a feature" while doing nothing meaningful.
+- When a step produces a setup/repair/provisioning script, the evidence for
+  that step is a CLEAN-SLATE run of the consolidated script itself (e.g.
+  `docker compose down -v` then the script, from zero, with no manual
+  interventions) — not the individual repairs you applied by hand while
+  debugging. Repairs transcribed into a script are "proved by construction";
+  only the from-zero run proves the script.
 - Only the machine-verifiable part of the plan's "Done when" gates the DONE
   token. Machine-verifiable means a test, a build, OR a command sequence you
   can run whose output proves the behavior (e.g. `docker compose up -d` plus
@@ -46,11 +55,26 @@ honest at every stopping point, not only when blocked:
   a one-line entry under a `## Notes & decisions` section in `.ralphy/plan.md`
   (create it if absent), recording the WHY briefly. The plan must explain not
   just what changed but why, so a fresh session can restart from it alone.
+- SECOND-SURPRISE CHECKPOINT: on the SECOND unplanned surprise within the same
+  step (a second repair, workaround, or dead assumption the plan did not
+  price), STOP before the next fix. Write a `## Notes & decisions` entry AT
+  THAT MOMENT — not retroactively after winning — naming which plan assumption
+  died, then consciously choose and record one of: (a) continue with the
+  remaining Steps rewritten to include the discovered work (keep `- [x]` lines;
+  restructure only what is left), or (b) `RALPHY_BLOCKED_EXIT` with the
+  finding. Continuing without this recorded decision is not allowed. The fact
+  that each next fix is individually honest and legitimate does NOT exempt you
+  from this checkpoint — "fixable" is not the same as "in the planned scope",
+  and a chain of locally-reasonable fixes is exactly how a session burns its
+  budget on work nobody chose.
 - Before emitting the exit token (done OR blocked), append a `## Plan friction`
   section to `.ralphy/plan.md` — at most 3 bullets: what the plan got wrong,
   what it missed, what you had to improvise. Write `- none` if the plan held
-  up. Be blunt, not polite — this feeds the next revision of the planning
-  prompt, and a silent improvisation is lost learning.
+  up. Be blunt, not polite — the runner publishes this on the issue at close
+  and it feeds future planning, so a silent improvisation is lost learning.
+  Friction bullets written at the moment of divergence (see the checkpoint
+  above) beat ones reconstructed at the end: post-victory writeups are easy
+  and biased.
 
 ## Fill the acceptance ledger
 
@@ -77,6 +101,33 @@ planner). As you complete each step, update the matching ledger line:
 the plan's machine-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT`
 when every machine-verifiable "Done when" condition is green and every step is
 `- [x]`, regardless of the ledger's review-only entries.
+
+## Write the handoff
+
+Before emitting `RALPHY_DONE_EXIT` (and on `RALPHY_BLOCKED_EXIT` too, with
+whatever is known so far), append a `## Handoff` section to `.ralphy/plan.md`.
+The runner posts it on the GitHub issue at close, and future sessions working
+dependent issues receive it as starting context — it is how your hard-won
+discoveries reach your successors instead of dying with this session. Keep it
+under ~30 lines, telegraphic, with these exact sub-headings:
+
+- **Delivered**: what now exists and where — files, scripts, fixtures, with
+  commit hashes.
+- **Environment facts & traps**: non-obvious facts about the environment or
+  toolchain that cost real effort to discover (broken defaults, schema quirks,
+  platform path mangling, encoding traps). One line each, with the symptom AND
+  the fix.
+- **Commands that work**: the exact, copy-pasteable command sequence that
+  brings up / verifies the relevant environment, as actually executed.
+- **Residue**: what remains unproven or unfinished — anything proved by
+  construction rather than execution, pending `[review-only]` items, known
+  risks — each with the cheapest concrete command or action that would close it.
+
+Promote, don't just hand off: if an Environment fact applies to ANY future
+issue (not only dependents) — a toolchain trap, a defect in a pinned upstream,
+a repo-wide convention gap — also record it in versioned docs (`CONTEXT.md` or
+`docs/adr/`) in this run's commits. The handoff travels the dependency graph;
+versioned docs travel everywhere.
 
 ## If you get blocked
 - Do not thrash and do not ask questions. Record what you learned under

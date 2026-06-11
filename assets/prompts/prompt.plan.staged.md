@@ -5,6 +5,11 @@ in the exact shape the executor expects (below).
 
 ## Context on disk
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
+- `.ralphy/handoffs.md` — when present, handoffs from the closed issues this
+  one depends on (`Blocked by`): what predecessors delivered, environment
+  traps they hit, command sequences that work, and residue they left. Feed it
+  into the staged design — it is paid-for knowledge. Treat entries as leads,
+  not truths; verify against the tree before anchoring a stage on one.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
   and builds run.
@@ -72,6 +77,11 @@ in the exact shape the executor expects (below).
   them the issue's acceptance criteria are silently never updated.
 - Keep the staged ordering as the sequence of `- [ ]` steps (one per stage or
   sub-step), so the executor implements them in order.
+- Price the environment, never assume it: when any stage depends on external
+  infrastructure (containers, databases, network services, an external repo),
+  add an explicit early step that PROBES it and budget repair work as its own
+  step(s) — infrastructure treated as free is how staged plans understate
+  effort.
 - Write the plan in the project's working language (English unless
   CLAUDE.md/CONTEXT.md says otherwise). Do not edit source files or run
   git/builds in this pass — just plan.
