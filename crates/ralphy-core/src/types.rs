@@ -102,6 +102,13 @@ impl Workspace {
         self.ralphy_dir().join("plan.md")
     }
 
+    /// `<repo>/.ralphy/handoffs.md` — handoffs collected from the closed
+    /// issues the current one depends on, written by the runner before the
+    /// plan pass and read by the planner as predecessor context.
+    pub fn handoffs_path(&self) -> PathBuf {
+        self.ralphy_dir().join("handoffs.md")
+    }
+
     /// `<repo>/.ralphy/runs/<stamp>` — per-run logs and scratch.
     pub fn run_dir(&self, stamp: &str) -> PathBuf {
         self.ralphy_dir().join("runs").join(stamp)

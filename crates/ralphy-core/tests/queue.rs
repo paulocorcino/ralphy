@@ -6,7 +6,7 @@
 //! closing nothing, and the deadline blocking the next issue.
 
 use std::cell::RefCell;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -45,6 +45,9 @@ struct ScriptedAgent {
     steps: usize,
     /// If set, appended to the plan as a `## Acceptance ledger` section.
     ledger: Option<String>,
+    /// If set, appended verbatim to the plan body (extra sections such as
+    /// `## Feasible`, `## Handoff`, `## Plan friction`).
+    extra: Option<String>,
 }
 
 impl ScriptedAgent {
@@ -64,11 +67,24 @@ impl ScriptedAgent {
             plan_attempts: RefCell::new(0),
             steps: 1,
             ledger: None,
+            extra: None,
         }
     }
 
     fn with_ledger(mut self, ledger: impl Into<String>) -> Self {
         self.ledger = Some(ledger.into());
+        self
+    }
+
+    /// Append extra sections verbatim to every plan this agent writes.
+    fn with_plan_extra(mut self, extra: impl Into<String>) -> Self {
+        self.extra = Some(extra.into());
+        self
+    }
+
+    /// Script an infeasible plan (zero open steps).
+    fn infeasible(mut self) -> Self {
+        self.steps = 0;
         self
     }
 
@@ -96,11 +112,17 @@ impl Agent for ScriptedAgent {
             .as_deref()
             .map(|l| format!("\n## Acceptance ledger\n\n{l}"))
             .unwrap_or_default();
+        let extra_section = self
+            .extra
+            .as_deref()
+            .map(|e| format!("\n{e}\n"))
+            .unwrap_or_default();
         let body = format!(
-            "# Plan for #{}\n\n## Steps\n{}{}",
+            "# Plan for #{}\n\n## Steps\n{}{}{}",
             issue.number,
             "- [ ] do a thing\n".repeat(self.steps),
             ledger_section,
+            extra_section,
         );
         fs::write(&path, body)?;
         Ok(Plan {
@@ -149,6 +171,10 @@ struct RecordingTracker {
     closes: RefCell<Vec<(u64, String)>>,
     evidence_writes: RefCell<Vec<(u64, Vec<Verdict>)>>,
     closed_issues: HashSet<u64>,
+    /// Every `comment` call (handoff at close, infeasible-skip reasoning).
+    comments: RefCell<Vec<(u64, String)>>,
+    /// Scripted handoff comments returned by `handoff_comment`, by issue number.
+    handoffs: HashMap<u64, String>,
 }
 
 impl IssueTracker for RecordingTracker {
@@ -166,6 +192,15 @@ impl IssueTracker for RecordingTracker {
 
     fn is_closed(&self, number: u64) -> anyhow::Result<bool> {
         Ok(self.closed_issues.contains(&number))
+    }
+
+    fn comment(&self, number: u64, body: &str) -> anyhow::Result<()> {
+        self.comments.borrow_mut().push((number, body.to_string()));
+        Ok(())
+    }
+
+    fn handoff_comment(&self, number: u64) -> anyhow::Result<Option<String>> {
+        Ok(self.handoffs.get(&number).cloned())
     }
 }
 
@@ -1031,6 +1066,163 @@ fn green_close_with_no_ledger_skips_write_evidence() {
     );
 
     fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_close_posts_handoff_and_friction_comment() {
+    let repo = init_repo("handoff-close");
+    let extra = "## Handoff\n\n- **Delivered**: lab fixtures (abc1234)\n- **Residue**: Setup-Lab.ps1 never ran clean-slate\n\n## Plan friction\n\n- the plan treated the lab as a given precondition";
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    run_queue(
+        &cfg(&repo, "stamp-handoff", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let comments = tracker.comments.borrow();
+    assert_eq!(comments.len(), 1, "one handoff comment for the green issue");
+    let (number, body) = &comments[0];
+    assert_eq!(*number, 1);
+    assert!(body.contains("## Handoff"), "comment carries the handoff");
+    assert!(
+        body.contains("never ran clean-slate"),
+        "residue reaches the issue"
+    );
+    assert!(
+        body.contains("## Plan friction") && body.contains("given precondition"),
+        "friction reaches the issue"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn infeasible_plan_posts_planner_reasoning_comment() {
+    let repo = init_repo("infeasible-comment");
+    let extra =
+        "## Feasible: no\nThe issue bundles six PRD breakdown tasks; split into W1-T01..T06.";
+    let queue = vec![issue(3)];
+    let agent = ScriptedAgent::new(vec![])
+        .infeasible()
+        .with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-infeasible", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // The skip stays a skip: not closed, not executed, run continues.
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "infeasible never closes"
+    );
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "infeasible never executes"
+    );
+    assert!(report.stop.is_none(), "infeasible does not stop the run");
+
+    // But the verdict is no longer silent: the reasoning lands on the issue.
+    let comments = tracker.comments.borrow();
+    assert_eq!(comments.len(), 1, "one skip comment");
+    let (number, body) = &comments[0];
+    assert_eq!(*number, 3);
+    assert!(
+        body.contains("bundles six PRD breakdown tasks"),
+        "planner reasoning reaches the issue: {body}"
+    );
+    assert!(
+        body.contains("stays open"),
+        "comment tells the human the issue was not closed"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
+    // Pass 1: #5 depends on closed #2, which left a handoff comment. The runner
+    // must write `.ralphy/handoffs.md` before planning #5.
+    {
+        let repo = init_repo("handoff-feed");
+        let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n")];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([2]),
+            handoffs: HashMap::from([(
+                2u64,
+                "## Handoff\n\n- **Delivered**: lab fixtures\n- **Commands that work**: docker compose up -d".to_string(),
+            )]),
+            ..Default::default()
+        };
+
+        run_queue(
+            &cfg(&repo, "stamp-feed", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let handoffs_md = fs::read_to_string(repo.join(".ralphy").join("handoffs.md"))
+            .expect("handoffs.md written");
+        assert!(handoffs_md.contains("## From #2"), "names the source issue");
+        assert!(
+            handoffs_md.contains("lab fixtures") && handoffs_md.contains("docker compose up -d"),
+            "carries the predecessor's handoff content"
+        );
+        assert!(
+            handoffs_md.contains("leads, not truths"),
+            "carries the staleness caveat"
+        );
+
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // Pass 2: an issue with no blockers must not inherit a stale handoffs.md
+    // from a previous issue — the runner removes it.
+    {
+        let repo = init_repo("handoff-stale");
+        let ralphy = repo.join(".ralphy");
+        fs::create_dir_all(&ralphy).unwrap();
+        fs::write(
+            ralphy.join("handoffs.md"),
+            "# stale from a previous issue\n",
+        )
+        .unwrap();
+
+        let queue = vec![issue(7)];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]);
+        let tracker = RecordingTracker::default();
+
+        run_queue(
+            &cfg(&repo, "stamp-stale", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        assert!(
+            !ralphy.join("handoffs.md").exists(),
+            "stale handoffs.md removed for an issue with no closed blockers"
+        );
+
+        fs::remove_dir_all(&repo).ok();
+    }
 }
 
 #[test]

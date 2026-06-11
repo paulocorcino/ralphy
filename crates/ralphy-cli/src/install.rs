@@ -40,7 +40,11 @@ pub fn run(args: &InstallArgs) -> Result<()> {
 
     // Windows resolves bare names against `name.exe`; keep the extension so the
     // installed entry is invokable as `ralphy`.
-    let name = if cfg!(windows) { "ralphy.exe" } else { "ralphy" };
+    let name = if cfg!(windows) {
+        "ralphy.exe"
+    } else {
+        "ralphy"
+    };
     let dest = dir.join(name);
 
     // Re-running install onto our own location is a no-op, not an error.
@@ -71,7 +75,10 @@ pub fn run(args: &InstallArgs) -> Result<()> {
             // than fail, fall back to a copy so `install` works out of the box.
             Err(e) if cfg!(windows) => {
                 std::fs::copy(&exe, &dest).with_context(|| {
-                    format!("symlink failed ({e}); fallback copy to {} also failed", dest.display())
+                    format!(
+                        "symlink failed ({e}); fallback copy to {} also failed",
+                        dest.display()
+                    )
                 })?;
                 println!(
                     "Symlink unavailable ({e}); copied ralphy to {} instead",

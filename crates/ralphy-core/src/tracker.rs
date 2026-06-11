@@ -29,6 +29,22 @@ pub trait IssueTracker {
         let _ = number;
         Ok(true)
     }
+
+    /// Post a free-form comment on an issue (handoff at close, skip reasoning
+    /// on an infeasible plan). Default no-op so non-`gh` implementations do
+    /// not need to override it.
+    fn comment(&self, number: u64, body: &str) -> Result<()> {
+        let _ = (number, body);
+        Ok(())
+    }
+
+    /// Fetch the handoff a closed issue left behind (the last comment carrying
+    /// a `## Handoff` heading), or `None` when it left none. Default `None` so
+    /// non-`gh` implementations never feed handoffs.
+    fn handoff_comment(&self, number: u64) -> Result<Option<String>> {
+        let _ = number;
+        Ok(None)
+    }
 }
 
 /// The production tracker: closes issues and writes acceptance evidence through
@@ -64,5 +80,14 @@ impl IssueTracker for GhTracker {
 
     fn is_closed(&self, number: u64) -> Result<bool> {
         github::issue_is_closed(number, &self.repo_root)
+    }
+
+    fn comment(&self, number: u64, body: &str) -> Result<()> {
+        github::comment_issue(number, body, &self.repo_root)
+    }
+
+    fn handoff_comment(&self, number: u64) -> Result<Option<String>> {
+        let comments = github::issue_comments(number, &self.repo_root)?;
+        Ok(crate::handoff::find_handoff_comment(&comments))
     }
 }

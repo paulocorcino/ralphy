@@ -11,7 +11,8 @@ use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
 use crate::{
-    acceptance, blocked, git, gitignore, Agent, Issue, IssueTracker, Outcome, PlanLimit, Workspace,
+    acceptance, blocked, git, gitignore, handoff, Agent, Issue, IssueTracker, Outcome, PlanLimit,
+    Workspace,
 };
 
 /// Consecutive plan-time usage limits that make no progress before the runner
@@ -396,6 +397,55 @@ fn close_comment(stamp: &str, branch: &str) -> String {
     format!("Closed by Ralphy run {stamp} (green on branch '{branch}'; merge by hand).")
 }
 
+/// The comment posted when the planner judges an issue infeasible: the verdict
+/// plus the planner's reasoning, so the skip is actionable from the issue
+/// itself (split it, respecify it) instead of silent.
+fn infeasible_comment(stamp: &str, reason: &str) -> String {
+    format!(
+        "Ralphy run {stamp} skipped this issue — the planner judged it not \
+         autonomously implementable as written.\n\n## Planner reasoning\n\n{reason}\n\n\
+         The issue stays open; act on the reasoning above (split, respecify, or \
+         label) and the next run will pick it up again."
+    )
+}
+
+/// Refresh `.ralphy/handoffs.md` for the issue about to be planned: collect the
+/// handoff comments its closed blockers left, render them, and write the file —
+/// or remove a stale one when there is nothing to feed. Best-effort: a fetch
+/// failure logs a warning and skips that blocker, never stopping the run.
+fn write_handoffs(
+    ws: &Workspace,
+    number: u64,
+    closed_blockers: &[u64],
+    tracker: &dyn IssueTracker,
+) {
+    let mut entries: Vec<(u64, String)> = Vec::new();
+    for &n in closed_blockers {
+        match tracker.handoff_comment(n) {
+            Ok(Some(h)) => entries.push((n, h)),
+            Ok(None) => {}
+            Err(e) => warn!(number, blocker = n, error = %e, "fetching handoff failed — skipping"),
+        }
+    }
+    let path = ws.handoffs_path();
+    match handoff::render_handoffs_file(&entries) {
+        Some(content) => {
+            if let Err(e) = std::fs::write(&path, content) {
+                warn!(number, error = %e, "writing .ralphy/handoffs.md failed");
+            } else {
+                info!(
+                    number,
+                    handoffs = entries.len(),
+                    "handoffs collected for planner"
+                );
+            }
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 /// Write the issue the planner reads to `.ralphy/issue.json`.
 fn write_issue_json(ws: &Workspace, issue: &Issue) -> Result<()> {
     std::fs::create_dir_all(ws.ralphy_dir())?;
@@ -455,21 +505,20 @@ pub fn run_queue(
         // Blocked-by gate: skip any issue whose declared blockers are still open.
         // Checked before write_issue_json so a blocked issue never touches the
         // planner. is_closed errors are fatal (the tracker is authoritative).
-        let open_blockers: Vec<u64> = {
-            let refs = blocked::parse_blocked_by(&issue.body);
-            let mut open = Vec::new();
-            for n in refs {
-                match tracker.is_closed(n) {
-                    Ok(true) => {}
-                    Ok(false) => open.push(n),
-                    Err(e) => {
-                        restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                        return Err(e);
-                    }
+        // Closed blockers are kept: they are the handoff sources below.
+        let refs = blocked::parse_blocked_by(&issue.body);
+        let mut open_blockers: Vec<u64> = Vec::new();
+        let mut closed_blockers: Vec<u64> = Vec::new();
+        for n in refs {
+            match tracker.is_closed(n) {
+                Ok(true) => closed_blockers.push(n),
+                Ok(false) => open_blockers.push(n),
+                Err(e) => {
+                    restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
+                    return Err(e);
                 }
             }
-            open
-        };
+        }
         if !open_blockers.is_empty() {
             // consumed by the telegram notifier / presenter — keep stable
             info!(
@@ -496,6 +545,13 @@ pub fn run_queue(
             restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
             return Err(e);
         }
+
+        // Shoulders of giants: collect the handoffs the closed blockers left on
+        // their issues into `.ralphy/handoffs.md`, where the planner reads them
+        // as predecessor context. Best-effort enrichment — a fetch failure is a
+        // warning, never a stop — but the file is always refreshed (or removed)
+        // so a previous issue's handoffs never leak into this one.
+        write_handoffs(&ws, issue.number, &closed_blockers, tracker);
 
         // Plan, auto-resuming through usage-limit reset windows the same way
         // execution does. A usage limit during planning surfaces as a typed
@@ -561,8 +617,15 @@ pub fn run_queue(
         );
 
         // An infeasible plan (no actionable steps) is a skip, not a failure, and
-        // not green — the runner neither closes it nor stops the run.
+        // not green — the runner neither closes it nor stops the run. The
+        // planner's reasoning is posted on the issue so the verdict is
+        // actionable instead of dying in the gitignored plan.md.
         if !plan.is_feasible() {
+            if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
+                if let Some(reason) = handoff::infeasible_reason(&plan_md) {
+                    tracker.comment(issue.number, &infeasible_comment(&cfg.stamp, &reason))?;
+                }
+            }
             worked.push(IssueResult {
                 number: issue.number,
                 outcome: None,
@@ -652,12 +715,17 @@ pub fn run_queue(
                 blocked_by: Vec::new(),
             });
 
-            // Write acceptance evidence when the plan carries a ledger. A
-            // missing or empty ledger is a graceful no-op.
+            // Write acceptance evidence when the plan carries a ledger, and
+            // publish the session's handoff + plan friction so successors (and
+            // dependent issues' planners) inherit what this session learned. A
+            // missing or empty ledger/handoff is a graceful no-op.
             if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
                 let verdicts = acceptance::parse_ledger(&plan_md);
                 if !verdicts.is_empty() {
                     tracker.write_evidence(issue.number, &issue.body, &verdicts)?;
+                }
+                if let Some(report) = handoff::close_report(&plan_md) {
+                    tracker.comment(issue.number, &report)?;
                 }
             }
 
@@ -831,7 +899,9 @@ mod tests {
             .unwrap()
             .timestamp();
         assert_eq!(
-            next_reset("2026-06-09T18:00:00Z.", now).unwrap().timestamp(),
+            next_reset("2026-06-09T18:00:00Z.", now)
+                .unwrap()
+                .timestamp(),
             expected
         );
     }

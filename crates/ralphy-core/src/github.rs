@@ -169,6 +169,38 @@ pub fn comment_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()>
     Ok(())
 }
 
+/// Parse `{"comments":[{"body":"..."}]}` JSON from `gh issue view --json comments`
+/// into the comment bodies, in thread order.
+pub fn parse_issue_comments(json: &str) -> Result<Vec<String>> {
+    #[derive(serde::Deserialize)]
+    struct CommentJson {
+        body: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct CommentsJson {
+        #[serde(default)]
+        comments: Vec<CommentJson>,
+    }
+    let c: CommentsJson =
+        serde_json::from_str(json).context("parsing `gh issue view --json comments`")?;
+    Ok(c.comments.into_iter().map(|c| c.body).collect())
+}
+
+/// Fetch an issue's comment bodies via `gh issue view <n> --json comments`.
+pub fn issue_comments(number: u64, repo_root: &Path) -> Result<Vec<String>> {
+    let out = gh(repo_root)
+        .args(["issue", "view", &number.to_string(), "--json", "comments"])
+        .output()
+        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`gh issue view {number} --json comments` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    parse_issue_comments(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Parse `{"state":"CLOSED"}` / `{"state":"OPEN"}` JSON from `gh issue view --json state`.
 fn parse_issue_state(json: &str) -> Result<bool> {
     #[derive(serde::Deserialize)]

@@ -90,7 +90,9 @@ fn link_or_copy_dir(src: &Path, dest: &Path) -> Result<()> {
         Ok(()) => Ok(()),
         Err(_) if cfg!(windows) => copy_dir_all(src, dest)
             .with_context(|| format!("copying {} -> {}", src.display(), dest.display())),
-        Err(e) => Err(e).with_context(|| format!("symlinking {} -> {}", src.display(), dest.display())),
+        Err(e) => {
+            Err(e).with_context(|| format!("symlinking {} -> {}", src.display(), dest.display()))
+        }
     }
 }
 
@@ -757,8 +759,14 @@ mod tests {
         // The merged ignore lists our skills without a `*` that would swallow the
         // user's sibling skills in `.agents/skills`.
         let gi = fs::read_to_string(skills_dir.join(".gitignore")).expect("read .gitignore");
-        assert!(gi.lines().any(|l| l.trim() == "/reviewer"), "gitignore: {gi:?}");
-        assert!(gi.lines().any(|l| l.trim() == "/staged-plan"), "gitignore: {gi:?}");
+        assert!(
+            gi.lines().any(|l| l.trim() == "/reviewer"),
+            "gitignore: {gi:?}"
+        );
+        assert!(
+            gi.lines().any(|l| l.trim() == "/staged-plan"),
+            "gitignore: {gi:?}"
+        );
 
         // Idempotent: a second call re-links cleanly and adds no duplicate entries.
         materialize_codex_skills(&ws).expect("re-materialize");
@@ -806,8 +814,14 @@ mod tests {
         // The user's gitignore line is preserved and ours are merged in, not
         // overwritten.
         let gi = fs::read_to_string(&user_gitignore).unwrap();
-        assert!(gi.lines().any(|l| l.trim() == "my-secret"), "gitignore: {gi:?}");
-        assert!(gi.lines().any(|l| l.trim() == "/reviewer"), "gitignore: {gi:?}");
+        assert!(
+            gi.lines().any(|l| l.trim() == "my-secret"),
+            "gitignore: {gi:?}"
+        );
+        assert!(
+            gi.lines().any(|l| l.trim() == "/reviewer"),
+            "gitignore: {gi:?}"
+        );
 
         let _ = fs::remove_dir_all(&base);
     }

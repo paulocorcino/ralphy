@@ -165,10 +165,15 @@ mod tests {
         fs::write(tmp.join("opencode"), b"#!/bin/sh\n").unwrap();
         fs::write(tmp.join("opencode.cmd"), b"@echo off\n").unwrap();
 
-        let got = find_program("opencode", Some(tmp.clone().into_os_string()), Some(".EXE;.CMD".into()))
-            .expect("must resolve a runnable candidate");
+        let got = find_program(
+            "opencode",
+            Some(tmp.clone().into_os_string()),
+            Some(".EXE;.CMD".into()),
+        )
+        .expect("must resolve a runnable candidate");
         assert!(
-            got.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd")),
+            got.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("cmd")),
             "must return the .cmd, not the extensionless shim: {got:?}"
         );
         let _ = fs::remove_dir_all(&tmp);
@@ -177,7 +182,12 @@ mod tests {
     #[test]
     fn find_program_returns_none_when_absent() {
         let path_var = std::env::temp_dir().into_os_string();
-        assert!(find_program("definitely-not-a-real-prog-xyz", Some(path_var), Some(".EXE".into())).is_none());
+        assert!(find_program(
+            "definitely-not-a-real-prog-xyz",
+            Some(path_var),
+            Some(".EXE".into())
+        )
+        .is_none());
     }
 
     #[test]
@@ -292,7 +302,10 @@ pub fn find_program(
                 && direct
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|e| exts.iter().any(|x| x.trim_start_matches('.').eq_ignore_ascii_case(e)))
+                    .is_some_and(|e| {
+                        exts.iter()
+                            .any(|x| x.trim_start_matches('.').eq_ignore_ascii_case(e))
+                    })
         } else {
             direct.is_file()
         };

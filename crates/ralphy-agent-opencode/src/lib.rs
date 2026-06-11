@@ -925,8 +925,7 @@ mod tests {
     #[test]
     fn parse_flags_error_event_in_nested_part() {
         // An error carried inside the `part` envelope must still set saw_error.
-        let stream =
-            r#"{"type":"error","sessionID":"s","part":{"type":"error","name":"APIError","statusCode":500}}"#;
+        let stream = r#"{"type":"error","sessionID":"s","part":{"type":"error","name":"APIError","statusCode":500}}"#;
         let (_text, saw_error) = parse_opencode_events(stream);
         assert!(saw_error, "a nested error part must flag saw_error");
     }

@@ -373,11 +373,7 @@ mod tests {
             GuardDecision::Allow
         );
         assert_eq!(
-            evaluate_guard(
-                "Bash",
-                &bash("docker compose ps --format json"),
-                TOOL_DIR
-            ),
+            evaluate_guard("Bash", &bash("docker compose ps --format json"), TOOL_DIR),
             GuardDecision::Allow
         );
     }
@@ -389,7 +385,11 @@ mod tests {
             GuardDecision::Allow
         );
         assert_eq!(
-            evaluate_guard("Bash", &bash("curl.exe -I http://localhost:8080/ocsinventory"), TOOL_DIR),
+            evaluate_guard(
+                "Bash",
+                &bash("curl.exe -I http://localhost:8080/ocsinventory"),
+                TOOL_DIR
+            ),
             GuardDecision::Allow
         );
         assert_eq!(
