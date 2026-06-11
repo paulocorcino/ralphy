@@ -18,6 +18,7 @@ use tracing::info;
 
 mod guard;
 mod hook;
+mod install;
 mod runstate;
 mod telegram;
 mod ui;
@@ -25,9 +26,20 @@ mod ui;
 #[derive(Parser)]
 #[command(
     name = "ralphy",
-    about = "Work a repo's GitHub issue queue with an agent CLI."
+    about = "Work a repo's GitHub issue queue with an agent CLI.",
+    // Reports the git-published version captured by build.rs (e.g. `v0.1.0-rc2`),
+    // not the Cargo manifest version. We bind lowercase `-v` (clap's default short is
+    // the uppercase `-V`); the run flags use long-only `--verbose`, leaving `-v` free
+    // at the top level. `disable_version_flag` drops clap's auto-generated `--version`
+    // so the custom arg below is the sole owner of the flag.
+    version = env!("RALPHY_VERSION"),
+    disable_version_flag = true,
 )]
 struct Cli {
+    /// Print the git-published version and exit.
+    #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
+    version: (),
+
     #[command(subcommand)]
     command: Command,
 }
@@ -43,6 +55,9 @@ enum Command {
     /// Configure the optional Telegram run monitor (token, chat, status).
     #[command(subcommand)]
     Telegram(telegram::TelegramCommand),
+    /// Symlink (or copy) this binary into a PATH directory so `ralphy` resolves
+    /// from anywhere on the command line.
+    Install(install::InstallArgs),
 }
 
 #[derive(Subcommand)]
@@ -201,6 +216,7 @@ fn main() -> Result<()> {
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
+        Command::Install(args) => install::run(&args),
     }
 }
 
@@ -418,12 +434,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
-/// Force `stop_on_limit` for Codex and OpenCode runs: Codex's rolling reset
-/// window is not parseable; OpenCode already self-waits short limits and long
-/// ones carry no parseable reset, so auto-resume is never useful for either.
-/// Claude passes the flag through unchanged.
+/// Force `stop_on_limit` for OpenCode runs only: OpenCode already self-waits short
+/// limits and long ones carry no parseable reset, so auto-resume is never useful.
+/// Claude and Codex pass the flag through unchanged — both emit a trustworthy reset
+/// time (Codex an absolute RFC3339 instant, Claude a relative one), so both
+/// auto-resume by default and honour `--stop-on-limit` as the opt-out.
 fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
-    flag || matches!(agent, CliAgent::Codex | CliAgent::OpenCode)
+    flag || matches!(agent, CliAgent::OpenCode)
 }
 
 fn non_empty(s: String) -> Option<String> {
@@ -497,8 +514,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn effective_stop_on_limit_codex_forces_true() {
-        assert!(effective_stop_on_limit(false, CliAgent::Codex));
+    fn effective_stop_on_limit_codex_passes_flag_through() {
+        // Codex emits an absolute RFC3339 reset, so it auto-resumes by default like
+        // Claude — the flag is no longer forced on.
+        assert!(!effective_stop_on_limit(false, CliAgent::Codex));
         assert!(effective_stop_on_limit(true, CliAgent::Codex));
     }
 

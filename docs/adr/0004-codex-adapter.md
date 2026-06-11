@@ -77,6 +77,20 @@ form (`.claude-plugin/plugin.json` under `.ralphy/plugin/`, passed via
 and must be rephrased to Codex-native subagent dispatch. All existing Claude
 assets stay untouched.
 
+Because Codex has no setting to point at a private skills directory — it only
+scans the conventional `.agents/skills` hierarchy, and `[[skills.config]]` merely
+toggles a skill on/off — that directory is a **user-owned, shared** location we must
+not wipe. So the adapter splits storage from exposure: the real skill content is
+materialized into ralphy's own `.ralphy/skills` store (cleared-and-replaced
+wholesale, like the OpenCode path, and kept out of git by `.ralphy/.gitignore`), and
+only **per-skill symlinks** are placed into `.agents/skills/<name>` — additively,
+replacing just the `reviewer`/`staged-plan` entries ralphy owns and leaving any
+sibling user skills intact. On Windows, where a symlink needs Developer Mode/admin,
+the link falls back to a recursive copy. A **merged** `.agents/skills/.gitignore`
+adds a `/<name>` line per ralphy skill without overwriting the user's own entries.
+`.agents/skills` is preferred-and-reused when it exists, else created; `.codex` and
+`.claude` are not used because `codex exec` does not discover skills there.
+
 ## D5 — Subscription auth is the operator's; security is the isolated branch
 
 Codex bills against the ChatGPT subscription when signed in via `codex login` and
@@ -88,18 +102,26 @@ no sandbox), with safety resting on Ralphy's existing net — every issue commit
 onto an isolated run branch a human merges by hand, plus the reviewer self-review.
 The Claude `PreToolUse` guard is not ported onto the Codex path.
 
-## D6 — A usage limit stops and reports; it does not auto-resume
+## D6 — A usage limit auto-resumes when Codex names a reset time; otherwise stops
 
-Claude auto-resumes by waiting for a parsed clock reset ("resets 3pm", ADR-0003).
-Codex limits reset on a rolling **5-hour and weekly** schedule whose weekly dates
-are variable, and the CLI message is often only "wait for limits to reset (every
-5h and every week)" with no parseable near-term time. Blocking for hours on a
-guessed wake time is the failure mode ADR-0003's "no parseable reset → stop"
-fallback already guards against — so for Codex that fallback is the **default**.
-The adapter matches the limit text (`you've hit your usage limit`, `usage limit`,
-`rate limit reached`) to `Outcome::Limit`, extracts a `try again at <datetime>`
-hint only when one is present, and otherwise stops and reports for the operator to
-re-run after the reset.
+**Superseded.** This decision originally stopped-and-reported on every Codex limit
+(`effective_stop_on_limit` forced `true` for Codex), on the premise that Codex's
+reset hint was never trustworthy. That premise was wrong: when Codex *does* emit a
+`try again at <datetime>`, the datetime is an **absolute RFC3339 instant**
+(`2026-06-09T18:00:00Z`) — its own date and zone, no next-occurrence guess. That is
+*more* trustworthy than Claude's relative `"resets 3pm"`, not less. So Codex now
+follows the same default as Claude (ADR-0003 D1): auto-resume, with `--stop-on-limit`
+as the opt-out.
+
+The split is the reset hint, not the vendor. The adapter matches the limit text
+(`you've hit your usage limit`, `usage limit`, `rate limit reached`) to
+`Outcome::Limit`, and extracts the absolute `try again at <datetime>` only when one
+is present. The core's `next_reset` parses that RFC3339 instant directly and waits
+for it. When Codex emits only "wait for limits to reset (every 5h and every week)"
+with no near-term time, the hint is `None` → `Outcome::Limit(None)` → ADR-0003's "no
+parseable reset → stop" fallback still fires. Blocking for hours on a *guessed* wake
+time — the original concern — never happens, because the only thing waited on is an
+explicit absolute instant.
 
 ## Consequences
 

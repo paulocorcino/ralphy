@@ -103,14 +103,32 @@ impl RunClock for WallClock {
 }
 
 /// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
-/// either a bare `"HH:mm"` or a weekday-qualified `"Wkd HH:mm"`. A bare time
-/// resolves to today, rolled to tomorrow when already past `now`; a
+/// one of: an absolute RFC3339 instant (`"2026-06-09T18:00:00Z"`, as Codex emits),
+/// a bare `"HH:mm"`, or a weekday-qualified `"Wkd HH:mm"` (the relative forms Claude
+/// emits). An absolute instant is unambiguous and used as-is — `now` is ignored. A
+/// bare time resolves to today, rolled to tomorrow when already past `now`; a
 /// weekday-qualified time resolves to the next date carrying that weekday (today
 /// only when the time is still ahead, else next week). Pure over its inputs so the
 /// rollover edge cases unit-test without sleeping. Returns `None` on an
 /// unparseable hint.
 fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
-    let (weekday, hhmm) = match reset.trim().split_once(char::is_whitespace) {
+    // Strip trailing sentence punctuation an adapter may leave on the hint (e.g.
+    // Codex's "… Try again at 2026-06-09T18:00:00Z.").
+    let trimmed = reset.trim().trim_end_matches('.').trim();
+
+    // An absolute RFC3339 instant is unambiguous (carries its own date and zone):
+    // use it directly, converted to local time. No next-occurrence guess is needed,
+    // unlike the relative forms handled below. Try the whole hint, then its leading
+    // token — the datetime may be trailed by prose ("…Z (in 3 hours)"). The relative
+    // forms never parse as RFC3339 ("Fri"/"15:00" both fail), so this stays additive.
+    let leading = trimmed.split_whitespace().next().unwrap_or(trimmed);
+    for cand in [trimmed, leading.trim_end_matches('.')] {
+        if let Ok(dt) = DateTime::parse_from_rfc3339(cand) {
+            return Some(dt.with_timezone(&Local));
+        }
+    }
+
+    let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
         Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
         None => (None, reset.trim()),
     };
@@ -788,5 +806,62 @@ mod tests {
     fn next_reset_unparseable_is_none() {
         let now = at(2026, 6, 9, 10, 0);
         assert_eq!(next_reset("not a time", now), None);
+    }
+
+    #[test]
+    fn next_reset_absolute_rfc3339_used_directly() {
+        // An absolute instant (Codex's format) ignores `now` and resolves to the
+        // exact instant it names. Compare epochs so the assertion is timezone-
+        // independent (the result is the same instant regardless of local zone).
+        let now = at(2026, 6, 9, 10, 0);
+        let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
+            .unwrap()
+            .timestamp();
+        assert_eq!(
+            next_reset("2026-06-09T18:00:00Z", now).unwrap().timestamp(),
+            expected
+        );
+    }
+
+    #[test]
+    fn next_reset_absolute_tolerates_trailing_period() {
+        // Codex's message is a sentence: "… Try again at 2026-06-09T18:00:00Z."
+        let now = at(2026, 6, 9, 10, 0);
+        let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
+            .unwrap()
+            .timestamp();
+        assert_eq!(
+            next_reset("2026-06-09T18:00:00Z.", now).unwrap().timestamp(),
+            expected
+        );
+    }
+
+    #[test]
+    fn next_reset_absolute_ignores_trailing_prose() {
+        // Codex may trail the datetime with prose: "…Z (in 3 hours)".
+        let now = at(2026, 6, 9, 10, 0);
+        let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
+            .unwrap()
+            .timestamp();
+        assert_eq!(
+            next_reset("2026-06-09T18:00:00Z (in 3 hours)", now)
+                .unwrap()
+                .timestamp(),
+            expected
+        );
+    }
+
+    #[test]
+    fn next_reset_absolute_honours_offset() {
+        let now = at(2026, 6, 9, 10, 0);
+        let expected = DateTime::parse_from_rfc3339("2026-06-09T15:00:00-03:00")
+            .unwrap()
+            .timestamp();
+        assert_eq!(
+            next_reset("2026-06-09T15:00:00-03:00", now)
+                .unwrap()
+                .timestamp(),
+            expected
+        );
     }
 }

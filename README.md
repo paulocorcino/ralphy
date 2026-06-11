@@ -174,10 +174,11 @@ Ralphy is built to run while you sleep, so it ships its own guardrails:
 
 ## Usage limits
 
-There's no dollar cap to set — there's no API spend. On **Claude**, when you hit a usage
-limit Ralphy **waits for the reset and resumes the same issue** automatically (pass
-`--stop-on-limit` if you'd rather it stop and report). **Codex** and **OpenCode** always
-stop and report — re-run once the limit clears.
+There's no dollar cap to set — there's no API spend. On **Claude** and **Codex**, when you
+hit a usage limit Ralphy **waits for the reset and resumes the same issue** automatically
+(pass `--stop-on-limit` if you'd rather it stop and report). Both emit a trustworthy reset
+time — Codex an absolute timestamp, Claude a relative one. **OpenCode** always stops and
+reports — re-run once the limit clears.
 
 ## Telegram run monitor (optional)
 
