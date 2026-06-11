@@ -102,7 +102,9 @@ fn evaluate_bash(tool_input: &Value) -> GuardDecision {
             why: "recursive delete is blocked",
         },
         Rule {
-            rx: r"\b(format|mkfs|diskpart)\b",
+            // `format` only as a command name (start of command or after a
+            // separator) — `--format json` / `--format=%H` flags are benign.
+            rx: r"(?:^|[;&|]\s*)format(?:\.com)?\s|\b(mkfs|diskpart)\b",
             why: "disk-level command is blocked",
         },
         Rule {
@@ -350,6 +352,54 @@ mod tests {
             ),
             GuardDecision::Deny(_)
         ));
+    }
+
+    #[test]
+    fn format_as_command_is_denied() {
+        assert!(matches!(
+            evaluate_guard("Bash", &bash("format C: /q"), TOOL_DIR),
+            GuardDecision::Deny(_)
+        ));
+        assert!(matches!(
+            evaluate_guard("Bash", &bash("echo y | format D:"), TOOL_DIR),
+            GuardDecision::Deny(_)
+        ));
+    }
+
+    #[test]
+    fn format_flag_is_allowed() {
+        assert_eq!(
+            evaluate_guard("Bash", &bash("git log --format=%H -n 5"), TOOL_DIR),
+            GuardDecision::Allow
+        );
+        assert_eq!(
+            evaluate_guard(
+                "Bash",
+                &bash("docker compose ps --format json"),
+                TOOL_DIR
+            ),
+            GuardDecision::Allow
+        );
+    }
+
+    #[test]
+    fn docker_and_curl_verification_commands_are_allowed() {
+        assert_eq!(
+            evaluate_guard("Bash", &bash("docker compose up -d"), TOOL_DIR),
+            GuardDecision::Allow
+        );
+        assert_eq!(
+            evaluate_guard("Bash", &bash("curl.exe -I http://localhost:8080/ocsinventory"), TOOL_DIR),
+            GuardDecision::Allow
+        );
+        assert_eq!(
+            evaluate_guard(
+                "Bash",
+                &bash("git clone https://github.com/OCSInventory-NG/OCSInventory-Docker-Image.git lab/git-docker"),
+                TOOL_DIR
+            ),
+            GuardDecision::Allow
+        );
     }
 
     #[test]

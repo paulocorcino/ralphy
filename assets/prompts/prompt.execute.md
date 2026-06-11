@@ -27,10 +27,14 @@ durable.
   builds. Add or extend a test that FAILS before your change and PASSES after,
   in the SAME commit as the step. This is what stops a plan from "meeting the
   letter of a feature" while doing nothing meaningful.
-- Only the test-verifiable part of the plan's "Done when" gates the DONE token.
-  If a criterion can only be confirmed by a human (e.g. "the row disappears
-  immediately"), do NOT treat it as blocking — record it under a
-  `## Notes for review` section in `.ralphy/plan.md` so the PR reviewer checks it.
+- Only the machine-verifiable part of the plan's "Done when" gates the DONE
+  token. Machine-verifiable means a test, a build, OR a command sequence you
+  can run whose output proves the behavior (e.g. `docker compose up -d` plus
+  `curl` asserting HTTP statuses) — "not covered by the test suite" does NOT
+  make a criterion human-only. Only a criterion that needs human JUDGMENT
+  (e.g. "the row disappears immediately", visual appearance, UX feel) is
+  non-blocking — record it under a `## Notes for review` section in
+  `.ralphy/plan.md` so the PR reviewer checks it.
 
 ## Keep the plan the living source of truth
 `.ralphy/plan.md` is what the NEXT session — or a human — resumes from. Keep it
@@ -55,15 +59,24 @@ planner). As you complete each step, update the matching ledger line:
 
 1. Replace the `evidence:` text with the real commit hash, test name, or other
    concrete backing for that criterion.
-2. Keep `[verified]` only when a **passing test** backs the criterion. If you
-   cannot produce a passing test, downgrade the line to `[review-only]` and add
-   a one-line entry under `## Notes & decisions` explaining why.
-3. Leave `[review-only]` lines as-is — do not promote them to `[verified]`.
+2. Keep `[verified]` only when a **passing test or an executed command whose
+   output you captured** backs the criterion. Before downgrading, ATTEMPT the
+   verification: probe the environment first (e.g. `docker info`, network
+   reachability) and run the named command. Downgrade to `[review-only]` only
+   when the attempt actually failed, and record the literal probe/command
+   error under `## Notes & decisions` as the justification — "would require X"
+   with no attempt is NOT a valid downgrade.
+3. Challenge `[review-only]` lines instead of accepting them: if a script or
+   command sequence could confirm the criterion, run it — on success, promote
+   the line to `[verified]` with the command and a one-line output summary as
+   evidence. Leave it `[review-only]` only when it genuinely needs human
+   judgment (visual, UX, subjective) or your environment probe failed (record
+   the failure under `## Notes & decisions`).
 
 **The ledger does NOT gate `RALPHY_DONE_EXIT`.** The green gate stays keyed to
-the plan's test-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT` when
-every test-verifiable "Done when" condition is green and every step is `- [x]`,
-regardless of the ledger's review-only entries.
+the plan's machine-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT`
+when every machine-verifiable "Done when" condition is green and every step is
+`- [x]`, regardless of the ledger's review-only entries.
 
 ## If you get blocked
 - Do not thrash and do not ask questions. Record what you learned under

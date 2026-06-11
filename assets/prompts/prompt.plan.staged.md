@@ -28,6 +28,24 @@ in the exact shape the executor expects (below).
    work, `opus` for genuinely complex. Staged issues tend to be complex, so this
    is often `opus`, but judge honestly.>
 
+   ## Done when
+   - <machine-verifiable condition(s) — what the project's tests, a build, or
+     a scripted command sequence prove. Phrase acceptance as observable
+     behavior, not internal attributes.>
+   - Review-only (omit if none): <behavior only human JUDGMENT can confirm in
+     the PR — visual appearance, UX feel, subjective quality.>
+
+   ## Acceptance ledger
+   <One bullet per issue Acceptance criterion, copied verbatim (without the
+   issue's `- [ ]` prefix), tagged [verified] or [review-only] — same grammar
+   as the standard planning prompt (em dash `—`, literal `evidence:` key).
+   Classify by WHO can confirm: [review-only] is reserved for criteria needing
+   human JUDGMENT; anything a script or command could confirm — even needing
+   Docker, the network, or an external repo — is [verified], with that command
+   as the evidence.>
+   - [verified] <criterion prose> — evidence: <step, test, or command that will prove it>
+   - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
+
    ## Stages
    <short narrative of the stages from the staged-plan design — the "why" and
    ordering — so the executor has the design context.>
@@ -36,6 +54,10 @@ in the exact shape the executor expects (below).
    - [ ] <stage 1 / sub-step — small, focused, committable in one iteration>
    - [ ] <stage 2 ...>
    - [ ] <...>
+   - [ ] Self-review: spawn the `reviewer` skill as an independent subagent over
+         ONLY the commits made for this issue — not the whole branch. Resolve
+         every HIGH finding before finishing; if one cannot be fixed
+         autonomously, record it under `## Notes & decisions` and block.
    - [ ] the project's format and test commands pass with no new warnings
    ```
 
@@ -43,7 +65,11 @@ in the exact shape the executor expects (below).
 - The authoritative artifact the executor reads is `.ralphy/plan.md`. If the
   skill also scaffolds a plan file elsewhere, fine — but `.ralphy/plan.md` MUST
   exist and hold the shape above.
-- Every actionable item is a `- [ ]` checkbox; the LAST is the green-build gate.
+- Every actionable item is a `- [ ]` checkbox; the PENULTIMATE is the
+  `reviewer`-skill self-review and the LAST is the green-build gate.
+- The `## Done when` and `## Acceptance ledger` sections are REQUIRED — the
+  runner parses the ledger to tick issue criteria and post evidence. Without
+  them the issue's acceptance criteria are silently never updated.
 - Keep the staged ordering as the sequence of `- [ ]` steps (one per stage or
   sub-step), so the executor implements them in order.
 - Write the plan in the project's working language (English unless

@@ -5,7 +5,7 @@ use ralphy_core::VerdictKind;
 /// These constants are the test contract: if the prompt example changes, update both
 /// the prompt and these constants together.
 const VERIFIED_CRITERION: &str = "cargo test passes with new test covering parse_ledger";
-const REVIEW_ONLY_CRITERION: &str = "a dry-run plan mirrors the issue criteria verbatim";
+const REVIEW_ONLY_CRITERION: &str = "the empty-state screen looks visually consistent with the app";
 
 /// Read `assets/prompts/prompt.plan.md` and verify that the canonical ledger
 /// example embedded in it is parseable and produces the expected `Verdict`s.

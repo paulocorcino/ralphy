@@ -23,13 +23,16 @@ you only produce a plan that a later execution loop will consume.
    skip the issue and leave a comment.>
 
    ## Done when
-   - <test-verifiable condition(s) — what the project's tests (or a build)
-     prove, e.g. "the test suite passes, including new test `xyz` covering ...".
-     Phrase acceptance as observable behavior, not internal attributes.>
-   - Review-only (omit if none): <behavior only a human can confirm in the PR,
-     e.g. "the row disappears immediately before the refresh completes">. State
-     these separately — the executor gates the done token on the test-verifiable
-     conditions and flags review-only ones for the PR reviewer.
+   - <machine-verifiable condition(s) — what the project's tests, a build, or
+     a scripted command sequence prove, e.g. "the test suite passes, including
+     new test `xyz` covering ..." or "`docker compose up -d` followed by
+     `curl -I <endpoint>` returns HTTP 200". Phrase acceptance as observable
+     behavior, not internal attributes.>
+   - Review-only (omit if none): <behavior only human JUDGMENT can confirm in
+     the PR, e.g. "the row disappears immediately before the refresh
+     completes">. State these separately — the executor gates the done token on
+     the machine-verifiable conditions and flags review-only ones for the PR
+     reviewer.
 
    ## Acceptance ledger
    <One bullet per issue Acceptance criterion, copied verbatim (without the
@@ -39,7 +42,7 @@ you only produce a plan that a later execution loop will consume.
 
    Example (two criteria, one of each kind):
    - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
-   - [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR
+   - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
 
    ## Decisions
    <Only if the issue left a design choice open. Resolve it yourself — never
@@ -76,10 +79,21 @@ you only produce a plan that a later execution loop will consume.
   `[verified]` and name the step or test that will prove them; tag criteria
   that require human judgment `[review-only]` and describe how a reviewer
   confirms them. The ledger does NOT change the green gate — `RALPHY_DONE_EXIT`
-  is still keyed to the plan's test-verifiable "Done when", not to the ledger.
-  The test-verifiable "Done when" bullets must be the union of the ledger's
-  `[verified]` lines — reference the same conditions in both; do not invent a
-  criterion in one that is absent from the other.
+  is still keyed to the plan's machine-verifiable "Done when", not to the
+  ledger. The machine-verifiable "Done when" bullets must be the union of the
+  ledger's `[verified]` lines — reference the same conditions in both; do not
+  invent a criterion in one that is absent from the other.
+- Classify ledger lines by WHO can confirm them, never by how much effort it
+  takes: `[review-only]` is reserved for criteria that need human JUDGMENT
+  (visual appearance, UX feel, subjective quality). If a script or command
+  sequence could confirm the criterion — even one outside the test suite, even
+  one needing Docker, the network, or an external repo — tag it `[verified]`
+  and name that command as the evidence. For environment-dependent criteria,
+  plan an explicit step that probes the environment (e.g. `docker info`) and
+  ATTEMPTS the verification; the executor downgrades to `[review-only]` only
+  if the attempt fails, recording the literal error. "Not verifiable by the
+  test suite", "artifacts are git-ignored", or "needs an external repo" are
+  NOT grounds for `[review-only]`.
 - Anchor every claim about existing code, not just steps: any "already
   exists / already present" statement in `## Feasible` or `## Decisions` must
   cite the file and function you read in THIS pass. Before planning, check
@@ -130,4 +144,4 @@ Canonical format reference — the executor's `parse_ledger` function matches
 exactly these two line shapes (em dash `—`, literal `evidence:` key):
 
 - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
-- [review-only] a dry-run plan mirrors the issue criteria verbatim — evidence: human inspects produced plan.md in the PR
+- [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
