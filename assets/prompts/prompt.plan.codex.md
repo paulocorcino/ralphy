@@ -16,7 +16,8 @@ you only produce a plan that a later execution loop will consume.
   and builds run.
 
 ## Your task
-1. Read `.ralphy/issue.json` and the relevant project docs.
+1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` (when present), and the
+   relevant project docs.
 2. Decide whether the issue is well-specified enough to implement
    autonomously, end to end, with a clear "done" criterion that the project's
    tests (or a build) can verify.
@@ -57,9 +58,8 @@ you only produce a plan that a later execution loop will consume.
    - [verified] <criterion prose> — evidence: <step or test that will prove it>
    - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
 
-   Example (two criteria, one of each kind):
-   - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
-   - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
+   (Exact line shapes are canonical — see the format reference at the end of
+   this prompt; the executor parses them mechanically.)
 
    ## Decisions
    <Only if the issue left a design choice open. Resolve it yourself — never
@@ -85,12 +85,34 @@ you only produce a plan that a later execution loop will consume.
    ```
 
 ## Rules
-- Read evidence cheapest-and-most-conclusive FIRST: when the issue cites a
-  source document (a PRD, a parent issue, a breakdown table), read that
-  document BEFORE inspecting the tree — it often settles feasibility and
-  granularity in one move. If the source's breakdown table maps more than one
+- Read evidence cheapest-and-most-conclusive FIRST, on this ladder — never
+  skip down a rung that a cheaper rung settles: (1) `.ralphy/` artifacts
+  (issue.json, handoffs.md) — canonical for this run; (2) the repo: docs,
+  ADRs, code, read-only git; (3) the web, LAST resort, only when ALL hold:
+  the claim anchors a decision (a Feasible verdict, a step, a divergence
+  rationale — not background curiosity), rungs 1-2 cannot settle it, and the
+  target is cited by the repo's own docs or is a pinned upstream ref / exact
+  registry version — never open-ended search. A source fetched at a pinned
+  SHA/version is canonical: if it contradicts a local doc's claim about the
+  upstream, the pinned source wins — surface the conflict under
+  `## Decisions`. Conclusions drawn from an unpinned URL are leads, not
+  facts. Record each fetch (URL + what it settled) under `## Decisions`; if
+  a needed fetch fails, mark the claim `(assumed — unverified)` instead of
+  stating it with a confident voice.
+  When the issue cites a source document (a PRD, a parent issue, a breakdown
+  table), read that document BEFORE inspecting the tree — it often settles
+  feasibility and granularity in one move. If the source's breakdown table maps more than one
   task line to this single issue number, the issue is a bundle: say so under
   `## Feasible` and recommend the split, naming the constituent tasks.
+- Name the exact expected value in every command-backed oracle: a "Done when"
+  bullet or `[verified]` evidence that runs a command must state the literal
+  value it asserts — the exact status code, output substring, or count —
+  never a permissive range ("200/302") or mere reachability ("returns an
+  HTTP status line"). For layered infrastructure, the assertion must hit the
+  APPLICATION layer's known response, not the proxy's or the container's: a
+  gate that a misconfigured proxy can still pass is not an oracle. If the
+  exact value is unknown at planning time, the plan's probe step must
+  capture it and pin it before any step depends on it.
 - Price the environment, never assume it: when any step depends on external
   infrastructure (containers, databases, network services, an external repo),
   add an explicit early step that PROBES it (e.g. `docker info`, compose
@@ -104,15 +126,11 @@ you only produce a plan that a later execution loop will consume.
   human and do not paper over it with a vague step. Reserve `Feasible: no` for
   issues genuinely under-specified to implement or not autonomously verifiable,
   never for a choice you could simply make.
-- For the `## Acceptance ledger`: copy each issue criterion's prose verbatim
-  (without the issue's `- [ ]` checkbox prefix). Tag verifiable criteria
-  `[verified]` and name the step or test that will prove them; tag criteria
-  that require human judgment `[review-only]` and describe how a reviewer
-  confirms them. The ledger does NOT change the green gate — `RALPHY_DONE_EXIT`
-  is still keyed to the plan's machine-verifiable "Done when", not to the
-  ledger. The machine-verifiable "Done when" bullets must be the union of the
-  ledger's `[verified]` lines — reference the same conditions in both; do not
-  invent a criterion in one that is absent from the other.
+- The `## Acceptance ledger` does NOT change the green gate —
+  `RALPHY_DONE_EXIT` is still keyed to the plan's machine-verifiable "Done
+  when", not to the ledger. The machine-verifiable "Done when" bullets must be
+  the union of the ledger's `[verified]` lines — reference the same conditions
+  in both; do not invent a criterion in one that is absent from the other.
 - Classify ledger lines by WHO can confirm them, never by how much effort it
   takes: `[review-only]` is reserved for criteria that need human JUDGMENT
   (visual appearance, UX feel, subjective quality). If a script or command
@@ -134,7 +152,12 @@ you only produce a plan that a later execution loop will consume.
   be validated against the consuming code you read in this pass (does the
   caller actually have that data at that point?). If you cannot validate it,
   mark it `(indicative — refine at implementation)` instead of stating it
-  with the same confident voice as verified facts.
+  with the same confident voice as verified facts. The same calibration
+  applies to a `Feasible: no` split recommendation: dependency edges between
+  the proposed sub-tasks and per-task model picks that you did not verify
+  against code or ADRs read in THIS pass must carry `(indicative)` — they
+  are reasoning over names, and the session opening each sub-issue must
+  re-derive them, not inherit them as fact.
 - Make cross-path invariants explicit: when the work touches lifecycle,
   teardown, error handling, shared resources, or concurrency, state the
   invariant that must hold on EVERY return path — including errors and early
@@ -154,10 +177,16 @@ you only produce a plan that a later execution loop will consume.
   atomic unit of work cannot fit one short commit, split it into explicit
   red/green/refactor sub-steps rather than faking granularity or hiding the
   whole unit behind one bullet.
-- The penultimate step is always a Codex-native self-review: dispatch
+- The penultimate step is a Codex-native self-review: dispatch
   `.agents/skills/reviewer/` as a Codex subagent scoped to ONLY the commits you
-  made for this issue. Resolve every HIGH finding before declaring done. Phrase
-  it as a Codex subagent dispatch — not as a Claude Task-tool invocation.
+  made for this issue — include it by DEFAULT. Omit it only when the change
+  carries no domain logic at all (pure data/fixtures/docs), and record that
+  omission as a `## Decisions` bullet with a one-line why. A plan that
+  includes the step buys a real review: the executor must record the
+  reviewer's findings in the plan, so do not include it as ritual for changes
+  where it cannot find anything tests don't. Resolve every HIGH finding
+  before declaring done. Phrase it as a Codex subagent dispatch — not as a
+  Claude Task-tool invocation.
 - The LAST step is always a green-build/test gate.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.

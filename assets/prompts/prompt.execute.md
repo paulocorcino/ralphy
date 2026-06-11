@@ -15,9 +15,8 @@ durable.
 
 ## Do this
 1. Read `.ralphy/plan.md` AND, if present, `.ralphy/handoffs.md` — predecessors
-   paid real effort for what is in it (expected probe outputs, environment
-   traps, working commands); skipping it re-buys their diagnoses at full
-   price. Then work the plan's `- [ ]` steps top to bottom. When an
+   paid real effort for what is in it; skipping it re-buys their diagnoses at
+   full price. Then work the plan's `- [ ]` steps top to bottom. When an
    observation contradicts a handoff entry (e.g. a probe returns a different
    status than the handoff documents), investigate the delta first — "what
    changed since the predecessor" is usually the shortest path to the fault.
@@ -154,6 +153,11 @@ versioned docs travel everywhere.
   `git switch`, `gh pr ...`, or a recursive delete. A hook blocks these. You
   are on a shared run branch that a human reviews and merges by hand — just
   commit your work onto it; never push, switch, or open a PR.
+- `.ralphy/` is gitignored BY THE RUNNER, deliberately: it is scratch, not
+  deliverable. Never commit anything under it, never `git add --force` it,
+  and never edit `.gitignore` to expose it. `plan.md` durability comes from
+  the file on disk (resume sessions share this worktree) and from the runner
+  publishing the handoff and friction on the issue — not from git.
 - Commit BEFORE emitting the exit token — uncommitted work is lost when the
   session is terminated.
 - Emit the exit token EXACTLY ONCE, as the very last thing you output.

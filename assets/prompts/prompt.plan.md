@@ -16,7 +16,8 @@ you only produce a plan that a later execution loop will consume.
   and builds run.
 
 ## Your task
-1. Read `.ralphy/issue.json` and the relevant project docs.
+1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` (when present), and the
+   relevant project docs.
 2. Decide whether the issue is well-specified enough to implement
    autonomously, end to end, with a clear "done" criterion that the project's
    tests (or a build) can verify.
@@ -60,9 +61,8 @@ you only produce a plan that a later execution loop will consume.
    - [verified] <criterion prose> — evidence: <step or test that will prove it>
    - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
 
-   Example (two criteria, one of each kind):
-   - [verified] cargo test passes with new test covering parse_ledger — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
-   - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
+   (Exact line shapes are canonical — see the format reference at the end of
+   this prompt; the executor parses them mechanically.)
 
    ## Decisions
    <Only if the issue left a design choice open. Resolve it yourself — never
@@ -130,15 +130,11 @@ you only produce a plan that a later execution loop will consume.
   human and do not paper over it with a vague step. Reserve `Feasible: no` for
   issues genuinely under-specified to implement or not autonomously verifiable,
   never for a choice you could simply make.
-- For the `## Acceptance ledger`: copy each issue criterion's prose verbatim
-  (without the issue's `- [ ]` checkbox prefix). Tag verifiable criteria
-  `[verified]` and name the step or test that will prove them; tag criteria
-  that require human judgment `[review-only]` and describe how a reviewer
-  confirms them. The ledger does NOT change the green gate — `RALPHY_DONE_EXIT`
-  is still keyed to the plan's machine-verifiable "Done when", not to the
-  ledger. The machine-verifiable "Done when" bullets must be the union of the
-  ledger's `[verified]` lines — reference the same conditions in both; do not
-  invent a criterion in one that is absent from the other.
+- The `## Acceptance ledger` does NOT change the green gate —
+  `RALPHY_DONE_EXIT` is still keyed to the plan's machine-verifiable "Done
+  when", not to the ledger. The machine-verifiable "Done when" bullets must be
+  the union of the ledger's `[verified]` lines — reference the same conditions
+  in both; do not invent a criterion in one that is absent from the other.
 - Classify ledger lines by WHO can confirm them, never by how much effort it
   takes: `[review-only]` is reserved for criteria that need human JUDGMENT
   (visual appearance, UX feel, subjective quality). If a script or command

@@ -15,7 +15,8 @@ in the exact shape the executor expects (below).
   and builds run.
 
 ## Your task
-1. Read `.ralphy/issue.json` and the relevant project docs.
+1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` (when present), and the
+   relevant project docs.
 2. Invoke the `staged-plan` skill to design the implementation plan. It runs
    NON-INTERACTIVELY (`STAGED_PLAN_NONINTERACTIVE=1` is set): follow the skill's
    non-interactive branch — do NOT call `AskUserQuestion`, there is no human to
@@ -71,7 +72,29 @@ in the exact shape the executor expects (below).
   skill also scaffolds a plan file elsewhere, fine — but `.ralphy/plan.md` MUST
   exist and hold the shape above.
 - Every actionable item is a `- [ ]` checkbox; the PENULTIMATE is the
-  `reviewer`-skill self-review and the LAST is the green-build gate.
+  `reviewer`-skill self-review and the LAST is the green-build gate. Include
+  the self-review by DEFAULT; omit it only when the change carries no domain
+  logic at all (pure data/fixtures/docs), recording that omission as a
+  `## Decisions` bullet with a one-line why — the executor must record the
+  reviewer's findings in the plan, so do not include it as ritual.
+- Gather evidence on this ladder — never skip down a rung a cheaper rung
+  settles: (1) `.ralphy/` artifacts (issue.json, handoffs.md) — canonical for
+  this run; (2) the repo: docs, ADRs, code, read-only git; (3) the web, LAST
+  resort, only when the claim anchors a decision, rungs 1-2 cannot settle it,
+  and the target is cited by the repo's own docs or is a pinned upstream
+  ref / exact registry version — never open-ended search. A pinned source is
+  canonical and beats a local doc's claim about the upstream; conclusions
+  from an unpinned URL are leads, not facts. Record each fetch (URL + what
+  it settled) under `## Decisions`; if a needed fetch fails, mark the claim
+  `(assumed — unverified)` instead of stating it with a confident voice.
+- Name the exact expected value in every command-backed oracle: a "Done when"
+  bullet or `[verified]` evidence that runs a command must state the literal
+  value it asserts — the exact status code, output substring, or count —
+  never a permissive range or mere reachability. For layered infrastructure,
+  the assertion must hit the APPLICATION layer's known response, not the
+  proxy's or the container's. If the exact value is unknown at planning time,
+  the plan's probe step must capture it and pin it before any step depends
+  on it.
 - The `## Done when` and `## Acceptance ledger` sections are REQUIRED — the
   runner parses the ledger to tick issue criteria and post evidence. Without
   them the issue's acceptance criteria are silently never updated.
