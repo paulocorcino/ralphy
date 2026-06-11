@@ -164,7 +164,7 @@ Ralphy is built to run while you sleep, so it ships its own guardrails:
   clobbers uncommitted work, and the agent is kept on the run branch.
 - **Never pushes, never opens a PR** — the agent only commits locally. The single run
   branch is the delivery; you review and merge it by hand.
-- **Time budgets** — a per-issue limit (`--max-minutes-per-issue`, default 45) and a
+- **Time budgets** — a per-issue limit (`--max-minutes-per-issue`, default 90) and a
   global `--deadline-hours` keep a hung issue from running forever.
 - **Stop at first failure** — one stalled issue stops the run instead of burning the rest
   of the budget.

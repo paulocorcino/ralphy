@@ -142,7 +142,7 @@ struct RunArgs {
     default_exec_model: String,
 
     /// Per-issue wall-clock budget (minutes) before the session is reclaimed.
-    #[arg(long, default_value_t = 45)]
+    #[arg(long, default_value_t = 90)]
     max_minutes_per_issue: u64,
 
     /// Enable Remote Control so you can follow/intervene from the mobile app
