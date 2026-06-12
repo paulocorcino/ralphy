@@ -257,6 +257,11 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     if let Some(only) = args.only_issue {
         queue.retain(|i| i.number == only);
     }
+    // Order by dependency (Blocked-by edges + split-bundle children), ascending
+    // number as tie-break — the pending list shown to the user IS the sequence
+    // run_queue will work, and a dependency-consistent order lets one run drain
+    // a graph whose numbering disagrees with its edges.
+    let queue = ralphy_core::blocked::sort_queue(queue);
     if queue.is_empty() {
         let scope = match args.only_issue {
             Some(n) => format!("issue #{n}"),
