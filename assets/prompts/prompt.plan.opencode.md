@@ -11,12 +11,15 @@ you only produce a plan that a later execution loop will consume.
   Treat entries as leads, not truths: they were true at the predecessor's
   close and may have gone stale; verify against the tree before anchoring a
   step on one.
-- `.ralphy/knowledge/` — when present, the accumulated local cache: one
-  `issue-<N>.md` per issue closed on this machine, holding the dated
-  environment facts and working commands mechanically extracted from its
-  handoff. Before planning a step that re-derives an environment procedure
-  (bringing up the lab, probing a service), grep this folder first — a
-  predecessor may have already paid for it. Same caveat: leads, not truths.
+- `.ralphy/knowledge/` — when present, the accumulated local cache. Read
+  `KNOWLEDGE.md` FIRST when it exists — it is the curated, deduplicated
+  consolidation, organized by topic. The loose `issue-<N>.md` files beside it
+  are newer, not-yet-consolidated notes (dated environment facts and working
+  commands mechanically extracted from each issue's handoff at close) — grep
+  those too before planning a step that re-derives an environment procedure
+  (bringing up the lab, probing a service); a predecessor may have already
+  paid for it. Ignore `knowledge/raw/` (archived input, already folded in).
+  Same caveat: leads, not truths.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
   and builds run.
@@ -99,7 +102,9 @@ you only produce a plan that a later execution loop will consume.
   table), read that document BEFORE inspecting the tree — it often settles
   feasibility and granularity in one move. If the source's breakdown table maps more than one
   task line to this single issue number, the issue is a bundle: say so under
-  `## Feasible` and recommend the split, naming the constituent tasks.
+  `## Feasible` — the verdict prose MUST contain the literal word "bundle"
+  (the runner keys on it to label the issue `needs-split`) — and recommend
+  the split, naming the constituent tasks.
 - Name the exact expected value in every command-backed oracle: a "Done when"
   bullet or `[verified]` evidence that runs a command must state the literal
   value it asserts — the exact status code, output substring, or count —
@@ -162,6 +167,11 @@ you only produce a plan that a later execution loop will consume.
   Decision. The language's idiomatic form (e.g. Rust's `?`) often violates
   such guarantees silently; plans must spend ink where the risk is, not
   where the description is easiest.
+- Enumerate impact sites with a tool, never from memory: any step that claims
+  "N call sites / usages / files affected" must have N established by a search
+  run in THIS pass (`grep -r <symbol>` or equivalent over the whole tree —
+  tests included), not by recalling the files you happened to read. A missed
+  call site turns a planned change into a reactive compile-error fix.
 - Anchor every step in real code: name the actual file and function/module to
   edit, found by reading the tree NOW. If a step cannot point at concrete code
   even after you have made the open design decisions, the issue is too

@@ -38,6 +38,13 @@ pub trait IssueTracker {
         Ok(())
     }
 
+    /// Add a label to an issue (e.g. `needs-split` on a bundle verdict).
+    /// Default no-op so non-`gh` implementations never touch labels.
+    fn add_label(&self, number: u64, label: &str) -> Result<()> {
+        let _ = (number, label);
+        Ok(())
+    }
+
     /// Fetch the handoff a closed issue left behind (the last comment carrying
     /// a `## Handoff` heading), or `None` when it left none. Default `None` so
     /// non-`gh` implementations never feed handoffs.
@@ -94,6 +101,10 @@ impl IssueTracker for GhTracker {
 
     fn comment(&self, number: u64, body: &str) -> Result<()> {
         github::comment_issue(number, body, &self.repo_root)
+    }
+
+    fn add_label(&self, number: u64, label: &str) -> Result<()> {
+        github::add_label(number, label, &self.repo_root)
     }
 
     fn handoff_comment(&self, number: u64) -> Result<Option<String>> {

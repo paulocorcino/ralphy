@@ -49,6 +49,14 @@ pub fn infeasible_reason(plan_md: &str) -> Option<String> {
     (!reason.is_empty()).then(|| reason.to_string())
 }
 
+/// Whether an infeasible reason is a bundle verdict: the planner judged the
+/// issue a multi-task bundle that needs splitting into child issues, rather
+/// than under-specified. Keys on the literal word "bundle", which the planning
+/// prompt requires the verdict prose to carry.
+pub fn is_bundle_reason(reason: &str) -> bool {
+    reason.to_lowercase().contains("bundle")
+}
+
 /// Pick the handoff out of an issue's comments: the LAST comment containing a
 /// `## Handoff` heading (a re-run of the issue supersedes earlier reports).
 pub fn find_handoff_comment(comments: &[String]) -> Option<String> {
@@ -208,6 +216,17 @@ some note
     #[test]
     fn infeasible_reason_absent_is_none() {
         assert_eq!(infeasible_reason("# Plan\n\n## Steps\n"), None);
+    }
+
+    #[test]
+    fn is_bundle_reason_detects_the_word_case_insensitively() {
+        assert!(is_bundle_reason(
+            "This issue is a **bundle**: six PRD tasks map to this number."
+        ));
+        assert!(is_bundle_reason("The issue is a Bundle of W2-T01..T05."));
+        assert!(!is_bundle_reason(
+            "No acceptance criteria and no verifiable done condition."
+        ));
     }
 
     #[test]

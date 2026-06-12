@@ -186,6 +186,42 @@ pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> 
     Ok(())
 }
 
+/// Add a label to an issue via `gh issue edit <n> --add-label <label>`. When the
+/// label does not exist in the repository yet, `gh` rejects the edit — so on
+/// failure the label is created once (`gh label create`, best-effort) and the
+/// edit retried, keeping first use on a fresh repo from failing.
+pub fn add_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
+    let edit = |root: &Path| -> Result<()> {
+        let out = gh(root)
+            .args(["issue", "edit", &number.to_string(), "--add-label", label])
+            .output()
+            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+        if !out.status.success() {
+            bail!(
+                "`gh issue edit {number} --add-label {label}` failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Ok(())
+    };
+    if edit(repo_root).is_ok() {
+        return Ok(());
+    }
+    // The most common failure is a missing label; create it and retry once.
+    let _ = gh(repo_root)
+        .args([
+            "label",
+            "create",
+            label,
+            "--color",
+            "D93F0B",
+            "--description",
+            "Ralphy: bundle issue awaiting split into child issues",
+        ])
+        .output();
+    edit(repo_root)
+}
+
 /// Post a comment on a GitHub issue via `gh issue comment <n> --body <comment>`.
 pub fn comment_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
     let out = gh(repo_root)

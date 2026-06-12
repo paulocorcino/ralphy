@@ -156,6 +156,26 @@ git -C C:\Dev\foo branch -D afk/run-<stamp>
 If the run **stopped** (didn't finish green), the repo is left on the run branch so you
 can fix the stalled issue in place, then commit and continue.
 
+## Knowledge cache and consolidation
+
+Every green close leaves a note at `.ralphy/knowledge/issue-<N>.md` with the
+environment facts and working commands extracted from the issue's handoff —
+future sessions read these instead of re-deriving environment procedures. The
+folder grows across runs, and the same trap naturally gets re-recorded by
+several issues. Periodically (end of a milestone, or when the loose notes pile
+up), curate it:
+
+```powershell
+ralphy consolidate --repo C:\Dev\foo
+```
+
+A one-shot agent session (Claude) merges all loose notes into a single
+`.ralphy/knowledge/KNOWLEDGE.md` — organized by topic, deduplicated, with
+provenance — and the consumed notes are archived under `knowledge/raw/`.
+Planner and executor sessions read `KNOWLEDGE.md` first, then any newer loose
+notes. If the session fails or produces nothing, the notes stay loose for a
+retry.
+
 ## Running unattended, safely
 
 Ralphy is built to run while you sleep, so it ships its own guardrails:

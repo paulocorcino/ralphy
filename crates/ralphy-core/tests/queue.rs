@@ -173,6 +173,8 @@ struct RecordingTracker {
     closed_issues: HashSet<u64>,
     /// Every `comment` call (handoff at close, infeasible-skip reasoning).
     comments: RefCell<Vec<(u64, String)>>,
+    /// Every `add_label` call (the needs-split label on a bundle verdict).
+    labels: RefCell<Vec<(u64, String)>>,
     /// Scripted handoff comments returned by `handoff_comment`, by issue number.
     handoffs: HashMap<u64, String>,
     /// Scripted open children returned by `open_children`, by parent number —
@@ -199,6 +201,11 @@ impl IssueTracker for RecordingTracker {
 
     fn comment(&self, number: u64, body: &str) -> anyhow::Result<()> {
         self.comments.borrow_mut().push((number, body.to_string()));
+        Ok(())
+    }
+
+    fn add_label(&self, number: u64, label: &str) -> anyhow::Result<()> {
+        self.labels.borrow_mut().push((number, label.to_string()));
         Ok(())
     }
 
@@ -1141,6 +1148,8 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
     assert!(report.stop.is_none(), "infeasible does not stop the run");
 
     // But the verdict is no longer silent: the reasoning lands on the issue.
+    // This reason carries the word "bundle", so it routes to the bundle path:
+    // the needs-split label is applied and the comment names the human step.
     let comments = tracker.comments.borrow();
     assert_eq!(comments.len(), 1, "one skip comment");
     let (number, body) = &comments[0];
@@ -1150,8 +1159,55 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
         "planner reasoning reaches the issue: {body}"
     );
     assert!(
+        body.contains("/to-issues"),
+        "bundle comment names the human split step: {body}"
+    );
+    let labels = tracker.labels.borrow();
+    assert_eq!(
+        labels.as_slice(),
+        &[(3u64, "needs-split".to_string())],
+        "bundle verdict applies the needs-split label"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn infeasible_plan_without_bundle_verdict_stays_generic() {
+    // A reason without the word "bundle" takes the generic infeasible path:
+    // no label, and the comment is the respecify-oriented one.
+    let repo = init_repo("infeasible-generic");
+    let extra = "## Feasible: no\nNo acceptance criteria and no verifiable done condition.";
+    let queue = vec![issue(4)];
+    let agent = ScriptedAgent::new(vec![])
+        .infeasible()
+        .with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-generic", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(report.stop.is_none(), "infeasible does not stop the run");
+    assert!(
+        tracker.labels.borrow().is_empty(),
+        "no needs-split label without a bundle verdict"
+    );
+    let comments = tracker.comments.borrow();
+    assert_eq!(comments.len(), 1, "one skip comment");
+    let (_, body) = &comments[0];
+    assert!(
         body.contains("stays open"),
-        "comment tells the human the issue was not closed"
+        "generic comment tells the human the issue was not closed: {body}"
+    );
+    assert!(
+        !body.contains("/to-issues"),
+        "generic comment does not prescribe a split: {body}"
     );
 
     fs::remove_dir_all(&repo).ok();

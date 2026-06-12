@@ -327,6 +327,12 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 const STOP_BEFORE_LABEL: &str = "stop-before";
 
+/// The label applied to an issue the planner judged a bundle (multiple backlog
+/// tasks under one number): the queue is parked on a human running `/to-issues`
+/// to open the children (`## Parent: #N`) and close the bundle — the
+/// follow-the-split blocker gate handles the rest.
+const NEEDS_SPLIT_LABEL: &str = "needs-split";
+
 /// Everything the core needs to work a whole queue. Like [`RunConfig`] but the
 /// issues come from the caller (built via [`crate::github::list_queue`]) so the
 /// loop itself stays `gh`-free and testable.
@@ -406,6 +412,21 @@ fn infeasible_comment(stamp: &str, reason: &str) -> String {
          autonomously implementable as written.\n\n## Planner reasoning\n\n{reason}\n\n\
          The issue stays open; act on the reasoning above (split, respecify, or \
          label) and the next run will pick it up again."
+    )
+}
+
+/// The comment posted on a bundle verdict: unlike a generic infeasible skip,
+/// the issue is well-specified but covers several backlog tasks, so the next
+/// step is a human split — spelled out so the parked queue has an owner.
+fn bundle_comment(stamp: &str, reason: &str) -> String {
+    format!(
+        "Ralphy run {stamp} skipped this issue — the planner judged it a \
+         **bundle**: several backlog tasks under one issue number. The queue is \
+         parked on this until it is split.\n\n## Planner reasoning\n\n{reason}\n\n\
+         Next step (human): run `/to-issues` against the source PRD using the \
+         split recommended above as a draft, open one child issue per task with \
+         a `## Parent` reference to this issue, then close this issue — \
+         dependents follow the open children automatically."
     )
 }
 
@@ -672,7 +693,18 @@ pub fn run_queue(
         if !plan.is_feasible() {
             if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
                 if let Some(reason) = handoff::infeasible_reason(&plan_md) {
-                    tracker.comment(issue.number, &infeasible_comment(&cfg.stamp, &reason))?;
+                    if handoff::is_bundle_reason(&reason) {
+                        // consumed by the telegram notifier / presenter — keep stable
+                        info!(number = issue.number, "bundle plan — needs split");
+                        // Best-effort: a label failure must not stop the run —
+                        // the comment below still carries the verdict.
+                        if let Err(e) = tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
+                            warn!(number = issue.number, error = %e, "applying needs-split label failed");
+                        }
+                        tracker.comment(issue.number, &bundle_comment(&cfg.stamp, &reason))?;
+                    } else {
+                        tracker.comment(issue.number, &infeasible_comment(&cfg.stamp, &reason))?;
+                    }
                 }
             }
             worked.push(IssueResult {
