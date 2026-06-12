@@ -182,17 +182,9 @@ pub fn render_card(state: &RunState, now_epoch: i64) -> String {
     truncate_chars(sections.join("\n\n"), TELEGRAM_LIMIT)
 }
 
-/// The push sent at run start (a new message, so the phone buzzes — an edit does
-/// not, ADR-0007 D3). Bounded to the message limit so an over-long `--title`
-/// cannot make Telegram reject (and thus silently drop) the start buzz.
-pub fn render_start_push(state: &RunState) -> String {
-    truncate_chars(
-        format!("▶️ {} — {} issues queued", state.title, state.total),
-        TELEGRAM_LIMIT,
-    )
-}
-
-/// The push sent at the final outcome. Bounded like the start push.
+/// The run's terminal footer, embedded as the last group of the consolidated card
+/// (`🏁 <title> — <head> · ✅ N done, ⏭️ M skipped`). Bounded to the message limit so
+/// an over-long `--title` cannot make Telegram reject the edit.
 pub fn render_final_push(state: &RunState) -> String {
     let c = state.counts();
     let head = state
@@ -372,11 +364,12 @@ impl<S: Subscriber> Layer<S> for NotifierLayer {
 // The worker
 // ---------------------------------------------------------------------------
 
-/// The background worker (ADR-0007 D4): send the card + start push, fold each
-/// drained event, edit the one owned `message_id` on change (with a throttled
-/// ~60s refresh), and on shutdown render the terminal card and send the final
-/// push. Every per-call transport error is swallowed (`warn!`ed) so a stalled
-/// network never aborts or blocks the run.
+/// The background worker (ADR-0007 D4): send the card once, fold each drained event,
+/// edit the one owned `message_id` on change (with a throttled ~60s refresh), and on
+/// shutdown render the terminal card with its footer. The card is a single
+/// consolidated component edited in place — no start/final pushes — though a
+/// usage-limit sleep/resume still buzzes via its own push. Every per-call transport
+/// error is swallowed (`warn!`ed) so a stalled network never aborts or blocks the run.
 pub fn run_worker<T: Transport>(
     client: BotClient<T>,
     chat_id: i64,
@@ -399,10 +392,11 @@ pub fn run_worker<T: Transport>(
     // identical body makes the Bot API reject it ("message is not modified"), so we
     // compare against this and only edit when the render genuinely differs.
     let mut last_card = initial_card;
-    // The start push is a new message so the phone buzzes once at run start.
-    if let Err(e) = client.send_message(chat_id, &render_start_push(&state)) {
-        warn!("telegram: start push failed: {e}");
-    }
+    // No separate start/final pushes: the card is one consolidated component edited
+    // in place (the operator opted to drop the buzzes). The initial `sendMessage`
+    // above already surfaces the card once; every later change is a silent edit, and
+    // the terminal `🏁` footer is the final edit below. The sleep/resume pushes are
+    // kept — a usage-limit pause is an exceptional event worth a buzz.
 
     let mut last_edit = Instant::now();
     let mut prev_sleeping = state.sleep.is_some();
@@ -460,10 +454,10 @@ pub fn run_worker<T: Transport>(
         }
     }
 
-    // Terminal state: mark the run finished so the card grows its `🏁` footer, then
-    // a final edit, then the final push. Skip the edit when the terminal render
-    // matches what's already shown, for the same "message is not modified" reason
-    // as the idle refresh above.
+    // Terminal state: mark the run finished so the card grows its `🏁` footer, then a
+    // final in-place edit. No final push — the footer lands silently on the card.
+    // Skip the edit when the terminal render matches what's already shown, for the
+    // same "message is not modified" reason as the idle refresh above.
     state.finished = true;
     if let Some(mid) = message_id {
         let card = render_card(&state, now_epoch());
@@ -472,9 +466,6 @@ pub fn run_worker<T: Transport>(
                 warn!("telegram: final edit failed: {e}");
             }
         }
-    }
-    if let Err(e) = client.send_message(chat_id, &render_final_push(&state)) {
-        warn!("telegram: final push failed: {e}");
     }
 }
 
@@ -947,7 +938,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_sends_card_start_edits_and_final_push() {
+    fn worker_sends_one_card_then_edits_in_place_no_pushes() {
         let transport = RecordingTransport::new();
         let calls = transport.calls.clone();
         let client = BotClient::new(transport);
@@ -977,11 +968,14 @@ mod tests {
 
         let calls = calls.lock().unwrap();
         let m = methods(&calls);
-        // card, then start push, then at least one edit, then the final push.
+        // Exactly ONE sendMessage — the card itself. No start/final pushes; every
+        // later change is an in-place edit.
+        let sends = m.iter().filter(|&&x| x == "sendMessage").count();
+        assert_eq!(sends, 1, "only the card is sent, not pushed: {m:?}");
         assert_eq!(m.first(), Some(&"sendMessage"));
-        assert_eq!(m[1], "sendMessage");
         assert!(m.contains(&"editMessageText"));
-        assert_eq!(m.last(), Some(&"sendMessage"));
+        // The run ends on an edit (the terminal footer), never a push.
+        assert_eq!(m.last(), Some(&"editMessageText"));
 
         // Every edit targets the card's message_id (the first sendMessage's id).
         let edit_ids: Vec<i64> = calls
@@ -1062,14 +1056,14 @@ mod tests {
             .iter()
             .position(|t| t.contains("resuming"))
             .expect("resume push");
-        // Order: the sleep-in push fires before the resume push, both beyond the
-        // initial card + start push and before the final push.
+        // Order: the sleep-in push fires before the resume push, both after the
+        // initial card. There are no start/final pushes anymore.
         assert!(
             sleep_idx < resume_idx,
             "sleep push must precede resume push: {texts:?}"
         );
-        // initial card + start + sleep + resume + final = five sendMessage calls.
-        assert!(texts.len() >= 5, "expected ≥5 sendMessage, got {texts:?}");
+        // initial card + sleep + resume = three sendMessage calls (no start/final).
+        assert_eq!(texts.len(), 3, "expected exactly 3 sendMessage, got {texts:?}");
     }
 
     #[test]
@@ -1106,7 +1100,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_swallows_edit_error_and_still_sends_final_push() {
+    fn worker_swallows_edit_error_and_finishes_cleanly() {
         let mut transport = RecordingTransport::new();
         transport.fail_edit = true;
         let calls = transport.calls.clone();
@@ -1127,18 +1121,19 @@ mod tests {
 
         let calls = calls.lock().unwrap();
         let m = methods(&calls);
-        // The failing edit did not abort the worker: the final push still went out.
+        // The failing edit was swallowed, not fatal: the worker still attempted the
+        // edit and returned. Only the card was sent (no pushes exist to fall back on).
         assert!(m.contains(&"editMessageText"));
-        assert_eq!(m.last(), Some(&"sendMessage"));
+        let sends = m.iter().filter(|&&x| x == "sendMessage").count();
+        assert_eq!(sends, 1, "only the card is sent: {m:?}");
     }
 
     #[test]
-    fn worker_terminal_edit_adds_footer_then_final_push() {
+    fn worker_terminal_edit_adds_footer_as_the_last_call() {
         // With no state-changing events the idle loop makes no edit (an identical
         // body would be rejected as "message is not modified"). The one terminal
         // edit is the `finished` flip growing the `🏁` footer — a genuine change —
-        // followed by the final push. So exactly one editMessageText goes out, and
-        // it carries the footer.
+        // and it is the LAST call: there is no final push after it.
         let transport = RecordingTransport::new();
         let calls = transport.calls.clone();
         let client = BotClient::new(transport);
@@ -1149,9 +1144,9 @@ mod tests {
 
         let calls = calls.lock().unwrap();
         let m = methods(&calls);
-        // Initial card, one terminal footer edit, then the final push.
+        // Initial card (sent once), then exactly one terminal footer edit — last.
         assert_eq!(m.first(), Some(&"sendMessage"));
-        assert_eq!(m.last(), Some(&"sendMessage"));
+        assert_eq!(m.last(), Some(&"editMessageText"));
         let edits: Vec<&Value> = calls
             .iter()
             .filter(|(method, _)| method == "editMessageText")
