@@ -63,6 +63,33 @@ pub fn build_queue(batches: Vec<Vec<Issue>>) -> Vec<Issue> {
     by_number.into_values().collect()
 }
 
+/// List ALL open issues (no label filter), with bodies. Used to find the open
+/// children of a retired bundle: issues whose `## Parent` section references
+/// it. Label-agnostic on purpose — children often sit in `needs-triage` and
+/// would be invisible to the label-filtered queue.
+pub fn list_open_issues(repo_root: &Path) -> Result<Vec<Issue>> {
+    let out = gh(repo_root)
+        .args([
+            "issue",
+            "list",
+            "--state",
+            "open",
+            "--json",
+            "number,title,body,labels",
+            "--limit",
+            "200",
+        ])
+        .output()
+        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`gh issue list --state open` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    parse_issue_list(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// A `gh` command rooted at `repo_root`. Ralphy is a global tool driven with
 /// `--repo`, so the process cwd need not be the target repo; `gh` resolves the
 /// repository from its working directory, so every GitHub call must be pinned to

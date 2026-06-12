@@ -1,5 +1,5 @@
-//! Parsing the `## Blocked by` section from an issue body. Pure functions over
-//! markdown strings — no I/O, no `gh` calls.
+//! Parsing the `## Blocked by` and `## Parent` sections from an issue body.
+//! Pure functions over markdown strings — no I/O, no `gh` calls.
 
 use regex::Regex;
 
@@ -18,6 +18,24 @@ pub fn parse_blocked_by(body: &str) -> Vec<u64> {
     // Match only bullet-list items: `- #N` (leading whitespace optional).
     // This avoids treating prose references like "step #3" as issue refs.
     let ref_re = Regex::new(r"(?m)^\s*-\s*#(\d+)").expect("valid regex");
+    ref_re
+        .captures_iter(section)
+        .map(|c| c[1].parse::<u64>().expect("matched digits"))
+        .collect()
+}
+
+/// Extract `#N` issue references from the `## Parent` section of an issue
+/// body (the to-issues skill's provenance field, e.g. "Split from #3 (bundle
+/// retired)"). Unlike `parse_blocked_by` this accepts prose refs, because the
+/// template writes the parent inline, not as a bullet list. Returns an empty
+/// list when the section is absent or carries no `#N` ref.
+pub fn parse_parent(body: &str) -> Vec<u64> {
+    let heading_re = Regex::new(r"(?im)^##\s+Parent\s*$").expect("valid regex");
+    let section = crate::markdown::section_after_heading(body, &heading_re);
+    if section.is_empty() {
+        return Vec::new();
+    }
+    let ref_re = Regex::new(r"#(\d+)").expect("valid regex");
     ref_re
         .captures_iter(section)
         .map(|c| c[1].parse::<u64>().expect("matched digits"))
@@ -57,5 +75,23 @@ mod tests {
         // "#3" appears in prose, not as a bullet item — must be ignored.
         let body = "## Blocked by\nStep #3 must finish before #7 merges\n- #7\n";
         assert_eq!(parse_blocked_by(body), vec![7]);
+    }
+
+    #[test]
+    fn parse_parent_reads_prose_ref() {
+        let body = "## Parent\n\nSplit from #3 (bundle retired). Part of PRD-0002.\n\n## Blocked by\n- #16\n";
+        assert_eq!(parse_parent(body), vec![3]);
+    }
+
+    #[test]
+    fn parse_parent_absent_or_refless_is_empty() {
+        assert!(parse_parent("## What to build\nstuff\n").is_empty());
+        assert!(parse_parent("## Parent\n\nPart of PRD-0002 only.\n").is_empty());
+    }
+
+    #[test]
+    fn parse_parent_stops_at_next_heading() {
+        let body = "## Parent\n\nSplit from #3.\n\n## Blocked by\n- #16\n";
+        assert_eq!(parse_parent(body), vec![3]);
     }
 }

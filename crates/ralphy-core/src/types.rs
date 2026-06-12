@@ -109,6 +109,22 @@ impl Workspace {
         self.ralphy_dir().join("handoffs.md")
     }
 
+    /// `<repo>/.ralphy/knowledge` — the accumulated local knowledge cache:
+    /// one `issue-<N>.md` per issue closed green, holding the environment
+    /// facts and working commands mechanically extracted from its handoff at
+    /// close. Unlike `handoffs.md` it is never cleared between issues — it
+    /// grows across runs so future sessions can grep it instead of
+    /// re-deriving environment procedures.
+    pub fn knowledge_dir(&self) -> PathBuf {
+        self.ralphy_dir().join("knowledge")
+    }
+
+    /// `<repo>/.ralphy/knowledge/issue-<N>.md` — a re-run of the same issue
+    /// overwrites its note (the latest close supersedes).
+    pub fn knowledge_path(&self, number: u64) -> PathBuf {
+        self.knowledge_dir().join(format!("issue-{number}.md"))
+    }
+
     /// `<repo>/.ralphy/runs/<stamp>` — per-run logs and scratch.
     pub fn run_dir(&self, stamp: &str) -> PathBuf {
         self.ralphy_dir().join("runs").join(stamp)

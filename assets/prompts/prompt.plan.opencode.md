@@ -11,6 +11,12 @@ you only produce a plan that a later execution loop will consume.
   Treat entries as leads, not truths: they were true at the predecessor's
   close and may have gone stale; verify against the tree before anchoring a
   step on one.
+- `.ralphy/knowledge/` — when present, the accumulated local cache: one
+  `issue-<N>.md` per issue closed on this machine, holding the dated
+  environment facts and working commands mechanically extracted from its
+  handoff. Before planning a step that re-derives an environment procedure
+  (bringing up the lab, probing a service), grep this folder first — a
+  predecessor may have already paid for it. Same caveat: leads, not truths.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
   and builds run.
@@ -167,6 +173,12 @@ you only produce a plan that a later execution loop will consume.
   atomic unit of work cannot fit one short commit, split it into explicit
   red/green/refactor sub-steps rather than faking granularity or hiding the
   whole unit behind one bullet.
+- Sequence steps by verification risk, not by ease: when the work produces
+  many similar units plus something that integrates or verifies them (a test
+  harness, validator, manifest), build that verifying spine FIRST — proven
+  green on ONE minimal unit — then fan out the rest. A session can stall at
+  any step: easy-first ordering leaves valuable-but-unverifiable residue;
+  skeleton-first leaves a spine that stands alone.
 - The penultimate step is a self-review: run the **inline `reviewer`
   skill** (auto-discovered via `skills.paths`) over ONLY the commits you made
   for this issue — **not** a subagent, and not the whole branch. Include it

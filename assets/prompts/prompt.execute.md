@@ -11,6 +11,11 @@ durable.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
   depends on: environment traps, working command sequences, residue. Treat them
   as leads from predecessors, not truths — verify before relying on one.
+- `.ralphy/knowledge/` — when present, the accumulated local cache: one
+  `issue-<N>.md` per issue closed on this machine, holding the dated
+  environment facts and working commands extracted from its handoff. Before
+  re-deriving an environment procedure (bringing up the lab, probing a
+  service), grep this folder first. Same caveat: leads, not truths.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## Do this

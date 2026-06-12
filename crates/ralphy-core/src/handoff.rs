@@ -78,6 +78,45 @@ pub fn render_handoffs_file(entries: &[(u64, String)]) -> Option<String> {
     Some(out)
 }
 
+/// Extract the durable-knowledge bullets from a plan's `## Handoff` section:
+/// the `**Environment facts & traps**` and `**Commands that work**` entries,
+/// verbatim with their sub-lines. `Delivered` and `Residue` are issue-specific
+/// and stay out — they already travel to dependents via `handoffs.md`. Returns
+/// `None` when the handoff is absent or carries neither, so the runner skips
+/// writing an empty knowledge file.
+pub fn knowledge_note(plan_md: &str) -> Option<String> {
+    let handoff = section(plan_md, r"(?im)^##\s+Handoff\s*$");
+    if handoff.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for key in ["Environment facts & traps", "Commands that work"] {
+        let block = bullet_block(handoff, key);
+        if !block.is_empty() {
+            out.push_str(block);
+            out.push('\n');
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// The `- **<key>**...` bullet and everything under it, up to the next
+/// top-level bold bullet (or end of input). Empty when the key is absent.
+fn bullet_block<'a>(md: &'a str, key: &str) -> &'a str {
+    let key_re =
+        Regex::new(&format!(r"(?im)^\s*-\s*\*\*{}\*\*", regex::escape(key))).expect("valid regex");
+    let Some(start) = key_re.find(md).map(|m| m.start()) else {
+        return "";
+    };
+    let bullet_re = Regex::new(r"(?m)^\s*-\s*\*\*").expect("valid regex");
+    let end = bullet_re
+        .find_iter(md)
+        .map(|m| m.start())
+        .find(|&s| s > start)
+        .unwrap_or(md.len());
+    md[start..end].trim_end()
+}
+
 /// Trimmed section body following the first heading matching `re`.
 fn section<'a>(md: &'a str, re: &str) -> &'a str {
     let heading_re = Regex::new(re).expect("valid regex");
@@ -187,5 +226,43 @@ some note
     #[test]
     fn render_handoffs_file_empty_is_none() {
         assert_eq!(render_handoffs_file(&[]), None);
+    }
+
+    #[test]
+    fn knowledge_note_extracts_env_facts_and_commands_only() {
+        let note = knowledge_note(PLAN_WITH_BOTH).expect("note present");
+        assert!(note.contains("**Environment facts & traps**"));
+        assert!(note.contains("does not process INVENTORY"));
+        assert!(note.contains("**Commands that work**"));
+        assert!(note.contains("docker compose up -d"));
+        // Issue-specific entries stay out.
+        assert!(!note.contains("**Delivered**"));
+        assert!(!note.contains("**Residue**"));
+        // Neighbouring sections must not leak in.
+        assert!(!note.contains("Plan friction"));
+    }
+
+    #[test]
+    fn knowledge_note_keeps_sub_lines_of_a_block() {
+        let md = "\
+## Handoff
+
+- **Delivered**: stuff (abc1234)
+- **Environment facts & traps**:
+  - proxy strips the TAG header; pass it via query instead
+  - schema rejects empty DEVICEID
+- **Residue**: none
+";
+        let note = knowledge_note(md).expect("note present");
+        assert!(note.contains("proxy strips the TAG header"));
+        assert!(note.contains("schema rejects empty DEVICEID"));
+        assert!(!note.contains("**Residue**"));
+    }
+
+    #[test]
+    fn knowledge_note_none_without_durable_entries() {
+        let md = "## Handoff\n\n- **Delivered**: docs only\n- **Residue**: none\n";
+        assert_eq!(knowledge_note(md), None);
+        assert_eq!(knowledge_note("# Plan\n\n## Steps\n- [x] x\n"), None);
     }
 }

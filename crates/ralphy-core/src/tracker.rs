@@ -45,6 +45,16 @@ pub trait IssueTracker {
         let _ = number;
         Ok(None)
     }
+
+    /// The OPEN issues whose `## Parent` section references `number` — the
+    /// live children of a retired bundle. A closed blocker with open children
+    /// still blocks: its work moved into the children, so the dependent must
+    /// wait for them. Default empty so non-`gh` implementations keep the
+    /// plain closed-means-done gate.
+    fn open_children(&self, number: u64) -> Result<Vec<u64>> {
+        let _ = number;
+        Ok(Vec::new())
+    }
 }
 
 /// The production tracker: closes issues and writes acceptance evidence through
@@ -89,5 +99,14 @@ impl IssueTracker for GhTracker {
     fn handoff_comment(&self, number: u64) -> Result<Option<String>> {
         let comments = github::issue_comments(number, &self.repo_root)?;
         Ok(crate::handoff::find_handoff_comment(&comments))
+    }
+
+    fn open_children(&self, number: u64) -> Result<Vec<u64>> {
+        let open = github::list_open_issues(&self.repo_root)?;
+        Ok(open
+            .iter()
+            .filter(|i| crate::blocked::parse_parent(&i.body).contains(&number))
+            .map(|i| i.number)
+            .collect())
     }
 }

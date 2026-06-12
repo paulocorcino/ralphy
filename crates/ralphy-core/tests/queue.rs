@@ -175,6 +175,9 @@ struct RecordingTracker {
     comments: RefCell<Vec<(u64, String)>>,
     /// Scripted handoff comments returned by `handoff_comment`, by issue number.
     handoffs: HashMap<u64, String>,
+    /// Scripted open children returned by `open_children`, by parent number —
+    /// the open issues whose `## Parent` references a retired bundle.
+    children: HashMap<u64, Vec<u64>>,
 }
 
 impl IssueTracker for RecordingTracker {
@@ -201,6 +204,10 @@ impl IssueTracker for RecordingTracker {
 
     fn handoff_comment(&self, number: u64) -> anyhow::Result<Option<String>> {
         Ok(self.handoffs.get(&number).cloned())
+    }
+
+    fn open_children(&self, number: u64) -> anyhow::Result<Vec<u64>> {
+        Ok(self.children.get(&number).cloned().unwrap_or_default())
     }
 }
 
@@ -1307,6 +1314,80 @@ fn open_blocker_skips_then_closed_blocker_runs() {
         assert!(r5.closed, "#5 must be closed green");
 
         assert!(report.stop.is_none());
+
+        fs::remove_dir_all(&repo).ok();
+    }
+}
+
+#[test]
+fn closed_blocker_with_open_children_still_blocks() {
+    // #4 declares "Blocked by #3"; #3 is closed but was a retired bundle whose
+    // work moved into open children #16/#17 (their `## Parent` references #3).
+    // Expected: #4 is skipped, blocked on the children — not on the closed #3.
+    {
+        let repo = init_repo("split-blocks");
+        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
+        let agent = ScriptedAgent::new(vec![]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([3]),
+            children: HashMap::from([(3u64, vec![16, 17])]),
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-split", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let r4 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 4)
+            .expect("#4 in worked");
+        assert!(r4.outcome.is_none(), "#4 skipped, never planned");
+        assert!(!r4.closed);
+        assert_eq!(r4.blocked_by, vec![16, 17], "blocked on the open children");
+        assert!(
+            agent.planned.borrow().is_empty(),
+            "#4 never reached the planner"
+        );
+        assert!(report.stop.is_none(), "a skip never stops the run");
+
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // Same shape but the children are all closed (none open): the closed
+    // blocker counts as done and #4 runs normally.
+    {
+        let repo = init_repo("split-drained");
+        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([3]),
+            children: HashMap::new(), // no OPEN children remain
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-drained", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let r4 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 4)
+            .expect("#4 in worked");
+        assert!(r4.blocked_by.is_empty(), "no open children → unblocked");
+        assert!(r4.closed, "#4 closed green");
 
         fs::remove_dir_all(&repo).ok();
     }

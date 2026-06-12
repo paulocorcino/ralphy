@@ -446,6 +446,35 @@ fn write_handoffs(
     }
 }
 
+/// Persist the durable knowledge a green close leaves behind: the environment
+/// facts and working commands extracted from the plan's `## Handoff`, written
+/// to `.ralphy/knowledge/issue-<N>.md`. The folder accumulates across issues
+/// and runs (never cleared), so any future session — sibling or dependent —
+/// can grep it instead of re-deriving an environment procedure. Best-effort:
+/// a write failure logs a warning, never stopping the run.
+fn write_knowledge(ws: &Workspace, issue: &Issue, stamp: &str, note: &str) {
+    let dir = ws.knowledge_dir();
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        warn!(number = issue.number, error = %e, "creating .ralphy/knowledge failed");
+        return;
+    }
+    let content = format!(
+        "# Knowledge from #{}: {}\n\nExtracted {} (run {}) from the session's \
+         handoff at close. Leads, not truths — verify before relying on one.\n\n{}\n",
+        issue.number,
+        issue.title,
+        chrono::Local::now().format("%Y-%m-%d"),
+        stamp,
+        note.trim_end(),
+    );
+    let path = ws.knowledge_path(issue.number);
+    if let Err(e) = std::fs::write(&path, content) {
+        warn!(number = issue.number, error = %e, "writing knowledge note failed");
+    } else {
+        info!(number = issue.number, path = %path.display(), "knowledge note written");
+    }
+}
+
 /// Write the issue the planner reads to `.ralphy/issue.json`.
 fn write_issue_json(ws: &Workspace, issue: &Issue) -> Result<()> {
     std::fs::create_dir_all(ws.ralphy_dir())?;
@@ -506,12 +535,32 @@ pub fn run_queue(
         // Checked before write_issue_json so a blocked issue never touches the
         // planner. is_closed errors are fatal (the tracker is authoritative).
         // Closed blockers are kept: they are the handoff sources below.
+        //
+        // A closed blocker can be a retired bundle whose work was split into
+        // child issues (their `## Parent` references it). Closing the bundle
+        // does not finish its work — the gate follows the split: while any
+        // child is open, the dependent stays blocked on those children.
         let refs = blocked::parse_blocked_by(&issue.body);
         let mut open_blockers: Vec<u64> = Vec::new();
         let mut closed_blockers: Vec<u64> = Vec::new();
         for n in refs {
             match tracker.is_closed(n) {
-                Ok(true) => closed_blockers.push(n),
+                Ok(true) => match tracker.open_children(n) {
+                    Ok(children) if children.is_empty() => closed_blockers.push(n),
+                    Ok(children) => {
+                        info!(
+                            number = issue.number,
+                            blocker = n,
+                            children = ?children,
+                            "blocker closed but split into open children — still blocking"
+                        );
+                        open_blockers.extend(children);
+                    }
+                    Err(e) => {
+                        restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
+                        return Err(e);
+                    }
+                },
                 Ok(false) => open_blockers.push(n),
                 Err(e) => {
                     restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
@@ -726,6 +775,9 @@ pub fn run_queue(
                 }
                 if let Some(report) = handoff::close_report(&plan_md) {
                     tracker.comment(issue.number, &report)?;
+                }
+                if let Some(note) = handoff::knowledge_note(&plan_md) {
+                    write_knowledge(&ws, issue, &cfg.stamp, &note);
                 }
             }
 
