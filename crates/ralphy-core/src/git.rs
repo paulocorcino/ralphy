@@ -52,6 +52,15 @@ pub fn current_branch(repo: &Path) -> Result<String> {
     git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
 }
 
+/// Best-effort `git remote get-url origin` for the header's repo link. `None` when
+/// there is no `origin` remote (a local-only repo), so the caller simply omits the
+/// link rather than failing the run.
+pub fn origin_url(repo: &Path) -> Option<String> {
+    git(repo, &["remote", "get-url", "origin"])
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 /// Whether `refname` resolves to a commit (branch, tag, remote-tracking, or SHA).
 pub fn commitish_exists(repo: &Path, refname: &str) -> bool {
     raw(

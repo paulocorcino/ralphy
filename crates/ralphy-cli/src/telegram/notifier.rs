@@ -89,13 +89,41 @@ fn issue_line(entry: &IssueEntry) -> String {
     }
 }
 
-/// The card's counter line, e.g. `4 issues · ✅ 2 · ⏭️ 1 · ⛔ 0 · 🤷 0 · ❌ 0`.
+/// The card's counter line, e.g. `▶️ 4 · ✅ 2 · ⏭️ 1 · ⛔ 0 · 🤷 0 · ❌ 0`. The
+/// leading `▶️ N` is the queue total (ADR-0007 D3 consolidated card).
 fn counters_line(state: &RunState) -> String {
     let c = state.counts();
     format!(
-        "{} issues · ✅ {} · ⏭️ {} · ⛔ {} · 🤷 {} · ❌ {}",
+        "▶️ {} · ✅ {} · ⏭️ {} · ⛔ {} · 🤷 {} · ❌ {}",
         state.total, c.done, c.skipped, c.blocked, c.infeasible, c.non_green
     )
+}
+
+/// The card's branding header: `🦊 Ralphy - v0.1.0` — a stable per-run face (seeded
+/// by the run title) plus the binary's own version. Shared with the console header.
+fn header_line(state: &RunState) -> String {
+    crate::runstate::ralphy_header(&state.title)
+}
+
+/// The issue list block: one line per issue for a small queue, or the collapsed
+/// `active`/`last` pair above [`FULL_LIST_MAX`] (ADR-0007 D6). Lines are joined by a
+/// single `\n`; the caller separates this block from its neighbours with a blank
+/// line. Empty when no issue has entered the lifecycle yet.
+fn render_issue_block(state: &RunState) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    if state.issues.len() <= FULL_LIST_MAX {
+        for entry in &state.issues {
+            lines.push(issue_line(entry));
+        }
+    } else {
+        if let Some(active) = state.active_issue() {
+            lines.push(format!("active · {}", issue_line(active)));
+        }
+        if let Some(last) = state.most_recent_finished() {
+            lines.push(format!("last  · {}", issue_line(last)));
+        }
+    }
+    lines.join("\n")
 }
 
 /// The live sleep line (ADR-0007 D3): `🌙 waiting for reset ~HH:MM · resumes in
@@ -123,41 +151,35 @@ fn render_sleep_line(sleep: &SleepState, now_epoch: i64) -> String {
 /// most-recently-finished one (ADR-0007 D6). `now_epoch` (Unix seconds) anchors
 /// the live sleep countdown.
 pub fn render_card(state: &RunState, now_epoch: i64) -> String {
-    let mut out = String::new();
-    out.push_str(&state.title);
-    out.push('\n');
-    out.push_str(&counters_line(state));
-    out.push('\n');
+    // The card is one consolidated component: four groups separated by a blank
+    // line (ADR-0007 D3). Each group is a section string; only non-empty sections
+    // join, so a not-yet-started run (no issues) never leaves a stray blank line.
+    let mut sections: Vec<String> = Vec::new();
 
+    // 1) Branding header: a stable per-run face + the binary version.
+    sections.push(header_line(state));
+
+    // 2) Title + counters — one group, no blank line between the two lines.
+    sections.push(format!("{}\n{}", state.title, counters_line(state)));
+
+    // 3) The live sleep block, its own group while waiting for a reset.
     if let Some(sleep) = &state.sleep {
-        out.push_str(&render_sleep_line(sleep, now_epoch));
-        out.push('\n');
+        sections.push(render_sleep_line(sleep, now_epoch));
     }
 
-    if state.issues.len() <= FULL_LIST_MAX {
-        for entry in &state.issues {
-            out.push_str(&issue_line(entry));
-            out.push('\n');
-        }
-    } else {
-        if let Some(active) = state.active_issue() {
-            out.push_str("active · ");
-            out.push_str(&issue_line(active));
-            out.push('\n');
-        }
-        if let Some(last) = state.most_recent_finished() {
-            out.push_str("last  · ");
-            out.push_str(&issue_line(last));
-            out.push('\n');
-        }
+    // 4) The issue list (collapsed above FULL_LIST_MAX).
+    let issues = render_issue_block(state);
+    if !issues.is_empty() {
+        sections.push(issues);
     }
 
-    if let Some(summary) = &state.final_summary {
-        out.push_str(summary);
-        out.push('\n');
+    // 5) The terminal footer — only once the run has finished, so the issue list
+    // is the last group through the live run.
+    if state.finished {
+        sections.push(render_final_push(state));
     }
 
-    truncate_chars(out, TELEGRAM_LIMIT)
+    truncate_chars(sections.join("\n\n"), TELEGRAM_LIMIT)
 }
 
 /// The push sent at run start (a new message, so the phone buzzes — an edit does
@@ -438,9 +460,11 @@ pub fn run_worker<T: Transport>(
         }
     }
 
-    // Terminal state: a final edit to the card, then the final push. Skip the edit
-    // when the terminal render matches what's already shown, for the same
-    // "message is not modified" reason as the idle refresh above.
+    // Terminal state: mark the run finished so the card grows its `🏁` footer, then
+    // a final edit, then the final push. Skip the edit when the terminal render
+    // matches what's already shown, for the same "message is not modified" reason
+    // as the idle refresh above.
+    state.finished = true;
     if let Some(mid) = message_id {
         let card = render_card(&state, now_epoch());
         if card != last_card {
@@ -616,6 +640,7 @@ mod tests {
         }
 
         state.final_summary = Some("✅ live demo finished".into());
+        state.finished = true;
         push(&client, &state, &mut last_card);
         eprintln!("done — final card left on the message");
     }
@@ -757,6 +782,63 @@ mod tests {
     }
 
     #[test]
+    fn render_card_has_header_counters_and_blank_line_grouping() {
+        let mut state = RunState::new("ocs-inventory · 2 issues [AFK]", 2);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "first".into(),
+        });
+        let card = render_card(&state, 0);
+        // Branding header with the binary version.
+        assert!(card.contains("Ralphy - v"), "header missing: {card}");
+        assert!(
+            card.contains(env!("CARGO_PKG_VERSION")),
+            "version missing: {card}"
+        );
+        // The counter line leads with `▶️ N`, the queue total (not `N issues`).
+        assert!(card.contains("▶️ 2 · ✅ 0"), "counters: {card}");
+        assert!(!card.contains("2 issues ·"), "old counter form: {card}");
+        // Groups are separated by a blank line.
+        assert!(card.contains("\n\n"), "blank-line grouping: {card}");
+        // No footer mid-run — the issue list is the last group.
+        assert!(!card.contains("🏁"), "footer must not show mid-run: {card}");
+    }
+
+    #[test]
+    fn render_card_shows_footer_only_when_finished() {
+        let mut state = RunState::new("repo · 1 issues", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "a".into(),
+        });
+        state.apply(RunEvent::IssueClosed { number: 1 });
+        // During the run: no footer.
+        assert!(!render_card(&state, 0).contains("🏁"), "no footer mid-run");
+        // Finished: the footer appears with the done/skipped tally.
+        state.finished = true;
+        let card = render_card(&state, 0);
+        assert!(card.contains("🏁"), "footer missing when finished: {card}");
+        assert!(card.contains("run finished"), "footer head: {card}");
+        assert!(card.contains("✅ 1 done"), "footer tally: {card}");
+    }
+
+    #[test]
+    fn header_face_is_stable_per_title_but_varies_across_titles() {
+        // Same title → same face on every edit (so the card never re-edits just to
+        // animate the face).
+        assert_eq!(
+            header_line(&RunState::new("ocs-inventory · 10 issues", 10)),
+            header_line(&RunState::new("ocs-inventory · 10 issues", 10))
+        );
+        // The face is drawn from the curated pool.
+        let face = crate::runstate::header_face("ocs-inventory · 10 issues");
+        assert!(
+            crate::runstate::HEADER_FACES.contains(&face),
+            "face off-pool: {face}"
+        );
+    }
+
+    #[test]
     fn render_card_collapses_large_queue_within_limit() {
         let mut state = RunState::new("Big run", 200);
         for n in 1..=200u64 {
@@ -770,7 +852,7 @@ mod tests {
         }
         let card = render_card(&state, 0);
         assert!(card.len() <= TELEGRAM_LIMIT, "len {}", card.len());
-        assert!(card.contains("200 issues"), "card: {card}");
+        assert!(card.contains("▶️ 200"), "card: {card}");
         // Collapsed: active issue #200 and a last-finished line are shown.
         assert!(card.contains("#200"), "card: {card}");
     }
@@ -1051,12 +1133,12 @@ mod tests {
     }
 
     #[test]
-    fn worker_skips_redundant_edit_when_card_unchanged() {
-        // With no state-changing events, the idle refresh must NOT re-edit the card:
-        // the body would be identical and Telegram rejects "message is not modified".
-        // The worker runs inline (shutdown preset) so the single drain finds nothing
-        // to fold; the only edit attempt would be the final terminal edit, which must
-        // also be skipped because the terminal render equals the initial card.
+    fn worker_terminal_edit_adds_footer_then_final_push() {
+        // With no state-changing events the idle loop makes no edit (an identical
+        // body would be rejected as "message is not modified"). The one terminal
+        // edit is the `finished` flip growing the `🏁` footer — a genuine change —
+        // followed by the final push. So exactly one editMessageText goes out, and
+        // it carries the footer.
         let transport = RecordingTransport::new();
         let calls = transport.calls.clone();
         let client = BotClient::new(transport);
@@ -1067,13 +1149,20 @@ mod tests {
 
         let calls = calls.lock().unwrap();
         let m = methods(&calls);
-        // Only the initial card and the final push went out — no editMessageText.
-        assert!(
-            !m.contains(&"editMessageText"),
-            "unchanged card must not be edited: {m:?}"
-        );
+        // Initial card, one terminal footer edit, then the final push.
         assert_eq!(m.first(), Some(&"sendMessage"));
         assert_eq!(m.last(), Some(&"sendMessage"));
+        let edits: Vec<&Value> = calls
+            .iter()
+            .filter(|(method, _)| method == "editMessageText")
+            .map(|(_, body)| body)
+            .collect();
+        assert_eq!(edits.len(), 1, "exactly one terminal footer edit: {m:?}");
+        let edited_text = edits[0]["text"].as_str().unwrap_or("");
+        assert!(
+            edited_text.contains("🏁") && edited_text.contains("run finished"),
+            "terminal edit must carry the footer: {edited_text}"
+        );
     }
 
     #[test]

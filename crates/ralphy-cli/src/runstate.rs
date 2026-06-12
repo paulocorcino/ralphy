@@ -14,6 +14,34 @@
 use tracing::field::{Field, Visit};
 use tracing::Level;
 
+/// The pool of branding header faces (human + animal). One is picked per run by a
+/// hash of a stable seed (the run title), so the face is "random" across runs but
+/// constant across every render of one run — an animated face would re-trigger
+/// edits and trip Telegram's "message is not modified".
+pub const HEADER_FACES: &[&str] = &[
+    "🦊", "🐶", "🐱", "🦁", "🐯", "🐰", "🐻", "🐼", "🐨", "🐸", "🐵", "🦝", "🐺", "🦄", "🐷",
+    "🐲", "🦉", "🦅", "🐢", "🐙", "🐳", "🐝", "🦋", "🐧", "🦦", "🦥", "🐹", "🐭", "🐮", "🐔",
+];
+
+/// Pick a stable header face for `seed` via a small FNV-1a hash, so the same seed
+/// always maps to the same face — deterministic across runs and processes (unlike a
+/// randomized hasher).
+pub fn header_face(seed: &str) -> &'static str {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in seed.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    HEADER_FACES[(h as usize) % HEADER_FACES.len()]
+}
+
+/// The shared branding header used by both the console and the Telegram card:
+/// `🦊 Ralphy - v0.1.0` — a stable per-run face (seeded by `seed`) plus the binary's
+/// own version.
+pub fn ralphy_header(seed: &str) -> String {
+    format!("{} Ralphy - v{}", header_face(seed), env!("CARGO_PKG_VERSION"))
+}
+
 /// Why an issue was skipped: a `blocked-by` dependency or a `stop-before` label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipKind {
@@ -130,6 +158,11 @@ pub struct RunState {
     pub final_summary: Option<String>,
     /// The active usage-limit sleep, if the run is currently waiting for a reset.
     pub sleep: Option<SleepState>,
+    /// Whether the run has reached its terminal state. The worker flips this to
+    /// `true` just before the final card render so the card grows its `🏁` footer
+    /// (the consolidated single-component card — ADR-0007 D3); it stays `false`
+    /// through the live run so the issue list is the last visible group.
+    pub finished: bool,
 }
 
 impl RunState {

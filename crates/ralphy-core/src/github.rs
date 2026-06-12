@@ -158,6 +158,11 @@ pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> 
     let mut child = gh(repo_root)
         .args(["issue", "edit", &number.to_string(), "--body-file", "-"])
         .stdin(Stdio::piped())
+        // Capture stdout/stderr rather than inheriting them: `gh issue edit` prints
+        // the issue URL to stdout on success, which would otherwise leak a loose
+        // line into the console UI (and `out.stderr` below would be empty on error).
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
 

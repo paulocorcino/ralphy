@@ -247,6 +247,20 @@ fn run_cmd(args: RunArgs) -> Result<()> {
 
     let presenter = init_tracing(log_file, args.verbose, notifier_layer);
 
+    // The branding header at the very top of the run, seeded by the repo name so the
+    // face is stable per repo (mirrors the Telegram card's `🦊 Ralphy - vX` header).
+    let repo_name = repo_root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("repo");
+    presenter.print_header(repo_name);
+
+    // The info line under the header: project · current branch · repo URL. All
+    // best-effort — a detached HEAD or a local-only repo simply drops that segment.
+    let start_branch = git::current_branch(&repo_root).ok();
+    let repo_url = git::origin_url(&repo_root).map(|u| ui::normalize_remote_url(&u));
+    presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
+
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
     // Build the queue: the whole queue by default, or just `--only-issue` when set
@@ -287,10 +301,6 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             cfg.chat_id,
             telegram::config::effective_token(Some(&cfg.token)),
         ) {
-            let repo_name = repo_root
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("repo");
             let only_issue_title = args.only_issue.and(queue.first()).map(|i| i.title.clone());
             let title = telegram::notifier::derive_title(
                 repo_name,

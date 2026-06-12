@@ -100,16 +100,33 @@ pub fn knowledge_note(plan_md: &str) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
-/// The `- **<key>**...` bullet and everything under it, up to the next
-/// top-level bold bullet (or end of input). Empty when the key is absent.
+/// The handoff sub-headings the prompts specify — the block boundaries for
+/// `bullet_block`. Executors write them either as bullets (`- **Key**: ...`)
+/// or as standalone bold lines (`**Key**:` followed by sub-bullets); both
+/// shapes are accepted, and a block ends at the next KNOWN sub-heading so a
+/// content line that merely starts bold never truncates it.
+const HANDOFF_KEYS: [&str; 4] = [
+    "Delivered",
+    "Environment facts & traps",
+    "Commands that work",
+    "Residue",
+];
+
+/// The `<key>` sub-heading line and everything under it, up to the next known
+/// sub-heading (or end of input). Empty when the key is absent.
 fn bullet_block<'a>(md: &'a str, key: &str) -> &'a str {
-    let key_re =
-        Regex::new(&format!(r"(?im)^\s*-\s*\*\*{}\*\*", regex::escape(key))).expect("valid regex");
+    let key_re = Regex::new(&format!(
+        r"(?im)^\s*(?:-\s*)?\*\*{}\*\*",
+        regex::escape(key)
+    ))
+    .expect("valid regex");
     let Some(start) = key_re.find(md).map(|m| m.start()) else {
         return "";
     };
-    let bullet_re = Regex::new(r"(?m)^\s*-\s*\*\*").expect("valid regex");
-    let end = bullet_re
+    let any_key = HANDOFF_KEYS.map(regex::escape).join("|");
+    let boundary_re =
+        Regex::new(&format!(r"(?im)^\s*(?:-\s*)?\*\*(?:{any_key})\*\*")).expect("valid regex");
+    let end = boundary_re
         .find_iter(md)
         .map(|m| m.start())
         .find(|&s| s > start)
@@ -257,6 +274,44 @@ some note
         assert!(note.contains("proxy strips the TAG header"));
         assert!(note.contains("schema rejects empty DEVICEID"));
         assert!(!note.contains("**Residue**"));
+    }
+
+    #[test]
+    fn knowledge_note_accepts_standalone_bold_headings() {
+        // The shape a real executor produced: sub-headings as standalone bold
+        // lines (no `- ` bullet), sub-bullets and code fences underneath.
+        let md = "\
+## Handoff
+
+**Delivered**:
+- `go.mod` + `go.sum`: module scaffold (commit 3fcf415)
+
+**Environment facts & traps**:
+- Host port 8080 is occupied by Docker Desktop's own backend. Always use 8088.
+- CGO_ENABLED=0 + GOOS=linux is mandatory; alpine cannot run a CGO binary.
+
+**Commands that work**:
+```
+docker compose build server && docker compose up -d server
+curl http://localhost:8088/
+```
+
+**Residue**:
+- base image not digest-pinned
+
+## Plan friction
+
+- the plan specified port 8080; Docker Desktop claimed it
+";
+        let note = knowledge_note(md).expect("note present");
+        assert!(note.contains("Host port 8080 is occupied"));
+        assert!(note.contains("CGO_ENABLED=0"));
+        assert!(note.contains("docker compose build server"));
+        assert!(note.contains("curl http://localhost:8088/"));
+        assert!(!note.contains("**Delivered**"));
+        assert!(!note.contains("**Residue**"));
+        assert!(!note.contains("digest-pinned"));
+        assert!(!note.contains("Plan friction"));
     }
 
     #[test]

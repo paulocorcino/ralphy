@@ -470,6 +470,55 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     lines
 }
 
+/// Normalize a git remote URL to an `https` web URL for the header link: strip a
+/// trailing `.git`, and rewrite the `git@host:owner/repo` / `ssh://git@host/owner/repo`
+/// SSH forms to `https://host/owner/repo`. An already-`http(s)` URL is left as-is
+/// (minus `.git`). Pure over its input.
+pub fn normalize_remote_url(raw: &str) -> String {
+    let s = raw.trim();
+    let s = s.strip_suffix(".git").unwrap_or(s);
+    if let Some(rest) = s.strip_prefix("ssh://git@") {
+        return format!("https://{rest}");
+    }
+    if let Some(rest) = s.strip_prefix("git@") {
+        // `host:owner/repo` → `host/owner/repo` (only the first colon is the sep).
+        return format!("https://{}", rest.replacen(':', "/", 1));
+    }
+    s.to_string()
+}
+
+/// Render the start-up info line shown under the branding header: the project name,
+/// the current branch, and the repo web URL, joined by ` · `. Each present segment
+/// gets an emoji prefix only when `opts.emoji`; a missing branch or URL is simply
+/// omitted. The non-colour path emits no ANSI byte.
+pub fn render_info_line(
+    project: &str,
+    branch: Option<&str>,
+    url: Option<&str>,
+    opts: RenderOpts,
+) -> String {
+    let seg = |emoji: &str, value: &str| -> String {
+        if opts.emoji {
+            format!("{emoji} {value}")
+        } else {
+            value.to_string()
+        }
+    };
+    let mut parts: Vec<String> = vec![seg("📦", project)];
+    if let Some(b) = branch {
+        parts.push(seg("🌿", b));
+    }
+    if let Some(u) = url {
+        parts.push(seg("🔗", u));
+    }
+    let line = parts.join(" · ");
+    if opts.color {
+        Style::new().dim().apply_to(&line).to_string()
+    } else {
+        line
+    }
+}
+
 /// Choose the emoji or its ASCII fallback.
 fn pick(emoji: &'static str, ascii: &'static str, use_emoji: bool) -> &'static str {
     if use_emoji {
@@ -723,6 +772,36 @@ impl PresenterHandle {
         println!("{text}");
     }
 
+    /// Print the run's branding header (`🦊 Ralphy - vX`) at start-up, seeded by a
+    /// stable per-run `seed` (the repo name), so it matches the Telegram card's
+    /// approach. Routed through `MultiProgress` when styled so it sits cleanly above
+    /// the live region; bold-cyan on a colour TTY, plain otherwise.
+    pub fn print_header(&self, seed: &str) {
+        let header = crate::runstate::ralphy_header(seed);
+        if self.color {
+            let _ = self
+                .multi
+                .println(Style::new().cyan().bold().apply_to(&header).to_string());
+        } else {
+            println!("{header}");
+        }
+    }
+
+    /// Print the start-up info line (project · branch · repo URL) under the header.
+    /// Routed through `MultiProgress` when styled so it sits above the live region.
+    pub fn print_info_line(&self, project: &str, branch: Option<&str>, url: Option<&str>) {
+        let opts = RenderOpts {
+            color: self.color,
+            emoji: self.color,
+        };
+        let line = render_info_line(project, branch, url, opts);
+        if self.color {
+            let _ = self.multi.println(line);
+        } else {
+            println!("{line}");
+        }
+    }
+
     /// Print the end-of-run totals panel to stdout, coloured when the handle is
     /// styled. Called after `finalize` has cleared the live region.
     pub fn print_panel(&self, data: &PanelData) {
@@ -946,6 +1025,65 @@ mod tests {
             stop_before.contains("skipped (stop-before)"),
             "{stop_before}"
         );
+    }
+
+    #[test]
+    fn normalize_remote_url_handles_ssh_https_and_dot_git() {
+        // SCP-style SSH → https, `.git` stripped.
+        assert_eq!(
+            normalize_remote_url("git@github.com:paulocorcino/ocs-inventory-go-server.git"),
+            "https://github.com/paulocorcino/ocs-inventory-go-server"
+        );
+        // ssh:// URL form.
+        assert_eq!(
+            normalize_remote_url("ssh://git@github.com/owner/repo.git"),
+            "https://github.com/owner/repo"
+        );
+        // Already https, only `.git` removed.
+        assert_eq!(
+            normalize_remote_url("https://github.com/owner/repo.git"),
+            "https://github.com/owner/repo"
+        );
+        // https without `.git` is left intact.
+        assert_eq!(
+            normalize_remote_url("https://github.com/owner/repo"),
+            "https://github.com/owner/repo"
+        );
+    }
+
+    #[test]
+    fn render_info_line_emoji_plain_and_omits_missing_segments() {
+        let emoji = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let full = render_info_line(
+            "ocs-inventory",
+            Some("main"),
+            Some("https://github.com/owner/repo"),
+            emoji,
+        );
+        assert_eq!(
+            full,
+            "📦 ocs-inventory · 🌿 main · 🔗 https://github.com/owner/repo"
+        );
+
+        // No URL (local-only repo): the 🔗 segment is omitted entirely.
+        let no_url = render_info_line("proj", Some("dev"), None, emoji);
+        assert_eq!(no_url, "📦 proj · 🌿 dev");
+
+        // Plain path: no emoji, no ANSI byte.
+        let plain = render_info_line(
+            "proj",
+            Some("dev"),
+            Some("https://x/y"),
+            RenderOpts {
+                color: false,
+                emoji: false,
+            },
+        );
+        assert_eq!(plain, "proj · dev · https://x/y");
+        assert!(!plain.contains('\u{1b}'), "no ANSI byte: {plain:?}");
     }
 
     #[test]
