@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-adapter-support"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
