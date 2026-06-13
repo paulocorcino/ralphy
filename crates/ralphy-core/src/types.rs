@@ -125,6 +125,21 @@ impl Workspace {
         self.knowledge_dir().join(format!("issue-{number}.md"))
     }
 
+    /// `<repo>/.ralphy/knowledge/KNOWLEDGE.md` — the curated consolidation of
+    /// the per-issue notes, written by a `ralphy consolidate` session and read
+    /// FIRST by planner/executor sessions (the loose `issue-<N>.md` files are
+    /// the not-yet-consolidated remainder).
+    pub fn knowledge_file(&self) -> PathBuf {
+        self.knowledge_dir().join("KNOWLEDGE.md")
+    }
+
+    /// `<repo>/.ralphy/knowledge/raw` — raw per-issue notes already folded
+    /// into `KNOWLEDGE.md`, kept for provenance. The runner moves notes here
+    /// after a successful consolidation; sessions don't read it.
+    pub fn knowledge_raw_dir(&self) -> PathBuf {
+        self.knowledge_dir().join("raw")
+    }
+
     /// `<repo>/.ralphy/runs/<stamp>` — per-run logs and scratch.
     pub fn run_dir(&self, stamp: &str) -> PathBuf {
         self.ralphy_dir().join("runs").join(stamp)

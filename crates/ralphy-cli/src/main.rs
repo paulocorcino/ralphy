@@ -48,6 +48,10 @@ struct Cli {
 enum Command {
     /// Work the repo's issue queue onto a fresh run branch.
     Run(Box<RunArgs>),
+    /// Consolidate the loose `.ralphy/knowledge/issue-<N>.md` notes into one
+    /// curated `KNOWLEDGE.md` (an agent session merges, dedups, and verifies;
+    /// consumed notes are archived under `knowledge/raw/`).
+    Consolidate(ConsolidateArgs),
     /// Internal: agent-CLI hook handlers (invoked by the execution session, not
     /// by a human).
     #[command(subcommand)]
@@ -179,6 +183,26 @@ struct RunArgs {
     title: Option<String>,
 }
 
+#[derive(Args)]
+struct ConsolidateArgs {
+    /// Any path inside the target repo; resolved to its git toplevel.
+    #[arg(long, default_value = ".")]
+    repo: PathBuf,
+
+    /// Model for the consolidation session. Curation is judgment-heavy
+    /// (dedup, conflict resolution, what to cut), so it defaults to opus.
+    #[arg(long, default_value = "opus")]
+    model: String,
+
+    /// Reasoning effort for the consolidation session.
+    #[arg(long, default_value = "medium")]
+    effort: String,
+
+    /// Wall-clock budget (minutes) before the session is reclaimed.
+    #[arg(long, default_value_t = 30)]
+    max_minutes: u64,
+}
+
 /// The CLI's own agent-selector enum so `clap` stays a CLI concern; the composition
 /// root maps it to the boxed `&dyn Agent` it hands the core (docs/adr/0004 D1).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -213,11 +237,73 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Run(args) => run_cmd(*args),
+        Command::Consolidate(args) => consolidate_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
     }
+}
+
+/// `ralphy consolidate`: run a one-shot agent session that curates the loose
+/// knowledge notes into `KNOWLEDGE.md`, then archive the consumed notes under
+/// `knowledge/raw/`. The session's only deliverable is the curated file — the
+/// command verifies it actually changed before archiving anything, so a failed
+/// or no-op session leaves the notes loose for a retry.
+fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
+    use anyhow::bail;
+    use ralphy_core::knowledge;
+
+    let repo_root = git::resolve_toplevel(&args.repo)?;
+    let ws = Workspace::new(&repo_root);
+
+    let notes = knowledge::loose_notes(&ws);
+    if notes.is_empty() {
+        println!("No loose knowledge notes under .ralphy/knowledge/ — nothing to consolidate.");
+        return Ok(());
+    }
+    let names: Vec<String> = notes
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    println!(
+        "Consolidating {} note(s) into KNOWLEDGE.md: {}",
+        notes.len(),
+        names.join(", ")
+    );
+
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let run_dir = ws.run_dir(&stamp);
+    std::fs::create_dir_all(&run_dir).ok();
+
+    // Same subscription-quota sentinel as `run` (see the comment there).
+    std::env::set_var("ANTHROPIC_API_KEY", "");
+
+    // The curated file before the session, to verify the session produced one.
+    let before = std::fs::read_to_string(ws.knowledge_file()).ok();
+
+    ralphy_agent_claude::consolidate_knowledge(
+        &ws,
+        &run_dir,
+        non_empty(args.model).as_deref(),
+        non_empty(args.effort).as_deref(),
+        std::time::Duration::from_secs(args.max_minutes * 60),
+    )?;
+
+    let after = std::fs::read_to_string(ws.knowledge_file()).ok();
+    match after {
+        Some(ref a) if before.as_deref() != Some(a.as_str()) => {}
+        _ => bail!(
+            "the session left KNOWLEDGE.md missing or unchanged — notes kept loose (see {})",
+            run_dir.join("consolidate.log").display()
+        ),
+    }
+
+    let archived = knowledge::archive_notes(&ws, &notes)?;
+    println!(
+        "Done: KNOWLEDGE.md updated, {archived} note(s) archived into .ralphy/knowledge/raw/."
+    );
+    Ok(())
 }
 
 fn run_cmd(args: RunArgs) -> Result<()> {

@@ -17,6 +17,7 @@ pub mod git;
 pub mod github;
 pub mod gitignore;
 pub mod handoff;
+pub mod knowledge;
 pub mod plan;
 
 pub use acceptance::{Verdict, VerdictKind};

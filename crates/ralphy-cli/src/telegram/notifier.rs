@@ -65,6 +65,7 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
         IssueStatus::Skipped => "⏭️",
         IssueStatus::Blocked => "⛔",
         IssueStatus::Infeasible => "🤷",
+        IssueStatus::NeedsSplit => "🧩",
         IssueStatus::NonGreen => "❌",
     }
 }
@@ -90,13 +91,19 @@ fn issue_line(entry: &IssueEntry) -> String {
 }
 
 /// The card's counter line, e.g. `▶️ 4 · ✅ 2 · ⏭️ 1 · ⛔ 0 · 🤷 0 · ❌ 0`. The
-/// leading `▶️ N` is the queue total (ADR-0007 D3 consolidated card).
+/// leading `▶️ N` is the queue total (ADR-0007 D3 consolidated card). A `🧩 N`
+/// needs-split counter appears only when non-zero — the common card stays
+/// unchanged, but a parked-on-split run is visibly different.
 fn counters_line(state: &RunState) -> String {
     let c = state.counts();
-    format!(
+    let mut line = format!(
         "▶️ {} · ✅ {} · ⏭️ {} · ⛔ {} · 🤷 {} · ❌ {}",
         state.total, c.done, c.skipped, c.blocked, c.infeasible, c.non_green
-    )
+    );
+    if c.needs_split > 0 {
+        line.push_str(&format!(" · 🧩 {}", c.needs_split));
+    }
+    line
 }
 
 /// The card's branding header: `🦊 Ralphy - v0.1.0` — a stable per-run face (seeded
@@ -191,9 +198,16 @@ pub fn render_final_push(state: &RunState) -> String {
         .final_summary
         .clone()
         .unwrap_or_else(|| "run finished".to_string());
+    // A bundle verdict parks the queue on a human split — the footer must say
+    // so, or a run that ends "green" hides the pending human step.
+    let split_part = if c.needs_split > 0 {
+        format!(", 🧩 {} awaiting split", c.needs_split)
+    } else {
+        String::new()
+    };
     truncate_chars(
         format!(
-            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped",
+            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped{split_part}",
             state.title, head, c.done, c.skipped
         ),
         TELEGRAM_LIMIT,
@@ -773,6 +787,30 @@ mod tests {
     }
 
     #[test]
+    fn render_card_and_footer_surface_needs_split() {
+        let mut state = RunState::new("repo · 1 issues", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 3,
+            title: "W1 bundle".into(),
+        });
+        state.apply(RunEvent::PlanWritten {
+            number: 3,
+            open_steps: 0,
+        });
+        state.apply(RunEvent::NeedsSplit { number: 3 });
+        let card = render_card(&state, 0);
+        assert!(card.contains("🧩 #3 W1 bundle"), "issue line: {card}");
+        assert!(card.contains("· 🧩 1"), "counter: {card}");
+        state.finished = true;
+        let footer = render_final_push(&state);
+        assert!(footer.contains("🧩 1 awaiting split"), "footer: {footer}");
+        // Without a bundle, neither the counter nor the footer mention it.
+        let clean = RunState::new("repo · 1 issues", 1);
+        assert!(!render_card(&clean, 0).contains("🧩"));
+        assert!(!render_final_push(&clean).contains("🧩"));
+    }
+
+    #[test]
     fn render_card_has_header_counters_and_blank_line_grouping() {
         let mut state = RunState::new("ocs-inventory · 2 issues [AFK]", 2);
         state.apply(RunEvent::IssueStarted {
@@ -1063,7 +1101,11 @@ mod tests {
             "sleep push must precede resume push: {texts:?}"
         );
         // initial card + sleep + resume = three sendMessage calls (no start/final).
-        assert_eq!(texts.len(), 3, "expected exactly 3 sendMessage, got {texts:?}");
+        assert_eq!(
+            texts.len(),
+            3,
+            "expected exactly 3 sendMessage, got {texts:?}"
+        );
     }
 
     #[test]

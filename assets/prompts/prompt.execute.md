@@ -11,11 +11,13 @@ durable.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
   depends on: environment traps, working command sequences, residue. Treat them
   as leads from predecessors, not truths — verify before relying on one.
-- `.ralphy/knowledge/` — when present, the accumulated local cache: one
-  `issue-<N>.md` per issue closed on this machine, holding the dated
-  environment facts and working commands extracted from its handoff. Before
+- `.ralphy/knowledge/` — when present, the accumulated local cache. Read
+  `KNOWLEDGE.md` FIRST when it exists (curated, organized by topic); the loose
+  `issue-<N>.md` files beside it are newer, not-yet-consolidated notes
+  (environment facts and working commands extracted from each handoff). Before
   re-deriving an environment procedure (bringing up the lab, probing a
-  service), grep this folder first. Same caveat: leads, not truths.
+  service), grep this folder first; ignore `knowledge/raw/` (archived input).
+  Same caveat: leads, not truths.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## Do this
@@ -40,6 +42,11 @@ durable.
   builds. Add or extend a test that FAILS before your change and PASSES after,
   in the SAME commit as the step. This is what stops a plan from "meeting the
   letter of a feature" while doing nothing meaningful.
+- A test that exercises multiple independent legs (e.g. a GET leg and a POST
+  leg) against the SAME fake/spy must discriminate per leg: reset the fake's
+  recorded state between legs or use a separate instance per leg. A shared,
+  never-reset flag proves only the last leg — the earlier assertions look like
+  coverage but aren't.
 - When a step produces a setup/repair/provisioning script, the evidence for
   that step is a CLEAN-SLATE run of the consolidated script itself (e.g.
   `docker compose down -v` then the script, from zero, with no manual

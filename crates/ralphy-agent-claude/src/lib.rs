@@ -34,6 +34,10 @@ const PROMPT_PLAN_STAGED: &str = include_str!("../../../assets/prompts/prompt.pl
 /// `.ralphy/exec.md` for the live session to read.
 const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
 
+/// The knowledge-consolidation charter (`ralphy consolidate`): curate the loose
+/// `.ralphy/knowledge/issue-<N>.md` notes into one `KNOWLEDGE.md`.
+const PROMPT_CONSOLIDATE: &str = include_str!("../../../assets/prompts/prompt.consolidate.md");
+
 /// The one-line charter the interactive session is launched with; it points the
 /// agent at the embedded charter and the plan, and names the exit sentinel.
 const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.";
@@ -368,6 +372,66 @@ impl ClaudeAgent {
         );
         Ok(headless_reason_to_outcome(HeadlessReason::MaxCalls))
     }
+}
+
+/// Run a one-shot headless `claude -p` knowledge-consolidation session in
+/// `ws`: pipe the consolidation charter on stdin and wait up to `timeout`.
+/// Mirrors the planning pass's invocation (settings with the skip flags, no
+/// Stop hook) — the session's only deliverable is `KNOWLEDGE.md`, which the
+/// caller verifies; the consumed notes are archived by the caller, not here.
+pub fn consolidate_knowledge(
+    ws: &Workspace,
+    run_dir: &Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<()> {
+    fs::create_dir_all(run_dir).ok();
+    let settings_path = run_dir.join("ralphy.settings.json");
+    fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+
+    let mut args: Vec<String> = Vec::new();
+    if let Some(m) = model {
+        args.push("--model".into());
+        args.push(m.into());
+    }
+    args.push("-p".into());
+    args.push("--dangerously-skip-permissions".into());
+    args.push("--settings".into());
+    args.push(settings_path.to_string_lossy().into_owned());
+    if let Some(e) = effort {
+        args.push("--effort".into());
+        args.push(e.into());
+    }
+
+    info!(?model, ?effort, "consolidating knowledge with claude -p");
+    let mut cmd = Command::new(resolve_claude_binary());
+    cmd.args(&args)
+        .current_dir(ws.repo_root())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let r = run_headless(cmd, PROMPT_CONSOLIDATE, timeout)
+        .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
+    let mut log = r.stdout;
+    log.push_str(&r.stderr);
+    let _ = fs::write(run_dir.join("consolidate.log"), &log);
+
+    if is_claude_auth_error(&log) {
+        bail!(
+            "{} (see {})",
+            CLAUDE_AUTH_ERROR_MSG,
+            run_dir.join("consolidate.log").display()
+        );
+    }
+    if r.timed_out {
+        bail!(
+            "consolidation session hit the wall timeout (see {})",
+            run_dir.join("consolidate.log").display()
+        );
+    }
+    Ok(())
 }
 
 impl Agent for ClaudeAgent {

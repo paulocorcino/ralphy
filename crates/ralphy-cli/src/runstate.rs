@@ -19,8 +19,8 @@ use tracing::Level;
 /// constant across every render of one run — an animated face would re-trigger
 /// edits and trip Telegram's "message is not modified".
 pub const HEADER_FACES: &[&str] = &[
-    "🦊", "🐶", "🐱", "🦁", "🐯", "🐰", "🐻", "🐼", "🐨", "🐸", "🐵", "🦝", "🐺", "🦄", "🐷",
-    "🐲", "🦉", "🦅", "🐢", "🐙", "🐳", "🐝", "🦋", "🐧", "🦦", "🦥", "🐹", "🐭", "🐮", "🐔",
+    "🦊", "🐶", "🐱", "🦁", "🐯", "🐰", "🐻", "🐼", "🐨", "🐸", "🐵", "🦝", "🐺", "🦄", "🐷", "🐲",
+    "🦉", "🦅", "🐢", "🐙", "🐳", "🐝", "🦋", "🐧", "🦦", "🦥", "🐹", "🐭", "🐮", "🐔",
 ];
 
 /// Pick a stable header face for `seed` via a small FNV-1a hash, so the same seed
@@ -39,7 +39,11 @@ pub fn header_face(seed: &str) -> &'static str {
 /// `🦊 Ralphy - v0.1.0` — a stable per-run face (seeded by `seed`) plus the binary's
 /// own version.
 pub fn ralphy_header(seed: &str) -> String {
-    format!("{} Ralphy - v{}", header_face(seed), env!("CARGO_PKG_VERSION"))
+    format!(
+        "{} Ralphy - v{}",
+        header_face(seed),
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// Why an issue was skipped: a `blocked-by` dependency or a `stop-before` label.
@@ -74,6 +78,10 @@ pub enum RunEvent {
     NonGreen { number: u64, outcome: String },
     /// An issue was skipped (blocked-by an open issue, or a `stop-before` label).
     Skipped { number: u64, kind: SkipKind },
+    /// The planner judged the issue a bundle (several backlog tasks under one
+    /// number): the queue is parked on a human split. Follows the infeasible
+    /// `PlanWritten { open_steps: 0 }` and upgrades the status.
+    NeedsSplit { number: u64 },
     /// A WARN or ERROR event from the run: level wins over message content.
     Notice { level: Level, message: String },
     /// The deadline passed before this issue could be started.
@@ -87,8 +95,9 @@ pub enum RunEvent {
 }
 
 /// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
-/// or `stop-before` skip) from 🤷 infeasible (an empty plan) and ⛔ blocked (a
-/// `Blocked` execution outcome) from a generic non-green stop.
+/// or `stop-before` skip) from 🤷 infeasible (an empty plan), 🧩 needs-split (a
+/// bundle verdict awaiting a human split) and ⛔ blocked (a `Blocked` execution
+/// outcome) from a generic non-green stop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IssueStatus {
     Planning,
@@ -97,6 +106,7 @@ pub enum IssueStatus {
     Skipped,
     Blocked,
     Infeasible,
+    NeedsSplit,
     NonGreen,
 }
 
@@ -109,6 +119,7 @@ impl IssueStatus {
                 | IssueStatus::Skipped
                 | IssueStatus::Blocked
                 | IssueStatus::Infeasible
+                | IssueStatus::NeedsSplit
                 | IssueStatus::NonGreen
         )
     }
@@ -137,6 +148,7 @@ pub struct Counts {
     pub skipped: usize,
     pub blocked: usize,
     pub infeasible: usize,
+    pub needs_split: usize,
     pub non_green: usize,
     pub planning: usize,
     pub executing: usize,
@@ -256,6 +268,12 @@ impl RunState {
             RunEvent::Skipped { number, .. } => {
                 self.entry_mut(number).status = IssueStatus::Skipped;
             }
+            RunEvent::NeedsSplit { number } => {
+                let Some(n) = self.resolve(number) else {
+                    return;
+                };
+                self.entry_mut(n).status = IssueStatus::NeedsSplit;
+            }
             RunEvent::Notice { .. } => {}
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
@@ -284,6 +302,7 @@ impl RunState {
                 IssueStatus::Skipped => c.skipped += 1,
                 IssueStatus::Blocked => c.blocked += 1,
                 IssueStatus::Infeasible => c.infeasible += 1,
+                IssueStatus::NeedsSplit => c.needs_split += 1,
                 IssueStatus::NonGreen => c.non_green += 1,
                 IssueStatus::Planning => c.planning += 1,
                 IssueStatus::Executing { .. } => c.executing += 1,
@@ -452,6 +471,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             outcome: fields.outcome.clone().unwrap_or_default(),
         }),
+        "bundle plan — needs split" => Some(RunEvent::NeedsSplit { number }),
         "blocked by open issue(s) — skipping" => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::BlockedBy,
@@ -555,6 +575,41 @@ mod tests {
             open_steps: 0,
         });
         assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
+    }
+
+    #[test]
+    fn needs_split_upgrades_infeasible_and_decodes_from_stable_message() {
+        // The runner emits "plan written" (0 steps) then "bundle plan — needs
+        // split"; the fold must land on NeedsSplit, not stay Infeasible.
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 3,
+            title: "W1 bundle".into(),
+        });
+        state.apply(RunEvent::PlanWritten {
+            number: 3,
+            open_steps: 0,
+        });
+        assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
+        state.apply(RunEvent::NeedsSplit { number: 3 });
+        assert_eq!(state.issues[0].status, IssueStatus::NeedsSplit);
+        assert!(state.issues[0].status.is_terminal());
+        assert_eq!(state.counts().needs_split, 1);
+        assert_eq!(state.counts().infeasible, 0);
+
+        // Decoder: the stable runner message maps to the typed event.
+        assert_eq!(
+            event_to_runevent(
+                "ralphy_core::runner",
+                "bundle plan — needs split",
+                &EventFields {
+                    message: "bundle plan — needs split".into(),
+                    number: Some(3),
+                    ..Default::default()
+                }
+            ),
+            Some(RunEvent::NeedsSplit { number: 3 })
+        );
     }
 
     #[test]

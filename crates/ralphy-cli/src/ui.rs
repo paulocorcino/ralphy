@@ -290,6 +290,11 @@ fn render_line(
             Style::new().dim(),
             format!("#{number} {}{dur}", skip_label(*kind)),
         ),
+        RunEvent::NeedsSplit { number } => (
+            pick("🧩", "[split]", opts.emoji),
+            Style::new().yellow(),
+            format!("#{number} bundle — needs split (run /to-issues, close the bundle)"),
+        ),
         RunEvent::Notice { level, message } => {
             if *level == Level::ERROR {
                 (
@@ -993,6 +998,18 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn render_plain_needs_split_names_the_bundle_and_next_step() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let line = render_plain_line(&RunEvent::NeedsSplit { number: 3 }, &ts, None)
+            .expect("NeedsSplit renders a line");
+        assert!(line.contains("#3 bundle — needs split"), "{line}");
+        assert!(line.contains("/to-issues"), "{line}");
     }
 
     #[test]
