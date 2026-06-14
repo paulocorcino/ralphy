@@ -325,6 +325,16 @@ fn render_line(
             Style::new().yellow(),
             format!("deadline reached before #{number}"),
         ),
+        RunEvent::KnowledgeConsolidating { notes } => (
+            pick("📚", "[know]", opts.emoji),
+            Style::new().cyan(),
+            format!("consolidating {notes} knowledge note(s) into KNOWLEDGE.md"),
+        ),
+        RunEvent::KnowledgeConsolidated { archived } => (
+            pick("📚", "[know]", opts.emoji),
+            Style::new().green(),
+            format!("knowledge consolidated — {archived} note(s) archived into knowledge/raw/"),
+        ),
     };
 
     Some(if opts.color {
@@ -998,6 +1008,25 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn render_plain_knowledge_consolidation_carries_glyph_and_counts() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 14, 2, 16, 0)
+            .single()
+            .unwrap();
+        let started = render_plain_line(&RunEvent::KnowledgeConsolidating { notes: 4 }, &ts, None)
+            .expect("KnowledgeConsolidating renders a line");
+        assert!(started.contains('📚'), "knowledge glyph: {started}");
+        assert!(started.contains('4'), "note count: {started}");
+        assert!(started.contains("KNOWLEDGE.md"), "target file: {started}");
+
+        let done = render_plain_line(&RunEvent::KnowledgeConsolidated { archived: 4 }, &ts, None)
+            .expect("KnowledgeConsolidated renders a line");
+        assert!(done.contains('📚'), "knowledge glyph: {done}");
+        assert!(done.contains("4 note(s) archived"), "archived count: {done}");
+        assert!(!done.contains('\u{1b}'), "no ANSI byte: {done:?}");
     }
 
     #[test]

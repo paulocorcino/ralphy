@@ -180,6 +180,18 @@ pub fn render_card(state: &RunState, now_epoch: i64) -> String {
         sections.push(issues);
     }
 
+    // 4b) The live knowledge-consolidation line (end-of-run trigger), its own group
+    // while the session runs. Hidden once `finished` so a failed session — which
+    // never clears `consolidating` — leaves no stale line on the terminal card; a
+    // successful one is summarised in the footer instead.
+    if let Some(notes) = state.consolidating {
+        if !state.finished {
+            sections.push(format!(
+                "📚 consolidating {notes} knowledge note(s) into KNOWLEDGE.md…"
+            ));
+        }
+    }
+
     // 5) The terminal footer — only once the run has finished, so the issue list
     // is the last group through the live run.
     if state.finished {
@@ -205,9 +217,15 @@ pub fn render_final_push(state: &RunState) -> String {
     } else {
         String::new()
     };
+    // The end-of-run knowledge consolidation, when it ran: a `📚 N consolidated`
+    // segment so the curation step is visible on the terminal card.
+    let knowledge_part = match state.consolidated {
+        Some(n) => format!(", 📚 {n} consolidated"),
+        None => String::new(),
+    };
     truncate_chars(
         format!(
-            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped{split_part}",
+            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped{split_part}{knowledge_part}",
             state.title, head, c.done, c.skipped
         ),
         TELEGRAM_LIMIT,
@@ -831,6 +849,46 @@ mod tests {
         assert!(card.contains("\n\n"), "blank-line grouping: {card}");
         // No footer mid-run — the issue list is the last group.
         assert!(!card.contains("🏁"), "footer must not show mid-run: {card}");
+    }
+
+    #[test]
+    fn render_card_shows_live_consolidation_line_then_footer_segment() {
+        let mut state = RunState::new("repo · 1 issues", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "a".into(),
+        });
+        state.apply(RunEvent::IssueClosed { number: 1 });
+        // Mid-consolidation: the live 📚 line shows, no footer yet.
+        state.apply(RunEvent::KnowledgeConsolidating { notes: 4 });
+        let live = render_card(&state, 0);
+        assert!(
+            live.contains("📚 consolidating 4 knowledge note(s)"),
+            "live consolidation line: {live}"
+        );
+        assert!(!live.contains("🏁"), "no footer mid-run: {live}");
+
+        // Completion + terminal: the live line is gone, the footer carries the count.
+        state.apply(RunEvent::KnowledgeConsolidated { archived: 4 });
+        state.finished = true;
+        let card = render_card(&state, 0);
+        assert!(
+            !card.contains("consolidating 4"),
+            "live line hidden once finished: {card}"
+        );
+        assert!(card.contains("📚 4 consolidated"), "footer segment: {card}");
+    }
+
+    #[test]
+    fn render_card_hides_stale_consolidating_line_on_finished_card() {
+        // A failed session never emits `KnowledgeConsolidated`, so `consolidating`
+        // stays set — the terminal card must still drop the stale 📚 line.
+        let mut state = RunState::new("repo · 1 issues", 1);
+        state.apply(RunEvent::KnowledgeConsolidating { notes: 2 });
+        state.finished = true;
+        let card = render_card(&state, 0);
+        assert!(!card.contains("consolidating"), "no stale live line: {card}");
+        assert!(!card.contains("📚"), "no consolidated footer segment: {card}");
     }
 
     #[test]

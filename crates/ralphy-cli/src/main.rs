@@ -513,6 +513,31 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // (ADR-0006: the presenter owns teardown).
     presenter.finalize();
 
+    // Knowledge consolidation trigger: a non-dry run that finished (produced a
+    // report) and left loose per-issue notes folds them into KNOWLEDGE.md, so the
+    // curated cache the next run reads (prompt.execute.md reads KNOWLEDGE.md first)
+    // stays current without a manual `consolidate` step. Everything lives under the
+    // gitignored `.ralphy/`, so there is nothing to commit and the panel's "clean
+    // run" report stays accurate. Run BEFORE the notifier shutdown and AFTER the
+    // presenter finalize so it surfaces as a first-class lifecycle event in both
+    // surfaces: the `info!`/`warn!` below decode to RunEvents the console presenter
+    // renders (timestamp + 📚) and the live Telegram card folds (a 📚 line during,
+    // a footer segment after). A failed session is a warning, never a run failure —
+    // the run already succeeded and the notes stay loose for a later retry.
+    // `ANTHROPIC_API_KEY` was already cleared up front; defaults mirror the
+    // `consolidate` command (opus / medium / 30 min).
+    if result.is_ok() && !args.dry_run {
+        let notes = ralphy_core::knowledge::loose_notes(&ws);
+        if !notes.is_empty() {
+            info!(count = notes.len() as u64, "consolidating knowledge");
+            let run_dir = ws.run_dir(&cfg.stamp);
+            match run_consolidation(&ws, &run_dir, Some("opus"), Some("medium"), 30, &notes) {
+                Ok(archived) => info!(count = archived as u64, "knowledge consolidated"),
+                Err(e) => warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry"),
+            }
+        }
+    }
+
     // Tear down the notifier (ADR-0007 D4): signal the worker to render the
     // terminal state, send the final push, and flush, joined under a bounded
     // timeout so a wedged network never holds the process open. Done before the
@@ -563,33 +588,6 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         dry_run: args.dry_run,
     };
     presenter.print_panel(&data);
-
-    // Knowledge consolidation trigger: a non-dry run that reached the end and left
-    // loose per-issue notes folds them into KNOWLEDGE.md before exiting, so the
-    // curated cache the next run reads (prompt.execute.md reads KNOWLEDGE.md first)
-    // stays current without a manual `consolidate` step. Everything lives under the
-    // gitignored `.ralphy/`, so there is nothing to commit and the panel's "clean
-    // run" report stays accurate. The session is headless (output to consolidate.log),
-    // so a notice frames the wait. A failed session is a warning, never a run
-    // failure — the run already succeeded and `run_consolidation` keeps the notes
-    // loose for a later retry. `ANTHROPIC_API_KEY` was already cleared up front;
-    // defaults mirror the `consolidate` command (opus / medium / 30 min).
-    if !args.dry_run {
-        let notes = ralphy_core::knowledge::loose_notes(&ws);
-        if !notes.is_empty() {
-            presenter.print_notice(&format!(
-                "Consolidating {} knowledge note(s) into KNOWLEDGE.md…",
-                notes.len()
-            ));
-            let run_dir = ws.run_dir(&cfg.stamp);
-            match run_consolidation(&ws, &run_dir, Some("opus"), Some("medium"), 30, &notes) {
-                Ok(archived) => presenter.print_notice(&format!(
-                    "Knowledge consolidated — {archived} note(s) archived into .ralphy/knowledge/raw/."
-                )),
-                Err(e) => warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry"),
-            }
-        }
-    }
     Ok(())
 }
 

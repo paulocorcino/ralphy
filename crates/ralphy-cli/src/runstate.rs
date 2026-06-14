@@ -92,6 +92,12 @@ pub enum RunEvent {
     SleepStarted { reset: String, target_epoch: i64 },
     /// The reset arrived and the run resumed; clears any active sleep.
     SleepEnded,
+    /// The end-of-run knowledge consolidation started, folding `notes` loose
+    /// per-issue notes into `KNOWLEDGE.md`.
+    KnowledgeConsolidating { notes: u64 },
+    /// Knowledge consolidation finished, archiving `archived` notes into
+    /// `knowledge/raw/` after curating `KNOWLEDGE.md`.
+    KnowledgeConsolidated { archived: u64 },
 }
 
 /// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
@@ -175,6 +181,13 @@ pub struct RunState {
     /// (the consolidated single-component card — ADR-0007 D3); it stays `false`
     /// through the live run so the issue list is the last visible group.
     pub finished: bool,
+    /// Live: the end-of-run knowledge consolidation is in progress over this many
+    /// loose notes. Set by `KnowledgeConsolidating`, cleared on completion (and
+    /// hidden once the run is `finished`, so a failed session leaves no stale line).
+    pub consolidating: Option<u64>,
+    /// Terminal: notes folded into `KNOWLEDGE.md` by the end-of-run consolidation,
+    /// surfaced as a `📚` segment in the card footer.
+    pub consolidated: Option<u64>,
 }
 
 impl RunState {
@@ -289,6 +302,13 @@ impl RunState {
             }
             RunEvent::SleepEnded => {
                 self.sleep = None;
+            }
+            RunEvent::KnowledgeConsolidating { notes } => {
+                self.consolidating = Some(notes);
+            }
+            RunEvent::KnowledgeConsolidated { archived } => {
+                self.consolidating = None;
+                self.consolidated = Some(archived);
             }
         }
     }
@@ -488,6 +508,14 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             target_epoch: fields.target_epoch.unwrap_or(0),
         }),
         "reset reached — resuming" => Some(RunEvent::SleepEnded),
+        // The end-of-run knowledge consolidation trigger: both events reuse the
+        // generic `count` field (notes in / notes archived).
+        "consolidating knowledge" => Some(RunEvent::KnowledgeConsolidating {
+            notes: fields.count.unwrap_or(0),
+        }),
+        "knowledge consolidated" => Some(RunEvent::KnowledgeConsolidated {
+            archived: fields.count.unwrap_or(0),
+        }),
         _ => None,
     }
 }
@@ -871,6 +899,38 @@ mod tests {
                 message: "something bad happened".into()
             })
         );
+    }
+
+    #[test]
+    fn decoder_maps_knowledge_consolidation_events() {
+        assert_eq!(
+            decode(EventFields {
+                message: "consolidating knowledge".into(),
+                count: Some(4),
+                ..Default::default()
+            }),
+            Some(RunEvent::KnowledgeConsolidating { notes: 4 })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "knowledge consolidated".into(),
+                count: Some(4),
+                ..Default::default()
+            }),
+            Some(RunEvent::KnowledgeConsolidated { archived: 4 })
+        );
+    }
+
+    #[test]
+    fn apply_knowledge_consolidation_sets_then_clears_live_and_records_count() {
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::KnowledgeConsolidating { notes: 4 });
+        assert_eq!(state.consolidating, Some(4));
+        assert_eq!(state.consolidated, None);
+        // Completion clears the live flag and records the archived tally.
+        state.apply(RunEvent::KnowledgeConsolidated { archived: 4 });
+        assert_eq!(state.consolidating, None);
+        assert_eq!(state.consolidated, Some(4));
     }
 
     #[test]
