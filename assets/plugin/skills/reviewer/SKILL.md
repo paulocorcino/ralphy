@@ -154,17 +154,26 @@ When narrowing was explicitly requested by the user (e.g. "review only the brief
 
 Before emitting the final report, write the draft `## Coverage` block and the full draft report body to disk, then run the two-step pipeline. Pick the invocation form (e.g. `python3` on Linux/macOS, `python` on Windows) for the host environment.
 
+**`<tmp-dir>` placeholder.** All intermediate artifacts go under a host-appropriate temp directory — do NOT hardcode `/tmp/`. Resolve `<tmp-dir>` first, then substitute it into every path below:
+- POSIX (Linux/macOS): `<tmp-dir>` = `/tmp` (e.g. `/tmp/fact_pack.json`).
+- Windows: `<tmp-dir>` = `$env:TEMP` (e.g. `$env:TEMP\fact_pack.json`). Never emit a literal `/tmp/...` path on Windows — the `/` → `\` and `:` translation collapses it into a separator-less junk filename (e.g. `CTempfact_pack.json`) dropped in the repo root. Always quote paths containing `\` or spaces, and quote `"<skill-dir>/scripts/..."` likewise.
+
 ```
-python3 <skill-dir>/scripts/fact_pack.py --repo <repo> --base <base> --target HEAD > /tmp/fact_pack.json
-python3 <skill-dir>/scripts/audit.py --coverage /tmp/coverage.md --fact-pack /tmp/fact_pack.json --not-exercised /tmp/not_exercised.md --report /tmp/report.md
+# POSIX
+python3 "<skill-dir>/scripts/fact_pack.py" --repo <repo> --base <base> --target HEAD > /tmp/fact_pack.json
+python3 "<skill-dir>/scripts/audit.py" --coverage /tmp/coverage.md --fact-pack /tmp/fact_pack.json --not-exercised /tmp/not_exercised.md --report /tmp/report.md
+
+# Windows (PowerShell)
+python "<skill-dir>\scripts\fact_pack.py" --repo <repo> --base <base> --target HEAD > "$env:TEMP\fact_pack.json"
+python "<skill-dir>\scripts\audit.py" --coverage "$env:TEMP\coverage.md" --fact-pack "$env:TEMP\fact_pack.json" --not-exercised "$env:TEMP\not_exercised.md" --report "$env:TEMP\report.md"
 ```
 
 - `<repo>` is the target repo's working tree. `<base>` matches the report's `base:` field (e.g. `origin/main`).
 - `--target HEAD` is the right choice when the work under review is committed to a branch (the common case). Use `--target working-tree` only when the work is uncommitted on disk — otherwise `git diff <base>` against an unchanged working tree may underreport.
-- **Tmp-file pre-flight.** Before writing `/tmp/coverage.md`, `/tmp/not_exercised.md`, or `/tmp/report.md`, run `rm -f /tmp/coverage.md /tmp/not_exercised.md /tmp/report.md` in a single Bash call. This prevents the Edit-tool "must Read before Write" failure when a stale file from a prior run exists at those paths.
-- `/tmp/coverage.md` contains the literal `## Coverage` block.
-- `/tmp/not_exercised.md` contains the literal `not exercised:` block from the report header (one line per command, with concrete blocker). Omit `--not-exercised` if the report's `not exercised:` is `none`.
-- `/tmp/report.md` contains the full draft report body (or, at minimum, `## Findings` and `## Verification`). The audit scans this body for material file citations — files cited there count as implicit-reviewed and are removed from `gap`. Coverage format F has no positive marker by design; `--report` is how the audit observes the citations already in the report. Omit `--report` only if there is no `## Findings` to scan.
+- **Tmp-file pre-flight.** Before writing `<tmp-dir>/coverage.md`, `<tmp-dir>/not_exercised.md`, or `<tmp-dir>/report.md`, delete any stale copies in a single call (`rm -f <tmp-dir>/coverage.md <tmp-dir>/not_exercised.md <tmp-dir>/report.md` on POSIX; `Remove-Item -Force -ErrorAction SilentlyContinue "$env:TEMP\coverage.md","$env:TEMP\not_exercised.md","$env:TEMP\report.md"` on Windows). This prevents the Edit-tool "must Read before Write" failure when a stale file from a prior run exists at those paths.
+- `<tmp-dir>/coverage.md` contains the literal `## Coverage` block.
+- `<tmp-dir>/not_exercised.md` contains the literal `not exercised:` block from the report header (one line per command, with concrete blocker). Omit `--not-exercised` if the report's `not exercised:` is `none`.
+- `<tmp-dir>/report.md` contains the full draft report body (or, at minimum, `## Findings` and `## Verification`). The audit scans this body for material file citations — files cited there count as implicit-reviewed and are removed from `gap`. Coverage format F has no positive marker by design; `--report` is how the audit observes the citations already in the report. Omit `--report` only if there is no `## Findings` to scan.
 - **First-pass `gap` is expected, not a defect.** The first run of `audit.py` typically returns `audit: gap` listing files neither cited in the report nor placed in `not-reviewed`. Treat this as a worklist: for each gap file, either (a) cite it in `## Findings` if it carries a finding, or (b) add it to `not-reviewed` (as an enumerated path or under a `category:` prefix) with a one-phrase reason. Re-run `audit.py` until it returns `pass` or `partial`. Do not edit the audit script to silence the gap.
 
 Place the literal stdout of `audit.py` verbatim in the report's `audit_output:` trailer and populate the header `audit:` field from the first line. The report must always carry a populated `audit:` value (`pass | partial | gap | scope-auto-narrowed`).
