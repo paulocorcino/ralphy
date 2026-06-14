@@ -21,12 +21,16 @@ durable.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## Do this
-1. Read `.ralphy/plan.md` AND, if present, `.ralphy/handoffs.md` — predecessors
-   paid real effort for what is in it; skipping it re-buys their diagnoses at
-   full price. Then work the plan's `- [ ]` steps top to bottom. When an
-   observation contradicts a handoff entry (e.g. a probe returns a different
-   status than the handoff documents), investigate the delta first — "what
-   changed since the predecessor" is usually the shortest path to the fault.
+1. Read `.ralphy/plan.md`, `.ralphy/handoffs.md` (when present), AND
+   `.ralphy/knowledge/KNOWLEDGE.md` (when present) — predecessors paid real
+   effort for what is in them; skipping them re-buys their diagnoses at full
+   price. KNOWLEDGE.md is curated by topic: at minimum scan its "Commands that
+   work" before re-deriving any gate or environment command — copy the curated
+   form verbatim, do not reinvent a looser variant. Then work the plan's `- [ ]`
+   steps top to bottom. When an observation contradicts a handoff entry (e.g. a
+   probe returns a different status than the handoff documents), investigate the
+   delta first — "what changed since the predecessor" is usually the shortest
+   path to the fault.
 2. For each step: implement it, run the project's format command and the
    NARROWEST relevant test command (or a build if not yet testable), as defined
    in CLAUDE.md/CONTEXT.md. When green, tick the step `- [x]` in `.ralphy/plan.md`
@@ -138,20 +142,43 @@ under ~30 lines, telegraphic, with these exact sub-headings:
 - **Delivered**: what now exists and where — files, scripts, fixtures, with
   commit hashes.
 - **Environment facts & traps**: non-obvious facts about the environment or
-  toolchain that cost real effort to discover (broken defaults, schema quirks,
-  platform path mangling, encoding traps). One line each, with the symptom AND
-  the fix.
+  toolchain that cost real effort to discover and that a fresh read of the repo
+  would NOT reveal — broken defaults, platform path mangling, encoding traps, a
+  real-world input that violates a schema assumption. One line each, with the
+  symptom AND the fix. (A bare code-fact — a count, a column width, a signature,
+  a "deferred until X" — is NOT a trap; see "Route by derivability" below.)
 - **Commands that work**: the exact, copy-pasteable command sequence that
   brings up / verifies the relevant environment, as actually executed.
 - **Residue**: what remains unproven or unfinished — anything proved by
   construction rather than execution, pending `[review-only]` items, known
   risks — each with the cheapest concrete command or action that would close it.
+- **Knowledge used**: which `KNOWLEDGE.md` / `handoffs.md` bullets you actually
+  relied on this session — quote the topic or first words of each — or `none`
+  if you did not consult them or found nothing load-bearing. Be honest,
+  including `none`: this is the cache's hit-rate signal, and a never-cited bullet
+  is exactly what tells the curator what to prune. (This sub-heading is not
+  folded into the cache; it travels only on the issue for measurement.)
 
-Promote, don't just hand off: if an Environment fact applies to ANY future
-issue (not only dependents) — a toolchain trap, a defect in a pinned upstream,
-a repo-wide convention gap — also record it in versioned docs (`CONTEXT.md` or
-`docs/adr/`) in this run's commits. The handoff travels the dependency graph;
-versioned docs travel everywhere.
+Route by derivability — keep the cache from filling with facts that rot. Before
+writing any bullet under **Environment facts & traps**, apply this litmus: could
+a fresh agent get this fact right just by READING the repo (code, schema, docs)
+without running anything? If yes, it is a code-fact, not a trap — do NOT put it
+in the handoff. Send it to its self-correcting home instead:
+- a verifiable invariant (a count, a column width, a signature, "N call sites")
+  → a check in the project's gate, so it FAILS when reality diverges;
+- a design-state fact ("X deferred until cycle N", "do not add Y yet") → an ADR
+  or `CONTEXT.md` note that the issue undoing it will supersede — never a cache
+  bullet, which has no mechanism to be retracted when Y lands.
+A trap is only what you learn by RUNNING or OBSERVING — a broken default, a
+platform behavior, a real-world input that violates a schema assumption (the
+payload is the input, not the column definition). That is the cache's
+defensible core; everything derivable competes with its own source and rots.
+
+Promote, don't just hand off: if a trap applies to ANY future issue (not only
+dependents) — a toolchain trap, a defect in a pinned upstream, a repo-wide
+convention gap — also record it in versioned docs (`CONTEXT.md` or `docs/adr/`)
+in this run's commits. The handoff travels the dependency graph; versioned docs
+travel everywhere.
 
 ## If you get blocked
 - Do not thrash and do not ask questions. Record what you learned under

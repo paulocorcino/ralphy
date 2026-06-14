@@ -46,6 +46,16 @@ naming what it proves>
   verify cheaply against the tree (grep, read the named file) and keep the
   version the tree supports. If verification is inconclusive, keep the most
   recent claim and suffix it `(unverified — conflicting notes)`.
+- Re-verify existing bullets, don't just merge new ones: every bullet that cites
+  a concrete code anchor — a `file:symbol`, a literal count/width/flag, a
+  "deferred until X" decision — must be checked against the CURRENT tree this
+  session (a cheap grep/read), not only when a fresh note happens to conflict
+  with it. DELETE any bullet the tree now contradicts — a deferral whose work has
+  since landed, a count that changed, a symbol that moved — instead of keeping it
+  as the "most recent claim". A code-fact that no longer holds is worse than
+  absent: a planner will trust it. Record each deletion as a one-line
+  `<!-- removed #<issue>: <fact> — contradicted by <file:symbol> -->` comment at
+  the very bottom of the file, so the invalidation is auditable.
 - When command variants differ, prefer the FUNCTIONALLY STRICTER one, not the
   majority wording: a gate that cannot fail is not a gate (e.g. `gofmt -l .`
   in a `&&` chain exits 0 even with unformatted files — `test -z "$(gofmt -l

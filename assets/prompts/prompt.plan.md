@@ -25,8 +25,10 @@ you only produce a plan that a later execution loop will consume.
   and builds run.
 
 ## Your task
-1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` (when present), and the
-   relevant project docs.
+1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` (when present),
+   `.ralphy/knowledge/KNOWLEDGE.md` (when present), and the relevant project
+   docs. KNOWLEDGE.md is the curated cache — read it before deriving the green
+   gate or any environment procedure a predecessor may have already paid for.
 2. Decide whether the issue is well-specified enough to implement
    autonomously, end to end, with a clear "done" criterion that the project's
    tests (or a build) can verify.
@@ -57,7 +59,11 @@ you only produce a plan that a later execution loop will consume.
      a scripted command sequence prove, e.g. "the test suite passes, including
      new test `xyz` covering ..." or "`docker compose up -d` followed by
      `curl -I <endpoint>` returns HTTP 200". Phrase acceptance as observable
-     behavior, not internal attributes.>
+     behavior, not internal attributes. When `KNOWLEDGE.md` carries a curated
+     green-gate under "Commands that work", copy that command sequence VERBATIM
+     instead of re-deriving it — the curated form is the functionally strictest
+     (e.g. `test -z "$(gofmt -l .)"`, which gates, not `gofmt -l .`, which exits
+     0 even on unformatted files).>
    - Review-only (omit if none): <behavior only human JUDGMENT can confirm in
      the PR, e.g. "the row disappears immediately before the refresh
      completes">. State these separately — the executor gates the done token on
