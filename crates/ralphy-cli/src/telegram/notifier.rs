@@ -60,7 +60,7 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 fn status_emoji(status: &IssueStatus) -> &'static str {
     match status {
         IssueStatus::Planning => "🧠",
-        IssueStatus::Executing { .. } => "⚙️",
+        IssueStatus::Executing => "⚙️",
         IssueStatus::Done => "✅",
         IssueStatus::Skipped => "⏭️",
         IssueStatus::Blocked => "⛔",
@@ -70,24 +70,12 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
     }
 }
 
-/// `MM:SS` clock form (minutes may exceed 59), e.g. `45:00`.
-fn fmt_clock(total_secs: u64) -> String {
-    format!("{:02}:{:02}", total_secs / 60, total_secs % 60)
-}
-
-/// One rendered issue line: `⚙️ #5 title · 45:00` while executing (the budget in
-/// the `12:43 / 45:00` form's terminal half), `emoji #n title` otherwise.
+/// One rendered issue line: `emoji #n title`. The card carries no per-issue clock —
+/// the budget is a static ceiling (e.g. `90:00`), not elapsed time, so showing it as
+/// a clock only misleads.
 fn issue_line(entry: &IssueEntry) -> String {
     let emoji = status_emoji(&entry.status);
-    match &entry.status {
-        IssueStatus::Executing { budget_min } => format!(
-            "{emoji} #{} {} · {}",
-            entry.number,
-            entry.title,
-            fmt_clock(budget_min.saturating_mul(60))
-        ),
-        _ => format!("{emoji} #{} {}", entry.number, entry.title),
-    }
+    format!("{emoji} #{} {}", entry.number, entry.title)
 }
 
 /// The card's counter line, e.g. `▶️ 4 · ✅ 2 · ⏭️ 1 · ⛔ 0 · 🤷 0 · ❌ 0`. The

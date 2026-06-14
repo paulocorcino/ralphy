@@ -593,14 +593,28 @@ impl Presenter {
         let is_tty = console::Term::stderr().is_term();
         let no_color = std::env::var_os("NO_COLOR").is_some();
         let styled = is_tty && !no_color;
-        Presenter {
+        let presenter = Presenter {
             multi: MultiProgress::new(),
             state: Arc::new(Mutex::new(LiveState::default())),
             opts: RenderOpts {
                 color: styled,
                 emoji: styled,
             },
+        };
+        // On a styled TTY, repaint the active line every second so the elapsed clock
+        // advances during quiet multi-minute execution stretches that emit no events.
+        // Detached: the process exit at end-of-run tears it down (it only ever reads
+        // shared state and updates an existing bar's message).
+        if styled {
+            let state = Arc::clone(&presenter.state);
+            let opts = presenter.opts;
+            std::thread::spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                repaint_active_bar(&s, opts);
+            });
         }
+        presenter
     }
 
     /// A teardown handle over the shared live region. `init_tracing` hands this to
@@ -724,24 +738,13 @@ impl Presenter {
     }
 
     /// Repaint (creating on first use) the self-ticking active-issue spinner from
-    /// the current [`ActiveIssue`]. No-op off a colour TTY.
+    /// the current [`ActiveIssue`]. No-op off a colour TTY. The message itself is
+    /// rendered by [`repaint_active_bar`], shared with the per-second clock ticker.
     fn refresh_active_bar(&self, s: &mut LiveState) {
-        if !self.opts.color {
+        if !self.opts.color || s.active.is_none() {
             return;
         }
-        let msg = match s.active.as_ref() {
-            Some(a) => render_active_line(
-                a.phase,
-                a.number,
-                &a.title,
-                a.model.as_deref(),
-                a.start.elapsed(),
-                a.budget_min,
-                self.opts,
-            ),
-            None => return,
-        };
-        let bar = s.active_bar.get_or_insert_with(|| {
+        if s.active_bar.is_none() {
             let b = self.multi.add(ProgressBar::new_spinner());
             b.set_style(
                 ProgressStyle::with_template("{spinner:.cyan} {msg}").expect("static template"),
@@ -749,9 +752,27 @@ impl Presenter {
             // Self-tick so the spinner keeps moving through quiet multi-minute
             // execution stretches that emit no events (ADR-0006 D4).
             b.enable_steady_tick(Duration::from_millis(120));
-            b
-        });
-        bar.set_message(msg);
+            s.active_bar = Some(b);
+        }
+        repaint_active_bar(s, self.opts);
+    }
+}
+
+/// Repaint the active-issue spinner's message from the current state, recomputing
+/// the elapsed clock. `indicatif`'s steady tick only re-draws the *same* message, so
+/// the clock would freeze at its event-time value; calling this on a one-second
+/// timer keeps the elapsed time advancing between events (ADR-0006 D4).
+fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
+    if let (Some(a), Some(bar)) = (s.active.as_ref(), s.active_bar.as_ref()) {
+        bar.set_message(render_active_line(
+            a.phase,
+            a.number,
+            &a.title,
+            a.model.as_deref(),
+            a.start.elapsed(),
+            a.budget_min,
+            opts,
+        ));
     }
 }
 
@@ -788,9 +809,10 @@ impl PresenterHandle {
     }
 
     /// Print the run's branding header (`🦊 Ralphy - vX`) at start-up, seeded by a
-    /// stable per-run `seed` (the repo name), so it matches the Telegram card's
-    /// approach. Routed through `MultiProgress` when styled so it sits cleanly above
-    /// the live region; bold-cyan on a colour TTY, plain otherwise.
+    /// stable per-run `seed` (the derived run title), so the face is identical to the
+    /// Telegram card for the run and varies across runs. Routed through
+    /// `MultiProgress` when styled so it sits cleanly above the live region; bold-cyan
+    /// on a colour TTY, plain otherwise.
     pub fn print_header(&self, seed: &str) {
         let header = crate::runstate::ralphy_header(seed);
         if self.color {

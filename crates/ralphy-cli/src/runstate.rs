@@ -107,7 +107,7 @@ pub enum RunEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IssueStatus {
     Planning,
-    Executing { budget_min: u64 },
+    Executing,
     Done,
     Skipped,
     Blocked,
@@ -250,13 +250,11 @@ impl RunState {
                     IssueStatus::Planning
                 };
             }
-            RunEvent::Executing {
-                number, budget_min, ..
-            } => {
+            RunEvent::Executing { number, .. } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
-                self.entry_mut(n).status = IssueStatus::Executing { budget_min };
+                self.entry_mut(n).status = IssueStatus::Executing;
             }
             RunEvent::IssueClosed { number } => {
                 let Some(n) = self.resolve(number) else {
@@ -325,7 +323,7 @@ impl RunState {
                 IssueStatus::NeedsSplit => c.needs_split += 1,
                 IssueStatus::NonGreen => c.non_green += 1,
                 IssueStatus::Planning => c.planning += 1,
-                IssueStatus::Executing { .. } => c.executing += 1,
+                IssueStatus::Executing => c.executing += 1,
             }
         }
         c
@@ -986,9 +984,6 @@ mod tests {
             budget_min: 45,
             model: "claude-opus-4".into(),
         });
-        assert_eq!(
-            state.issues[0].status,
-            IssueStatus::Executing { budget_min: 45 }
-        );
+        assert_eq!(state.issues[0].status, IssueStatus::Executing);
     }
 }

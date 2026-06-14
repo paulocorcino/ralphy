@@ -364,19 +364,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
 
     let presenter = init_tracing(log_file, args.verbose, notifier_layer);
 
-    // The branding header at the very top of the run, seeded by the repo name so the
-    // face is stable per repo (mirrors the Telegram card's `🦊 Ralphy - vX` header).
+    // The repo name feeds the run title (below); the branding header is printed once
+    // that title is known, so the console face is seeded by the same title as the
+    // Telegram card — identical per run, varying across runs.
     let repo_name = repo_root
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("repo");
-    presenter.print_header(repo_name);
-
-    // The info line under the header: project · current branch · repo URL. All
-    // best-effort — a detached HEAD or a local-only repo simply drops that segment.
-    let start_branch = git::current_branch(&repo_root).ok();
-    let repo_url = git::origin_url(&repo_root).map(|u| ui::normalize_remote_url(&u));
-    presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
@@ -393,6 +387,26 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // run_queue will work, and a dependency-consistent order lets one run drain
     // a graph whose numbering disagrees with its edges.
     let queue = ralphy_core::blocked::sort_queue(queue);
+
+    // Derive the run title once, before any on-screen line, so it can seed both the
+    // console branding header and the Telegram card — the face then matches across
+    // both surfaces and varies per run (a different queue → a different face).
+    let only_issue_title = args.only_issue.and(queue.first()).map(|i| i.title.clone());
+    let title = telegram::notifier::derive_title(
+        repo_name,
+        queue.len(),
+        &effective_labels,
+        only_issue_title.as_deref(),
+        args.title.as_deref(),
+    );
+
+    // Branding header + info line, seeded by the run title (see above). All info-line
+    // segments are best-effort — a detached HEAD or a local-only repo drops that part.
+    presenter.print_header(&title);
+    let start_branch = git::current_branch(&repo_root).ok();
+    let repo_url = git::origin_url(&repo_root).map(|u| ui::normalize_remote_url(&u));
+    presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
+
     if queue.is_empty() {
         let scope = match args.only_issue {
             Some(n) => format!("issue #{n}"),
@@ -418,15 +432,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             cfg.chat_id,
             telegram::config::effective_token(Some(&cfg.token)),
         ) {
-            let only_issue_title = args.only_issue.and(queue.first()).map(|i| i.title.clone());
-            let title = telegram::notifier::derive_title(
-                repo_name,
-                queue.len(),
-                &effective_labels,
-                only_issue_title.as_deref(),
-                args.title.as_deref(),
-            );
-            let state = runstate::RunState::new(title, queue.len());
+            let state = runstate::RunState::new(title.clone(), queue.len());
             let client =
                 telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
             notifier =
