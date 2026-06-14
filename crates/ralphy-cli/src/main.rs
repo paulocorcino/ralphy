@@ -14,7 +14,7 @@ use ralphy_core::{
     git, github, run_queue, Agent, BranchMode, GhTracker, Outcome, QueueConfig, StopReason,
     WallClock, Workspace,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 mod guard;
 mod hook;
@@ -245,13 +245,58 @@ fn main() -> Result<()> {
     }
 }
 
+/// The shared consolidation step behind both `ralphy consolidate` and the
+/// automatic end-of-run trigger: run the curation session, verify it actually
+/// rewrote `KNOWLEDGE.md`, and only then archive the consumed notes into
+/// `knowledge/raw/`. Returns how many notes were archived. Errors — leaving the
+/// notes loose for a retry — when the session left `KNOWLEDGE.md` missing or
+/// unchanged. `notes` must be non-empty; callers gate on `loose_notes` first.
+///
+/// Callers are responsible for clearing `ANTHROPIC_API_KEY` (the subscription-quota
+/// sentinel) before this runs — `run` already does so up front, `consolidate` does
+/// it just before calling.
+fn run_consolidation(
+    ws: &Workspace,
+    run_dir: &std::path::Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    max_minutes: u64,
+    notes: &[PathBuf],
+) -> Result<usize> {
+    use anyhow::bail;
+    use ralphy_core::knowledge;
+
+    std::fs::create_dir_all(run_dir).ok();
+
+    // The curated file before the session, to verify the session produced one.
+    let before = std::fs::read_to_string(ws.knowledge_file()).ok();
+
+    ralphy_agent_claude::consolidate_knowledge(
+        ws,
+        run_dir,
+        model,
+        effort,
+        std::time::Duration::from_secs(max_minutes * 60),
+    )?;
+
+    let after = std::fs::read_to_string(ws.knowledge_file()).ok();
+    match after {
+        Some(ref a) if before.as_deref() != Some(a.as_str()) => {}
+        _ => bail!(
+            "the session left KNOWLEDGE.md missing or unchanged — notes kept loose (see {})",
+            run_dir.join("consolidate.log").display()
+        ),
+    }
+
+    knowledge::archive_notes(ws, notes)
+}
+
 /// `ralphy consolidate`: run a one-shot agent session that curates the loose
 /// knowledge notes into `KNOWLEDGE.md`, then archive the consumed notes under
 /// `knowledge/raw/`. The session's only deliverable is the curated file — the
 /// command verifies it actually changed before archiving anything, so a failed
 /// or no-op session leaves the notes loose for a retry.
 fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
-    use anyhow::bail;
     use ralphy_core::knowledge;
 
     let repo_root = git::resolve_toplevel(&args.repo)?;
@@ -274,32 +319,18 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
 
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let run_dir = ws.run_dir(&stamp);
-    std::fs::create_dir_all(&run_dir).ok();
 
     // Same subscription-quota sentinel as `run` (see the comment there).
     std::env::set_var("ANTHROPIC_API_KEY", "");
 
-    // The curated file before the session, to verify the session produced one.
-    let before = std::fs::read_to_string(ws.knowledge_file()).ok();
-
-    ralphy_agent_claude::consolidate_knowledge(
+    let archived = run_consolidation(
         &ws,
         &run_dir,
         non_empty(args.model).as_deref(),
         non_empty(args.effort).as_deref(),
-        std::time::Duration::from_secs(args.max_minutes * 60),
+        args.max_minutes,
+        &notes,
     )?;
-
-    let after = std::fs::read_to_string(ws.knowledge_file()).ok();
-    match after {
-        Some(ref a) if before.as_deref() != Some(a.as_str()) => {}
-        _ => bail!(
-            "the session left KNOWLEDGE.md missing or unchanged — notes kept loose (see {})",
-            run_dir.join("consolidate.log").display()
-        ),
-    }
-
-    let archived = knowledge::archive_notes(&ws, &notes)?;
     println!(
         "Done: KNOWLEDGE.md updated, {archived} note(s) archived into .ralphy/knowledge/raw/."
     );
@@ -532,6 +563,33 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         dry_run: args.dry_run,
     };
     presenter.print_panel(&data);
+
+    // Knowledge consolidation trigger: a non-dry run that reached the end and left
+    // loose per-issue notes folds them into KNOWLEDGE.md before exiting, so the
+    // curated cache the next run reads (prompt.execute.md reads KNOWLEDGE.md first)
+    // stays current without a manual `consolidate` step. Everything lives under the
+    // gitignored `.ralphy/`, so there is nothing to commit and the panel's "clean
+    // run" report stays accurate. The session is headless (output to consolidate.log),
+    // so a notice frames the wait. A failed session is a warning, never a run
+    // failure — the run already succeeded and `run_consolidation` keeps the notes
+    // loose for a later retry. `ANTHROPIC_API_KEY` was already cleared up front;
+    // defaults mirror the `consolidate` command (opus / medium / 30 min).
+    if !args.dry_run {
+        let notes = ralphy_core::knowledge::loose_notes(&ws);
+        if !notes.is_empty() {
+            presenter.print_notice(&format!(
+                "Consolidating {} knowledge note(s) into KNOWLEDGE.md…",
+                notes.len()
+            ));
+            let run_dir = ws.run_dir(&cfg.stamp);
+            match run_consolidation(&ws, &run_dir, Some("opus"), Some("medium"), 30, &notes) {
+                Ok(archived) => presenter.print_notice(&format!(
+                    "Knowledge consolidated — {archived} note(s) archived into .ralphy/knowledge/raw/."
+                )),
+                Err(e) => warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry"),
+            }
+        }
+    }
     Ok(())
 }
 
