@@ -349,10 +349,16 @@ pub struct QueueConfig {
     /// When set, the `stop-before` label on this specific issue is ignored and
     /// the issue runs normally. Mirrors ps1's `$OnlyIssue -le 0` guard.
     pub only_issue: Option<u64>,
-    /// When true, a usage limit stops the run and reports the reset (the old
-    /// behaviour). The default (`false`) waits for the reset and auto-resumes the
-    /// same issue. See docs/adr/0003.
-    pub stop_on_limit: bool,
+    /// When true, a usage limit during the *plan* phase stops the run and reports
+    /// the reset (the old behaviour). The default (`false`) waits for the reset
+    /// and auto-resumes the same issue. Derived from the planner agent so a split
+    /// run can resume through a plan-time reset while still stopping on an
+    /// execute-time limit. See docs/adr/0003 and docs/adr/0009.
+    pub stop_on_limit_plan: bool,
+    /// When true, a usage limit during the *execute* phase stops the run and
+    /// reports the reset. The default (`false`) waits and auto-resumes. Derived
+    /// from the executor agent. See docs/adr/0003 and docs/adr/0009.
+    pub stop_on_limit_exec: bool,
 }
 
 /// What happened to one issue in the queue.
@@ -671,7 +677,7 @@ pub fn run_queue(
         // Plan, auto-resuming through usage-limit reset windows the same way
         // execution does. A usage limit during planning surfaces as a typed
         // `PlanLimit` (not a generic failure): wait for the reset and re-plan,
-        // unless `stop_on_limit`, no reset was parsed, or repeated no-progress
+        // unless `stop_on_limit_plan`, no reset was parsed, or repeated no-progress
         // limits hit the cap — any of which stops and reports the limit. A
         // genuine (non-limit) planning failure still restores and propagates.
         let mut plan_limit_streak = 0u32;
@@ -693,7 +699,7 @@ pub fn run_queue(
             // Stop-and-report when configured, when no reset was parsed (nothing
             // to wait for), or when the cap is hit — never delete the branch, so
             // it is handed back exactly like an execute-time limit stop.
-            if cfg.stop_on_limit || limit.reset.is_none() || capped {
+            if cfg.stop_on_limit_plan || limit.reset.is_none() || capped {
                 info!(
                     number = issue.number,
                     reset = ?limit.reset,
@@ -798,7 +804,7 @@ pub fn run_queue(
 
         // Execute the issue, auto-resuming through usage-limit reset windows by
         // default. On `Outcome::Limit` with a parsed reset (and not
-        // `stop_on_limit`), wait for the reset and re-run `execute()` only —
+        // `stop_on_limit_exec`), wait for the reset and re-run `execute()` only —
         // never `plan()`, which would delete the on-disk `plan.md` the resume
         // depends on (ADR-0003). A progress-aware cap abandons the issue after
         // two consecutive limit outcomes that commit nothing; any commit resets
@@ -824,9 +830,9 @@ pub fn run_queue(
             }
 
             let reset = match &outcome {
-                Outcome::Limit(Some(r)) if !cfg.stop_on_limit => r.clone(),
+                Outcome::Limit(Some(r)) if !cfg.stop_on_limit_exec => r.clone(),
                 // Done, any non-limit outcome, a bare `Limit(None)`, or
-                // `stop_on_limit` all leave the loop with the outcome as-is.
+                // `stop_on_limit_exec` all leave the loop with the outcome as-is.
                 _ => break outcome,
             };
 

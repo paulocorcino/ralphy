@@ -415,7 +415,8 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
         only_issue: None,
-        stop_on_limit: false,
+        stop_on_limit_plan: false,
+        stop_on_limit_exec: false,
     }
 }
 
@@ -427,7 +428,8 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
         only_issue: Some(only),
-        stop_on_limit: false,
+        stop_on_limit_plan: false,
+        stop_on_limit_exec: false,
     }
 }
 
@@ -439,11 +441,13 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::Current,
         only_issue: None,
-        stop_on_limit: false,
+        stop_on_limit_plan: false,
+        stop_on_limit_exec: false,
     }
 }
 
-/// A New-mode config with the auto-resume opt-out (`--stop-on-limit`) enabled.
+/// A New-mode config with the auto-resume opt-out (`--stop-on-limit`) enabled for
+/// both phases (an explicit `--stop-on-limit` forces plan and execute alike).
 fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
     QueueConfig {
         repo_root: repo.to_path_buf(),
@@ -452,7 +456,8 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
         only_issue: None,
-        stop_on_limit: true,
+        stop_on_limit_plan: true,
+        stop_on_limit_exec: true,
     }
 }
 
