@@ -81,7 +81,7 @@ impl PriceTable {
     /// The read-time USD cost of `tokens` priced as `model`, or `None` when the
     /// model is absent from the table (logged once — never reported as `0`).
     pub fn cost_usd(&self, model: &str, tokens: &Usage) -> Option<f64> {
-        let Some(price) = self.0.get(model) else {
+        let Some(price) = self.resolve(model) else {
             warn_unknown(model);
             return None;
         };
@@ -119,6 +119,18 @@ impl PriceTable {
         (any_priced.then_some(usd), any_unpriced)
     }
 
+    /// Resolve a model id to its price, tolerating a trailing release-date suffix:
+    /// `claude-haiku-4-5-20251001` falls back to the undated family id
+    /// `claude-haiku-4-5`. Claude Code keys its `modelUsage` map by the *dated* id
+    /// while the table (and Anthropic's published price list) uses the undated
+    /// family id, so without this fallback every dated id reports as unpriced
+    /// (`~$?`) even when its family is in the table.
+    fn resolve(&self, model: &str) -> Option<&ModelPrice> {
+        self.0
+            .get(model)
+            .or_else(|| self.0.get(strip_release_date(model)))
+    }
+
     /// Load the effective table: the shipped [`defaults`](Self::defaults) overlaid
     /// with `~/.ralphy/pricing.toml` when present. The override path is
     /// `$RALPHY_PRICING_FILE` when set (tests point it at a temp file), else
@@ -143,6 +155,17 @@ impl PriceTable {
             }
         }
         table
+    }
+}
+
+/// Strip a trailing `-YYYYMMDD` release-date suffix from a model id, returning the
+/// undated family id (`claude-haiku-4-5-20251001` → `claude-haiku-4-5`). Returns
+/// the input unchanged when the final segment is not exactly eight digits, so a
+/// genuinely undated id (or an operator's custom key) is never mangled.
+fn strip_release_date(model: &str) -> &str {
+    match model.rsplit_once('-') {
+        Some((head, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => head,
+        _ => model,
     }
 }
 
@@ -195,6 +218,32 @@ mod tests {
         );
         // An unknown model reports unknown cost — never `Some(0.0)` (ADR-0008 D8).
         assert_eq!(table.cost_usd("big-pickle", &one_million_each()), None);
+    }
+
+    #[test]
+    fn dated_model_id_falls_back_to_undated_family_price() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        // The dated id Claude Code keys `modelUsage` by resolves to the undated
+        // `claude-haiku-4-5` family price (1 + 5 + 0.1 + 1.25 = 7.35 over 1M each).
+        let dated = table
+            .cost_usd("claude-haiku-4-5-20251001", &tokens)
+            .expect("dated haiku id resolves via family fallback");
+        let undated = table
+            .cost_usd("claude-haiku-4-5", &tokens)
+            .expect("undated haiku is priced");
+        assert!(
+            (dated - undated).abs() < 1e-9,
+            "dated id must price identically to its family, got {dated} vs {undated}"
+        );
+        // A non-date trailing segment is NOT stripped — a genuinely unknown model
+        // stays unknown (never silently mispriced).
+        assert_eq!(table.cost_usd("claude-haiku-4-5-turbo", &tokens), None);
+        assert_eq!(strip_release_date("claude-opus-4-8"), "claude-opus-4-8");
+        assert_eq!(
+            strip_release_date("claude-haiku-4-5-20251001"),
+            "claude-haiku-4-5"
+        );
     }
 
     #[test]

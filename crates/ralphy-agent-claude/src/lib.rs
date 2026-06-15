@@ -703,7 +703,7 @@ impl ClaudeAgent {
             }
             if Instant::now() >= next_transcript_poll {
                 if let Some(t) = latest_transcript_text_since(transcript_dir, transcript_since) {
-                    if is_limit_text(&t) {
+                    if transcript_limit(&t).is_some() {
                         limit_transcript = Some(t);
                         break;
                     }
@@ -795,8 +795,10 @@ fn classify_outcome(flag: Option<&str>, timed_out: bool, transcript: Option<&str
     // A usage limit wins over a wall-timeout: the oracle reclassifies a
     // timed-out/exited session to `limit` when the transcript shows one
     // (ralphy.ps1:395-397), preserving the reset hint so the run can resume.
-    if transcript.is_some_and(is_limit_text) {
-        return Outcome::Limit(transcript.and_then(parse_reset_hhmm));
+    // Detection is structural (`transcript_limit`), not a substring scan, so the
+    // agent reading source that *mentions* a limit cannot fabricate one.
+    if let Some(reset) = transcript.and_then(transcript_limit) {
+        return Outcome::Limit(reset);
     }
     if timed_out {
         return Outcome::Timeout;
@@ -885,7 +887,9 @@ fn headless_reason_to_outcome(r: HeadlessReason) -> Outcome {
 }
 
 /// Whether text looks like a subscription usage/rate-limit notice. Ports the ps1
-/// `Test-LimitText` oracle.
+/// `Test-LimitText` oracle. Used only on the bounded `claude -p` **stdout**
+/// channels (plan / headless-exec), never on the live PTY transcript — see
+/// [`transcript_limit`] for why a raw scan is unsafe there.
 fn is_limit_text(text: &str) -> bool {
     use regex::Regex;
     let re = Regex::new(
@@ -893,6 +897,71 @@ fn is_limit_text(text: &str) -> bool {
     )
     .expect("valid regex");
     re.is_match(text)
+}
+
+/// Detect a *genuine* usage-limit banner in a Claude session transcript JSONL,
+/// returning `Some(reset_hint)` (the hint itself may be `None`) when found and
+/// `None` otherwise.
+///
+/// This is line-oriented and **anchored on the API-error structure** — the real
+/// banner is an assistant line carrying `isApiErrorMessage: true` together with
+/// `error: "rate_limit"` or `apiErrorStatus: 429` (verified against a captured
+/// 429), or a `rate_limit_event` whose status is `rejected`. A raw substring
+/// scan ([`is_limit_text`]) over the whole transcript cannot be used here: the
+/// transcript records everything the agent *read and wrote*, so it false-trips
+/// the instant the agent touches source that merely mentions "usage limit" /
+/// "session limit" — which is exactly what happens when ralphy runs against a
+/// repo about rate limiting (its own included, where the test fixtures alone
+/// carry the phrase hundreds of times). Only Claude's own injected error line is
+/// a limit; prose in tool results and assistant text is not.
+///
+/// The reset hint is parsed from that error line's own text via
+/// [`parse_reset_hhmm`] (e.g. `"You've hit your session limit · resets 8:10am"`
+/// → `Some("08:10")`).
+fn transcript_limit(jsonl: &str) -> Option<Option<String>> {
+    for line in jsonl.lines() {
+        let line = line.trim();
+        if !line.starts_with('{') {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if line_is_rate_limit_error(&v) {
+            return Some(limit_line_text(&v).as_deref().and_then(parse_reset_hhmm));
+        }
+    }
+    None
+}
+
+/// Whether a parsed transcript line is Claude's own rate-limit error — either an
+/// `isApiErrorMessage` line whose `error`/`apiErrorStatus` marks a rate limit, or
+/// a rejected `rate_limit_event`.
+fn line_is_rate_limit_error(v: &serde_json::Value) -> bool {
+    let api_rate_limited = v
+        .get("isApiErrorMessage")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false)
+        && (v.get("error").and_then(|e| e.as_str()) == Some("rate_limit")
+            || v.get("apiErrorStatus").and_then(|s| s.as_u64()) == Some(429));
+    let rate_limit_event = v.get("type").and_then(|t| t.as_str()) == Some("rate_limit_event")
+        && v.get("rate_limit_info")
+            .and_then(|i| i.get("status"))
+            .and_then(|s| s.as_str())
+            == Some("rejected");
+    api_rate_limited || rate_limit_event
+}
+
+/// Concatenate the `text` blocks of a transcript line's `message.content`, so the
+/// reset hint can be parsed from the banner Claude rendered into it. `None` when
+/// no text is present.
+fn limit_line_text(v: &serde_json::Value) -> Option<String> {
+    let blocks = v.get("message")?.get("content")?.as_array()?;
+    let text: String = blocks
+        .iter()
+        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+        .collect();
+    (!text.is_empty()).then_some(text)
 }
 
 /// Parse a reset time from a usage-limit transcript. Looks for a pattern like
@@ -1133,12 +1202,17 @@ fn parse_plan_usage(stdout: &str) -> Usage {
             cache_creation: field("cache_creation_input_tokens"),
             model: None,
         };
-        // The model id resolves the price table (D8): prefer the `modelUsage` map
-        // key (the per-model breakdown), fall back to a `usage.model` field.
+        // The model id resolves the price table (D8): prefer the *dominant*
+        // `modelUsage` key — the main model the top-level `usage` block accounts
+        // for — falling back to a `usage.model` field. Picking the dominant entry
+        // (not the first) matters because Claude Code also bills a tiny amount to
+        // a background model (e.g. haiku) for auxiliary work; that entry sorts
+        // first alphabetically, so `keys().next()` mislabeled the whole phase as
+        // haiku — and, being a dated id, missed the price table entirely.
         u.model = value
             .get("modelUsage")
             .and_then(|m| m.as_object())
-            .and_then(|m| m.keys().next().cloned())
+            .and_then(dominant_model_key)
             .or_else(|| {
                 usage
                     .get("model")
@@ -1148,6 +1222,25 @@ fn parse_plan_usage(stdout: &str) -> Usage {
         found = Some(u); // keep the LAST result object
     }
     found.unwrap_or_default()
+}
+
+/// The key of the `modelUsage` entry with the most tokens — the run's *main*
+/// model, the one the top-level `usage` block accounts for. `None` for an empty
+/// map. Ties resolve to the last-seen max, which is immaterial (a tie means equal
+/// spend, so the price is the same either way for the figures that matter).
+fn dominant_model_key(model_usage: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    model_usage
+        .iter()
+        .max_by_key(|(_, entry)| model_usage_total(entry))
+        .map(|(k, _)| k.clone())
+}
+
+/// Sum a `modelUsage` entry's token counts. These fields are **camelCase**
+/// (`inputTokens`, `cacheReadInputTokens`, …), unlike the snake_case top-level
+/// `usage` block — Claude Code reports the per-model breakdown in the other case.
+fn model_usage_total(entry: &serde_json::Value) -> u64 {
+    let f = |k: &str| entry.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    f("inputTokens") + f("outputTokens") + f("cacheReadInputTokens") + f("cacheCreationInputTokens")
 }
 
 /// Encode a launch cwd the way Claude Code names its `~/.claude/projects/<dir>`
@@ -1448,14 +1541,26 @@ mod tests {
         );
     }
 
+    /// One real transcript api-error line carrying the limit banner `text`, in the
+    /// exact shape Claude Code writes (`isApiErrorMessage`+`error`+`apiErrorStatus`).
+    fn limit_jsonl(text: &str) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "isApiErrorMessage": true,
+            "error": "rate_limit",
+            "apiErrorStatus": 429,
+            "message": { "role": "assistant", "content": [ { "type": "text", "text": text } ] }
+        })
+        .to_string()
+    }
+
     #[test]
     fn classify_limit_beats_timeout() {
-        // A timed-out session whose transcript shows a usage limit classifies as
-        // Limit (oracle parity, ralphy.ps1:395-397) so the run resumes after reset.
-        assert_eq!(
-            classify_outcome(None, true, Some("usage limit reached")),
-            Outcome::Limit(None)
-        );
+        // A timed-out session whose transcript shows a real rate-limit error line
+        // classifies as Limit (oracle parity, ralphy.ps1:395-397) so the run
+        // resumes after reset.
+        let t = limit_jsonl("You've hit your usage limit");
+        assert_eq!(classify_outcome(None, true, Some(&t)), Outcome::Limit(None));
     }
 
     #[test]
@@ -1468,25 +1573,53 @@ mod tests {
 
     #[test]
     fn classify_limit_from_transcript() {
+        let t = limit_jsonl("You've reached your usage limit; resets 3:00pm");
         assert_eq!(
-            classify_outcome(
-                None,
-                false,
-                Some("You've reached your usage limit; resets 3:00pm")
-            ),
+            classify_outcome(None, false, Some(&t)),
             Outcome::Limit(Some("15:00".into()))
         );
     }
 
     #[test]
     fn classify_limit_from_subagent_session_limit_transcript() {
-        // This is the shape Claude Code records when a tool/subagent hits the
-        // session cap while the outer interactive PTY remains alive.
-        let transcript = "You've hit your session limit · resets 8:10am (America/Bahia)";
+        // The exact line Claude Code records when the session cap is hit while the
+        // interactive PTY remains alive (captured from a real 429).
+        let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
         assert_eq!(
-            classify_outcome(None, false, Some(transcript)),
+            classify_outcome(None, false, Some(&t)),
             Outcome::Limit(Some("08:10".into()))
         );
+    }
+
+    #[test]
+    fn classify_does_not_trip_on_source_that_mentions_limits() {
+        // THE REGRESSION GUARD: running ralphy on a repo about rate limiting (its
+        // own included) fills the transcript with tool results and assistant text
+        // that say "usage limit" / "session limit" / "resets 3:00pm" — none of
+        // which is a real limit. A structural detector must ignore all of it.
+        let transcript = concat!(
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"fn is_limit_text(text) { /* rate limit, usage limit, session limit */ }\nassert_eq!(parse_reset_hhmm(\"resets 3:00pm\"), Some(\"15:00\"));"}]}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll wire the usage limit handling so a session limit auto-resumes after reset."}]}}"#,
+        );
+        assert_eq!(transcript_limit(transcript), None);
+        // ...and a timed-out session over that transcript is a Timeout, not a Limit.
+        assert_eq!(
+            classify_outcome(None, true, Some(transcript)),
+            Outcome::Timeout
+        );
+    }
+
+    #[test]
+    fn transcript_limit_detects_real_429_error_line() {
+        let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
+        assert_eq!(transcript_limit(&t), Some(Some("08:10".into())));
+    }
+
+    #[test]
+    fn transcript_limit_detects_rejected_rate_limit_event() {
+        let t = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}"#;
+        assert_eq!(transcript_limit(t), Some(None));
     }
 
     #[test]
@@ -1820,6 +1953,31 @@ mod tests {
         assert_eq!(usage.cache_read, 0);
         assert_eq!(usage.cache_creation, 23406);
         assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn parse_plan_usage_attributes_to_dominant_not_alphabetical_model() {
+        // The real shape (captured from a plan.log): Claude bills a tiny amount to
+        // the background `claude-haiku-4-5-20251001` and the bulk to the main
+        // `claude-opus-4-8`. The top-level `usage` is the MAIN model's split, so the
+        // phase must be labeled opus — not haiku (which sorts first alphabetically
+        // and is a dated id absent from the price table).
+        let stdout = "{\"type\":\"result\",\
+\"modelUsage\":{\
+\"claude-haiku-4-5-20251001\":{\"inputTokens\":4375,\"outputTokens\":17,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0},\
+\"claude-opus-4-8\":{\"inputTokens\":4237,\"outputTokens\":14023,\"cacheReadInputTokens\":1129426,\"cacheCreationInputTokens\":76510}},\
+\"usage\":{\"input_tokens\":4237,\"output_tokens\":14023,\"cache_read_input_tokens\":1129426,\"cache_creation_input_tokens\":76510}}\n";
+        let usage = parse_plan_usage(stdout);
+        assert_eq!(
+            usage.model.as_deref(),
+            Some("claude-opus-4-8"),
+            "the dominant model, not the alphabetically-first background haiku"
+        );
+        // The numeric split is the main model's (the top-level `usage`), unchanged.
+        assert_eq!(usage.input, 4237);
+        assert_eq!(usage.output, 14023);
+        assert_eq!(usage.cache_read, 1129426);
+        assert_eq!(usage.cache_creation, 76510);
     }
 
     #[test]
