@@ -18,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::run_headless;
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
 
@@ -516,6 +516,12 @@ impl Agent for ClaudeAgent {
         }
 
         if !plan_path.exists() {
+            if is_limit_text(&log) {
+                return Err(PlanLimit {
+                    reset: parse_reset_hhmm(&log),
+                }
+                .into());
+            }
             bail!(
                 "claude produced no plan at {} (see {})",
                 plan_path.display(),
@@ -882,9 +888,10 @@ fn headless_reason_to_outcome(r: HeadlessReason) -> Outcome {
 /// `Test-LimitText` oracle.
 fn is_limit_text(text: &str) -> bool {
     use regex::Regex;
-    let re =
-        Regex::new(r"(?i)(rate limit|usage limit|reached your .* limit|limit reached|resets\s+\d)")
-            .expect("valid regex");
+    let re = Regex::new(
+        r"(?i)(rate[_ -]?limit|usage limit|session limit|reached your .* limit|limit reached|resets\s+\d)",
+    )
+    .expect("valid regex");
     re.is_match(text)
 }
 
@@ -1480,6 +1487,19 @@ mod tests {
             classify_outcome(None, false, Some(transcript)),
             Outcome::Limit(Some("08:10".into()))
         );
+    }
+
+    #[test]
+    fn limit_text_matches_claude_rate_limit_event() {
+        let log = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}"#;
+        assert!(is_limit_text(log));
+    }
+
+    #[test]
+    fn limit_text_matches_session_limit_message() {
+        let log = "You've hit your session limit · resets 8:10am (America/Bahia)";
+        assert!(is_limit_text(log));
+        assert_eq!(parse_reset_hhmm(log), Some("08:10".into()));
     }
 
     #[test]
