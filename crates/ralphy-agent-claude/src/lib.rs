@@ -1750,7 +1750,10 @@ mod tests {
         let after = vec![PathBuf::from("/p/a.jsonl"), PathBuf::from("/p/b.jsonl")];
         // `a.jsonl` was present before (it merely grew) → excluded; only the
         // freshly appeared `b.jsonl` is this run's transcript.
-        assert_eq!(appeared_files(&before, &after), vec![PathBuf::from("/p/b.jsonl")]);
+        assert_eq!(
+            appeared_files(&before, &after),
+            vec![PathBuf::from("/p/b.jsonl")]
+        );
     }
 
     #[test]

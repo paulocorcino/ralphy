@@ -1703,8 +1703,16 @@ fn green_issue_writes_one_plan_and_one_execute_ledger_line() {
         assert!(line.contains("\"outcome\":"), "outcome: {line}");
     }
     // The execute line records the terminal `done`; the plan line records `ok`.
-    assert!(exec_lines[0].contains("\"outcome\":\"done\""), "execute outcome: {}", exec_lines[0]);
-    assert!(plan_lines[0].contains("\"outcome\":\"ok\""), "plan outcome: {}", plan_lines[0]);
+    assert!(
+        exec_lines[0].contains("\"outcome\":\"done\""),
+        "execute outcome: {}",
+        exec_lines[0]
+    );
+    assert!(
+        plan_lines[0].contains("\"outcome\":\"ok\""),
+        "plan outcome: {}",
+        plan_lines[0]
+    );
 
     fs::remove_dir_all(&repo).ok();
 }

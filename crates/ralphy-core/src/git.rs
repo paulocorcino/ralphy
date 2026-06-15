@@ -80,7 +80,10 @@ pub fn slug_from_url(url: &str) -> Option<String> {
         s
     };
     let after_host = after_host.replacen(':', "/", 1);
-    let segments: Vec<&str> = after_host.split('/').filter(|seg| !seg.is_empty()).collect();
+    let segments: Vec<&str> = after_host
+        .split('/')
+        .filter(|seg| !seg.is_empty())
+        .collect();
     if segments.len() >= 2 {
         let owner = segments[segments.len() - 2];
         let repo = segments[segments.len() - 1];
@@ -219,6 +222,9 @@ mod tests {
         let no_remote = std::env::temp_dir().join("ralphy-no-such-repo-xyz");
         let slug = project_slug(&no_remote);
         assert!(slug.starts_with("path-"), "fallback slug form: {slug}");
-        assert!(slug.len() > "path-".len(), "fallback slug non-empty: {slug}");
+        assert!(
+            slug.len() > "path-".len(),
+            "fallback slug non-empty: {slug}"
+        );
     }
 }

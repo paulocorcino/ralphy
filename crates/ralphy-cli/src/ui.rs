@@ -1080,7 +1080,10 @@ mod tests {
         let done = render_plain_line(&RunEvent::KnowledgeConsolidated { archived: 4 }, &ts, None)
             .expect("KnowledgeConsolidated renders a line");
         assert!(done.contains('📚'), "knowledge glyph: {done}");
-        assert!(done.contains("4 note(s) archived"), "archived count: {done}");
+        assert!(
+            done.contains("4 note(s) archived"),
+            "archived count: {done}"
+        );
         assert!(!done.contains('\u{1b}'), "no ANSI byte: {done:?}");
     }
 

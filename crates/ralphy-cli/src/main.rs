@@ -539,7 +539,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             let run_dir = ws.run_dir(&cfg.stamp);
             match run_consolidation(&ws, &run_dir, Some("opus"), Some("medium"), 30, &notes) {
                 Ok(archived) => info!(count = archived as u64, "knowledge consolidated"),
-                Err(e) => warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry"),
+                Err(e) => {
+                    warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry")
+                }
             }
         }
     }

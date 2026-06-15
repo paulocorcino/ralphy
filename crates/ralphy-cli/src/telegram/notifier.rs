@@ -584,8 +584,8 @@ mod tests {
     use std::sync::atomic::AtomicI64;
 
     /// Live, opt-in demo that the notifier updates ONE message in place: it sends a
-    /// card then edits it repeatedly with visibly-changing content (issues advancing
-    /// + a live clock), ~2s apart, so the operator watches it animate on their phone.
+    /// card then edits it repeatedly with visibly-changing content (issues
+    /// advancing + a live clock), ~2s apart, so the operator watches it animate.
     /// Run with `cargo test -p ralphy-cli -- --ignored live_animate_card --nocapture`.
     #[test]
     #[ignore = "hits the live Telegram Bot API; needs `telegram setup` first"]
@@ -875,8 +875,14 @@ mod tests {
         state.apply(RunEvent::KnowledgeConsolidating { notes: 2 });
         state.finished = true;
         let card = render_card(&state, 0);
-        assert!(!card.contains("consolidating"), "no stale live line: {card}");
-        assert!(!card.contains("📚"), "no consolidated footer segment: {card}");
+        assert!(
+            !card.contains("consolidating"),
+            "no stale live line: {card}"
+        );
+        assert!(
+            !card.contains("📚"),
+            "no consolidated footer segment: {card}"
+        );
     }
 
     #[test]
