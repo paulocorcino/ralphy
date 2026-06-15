@@ -114,7 +114,7 @@ impl OpenCodeAgent {
             model,
             variant: None,
             run_dir,
-            max_minutes_per_issue: 45,
+            max_minutes_per_issue: 90,
             run_deadline: None,
         }
     }
@@ -124,6 +124,12 @@ impl OpenCodeAgent {
     /// sends a value the provider rejects.
     pub fn with_variant(mut self, variant: Option<String>) -> Self {
         self.variant = variant;
+        self
+    }
+
+    /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
+    pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
+        self.max_minutes_per_issue = minutes;
         self
     }
 
@@ -679,6 +685,26 @@ impl Agent for OpenCodeAgent {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    // ── with_max_minutes_per_issue ──────────────────────────────────────────
+
+    #[test]
+    fn opencode_honours_max_minutes_per_issue() {
+        assert_eq!(
+            OpenCodeAgent::new(None, PathBuf::from("/run")).max_minutes_per_issue,
+            90
+        );
+        let a = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
+        assert_eq!(a.max_minutes_per_issue, 120);
+        let short = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
+        let long = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
+        assert!(long.issue_deadline() > short.issue_deadline());
+        let rd = Instant::now() + Duration::from_secs(1);
+        let clamped = OpenCodeAgent::new(None, PathBuf::from("/run"))
+            .with_max_minutes_per_issue(1000)
+            .with_run_deadline(Some(rd));
+        assert!(clamped.issue_deadline() <= rd);
+    }
 
     // ── resolved_model_label ────────────────────────────────────────────────
 

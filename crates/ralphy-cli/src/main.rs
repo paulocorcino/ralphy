@@ -768,7 +768,8 @@ fn build_agent(
                 non_empty(args.exec_model.clone().unwrap_or_default()),
                 run_dir,
             )
-            .with_run_deadline(run_deadline),
+            .with_run_deadline(run_deadline)
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue),
         ),
         CliAgent::OpenCode => Box::new(
             OpenCodeAgent::new(
@@ -776,7 +777,8 @@ fn build_agent(
                 run_dir,
             )
             .with_variant(non_empty(args.exec_variant.clone().unwrap_or_default()))
-            .with_run_deadline(run_deadline),
+            .with_run_deadline(run_deadline)
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue),
         ),
     }
 }

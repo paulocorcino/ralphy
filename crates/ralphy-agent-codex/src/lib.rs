@@ -200,9 +200,15 @@ impl CodexAgent {
         Self {
             model,
             run_dir,
-            max_minutes_per_issue: 45,
+            max_minutes_per_issue: 90,
             run_deadline: None,
         }
+    }
+
+    /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
+    pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
+        self.max_minutes_per_issue = minutes;
+        self
     }
 
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
@@ -681,6 +687,26 @@ impl Agent for CodexAgent {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    // ── with_max_minutes_per_issue ──────────────────────────────────────────
+
+    #[test]
+    fn codex_honours_max_minutes_per_issue() {
+        assert_eq!(
+            CodexAgent::new(None, PathBuf::from("/run")).max_minutes_per_issue,
+            90
+        );
+        let a = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
+        assert_eq!(a.max_minutes_per_issue, 120);
+        let short = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
+        let long = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
+        assert!(long.issue_deadline() > short.issue_deadline());
+        let rd = Instant::now() + Duration::from_secs(1);
+        let clamped = CodexAgent::new(None, PathBuf::from("/run"))
+            .with_max_minutes_per_issue(1000)
+            .with_run_deadline(Some(rd));
+        assert!(clamped.issue_deadline() <= rd);
+    }
 
     // ── classify_codex_outcome ──────────────────────────────────────────────
 
