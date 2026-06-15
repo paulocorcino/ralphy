@@ -813,6 +813,7 @@ dependencies = [
  "ralphy-adapter-support",
  "ralphy-core",
  "regex",
+ "serde_json",
  "tracing",
 ]
 
