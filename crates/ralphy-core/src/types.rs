@@ -200,6 +200,12 @@ impl Workspace {
     pub fn plugin_dir(&self) -> PathBuf {
         self.ralphy_dir().join("plugin")
     }
+
+    /// `<repo>/.ralphy/settings.json` — the per-repo operator config store
+    /// (ADR-0010). Gitignored like everything else under `.ralphy/`.
+    pub fn settings_path(&self) -> PathBuf {
+        self.ralphy_dir().join("settings.json")
+    }
 }
 
 #[cfg(test)]

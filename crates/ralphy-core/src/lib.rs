@@ -20,6 +20,7 @@ pub mod handoff;
 pub mod knowledge;
 pub mod ledger;
 pub mod plan;
+pub mod settings;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
@@ -30,4 +31,5 @@ pub use runner::{
     RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,
 };
 pub use tracker::{GhTracker, IssueTracker};
+pub use settings::{OpenCodeSettings, Settings};
 pub use types::{Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
