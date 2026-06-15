@@ -93,6 +93,32 @@ impl PriceTable {
         )
     }
 
+    /// Price a per-model token split (ADR-0008 D8): sum each model's read-time
+    /// cost. Returns `(usd, any_unpriced)` where `usd` is `None` when *nothing* in
+    /// the set could be priced (rendered `~$?`, never `0`), `Some(sum)` of the
+    /// priced portion otherwise; `any_unpriced` flags a model absent from the table
+    /// so the figure can carry a `+?` residue marker.
+    pub fn cost_usd_by_model(&self, by_model: &BTreeMap<String, Usage>) -> (Option<f64>, bool) {
+        let mut usd = 0.0;
+        let mut any_priced = false;
+        let mut any_unpriced = false;
+        for (model, tokens) in by_model {
+            // A zero-token entry carries no spend and no signal — skip it so an
+            // empty `unknown` bucket never forces a spurious `+?`.
+            if tokens.total() == 0 {
+                continue;
+            }
+            match self.cost_usd(model, tokens) {
+                Some(c) => {
+                    usd += c;
+                    any_priced = true;
+                }
+                None => any_unpriced = true,
+            }
+        }
+        (any_priced.then_some(usd), any_unpriced)
+    }
+
     /// Load the effective table: the shipped [`defaults`](Self::defaults) overlaid
     /// with `~/.ralphy/pricing.toml` when present. The override path is
     /// `$RALPHY_PRICING_FILE` when set (tests point it at a temp file), else

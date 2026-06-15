@@ -238,6 +238,14 @@ pub struct PanelData {
     pub project_tokens: u64,
     /// The project slug (`owner/repo` or a path-hash) shown in the footer.
     pub project_id: String,
+    /// Read-time USD for this run (ADR-0008 D8), priced per model. `None` when
+    /// nothing in the set could be priced — rendered `~$?`, never `~$0.00`.
+    pub run_usd: Option<f64>,
+    /// Read-time USD for the project's cumulative ledger, priced per model.
+    pub project_usd: Option<f64>,
+    /// Whether any model in the run/project was unpriced — the priced figures
+    /// then carry a `+?` suffix so the residue is visibly flagged.
+    pub usd_partial: bool,
 }
 
 /// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
@@ -495,14 +503,17 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
         });
     }
 
-    // Token-usage footer (ADR-0008 D11): the run total plus the project's
-    // accumulated balance, in tokens (USD is a read-time projection, never shown
-    // here). Always present so efficiency is visible at every run's end.
+    // Token-usage footer (ADR-0008 D11): the run total and the project's
+    // accumulated balance, each in tokens plus a read-time USD estimate (D8). USD
+    // is a read-time projection, never stored; an unpriced model shows `~$?`
+    // (never `~$0.00`) or flags the priced portion with `+?`.
     let footer_raw = format!(
-        "run: {} tok · project: {} {} tok",
+        "run: {} tok · {} · project: {} {} tok · {}",
         fmt_tokens(data.run_tokens),
+        fmt_panel_usd(data.run_usd, data.usd_partial),
         data.project_id,
         fmt_tokens(data.project_tokens),
+        fmt_panel_usd(data.project_usd, data.usd_partial),
     );
     lines.push(if opts.color {
         Style::new().dim().apply_to(&footer_raw).to_string()
@@ -511,6 +522,16 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     });
 
     lines
+}
+
+/// Format a read-time USD estimate for the footer (ADR-0008 D8): `~$2.10`, with a
+/// `+?` suffix when some model was unpriced, or a bare `~$?` when nothing in the
+/// set could be priced — never `~$0.00`, which would be a lie that hides spend.
+fn fmt_panel_usd(usd: Option<f64>, partial: bool) -> String {
+    match usd {
+        None => "~$?".to_string(),
+        Some(v) => format!("~${v:.2}{}", if partial { "+?" } else { "" }),
+    }
 }
 
 /// Format a token count compactly for the footer: `1.2M`, `8.4k`, or a bare
@@ -1381,6 +1402,9 @@ mod tests {
             run_tokens: 8_400_000,
             project_tokens: 142_000_000,
             project_id: "owner/repo".to_string(),
+            run_usd: Some(2.10),
+            project_usd: Some(35.6),
+            usd_partial: false,
         }
     }
 
@@ -1407,7 +1431,43 @@ mod tests {
         assert!(footer.contains("8.4M tok"), "run total: {footer}");
         assert!(footer.contains("owner/repo"), "project id: {footer}");
         assert!(footer.contains("142.0M tok"), "project total: {footer}");
+        // Read-time USD estimates (ADR-0008 D8).
+        assert!(footer.contains("~$2.10"), "run usd: {footer}");
+        assert!(footer.contains("~$35.6"), "project usd: {footer}");
         assert!(!footer.contains('\u{1b}'), "no ANSI byte: {footer:?}");
+    }
+
+    #[test]
+    fn render_totals_panel_footer_shows_unknown_usd_never_zero() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        // A fully-unpriced run shows `~$?`, never `~$0.00`.
+        let data = PanelData {
+            run_usd: None,
+            project_usd: None,
+            usd_partial: true,
+            ..panel_base()
+        };
+        let lines = render_totals_panel(&data, opts);
+        let footer = lines
+            .iter()
+            .find(|l| l.contains("run:") && l.contains("project:"))
+            .expect("a token footer line");
+        assert!(footer.contains("~$?"), "unknown usd shows ~$?: {footer}");
+        assert!(
+            !footer.contains("~$0.00"),
+            "never reports $0 for unknown spend: {footer}"
+        );
+    }
+
+    #[test]
+    fn fmt_panel_usd_partial_suffix_and_unknown() {
+        assert_eq!(fmt_panel_usd(Some(2.10), false), "~$2.10");
+        assert_eq!(fmt_panel_usd(Some(2.10), true), "~$2.10+?");
+        assert_eq!(fmt_panel_usd(None, false), "~$?");
+        assert_eq!(fmt_panel_usd(None, true), "~$?");
     }
 
     #[test]

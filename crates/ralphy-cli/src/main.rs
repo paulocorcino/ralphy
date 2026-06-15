@@ -598,6 +598,22 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let run_tokens = report.run_usage.total();
     let project_tokens = ralphy_core::ledger::project_total(&slug).total();
 
+    // Read-time USD (ADR-0008 D8), priced per model and summed. The run total
+    // prices `report.run_usage_by_model` (the runner's per-model split); the
+    // project total groups the cumulative ledger rows by model and prices each.
+    // USD never enters the ledger — re-pricing the table re-prices history.
+    let price_table = pricing::PriceTable::load();
+    let (run_usd, run_partial) = price_table.cost_usd_by_model(&report.run_usage_by_model);
+    let mut project_by_model: std::collections::BTreeMap<String, ralphy_core::Usage> =
+        std::collections::BTreeMap::new();
+    for row in ralphy_core::read_project_rows(&slug) {
+        project_by_model
+            .entry(row.model.clone())
+            .or_default()
+            .add_tokens(&row.tokens);
+    }
+    let (project_usd, project_partial) = price_table.cost_usd_by_model(&project_by_model);
+
     let data = ui::PanelData {
         branch: report.branch,
         orig_branch: report.orig_branch,
@@ -611,6 +627,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         run_tokens,
         project_tokens,
         project_id: slug,
+        run_usd,
+        project_usd,
+        usd_partial: run_partial || project_partial,
     };
     presenter.print_panel(&data);
     Ok(())
