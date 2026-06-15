@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::run_headless;
-use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
+use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Usage, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
 
@@ -460,6 +460,13 @@ impl Agent for ClaudeAgent {
         }
         args.push("-p".into());
         args.push("--dangerously-skip-permissions".into());
+        // Capture per-invocation token usage off the result event (ADR-0008 D5).
+        // `stream-json` requires `--verbose` on the pinned CLI; the plan markdown
+        // is still written to disk by the session, so the stdout format is free to
+        // change. `parse_plan_usage` skips the non-JSON warning preamble.
+        args.push("--output-format".into());
+        args.push("stream-json".into());
+        args.push("--verbose".into());
         args.push("--settings".into());
         args.push(settings_path.to_string_lossy().into_owned());
         args.push("--plugin-dir".into());
@@ -516,6 +523,7 @@ impl Agent for ClaudeAgent {
             open_steps: plan::count_open_steps(&md),
             recommended_model: plan::recommended_model(&md),
             path: plan_path,
+            usage: parse_plan_usage(&log),
         })
     }
 
@@ -979,6 +987,152 @@ fn newest_jsonl(base: &Path) -> Option<PathBuf> {
     (age < Duration::from_secs(300)).then_some(path)
 }
 
+/// Parse the token usage off a headless `claude -p --output-format stream-json`
+/// stdout (ADR-0008 D5, plan path). The stream is preceded by a human-readable
+/// warning preamble ("no stdin data received in 3s…") and interleaves event
+/// lines, so only lines whose trimmed start is `{` are JSON-parsed; the LAST
+/// `{"type":"result",…}` object's `usage` is the authoritative per-invocation
+/// total. Reads the four Messages-API fields and a model id (the `modelUsage`
+/// map key, else `usage.model`). Returns `Usage::default()` when no result line
+/// is found.
+fn parse_plan_usage(stdout: &str) -> Usage {
+    let mut found: Option<Usage> = None;
+    for line in stdout.lines() {
+        let line = line.trim_start();
+        if !line.starts_with('{') {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(|t| t.as_str()) != Some("result") {
+            continue;
+        }
+        let Some(usage) = value.get("usage") else {
+            continue;
+        };
+        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let mut u = Usage {
+            input: field("input_tokens"),
+            output: field("output_tokens"),
+            cache_read: field("cache_read_input_tokens"),
+            cache_creation: field("cache_creation_input_tokens"),
+            model: None,
+        };
+        // The model id resolves the price table (D8): prefer the `modelUsage` map
+        // key (the per-model breakdown), fall back to a `usage.model` field.
+        u.model = value
+            .get("modelUsage")
+            .and_then(|m| m.as_object())
+            .and_then(|m| m.keys().next().cloned())
+            .or_else(|| {
+                usage
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            });
+        found = Some(u); // keep the LAST result object
+    }
+    found.unwrap_or_default()
+}
+
+/// Encode a launch cwd the way Claude Code names its `~/.claude/projects/<dir>`
+/// transcript folder (ADR-0008 D10): every non-ASCII-alphanumeric character maps
+/// to `-`, drive-letter case preserved. So `c:\Dev\ralphy` → `c--Dev-ralphy` and
+/// `C:\Dev\.ralph-worktrees\issue-10` → `C--Dev--ralph-worktrees-issue-10` (the
+/// dot becomes a second `-`). Pure over the byte-exact cwd string.
+fn dashed_cwd(cwd: &str) -> String {
+    cwd.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// The `*.jsonl` files directly under `dir` (non-recursive). Empty when `dir` is
+/// missing — the snapshot-diff (D10) treats that as "no transcripts yet".
+fn list_jsonl(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// The files present in `after` but not in `before` — the appeared-over-grew rule
+/// (ADR-0008 D10). A file that merely *grew* (present in both) is a concurrent
+/// pre-existing session and is excluded; only a freshly *appeared* transcript is
+/// attributed to this run. Pure over its inputs.
+fn appeared_files(before: &[PathBuf], after: &[PathBuf]) -> Vec<PathBuf> {
+    after
+        .iter()
+        .filter(|p| !before.contains(p))
+        .cloned()
+        .collect()
+}
+
+/// Sum `cache_creation` tokens from a transcript `usage` block: prefer the flat
+/// `cache_creation_input_tokens`, else sum the `cache_creation` 5m/1h ephemeral
+/// sub-tiers (they total to the flat field, so taking the flat first avoids
+/// double-counting). ADR-0008 D5/D10.
+fn cache_creation_tokens(usage: &serde_json::Value) -> u64 {
+    if let Some(flat) = usage
+        .get("cache_creation_input_tokens")
+        .and_then(|v| v.as_u64())
+    {
+        return flat;
+    }
+    if let Some(obj) = usage.get("cache_creation").and_then(|v| v.as_object()) {
+        let tier = |k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        return tier("ephemeral_5m_input_tokens") + tier("ephemeral_1h_input_tokens");
+    }
+    0
+}
+
+/// Parse and sum the token usage across a Claude-exec transcript JSONL (ADR-0008
+/// D5/D10). Two traps the spike found are load-bearing here: **dedup by
+/// `message.id`** (resume/branch replays and parallel-tool-call lines reuse one
+/// id; a naïve sum overcounts ~2.8×) and **never descending into the nested
+/// `iterations[]`** array (it repeats the top-level `usage`). Only the top-level
+/// `message.usage` of each unique `message.id` is summed.
+fn parse_transcript_usage(jsonl: &str) -> Usage {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut total = Usage::default();
+    for line in jsonl.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(message) = value.get("message") else {
+            continue;
+        };
+        // Mandatory dedup: count one `usage` per unique `message.id`.
+        if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
+            if !seen.insert(id.to_string()) {
+                continue;
+            }
+        }
+        let Some(usage) = message.get("usage") else {
+            continue;
+        };
+        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        // Only the top-level `message.usage` is read; `iterations[]` is never
+        // descended into, so its repeated `usage` is ignored by construction.
+        total.input += field("input_tokens");
+        total.output += field("output_tokens");
+        total.cache_read += field("cache_read_input_tokens");
+        total.cache_creation += cache_creation_tokens(usage);
+    }
+    total
+}
+
 /// Index of the first occurrence of `needle` in `haystack`.
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
@@ -1114,6 +1268,7 @@ mod tests {
             path: PathBuf::from("/x/plan.md"),
             open_steps: 3,
             recommended_model: recommended.map(str::to_string),
+            usage: Usage::default(),
         }
     }
 
@@ -1508,5 +1663,77 @@ mod tests {
         let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
         let reason = run_headless_steps(&calls, 6);
         assert_eq!(headless_reason_to_outcome(reason), Outcome::Stuck);
+    }
+
+    // ── token-usage capture (ADR-0008) ──────────────────────────────────────
+
+    #[test]
+    fn parse_plan_usage_skips_warning_preamble() {
+        // The headless `-p --output-format stream-json` stdout is preceded by a
+        // non-JSON warning line; the parser must skip it and read the terminal
+        // result event's usage (reconciled exactly against the payload, D5).
+        let stdout = "no stdin data received in 3s. Continuing without stdin.\n\
+{\"type\":\"system\",\"subtype\":\"init\"}\n\
+{\"type\":\"assistant\",\"message\":{\"id\":\"m1\"}}\n\
+{\"type\":\"result\",\"modelUsage\":{\"claude-opus-4-8\":{\"input_tokens\":3747}},\"usage\":{\"input_tokens\":3747,\"output_tokens\":9,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":23406}}\n";
+        let usage = parse_plan_usage(stdout);
+        assert_eq!(usage.input, 3747);
+        assert_eq!(usage.output, 9);
+        assert_eq!(usage.cache_read, 0);
+        assert_eq!(usage.cache_creation, 23406);
+        assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn dashed_cwd_encodes_nonalnum_and_preserves_case() {
+        assert_eq!(dashed_cwd("c:\\Dev\\ralphy"), "c--Dev-ralphy");
+        assert_eq!(
+            dashed_cwd("C:\\Dev\\.ralph-worktrees\\issue-10"),
+            "C--Dev--ralph-worktrees-issue-10"
+        );
+    }
+
+    #[test]
+    fn appeared_files_returns_new_not_grown() {
+        let before = vec![PathBuf::from("/p/a.jsonl")];
+        let after = vec![PathBuf::from("/p/a.jsonl"), PathBuf::from("/p/b.jsonl")];
+        // `a.jsonl` was present before (it merely grew) → excluded; only the
+        // freshly appeared `b.jsonl` is this run's transcript.
+        assert_eq!(appeared_files(&before, &after), vec![PathBuf::from("/p/b.jsonl")]);
+    }
+
+    #[test]
+    fn parse_transcript_usage_dedups_message_id_and_ignores_iterations() {
+        // Three assistant lines: two share `m1` (counted once), one carries `m2`
+        // and nests an `iterations[]` that repeats its usage (must be ignored).
+        let jsonl = "\
+{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":100,\"output_tokens\":10,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":5}}}
+{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":999,\"output_tokens\":999,\"cache_read_input_tokens\":999,\"cache_creation_input_tokens\":999}}}
+{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":200,\"output_tokens\":20,\"cache_read_input_tokens\":2000,\"cache_creation_input_tokens\":7}},\"iterations\":[{\"usage\":{\"input_tokens\":200,\"output_tokens\":20,\"cache_read_input_tokens\":2000,\"cache_creation_input_tokens\":7}}]}
+";
+        let usage = parse_transcript_usage(jsonl);
+        // m1 (first only) + m2: input 100+200, output 10+20, cache_read 1000+2000,
+        // cache_creation 5+7. The duplicate m1 line and the nested iterations are
+        // both excluded.
+        assert_eq!(
+            usage,
+            Usage {
+                input: 300,
+                output: 30,
+                cache_read: 3000,
+                cache_creation: 12,
+                model: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_transcript_usage_sums_cache_creation_subtiers() {
+        // When only the `cache_creation` 5m/1h breakdown is present (no flat
+        // field), the sub-tiers are summed.
+        let jsonl = "{\"message\":{\"id\":\"x\",\"usage\":{\"input_tokens\":1,\"cache_creation\":{\"ephemeral_5m_input_tokens\":40,\"ephemeral_1h_input_tokens\":2}}}}\n";
+        let usage = parse_transcript_usage(jsonl);
+        assert_eq!(usage.input, 1);
+        assert_eq!(usage.cache_creation, 42);
     }
 }
