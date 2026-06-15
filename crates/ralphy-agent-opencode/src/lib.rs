@@ -505,8 +505,17 @@ fn sum_opencode_session_usage(db: &Path, session_id: &str) -> Usage {
 /// the run.
 fn read_opencode_session_usage(db: &Path, session_id: &str) -> rusqlite::Result<Usage> {
     use rusqlite::{Connection, OpenFlags};
+    // READ-ONLY: this run is the reader, OpenCode the writer. The writer process
+    // has already exited by the time we read (see `opencode_usage` call sites),
+    // so the store is quiescent. Caveat: if OpenCode keeps the DB in WAL mode, a
+    // read-only handle cannot checkpoint, so rows committed but not yet
+    // checkpointed are invisible — token capture then under-counts rather than
+    // failing. Acceptable for a best-effort measurement path.
     let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    let mut stmt = conn.prepare("SELECT data FROM message WHERE session_id = ?1")?;
+    // ORDER BY time_created so "last record's model" below is deterministic
+    // rather than relying on implementation-defined row order.
+    let mut stmt =
+        conn.prepare("SELECT data FROM message WHERE session_id = ?1 ORDER BY time_created")?;
     let rows = stmt.query_map([session_id], |row| row.get::<_, String>(0))?;
     let mut total = Usage::default();
     for data in rows.flatten() {
@@ -515,7 +524,9 @@ fn read_opencode_session_usage(db: &Path, session_id: &str) -> rusqlite::Result<
         };
         if let Some(u) = usage_from_opencode_message(&val) {
             total.add_tokens(&u);
-            // add_tokens leaves `model` untouched; carry the last record's model.
+            // add_tokens leaves `model` untouched; carry the last record's model
+            // (rows are ordered by time_created, so this is the chronologically
+            // last assistant message's model).
             if u.model.is_some() {
                 total.model = u.model;
             }
