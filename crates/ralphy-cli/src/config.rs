@@ -57,6 +57,9 @@ fn require_known_key(key: &str) -> Result<()> {
 
 pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     require_known_key(key)?;
+    if value.trim().is_empty() {
+        bail!("value for '{key}' must not be empty — use `config unset {key}` to clear it");
+    }
     let mut s = Settings::load(ws)?;
     match key {
         "opencode.model" => s.opencode.model = Some(value.to_owned()),
@@ -82,7 +85,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
 
 pub fn get(ws: &Workspace) -> Result<()> {
     let s = Settings::load(ws)?;
-    match &s.opencode.model {
+    match s.opencode.model.filter(|m| !m.is_empty()) {
         Some(m) => println!("opencode.model = {m}"),
         None => println!("opencode.model: not set"),
     }

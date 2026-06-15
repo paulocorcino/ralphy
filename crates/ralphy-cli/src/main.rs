@@ -493,9 +493,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     //
     // Load the persisted OpenCode model once here so both build_agent calls
     // (executor and optional planner) receive the same resolved value (ADR-0010).
-    let persisted_opencode_model = ralphy_core::Settings::load(&ws)
-        .ok()
-        .and_then(|s| s.opencode.model);
+    let persisted_opencode_model = match ralphy_core::Settings::load(&ws) {
+        Ok(s) => s.opencode.model,
+        Err(e) => {
+            warn!(error = %e, "could not load .ralphy/settings.json — persisted model ignored");
+            None
+        }
+    };
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     let executor = build_agent(
         args.agent,
