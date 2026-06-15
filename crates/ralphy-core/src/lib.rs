@@ -24,6 +24,7 @@ pub mod plan;
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
 pub use blocked::parse_blocked_by;
+pub use ledger::{read_project_rows, read_rows, UsageRow};
 pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
     RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,

@@ -90,6 +90,87 @@ pub fn sum_tokens(jsonl: &str) -> Usage {
     total
 }
 
+/// A read model over one ledger line (ADR-0008 D8/D11). Built tolerantly from a
+/// `serde_json::Value` — never `#[derive(Deserialize)]` on [`LedgerRecord`], whose
+/// `tokens` serializes through a custom hook — so the reader mirrors [`sum_tokens`]'s
+/// "skip a malformed line" stance instead of fighting that write-side asymmetry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageRow {
+    pub project: String,
+    pub actor_email: String,
+    pub actor_name: String,
+    pub ralphy_version: String,
+    pub issue: u64,
+    pub phase: String,
+    pub agent: String,
+    pub model: String,
+    pub outcome: String,
+    /// The four numeric token fields (never carries `model` — the row's `model` is
+    /// the top-level field).
+    pub tokens: Usage,
+    pub ts: String,
+}
+
+/// Parse every well-formed line of a JSONL ledger string into a [`UsageRow`].
+/// Tolerant: a line that does not parse as a JSON object is skipped, mirroring
+/// [`sum_tokens`]. Missing string fields default to empty, missing numbers to `0`.
+pub fn read_rows(jsonl: &str) -> Vec<UsageRow> {
+    let mut rows = Vec::new();
+    for line in jsonl.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if !value.is_object() {
+            continue;
+        }
+        let s = |k: &str| value.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let n = |k: &str| value.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let tok = |k: &str| {
+            value
+                .get("tokens")
+                .and_then(|t| t.get(k))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+        };
+        rows.push(UsageRow {
+            project: s("project"),
+            actor_email: s("actor_email"),
+            actor_name: s("actor_name"),
+            ralphy_version: s("ralphy_version"),
+            issue: n("issue"),
+            phase: s("phase"),
+            agent: s("agent"),
+            model: s("model"),
+            outcome: s("outcome"),
+            tokens: Usage {
+                input: tok("input"),
+                output: tok("output"),
+                cache_read: tok("cache_read"),
+                cache_creation: tok("cache_creation"),
+                model: None,
+            },
+            ts: s("ts"),
+        });
+    }
+    rows
+}
+
+/// Read a project's whole ledger file into [`UsageRow`]s. An empty vec on a
+/// missing file (nothing recorded yet) or an unresolved ledger root.
+pub fn read_project_rows(slug: &str) -> Vec<UsageRow> {
+    let Some(path) = ledger_path(slug) else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    read_rows(&content)
+}
+
 /// The ledger root: `$RALPHY_USAGE_DIR` when set (tests point it at a temp dir),
 /// else `<home>/.ralphy/usage`. `None` when no home directory can be resolved.
 fn usage_root() -> Option<PathBuf> {
@@ -207,6 +288,31 @@ mod tests {
         assert_eq!(total.output, 3);
         assert_eq!(total.cache_read, 300);
         assert_eq!(total.cache_creation, 12);
+    }
+
+    #[test]
+    fn read_rows_parses_good_lines_and_skips_malformed() {
+        // Two well-formed lines and one malformed (unparseable) middle line.
+        let jsonl = "\
+{\"project\":\"owner/repo\",\"actor_email\":\"a@x.io\",\"actor_name\":\"A\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"claude\",\"model\":\"claude-opus-4-8\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5},\"ts\":\"2026-06-15T12:00:00+00:00\"}
+{ this is not valid json
+{\"project\":\"owner/repo\",\"actor_email\":\"b@x.io\",\"actor_name\":\"B\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"codex\",\"model\":\"claude-sonnet-4-6\",\"outcome\":\"done\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7},\"ts\":\"2026-06-15T12:05:00+00:00\"}
+";
+        let rows = read_rows(jsonl);
+        assert_eq!(rows.len(), 2, "malformed middle line is skipped");
+
+        assert_eq!(rows[0].model, "claude-opus-4-8");
+        assert_eq!(rows[0].phase, "plan");
+        assert_eq!(rows[0].actor_email, "a@x.io");
+        assert_eq!(rows[0].issue, 42);
+        assert_eq!(rows[0].tokens.input, 10);
+        assert_eq!(rows[0].tokens.cache_read, 100);
+        assert_eq!(rows[0].ts, "2026-06-15T12:00:00+00:00");
+
+        assert_eq!(rows[1].model, "claude-sonnet-4-6");
+        assert_eq!(rows[1].phase, "execute");
+        assert_eq!(rows[1].agent, "codex");
+        assert_eq!(rows[1].tokens.output, 2);
     }
 
     #[test]
