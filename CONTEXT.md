@@ -57,6 +57,43 @@ Code today; Codex, OpenCode later), behind the core's agent contract. Each
 adapter owns its own execution mode and completion protocol.
 _Avoid_: driver, plugin, backend.
 
+**Planner / Executor (phase roles)**:
+The two phase-roles a run's **adapter(s)** fill: the *planner* writes
+`.ralphy/plan.md` from the issue; the *executor* carries that plan out and
+commits. By default one adapter fills both. They are independently selectable —
+`--agent` picks the executor, `--plan-agent` the planner (defaulting to
+`--agent`). The plan artifact is vendor-neutral markdown, so any planner's plan
+is executable by any executor.
+_Avoid_: stage, role (overloaded with triage roles).
+
+**Split run**:
+A run whose **planner** and **executor** are different **adapters** (e.g.
+`--agent opencode --plan-agent claude`: Claude plans on subscription, OpenCode's
+Kimi codes). Wired by a composition-root wrapper that delegates `plan()` to one
+adapter and `execute()` to another — the core still sees one `Agent` and never
+learns it is split. Usage-limit handling is per-phase: each phase inherits its
+own adapter's limit stance (the planner may auto-resume while the executor
+stops). The plan-phase ledger line carries the executor's `agent` name (the
+wrapper reports one identity), while the `model` column stays per-phase-true.
+_Avoid_: mixed-vendor (informal), planner override.
+
+**Settings**:
+Per-repo operator configuration at `.ralphy/settings.json` (gitignored), managed
+by `ralphy config set/get/unset`. Its first key is the **OpenCode model
+default** — a persistent `-m` the operator picks once. The schema tolerates
+unknown keys so future knobs grow in the same file. Distinct from the Telegram
+config, which stays its own global TOML for now.
+_Avoid_: config (the subcommand), preferences, dotfile.
+
+**OpenCode model resolution**:
+The precedence Ralphy uses to pick the OpenCode execution model:
+`--exec-model` (per-run) **>** `settings.json` `opencode.model` (persistent
+default) **>** omitting `-m` so OpenCode resolves its own (ADR-0005 D4, amended
+by ADR-0010). An empty/unset setting falls back to OpenCode's own default, which
+stays the out-of-the-box behaviour. The model that *actually* ran is read back
+from `opencode.db` into the ledger (ADR-0008 D5).
+_Avoid_: model selection (reserved for Claude complexity routing).
+
 **Adapter support**:
 The shared machinery every **adapter** leans on but that is specific to *no*
 vendor — the headless child-driving loop (spawn, drain stdout/stderr, poll to
