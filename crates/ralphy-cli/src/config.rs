@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
-use ralphy_core::{git, gitignore, Settings, Workspace};
+use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
 #[derive(Args)]
 pub struct ConfigArgs {
@@ -120,6 +120,19 @@ pub fn resolve_u64(flag: Option<u64>, persisted: Option<u64>, default: u64) -> u
     flag.or(persisted).unwrap_or(default)
 }
 
+/// Parse a persisted/`config set` `branch_mode` string into the core enum.
+/// Accepts the lowercase canonical forms `"new"` / `"current"`; any other value
+/// is a hard error so an invalid setting fails loud rather than silently
+/// resolving to a default. The single validation path shared by `config set`
+/// and run-time resolution keeps `ralphy-core`'s [`BranchMode`] serde-free.
+pub fn parse_branch_mode(value: &str) -> Result<BranchMode> {
+    match value {
+        "new" => Ok(BranchMode::New),
+        "current" => Ok(BranchMode::Current),
+        other => bail!("branch_mode must be 'new' or 'current', got '{other}'"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +219,23 @@ mod tests {
         assert_eq!(resolve_u64(Some(10), Some(20), 90), 10);
         assert_eq!(resolve_u64(None, Some(20), 90), 20);
         assert_eq!(resolve_u64(None, None, 90), 90);
+    }
+
+    // --- parse_branch_mode ---
+
+    #[test]
+    fn parse_branch_mode_ok_arms() {
+        assert_eq!(parse_branch_mode("new").unwrap(), BranchMode::New);
+        assert_eq!(parse_branch_mode("current").unwrap(), BranchMode::Current);
+    }
+
+    #[test]
+    fn parse_branch_mode_rejects_unknown() {
+        let err = parse_branch_mode("sideways").unwrap_err();
+        assert!(
+            err.to_string().contains("must be 'new' or 'current'"),
+            "got: {err}"
+        );
     }
 
     // --- config handler round-trip ---
