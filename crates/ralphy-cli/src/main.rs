@@ -16,6 +16,7 @@ use ralphy_core::{
 };
 use tracing::{info, warn};
 
+mod config;
 mod guard;
 mod hook;
 mod install;
@@ -63,6 +64,8 @@ enum Command {
     /// (`--by phase|model|actor|version`, `--since`, `--project`), or export it
     /// (`--format csv|json`). USD is a read-time projection, never stored.
     Usage(usage::UsageArgs),
+    /// Configure per-repo operator settings (e.g. `opencode.model`).
+    Config(config::ConfigArgs),
     /// Configure the optional Telegram run monitor (token, chat, status).
     #[command(subcommand)]
     Telegram(telegram::TelegramCommand),
@@ -253,6 +256,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Run(args) => run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),
+        Command::Config(args) => config::run(args),
         Command::Usage(args) => usage::usage_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
@@ -486,13 +490,31 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // handed to the core directly so the single-agent path carries no wrapper
     // (byte-for-byte unchanged); otherwise a `SplitAgent` routes plan→planner,
     // execute→executor (docs/adr/0009).
+    //
+    // Load the persisted OpenCode model once here so both build_agent calls
+    // (executor and optional planner) receive the same resolved value (ADR-0010).
+    let persisted_opencode_model = ralphy_core::Settings::load(&ws)
+        .ok()
+        .and_then(|s| s.opencode.model);
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
-    let executor = build_agent(args.agent, &args, run_dir.clone(), run_deadline);
+    let executor = build_agent(
+        args.agent,
+        &args,
+        run_dir.clone(),
+        run_deadline,
+        persisted_opencode_model.clone(),
+    );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
         executor
     } else {
         Box::new(split_agent::SplitAgent {
-            planner: build_agent(plan_agent, &args, run_dir, run_deadline),
+            planner: build_agent(
+                plan_agent,
+                &args,
+                run_dir,
+                run_deadline,
+                persisted_opencode_model,
+            ),
             executor,
         })
     };
@@ -648,6 +670,7 @@ fn build_agent(
     args: &RunArgs,
     run_dir: PathBuf,
     run_deadline: Option<std::time::Instant>,
+    persisted_opencode_model: Option<String>,
 ) -> Box<dyn Agent> {
     match which {
         CliAgent::Claude => Box::new(
@@ -676,7 +699,7 @@ fn build_agent(
         ),
         CliAgent::OpenCode => Box::new(
             OpenCodeAgent::new(
-                non_empty(args.exec_model.clone().unwrap_or_default()),
+                config::resolve_opencode_model(args.exec_model.clone(), persisted_opencode_model),
                 run_dir,
             )
             .with_variant(non_empty(args.exec_variant.clone().unwrap_or_default()))
