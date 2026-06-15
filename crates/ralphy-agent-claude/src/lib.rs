@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
@@ -631,9 +631,19 @@ impl ClaudeAgent {
         // budget_min field consumed by the telegram notifier / presenter — keep stable
         info!(model = %exec_model, effort = ?self.exec.exec_effort, remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
 
+        let transcript_dir = self.transcript_dir(ws);
+        let transcript_since = SystemTime::now()
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
         let mut session =
             PtySession::spawn(cmd).context("spawning the claude execution session")?;
-        let result = self.drive_session(&mut session, &flag_file);
+        let result = self.drive_session(
+            &mut session,
+            &flag_file,
+            transcript_dir.as_deref(),
+            transcript_since,
+        );
         // Reclaim: kill the tree and drop the session (closes the ConPTY).
         // Kill unconditionally so the child never outlives us on error paths.
         let _ = session.kill();
@@ -645,7 +655,13 @@ impl ClaudeAgent {
     /// Drain the PTY (tee to `exec.log`, answer DSR queries) while polling for the
     /// flag file, the child's own exit, and the per-issue wall timeout. Classifies
     /// the result into an [`Outcome`].
-    fn drive_session(&self, session: &mut PtySession, flag_file: &Path) -> Result<Outcome> {
+    fn drive_session(
+        &self,
+        session: &mut PtySession,
+        flag_file: &Path,
+        transcript_dir: Option<&Path>,
+        transcript_since: SystemTime,
+    ) -> Result<Outcome> {
         let mut reader = session.reader()?;
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         thread::spawn(move || {
@@ -662,6 +678,8 @@ impl ClaudeAgent {
 
         let mut timed_out = false;
         let mut child_exited = false;
+        let mut limit_transcript: Option<String> = None;
+        let mut next_transcript_poll = Instant::now();
         let mut dsr_carry: Vec<u8> = Vec::new();
         loop {
             // Act as the terminal: tee output and answer cursor-position queries.
@@ -677,6 +695,15 @@ impl ClaudeAgent {
             if flag_file.exists() {
                 break;
             }
+            if Instant::now() >= next_transcript_poll {
+                if let Some(t) = latest_transcript_text_since(transcript_dir, transcript_since) {
+                    if is_limit_text(&t) {
+                        limit_transcript = Some(t);
+                        break;
+                    }
+                }
+                next_transcript_poll = Instant::now() + Duration::from_secs(2);
+            }
             if session.try_wait()?.is_some() {
                 child_exited = true;
                 break;
@@ -689,10 +716,21 @@ impl ClaudeAgent {
         }
 
         let flag = fs::read_to_string(flag_file).ok();
-        // A transcript read is only needed to spot a usage limit when the session
-        // ended without a sentinel (it exits on its own when limited).
-        let transcript = if flag.is_none() && (child_exited || timed_out) {
-            latest_transcript_text()
+        // A transcript read is needed to spot a usage limit when the session
+        // ends without a sentinel, and the live loop above also watches for the
+        // Claude CLI's subagent/tool-result rate-limit shape while the PTY stays
+        // alive.
+        let transcript = if flag.is_none() {
+            limit_transcript.or_else(|| {
+                (child_exited || timed_out)
+                    .then(|| latest_transcript_text_since(transcript_dir, transcript_since))
+                    .flatten()
+                    .or_else(|| {
+                        (child_exited || timed_out)
+                            .then(latest_transcript_text)
+                            .flatten()
+                    })
+            })
         } else {
             None
         };
@@ -896,6 +934,17 @@ fn latest_transcript_text() -> Option<String> {
     fs::read_to_string(newest).ok()
 }
 
+/// Read the newest transcript under `base` that was modified after
+/// `transcript_since`. Used by the live PTY loop so a pre-existing transcript
+/// from the same project cannot falsely trip a new session.
+fn latest_transcript_text_since(
+    base: Option<&Path>,
+    transcript_since: SystemTime,
+) -> Option<String> {
+    let newest = newest_jsonl_since(base?, Some(transcript_since))?;
+    fs::read_to_string(newest).ok()
+}
+
 /// The home directory, from the platform's usual env var.
 fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
@@ -1008,6 +1057,10 @@ fn find_program(
 /// Recursively find the most-recently-modified `*.jsonl` under `base`, but only if
 /// it was modified within the last 5 minutes (a stale transcript is irrelevant).
 fn newest_jsonl(base: &Path) -> Option<PathBuf> {
+    newest_jsonl_since(base, None)
+}
+
+fn newest_jsonl_since(base: &Path, min_modified: Option<SystemTime>) -> Option<PathBuf> {
     let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
     let mut stack = vec![base.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -1026,6 +1079,9 @@ fn newest_jsonl(base: &Path) -> Option<PathBuf> {
             let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
                 continue;
             };
+            if min_modified.is_some_and(|min| modified < min) {
+                continue;
+            }
             if newest.as_ref().is_none_or(|(t, _)| modified > *t) {
                 newest = Some((modified, path));
             }
@@ -1412,6 +1468,17 @@ mod tests {
                 Some("You've reached your usage limit; resets 3:00pm")
             ),
             Outcome::Limit(Some("15:00".into()))
+        );
+    }
+
+    #[test]
+    fn classify_limit_from_subagent_session_limit_transcript() {
+        // This is the shape Claude Code records when a tool/subagent hits the
+        // session cap while the outer interactive PTY remains alive.
+        let transcript = "You've hit your session limit · resets 8:10am (America/Bahia)";
+        assert_eq!(
+            classify_outcome(None, false, Some(transcript)),
+            Outcome::Limit(Some("08:10".into()))
         );
     }
 
