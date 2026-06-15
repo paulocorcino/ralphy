@@ -23,6 +23,7 @@ mod pricing;
 mod runstate;
 mod telegram;
 mod ui;
+mod usage;
 
 #[derive(Parser)]
 #[command(
@@ -57,6 +58,10 @@ enum Command {
     /// by a human).
     #[command(subcommand)]
     Hook(HookCommand),
+    /// Read the project's token ledger: print the balance and group-by cuts
+    /// (`--by phase|model|actor|version`, `--since`, `--project`), or export it
+    /// (`--format csv|json`). USD is a read-time projection, never stored.
+    Usage(usage::UsageArgs),
     /// Configure the optional Telegram run monitor (token, chat, status).
     #[command(subcommand)]
     Telegram(telegram::TelegramCommand),
@@ -239,6 +244,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Run(args) => run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),
+        Command::Usage(args) => usage::usage_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
