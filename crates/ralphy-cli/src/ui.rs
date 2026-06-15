@@ -145,6 +145,13 @@ impl QueueState {
     }
 }
 
+fn sleep_label(reset: &str, opts: RenderOpts) -> String {
+    format!(
+        "{} usage limit — sleeping until {reset}",
+        pick("🌙", "[limit]", opts.emoji)
+    )
+}
+
 /// Render the live active-issue line: phase icon · `#n` title · model · `elapsed`
 /// (or `elapsed / budget`). Pure over its inputs; the emoji/ASCII and colour
 /// choice come from `opts`. The non-colour path emits no ANSI byte.
@@ -633,6 +640,7 @@ struct ActiveIssue {
 struct LiveState {
     active: Option<ActiveIssue>,
     queue: Option<QueueState>,
+    sleep: Option<String>,
     queue_bar: Option<ProgressBar>,
     active_bar: Option<ProgressBar>,
 }
@@ -783,6 +791,20 @@ impl Presenter {
                 }
                 d
             }
+            RunEvent::SleepStarted { reset, .. } => {
+                s.sleep = Some(reset.clone());
+                if let Some(bar) = s.active_bar.take() {
+                    bar.finish_and_clear();
+                }
+                self.refresh_queue_bar(s);
+                None
+            }
+            RunEvent::SleepEnded => {
+                s.sleep = None;
+                self.refresh_queue_bar(s);
+                self.refresh_active_bar(s);
+                None
+            }
             _ => None,
         }
     }
@@ -793,8 +815,13 @@ impl Presenter {
         if !self.opts.color {
             return;
         }
-        if let (Some(bar), Some(q)) = (s.queue_bar.as_ref(), s.queue.as_ref()) {
-            bar.set_message(q.bar_label());
+        if let Some(bar) = s.queue_bar.as_ref() {
+            let msg = match (&s.sleep, &s.queue) {
+                (Some(reset), _) => sleep_label(reset, self.opts),
+                (None, Some(q)) => q.bar_label(),
+                (None, None) => return,
+            };
+            bar.set_message(msg);
         }
     }
 
@@ -1377,6 +1404,21 @@ mod tests {
         q.advance(3);
         let label = q.bar_label();
         assert_eq!(label, "▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)");
+        assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
+    }
+
+    #[test]
+    fn sleep_label_replaces_queue_context_with_limit_message() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let label = sleep_label("08:10", opts);
+        assert_eq!(label, "🌙 usage limit — sleeping until 08:10");
+        assert!(
+            !label.contains("pending"),
+            "sleep hides pending list: {label}"
+        );
         assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
     }
 
