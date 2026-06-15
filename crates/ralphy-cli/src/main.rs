@@ -19,6 +19,7 @@ use tracing::{info, warn};
 mod guard;
 mod hook;
 mod install;
+mod pricing;
 mod runstate;
 mod telegram;
 mod ui;
