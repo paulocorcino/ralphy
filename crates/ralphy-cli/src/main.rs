@@ -21,6 +21,7 @@ mod hook;
 mod install;
 mod pricing;
 mod runstate;
+mod split_agent;
 mod telegram;
 mod ui;
 mod usage;
@@ -84,11 +85,19 @@ struct RunArgs {
     #[arg(long, default_value = ".")]
     repo: PathBuf,
 
-    /// Which agent CLI drives the run: `claude` (the default, a live PTY session)
-    /// or `codex` (headless `codex exec`). Selected per run; the core never learns
-    /// which vendor it holds.
+    /// Which agent CLI executes the run: `claude` (the default, a live PTY
+    /// session), `codex` (headless `codex exec`), or `opencode`. Selects the
+    /// executor; pair with `--plan-agent` to plan with a different adapter.
+    /// Selected per run; the core never learns which vendor it holds.
     #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
     agent: CliAgent,
+
+    /// Adapter for the planning phase; defaults to `--agent` when omitted, so a
+    /// single-agent run is unchanged. The canonical split is
+    /// `--agent opencode --plan-agent claude` (Claude plans, OpenCode executes).
+    /// Any planner/executor combination is accepted (ADR-0009).
+    #[arg(long = "plan-agent", value_enum)]
+    plan_agent: Option<CliAgent>,
 
     /// Work only this issue number (filters the queue to it). Omit to work the
     /// whole queue.
@@ -471,35 +480,21 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         .deadline_hours
         .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0));
 
-    // Select the adapter per run and box it as `&dyn Agent`; the core takes a
+    // Select the adapter(s) per run and box as `&dyn Agent`; the core takes a
     // single `&dyn Agent` and never learns which vendor it holds (docs/adr/0004).
-    let agent: Box<dyn Agent> = match args.agent {
-        CliAgent::Claude => Box::new(
-            ClaudeAgent::new(
-                non_empty(args.plan_model),
-                non_empty(args.plan_effort),
-                run_dir,
-            )
-            .with_exec_config(
-                non_empty(args.exec_model.unwrap_or_default()),
-                non_empty(args.exec_effort),
-                args.default_exec_model,
-                args.max_minutes_per_issue,
-                !args.no_remote_control,
-                args.headless_exec,
-                args.max_exec_calls,
-            )
-            .with_run_deadline(run_deadline),
-        ),
-        CliAgent::Codex => Box::new(
-            CodexAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
-                .with_run_deadline(run_deadline),
-        ),
-        CliAgent::OpenCode => Box::new(
-            OpenCodeAgent::new(non_empty(args.exec_model.unwrap_or_default()), run_dir)
-                .with_variant(non_empty(args.exec_variant.unwrap_or_default()))
-                .with_run_deadline(run_deadline),
-        ),
+    // `--plan-agent` defaults to `--agent`: when they match, the executor box is
+    // handed to the core directly so the single-agent path carries no wrapper
+    // (byte-for-byte unchanged); otherwise a `SplitAgent` routes plan→planner,
+    // execute→executor (docs/adr/0009).
+    let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
+    let executor = build_agent(args.agent, &args, run_dir.clone(), run_deadline);
+    let agent: Box<dyn Agent> = if plan_agent == args.agent {
+        executor
+    } else {
+        Box::new(split_agent::SplitAgent {
+            planner: build_agent(plan_agent, &args, run_dir, run_deadline),
+            executor,
+        })
     };
     let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
@@ -509,7 +504,10 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stamp,
         branch_mode,
         only_issue: args.only_issue,
-        stop_on_limit: effective_stop_on_limit(args.stop_on_limit, args.agent),
+        // Per-phase limit stance, each derived from the agent serving that phase;
+        // an explicit `--stop-on-limit` forces both (docs/adr/0009).
+        stop_on_limit_plan: effective_stop_on_limit(args.stop_on_limit, plan_agent),
+        stop_on_limit_exec: effective_stop_on_limit(args.stop_on_limit, args.agent),
     };
 
     // The same deadline gates starting the next issue (between-issue clock).
@@ -640,6 +638,60 @@ fn run_cmd(args: RunArgs) -> Result<()> {
 /// Claude and Codex pass the flag through unchanged — both emit a trustworthy reset
 /// time (Codex an absolute RFC3339 instant, Claude a relative one), so both
 /// auto-resume by default and honour `--stop-on-limit` as the opt-out.
+/// Build a fully-configured adapter for one `CliAgent`, boxed as `&dyn Agent`.
+/// Centralizes the per-vendor construction the composition root needs once for
+/// the executor and (only in a split run) once for the planner — so `--plan-agent`
+/// can wire two adapters without duplicating the match. The `String`/`Option`
+/// config values are cloned per call so the same `RunArgs` can back both builds.
+fn build_agent(
+    which: CliAgent,
+    args: &RunArgs,
+    run_dir: PathBuf,
+    run_deadline: Option<std::time::Instant>,
+) -> Box<dyn Agent> {
+    match which {
+        CliAgent::Claude => Box::new(
+            ClaudeAgent::new(
+                non_empty(args.plan_model.clone()),
+                non_empty(args.plan_effort.clone()),
+                run_dir,
+            )
+            .with_exec_config(
+                non_empty(args.exec_model.clone().unwrap_or_default()),
+                non_empty(args.exec_effort.clone()),
+                args.default_exec_model.clone(),
+                args.max_minutes_per_issue,
+                !args.no_remote_control,
+                args.headless_exec,
+                args.max_exec_calls,
+            )
+            .with_run_deadline(run_deadline),
+        ),
+        CliAgent::Codex => Box::new(
+            CodexAgent::new(
+                non_empty(args.exec_model.clone().unwrap_or_default()),
+                run_dir,
+            )
+            .with_run_deadline(run_deadline),
+        ),
+        CliAgent::OpenCode => Box::new(
+            OpenCodeAgent::new(
+                non_empty(args.exec_model.clone().unwrap_or_default()),
+                run_dir,
+            )
+            .with_variant(non_empty(args.exec_variant.clone().unwrap_or_default()))
+            .with_run_deadline(run_deadline),
+        ),
+    }
+}
+
+/// Resolve which adapter plans: the explicit `--plan-agent`, or `--agent` when
+/// the flag is omitted. An absent flag MUST equal `--agent` so a single-agent run
+/// is unchanged (docs/adr/0009).
+fn resolve_plan_agent(plan_agent: Option<CliAgent>, agent: CliAgent) -> CliAgent {
+    plan_agent.unwrap_or(agent)
+}
+
 fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
     flag || matches!(agent, CliAgent::OpenCode)
 }
@@ -748,5 +800,21 @@ mod tests {
     fn effective_stop_on_limit_opencode_forces_true() {
         assert!(effective_stop_on_limit(false, CliAgent::OpenCode));
         assert!(effective_stop_on_limit(true, CliAgent::OpenCode));
+    }
+
+    #[test]
+    fn plan_agent_defaults_to_the_executor_when_omitted() {
+        // Omitted `--plan-agent` resolves to `--agent`, keeping single-agent runs
+        // unchanged; an explicit flag overrides it (any combination allowed).
+        assert_eq!(
+            resolve_plan_agent(None, CliAgent::Claude),
+            CliAgent::Claude,
+            "absent flag equals --agent"
+        );
+        assert_eq!(
+            resolve_plan_agent(Some(CliAgent::Claude), CliAgent::OpenCode),
+            CliAgent::Claude,
+            "explicit --plan-agent overrides --agent"
+        );
     }
 }
