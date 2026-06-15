@@ -264,6 +264,10 @@ fn render_line(
     duration: Option<Duration>,
     opts: RenderOpts,
 ) -> Option<String> {
+    if opts.color && matches!(event, RunEvent::SleepStarted { .. }) {
+        return None;
+    }
+
     let ts_str = ts.format("%Y-%m-%d %H:%M:%S").to_string();
     let dur = duration
         .map(|d| format!(" ({})", fmt_duration(d)))
@@ -1152,6 +1156,31 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn styled_sleep_started_is_live_region_only() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let event = RunEvent::SleepStarted {
+            reset: "08:10".to_string(),
+            target_epoch: 1_000_000,
+        };
+        let styled = RenderOpts {
+            color: true,
+            emoji: true,
+        };
+        assert_eq!(render_line(&event, &ts, None, styled), None);
+
+        let plain = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        assert!(render_line(&event, &ts, None, plain)
+            .expect("plain sleep line")
+            .contains("sleeping until 08:10"));
     }
 
     #[test]
