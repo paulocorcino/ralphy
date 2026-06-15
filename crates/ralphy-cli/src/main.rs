@@ -582,6 +582,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         BranchMode::Current => ui::PanelBranchMode::Current,
     };
 
+    // Token-usage footer figures (ADR-0008 D11): the run total off this run's
+    // accumulated usage, and the project's cumulative balance read from the
+    // ledger. `cfg.repo_root` is still in scope (cfg owns it).
+    let slug = git::project_slug(&cfg.repo_root);
+    let run_tokens = report.run_usage.total();
+    let project_tokens = ralphy_core::ledger::project_total(&slug).total();
+
     let data = ui::PanelData {
         branch: report.branch,
         orig_branch: report.orig_branch,
@@ -592,6 +599,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stop: panel_stop,
         branch_mode: panel_mode,
         dry_run: args.dry_run,
+        run_tokens,
+        project_tokens,
+        project_id: slug,
     };
     presenter.print_panel(&data);
     Ok(())

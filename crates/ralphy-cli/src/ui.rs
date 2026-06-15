@@ -232,6 +232,12 @@ pub struct PanelData {
     pub stop: Option<PanelStop>,
     pub branch_mode: PanelBranchMode,
     pub dry_run: bool,
+    /// Total tokens this run consumed across all phases (ADR-0008 D11).
+    pub run_tokens: u64,
+    /// The project's cumulative tokens, read from the ledger after the run.
+    pub project_tokens: u64,
+    /// The project slug (`owner/repo` or a path-hash) shown in the footer.
+    pub project_id: String,
 }
 
 /// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
@@ -482,7 +488,34 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
         });
     }
 
+    // Token-usage footer (ADR-0008 D11): the run total plus the project's
+    // accumulated balance, in tokens (USD is a read-time projection, never shown
+    // here). Always present so efficiency is visible at every run's end.
+    let footer_raw = format!(
+        "run: {} tok · project: {} {} tok",
+        fmt_tokens(data.run_tokens),
+        data.project_id,
+        fmt_tokens(data.project_tokens),
+    );
+    lines.push(if opts.color {
+        Style::new().dim().apply_to(&footer_raw).to_string()
+    } else {
+        footer_raw
+    });
+
     lines
+}
+
+/// Format a token count compactly for the footer: `1.2M`, `8.4k`, or a bare
+/// `912` under a thousand. One decimal place for the scaled forms.
+fn fmt_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
 }
 
 /// Normalize a git remote URL to an `https` web URL for the header link: strip a
@@ -1301,7 +1334,36 @@ mod tests {
             stop: None,
             branch_mode: PanelBranchMode::New,
             dry_run: false,
+            run_tokens: 8_400_000,
+            project_tokens: 142_000_000,
+            project_id: "owner/repo".to_string(),
         }
+    }
+
+    #[test]
+    fn fmt_tokens_scales_millions_thousands_and_bare() {
+        assert_eq!(fmt_tokens(1_200_000), "1.2M");
+        assert_eq!(fmt_tokens(8_400), "8.4k");
+        assert_eq!(fmt_tokens(912), "912");
+        assert_eq!(fmt_tokens(0), "0");
+    }
+
+    #[test]
+    fn render_totals_panel_footer_shows_run_and_project_tokens() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        let lines = render_totals_panel(&panel_base(), opts);
+        let footer = lines
+            .iter()
+            .find(|l| l.contains("run:") && l.contains("project:"))
+            .expect("a token footer line");
+        // Carries the formatted run total, the project id, and the project total.
+        assert!(footer.contains("8.4M tok"), "run total: {footer}");
+        assert!(footer.contains("owner/repo"), "project id: {footer}");
+        assert!(footer.contains("142.0M tok"), "project total: {footer}");
+        assert!(!footer.contains('\u{1b}'), "no ANSI byte: {footer:?}");
     }
 
     #[test]
