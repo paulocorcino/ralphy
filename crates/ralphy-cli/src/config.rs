@@ -105,6 +105,21 @@ pub fn resolve_opencode_model(
         .or_else(|| persisted.filter(|s| !s.is_empty()))
 }
 
+/// Resolve a string-valued run knob (ADR-0010). Precedence: per-run `flag` >
+/// persisted `settings.json` value > hardcoded `default`. Empty strings on
+/// either source are treated as unset so they fall through to the next slot.
+pub fn resolve_str(flag: Option<String>, persisted: Option<String>, default: &str) -> String {
+    flag.filter(|s| !s.is_empty())
+        .or_else(|| persisted.filter(|s| !s.is_empty()))
+        .unwrap_or_else(|| default.to_owned())
+}
+
+/// Resolve a `u64`-valued run knob (ADR-0010). Precedence: per-run `flag` >
+/// persisted `settings.json` value > hardcoded `default`.
+pub fn resolve_u64(flag: Option<u64>, persisted: Option<u64>, default: u64) -> u64 {
+    flag.or(persisted).unwrap_or(default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,6 +169,43 @@ mod tests {
             resolve_opencode_model(Some("".into()), Some("k2p7".into())),
             Some("k2p7".into())
         );
+    }
+
+    // --- resolve_str / resolve_u64 precedence ---
+
+    #[test]
+    fn resolve_str_flag_wins() {
+        assert_eq!(
+            resolve_str(Some("flag".into()), Some("persisted".into()), "default"),
+            "flag"
+        );
+    }
+
+    #[test]
+    fn resolve_str_persisted_when_flag_absent_or_empty() {
+        assert_eq!(
+            resolve_str(None, Some("persisted".into()), "default"),
+            "persisted"
+        );
+        assert_eq!(
+            resolve_str(Some("".into()), Some("persisted".into()), "default"),
+            "persisted"
+        );
+        // An empty persisted value also falls through to the default.
+        assert_eq!(resolve_str(None, Some("".into()), "default"), "default");
+    }
+
+    #[test]
+    fn resolve_str_byte_for_byte_default() {
+        // Absent flag AND absent setting yield today's hardcoded value verbatim.
+        assert_eq!(resolve_str(None, None, "origin/main"), "origin/main");
+    }
+
+    #[test]
+    fn resolve_u64_flag_wins_then_persisted_then_default() {
+        assert_eq!(resolve_u64(Some(10), Some(20), 90), 10);
+        assert_eq!(resolve_u64(None, Some(20), 90), 20);
+        assert_eq!(resolve_u64(None, None, 90), 90);
     }
 
     // --- config handler round-trip ---
