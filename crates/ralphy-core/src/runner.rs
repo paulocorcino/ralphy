@@ -2,6 +2,7 @@
 //! and (on a dry run) return the repo to where it started, dropping the empty
 //! run branch. Execution is a later slice; this slice stops after planning.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -400,6 +401,11 @@ pub struct QueueReport {
     /// of each plan and execute [`Usage`] (ADR-0008). The console footer's run
     /// total (D11) reads off it.
     pub run_usage: Usage,
+    /// The run's token usage split **per model** (keyed by the phase's `model`, or
+    /// `unknown` when the adapter captured none). The footer's read-time USD (D8)
+    /// needs this split because price resolves per model — `run_usage` alone cannot
+    /// be priced once a run mixes models.
+    pub run_usage_by_model: BTreeMap<String, Usage>,
 }
 
 /// The terminal-status label written to the ledger's `outcome` field (ADR-0008
@@ -414,6 +420,16 @@ fn outcome_label(outcome: &Outcome) -> &'static str {
         Outcome::Stuck => "stuck",
         Outcome::Limit(_) => "limit",
     }
+}
+
+/// Fold one phase's [`Usage`] into a per-model accumulator, keyed by its `model`
+/// (or `unknown` when the adapter captured none). The read-time USD footer (D8)
+/// needs this split because price resolves per model.
+fn accumulate_by_model(by_model: &mut BTreeMap<String, Usage>, usage: &Usage) {
+    by_model
+        .entry(usage.model.clone().unwrap_or_else(|| "unknown".into()))
+        .or_default()
+        .add_tokens(usage);
 }
 
 /// The close comment the runner leaves on a green queue issue. Mirrors the ps1
@@ -549,6 +565,9 @@ pub fn run_queue(
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
     let mut run_usage = Usage::default();
+    // Per-model token accumulation for the read-time USD footer (D8): keyed by the
+    // phase's resolved model, summed across every phase the run worked.
+    let mut run_usage_by_model: BTreeMap<String, Usage> = BTreeMap::new();
 
     'queue: for issue in queue {
         // Don't start a new issue past the global budget. Work already committed
@@ -734,6 +753,7 @@ pub fn run_queue(
             warn!(number = issue.number, error = %e, "writing plan usage ledger line failed");
         }
         run_usage.add_tokens(&plan.usage);
+        accumulate_by_model(&mut run_usage_by_model, &plan.usage);
 
         // An infeasible plan (no actionable steps) is a skip, not a failure, and
         // not green — the runner neither closes it nor stops the run. The
@@ -853,6 +873,7 @@ pub fn run_queue(
             warn!(number = issue.number, error = %e, "writing execute usage ledger line failed");
         }
         run_usage.add_tokens(&exec_usage);
+        accumulate_by_model(&mut run_usage_by_model, &exec_usage);
 
         if outcome == Outcome::Done {
             // Close the cycle: a green queue issue is closed so it leaves the
@@ -861,8 +882,15 @@ pub fn run_queue(
 
             // Record the closed issue before writing evidence so the result is
             // always present in the report even if write_evidence errors out.
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(number = issue.number, "green — issue closed");
+            // consumed by the telegram notifier / presenter — keep stable. The
+            // `tokens` field carries the issue's total (plan + execute) so the live
+            // UI can show inline per-issue tokens (ADR-0008 D11).
+            let issue_total = plan.usage.total() + exec_usage.total();
+            info!(
+                number = issue.number,
+                tokens = issue_total,
+                "green — issue closed"
+            );
             worked.push(IssueResult {
                 number: issue.number,
                 outcome: Some(Outcome::Done),
@@ -947,6 +975,7 @@ pub fn run_queue(
         commits,
         oneline,
         run_usage,
+        run_usage_by_model,
     })
 }
 
@@ -984,6 +1013,33 @@ mod tests {
     /// Build a fixed `DateTime<Local>` for deterministic `next_reset` tests.
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
         Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
+    }
+
+    #[test]
+    fn accumulate_by_model_splits_and_sums_per_model_with_unknown_fallback() {
+        let mut by_model: BTreeMap<String, Usage> = BTreeMap::new();
+        let opus = |i| Usage {
+            input: i,
+            output: 0,
+            cache_read: 0,
+            cache_creation: 0,
+            model: Some("claude-opus-4-8".into()),
+        };
+        accumulate_by_model(&mut by_model, &opus(100));
+        accumulate_by_model(&mut by_model, &opus(200));
+        // A phase with no captured model is keyed under `unknown`, not dropped.
+        accumulate_by_model(
+            &mut by_model,
+            &Usage {
+                input: 7,
+                model: None,
+                ..Usage::default()
+            },
+        );
+
+        assert_eq!(by_model["claude-opus-4-8"].input, 300, "opus rows summed");
+        assert_eq!(by_model["unknown"].input, 7, "model-less rows fall to unknown");
+        assert_eq!(by_model.len(), 2);
     }
 
     #[test]
