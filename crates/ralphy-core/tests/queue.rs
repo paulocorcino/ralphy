@@ -13,8 +13,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use ralphy_core::{
-    run_queue, Agent, BranchMode, Issue, IssueTracker, Outcome, Plan, PlanLimit, QueueConfig,
-    RunClock, StopReason, Verdict, WaitOutcome, Workspace,
+    run_queue, Agent, BranchMode, Execution, Issue, IssueTracker, Outcome, Plan, PlanLimit,
+    QueueConfig, RunClock, StopReason, Usage, Verdict, WaitOutcome, Workspace,
 };
 
 /// A scripted planning result. `Limit(reset)` makes `plan()` return a
@@ -97,6 +97,10 @@ impl ScriptedAgent {
 }
 
 impl Agent for ScriptedAgent {
+    fn name(&self) -> &'static str {
+        "scripted"
+    }
+
     fn plan(&self, issue: &Issue, ws: &Workspace) -> anyhow::Result<Plan> {
         *self.plan_attempts.borrow_mut() += 1;
         // A scripted limit fails this plan call before any artifact is written,
@@ -129,10 +133,11 @@ impl Agent for ScriptedAgent {
             open_steps: self.steps,
             recommended_model: None,
             path,
+            usage: Usage::default(),
         })
     }
 
-    fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Outcome> {
+    fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Execution> {
         // The most recently planned issue is the one being executed.
         let number = *self.planned.borrow().last().unwrap();
         let n = self.executed.borrow().len();
@@ -156,7 +161,10 @@ impl Agent for ScriptedAgent {
                 &["commit", "-q", "-m", &format!("work #{number} ({n})")],
             );
         }
-        Ok(outcome)
+        Ok(Execution {
+            outcome,
+            usage: Usage::default(),
+        })
     }
 }
 
@@ -334,7 +342,26 @@ fn git_show(repo: &Path, refname: &str, path: &str) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
+/// Point the token-usage ledger at a shared temp dir for the whole test binary,
+/// once, so `run_queue`'s best-effort ledger writes never touch the operator's
+/// real `~/.ralphy/usage`. Each test's repo has a unique path → a unique
+/// `path-<hash>` project slug → its own ledger file, so a shared root still keeps
+/// per-test lines isolated by filename. Set once (not per-test) to avoid a
+/// data race on the process-global env var under parallel test execution.
+fn ensure_usage_dir() -> PathBuf {
+    use std::sync::OnceLock;
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("ralphy-usage-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::env::set_var("RALPHY_USAGE_DIR", &dir);
+        dir
+    })
+    .clone()
+}
+
 fn init_repo(name: &str) -> PathBuf {
+    ensure_usage_dir();
     static N: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
         "ralphy-queue-{}-{}-{}",
@@ -1626,6 +1653,58 @@ fn deadline_during_wait_short_circuits_with_deadline() {
         "deadline beats resume: {:?}",
         report.stop
     );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_issue_writes_one_plan_and_one_execute_ledger_line() {
+    // Working one green issue must append exactly one `"phase":"plan"` line and
+    // one `"phase":"execute"` line to the project's ledger, each carrying the
+    // agent label, the issue number, and an outcome (ADR-0008 D6). The ledger
+    // root is the shared temp dir set by `init_repo`; this repo's unique slug
+    // gives it its own file.
+    let repo = init_repo("ledger");
+    let usage_dir = ensure_usage_dir();
+    let queue = vec![issue(77)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    run_queue(
+        &cfg(&repo, "stamp-ledger", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // The ledger file is keyed by the project slug with `/` sanitized to `-`.
+    let slug = ralphy_core::git::project_slug(&repo);
+    let file = usage_dir.join(format!("{}.jsonl", slug.replace('/', "-")));
+    let content = fs::read_to_string(&file)
+        .unwrap_or_else(|e| panic!("ledger file {} unreadable: {e}", file.display()));
+
+    let plan_lines: Vec<&str> = content
+        .lines()
+        .filter(|l| l.contains("\"phase\":\"plan\""))
+        .collect();
+    let exec_lines: Vec<&str> = content
+        .lines()
+        .filter(|l| l.contains("\"phase\":\"execute\""))
+        .collect();
+    assert_eq!(plan_lines.len(), 1, "exactly one plan line: {content}");
+    assert_eq!(exec_lines.len(), 1, "exactly one execute line: {content}");
+
+    // Each line carries agent, issue, and outcome.
+    for line in [plan_lines[0], exec_lines[0]] {
+        assert!(line.contains("\"agent\":\"scripted\""), "agent: {line}");
+        assert!(line.contains("\"issue\":77"), "issue: {line}");
+        assert!(line.contains("\"outcome\":"), "outcome: {line}");
+    }
+    // The execute line records the terminal `done`; the plan line records `ok`.
+    assert!(exec_lines[0].contains("\"outcome\":\"done\""), "execute outcome: {}", exec_lines[0]);
+    assert!(plan_lines[0].contains("\"outcome\":\"ok\""), "plan outcome: {}", plan_lines[0]);
 
     fs::remove_dir_all(&repo).ok();
 }

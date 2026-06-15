@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use ralphy_core::{run, Agent, BranchMode, Issue, Outcome, Plan, RunConfig, RunOutcome, Workspace};
+use ralphy_core::{
+    run, Agent, BranchMode, Execution, Issue, Outcome, Plan, RunConfig, RunOutcome, Usage,
+    Workspace,
+};
 
 /// Writes a plan with `steps` open items; never touches git, so a dry run stays
 /// empty and the branch is dropped on restore.
@@ -17,6 +20,10 @@ struct FakeAgent {
 }
 
 impl Agent for FakeAgent {
+    fn name(&self) -> &'static str {
+        "fake"
+    }
+
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> anyhow::Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir())?;
         let path = ws.plan_path();
@@ -29,11 +36,15 @@ impl Agent for FakeAgent {
             open_steps: self.steps,
             recommended_model: Some("sonnet".into()),
             path,
+            usage: Usage::default(),
         })
     }
 
-    fn execute(&self, _plan: &Plan, _ws: &Workspace) -> anyhow::Result<Outcome> {
-        Ok(Outcome::Done)
+    fn execute(&self, _plan: &Plan, _ws: &Workspace) -> anyhow::Result<Execution> {
+        Ok(Execution {
+            outcome: Outcome::Done,
+            usage: Usage::default(),
+        })
     }
 }
 

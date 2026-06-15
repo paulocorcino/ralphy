@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::{resolve_program, run_headless};
-use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Usage, Workspace};
 use tracing::info;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -428,6 +428,10 @@ impl OpenCodeAgent {
 }
 
 impl Agent for OpenCodeAgent {
+    fn name(&self) -> &'static str {
+        "opencode"
+    }
+
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         fs::create_dir_all(&self.run_dir).ok();
@@ -469,10 +473,12 @@ impl Agent for OpenCodeAgent {
             // OpenCode drops complexity routing (ADR-0005 D3), so there is no tier.
             recommended_model: None,
             path: plan_path,
+            // OpenCode token capture (ADR-0008 D5, session store) is a later slice.
+            usage: Usage::default(),
         })
     }
 
-    fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Outcome> {
+    fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Execution> {
         fs::create_dir_all(&self.run_dir).ok();
         fs::create_dir_all(ws.ralphy_dir()).ok();
         let skills_dir = materialize_opencode_skills(ws)?;
@@ -519,7 +525,10 @@ impl Agent for OpenCodeAgent {
             ?outcome,
             exited_cleanly, timed_out, committed, saw_error, "opencode execution ended"
         );
-        Ok(outcome)
+        Ok(Execution {
+            outcome,
+            usage: Usage::default(),
+        })
     }
 }
 

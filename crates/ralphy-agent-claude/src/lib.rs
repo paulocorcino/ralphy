@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::run_headless;
-use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Usage, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
 
@@ -435,6 +435,10 @@ pub fn consolidate_knowledge(
 }
 
 impl Agent for ClaudeAgent {
+    fn name(&self) -> &'static str {
+        "claude"
+    }
+
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         fs::create_dir_all(&self.run_dir).ok();
@@ -527,7 +531,54 @@ impl Agent for ClaudeAgent {
         })
     }
 
-    fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
+    fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
+        // Snapshot the dashed-cwd transcript dir around the whole session so a
+        // file that APPEARED is this run's transcript, while one that merely grew
+        // is a concurrent pre-existing session and is excluded (ADR-0008 D10,
+        // appeared-over-grew). A missing dir yields empty before/after and zero
+        // usage — best-effort, never failing the run.
+        let transcript_dir = self.transcript_dir(ws);
+        let before = transcript_dir
+            .as_deref()
+            .map(list_jsonl)
+            .unwrap_or_default();
+
+        let outcome = self.execute_outcome(plan, ws)?;
+
+        let after = transcript_dir
+            .as_deref()
+            .map(list_jsonl)
+            .unwrap_or_default();
+        let usage = appeared_files(&before, &after)
+            .iter()
+            .filter_map(|p| fs::read_to_string(p).ok())
+            .map(|t| parse_transcript_usage(&t))
+            .fold(Usage::default(), |mut acc, u| {
+                acc.add_tokens(&u);
+                acc
+            });
+        Ok(Execution { outcome, usage })
+    }
+}
+
+impl ClaudeAgent {
+    /// `~/.claude/projects/<dashed-cwd>` for the repo this run operates on — the
+    /// directory Claude writes the session transcript JSONL into (ADR-0008 D10).
+    /// Derived from the byte-exact cwd passed to `claude` (the repo root).
+    fn transcript_dir(&self, ws: &Workspace) -> Option<PathBuf> {
+        let cwd = ws.repo_root().to_string_lossy();
+        Some(
+            dirs_home()?
+                .join(".claude")
+                .join("projects")
+                .join(dashed_cwd(&cwd)),
+        )
+    }
+
+    /// Drive the execution session (headless `-p` loop or interactive PTY) to a
+    /// core [`Outcome`]. The token snapshot/wrap lives in [`Agent::execute`]; this
+    /// keeps the completion-classification logic exactly as it was.
+    fn execute_outcome(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
         if self.exec.headless_exec {
             return self.execute_headless(plan, ws);
         }

@@ -11,8 +11,9 @@ use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
 use crate::{
-    acceptance, blocked, git, gitignore, handoff, Agent, Issue, IssueTracker, Outcome, PlanLimit,
-    Workspace,
+    acceptance, blocked, git, gitignore, handoff,
+    ledger::{self, LedgerRecord},
+    Agent, Execution, Issue, IssueTracker, Outcome, PlanLimit, Usage, Workspace,
 };
 
 /// Consecutive plan-time usage limits that make no progress before the runner
@@ -316,7 +317,7 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
         });
     }
 
-    let outcome = agent.execute(&plan, &ws)?;
+    let Execution { outcome, usage: _ } = agent.execute(&plan, &ws)?;
     Ok(RunReport {
         branch,
         orig_branch: orig,
@@ -395,6 +396,24 @@ pub struct QueueReport {
     pub commits: usize,
     /// One `git log --oneline` entry per counted commit.
     pub oneline: Vec<String>,
+    /// The token usage this run consumed across every phase it worked — the sum
+    /// of each plan and execute [`Usage`] (ADR-0008). The console footer's run
+    /// total (D11) reads off it.
+    pub run_usage: Usage,
+}
+
+/// The terminal-status label written to the ledger's `outcome` field (ADR-0008
+/// D6), one of `done`/`blocked`/`timeout`/`stuck`/`limit`. A read-time report
+/// joins it with the plan line by `issue` to ask "what fraction of tokens bought
+/// a `done`?".
+fn outcome_label(outcome: &Outcome) -> &'static str {
+    match outcome {
+        Outcome::Done => "done",
+        Outcome::Blocked(_) => "blocked",
+        Outcome::Timeout => "timeout",
+        Outcome::Stuck => "stuck",
+        Outcome::Limit(_) => "limit",
+    }
 }
 
 /// The close comment the runner leaves on a green queue issue. Mirrors the ps1
@@ -521,8 +540,15 @@ pub fn run_queue(
     let (orig, branch, compare_ref) =
         prepare_branch(repo, &cfg.base_branch, &cfg.stamp, cfg.branch_mode)?;
 
+    // Identity for every ledger line this run writes (ADR-0008 D6/D7), read once
+    // from git: the project slug (remote, or a path-hash fallback) and the actor.
+    let project = git::project_slug(repo);
+    let actor_email = git::user_email(repo).unwrap_or_default();
+    let actor_name = git::user_name(repo).unwrap_or_default();
+
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
+    let mut run_usage = Usage::default();
 
     'queue: for issue in queue {
         // Don't start a new issue past the global budget. Work already committed
@@ -686,6 +712,29 @@ pub fn run_queue(
             "plan written"
         );
 
+        // Record the plan phase's token usage (ADR-0008 D6). Written before the
+        // feasibility branch so even an infeasible plan's planning cost is on the
+        // ledger. The plan line carries `ok` — the issue's terminal outcome is its
+        // execute line's, joined by `issue` at read-time. Best-effort: a write
+        // failure warns, never stops the run (D9).
+        let plan_rec = LedgerRecord {
+            project: project.clone(),
+            actor_email: actor_email.clone(),
+            actor_name: actor_name.clone(),
+            ralphy_version: env!("CARGO_PKG_VERSION").into(),
+            issue: issue.number,
+            phase: "plan".into(),
+            agent: agent.name().into(),
+            model: plan.usage.model.clone().unwrap_or_else(|| "unknown".into()),
+            outcome: "ok".into(),
+            tokens: plan.usage.clone(),
+            ts: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(e) = ledger::append(&plan_rec) {
+            warn!(number = issue.number, error = %e, "writing plan usage ledger line failed");
+        }
+        run_usage.add_tokens(&plan.usage);
+
         // An infeasible plan (no actionable steps) is a skip, not a failure, and
         // not green — the runner neither closes it nor stops the run. The
         // planner's reasoning is posted on the issue so the verdict is
@@ -737,9 +786,13 @@ pub fn run_queue(
         // issue is abandoned without first burning another reset window.
         let mut no_commit_streak = 0u32;
         let mut deadline_cut = false;
+        let mut exec_usage = Usage::default();
         let outcome = loop {
             let before_sha = git::head_sha(repo).unwrap_or_default();
-            let outcome = agent.execute(&plan, &ws)?;
+            let Execution { outcome, usage } = agent.execute(&plan, &ws)?;
+            // Accumulate across the resume loop so the single execute ledger line
+            // carries the whole issue's execution cost, not just the last attempt.
+            exec_usage.add_tokens(&usage);
             let after_sha = git::head_sha(repo).unwrap_or_default();
 
             // Track progress: a commit resets the streak, a no-commit execute
@@ -779,6 +832,27 @@ pub fn run_queue(
             }
             // Otherwise loop: re-run execute() against the same on-disk plan.md.
         };
+
+        // Record the execute phase's accumulated token usage with this issue's
+        // terminal outcome (ADR-0008 D6). One line per issue regardless of how
+        // many resume attempts ran. Best-effort (D9).
+        let exec_rec = LedgerRecord {
+            project: project.clone(),
+            actor_email: actor_email.clone(),
+            actor_name: actor_name.clone(),
+            ralphy_version: env!("CARGO_PKG_VERSION").into(),
+            issue: issue.number,
+            phase: "execute".into(),
+            agent: agent.name().into(),
+            model: exec_usage.model.clone().unwrap_or_else(|| "unknown".into()),
+            outcome: outcome_label(&outcome).into(),
+            tokens: exec_usage.clone(),
+            ts: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(e) = ledger::append(&exec_rec) {
+            warn!(number = issue.number, error = %e, "writing execute usage ledger line failed");
+        }
+        run_usage.add_tokens(&exec_usage);
 
         if outcome == Outcome::Done {
             // Close the cycle: a green queue issue is closed so it leaves the
@@ -872,6 +946,7 @@ pub fn run_queue(
         stop,
         commits,
         oneline,
+        run_usage,
     })
 }
 

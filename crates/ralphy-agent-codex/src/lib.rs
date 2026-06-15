@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::run_headless;
-use ralphy_core::{git, plan, Agent, Issue, Outcome, Plan, PlanLimit, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -425,6 +425,10 @@ impl CodexAgent {
 }
 
 impl Agent for CodexAgent {
+    fn name(&self) -> &'static str {
+        "codex"
+    }
+
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
         fs::create_dir_all(ws.ralphy_dir()).ok();
         fs::create_dir_all(&self.run_dir).ok();
@@ -476,10 +480,13 @@ impl Agent for CodexAgent {
             open_steps: plan::count_open_steps(&md),
             recommended_model: recommended_tier(&md),
             path: plan_path,
+            // Codex token capture (ADR-0008 D5, rollout JSONL) lands in a later
+            // slice; this issue wires only the Claude paths.
+            usage: Usage::default(),
         })
     }
 
-    fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
+    fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
         fs::create_dir_all(&self.run_dir).ok();
         fs::create_dir_all(ws.ralphy_dir()).ok();
         materialize_codex_skills(ws)?;
@@ -517,7 +524,10 @@ impl Agent for CodexAgent {
             ?outcome,
             exited_cleanly, timed_out, committed, "codex execution ended"
         );
-        Ok(outcome)
+        Ok(Execution {
+            outcome,
+            usage: Usage::default(),
+        })
     }
 }
 
