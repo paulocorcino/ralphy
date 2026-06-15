@@ -71,8 +71,10 @@ pub enum RunEvent {
         budget_min: u64,
         model: String,
     },
-    /// A green issue was closed (the cycle).
-    IssueClosed { number: u64 },
+    /// A green issue was closed (the cycle). `tokens` is the issue's total
+    /// (plan + execute) for the inline per-issue token figure (ADR-0008 D11);
+    /// `0` when the runner captured none.
+    IssueClosed { number: u64, tokens: u64 },
     /// An issue finished non-green and stopped the run; `outcome` is the core's
     /// `Outcome` debug string (e.g. `Stuck`, `Blocked`, `Timeout`).
     NonGreen { number: u64, outcome: String },
@@ -256,7 +258,7 @@ impl RunState {
                 };
                 self.entry_mut(n).status = IssueStatus::Executing;
             }
-            RunEvent::IssueClosed { number } => {
+            RunEvent::IssueClosed { number, .. } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
@@ -380,6 +382,7 @@ pub struct EventFields {
     pub reset: Option<String>,
     pub target_epoch: Option<i64>,
     pub model: Option<String>,
+    pub tokens: Option<u64>,
 }
 
 impl Default for EventFields {
@@ -397,6 +400,7 @@ impl Default for EventFields {
             reset: None,
             target_epoch: None,
             model: None,
+            tokens: None,
         }
     }
 }
@@ -408,6 +412,7 @@ impl Visit for EventFields {
             "open_steps" => self.open_steps = Some(value),
             "count" => self.count = Some(value),
             "budget_min" => self.budget_min = Some(value),
+            "tokens" => self.tokens = Some(value),
             _ => {}
         }
     }
@@ -484,7 +489,10 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             budget_min: fields.budget_min.unwrap_or(0),
             model: fields.model.clone().unwrap_or_default(),
         }),
-        "green — issue closed" => Some(RunEvent::IssueClosed { number }),
+        "green — issue closed" => Some(RunEvent::IssueClosed {
+            number,
+            tokens: fields.tokens.unwrap_or(0),
+        }),
         "non-green — stopping run" => Some(RunEvent::NonGreen {
             number,
             outcome: fields.outcome.clone().unwrap_or_default(),
@@ -559,7 +567,7 @@ mod tests {
                 budget_min: 45,
                 model: String::new(),
             },
-            RunEvent::IssueClosed { number: 1 },
+            RunEvent::IssueClosed { number: 1, tokens: 0 },
             RunEvent::IssueStarted {
                 number: 2,
                 title: "two".into(),
@@ -704,7 +712,7 @@ mod tests {
             number: 1,
             title: "a".into(),
         });
-        state.apply(RunEvent::IssueClosed { number: 1 });
+        state.apply(RunEvent::IssueClosed { number: 1, tokens: 0 });
         state.apply(RunEvent::Skipped {
             number: 2,
             kind: SkipKind::BlockedBy,
@@ -796,9 +804,13 @@ mod tests {
             decode(EventFields {
                 message: "green — issue closed".into(),
                 number: Some(7),
+                tokens: Some(1_200_000),
                 ..Default::default()
             }),
-            Some(RunEvent::IssueClosed { number: 7 })
+            Some(RunEvent::IssueClosed {
+                number: 7,
+                tokens: 1_200_000
+            })
         );
         assert_eq!(
             decode(EventFields {

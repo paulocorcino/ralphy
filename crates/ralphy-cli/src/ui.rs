@@ -273,13 +273,20 @@ fn render_line(
             Style::new().cyan(),
             format!("#{number} plan written ({open_steps} step(s))"),
         ),
-        RunEvent::IssueClosed { number } => {
+        RunEvent::IssueClosed { number, tokens } => {
             let outcome = FinishOutcome::Done;
             let (emoji, ascii, style) = outcome.glyph();
+            // Inline per-issue tokens (ADR-0008 D11), only when the runner
+            // captured a non-zero total.
+            let tok = if *tokens > 0 {
+                format!(" · {} tok", fmt_tokens(*tokens))
+            } else {
+                String::new()
+            };
             (
                 pick(emoji, ascii, opts.emoji),
                 style,
-                format!("#{number} {}{dur}", outcome.label()),
+                format!("#{number} {}{dur}{tok}", outcome.label()),
             )
         }
         RunEvent::NonGreen { number, outcome } => {
@@ -737,7 +744,7 @@ impl Presenter {
                 self.refresh_active_bar(s);
                 None
             }
-            RunEvent::IssueClosed { number }
+            RunEvent::IssueClosed { number, .. }
             | RunEvent::NonGreen { number, .. }
             | RunEvent::Skipped { number, .. } => {
                 let d = s
@@ -937,7 +944,10 @@ mod tests {
             .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
             .single()
             .unwrap();
-        let event = RunEvent::IssueClosed { number: 30 };
+        let event = RunEvent::IssueClosed {
+            number: 30,
+            tokens: 0,
+        };
         let line = render_plain_line(&event, &ts, Some(Duration::from_secs(133))).expect("a line");
 
         assert!(
@@ -951,6 +961,37 @@ mod tests {
             !line.contains('\u{1b}'),
             "plain line has no ANSI escape byte: {line:?}"
         );
+    }
+
+    #[test]
+    fn render_plain_issue_closed_shows_inline_tokens() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let event = RunEvent::IssueClosed {
+            number: 45,
+            tokens: 1_200_000,
+        };
+        let line = render_plain_line(&event, &ts, Some(Duration::from_secs(776))).expect("a line");
+        assert!(line.contains("#45 done"), "issue + outcome: {line}");
+        assert!(line.contains("1.2M tok"), "inline tokens: {line}");
+        assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
+    }
+
+    #[test]
+    fn render_plain_issue_closed_omits_tokens_when_zero() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let event = RunEvent::IssueClosed {
+            number: 9,
+            tokens: 0,
+        };
+        let line = render_plain_line(&event, &ts, None).expect("a line");
+        assert!(line.contains("#9 done"), "issue + outcome: {line}");
+        assert!(!line.contains("tok"), "no token segment when zero: {line}");
     }
 
     #[test]

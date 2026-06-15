@@ -646,7 +646,7 @@ mod tests {
             });
             push(&client, &state, &mut last_card);
 
-            state.apply(RunEvent::IssueClosed { number: n });
+            state.apply(RunEvent::IssueClosed { number: n, tokens: 0 });
             push(&client, &state, &mut last_card);
         }
 
@@ -781,7 +781,7 @@ mod tests {
             number: 1,
             title: "first".into(),
         });
-        state.apply(RunEvent::IssueClosed { number: 1 });
+        state.apply(RunEvent::IssueClosed { number: 1, tokens: 0 });
         state.apply(RunEvent::IssueStarted {
             number: 2,
             title: "second".into(),
@@ -846,7 +846,7 @@ mod tests {
             number: 1,
             title: "a".into(),
         });
-        state.apply(RunEvent::IssueClosed { number: 1 });
+        state.apply(RunEvent::IssueClosed { number: 1, tokens: 0 });
         // Mid-consolidation: the live 📚 line shows, no footer yet.
         state.apply(RunEvent::KnowledgeConsolidating { notes: 4 });
         let live = render_card(&state, 0);
@@ -892,7 +892,7 @@ mod tests {
             number: 1,
             title: "a".into(),
         });
-        state.apply(RunEvent::IssueClosed { number: 1 });
+        state.apply(RunEvent::IssueClosed { number: 1, tokens: 0 });
         // During the run: no footer.
         assert!(!render_card(&state, 0).contains("🏁"), "no footer mid-run");
         // Finished: the footer appears with the done/skipped tally.
@@ -928,7 +928,7 @@ mod tests {
                 title: format!("issue {n} with a moderately long descriptive title to pad bytes"),
             });
             if n < 200 {
-                state.apply(RunEvent::IssueClosed { number: n });
+                state.apply(RunEvent::IssueClosed { number: n, tokens: 0 });
             }
         }
         let card = render_card(&state, 0);
@@ -1006,15 +1006,15 @@ mod tests {
     #[test]
     fn event_queue_drops_oldest_at_capacity() {
         let q = EventQueue::with_capacity(2);
-        q.push(RunEvent::IssueClosed { number: 1 });
-        q.push(RunEvent::IssueClosed { number: 2 });
-        q.push(RunEvent::IssueClosed { number: 3 });
+        q.push(RunEvent::IssueClosed { number: 1, tokens: 0 });
+        q.push(RunEvent::IssueClosed { number: 2, tokens: 0 });
+        q.push(RunEvent::IssueClosed { number: 3, tokens: 0 });
         let drained = q.drain_blocking(Duration::from_millis(0));
         assert_eq!(
             drained,
             vec![
-                RunEvent::IssueClosed { number: 2 },
-                RunEvent::IssueClosed { number: 3 },
+                RunEvent::IssueClosed { number: 2, tokens: 0 },
+                RunEvent::IssueClosed { number: 3, tokens: 0 },
             ]
         );
     }
@@ -1044,7 +1044,7 @@ mod tests {
             budget_min: 45,
             model: String::new(),
         });
-        queue.push(RunEvent::IssueClosed { number: 1 });
+        queue.push(RunEvent::IssueClosed { number: 1, tokens: 0 });
 
         let worker_queue = queue.clone();
         let worker_shutdown = shutdown.clone();
