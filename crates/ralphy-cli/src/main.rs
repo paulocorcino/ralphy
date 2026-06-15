@@ -131,23 +131,26 @@ struct RunArgs {
     #[arg(long)]
     verbose: bool,
 
-    /// Commit-ish the run branch is cut from. Only used with `--branch-mode new`.
-    #[arg(long, default_value = "origin/main")]
-    base_branch: String,
+    /// Commit-ish the run branch is cut from. Only used with `--branch-mode new`
+    /// (default: origin/main, or `base_branch` in settings.json).
+    #[arg(long)]
+    base_branch: Option<String>,
 
     /// Where commits land: `new` cuts a fresh `afk/run-*` branch off
     /// `--base-branch`; `current` commits straight onto the branch the repo is
-    /// already on (no new branch, `--base-branch` ignored).
-    #[arg(long = "branch-mode", value_enum, default_value_t = CliBranchMode::New)]
-    branch_mode: CliBranchMode,
+    /// already on (no new branch, `--base-branch` ignored). (default: new, or
+    /// `branch_mode` in settings.json).
+    #[arg(long = "branch-mode", value_enum)]
+    branch_mode: Option<CliBranchMode>,
 
-    /// Planning model.
-    #[arg(long, default_value = "opus")]
-    plan_model: String,
+    /// Planning model (default: opus, or `claude.plan_model` in settings.json).
+    #[arg(long)]
+    plan_model: Option<String>,
 
-    /// Planning effort.
-    #[arg(long, default_value = "medium")]
-    plan_effort: String,
+    /// Planning effort (default: medium, or `claude.plan_effort` in
+    /// settings.json).
+    #[arg(long)]
+    plan_effort: Option<String>,
 
     /// Force the execution model for the issue (overrides the plan's judgment).
     #[arg(long)]
@@ -159,17 +162,20 @@ struct RunArgs {
     #[arg(long)]
     exec_variant: Option<String>,
 
-    /// Execution effort.
-    #[arg(long, default_value = "medium")]
-    exec_effort: String,
+    /// Execution effort (default: medium, or `claude.exec_effort` in
+    /// settings.json).
+    #[arg(long)]
+    exec_effort: Option<String>,
 
-    /// Execution model used when the plan emits no complexity judgment.
-    #[arg(long, default_value = "sonnet")]
-    default_exec_model: String,
+    /// Execution model used when the plan emits no complexity judgment
+    /// (default: sonnet, or `claude.default_exec_model` in settings.json).
+    #[arg(long)]
+    default_exec_model: Option<String>,
 
-    /// Per-issue wall-clock budget (minutes) before the session is reclaimed.
-    #[arg(long, default_value_t = 90)]
-    max_minutes_per_issue: u64,
+    /// Per-issue wall-clock budget (minutes) before the session is reclaimed
+    /// (default: 90, or `claude.max_minutes_per_issue` in settings.json).
+    #[arg(long)]
+    max_minutes_per_issue: Option<u64>,
 
     /// Enable Remote Control so you can follow/intervene from the mobile app
     /// (the default).
@@ -253,6 +259,17 @@ impl From<CliBranchMode> for BranchMode {
             CliBranchMode::Current => BranchMode::Current,
         }
     }
+}
+
+/// The five Claude-only run knobs resolved once (flag > settings.json >
+/// hardcoded default, ADR-0010) so the executor and an optional split planner
+/// share one value. Strings are guaranteed non-empty by the resolvers.
+struct ResolvedClaude {
+    plan_model: String,
+    plan_effort: String,
+    exec_effort: String,
+    default_exec_model: String,
+    max_minutes_per_issue: u64,
 }
 
 fn main() -> Result<()> {
@@ -496,14 +513,59 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // (byte-for-byte unchanged); otherwise a `SplitAgent` routes plan→planner,
     // execute→executor (docs/adr/0009).
     //
-    // Load the persisted OpenCode model once here so both build_agent calls
-    // (executor and optional planner) receive the same resolved value (ADR-0010).
-    let persisted_opencode_model = match ralphy_core::Settings::load(&ws) {
-        Ok(s) => s.opencode.model,
+    // Load the persisted settings once here so every run knob resolves against
+    // the same snapshot (ADR-0010). A load failure warns and falls back to
+    // defaults so a malformed settings file never aborts a run. Precedence for
+    // each knob: per-run flag > settings.json > hardcoded default.
+    let settings = match ralphy_core::Settings::load(&ws) {
+        Ok(s) => s,
         Err(e) => {
-            warn!(error = %e, "could not load .ralphy/settings.json — persisted model ignored");
-            None
+            warn!(error = %e, "could not load .ralphy/settings.json — persisted defaults ignored");
+            ralphy_core::Settings::default()
         }
+    };
+    let persisted_opencode_model = settings.opencode.model.clone();
+    let base_branch = config::resolve_str(
+        args.base_branch.clone(),
+        settings.base_branch.clone(),
+        "origin/main",
+    );
+    let branch_mode: BranchMode = args
+        .branch_mode
+        .map(BranchMode::from)
+        .or_else(|| {
+            settings
+                .branch_mode
+                .as_deref()
+                .and_then(|m| config::parse_branch_mode(m).ok())
+        })
+        .unwrap_or(BranchMode::New);
+    let resolved_claude = ResolvedClaude {
+        plan_model: config::resolve_str(
+            args.plan_model.clone(),
+            settings.claude.plan_model.clone(),
+            "opus",
+        ),
+        plan_effort: config::resolve_str(
+            args.plan_effort.clone(),
+            settings.claude.plan_effort.clone(),
+            "medium",
+        ),
+        exec_effort: config::resolve_str(
+            args.exec_effort.clone(),
+            settings.claude.exec_effort.clone(),
+            "medium",
+        ),
+        default_exec_model: config::resolve_str(
+            args.default_exec_model.clone(),
+            settings.claude.default_exec_model.clone(),
+            "sonnet",
+        ),
+        max_minutes_per_issue: config::resolve_u64(
+            args.max_minutes_per_issue,
+            settings.claude.max_minutes_per_issue,
+            90,
+        ),
     };
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     let executor = build_agent(
@@ -512,6 +574,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         run_dir.clone(),
         run_deadline,
         persisted_opencode_model.clone(),
+        &resolved_claude,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
         executor
@@ -523,14 +586,14 @@ fn run_cmd(args: RunArgs) -> Result<()> {
                 run_dir,
                 run_deadline,
                 persisted_opencode_model,
+                &resolved_claude,
             ),
             executor,
         })
     };
-    let branch_mode: BranchMode = args.branch_mode.into();
     let cfg = QueueConfig {
         repo_root,
-        base_branch: args.base_branch,
+        base_branch,
         dry_run: args.dry_run,
         stamp,
         branch_mode,
@@ -680,19 +743,20 @@ fn build_agent(
     run_dir: PathBuf,
     run_deadline: Option<std::time::Instant>,
     persisted_opencode_model: Option<String>,
+    claude: &ResolvedClaude,
 ) -> Box<dyn Agent> {
     match which {
         CliAgent::Claude => Box::new(
             ClaudeAgent::new(
-                non_empty(args.plan_model.clone()),
-                non_empty(args.plan_effort.clone()),
+                non_empty(claude.plan_model.clone()),
+                non_empty(claude.plan_effort.clone()),
                 run_dir,
             )
             .with_exec_config(
                 non_empty(args.exec_model.clone().unwrap_or_default()),
-                non_empty(args.exec_effort.clone()),
-                args.default_exec_model.clone(),
-                args.max_minutes_per_issue,
+                non_empty(claude.exec_effort.clone()),
+                claude.default_exec_model.clone(),
+                claude.max_minutes_per_issue,
                 !args.no_remote_control,
                 args.headless_exec,
                 args.max_exec_calls,
@@ -832,6 +896,33 @@ mod tests {
     fn effective_stop_on_limit_opencode_forces_true() {
         assert!(effective_stop_on_limit(false, CliAgent::OpenCode));
         assert!(effective_stop_on_limit(true, CliAgent::OpenCode));
+    }
+
+    #[test]
+    fn resolution_byte_for_byte_when_absent() {
+        // With no flag AND no setting, every knob must resolve to today's
+        // hardcoded default, leaving behaviour unchanged (ADR-0010).
+        assert_eq!(
+            config::resolve_str(None, None, "origin/main"),
+            "origin/main"
+        );
+        assert_eq!(config::resolve_str(None, None, "opus"), "opus");
+        assert_eq!(config::resolve_str(None, None, "medium"), "medium");
+        assert_eq!(config::resolve_str(None, None, "sonnet"), "sonnet");
+        assert_eq!(config::resolve_u64(None, None, 90), 90);
+
+        // The branch_mode resolution chain with (no flag, no setting) yields New.
+        let flag: Option<CliBranchMode> = None;
+        let persisted: Option<String> = None;
+        let branch_mode: BranchMode = flag
+            .map(BranchMode::from)
+            .or_else(|| {
+                persisted
+                    .as_deref()
+                    .and_then(|m| config::parse_branch_mode(m).ok())
+            })
+            .unwrap_or(BranchMode::New);
+        assert_eq!(branch_mode, BranchMode::New);
     }
 
     #[test]
