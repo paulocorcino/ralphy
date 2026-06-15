@@ -61,6 +61,64 @@ pub fn origin_url(repo: &Path) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Extract an `owner/repo` slug from a git remote URL (ADR-0008 D7). Handles the
+/// `https://host/owner/repo[.git]`, `git@host:owner/repo[.git]`, and
+/// `ssh://git@host/owner/repo[.git]` forms by stripping the scheme/host (or the
+/// `git@host:` prefix) and the trailing `.git`, then taking the last two path
+/// segments. Pure over its input. `None` when fewer than two segments remain.
+pub fn slug_from_url(url: &str) -> Option<String> {
+    let s = url.trim();
+    let s = s.strip_suffix(".git").unwrap_or(s);
+    // Drop the scheme+host (`scheme://host/…`) or the SCP-style `user@host:` prefix
+    // so only the path remains. The first colon in the SCP form is the host/path
+    // separator, so normalize it to `/` before splitting.
+    let after_host = if let Some((_, rest)) = s.split_once("://") {
+        rest
+    } else if let Some((_, rest)) = s.split_once('@') {
+        rest
+    } else {
+        s
+    };
+    let after_host = after_host.replacen(':', "/", 1);
+    let segments: Vec<&str> = after_host.split('/').filter(|seg| !seg.is_empty()).collect();
+    if segments.len() >= 2 {
+        let owner = segments[segments.len() - 2];
+        let repo = segments[segments.len() - 1];
+        Some(format!("{owner}/{repo}"))
+    } else {
+        None
+    }
+}
+
+/// The project identity key (ADR-0008 D7): the `origin` remote normalized to an
+/// `owner/repo` slug, or — for a local-only repo with no remote — a stable
+/// `path-<hash>` slug derived from the repo-root path string (single-machine, but
+/// never wrong). Always returns a non-empty string.
+pub fn project_slug(repo: &Path) -> String {
+    if let Some(slug) = origin_url(repo).as_deref().and_then(slug_from_url) {
+        return slug;
+    }
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    repo.to_string_lossy().hash(&mut hasher);
+    format!("path-{:x}", hasher.finish())
+}
+
+/// `git config user.email` for the run's actor (ADR-0008 D7). `None` when unset
+/// or empty — the caller substitutes a default rather than failing the run.
+pub fn user_email(repo: &Path) -> Option<String> {
+    git(repo, &["config", "user.email"])
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+/// `git config user.name` for the actor's display name (ADR-0008 D7).
+pub fn user_name(repo: &Path) -> Option<String> {
+    git(repo, &["config", "user.name"])
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 /// Whether `refname` resolves to a commit (branch, tag, remote-tracking, or SHA).
 pub fn commitish_exists(repo: &Path, refname: &str) -> bool {
     raw(
@@ -133,4 +191,34 @@ pub fn is_clean_ignoring_ralphy(repo: &Path) -> Result<bool> {
         return Ok(false);
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_slug_from_remote_and_path_fallback() {
+        // Both common remote forms normalize to the same `owner/repo` slug.
+        assert_eq!(
+            slug_from_url("git@github.com:owner/repo.git").as_deref(),
+            Some("owner/repo")
+        );
+        assert_eq!(
+            slug_from_url("https://github.com/owner/repo").as_deref(),
+            Some("owner/repo")
+        );
+        // The ssh:// form and a trailing `.git` are handled too.
+        assert_eq!(
+            slug_from_url("ssh://git@github.com/owner/repo.git").as_deref(),
+            Some("owner/repo")
+        );
+
+        // A path with no git remote (a non-existent dir → `origin_url` is `None`)
+        // falls back to a non-empty `path-<hash>` slug.
+        let no_remote = std::env::temp_dir().join("ralphy-no-such-repo-xyz");
+        let slug = project_slug(&no_remote);
+        assert!(slug.starts_with("path-"), "fallback slug form: {slug}");
+        assert!(slug.len() > "path-".len(), "fallback slug non-empty: {slug}");
+    }
 }

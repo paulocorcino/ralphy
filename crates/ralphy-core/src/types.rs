@@ -16,6 +16,51 @@ pub struct Issue {
     pub labels: Vec<String>,
 }
 
+/// A normalized, vendor-agnostic token-usage record (ADR-0008 D4). Each adapter
+/// fills it from the counts its CLI already reports; the core only sums it and
+/// never branches on `model`. `cache_read`/`cache_creation` are kept as separate
+/// fields (not folded into `input`) because Claude reports cache reads at ~1/10th
+/// the price of fresh input, so collapsing them would overstate cost by an order
+/// of magnitude (ADR-0008 D2). `model` rides along because price resolves on it
+/// (D8) and is only knowable per-record.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Usage {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_creation: u64,
+    pub model: Option<String>,
+}
+
+impl Usage {
+    /// Add another usage's four numeric fields into this one. `model` is left
+    /// untouched — summing is across records of (potentially) different models,
+    /// and the per-record model is what the price table resolves on (D8).
+    pub fn add_tokens(&mut self, other: &Usage) {
+        self.input += other.input;
+        self.output += other.output;
+        self.cache_read += other.cache_read;
+        self.cache_creation += other.cache_creation;
+    }
+
+    /// The flat token total across the four numeric fields — the figure the
+    /// run-end footer and project roll-ups present (ADR-0008 D11).
+    pub fn total(&self) -> u64 {
+        self.input + self.output + self.cache_read + self.cache_creation
+    }
+}
+
+/// The pairing an [`crate::Agent::execute`] hands back: the domain [`Outcome`]
+/// plus the [`Usage`] the phase consumed (ADR-0008 D4). It is a struct rather
+/// than a new `Outcome` field because `Outcome` is an enum matched and
+/// constructed at many sites across all three adapters and the runner; pairing
+/// the two here leaves every `Outcome::` match untouched.
+#[derive(Debug, Clone)]
+pub struct Execution {
+    pub outcome: Outcome,
+    pub usage: Usage,
+}
+
 /// A planning artifact produced by an [`crate::Agent`] for one issue. The plan
 /// itself lives on disk at [`Plan::path`]; the counts are read off it.
 #[derive(Debug, Clone)]
@@ -28,6 +73,9 @@ pub struct Plan {
     /// The planner's complexity judgment, if it emitted one. An adapter
     /// capability, never a core guarantee — the core only carries it across.
     pub recommended_model: Option<String>,
+    /// The token usage the planning phase consumed, filled by the adapter
+    /// (ADR-0008 D4). `Usage::default()` when the adapter does not capture it.
+    pub usage: Usage,
 }
 
 impl Plan {
@@ -151,5 +199,36 @@ impl Workspace {
     /// whatever skills happen to be installed globally on the machine.
     pub fn plugin_dir(&self) -> PathBuf {
         self.ralphy_dir().join("plugin")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_add_tokens_is_additive() {
+        let mut a = Usage {
+            input: 10,
+            output: 1,
+            cache_read: 100,
+            cache_creation: 5,
+            model: Some("claude-opus-4-8".into()),
+        };
+        let b = Usage {
+            input: 20,
+            output: 2,
+            cache_read: 200,
+            cache_creation: 7,
+            model: Some("claude-sonnet-4-6".into()),
+        };
+        a.add_tokens(&b);
+        assert_eq!(a.input, 30);
+        assert_eq!(a.output, 3);
+        assert_eq!(a.cache_read, 300);
+        assert_eq!(a.cache_creation, 12);
+        // `model` is untouched by summing — it stays the receiver's value.
+        assert_eq!(a.model.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(a.total(), 345);
     }
 }
