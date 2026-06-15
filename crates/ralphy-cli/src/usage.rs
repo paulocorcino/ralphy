@@ -152,22 +152,17 @@ pub fn render_table(rows: &[UsageRow], by: Option<GroupBy>, table: &PriceTable) 
     ));
 
     if let Some(by) = by {
-        // Group rows (keeping the rows themselves for per-group USD).
-        let mut groups: BTreeMap<String, Vec<&UsageRow>> = BTreeMap::new();
-        for r in rows {
-            groups.entry(group_key(r, by)).or_default().push(r);
-        }
-        for (key, group_rows) in groups {
-            let mut g = Usage::default();
-            for r in &group_rows {
-                g.add_tokens(&r.tokens);
-            }
+        // The token sums + counts come from the pure `group_by`; the per-group USD
+        // needs the rows themselves (price resolves per model, which a group keyed
+        // on another dimension spans), so it is computed from the filtered rows.
+        for (key, g, count) in group_by(rows, by) {
+            let group_rows: Vec<&UsageRow> =
+                rows.iter().filter(|r| group_key(r, by) == key).collect();
             let (gusd, gpartial) = usd_for_rows(&group_rows, table);
             lines.push(format!(
-                "{key} · {} tok · {} · {} row(s)",
+                "{key} · {} tok · {} · {count} row(s)",
                 fmt_tokens(g.total()),
                 fmt_usd(gusd, gpartial),
-                group_rows.len()
             ));
         }
     }
@@ -255,7 +250,9 @@ pub fn export_json(rows: &[UsageRow], table: &PriceTable) -> Result<String> {
             })
         })
         .collect();
-    Ok(serde_json::to_string_pretty(&serde_json::Value::Array(arr))?)
+    Ok(serde_json::to_string_pretty(&serde_json::Value::Array(
+        arr,
+    ))?)
 }
 
 /// `ralphy usage`: read the project's ledger and print the balance / group-by cut
@@ -411,7 +408,11 @@ mod tests {
     fn render_table_balance_carries_tokens_and_usd() {
         let rows = two_model_fixture();
         let lines = render_table(&rows, None, &PriceTable::defaults());
-        assert!(lines[0].starts_with("balance:"), "balance line: {}", lines[0]);
+        assert!(
+            lines[0].starts_with("balance:"),
+            "balance line: {}",
+            lines[0]
+        );
         assert!(lines[0].contains("tok"), "tokens: {}", lines[0]);
         assert!(lines[0].contains("~$"), "usd: {}", lines[0]);
     }

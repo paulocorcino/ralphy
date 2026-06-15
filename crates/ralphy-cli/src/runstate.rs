@@ -567,7 +567,10 @@ mod tests {
                 budget_min: 45,
                 model: String::new(),
             },
-            RunEvent::IssueClosed { number: 1, tokens: 0 },
+            RunEvent::IssueClosed {
+                number: 1,
+                tokens: 0,
+            },
             RunEvent::IssueStarted {
                 number: 2,
                 title: "two".into(),
@@ -712,7 +715,10 @@ mod tests {
             number: 1,
             title: "a".into(),
         });
-        state.apply(RunEvent::IssueClosed { number: 1, tokens: 0 });
+        state.apply(RunEvent::IssueClosed {
+            number: 1,
+            tokens: 0,
+        });
         state.apply(RunEvent::Skipped {
             number: 2,
             kind: SkipKind::BlockedBy,

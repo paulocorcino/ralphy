@@ -138,7 +138,9 @@ impl PriceTable {
                     table.0.insert(model, price);
                 }
             }
-            Err(e) => warn!(path = %path.display(), error = %e, "parsing pricing.toml failed — using defaults"),
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "parsing pricing.toml failed — using defaults")
+            }
         }
         table
     }
@@ -159,7 +161,10 @@ fn warn_unknown(model: &str) {
     let mut guard = WARNED.lock().unwrap_or_else(|e| e.into_inner());
     let seen = guard.get_or_insert_with(HashSet::new);
     if seen.insert(model.to_string()) {
-        warn!(model, "unknown model — add `{model}` to pricing.toml to price it");
+        warn!(
+            model,
+            "unknown model — add `{model}` to pricing.toml to price it"
+        );
     }
 }
 

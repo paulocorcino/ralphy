@@ -127,7 +127,13 @@ pub fn read_rows(jsonl: &str) -> Vec<UsageRow> {
         if !value.is_object() {
             continue;
         }
-        let s = |k: &str| value.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let s = |k: &str| {
+            value
+                .get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
         let n = |k: &str| value.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
         let tok = |k: &str| {
             value

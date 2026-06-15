@@ -1038,7 +1038,10 @@ mod tests {
         );
 
         assert_eq!(by_model["claude-opus-4-8"].input, 300, "opus rows summed");
-        assert_eq!(by_model["unknown"].input, 7, "model-less rows fall to unknown");
+        assert_eq!(
+            by_model["unknown"].input, 7,
+            "model-less rows fall to unknown"
+        );
         assert_eq!(by_model.len(), 2);
     }
 
