@@ -30,6 +30,7 @@ console = "0.15"
 ureq = { version = "2", features = ["json"] }
 directories = "5"
 toml = "0.8"
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }

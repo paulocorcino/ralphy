@@ -11,5 +11,6 @@ anyhow.workspace = true
 tracing.workspace = true
 serde_json.workspace = true
 include_dir.workspace = true
+rusqlite.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
