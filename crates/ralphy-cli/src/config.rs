@@ -1,11 +1,16 @@
 //! The `ralphy config` subcommand (ADR-0010).
 //!
-//! Manages per-repo `.ralphy/settings.json`. Currently supports one key:
-//! `opencode.model` — the persistent execution-model default for OpenCode.
+//! Manages per-repo `.ralphy/settings.json`. Supported keys: `opencode.model`
+//! (OpenCode execution-model default, #47), the agent-agnostic `base_branch` and
+//! `branch_mode`, and the Claude-only run defaults under `claude.*`
+//! (`plan_model`, `plan_effort`, `default_exec_model`, `exec_effort`,
+//! `max_minutes_per_issue`). The model/effort/budget knobs are Claude-only
+//! today — a Codex equivalent is deferred. Each resolves with the same
+//! precedence: per-run flag > `settings.json` > hardcoded default.
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::{Args, Subcommand};
 use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
@@ -23,7 +28,11 @@ pub struct ConfigArgs {
 pub enum ConfigCommand {
     /// Persist a config key in `.ralphy/settings.json`.
     Set {
-        /// The config key (currently only `opencode.model`).
+        /// The config key: `opencode.model`, `base_branch`, `branch_mode`, or a
+        /// Claude-only knob (`claude.plan_model`, `claude.plan_effort`,
+        /// `claude.default_exec_model`, `claude.exec_effort`,
+        /// `claude.max_minutes_per_issue`). The model/effort/budget defaults are
+        /// Claude-only today (Codex deferred).
         key: String,
         /// The value to store.
         value: String,
@@ -48,10 +57,27 @@ pub fn run(args: ConfigArgs) -> Result<()> {
     }
 }
 
+/// Human-readable list of every supported `config` key, reused both in
+/// `--help`-style docs and in the unknown-key error so the two never drift. The
+/// model/effort/budget knobs are Claude-only in the current wiring (ADR-0010).
+pub const SUPPORTED_KEYS_HELP: &str = "supported keys: \
+opencode.model, base_branch, branch_mode, \
+claude.plan_model, claude.plan_effort, claude.default_exec_model, \
+claude.exec_effort, claude.max_minutes_per_issue \
+(model/effort/budget defaults are Claude-only today \
+(Codex deferred; OpenCode's model lives under opencode.model, #47))";
+
 fn require_known_key(key: &str) -> Result<()> {
     match key {
-        "opencode.model" => Ok(()),
-        other => bail!("unknown config key '{other}'; supported: opencode.model"),
+        "opencode.model"
+        | "base_branch"
+        | "branch_mode"
+        | "claude.plan_model"
+        | "claude.plan_effort"
+        | "claude.default_exec_model"
+        | "claude.exec_effort"
+        | "claude.max_minutes_per_issue" => Ok(()),
+        other => bail!("unknown config key '{other}'; {SUPPORTED_KEYS_HELP}"),
     }
 }
 
@@ -63,6 +89,23 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     let mut s = Settings::load(ws)?;
     match key {
         "opencode.model" => s.opencode.model = Some(value.to_owned()),
+        "base_branch" => s.base_branch = Some(value.to_owned()),
+        "branch_mode" => {
+            // Validate through the shared parser; store the canonical lowercase
+            // string so resolution and `config get` see one form.
+            parse_branch_mode(value)?;
+            s.branch_mode = Some(value.to_owned());
+        }
+        "claude.plan_model" => s.claude.plan_model = Some(value.to_owned()),
+        "claude.plan_effort" => s.claude.plan_effort = Some(value.to_owned()),
+        "claude.default_exec_model" => s.claude.default_exec_model = Some(value.to_owned()),
+        "claude.exec_effort" => s.claude.exec_effort = Some(value.to_owned()),
+        "claude.max_minutes_per_issue" => {
+            let n = value.parse::<u64>().map_err(|_| {
+                anyhow!("claude.max_minutes_per_issue must be a positive integer, got '{value}'")
+            })?;
+            s.claude.max_minutes_per_issue = Some(n);
+        }
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -76,6 +119,13 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     let mut s = Settings::load(ws)?;
     match key {
         "opencode.model" => s.opencode.model = None,
+        "base_branch" => s.base_branch = None,
+        "branch_mode" => s.branch_mode = None,
+        "claude.plan_model" => s.claude.plan_model = None,
+        "claude.plan_effort" => s.claude.plan_effort = None,
+        "claude.default_exec_model" => s.claude.default_exec_model = None,
+        "claude.exec_effort" => s.claude.exec_effort = None,
+        "claude.max_minutes_per_issue" => s.claude.max_minutes_per_issue = None,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -85,11 +135,27 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
 
 pub fn get(ws: &Workspace) -> Result<()> {
     let s = Settings::load(ws)?;
-    match s.opencode.model.filter(|m| !m.is_empty()) {
-        Some(m) => println!("opencode.model = {m}"),
-        None => println!("opencode.model: not set"),
+    print_str("opencode.model", s.opencode.model);
+    print_str("base_branch", s.base_branch);
+    print_str("branch_mode", s.branch_mode);
+    print_str("claude.plan_model", s.claude.plan_model);
+    print_str("claude.plan_effort", s.claude.plan_effort);
+    print_str("claude.default_exec_model", s.claude.default_exec_model);
+    print_str("claude.exec_effort", s.claude.exec_effort);
+    match s.claude.max_minutes_per_issue {
+        Some(n) => println!("claude.max_minutes_per_issue = {n}"),
+        None => println!("claude.max_minutes_per_issue: not set"),
     }
     Ok(())
+}
+
+/// Print one `key = value` / `key: not set` line for an optional string knob,
+/// treating an empty string as unset.
+fn print_str(key: &str, value: Option<String>) {
+    match value.filter(|v| !v.is_empty()) {
+        Some(v) => println!("{key} = {v}"),
+        None => println!("{key}: not set"),
+    }
 }
 
 /// Resolve the OpenCode execution model from the per-run flag and the
@@ -259,5 +325,46 @@ mod tests {
         assert!(err.to_string().contains("unknown config key"));
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn new_keys_handler_round_trip() {
+        let (ws, dir) = tmp_ws("new-keys-handler");
+
+        set(&ws, "base_branch", "origin/dev").unwrap();
+        set(&ws, "claude.max_minutes_per_issue", "45").unwrap();
+        set(&ws, "branch_mode", "current").unwrap();
+
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.base_branch.as_deref(), Some("origin/dev"));
+        assert_eq!(s.claude.max_minutes_per_issue, Some(45));
+        assert_eq!(s.branch_mode.as_deref(), Some("current"));
+
+        unset(&ws, "base_branch").unwrap();
+        unset(&ws, "claude.max_minutes_per_issue").unwrap();
+        unset(&ws, "branch_mode").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.base_branch, None);
+        assert_eq!(s.claude.max_minutes_per_issue, None);
+        assert_eq!(s.branch_mode, None);
+
+        // Invalid branch_mode and non-integer budget are rejected at set time.
+        let err = set(&ws, "branch_mode", "sideways").unwrap_err();
+        assert!(
+            err.to_string().contains("must be 'new' or 'current'"),
+            "got: {err}"
+        );
+        let err = set(&ws, "claude.max_minutes_per_issue", "abc").unwrap_err();
+        assert!(
+            err.to_string().contains("must be a positive integer"),
+            "got: {err}"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn help_notes_claude_only() {
+        assert!(SUPPORTED_KEYS_HELP.contains("Claude-only today"));
     }
 }
