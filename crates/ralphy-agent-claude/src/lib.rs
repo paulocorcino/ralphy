@@ -1306,9 +1306,14 @@ fn cache_creation_tokens(usage: &serde_json::Value) -> u64 {
 /// `iterations[]`** array (it repeats the top-level `usage`). Only the top-level
 /// `message.usage` of each unique `message.id` is summed.
 fn parse_transcript_usage(jsonl: &str) -> Usage {
-    use std::collections::HashSet;
+    use std::collections::{BTreeMap, HashSet};
     let mut seen: HashSet<String> = HashSet::new();
     let mut total = Usage::default();
+    // Per-model token tallies so the price table can resolve on the *dominant*
+    // model (D8) — mirrors `parse_plan_usage`'s `modelUsage` attribution. Without
+    // this every execute row was written `model: None` → `unknown` in the ledger,
+    // leaving the bulk of a run's spend unpriced (`~$?`) in `ralphy usage`.
+    let mut by_model: BTreeMap<String, u64> = BTreeMap::new();
     for line in jsonl.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -1332,11 +1337,25 @@ fn parse_transcript_usage(jsonl: &str) -> Usage {
         let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
         // Only the top-level `message.usage` is read; `iterations[]` is never
         // descended into, so its repeated `usage` is ignored by construction.
-        total.input += field("input_tokens");
-        total.output += field("output_tokens");
-        total.cache_read += field("cache_read_input_tokens");
-        total.cache_creation += cache_creation_tokens(usage);
+        let input = field("input_tokens");
+        let output = field("output_tokens");
+        let cache_read = field("cache_read_input_tokens");
+        let cache_creation = cache_creation_tokens(usage);
+        total.input += input;
+        total.output += output;
+        total.cache_read += cache_read;
+        total.cache_creation += cache_creation;
+        // Attribute this line's tokens to its assistant `message.model` so the
+        // dominant model can be picked once the whole transcript is summed.
+        if let Some(m) = message.get("model").and_then(|v| v.as_str()) {
+            *by_model.entry(m.to_string()).or_insert(0) +=
+                input + output + cache_read + cache_creation;
+        }
     }
+    // The dominant model (most tokens) is the one the price table resolves on; a
+    // tie resolves to the last key, which is immaterial (equal spend → same price
+    // for the figures that matter). `None` when no line carried a `model`.
+    total.model = by_model.into_iter().max_by_key(|(_, n)| *n).map(|(k, _)| k);
     total
 }
 
@@ -2024,6 +2043,24 @@ mod tests {
                 model: None,
             }
         );
+    }
+
+    #[test]
+    fn parse_transcript_usage_attributes_dominant_model() {
+        // Two models in one transcript: a little haiku auxiliary work and the
+        // bulk on opus. The summed `usage.model` must resolve to the *dominant*
+        // (most-tokens) model so the price table prices the run — without this
+        // every execute row was written `unknown` and went unpriced (`~$?`).
+        let jsonl = "\
+{\"type\":\"assistant\",\"message\":{\"id\":\"h1\",\"model\":\"claude-haiku-4-5\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1,\"cache_read_input_tokens\":5,\"cache_creation_input_tokens\":0}}}
+{\"type\":\"assistant\",\"message\":{\"id\":\"o1\",\"model\":\"claude-opus-4-8\",\"usage\":{\"input_tokens\":200,\"output_tokens\":20,\"cache_read_input_tokens\":2000,\"cache_creation_input_tokens\":7}}}
+";
+        let usage = parse_transcript_usage(jsonl);
+        // Tokens still sum across both models...
+        assert_eq!(usage.input, 210);
+        assert_eq!(usage.cache_read, 2005);
+        // ...but the model attribution picks opus (the dominant spend), not haiku.
+        assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
     }
 
     #[test]

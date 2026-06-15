@@ -145,15 +145,25 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Ensure a `/<name>` ignore line exists for each ralphy skill in
-/// `.agents/skills/.gitignore`, appending only what's missing so any entries the
-/// user already keeps there survive. Idempotent: a no-op once the lines are present.
+/// Ensure a `/<name>` ignore line exists for each ralphy skill — plus a
+/// `/.gitignore` self-ignore — in `.agents/skills/.gitignore`, appending only
+/// what's missing so any entries the user already keeps there survive. The
+/// self-ignore keeps the file itself from being the one untracked thing that
+/// surfaces `.agents/` in `git status`. Idempotent: a no-op once the lines exist.
 fn ensure_gitignore_entries(path: &Path, names: &[std::ffi::OsString]) -> Result<()> {
     let existing = fs::read_to_string(path).unwrap_or_default();
     let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
     let mut changed = false;
-    for name in names {
-        let entry = format!("/{}", name.to_string_lossy());
+    // Self-ignore `.gitignore` itself (`/.gitignore`) alongside each skill subdir.
+    // Without the self-entry this file is the lone unignored thing left in
+    // `.agents/skills/`, so `.agents/` shows as untracked and dirties the working
+    // tree — aborting the next run's clean-tree check. (The OpenCode adapter avoids
+    // this with a blanket `.ralphy/.gitignore = *`; Codex shares `.agents/skills`
+    // with the user's own skills, so it ignores precisely its own subdirs plus
+    // this file rather than the whole directory.)
+    let entries = std::iter::once("/.gitignore".to_string())
+        .chain(names.iter().map(|n| format!("/{}", n.to_string_lossy())));
+    for entry in entries {
         if !lines.iter().any(|l| l.trim() == entry) {
             lines.push(entry);
             changed = true;
@@ -948,6 +958,12 @@ mod tests {
         assert!(
             gi.lines().any(|l| l.trim() == "/staged-plan"),
             "gitignore: {gi:?}"
+        );
+        // The ignore self-ignores, so `.gitignore` is not the lone untracked file
+        // that would surface `.agents/` in `git status` and dirty the tree.
+        assert!(
+            gi.lines().any(|l| l.trim() == "/.gitignore"),
+            "gitignore must self-ignore: {gi:?}"
         );
 
         // Idempotent: a second call re-links cleanly and adds no duplicate entries.

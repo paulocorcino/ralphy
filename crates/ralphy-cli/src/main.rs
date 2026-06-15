@@ -721,7 +721,8 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         project_id: slug,
         run_usd,
         project_usd,
-        usd_partial: run_partial || project_partial,
+        run_usd_partial: run_partial,
+        project_usd_partial: project_partial,
     };
     presenter.print_panel(&data);
     Ok(())

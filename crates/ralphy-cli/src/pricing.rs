@@ -41,9 +41,9 @@ static WARNED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 impl PriceTable {
     /// The shipped defaults for the models actually in use. `claude-opus-4-8` is
-    /// pinned from ADR-0008 D8 (the canonical test oracle); the sonnet/haiku
-    /// entries are indicative current Anthropic list prices and are not asserted
-    /// by tests.
+    /// pinned from ADR-0008 D8 (the canonical test oracle); the sonnet/haiku and
+    /// the cross-vendor `gpt-5.5`/`k2p6` entries are indicative current list prices
+    /// and are not asserted by tests.
     pub fn defaults() -> Self {
         let mut t = BTreeMap::new();
         // ADR-0008 D8 — canonical, the `cost_usd` test oracle.
@@ -73,6 +73,31 @@ impl PriceTable {
                 output: 5.0,
                 cache_read: 0.1,
                 cache_creation: 1.25,
+            },
+        );
+        // Codex (OpenAI) and OpenCode (Moonshot) models actually in use — indicative
+        // list prices captured 2026-06, not asserted by tests. Neither provider
+        // charges a cache-write premium (context caching is automatic), so
+        // `cache_creation` is priced at the plain input rate — unlike Anthropic's
+        // 1.25× cache writes above. Keyed on the exact id each adapter reports
+        // (`gpt-5.5` from Codex, `k2p6` from OpenCode), so they resolve directly.
+        t.insert(
+            "gpt-5.5".to_string(),
+            ModelPrice {
+                input: 5.0,
+                output: 30.0,
+                cache_read: 0.5,
+                cache_creation: 5.0,
+            },
+        );
+        // `k2p6` is OpenCode's id for Moonshot's Kimi K2.6 flagship.
+        t.insert(
+            "k2p6".to_string(),
+            ModelPrice {
+                input: 0.95,
+                output: 4.0,
+                cache_read: 0.16,
+                cache_creation: 0.95,
             },
         );
         PriceTable(t)
@@ -218,6 +243,23 @@ mod tests {
         );
         // An unknown model reports unknown cost — never `Some(0.0)` (ADR-0008 D8).
         assert_eq!(table.cost_usd("big-pickle", &one_million_each()), None);
+    }
+
+    #[test]
+    fn cross_vendor_codex_and_opencode_ids_resolve_to_a_price() {
+        // The exact ids the Codex and OpenCode adapters emit (`gpt-5.5`, `k2p6`)
+        // must resolve in the defaults, or every cross-vendor run reports `~$?`.
+        // This guards the key spelling, not the indicative figures themselves.
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        assert!(
+            table.cost_usd("gpt-5.5", &tokens).is_some(),
+            "Codex's `gpt-5.5` must be priced by the defaults"
+        );
+        assert!(
+            table.cost_usd("k2p6", &tokens).is_some(),
+            "OpenCode's `k2p6` must be priced by the defaults"
+        );
     }
 
     #[test]

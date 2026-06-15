@@ -250,9 +250,13 @@ pub struct PanelData {
     pub run_usd: Option<f64>,
     /// Read-time USD for the project's cumulative ledger, priced per model.
     pub project_usd: Option<f64>,
-    /// Whether any model in the run/project was unpriced — the priced figures
-    /// then carry a `+?` suffix so the residue is visibly flagged.
-    pub usd_partial: bool,
+    /// Whether any model in *this run* was unpriced — the run figure then carries a
+    /// `+?` suffix. Tracked separately from the project so a fully-priced run is not
+    /// flagged `+?` merely because the cumulative ledger holds an unpriced model.
+    pub run_usd_partial: bool,
+    /// Whether any model in the *cumulative project* ledger was unpriced — the
+    /// project figure then carries the `+?` suffix, independent of the run.
+    pub project_usd_partial: bool,
 }
 
 /// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
@@ -521,10 +525,10 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     let footer_raw = format!(
         "run: {} tok · {} · project: {} {} tok · {}",
         fmt_tokens(data.run_tokens),
-        fmt_panel_usd(data.run_usd, data.usd_partial),
+        fmt_panel_usd(data.run_usd, data.run_usd_partial),
         data.project_id,
         fmt_tokens(data.project_tokens),
-        fmt_panel_usd(data.project_usd, data.usd_partial),
+        fmt_panel_usd(data.project_usd, data.project_usd_partial),
     );
     lines.push(if opts.color {
         Style::new().dim().apply_to(&footer_raw).to_string()
@@ -1475,7 +1479,8 @@ mod tests {
             project_id: "owner/repo".to_string(),
             run_usd: Some(2.10),
             project_usd: Some(35.6),
-            usd_partial: false,
+            run_usd_partial: false,
+            project_usd_partial: false,
         }
     }
 
@@ -1518,7 +1523,8 @@ mod tests {
         let data = PanelData {
             run_usd: None,
             project_usd: None,
-            usd_partial: true,
+            run_usd_partial: true,
+            project_usd_partial: true,
             ..panel_base()
         };
         let lines = render_totals_panel(&data, opts);
@@ -1530,6 +1536,39 @@ mod tests {
         assert!(
             !footer.contains("~$0.00"),
             "never reports $0 for unknown spend: {footer}"
+        );
+    }
+
+    #[test]
+    fn render_totals_panel_run_and_project_partial_are_independent() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        // A fully-priced run (no unpriced model) alongside a project whose
+        // cumulative ledger DOES hold an unpriced model: the run figure must stay
+        // clean while only the project carries `+?`. Guards the regression where a
+        // single shared flag leaked the project's residue onto the run total.
+        let data = PanelData {
+            run_usd: Some(1.81),
+            project_usd: Some(15.98),
+            run_usd_partial: false,
+            project_usd_partial: true,
+            ..panel_base()
+        };
+        let lines = render_totals_panel(&data, opts);
+        let footer = lines
+            .iter()
+            .find(|l| l.contains("run:") && l.contains("project:"))
+            .expect("a token footer line");
+        let (run_part, project_part) = footer.split_once("project:").expect("two segments");
+        assert!(
+            run_part.contains("~$1.81") && !run_part.contains("+?"),
+            "the fully-priced run must NOT carry +?: {run_part}"
+        );
+        assert!(
+            project_part.contains("~$15.98+?"),
+            "the project's unpriced residue is flagged with +?: {project_part}"
         );
     }
 
