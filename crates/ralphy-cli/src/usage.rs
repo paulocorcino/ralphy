@@ -70,7 +70,9 @@ fn group_key(row: &UsageRow, by: GroupBy) -> String {
 /// so a lexical compare of that prefix against `since` is a correct date filter.
 pub fn filter_since(rows: Vec<UsageRow>, since: &str) -> Vec<UsageRow> {
     rows.into_iter()
-        .filter(|r| r.ts.len() >= 10 && &r.ts[..10] >= since)
+        // `get(..10)` is char-boundary-safe: `read_rows` is tolerant of arbitrary
+        // on-disk JSON, so a corrupt non-ASCII `ts` must not panic the slice.
+        .filter(|r| r.ts.get(..10).is_some_and(|d| d >= since))
         .collect()
 }
 
@@ -103,6 +105,11 @@ fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (f64, bool) {
     let mut usd = 0.0;
     let mut partial = false;
     for (model, tokens) in &by_model {
+        // A zero-token bucket carries no spend and no signal — skip it so an empty
+        // `unknown` model never forces a spurious `+?` (matches `cost_usd_by_model`).
+        if tokens.total() == 0 {
+            continue;
+        }
         match table.cost_usd(model, tokens) {
             Some(c) => usd += c,
             None => partial = true,
@@ -446,16 +453,32 @@ mod tests {
     }
 
     #[test]
-    fn export_json_is_an_array_of_objects_with_a_usd_field() {
-        let rows = two_model_fixture();
+    fn export_json_is_an_array_with_numeric_usd_for_priced_and_null_for_unpriced() {
+        let mut rows = two_model_fixture();
+        // Add an unpriced (unknown-model) row so the usd field discriminates: a
+        // priced row carries a number, an unpriced one carries null (never 0).
+        rows.push(row(
+            "big-pickle",
+            "execute",
+            "c@x.io",
+            "rc5",
+            "2026-06-15T13:00:00+00:00",
+            tok(99, 9),
+        ));
         let json = export_json(&rows, &PriceTable::defaults()).expect("json");
         let value: serde_json::Value = serde_json::from_str(&json).expect("parses");
         let arr = value.as_array().expect("an array");
-        assert_eq!(arr.len(), 3);
+        assert_eq!(arr.len(), 4);
+        // arr[0] is an opus row → usd is a number; the unpriced tail row → null.
         assert!(
-            arr[0].get("usd").is_some(),
-            "objects carry a usd field: {}",
+            arr[0]["usd"].is_number(),
+            "priced row carries a numeric usd: {}",
             arr[0]
+        );
+        assert!(
+            arr[3]["usd"].is_null(),
+            "unpriced row carries null usd (never 0): {}",
+            arr[3]
         );
     }
 }
