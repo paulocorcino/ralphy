@@ -545,6 +545,24 @@ fn opencode_usage(stdout: &str) -> Usage {
     }
 }
 
+/// List available models by passing through to `opencode models`.
+/// Stdio is inherited so the output streams directly to the operator.
+pub fn list_models() -> Result<()> {
+    let status = Command::new(resolve_program("opencode"))
+        .arg("models")
+        .status()
+        .context("failed to spawn `opencode models` (is opencode installed and on PATH?)")?;
+    if !status.success() {
+        bail!("`opencode models` exited with {status}");
+    }
+    Ok(())
+}
+
+/// Return the model string from a usage record, or `"<unknown>"` when absent.
+fn resolved_model_label(usage: &Usage) -> &str {
+    usage.model.as_deref().unwrap_or("<unknown>")
+}
+
 impl Agent for OpenCodeAgent {
     fn name(&self) -> &'static str {
         "opencode"
@@ -586,12 +604,17 @@ impl Agent for OpenCodeAgent {
             );
         }
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
+        let usage = opencode_usage(&stdout_text);
+        info!(
+            model = resolved_model_label(&usage),
+            "opencode plan resolved model"
+        );
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
             // OpenCode drops complexity routing (ADR-0005 D3), so there is no tier.
             recommended_model: None,
             path: plan_path,
-            usage: opencode_usage(&stdout_text),
+            usage,
         })
     }
 
@@ -638,14 +661,17 @@ impl Agent for OpenCodeAgent {
             saw_error,
             limit,
         );
+        let usage = opencode_usage(&stdout_text);
         info!(
             ?outcome,
-            exited_cleanly, timed_out, committed, saw_error, "opencode execution ended"
+            model = resolved_model_label(&usage),
+            exited_cleanly,
+            timed_out,
+            committed,
+            saw_error,
+            "opencode execution ended"
         );
-        Ok(Execution {
-            outcome,
-            usage: opencode_usage(&stdout_text),
-        })
+        Ok(Execution { outcome, usage })
     }
 }
 
@@ -653,6 +679,20 @@ impl Agent for OpenCodeAgent {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    // ── resolved_model_label ────────────────────────────────────────────────
+
+    #[test]
+    fn resolved_model_label_returns_model_or_unknown() {
+        assert_eq!(
+            resolved_model_label(&Usage {
+                model: Some("k2p6".into()),
+                ..Default::default()
+            }),
+            "k2p6"
+        );
+        assert_eq!(resolved_model_label(&Usage::default()), "<unknown>");
+    }
 
     // ── is_opencode_auth_error ──────────────────────────────────────────────
 

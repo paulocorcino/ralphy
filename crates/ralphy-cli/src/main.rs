@@ -20,6 +20,7 @@ mod config;
 mod guard;
 mod hook;
 mod install;
+mod models;
 mod pricing;
 mod runstate;
 mod split_agent;
@@ -64,6 +65,9 @@ enum Command {
     /// (`--by phase|model|actor|version`, `--since`, `--project`), or export it
     /// (`--format csv|json`). USD is a read-time projection, never stored.
     Usage(usage::UsageArgs),
+    /// List models available to an agent (`--agent opencode`, the default).
+    /// Passes through to the agent's own model-listing command.
+    Models(models::ModelsArgs),
     /// Configure per-repo operator settings (e.g. `opencode.model`).
     Config(config::ConfigArgs),
     /// Configure the optional Telegram run monitor (token, chat, status).
@@ -256,6 +260,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Run(args) => run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),
+        Command::Models(args) => models::run(args),
         Command::Config(args) => config::run(args),
         Command::Usage(args) => usage::usage_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
