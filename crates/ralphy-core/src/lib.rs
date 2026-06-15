@@ -30,6 +30,6 @@ pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
     RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,
 };
+pub use settings::{ClaudeSettings, OpenCodeSettings, Settings};
 pub use tracker::{GhTracker, IssueTracker};
-pub use settings::{OpenCodeSettings, Settings};
 pub use types::{Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
