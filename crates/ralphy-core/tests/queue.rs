@@ -461,6 +461,23 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
     }
 }
 
+/// A New-mode config with the per-phase asymmetry a split run produces: the
+/// planner auto-resumes through a plan-time limit (`stop_on_limit_plan = false`,
+/// e.g. a Claude planner) while the executor stops on an execute-time limit
+/// (`stop_on_limit_exec = true`, e.g. an OpenCode executor). See docs/adr/0009.
+fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
+    QueueConfig {
+        repo_root: repo.to_path_buf(),
+        base_branch: "main".into(),
+        dry_run: false,
+        stamp: stamp.into(),
+        branch_mode: BranchMode::New,
+        only_issue: None,
+        stop_on_limit_plan: false,
+        stop_on_limit_exec: true,
+    }
+}
+
 #[test]
 fn works_issues_in_order_and_closes_each_green() {
     let repo = init_repo("green");
@@ -750,6 +767,64 @@ fn plan_limit_with_stop_on_limit_stops_and_reports() {
         Some(Outcome::Limit(Some("12:23 AM".into())))
     );
     assert!(!worked[0].closed);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn per_phase_limit_plans_resume_but_execute_stops() {
+    // The split-run asymmetry (ADR-0009): with `stop_on_limit_plan = false` and
+    // `stop_on_limit_exec = true`, a plan-time limit auto-resumes (the planner
+    // waits and re-plans) while an execute-time limit stops the run and reports
+    // the reset. A single `stop_on_limit` field could not express this split — so
+    // this test FAILS before the field was split and PASSES after.
+    let repo = init_repo("split-limit");
+    let queue = vec![issue(8)];
+    // One plan-time limit (resolves via resume), then an execute-time limit (stops).
+    let agent = ScriptedAgent::new(vec![Outcome::Limit(Some("15:00".into()))])
+        .with_plan_scripts(vec![PlanScript::Limit(Some("12:00".into()))]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
+
+    let report = run_queue(
+        &cfg_split_limit(&repo, "stamp-split-limit"),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    // Plan auto-resumed: two plan attempts, and the only wait was for the plan
+    // reset — the execute-time limit stopped immediately without waiting.
+    assert_eq!(
+        *agent.plan_attempts.borrow(),
+        2,
+        "plan auto-resumed once through the plan-time limit"
+    );
+    assert_eq!(
+        *clock.waited_for.borrow(),
+        vec!["12:00".to_string()],
+        "waited only for the plan reset; the execute limit never waits"
+    );
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![8],
+        "executed once, then the execute-time limit stopped the run"
+    );
+
+    // Execute stopped as a reported limit carrying the execute-time reset.
+    match report.stop {
+        Some(StopReason::Limit { number, reset }) => {
+            assert_eq!(number, 8);
+            assert_eq!(reset, Some("15:00".into()));
+        }
+        other => panic!("expected Limit stop from the execute phase, got {other:?}"),
+    }
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "a limit-stopped issue is never closed"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
