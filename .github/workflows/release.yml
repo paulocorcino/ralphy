@@ -109,7 +109,13 @@ jobs:
             tar -czf "out/$name.tar.gz" -C dist "$name"
             archive="$name.tar.gz"
           fi
-          ( cd out && sha256sum "$archive" > "$archive.sha256" )
+          # macOS ships `shasum -a 256`, not the `sha256sum` Linux/Windows have;
+          # both emit the same `<hash>  <file>` format `sha256sum -c` verifies.
+          if command -v sha256sum >/dev/null 2>&1; then
+            ( cd out && sha256sum "$archive" > "$archive.sha256" )
+          else
+            ( cd out && shasum -a 256 "$archive" > "$archive.sha256" )
+          fi
           ls -l out
 
       - name: Upload package artifact
