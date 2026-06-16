@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-adapter-support"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-claude"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-codex"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -819,7 +819,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-opencode"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-cli"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "chrono",
@@ -855,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-core"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "chrono",
@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-pty"
-version = "0.1.0-rc5"
+version = "0.1.0-rc6"
 dependencies = [
  "anyhow",
  "portable-pty",
