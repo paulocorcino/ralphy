@@ -53,6 +53,27 @@ pub enum SkipKind {
     StopBefore,
 }
 
+/// A normalized token-usage breakdown carried on a [`RunEvent`] for the live UI:
+/// the four numeric fields the compact meter renders (`↑ input · ⚡ cache-read ·
+/// ❄ cache-write · ↓ output`) plus the `model` the read-time USD prices on (D8).
+/// Mirrors `ralphy_core::Usage` but lives in the CLI so the decoder owns it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UsageLite {
+    pub input: u64,
+    pub cache_read: u64,
+    pub cache_creation: u64,
+    pub output: u64,
+    pub model: Option<String>,
+}
+
+impl UsageLite {
+    /// The flat token total across the four numeric fields — drives the
+    /// "omit the meter when zero" guard, mirroring `Usage::total`.
+    pub fn total(&self) -> u64 {
+        self.input + self.cache_read + self.cache_creation + self.output
+    }
+}
+
 /// One semantic run event, already lifted out of the raw `(target, message,
 /// fields)` triple by [`event_to_runevent`]. One variant per consumed lifecycle
 /// event.
@@ -62,19 +83,38 @@ pub enum RunEvent {
     QueueBuilt { count: u64, order: Vec<u64> },
     /// Work began on an issue (number + title).
     IssueStarted { number: u64, title: String },
-    /// A plan was written; `open_steps == 0` means the plan is infeasible.
-    PlanWritten { number: u64, open_steps: u64 },
+    /// The planning phase started for the active issue (adapter event). Carries
+    /// the planner's display model/effort so the live region can label the
+    /// planning spinner and the `plan written` scroll line. Live-region only —
+    /// no permanent line; the adapter never learns the issue number.
+    Planning {
+        model: Option<String>,
+        effort: Option<String>,
+    },
+    /// A plan was written; `open_steps == 0` means the plan is infeasible. The
+    /// `usage` is the planning phase's token consumption for the inline meter.
+    PlanWritten {
+        number: u64,
+        open_steps: u64,
+        usage: UsageLite,
+    },
     /// Execution started for the active issue. The adapter never learns the issue
     /// number, so `number` is `0` here and resolves to the active issue.
     Executing {
         number: u64,
         budget_min: u64,
         model: String,
+        effort: Option<String>,
     },
-    /// A green issue was closed (the cycle). `tokens` is the issue's total
-    /// (plan + execute) for the inline per-issue token figure (ADR-0008 D11);
-    /// `0` when the runner captured none.
-    IssueClosed { number: u64, tokens: u64 },
+    /// A green issue was closed (the cycle). `tokens` is the issue's total (plan +
+    /// execute) flat count, kept for the telegram notifier; `usage` is the
+    /// *execution* phase's breakdown, which the live region combines with the
+    /// planning usage it stashed at `PlanWritten` to show the issue total (D11).
+    IssueClosed {
+        number: u64,
+        tokens: u64,
+        usage: UsageLite,
+    },
     /// An issue finished non-green and stopped the run; `outcome` is the core's
     /// `Outcome` debug string (e.g. `Stuck`, `Blocked`, `Timeout`).
     NonGreen { number: u64, outcome: String },
@@ -241,7 +281,12 @@ impl RunState {
                 e.title = title;
                 e.status = IssueStatus::Planning;
             }
-            RunEvent::PlanWritten { number, open_steps } => {
+            // Live-region only in the presenter; the card fold ignores it (the
+            // planner's model/effort never changes an issue's status).
+            RunEvent::Planning { .. } => {}
+            RunEvent::PlanWritten {
+                number, open_steps, ..
+            } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
@@ -383,6 +428,15 @@ pub struct EventFields {
     pub target_epoch: Option<i64>,
     pub model: Option<String>,
     pub tokens: Option<u64>,
+    /// Reasoning effort label (`low`/`medium`/`high`); adapters also report it as
+    /// `variant` (OpenCode), folded into the same slot.
+    pub effort: Option<String>,
+    /// Per-phase token breakdown carried on `plan written` / `green — issue
+    /// closed`: `up` input, `cr` cache-read, `cw` cache-write, `out` output.
+    pub up: Option<u64>,
+    pub cr: Option<u64>,
+    pub cw: Option<u64>,
+    pub out: Option<u64>,
 }
 
 impl Default for EventFields {
@@ -401,6 +455,11 @@ impl Default for EventFields {
             target_epoch: None,
             model: None,
             tokens: None,
+            effort: None,
+            up: None,
+            cr: None,
+            cw: None,
+            out: None,
         }
     }
 }
@@ -413,6 +472,10 @@ impl Visit for EventFields {
             "count" => self.count = Some(value),
             "budget_min" => self.budget_min = Some(value),
             "tokens" => self.tokens = Some(value),
+            "up" => self.up = Some(value),
+            "cr" => self.cr = Some(value),
+            "cw" => self.cw = Some(value),
+            "out" => self.out = Some(value),
             _ => {}
         }
     }
@@ -430,7 +493,8 @@ impl Visit for EventFields {
             "order" => self.order = Some(value.to_string()),
             "outcome" => self.outcome = Some(value.to_string()),
             "reset" => self.reset = Some(value.to_string()),
-            "model" => self.model = Some(value.to_string()),
+            "model" => self.model = clean_opt(value),
+            "effort" | "variant" => self.effort = clean_opt(value),
             _ => {}
         }
     }
@@ -442,11 +506,31 @@ impl Visit for EventFields {
             "title" => self.title = Some(rendered),
             "order" => self.order = Some(rendered),
             "outcome" => self.outcome = Some(rendered),
-            "reset" => self.reset = Some(rendered),
-            "model" => self.model = Some(rendered),
+            "reset" => self.reset = Some(rendered.clone()),
+            // Debug-formatted `Option<String>` / `&str` adapter fields: strip the
+            // `Some("…")` / quote wrapping and treat `None`/empty as absent so the
+            // decoder never carries a literal `None` or `""` into a display label.
+            "model" => self.model = clean_opt(&rendered),
+            "effort" | "variant" => self.effort = clean_opt(&rendered),
             _ => {}
         }
     }
+}
+
+/// Normalize a possibly-`Debug`-wrapped adapter field to a clean display string,
+/// or `None` when it is absent/empty. Strips a `Some("…")` wrapper and surrounding
+/// quotes (the `?`-formatted `Option<String>` form some adapters still emit) and
+/// maps `None`/`""` to `None` so a label never reads `None` or blank.
+fn clean_opt(raw: &str) -> Option<String> {
+    let mut s = raw.trim();
+    if s == "None" || s.is_empty() {
+        return None;
+    }
+    if let Some(inner) = s.strip_prefix("Some(").and_then(|r| r.strip_suffix(')')) {
+        s = inner.trim();
+    }
+    let s = s.trim_matches('"').trim();
+    (!s.is_empty()).then(|| s.to_string())
 }
 
 /// Map an event's `(target, message, fields)` to a [`RunEvent`], or `None` for an
@@ -458,6 +542,17 @@ impl Visit for EventFields {
 ///
 /// `target` is currently informational — the message + fields uniquely identify
 /// every consumed event — but kept in the signature for future disambiguation.
+/// Lift the four breakdown fields + pricing model off an event into a [`UsageLite`].
+fn usage_from(fields: &EventFields) -> UsageLite {
+    UsageLite {
+        input: fields.up.unwrap_or(0),
+        cache_read: fields.cr.unwrap_or(0),
+        cache_creation: fields.cw.unwrap_or(0),
+        output: fields.out.unwrap_or(0),
+        model: fields.model.clone(),
+    }
+}
+
 pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> Option<RunEvent> {
     let _ = target;
     // Level wins: WARN and ERROR always surface as Notice.
@@ -477,21 +572,34 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             title: fields.title.clone().unwrap_or_default(),
         }),
+        // The adapter's planning events carry no issue number; the fold applies
+        // the display model/effort to the active issue's planning spinner.
+        "planning with claude -p" | "planning with codex exec" | "planning with opencode run" => {
+            Some(RunEvent::Planning {
+                model: fields.model.clone(),
+                effort: fields.effort.clone(),
+            })
+        }
         "plan written" => Some(RunEvent::PlanWritten {
             number,
             open_steps: fields.open_steps.unwrap_or(0),
+            usage: usage_from(fields),
         }),
         // The adapter's execution events carry no issue number; the fold applies
         // this to the active issue.
         "executing with interactive claude over the PTY"
-        | "executing with headless claude -p loop" => Some(RunEvent::Executing {
+        | "executing with headless claude -p loop"
+        | "executing with codex exec"
+        | "executing with opencode run" => Some(RunEvent::Executing {
             number,
             budget_min: fields.budget_min.unwrap_or(0),
             model: fields.model.clone().unwrap_or_default(),
+            effort: fields.effort.clone(),
         }),
         "green — issue closed" => Some(RunEvent::IssueClosed {
             number,
             tokens: fields.tokens.unwrap_or(0),
+            usage: usage_from(fields),
         }),
         "non-green — stopping run" => Some(RunEvent::NonGreen {
             number,
@@ -560,16 +668,19 @@ mod tests {
             RunEvent::PlanWritten {
                 number: 1,
                 open_steps: 3,
+                usage: UsageLite::default(),
             },
             // The execution event carries no number; it must land on the active issue.
             RunEvent::Executing {
                 number: 0,
                 budget_min: 45,
                 model: String::new(),
+                effort: None,
             },
             RunEvent::IssueClosed {
                 number: 1,
                 tokens: 0,
+                usage: UsageLite::default(),
             },
             RunEvent::IssueStarted {
                 number: 2,
@@ -578,11 +689,13 @@ mod tests {
             RunEvent::PlanWritten {
                 number: 2,
                 open_steps: 2,
+                usage: UsageLite::default(),
             },
             RunEvent::Executing {
                 number: 0,
                 budget_min: 45,
                 model: String::new(),
+                effort: None,
             },
             RunEvent::NonGreen {
                 number: 2,
@@ -610,6 +723,7 @@ mod tests {
         state.apply(RunEvent::PlanWritten {
             number: 5,
             open_steps: 0,
+            usage: UsageLite::default(),
         });
         assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
     }
@@ -626,6 +740,7 @@ mod tests {
         state.apply(RunEvent::PlanWritten {
             number: 3,
             open_steps: 0,
+            usage: UsageLite::default(),
         });
         assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
         state.apply(RunEvent::NeedsSplit { number: 3 });
@@ -689,6 +804,7 @@ mod tests {
             number: 0,
             budget_min: 45,
             model: String::new(),
+            effort: None,
         });
         assert!(state.issues.is_empty());
     }
@@ -718,6 +834,7 @@ mod tests {
         state.apply(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         state.apply(RunEvent::Skipped {
             number: 2,
@@ -774,11 +891,36 @@ mod tests {
                 message: "plan written".into(),
                 number: Some(7),
                 open_steps: Some(0),
+                up: Some(12_400),
+                cr: Some(184_000),
+                cw: Some(8_100),
+                out: Some(3_200),
+                model: Some("claude-opus-4".into()),
                 ..Default::default()
             }),
             Some(RunEvent::PlanWritten {
                 number: 7,
-                open_steps: 0
+                open_steps: 0,
+                usage: UsageLite {
+                    input: 12_400,
+                    cache_read: 184_000,
+                    cache_creation: 8_100,
+                    output: 3_200,
+                    model: Some("claude-opus-4".into()),
+                },
+            })
+        );
+        // The adapter's planning event seeds the planning spinner's model/effort.
+        assert_eq!(
+            decode(EventFields {
+                message: "planning with claude -p".into(),
+                model: Some("opus".into()),
+                effort: Some("high".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::Planning {
+                model: Some("opus".into()),
+                effort: Some("high".into()),
             })
         );
         assert_eq!(
@@ -786,12 +928,14 @@ mod tests {
                 message: "executing with interactive claude over the PTY".into(),
                 budget_min: Some(45),
                 model: Some("claude-sonnet-4".into()),
+                effort: Some("medium".into()),
                 ..Default::default()
             }),
             Some(RunEvent::Executing {
                 number: 0,
                 budget_min: 45,
-                model: "claude-sonnet-4".into()
+                model: "claude-sonnet-4".into(),
+                effort: Some("medium".into()),
             })
         );
         assert_eq!(
@@ -803,7 +947,8 @@ mod tests {
             Some(RunEvent::Executing {
                 number: 0,
                 budget_min: 30,
-                model: String::new()
+                model: String::new(),
+                effort: None,
             })
         );
         assert_eq!(
@@ -811,11 +956,23 @@ mod tests {
                 message: "green — issue closed".into(),
                 number: Some(7),
                 tokens: Some(1_200_000),
+                up: Some(41_200),
+                cr: Some(902_000),
+                cw: Some(22_000),
+                out: Some(18_400),
+                model: Some("claude-sonnet-4".into()),
                 ..Default::default()
             }),
             Some(RunEvent::IssueClosed {
                 number: 7,
-                tokens: 1_200_000
+                tokens: 1_200_000,
+                usage: UsageLite {
+                    input: 41_200,
+                    cache_read: 902_000,
+                    cache_creation: 22_000,
+                    output: 18_400,
+                    model: Some("claude-sonnet-4".into()),
+                },
             })
         );
         assert_eq!(
@@ -1001,6 +1158,7 @@ mod tests {
             number: 1,
             budget_min: 45,
             model: "claude-opus-4".into(),
+            effort: None,
         });
         assert_eq!(state.issues[0].status, IssueStatus::Executing);
     }

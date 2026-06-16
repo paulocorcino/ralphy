@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use serde::Deserialize;
 use tracing::warn;
@@ -37,7 +37,12 @@ pub struct PriceTable(pub BTreeMap<String, ModelPrice>);
 
 /// The set of unknown models already warned about, so the "add `<model>` to
 /// pricing.toml" hint is logged once per model rather than on every priced row.
-static WARNED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// The bucket key the runner assigns to a usage record with no model attribution
+/// (`Usage.model == None`). A sentinel, never a real model id — the pricing layer
+/// treats it specially so it is never reported as a model you could add to the table.
+const UNKNOWN_MODEL: &str = "unknown";
 
 impl PriceTable {
     /// The shipped defaults for the models actually in use. `claude-opus-4-8` is
@@ -204,15 +209,24 @@ fn pricing_file() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".ralphy").join("pricing.toml"))
 }
 
-/// Log the "add `<model>` to pricing.toml" hint at most once per unknown model.
+/// Log a one-shot pricing hint for an unpriced model. The `unknown` *sentinel*
+/// (the bucket the runner assigns to a usage record with no model attribution — it
+/// is not a real model id) gets a distinct, actionable message instead of the
+/// nonsensical "add `unknown` to pricing.toml". Logged at most once per id.
 fn warn_unknown(model: &str) {
-    let mut guard = WARNED.lock().unwrap_or_else(|e| e.into_inner());
-    let seen = guard.get_or_insert_with(HashSet::new);
+    let mut seen = WARNED.lock().unwrap_or_else(|e| e.into_inner());
     if seen.insert(model.to_string()) {
-        warn!(
-            model,
-            "unknown model — add `{model}` to pricing.toml to price it"
-        );
+        if model == UNKNOWN_MODEL {
+            warn!(
+                model,
+                "some tokens had no model attribution — not priced (shown as +?)"
+            );
+        } else {
+            warn!(
+                model,
+                "unknown model — add `{model}` to pricing.toml to price it"
+            );
+        }
     }
 }
 

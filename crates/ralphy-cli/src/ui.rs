@@ -17,7 +17,10 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
+use crate::pricing::PriceTable;
 use crate::runstate::{event_to_runevent, EventFields, RunEvent, SkipKind};
+// Re-exported because it appears in `PanelData`'s public fields (constructed in `main`).
+pub use crate::runstate::UsageLite;
 
 /// Which phase the active issue is in, for the live active-line icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,11 +158,13 @@ fn sleep_label(reset: &str, opts: RenderOpts) -> String {
 /// Render the live active-issue line: phase icon · `#n` title · model · `elapsed`
 /// (or `elapsed / budget`). Pure over its inputs; the emoji/ASCII and colour
 /// choice come from `opts`. The non-colour path emits no ANSI byte.
+#[allow(clippy::too_many_arguments)]
 fn render_active_line(
     phase: Phase,
     number: u64,
     title: &str,
     model: Option<&str>,
+    effort: Option<&str>,
     elapsed: Duration,
     budget_min: Option<u64>,
     opts: RenderOpts,
@@ -169,11 +174,11 @@ fn render_active_line(
         Phase::Executing => pick("⚙️", "[exec]", opts.emoji),
     };
     let mut parts: Vec<String> = vec![format!("{icon} #{number} {title}")];
-    if let Some(m) = model {
+    if let Some(seg) = model_effort_seg(model, effort) {
         parts.push(if opts.color {
-            Style::new().cyan().apply_to(m).to_string()
+            Style::new().cyan().apply_to(seg).to_string()
         } else {
-            m.to_string()
+            seg
         });
     }
     let clock = match budget_min {
@@ -239,10 +244,11 @@ pub struct PanelData {
     pub stop: Option<PanelStop>,
     pub branch_mode: PanelBranchMode,
     pub dry_run: bool,
-    /// Total tokens this run consumed across all phases (ADR-0008 D11).
-    pub run_tokens: u64,
-    /// The project's cumulative tokens, read from the ledger after the run.
-    pub project_tokens: u64,
+    /// This run's token breakdown across all phases, for the compact footer meter
+    /// (ADR-0008 D11). `model` is unused at the footer — USD is supplied below.
+    pub run_breakdown: UsageLite,
+    /// The project's cumulative token breakdown, read from the ledger after the run.
+    pub project_breakdown: UsageLite,
     /// The project slug (`owner/repo` or a path-hash) shown in the footer.
     pub project_id: String,
     /// Read-time USD for this run (ADR-0008 D8), priced per model. `None` when
@@ -265,7 +271,7 @@ pub struct PanelData {
 fn render_line(
     event: &RunEvent,
     ts: &DateTime<Local>,
-    duration: Option<Duration>,
+    extra: &LineExtra,
     opts: RenderOpts,
 ) -> Option<String> {
     if opts.color && matches!(event, RunEvent::SleepStarted { .. }) {
@@ -273,7 +279,10 @@ fn render_line(
     }
 
     let ts_str = ts.format("%Y-%m-%d %H:%M:%S").to_string();
-    let dur = duration
+    // Generic finished-line duration (` (2m13s)`) for the non-issue outcome lines;
+    // the issue lines (`plan written` / `done`) compose their own tail via `issue_tail`.
+    let dur = extra
+        .duration
         .map(|d| format!(" ({})", fmt_duration(d)))
         .unwrap_or_default();
 
@@ -283,33 +292,33 @@ fn render_line(
             Style::new().cyan(),
             format!("queue built: {count} issue(s)"),
         ),
-        // Live-region only: the active line carries the execution phase; no
-        // permanent scroll-up line is drawn for it.
-        RunEvent::Executing { .. } => return None,
+        // Live-region only: the active line carries the planning/execution phase
+        // and its model/effort; no permanent scroll-up line is drawn for them.
+        RunEvent::Executing { .. } | RunEvent::Planning { .. } => return None,
         RunEvent::IssueStarted { number, title } => (
             pick("🧠", "[plan]", opts.emoji),
             Style::new().cyan(),
             format!("#{number} {title} — planning"),
         ),
-        RunEvent::PlanWritten { number, open_steps } => (
+        RunEvent::PlanWritten {
+            number, open_steps, ..
+        } => (
             pick("📝", "[plan]", opts.emoji),
             Style::new().cyan(),
-            format!("#{number} plan written ({open_steps} step(s))"),
+            issue_tail(
+                *number,
+                &format!("plan written ({open_steps} step(s))"),
+                extra,
+                opts,
+            ),
         ),
-        RunEvent::IssueClosed { number, tokens } => {
+        RunEvent::IssueClosed { number, .. } => {
             let outcome = FinishOutcome::Done;
             let (emoji, ascii, style) = outcome.glyph();
-            // Inline per-issue tokens (ADR-0008 D11), only when the runner
-            // captured a non-zero total.
-            let tok = if *tokens > 0 {
-                format!(" · {} tok", fmt_tokens(*tokens))
-            } else {
-                String::new()
-            };
             (
                 pick(emoji, ascii, opts.emoji),
                 style,
-                format!("#{number} {}{dur}{tok}", outcome.label()),
+                issue_tail(*number, outcome.label(), extra, opts),
             )
         }
         RunEvent::NonGreen { number, outcome } => {
@@ -388,7 +397,8 @@ fn render_line(
 /// Render a [`RunEvent`] to a plain, ANSI-free line (local timestamp + outcome
 /// glyph + body). The non-TTY / `NO_COLOR` clean-line path; also the public seam
 /// the unit tests assert against.
-pub fn render_plain_line(
+#[cfg(test)]
+fn render_plain_line(
     event: &RunEvent,
     ts: &DateTime<Local>,
     duration: Option<Duration>,
@@ -396,7 +406,10 @@ pub fn render_plain_line(
     render_line(
         event,
         ts,
-        duration,
+        &LineExtra {
+            duration,
+            ..Default::default()
+        },
         RenderOpts {
             color: false,
             emoji: true,
@@ -523,12 +536,20 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     // is a read-time projection, never stored; an unpriced model shows `~$?`
     // (never `~$0.00`) or flags the priced portion with `+?`.
     let footer_raw = format!(
-        "run: {} tok · {} · project: {} {} tok · {}",
-        fmt_tokens(data.run_tokens),
-        fmt_panel_usd(data.run_usd, data.run_usd_partial),
+        "run: {} · project: {} {}",
+        fmt_breakdown(
+            &data.run_breakdown,
+            data.run_usd,
+            data.run_usd_partial,
+            opts.emoji
+        ),
         data.project_id,
-        fmt_tokens(data.project_tokens),
-        fmt_panel_usd(data.project_usd, data.project_usd_partial),
+        fmt_breakdown(
+            &data.project_breakdown,
+            data.project_usd,
+            data.project_usd_partial,
+            opts.emoji
+        ),
     );
     lines.push(if opts.color {
         Style::new().dim().apply_to(&footer_raw).to_string()
@@ -539,13 +560,149 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     lines
 }
 
-/// Format a read-time USD estimate for the footer (ADR-0008 D8): `~$2.10`, with a
-/// `+?` suffix when some model was unpriced, or a bare `~$?` when nothing in the
-/// set could be priced — never `~$0.00`, which would be a lie that hides spend.
-fn fmt_panel_usd(usd: Option<f64>, partial: bool) -> String {
+/// Format a footer breakdown meter — `↑X ⚡X ❄X ↓X · $Y` — reusing the inline meter
+/// layout with an externally-supplied read-time USD (the footer prices the per-model
+/// split in `main`, not a single [`UsageLite`]).
+fn fmt_breakdown(u: &UsageLite, usd: Option<f64>, partial: bool, emoji: bool) -> String {
+    fmt_meter(
+        &Meter {
+            usage: u.clone(),
+            usd,
+            partial,
+        },
+        emoji,
+    )
+}
+
+/// A priced token meter for one scroll-up line: the combined breakdown to show
+/// (`↑ ⚡ ❄ ↓`) plus the read-time USD (D8). `usd` is `None` when nothing in the
+/// meter could be priced (rendered `$?`, never `$0`); `partial` flags a model that
+/// was unpriced so the figure can carry a `+?` residue.
+struct Meter {
+    usage: UsageLite,
+    usd: Option<f64>,
+    partial: bool,
+}
+
+/// Per-line render context the presenter computes in `drive` (it owns the clock,
+/// the active issue's display model/effort, and the price table) and hands to
+/// `render_line`. All fields are absent for events that carry no meter/duration.
+#[derive(Default)]
+struct LineExtra {
+    duration: Option<Duration>,
+    model: Option<String>,
+    effort: Option<String>,
+    meter: Option<Meter>,
+}
+
+/// Price one phase's [`UsageLite`] at read time, or `None` when its model is absent
+/// or unpriced. Bridges to the core `Usage` the [`PriceTable`] prices on.
+fn price_lite(pt: &PriceTable, u: &UsageLite) -> Option<f64> {
+    let model = u.model.as_deref().filter(|m| !m.is_empty())?;
+    let usage = ralphy_core::Usage {
+        input: u.input,
+        output: u.output,
+        cache_read: u.cache_read,
+        cache_creation: u.cache_creation,
+        model: u.model.clone(),
+    };
+    pt.cost_usd(model, &usage)
+}
+
+/// Build a [`Meter`] for an issue line from its planning usage (stashed, may be
+/// absent on the `plan written` line) and a final phase's usage. The display
+/// breakdown sums both phases; the USD prices each phase's model separately (plan
+/// and execute often differ) and sums the priced portion, mirroring
+/// `cost_usd_by_model`'s `$?`/`+?` semantics (ADR-0008 D8).
+fn meter_for(pt: &PriceTable, plan: Option<&UsageLite>, last: &UsageLite) -> Meter {
+    let mut combined = last.clone();
+    combined.model = None; // the sum spans models; the label's model comes from the active issue
+    if let Some(p) = plan {
+        combined.input += p.input;
+        combined.cache_read += p.cache_read;
+        combined.cache_creation += p.cache_creation;
+        combined.output += p.output;
+    }
+    let mut usd = 0.0;
+    let mut any_priced = false;
+    let mut any_unpriced = false;
+    for u in plan.into_iter().chain(std::iter::once(last)) {
+        if u.total() == 0 {
+            continue;
+        }
+        match price_lite(pt, u) {
+            Some(c) => {
+                usd += c;
+                any_priced = true;
+            }
+            None => any_unpriced = true,
+        }
+    }
+    Meter {
+        usage: combined,
+        usd: any_priced.then_some(usd),
+        partial: any_unpriced,
+    }
+}
+
+/// The compact emoji token meter: `↑12.4k ⚡184k ❄8.1k ↓3.2k · $1.84`. `↑` input,
+/// `⚡` cache-read (hot reuse), `❄` cache-write (cold store), `↓` output. The ASCII
+/// path drops the emoji glyphs for `in/cr/cw/out` labels.
+fn fmt_meter(m: &Meter, emoji: bool) -> String {
+    let u = &m.usage;
+    let (i, cr, cw, o) = if emoji {
+        ("↑", "⚡", "❄", "↓")
+    } else {
+        ("in ", "cr ", "cw ", "out ")
+    };
+    format!(
+        "{i}{} {cr}{} {cw}{} {o}{} · {}",
+        fmt_tokens(u.input),
+        fmt_tokens(u.cache_read),
+        fmt_tokens(u.cache_creation),
+        fmt_tokens(u.output),
+        fmt_usd_compact(m.usd, m.partial),
+    )
+}
+
+/// Compact read-time USD for an inline meter: `$1.84`, `$1.84+?` when some model was
+/// unpriced, or a bare `$?` when nothing could be priced — never `$0.00`, which would
+/// hide spend (ADR-0008 D8).
+fn fmt_usd_compact(usd: Option<f64>, partial: bool) -> String {
     match usd {
-        None => "~$?".to_string(),
-        Some(v) => format!("~${v:.2}{}", if partial { "+?" } else { "" }),
+        None => "$?".to_string(),
+        Some(v) => format!("${v:.2}{}", if partial { "+?" } else { "" }),
+    }
+}
+
+/// The `model / effort` label segment for an issue line, from the active issue's
+/// display values. `None` when no model is known; effort alone is never shown.
+fn model_effort_seg(model: Option<&str>, effort: Option<&str>) -> Option<String> {
+    match (model, effort) {
+        (Some(m), Some(e)) => Some(format!("{m} / {e}")),
+        (Some(m), None) => Some(m.to_string()),
+        _ => None,
+    }
+}
+
+/// Build an issue scroll-line body — `#N <label> · model / effort · (dur) · meter`
+/// — appending only the segments that are present, joined by ` · `. Shared by the
+/// `plan written` and `done` lines so their layout stays identical.
+fn issue_tail(number: u64, label: &str, extra: &LineExtra, opts: RenderOpts) -> String {
+    let mut tail: Vec<String> = Vec::new();
+    if let Some(seg) = model_effort_seg(extra.model.as_deref(), extra.effort.as_deref()) {
+        tail.push(seg);
+    }
+    if let Some(d) = extra.duration {
+        tail.push(format!("({})", fmt_duration(d)));
+    }
+    if let Some(m) = extra.meter.as_ref().filter(|m| m.usage.total() > 0) {
+        tail.push(fmt_meter(m, opts.emoji));
+    }
+    if tail.is_empty() {
+        format!("#{number} {label}")
+    } else {
+        format!("#{number} {label} · {}", tail.join(" · "))
     }
 }
 
@@ -637,7 +794,11 @@ struct ActiveIssue {
     start: Instant,
     phase: Phase,
     model: Option<String>,
+    effort: Option<String>,
     budget_min: Option<u64>,
+    /// The planning phase's usage, stashed at `PlanWritten` so the `done` line can
+    /// show the issue total (plan + execute) and price each phase's model (D8).
+    plan_usage: Option<UsageLite>,
 }
 
 /// The mutable live-region state behind the presenter's single `Mutex`: the active
@@ -661,6 +822,9 @@ pub struct Presenter {
     multi: MultiProgress,
     state: Arc<Mutex<LiveState>>,
     opts: RenderOpts,
+    /// The read-time price table, used to project per-line USD for the `plan
+    /// written` and `done` meters (ADR-0008 D8). Loaded once at construction.
+    price: PriceTable,
 }
 
 impl Presenter {
@@ -677,6 +841,7 @@ impl Presenter {
                 color: styled,
                 emoji: styled,
             },
+            price: PriceTable::load(),
         };
         // On a styled TTY, repaint the active line every second so the elapsed clock
         // advances during quiet multi-minute execution stretches that emit no events.
@@ -713,16 +878,14 @@ impl Presenter {
         // panic here would corrupt the run on a tracing call.
         let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
-        let duration = self.drive(&mut s, &event);
+        let extra = self.drive(&mut s, &event);
 
         // Styled lines on a colour TTY (routed through `MultiProgress` so they
         // never tear the live region); one clean, ANSI-free line per event
-        // otherwise (the non-TTY / `NO_COLOR` path, ADR-0006 D3).
-        let line = if self.opts.color {
-            render_line(&event, &ts, duration, self.opts)
-        } else {
-            render_plain_line(&event, &ts, duration)
-        };
+        // otherwise (the non-TTY / `NO_COLOR` path, ADR-0006 D3). `render_line`
+        // styles per `opts.color`, so both paths share it — the plain path keeps
+        // the same model/effort/meter tail.
+        let line = render_line(&event, &ts, &extra, self.opts);
         if let Some(line) = line {
             if self.opts.color {
                 let _ = self.multi.println(line);
@@ -735,7 +898,7 @@ impl Presenter {
     /// Update the live region for one event and return a finishing duration when
     /// the event closes the active issue. The live-region (`indicatif`) calls are
     /// guarded behind `self.opts.color`, so `--verbose`/non-TTY draw nothing.
-    fn drive(&self, s: &mut LiveState, event: &RunEvent) -> Option<Duration> {
+    fn drive(&self, s: &mut LiveState, event: &RunEvent) -> LineExtra {
         match event {
             RunEvent::QueueBuilt { count, order } => {
                 s.queue = Some(QueueState::built(*count, order.clone()));
@@ -747,7 +910,7 @@ impl Presenter {
                     }
                     s.queue_bar = Some(bar);
                 }
-                None
+                LineExtra::default()
             }
             RunEvent::IssueStarted { number, title } => {
                 // A new active issue supersedes a still-pending prior one that
@@ -764,27 +927,89 @@ impl Presenter {
                     start: Instant::now(),
                     phase: Phase::Planning,
                     model: None,
+                    effort: None,
                     budget_min: None,
+                    plan_usage: None,
                 });
                 self.refresh_active_bar(s);
-                None
+                LineExtra::default()
+            }
+            RunEvent::Planning { model, effort } => {
+                // Live-region only: label the planning spinner with the planner's
+                // display model/effort. The adapter carries no issue number.
+                if let Some(a) = s.active.as_mut() {
+                    if model.is_some() {
+                        a.model = model.clone();
+                    }
+                    if effort.is_some() {
+                        a.effort = effort.clone();
+                    }
+                }
+                self.refresh_active_bar(s);
+                LineExtra::default()
+            }
+            RunEvent::PlanWritten { usage, .. } => {
+                // Stash the planning usage for the eventual `done` line, and surface
+                // the scroll line with the planning meter + elapsed-so-far.
+                match s.active.as_mut() {
+                    Some(a) => {
+                        a.plan_usage = Some(usage.clone());
+                        LineExtra {
+                            duration: Some(a.start.elapsed()),
+                            model: a.model.clone(),
+                            effort: a.effort.clone(),
+                            meter: Some(meter_for(&self.price, None, usage)),
+                        }
+                    }
+                    None => LineExtra {
+                        meter: Some(meter_for(&self.price, None, usage)),
+                        ..Default::default()
+                    },
+                }
             }
             RunEvent::Executing {
-                model, budget_min, ..
+                model,
+                budget_min,
+                effort,
+                ..
             } => {
                 // The event carries no number; it applies to the active issue.
                 if let Some(a) = s.active.as_mut() {
                     a.phase = Phase::Executing;
                     a.model = Some(model.clone());
+                    if effort.is_some() {
+                        a.effort = effort.clone();
+                    }
                     a.budget_min = Some(*budget_min);
                 }
                 self.refresh_active_bar(s);
-                None
+                LineExtra::default()
             }
-            RunEvent::IssueClosed { number, .. }
-            | RunEvent::NonGreen { number, .. }
-            | RunEvent::Skipped { number, .. } => {
-                let d = s
+            RunEvent::IssueClosed { number, usage, .. } => {
+                // The `done` line shows the issue total (plan + execute) and prices
+                // each phase's model: combine the stashed planning usage with this
+                // execution usage before clearing the active issue.
+                let extra = match s.active.as_ref().filter(|a| a.number == *number) {
+                    Some(a) => LineExtra {
+                        duration: Some(a.start.elapsed()),
+                        model: a.model.clone(),
+                        effort: a.effort.clone(),
+                        meter: Some(meter_for(&self.price, a.plan_usage.as_ref(), usage)),
+                    },
+                    None => LineExtra::default(),
+                };
+                s.active = None;
+                if let Some(q) = s.queue.as_mut() {
+                    q.advance(*number);
+                }
+                self.refresh_queue_bar(s);
+                if let Some(bar) = s.active_bar.take() {
+                    bar.finish_and_clear();
+                }
+                extra
+            }
+            RunEvent::NonGreen { number, .. } | RunEvent::Skipped { number, .. } => {
+                let duration = s
                     .active
                     .as_ref()
                     .filter(|a| a.number == *number)
@@ -797,7 +1022,10 @@ impl Presenter {
                 if let Some(bar) = s.active_bar.take() {
                     bar.finish_and_clear();
                 }
-                d
+                LineExtra {
+                    duration,
+                    ..Default::default()
+                }
             }
             RunEvent::SleepStarted { reset, .. } => {
                 s.sleep = Some(reset.clone());
@@ -805,15 +1033,15 @@ impl Presenter {
                     bar.finish_and_clear();
                 }
                 self.refresh_queue_bar(s);
-                None
+                LineExtra::default()
             }
             RunEvent::SleepEnded => {
                 s.sleep = None;
                 self.refresh_queue_bar(s);
                 self.refresh_active_bar(s);
-                None
+                LineExtra::default()
             }
-            _ => None,
+            _ => LineExtra::default(),
         }
     }
 
@@ -865,6 +1093,7 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
             a.number,
             &a.title,
             a.model.as_deref(),
+            a.effort.as_deref(),
             a.start.elapsed(),
             a.budget_min,
             opts,
@@ -1003,6 +1232,7 @@ mod tests {
         let event = RunEvent::IssueClosed {
             number: 30,
             tokens: 0,
+            usage: UsageLite::default(),
         };
         let line = render_plain_line(&event, &ts, Some(Duration::from_secs(133))).expect("a line");
 
@@ -1020,23 +1250,57 @@ mod tests {
     }
 
     #[test]
-    fn render_plain_issue_closed_shows_inline_tokens() {
+    fn render_done_line_shows_model_effort_duration_and_compact_meter() {
         let ts = Local
             .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
             .single()
             .unwrap();
-        let event = RunEvent::IssueClosed {
-            number: 45,
-            tokens: 1_200_000,
+        // The meter/model/effort/duration ride on `LineExtra` (the presenter computes
+        // them in `drive`); the event itself only names the issue.
+        let extra = LineExtra {
+            duration: Some(Duration::from_secs(776)),
+            model: Some("sonnet".into()),
+            effort: Some("medium".into()),
+            meter: Some(Meter {
+                usage: UsageLite {
+                    input: 41_200,
+                    cache_read: 902_000,
+                    cache_creation: 22_000,
+                    output: 18_400,
+                    model: None,
+                },
+                usd: Some(6.10),
+                partial: false,
+            }),
         };
-        let line = render_plain_line(&event, &ts, Some(Duration::from_secs(776))).expect("a line");
+        let line = render_line(
+            &RunEvent::IssueClosed {
+                number: 45,
+                tokens: 0,
+                usage: UsageLite::default(),
+            },
+            &ts,
+            &extra,
+            RenderOpts {
+                color: false,
+                emoji: true,
+            },
+        )
+        .expect("a line");
         assert!(line.contains("#45 done"), "issue + outcome: {line}");
-        assert!(line.contains("1.2M tok"), "inline tokens: {line}");
+        assert!(line.contains("sonnet / medium"), "model / effort: {line}");
+        assert!(line.contains("(12m56s)"), "issue duration: {line}");
+        // Compact emoji breakdown + USD, scaled and joined by ` · `.
+        assert!(line.contains("↑41.2k"), "input glyph + tokens: {line}");
+        assert!(line.contains("⚡902.0k"), "cache-read: {line}");
+        assert!(line.contains("❄22.0k"), "cache-write: {line}");
+        assert!(line.contains("↓18.4k"), "output: {line}");
+        assert!(line.contains("$6.10"), "read-time USD: {line}");
         assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
     }
 
     #[test]
-    fn render_plain_issue_closed_omits_tokens_when_zero() {
+    fn render_done_line_omits_meter_when_zero() {
         let ts = Local
             .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
             .single()
@@ -1044,10 +1308,12 @@ mod tests {
         let event = RunEvent::IssueClosed {
             number: 9,
             tokens: 0,
+            usage: UsageLite::default(),
         };
         let line = render_plain_line(&event, &ts, None).expect("a line");
         assert!(line.contains("#9 done"), "issue + outcome: {line}");
-        assert!(!line.contains("tok"), "no token segment when zero: {line}");
+        assert!(!line.contains('↑'), "no meter when usage is zero: {line}");
+        assert!(!line.contains('$'), "no cost when usage is zero: {line}");
     }
 
     #[test]
@@ -1062,6 +1328,7 @@ mod tests {
                     number: 0,
                     model: String::new(),
                     budget_min: 0,
+                    effort: None,
                 },
                 &ts,
                 None
@@ -1154,6 +1421,7 @@ mod tests {
                     number: 0,
                     model: String::new(),
                     budget_min: 0,
+                    effort: None,
                 },
                 &ts,
                 None,
@@ -1176,13 +1444,13 @@ mod tests {
             color: true,
             emoji: true,
         };
-        assert_eq!(render_line(&event, &ts, None, styled), None);
+        assert_eq!(render_line(&event, &ts, &LineExtra::default(), styled), None);
 
         let plain = RenderOpts {
             color: false,
             emoji: true,
         };
-        assert!(render_line(&event, &ts, None, plain)
+        assert!(render_line(&event, &ts, &LineExtra::default(), plain)
             .expect("plain sleep line")
             .contains("sleeping until 08:10"));
     }
@@ -1374,6 +1642,7 @@ mod tests {
             31,
             "Console UI",
             Some("sonnet"),
+            Some("medium"),
             Duration::from_secs(12 * 60 + 43),
             Some(45),
             opts,
@@ -1381,7 +1650,7 @@ mod tests {
         assert!(line.contains('⚙'), "executing phase icon: {line}");
         assert!(line.contains("#31"), "issue number: {line}");
         assert!(line.contains("Console UI"), "title: {line}");
-        assert!(line.contains("sonnet"), "model: {line}");
+        assert!(line.contains("sonnet / medium"), "model / effort: {line}");
         assert!(line.contains("12:43 / 45:00"), "elapsed / budget: {line}");
         assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
     }
@@ -1396,6 +1665,7 @@ mod tests {
             Phase::Planning,
             31,
             "Console UI",
+            None,
             None,
             Duration::from_secs(12),
             None,
@@ -1421,6 +1691,7 @@ mod tests {
             31,
             "title",
             Some("opus"),
+            Some("high"),
             Duration::from_secs(63),
             Some(45),
             opts,
@@ -1474,8 +1745,14 @@ mod tests {
             stop: None,
             branch_mode: PanelBranchMode::New,
             dry_run: false,
-            run_tokens: 8_400_000,
-            project_tokens: 142_000_000,
+            run_breakdown: UsageLite {
+                input: 8_400_000,
+                ..Default::default()
+            },
+            project_breakdown: UsageLite {
+                input: 142_000_000,
+                ..Default::default()
+            },
             project_id: "owner/repo".to_string(),
             run_usd: Some(2.10),
             project_usd: Some(35.6),
@@ -1503,13 +1780,13 @@ mod tests {
             .iter()
             .find(|l| l.contains("run:") && l.contains("project:"))
             .expect("a token footer line");
-        // Carries the formatted run total, the project id, and the project total.
-        assert!(footer.contains("8.4M tok"), "run total: {footer}");
+        // Carries the formatted run breakdown, the project id, and the project total.
+        assert!(footer.contains("↑8.4M"), "run input total: {footer}");
         assert!(footer.contains("owner/repo"), "project id: {footer}");
-        assert!(footer.contains("142.0M tok"), "project total: {footer}");
-        // Read-time USD estimates (ADR-0008 D8).
-        assert!(footer.contains("~$2.10"), "run usd: {footer}");
-        assert!(footer.contains("~$35.6"), "project usd: {footer}");
+        assert!(footer.contains("↑142.0M"), "project input total: {footer}");
+        // Read-time USD estimates (ADR-0008 D8), compact `$` form.
+        assert!(footer.contains("$2.10"), "run usd: {footer}");
+        assert!(footer.contains("$35.60"), "project usd: {footer}");
         assert!(!footer.contains('\u{1b}'), "no ANSI byte: {footer:?}");
     }
 
@@ -1532,9 +1809,9 @@ mod tests {
             .iter()
             .find(|l| l.contains("run:") && l.contains("project:"))
             .expect("a token footer line");
-        assert!(footer.contains("~$?"), "unknown usd shows ~$?: {footer}");
+        assert!(footer.contains("$?"), "unknown usd shows $?: {footer}");
         assert!(
-            !footer.contains("~$0.00"),
+            !footer.contains("$0.00"),
             "never reports $0 for unknown spend: {footer}"
         );
     }
@@ -1563,21 +1840,21 @@ mod tests {
             .expect("a token footer line");
         let (run_part, project_part) = footer.split_once("project:").expect("two segments");
         assert!(
-            run_part.contains("~$1.81") && !run_part.contains("+?"),
+            run_part.contains("$1.81") && !run_part.contains("+?"),
             "the fully-priced run must NOT carry +?: {run_part}"
         );
         assert!(
-            project_part.contains("~$15.98+?"),
+            project_part.contains("$15.98+?"),
             "the project's unpriced residue is flagged with +?: {project_part}"
         );
     }
 
     #[test]
-    fn fmt_panel_usd_partial_suffix_and_unknown() {
-        assert_eq!(fmt_panel_usd(Some(2.10), false), "~$2.10");
-        assert_eq!(fmt_panel_usd(Some(2.10), true), "~$2.10+?");
-        assert_eq!(fmt_panel_usd(None, false), "~$?");
-        assert_eq!(fmt_panel_usd(None, true), "~$?");
+    fn fmt_usd_compact_partial_suffix_and_unknown() {
+        assert_eq!(fmt_usd_compact(Some(2.10), false), "$2.10");
+        assert_eq!(fmt_usd_compact(Some(2.10), true), "$2.10+?");
+        assert_eq!(fmt_usd_compact(None, false), "$?");
+        assert_eq!(fmt_usd_compact(None, true), "$?");
     }
 
     #[test]

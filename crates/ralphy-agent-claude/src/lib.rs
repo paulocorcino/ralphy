@@ -314,7 +314,7 @@ impl ClaudeAgent {
         // budget_min field consumed by the telegram notifier / presenter — keep stable
         info!(
             model = %exec_model,
-            effort = ?self.exec.exec_effort,
+            effort = self.exec.exec_effort.as_deref().unwrap_or("medium"),
             max_calls = self.exec.max_exec_calls,
             budget_min = self.exec.max_minutes_per_issue,
             "executing with headless claude -p loop"
@@ -480,7 +480,7 @@ impl Agent for ClaudeAgent {
             args.push(e.clone());
         }
 
-        info!(model = ?self.plan_model, effort = ?self.plan_effort, staged, "planning with claude -p");
+        info!(model = self.plan_model.as_deref().unwrap_or(""), effort = self.plan_effort.as_deref().unwrap_or("medium"), staged, "planning with claude -p");
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)
             .current_dir(ws.repo_root())
@@ -555,14 +555,12 @@ impl Agent for ClaudeAgent {
             .as_deref()
             .map(list_jsonl)
             .unwrap_or_default();
-        let usage = appeared_files(&before, &after)
+        let per_transcript: Vec<Usage> = appeared_files(&before, &after)
             .iter()
             .filter_map(|p| fs::read_to_string(p).ok())
             .map(|t| parse_transcript_usage(&t))
-            .fold(Usage::default(), |mut acc, u| {
-                acc.add_tokens(&u);
-                acc
-            });
+            .collect();
+        let usage = fold_exec_usage(&per_transcript, &self.resolve_exec_model(plan));
         Ok(Execution { outcome, usage })
     }
 }
@@ -635,7 +633,7 @@ impl ClaudeAgent {
         cmd = cmd.arg(EXEC_CHARTER);
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
-        info!(model = %exec_model, effort = ?self.exec.exec_effort, remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
+        info!(model = %exec_model, effort = self.exec.exec_effort.as_deref().unwrap_or("medium"), remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
 
         let transcript_dir = self.transcript_dir(ws);
         let transcript_since = SystemTime::now()
@@ -1222,6 +1220,26 @@ fn parse_plan_usage(stdout: &str) -> Usage {
         found = Some(u); // keep the LAST result object
     }
     found.unwrap_or_default()
+}
+
+/// Sum a session's per-transcript usages and attribute the phase to one model.
+/// `add_tokens` drops `model` by design (it sums across records), so a plain fold
+/// would leave the phase unattributed → the `unknown` pricing bucket even though
+/// each transcript already resolved its own dominant model. Carry the model of the
+/// heaviest transcript, falling back to `fallback_model` (the model we requested)
+/// so a real, priceable id is always recorded rather than `unknown` (ADR-0008 D8).
+fn fold_exec_usage(per_transcript: &[Usage], fallback_model: &str) -> Usage {
+    let mut usage = per_transcript.iter().fold(Usage::default(), |mut acc, u| {
+        acc.add_tokens(u);
+        acc
+    });
+    usage.model = per_transcript
+        .iter()
+        .filter(|u| u.model.is_some())
+        .max_by_key(|u| u.total())
+        .and_then(|u| u.model.clone())
+        .or_else(|| Some(fallback_model.to_string()));
+    usage
 }
 
 /// The key of the `modelUsage` entry with the most tokens — the run's *main*
@@ -2061,6 +2079,46 @@ mod tests {
         assert_eq!(usage.cache_read, 2005);
         // ...but the model attribution picks opus (the dominant spend), not haiku.
         assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn fold_exec_usage_carries_heaviest_transcript_model() {
+        // Two transcripts; the second is heavier. Tokens sum across both, and the
+        // attribution follows the heaviest (opus) — not lost to `unknown`.
+        let a = Usage {
+            input: 10,
+            output: 1,
+            cache_read: 5,
+            cache_creation: 0,
+            model: Some("claude-haiku-4-5".into()),
+        };
+        let b = Usage {
+            input: 200,
+            output: 20,
+            cache_read: 2000,
+            cache_creation: 7,
+            model: Some("claude-opus-4-8".into()),
+        };
+        let usage = fold_exec_usage(&[a, b], "sonnet");
+        assert_eq!(usage.input, 210);
+        assert_eq!(usage.cache_read, 2005);
+        assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn fold_exec_usage_falls_back_to_requested_model_when_none_attributed() {
+        // No transcript carried a model (counts present, attribution absent): the
+        // phase falls back to the model we requested rather than `unknown`.
+        let a = Usage {
+            input: 100,
+            output: 10,
+            cache_read: 0,
+            cache_creation: 0,
+            model: None,
+        };
+        let usage = fold_exec_usage(&[a], "sonnet");
+        assert_eq!(usage.input, 100);
+        assert_eq!(usage.model.as_deref(), Some("sonnet"));
     }
 
     #[test]

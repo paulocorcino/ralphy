@@ -305,7 +305,15 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
             return Err(e);
         }
     };
-    info!(open_steps = plan.open_steps, "plan written");
+    info!(
+        open_steps = plan.open_steps,
+        up = plan.usage.input,
+        cr = plan.usage.cache_read,
+        cw = plan.usage.cache_creation,
+        out = plan.usage.output,
+        model = plan.usage.model.as_deref().unwrap_or(""),
+        "plan written"
+    );
 
     if cfg.dry_run {
         restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
@@ -734,6 +742,11 @@ pub fn run_queue(
         info!(
             number = issue.number,
             open_steps = plan.open_steps,
+            up = plan.usage.input,
+            cr = plan.usage.cache_read,
+            cw = plan.usage.cache_creation,
+            out = plan.usage.output,
+            model = plan.usage.model.as_deref().unwrap_or(""),
             "plan written"
         );
 
@@ -892,9 +905,17 @@ pub fn run_queue(
             // `tokens` field carries the issue's total (plan + execute) so the live
             // UI can show inline per-issue tokens (ADR-0008 D11).
             let issue_total = plan.usage.total() + exec_usage.total();
+            // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
+            // carry the *execution* phase breakdown so the live UI can combine it
+            // with the planning usage it stashed at `plan written` (ADR-0008 D11).
             info!(
                 number = issue.number,
                 tokens = issue_total,
+                up = exec_usage.input,
+                cr = exec_usage.cache_read,
+                cw = exec_usage.cache_creation,
+                out = exec_usage.output,
+                model = exec_usage.model.as_deref().unwrap_or(""),
                 "green — issue closed"
             );
             worked.push(IssueResult {

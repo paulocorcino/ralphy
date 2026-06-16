@@ -687,8 +687,15 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // accumulated usage, and the project's cumulative balance read from the
     // ledger. `cfg.repo_root` is still in scope (cfg owns it).
     let slug = git::project_slug(&cfg.repo_root);
-    let run_tokens = report.run_usage.total();
-    let project_tokens = ralphy_core::ledger::project_total(&slug).total();
+    let run_usage = &report.run_usage;
+    let project_usage = ralphy_core::ledger::project_total(&slug);
+    let to_lite = |u: &ralphy_core::Usage| ui::UsageLite {
+        input: u.input,
+        cache_read: u.cache_read,
+        cache_creation: u.cache_creation,
+        output: u.output,
+        model: None,
+    };
 
     // Read-time USD (ADR-0008 D8), priced per model and summed. The run total
     // prices `report.run_usage_by_model` (the runner's per-model split); the
@@ -716,8 +723,8 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stop: panel_stop,
         branch_mode: panel_mode,
         dry_run: args.dry_run,
-        run_tokens,
-        project_tokens,
+        run_breakdown: to_lite(run_usage),
+        project_breakdown: to_lite(&project_usage),
         project_id: slug,
         run_usd,
         project_usd,

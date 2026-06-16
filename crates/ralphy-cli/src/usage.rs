@@ -91,10 +91,13 @@ pub fn group_by(rows: &[UsageRow], by: GroupBy) -> Vec<(String, Usage, usize)> {
 }
 
 /// The read-time USD of a row set, computed **per model** and summed: each model's
-/// rows are summed and priced separately (price resolves on the model — D8).
-/// Returns `(priced_usd, any_unpriced)`; `any_unpriced` flags a model absent from
-/// the table, whose tokens are excluded from `priced_usd` (never reported as `0`).
-fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (f64, bool) {
+/// rows are summed and priced separately (price resolves on the model — D8). Folds
+/// the rows into a per-model token split and defers to [`PriceTable::cost_usd_by_model`],
+/// which owns the zero-token-skip and never-reports-`0` invariants. Returns
+/// `(priced_usd, any_unpriced)`: `priced_usd` is `None` when *nothing* could be
+/// priced, `Some(sum)` of the priced portion otherwise; `any_unpriced` flags a
+/// model absent from the table.
+fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (Option<f64>, bool) {
     let mut by_model: BTreeMap<String, Usage> = BTreeMap::new();
     for row in rows {
         by_model
@@ -102,31 +105,18 @@ fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (f64, bool) {
             .or_default()
             .add_tokens(&row.tokens);
     }
-    let mut usd = 0.0;
-    let mut partial = false;
-    for (model, tokens) in &by_model {
-        // A zero-token bucket carries no spend and no signal — skip it so an empty
-        // `unknown` model never forces a spurious `+?` (matches `cost_usd_by_model`).
-        if tokens.total() == 0 {
-            continue;
-        }
-        match table.cost_usd(model, tokens) {
-            Some(c) => usd += c,
-            None => partial = true,
-        }
-    }
-    (usd, partial)
+    table.cost_usd_by_model(&by_model)
 }
 
-/// Format a USD figure for display: `~$2.10`, with a `+?` suffix when some model
-/// in the set was unpriced, or a bare `~$?` when nothing could be priced.
-fn fmt_usd(usd: f64, partial: bool) -> String {
-    if partial && usd == 0.0 {
-        "~$?".to_string()
-    } else if partial {
-        format!("~${usd:.2}+?")
-    } else {
-        format!("~${usd:.2}")
+/// Format a USD figure for display: `~$2.10`, with a `+?` suffix when some model in
+/// the set was unpriced, a bare `~$?` when nothing priceable could be priced, or
+/// `~$0.00` for an empty/zero-token set (nothing to price and nothing unpriced).
+fn fmt_usd(usd: Option<f64>, partial: bool) -> String {
+    match (usd, partial) {
+        (None, true) => "~$?".to_string(),
+        (Some(usd), true) => format!("~${usd:.2}+?"),
+        (Some(usd), false) => format!("~${usd:.2}"),
+        (None, false) => "~$0.00".to_string(),
     }
 }
 

@@ -579,6 +579,7 @@ impl NotifierHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runstate::UsageLite;
     use anyhow::{bail, Result};
     use serde_json::json;
     use std::sync::atomic::AtomicI64;
@@ -643,12 +644,14 @@ mod tests {
                 number: n,
                 budget_min: 45,
                 model: String::new(),
+                effort: None,
             });
             push(&client, &state, &mut last_card);
 
             state.apply(RunEvent::IssueClosed {
                 number: n,
                 tokens: 0,
+                usage: UsageLite::default(),
             });
             push(&client, &state, &mut last_card);
         }
@@ -701,6 +704,7 @@ mod tests {
             number: 1,
             budget_min: 45,
             model: String::new(),
+            effort: None,
         });
         let card_v2 = render_card(&state, now_epoch());
         assert_ne!(card_v1, card_v2, "state change should alter the render");
@@ -787,6 +791,7 @@ mod tests {
         state.apply(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         state.apply(RunEvent::IssueStarted {
             number: 2,
@@ -808,6 +813,7 @@ mod tests {
         state.apply(RunEvent::PlanWritten {
             number: 3,
             open_steps: 0,
+            usage: UsageLite::default(),
         });
         state.apply(RunEvent::NeedsSplit { number: 3 });
         let card = render_card(&state, 0);
@@ -855,6 +861,7 @@ mod tests {
         state.apply(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         // Mid-consolidation: the live 📚 line shows, no footer yet.
         state.apply(RunEvent::KnowledgeConsolidating { notes: 4 });
@@ -904,6 +911,7 @@ mod tests {
         state.apply(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         // During the run: no footer.
         assert!(!render_card(&state, 0).contains("🏁"), "no footer mid-run");
@@ -943,6 +951,7 @@ mod tests {
                 state.apply(RunEvent::IssueClosed {
                     number: n,
                     tokens: 0,
+                    usage: UsageLite::default(),
                 });
             }
         }
@@ -1024,14 +1033,17 @@ mod tests {
         q.push(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         q.push(RunEvent::IssueClosed {
             number: 2,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         q.push(RunEvent::IssueClosed {
             number: 3,
             tokens: 0,
+            usage: UsageLite::default(),
         });
         let drained = q.drain_blocking(Duration::from_millis(0));
         assert_eq!(
@@ -1039,11 +1051,13 @@ mod tests {
             vec![
                 RunEvent::IssueClosed {
                     number: 2,
-                    tokens: 0
+                    tokens: 0,
+                    usage: UsageLite::default(),
                 },
                 RunEvent::IssueClosed {
                     number: 3,
-                    tokens: 0
+                    tokens: 0,
+                    usage: UsageLite::default(),
                 },
             ]
         );
@@ -1073,10 +1087,12 @@ mod tests {
             number: 1,
             budget_min: 45,
             model: String::new(),
+            effort: None,
         });
         queue.push(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            usage: UsageLite::default(),
         });
 
         let worker_queue = queue.clone();
