@@ -35,9 +35,12 @@ jobs:
             target: x86_64-unknown-linux-musl
             bin: ralphy
             archive: tar.gz
-          # macOS native-arch runners (macos-13 = Intel, macos-14 = Apple Silicon).
+          # Both macOS arches build on the Apple Silicon runner (macos-14): arm64
+          # natively, x86_64 by cross-compile (Apple clang cross-compiles out of
+          # the box, no extra deps). This avoids the scarce/retiring macos-13 Intel
+          # runner, whose queue stalls the whole release.
           # MACOSX_DEPLOYMENT_TARGET=12.0 floors compatibility at macOS 12 Monterey.
-          - os: macos-13
+          - os: macos-14
             target_name: macos-x64
             target: x86_64-apple-darwin
             macos_min: "12.0"
