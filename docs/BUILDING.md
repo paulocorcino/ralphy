@@ -1,22 +1,23 @@
 # Building Ralphy
 
-Ralphy ships as a single Windows executable (`ralphy.exe`). To build it yourself you
-need the [Rust toolchain](https://www.rust-lang.org/tools/install).
+Ralphy ships as a single self-contained executable — `ralphy.exe` on Windows, `ralphy`
+on Linux. To build it yourself you need the
+[Rust toolchain](https://www.rust-lang.org/tools/install).
 
-```powershell
+```bash
 git clone https://github.com/paulocorcino/ralphy
 cd ralphy
 cargo build --release
-# binary at target\release\ralphy.exe
+# binary at target/release/ralphy  (target\release\ralphy.exe on Windows)
 ```
 
-Put `ralphy.exe` somewhere on your `PATH` so you can run `ralphy` from any repo. The
+Put the binary somewhere on your `PATH` so you can run `ralphy` from any repo. The
 bundled skills (`reviewer`, `staged-plan`) are embedded into the binary at build time —
 there's nothing else to install or copy alongside it.
 
 To run the test suite:
 
-```powershell
+```bash
 cargo test
 ```
 
@@ -29,24 +30,26 @@ Two GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   Linux, and a `test` matrix builds and runs the suite in release mode on **both
   `windows-latest` and `ubuntu-latest`** (the PTY tests drive `cmd.exe` on Windows
   and `sh` on Linux).
-- **`release.yml`** — builds the shippable artifacts for both platforms:
+- **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
-  - `ralphy-<version>-linux-x64.tar.gz` (tar preserves the executable bit)
+  - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc
+    dependency, so it runs on any Linux distro (tar preserves the executable bit)
+  - `ralphy-<version>-macos-x64.tar.gz` — Intel, floored at macOS 12 Monterey
+  - `ralphy-<version>-macos-arm64.tar.gz` — Apple Silicon, floored at macOS 12 Monterey
 
   Each contains the binary (`ralphy.exe` / `ralphy`) plus `README.md`, `LICENSE`,
   and this `BUILDING.md`. Because the prompts and skills are embedded in the binary
   on every platform, those archives are everything a user needs.
 
-> **Linux is built, not yet officially supported.** Ralphy's code is
-> cross-platform (`portable-pty`, `HOME`/`~/.local/bin/claude` fallbacks), so it
-> compiles and the suite passes on Linux — but the README still scopes the tool to
-> Windows, and the Linux binary's runtime behaviour is unverified end-to-end.
+Ralphy's code is cross-platform (`portable-pty`, `HOME`/`~/.local/bin/claude`
+fallbacks), and both the Windows and Linux binaries are built and exercised by the
+CI suite on every push.
 
 To cut a release, push a `v*` tag — the build matrix produces both archives (each
 with a `.sha256` checksum) and a final job publishes a single GitHub Release with
 both attached and auto-generated notes:
 
-```powershell
+```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```

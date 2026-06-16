@@ -1,7 +1,7 @@
 # Ralphy
 
 [![Built with Rust](https://img.shields.io/badge/built_with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows)](#prerequisites)
+[![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows_%7C_Linux-0078D6)](#prerequisites)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 [![Powered by Claude Code](https://img.shields.io/badge/powered_by-Claude_Code-d97757)](https://claude.com/claude-code)
 
@@ -13,9 +13,10 @@ pushes and never opens a PR** — you review the branch and **merge by hand**. I
 your **coding-agent subscription** (Claude, ChatGPT/Codex, or your OpenCode provider — no
 API key, so no per-token bill).
 
-> **Scope (for now):** Ralphy is a **Windows** tool. It drives one coding-agent CLI per
-> run, picked with `--agent`: **[Claude Code](https://claude.com/claude-code)** (the
-> default), **Codex**, or **OpenCode**.
+> **Scope:** Ralphy runs on **Windows and Linux** (both built and tested in CI). It
+> drives one coding-agent CLI per run, picked with `--agent`:
+> **[Claude Code](https://claude.com/claude-code)** (the default), **Codex**, or
+> **OpenCode**.
 
 ```text
 You, before bed:                          Ralphy, overnight:                 You, morning:
@@ -30,6 +31,7 @@ You, before bed:                          Ralphy, overnight:                 You
 ## Quick start
 
 ```powershell
+# Windows (PowerShell)
 # 1) Try one issue, plan only — no code changes, no commits. Inspect .ralphy/plan.md.
 ralphy run --repo C:\Dev\foo --only-issue 13 --dry-run
 
@@ -38,6 +40,13 @@ ralphy run --repo C:\Dev\foo --only-issue 13
 
 # 3) The overnight run: the whole queue, ascending order, with an 8-hour budget.
 ralphy run --repo C:\Dev\foo --deadline-hours 8
+```
+
+```bash
+# Linux (bash) — same flags, POSIX paths
+ralphy run --repo ~/dev/foo --only-issue 13 --dry-run
+ralphy run --repo ~/dev/foo --only-issue 13
+ralphy run --repo ~/dev/foo --deadline-hours 8
 ```
 
 `--repo` defaults to the current directory, so from inside the repo you can just run
@@ -53,7 +62,8 @@ issue, then one issue for real, and only then trust the unattended overnight que
   - `claude` (default) — Claude Code CLI
   - `codex` — signed in with `codex login` (use `--agent codex`)
   - `opencode` — a provider set up with `opencode auth login` (use `--agent opencode`)
-- The `ralphy.exe` binary on your `PATH` — see [docs/BUILDING.md](docs/BUILDING.md).
+- The Ralphy binary on your `PATH` (`ralphy.exe` on Windows, `ralphy` on Linux) — see
+  [docs/BUILDING.md](docs/BUILDING.md).
 - Whatever build tools the issues themselves need on `PATH` (an issue that builds a
   feature needs that feature's deps, or it will time out).
 
@@ -115,11 +125,26 @@ subscription login stays the one in charge. The same `reviewer` and `staged-plan
 ship to every agent automatically, so a run never depends on what's installed on your
 machine, and your global skills are left untouched.
 
+**Split planner and executor.** `--agent` picks the executor; `--plan-agent` (default:
+the `--agent` value) picks the planner, so you can plan with one agent and execute with
+another. The plan is vendor-neutral markdown, so any planner's plan runs under any
+executor. The canonical split is `--agent opencode --plan-agent claude` — Claude plans on
+its subscription, OpenCode's coder model executes:
+
+```powershell
+ralphy run --agent opencode --plan-agent claude
+```
+
+Usage-limit handling is per-phase: a Claude planner can wait out a plan-time reset while
+the OpenCode executor stops on an execute-time limit (an explicit `--stop-on-limit`
+forces both phases to stop).
+
 ## Everyday flags
 
 ```powershell
 ralphy run --agent codex                   # use Codex instead of Claude
 ralphy run --agent opencode                # use OpenCode
+ralphy run --agent opencode --plan-agent claude  # Claude plans, OpenCode executes
 ralphy run --base-branch feature/x         # cut the run branch from another base
 ralphy run --branch-mode current           # commit onto the current branch (no new branch)
 ralphy run --exec-model opus               # force the execution model for every issue
@@ -139,6 +164,28 @@ more).
 `--branch-mode current` commits straight onto the branch you're already on. Either way a
 clean working tree is required. For issues that need different bases, run twice with
 different `--base-branch`.
+
+## Persistent settings
+
+Anything you'd otherwise retype every run can be persisted per-repo in
+`.ralphy/settings.json` via `ralphy config`. The resolution order is always **per-run
+flag > `settings.json` > built-in default**, so a flag still wins for a one-off:
+
+```powershell
+ralphy config set opencode.model kimi-for-coding/k2p7   # OpenCode execution model default
+ralphy config set base_branch origin/develop            # default base for the run branch
+ralphy config set branch_mode current                   # default branch mode
+ralphy config set claude.default_exec_model opus        # Claude run defaults (claude.*):
+ralphy config set claude.max_minutes_per_issue 120      #   plan_model, plan_effort,
+ralphy config get                                        #   exec_effort, … — see config --help
+ralphy config unset opencode.model                      # clear a key
+```
+
+List the models an agent offers (OpenCode only — Codex/Claude have no listing command):
+
+```powershell
+ralphy models --agent opencode
+```
 
 ## Morning review
 
@@ -199,6 +246,27 @@ hit a usage limit Ralphy **waits for the reset and resumes the same issue** auto
 (pass `--stop-on-limit` if you'd rather it stop and report). Both emit a trustworthy reset
 time — Codex an absolute timestamp, Claude a relative one. **OpenCode** always stops and
 reports — re-run once the limit clears.
+
+## Cost reporting
+
+You don't pay per token, but Ralphy still **measures** what each run consumed so you can
+see how efficient a task was. Every run harvests the token counts each agent CLI already
+reports and accumulates them durably per project in an append-only ledger
+(`.ralphy/usage.jsonl`). The end-of-run footer shows the run total and the project's
+cumulative balance as a token meter (`↑` input, `⚡` cache write, `❄` cache read,
+`↓` output) plus a read-time USD estimate priced per model (`~$?` when a model has no
+known price). USD is only ever a read-time projection — it never enters the ledger, so
+re-pricing never rewrites history.
+
+Read the ledger after the fact with `ralphy usage`:
+
+```powershell
+ralphy usage                       # the project balance: total tokens + estimated USD
+ralphy usage --by model            # group by model (also: phase, actor, version)
+ralphy usage --since 2026-06-01    # only rows on/after a date
+ralphy usage --format csv          # export (also: json) instead of the table
+ralphy usage --project owner/repo  # read another project's ledger
+```
 
 ## Telegram run monitor (optional)
 

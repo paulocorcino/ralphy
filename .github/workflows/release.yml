@@ -24,10 +24,29 @@ jobs:
         include:
           - os: windows-latest
             target_name: windows-x64
+            target: x86_64-pc-windows-msvc
             bin: ralphy.exe
             archive: zip
           - os: ubuntu-latest
             target_name: linux-x64
+            # Static musl build: no glibc dependency, so the released binary runs
+            # on any Linux distro (the default glibc build floors at the runner's
+            # glibc, e.g. 2.39 on ubuntu-latest, and fails on older LTS releases).
+            target: x86_64-unknown-linux-musl
+            bin: ralphy
+            archive: tar.gz
+          # macOS native-arch runners (macos-13 = Intel, macos-14 = Apple Silicon).
+          # MACOSX_DEPLOYMENT_TARGET=12.0 floors compatibility at macOS 12 Monterey.
+          - os: macos-13
+            target_name: macos-x64
+            target: x86_64-apple-darwin
+            macos_min: "12.0"
+            bin: ralphy
+            archive: tar.gz
+          - os: macos-14
+            target_name: macos-arm64
+            target: aarch64-apple-darwin
+            macos_min: "12.0"
             bin: ralphy
             archive: tar.gz
     steps:
@@ -35,12 +54,29 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl build tools
+        if: runner.os == 'Linux'
+        # musl-gcc, picked up by cc-rs to compile the bundled C deps (sqlite, ring)
+        # against musl.
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
-        run: cargo build --release --bin ralphy
+        # MACOSX_DEPLOYMENT_TARGET is read by the Apple linker to set the binary's
+        # minimum-OS load command; empty (and so ignored) on Windows/Linux.
+        # CC_x86_64_unknown_linux_musl points cc-rs at the wrapper Ubuntu's
+        # musl-tools actually installs (`musl-gcc`), not the prefixed name cc-rs
+        # probes by default (`x86_64-linux-musl-gcc`), so the bundled C deps
+        # (sqlite, ring) compile. Ignored on the Windows/macOS targets.
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --bin ralphy --target ${{ matrix.target }}
 
       - name: Determine version
         id: version
@@ -63,7 +99,7 @@ jobs:
           mkdir -p "$stage" out
           # The binary embeds its prompts and skills at build time, so it is
           # self-contained — these are the docs a user needs alongside it.
-          cp "target/release/${{ matrix.bin }}" "$stage/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$stage/"
           cp README.md LICENSE docs/BUILDING.md "$stage/"
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
             ( cd dist && 7z a -tzip "../out/$name.zip" "$name" >/dev/null )
