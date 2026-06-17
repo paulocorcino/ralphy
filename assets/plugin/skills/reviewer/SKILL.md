@@ -1,6 +1,7 @@
 ---
 name: reviewer
 description: Use ONLY when the user explicitly invokes /reviewer (literal slash command). Performs a native, findings-first review with a deterministic coverage audit run by the reviewer before emission (`scripts/fact_pack.py` + `scripts/audit.py`). Four subagent capabilities (defect-hunter, test-auditor, verifier, scout) are spawnable on judgment, not always-on. During validation this skill must NOT match generic "code review" requests.
+disable-model-invocation: false
 ---
 
 # reviewer
