@@ -19,6 +19,7 @@ use tracing::{info, warn};
 mod config;
 mod guard;
 mod hook;
+mod init;
 mod install;
 mod models;
 mod pricing;
@@ -76,6 +77,9 @@ enum Command {
     /// Symlink (or copy) this binary into a PATH directory so `ralphy` resolves
     /// from anywhere on the command line.
     Install(install::InstallArgs),
+    /// Validate the environment prerequisites for a repo: Python, `gh` auth, a
+    /// GitHub remote, and at least one logged-in agent CLI (ADR-0012 stage 1).
+    Init(init::InitArgs),
 }
 
 #[derive(Subcommand)]
@@ -284,6 +288,7 @@ fn main() -> Result<()> {
         Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
+        Command::Init(args) => init::run(&args),
     }
 }
 
@@ -887,6 +892,17 @@ fn init_tracing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn init_subcommand_is_registered() {
+        use clap::CommandFactory;
+        assert!(
+            Cli::command()
+                .get_subcommands()
+                .any(|s| s.get_name() == "init"),
+            "the `init` subcommand must be registered in the CLI"
+        );
+    }
 
     #[test]
     fn effective_stop_on_limit_codex_passes_flag_through() {
