@@ -1,13 +1,16 @@
-//! `ralphy init`: deterministic environment gate — validates all prerequisites
-//! for running ralphy on a repo (ADR-0012 stage 1). Stages 2–10 are stubbed.
+//! `ralphy init`: deterministic environment gate (ADR-0012 stage 1), then a
+//! read-only repo diagnosis from a neutral cwd (stage 2) and a diagnosis-seeded
+//! console Q&A captured into a typed config (stage 3). Stages 4–10 are stubbed.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::Args;
 use ralphy_adapter_support::find_program;
-use ralphy_core::git;
+use ralphy_core::{git, DiagnosisReport, RepoKind, Workspace};
 
 #[derive(Args)]
 pub struct InitArgs {
@@ -182,6 +185,255 @@ fn agent_logged_in(a: &Agent) -> bool {
         .unwrap_or(false)
 }
 
+// ── diagnosis → Q&A → typed config (ADR-0012 stages 2–3) ────────────────────
+
+/// The typed config the interactive Q&A captures — the dev's confirmed/corrected
+/// view of the [`DiagnosisReport`]. Each field mirrors a report field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitConfig {
+    pub repo_kind: RepoKind,
+    pub language_build: Option<String>,
+    pub backlog_location: Option<String>,
+    pub milestone_docs: Vec<String>,
+    pub skills_dir: Option<String>,
+    pub has_context_or_adrs: bool,
+    pub remote_host: Option<String>,
+}
+
+/// One seeded console question: the prompt label and the diagnosis-derived
+/// default the dev confirms (empty input) or overrides.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Question {
+    pub label: String,
+    pub default: String,
+}
+
+/// The display form of an optional text field: the value, or the literal `none`
+/// when absent — so a seeded default round-trips through [`resolve_text`].
+fn display_opt(value: Option<&str>) -> String {
+    value.unwrap_or("none").to_string()
+}
+
+/// The display form of a [`RepoKind`] — the same token [`resolve_kind`] parses.
+fn display_kind(kind: RepoKind) -> String {
+    match kind {
+        RepoKind::Empty => "empty",
+        RepoKind::Existing => "existing",
+    }
+    .to_string()
+}
+
+/// The display form of a bool field — the same token [`resolve_bool`] parses.
+fn display_bool(value: bool) -> String {
+    if value { "yes" } else { "no" }.to_string()
+}
+
+/// The display form of the milestone-docs list: comma-joined, or `none` when
+/// empty.
+fn display_list(items: &[String]) -> String {
+    if items.is_empty() {
+        "none".to_string()
+    } else {
+        items.join(", ")
+    }
+}
+
+/// Resolve a free-text answer against a seeded default. Empty input keeps the
+/// default; the literal `none` clears it to `None`; anything else is the trimmed
+/// override.
+fn resolve_text(default: Option<&str>, raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default.map(str::to_string);
+    }
+    if trimmed.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+/// Resolve a yes/no answer against a seeded default. Empty input keeps the
+/// default; `y`/`yes`/`true` → `true`, `n`/`no`/`false` → `false`; an
+/// unrecognized answer keeps the default.
+fn resolve_bool(default: bool, raw: &str) -> bool {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" => default,
+        "y" | "yes" | "true" => true,
+        "n" | "no" | "false" => false,
+        _ => default,
+    }
+}
+
+/// Resolve a repo-kind answer against a seeded default. Empty input keeps the
+/// default; `empty`/`existing` set it; an unrecognized answer keeps the default.
+fn resolve_kind(default: RepoKind, raw: &str) -> RepoKind {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "empty" => RepoKind::Empty,
+        "existing" => RepoKind::Existing,
+        _ => default,
+    }
+}
+
+/// Resolve a comma-separated list answer against a seeded default. Empty input
+/// keeps the default; the literal `none` clears it to an empty list; otherwise
+/// the comma-split, trimmed, non-empty entries replace it.
+fn resolve_list(default: &[String], raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default.to_vec();
+    }
+    if trimmed.eq_ignore_ascii_case("none") {
+        return Vec::new();
+    }
+    trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Build the seeded console questions from a diagnosis report — each default is
+/// the report field's display form, so the dev confirms findings rather than
+/// answering blind (ADR-0012 stage 3).
+fn seed_questions(report: &DiagnosisReport) -> Vec<Question> {
+    vec![
+        Question {
+            label: "Repo kind (empty/existing)".into(),
+            default: display_kind(report.repo_kind),
+        },
+        Question {
+            label: "Language / build".into(),
+            default: display_opt(report.language_build.as_deref()),
+        },
+        Question {
+            label: "Backlog location".into(),
+            default: display_opt(report.backlog_location.as_deref()),
+        },
+        Question {
+            label: "Milestone docs (comma-separated)".into(),
+            default: display_list(&report.milestone_docs),
+        },
+        Question {
+            label: "Skills directory".into(),
+            default: display_opt(report.skills_dir.as_deref()),
+        },
+        Question {
+            label: "Has CONTEXT.md or ADRs (yes/no)".into(),
+            default: display_bool(report.has_context_or_adrs),
+        },
+        Question {
+            label: "Remote host".into(),
+            default: display_opt(report.remote_host.as_deref()),
+        },
+    ]
+}
+
+/// Persist a validated diagnosis report under the workspace's `.ralphy/` so the
+/// later init stages (and a re-run) can read it back (ADR-0012 stage 2).
+fn persist_report(ws: &Workspace, report: &DiagnosisReport) -> Result<()> {
+    std::fs::create_dir_all(ws.ralphy_dir()).context("creating .ralphy dir")?;
+    let json = serde_json::to_string_pretty(report).context("serializing diagnosis report")?;
+    std::fs::write(ws.diagnosis_path(), json).context("writing .ralphy/diagnosis.json")?;
+    Ok(())
+}
+
+/// A human-readable echo of the captured config, for the dev to confirm. Every
+/// resolved field appears so the confirmation is complete.
+fn format_config_echo(cfg: &InitConfig) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("repo kind:     {}\n", display_kind(cfg.repo_kind)));
+    out.push_str(&format!(
+        "language/build: {}\n",
+        display_opt(cfg.language_build.as_deref())
+    ));
+    out.push_str(&format!(
+        "backlog:        {}\n",
+        display_opt(cfg.backlog_location.as_deref())
+    ));
+    out.push_str(&format!(
+        "milestone docs: {}\n",
+        display_list(&cfg.milestone_docs)
+    ));
+    out.push_str(&format!(
+        "skills dir:     {}\n",
+        display_opt(cfg.skills_dir.as_deref())
+    ));
+    out.push_str(&format!(
+        "context/ADRs:   {}\n",
+        display_bool(cfg.has_context_or_adrs)
+    ));
+    out.push_str(&format!(
+        "remote host:    {}\n",
+        display_opt(cfg.remote_host.as_deref())
+    ));
+    out
+}
+
+/// The neutral working directory for the diagnosis session: a fresh dir under the
+/// system temp root, OUTSIDE the target repo, so the agent CLI cannot auto-load
+/// the target's `CLAUDE.md`/`AGENTS.md` as system instructions (ADR-0012
+/// "Considered options"). The `stamp` keeps concurrent runs from colliding.
+fn diagnosis_cwd(_repo: &Path, stamp: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("ralphy-diagnose-{stamp}"))
+}
+
+/// Run the interactive, diagnosis-seeded Q&A on real stdin/stdout, resolving each
+/// answer into an [`InitConfig`]. The pure resolvers do the work; this is the thin
+/// impure shell (printing prompts, reading lines).
+fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
+    let questions = seed_questions(report);
+    let read_line = |label: &str, default: &str| -> Result<String> {
+        print!("{label} [{default}]: ");
+        std::io::stdout().flush().ok();
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .context("reading answer from stdin")?;
+        Ok(line)
+    };
+
+    // Indices match the order in `seed_questions`.
+    let repo_kind = resolve_kind(
+        report.repo_kind,
+        &read_line(&questions[0].label, &questions[0].default)?,
+    );
+    let language_build = resolve_text(
+        report.language_build.as_deref(),
+        &read_line(&questions[1].label, &questions[1].default)?,
+    );
+    let backlog_location = resolve_text(
+        report.backlog_location.as_deref(),
+        &read_line(&questions[2].label, &questions[2].default)?,
+    );
+    let milestone_docs = resolve_list(
+        &report.milestone_docs,
+        &read_line(&questions[3].label, &questions[3].default)?,
+    );
+    let skills_dir = resolve_text(
+        report.skills_dir.as_deref(),
+        &read_line(&questions[4].label, &questions[4].default)?,
+    );
+    let has_context_or_adrs = resolve_bool(
+        report.has_context_or_adrs,
+        &read_line(&questions[5].label, &questions[5].default)?,
+    );
+    let remote_host = resolve_text(
+        report.remote_host.as_deref(),
+        &read_line(&questions[6].label, &questions[6].default)?,
+    );
+
+    Ok(InitConfig {
+        repo_kind,
+        language_build,
+        backlog_location,
+        milestone_docs,
+        skills_dir,
+        has_context_or_adrs,
+        remote_host,
+    })
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
@@ -204,15 +456,38 @@ pub fn run(args: &InitArgs) -> Result<()> {
     let fails = evaluate_gate(&findings);
     print!("{}", format_report(&findings, &fails));
 
-    if fails.is_empty() {
-        println!("Environment gate passed. (Further init stages not yet implemented.)");
-        Ok(())
-    } else {
+    if !fails.is_empty() {
         bail!(
             "ralphy init: environment gate failed ({} blocker(s)) — see report above",
             fails.len()
-        )
+        );
     }
+
+    println!("Environment gate passed. Diagnosing repo (read-only)…");
+
+    // Diagnose from a neutral cwd OUTSIDE the repo, so the target's
+    // CLAUDE.md/AGENTS.md are read as data, never auto-loaded as instructions.
+    let stamp = format!("{}", std::process::id());
+    let cwd = diagnosis_cwd(&repo, &stamp);
+    let report = ralphy_agent_claude::diagnose_repo(
+        &repo,
+        &cwd,
+        None,
+        Some("medium"),
+        Duration::from_secs(300),
+    )?;
+
+    let ws = Workspace::new(&repo);
+    persist_report(&ws, &report)?;
+    println!("Diagnosis written to {}", ws.diagnosis_path().display());
+
+    // Console Q&A pre-filled by the diagnosis — the dev confirms/corrects.
+    println!("\nConfirm or correct the findings (Enter keeps the default, 'none' clears):");
+    let cfg = run_qa(&report)?;
+
+    println!("\nCaptured config:");
+    print!("{}", format_config_echo(&cfg));
+    Ok(())
 }
 
 #[cfg(test)]
@@ -323,6 +598,119 @@ mod tests {
         assert!(
             report.contains("codex: not logged in"),
             "expected 'codex: not logged in' in:\n{report}"
+        );
+    }
+
+    // ── diagnosis → Q&A → config (ADR-0012 stages 2–3) ──────────────────────
+
+    fn sample_report() -> DiagnosisReport {
+        DiagnosisReport {
+            repo_kind: RepoKind::Existing,
+            language_build: Some("Rust / cargo".into()),
+            backlog_location: Some("docs/backlog.md".into()),
+            milestone_docs: vec!["docs/roadmap.md".into(), "docs/prd/0001.md".into()],
+            skills_dir: Some(".claude".into()),
+            has_context_or_adrs: true,
+            remote_host: Some("github.com".into()),
+        }
+    }
+
+    fn config_of(report: &DiagnosisReport) -> InitConfig {
+        InitConfig {
+            repo_kind: report.repo_kind,
+            language_build: report.language_build.clone(),
+            backlog_location: report.backlog_location.clone(),
+            milestone_docs: report.milestone_docs.clone(),
+            skills_dir: report.skills_dir.clone(),
+            has_context_or_adrs: report.has_context_or_adrs,
+            remote_host: report.remote_host.clone(),
+        }
+    }
+
+    #[test]
+    fn resolve_text_empty_keeps_default_typed_overrides_none_clears() {
+        // Empty input keeps the seeded default.
+        assert_eq!(resolve_text(Some("Rust"), "  "), Some("Rust".to_string()));
+        // A typed value overrides it.
+        assert_eq!(resolve_text(Some("Rust"), "Go"), Some("Go".to_string()));
+        // The literal `none` clears it.
+        assert_eq!(resolve_text(Some("Rust"), "none"), None);
+    }
+
+    #[test]
+    fn resolve_bool_empty_keeps_default_typed_overrides() {
+        assert!(resolve_bool(true, ""));
+        assert!(!resolve_bool(true, "no"));
+        assert!(resolve_bool(false, "yes"));
+        // Unrecognized → keep the default.
+        assert!(!resolve_bool(false, "maybe"));
+    }
+
+    #[test]
+    fn resolve_kind_empty_keeps_default_typed_overrides() {
+        assert_eq!(resolve_kind(RepoKind::Existing, ""), RepoKind::Existing);
+        assert_eq!(resolve_kind(RepoKind::Existing, "empty"), RepoKind::Empty);
+        assert_eq!(
+            resolve_kind(RepoKind::Empty, "existing"),
+            RepoKind::Existing
+        );
+    }
+
+    #[test]
+    fn seed_questions_defaults_match_report_fields() {
+        let report = sample_report();
+        let qs = seed_questions(&report);
+        assert_eq!(qs[0].default, display_kind(report.repo_kind));
+        assert_eq!(qs[1].default, report.language_build.clone().unwrap());
+        assert_eq!(qs[2].default, report.backlog_location.clone().unwrap());
+        assert_eq!(qs[3].default, report.milestone_docs.join(", "));
+        assert_eq!(qs[4].default, report.skills_dir.clone().unwrap());
+        assert_eq!(qs[5].default, display_bool(report.has_context_or_adrs));
+        assert_eq!(qs[6].default, report.remote_host.clone().unwrap());
+    }
+
+    #[test]
+    fn persist_report_round_trips_through_ralphy_dir() {
+        // Mirror gitignore.rs/queue.rs: no tempfile dep, manual temp dir.
+        let dir = std::env::temp_dir().join(format!("ralphy-init-persist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ws = Workspace::new(&dir);
+        let report = sample_report();
+
+        persist_report(&ws, &report).unwrap();
+        let raw = std::fs::read_to_string(ws.diagnosis_path()).unwrap();
+        let back: DiagnosisReport = serde_json::from_str(&raw).unwrap();
+        assert_eq!(back, report);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn format_config_echo_contains_each_field() {
+        let cfg = config_of(&sample_report());
+        let echo = format_config_echo(&cfg);
+        assert!(echo.contains("existing"), "repo kind missing:\n{echo}");
+        assert!(echo.contains("Rust / cargo"), "language missing:\n{echo}");
+        assert!(echo.contains("docs/backlog.md"), "backlog missing:\n{echo}");
+        assert!(
+            echo.contains("docs/roadmap.md"),
+            "milestone missing:\n{echo}"
+        );
+        assert!(echo.contains(".claude"), "skills dir missing:\n{echo}");
+        assert!(echo.contains("github.com"), "remote missing:\n{echo}");
+    }
+
+    #[test]
+    fn diagnosis_cwd_is_outside_repo() {
+        let repo = std::env::temp_dir().join("ralphy-some-repo");
+        let cwd = diagnosis_cwd(&repo, "stamp123");
+        assert_ne!(cwd, repo, "neutral cwd must not be the repo root");
+        assert!(
+            !cwd.starts_with(&repo),
+            "neutral cwd {} must not be inside the repo {}",
+            cwd.display(),
+            repo.display()
         );
     }
 }
