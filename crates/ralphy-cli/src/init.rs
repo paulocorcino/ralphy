@@ -1,6 +1,8 @@
 //! `ralphy init`: deterministic environment gate (ADR-0012 stage 1), then a
 //! read-only repo diagnosis from a neutral cwd (stage 2) and a diagnosis-seeded
-//! console Q&A captured into a typed config (stage 3). Stages 4–10 are stubbed.
+//! console Q&A captured into a typed config (stage 3), the git-safety snapshot +
+//! `ralphy/init` branch (stage 4) and the deterministic scaffold from the embedded
+//! setup-pocock templates (stage 5). Stages 6–10 are stubbed.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -466,6 +468,195 @@ fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
     })
 }
 
+// ── scaffold from setup-pocock templates (ADR-0012 stages 4–5) ──────────────
+
+// The setup-pocock templates ship embedded in the binary so init has zero
+// runtime dependency on the on-disk skills dir. Paths mirror the depth
+// `ralphy-agent-claude/src/lib.rs` uses for `../../../assets/prompts/...`.
+const TPL_ISSUE_GITHUB: &str =
+    include_str!("../../../assets/plugin/skills/setup-pocock/issue-tracker-github.md");
+const TPL_ISSUE_GITLAB: &str =
+    include_str!("../../../assets/plugin/skills/setup-pocock/issue-tracker-gitlab.md");
+const TPL_ISSUE_LOCAL: &str =
+    include_str!("../../../assets/plugin/skills/setup-pocock/issue-tracker-local.md");
+const TPL_TRIAGE: &str =
+    include_str!("../../../assets/plugin/skills/setup-pocock/triage-labels.md");
+const TPL_DOMAIN: &str = include_str!("../../../assets/plugin/skills/setup-pocock/domain.md");
+const TPL_ROADMAP: &str = include_str!("../../../assets/plugin/skills/setup-pocock/roadmap.md");
+const TPL_PRD_README: &str =
+    include_str!("../../../assets/plugin/skills/setup-pocock/prd-readme.md");
+const TPL_PRD_TEMPLATE: &str =
+    include_str!("../../../assets/plugin/skills/setup-pocock/prd-template.md");
+
+const AGENT_SKILLS_HEADING: &str = "## Agent skills";
+
+/// Select the issue-tracker template by the remote host. A host containing
+/// `gitlab` → the GitLab template, `github` → the GitHub template, anything else
+/// (including `None`) → the local-markdown template. Returns the on-disk filename
+/// to write (always `issue-tracker.md`) and the chosen template body. Pure over
+/// its input.
+fn select_issue_tracker(remote_host: Option<&str>) -> (&'static str, &'static str) {
+    let host = remote_host.unwrap_or("").to_ascii_lowercase();
+    let body = if host.contains("gitlab") {
+        TPL_ISSUE_GITLAB
+    } else if host.contains("github") {
+        TPL_ISSUE_GITHUB
+    } else {
+        TPL_ISSUE_LOCAL
+    };
+    ("issue-tracker.md", body)
+}
+
+/// Render the `## Agent skills` block from the captured config: three one-line
+/// summaries (issue tracker, triage labels, domain docs), each pointing at the
+/// `docs/agents/*.md` file written alongside it.
+fn agent_skills_block(cfg: &InitConfig) -> String {
+    let tracker = match select_issue_tracker(cfg.remote_host.as_deref()).1 {
+        b if b == TPL_ISSUE_GITHUB => "GitHub issues (use the `gh` CLI)",
+        b if b == TPL_ISSUE_GITLAB => "GitLab issues (use the `glab` CLI)",
+        _ => "local markdown files",
+    };
+    let mut out = String::new();
+    out.push_str(AGENT_SKILLS_HEADING);
+    out.push('\n');
+    out.push_str(&format!(
+        "\nThe engineering skills onboard from the docs below.\n\n\
+         - Issue tracker: {tracker}. See `docs/agents/issue-tracker.md`.\n\
+         - Triage labels: this repo's canonical triage roles. See `docs/agents/triage-labels.md`.\n\
+         - Domain docs: single-context. See `docs/agents/domain.md`.\n"
+    ));
+    out
+}
+
+/// Replace an existing `## Agent skills` section in `doc` (from that heading up to
+/// the next top-level `## ` heading or EOF) with `block`, or append `block` when
+/// no such section exists. The result contains the heading exactly once. Pure.
+fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
+    let block = block.trim_end();
+    let Some(start) = find_heading(doc, AGENT_SKILLS_HEADING) else {
+        // Append, separated by a blank line from any existing content.
+        let mut out = doc.trim_end().to_string();
+        if out.is_empty() {
+            return format!("{block}\n");
+        }
+        out.push_str("\n\n");
+        out.push_str(block);
+        out.push('\n');
+        return out;
+    };
+
+    // Find the end: the next top-level `## ` heading after the section's body.
+    let after = &doc[start..];
+    let body_offset = after.find('\n').map(|n| n + 1).unwrap_or(after.len());
+    let end_rel = find_heading(&after[body_offset..], "## ").map(|p| body_offset + p);
+
+    let mut out = String::new();
+    out.push_str(&doc[..start]);
+    out.push_str(block);
+    out.push('\n');
+    if let Some(end_rel) = end_rel {
+        out.push('\n');
+        out.push_str(after[end_rel..].trim_start_matches('\n'));
+    }
+    out
+}
+
+/// Byte offset of the first line that starts with `needle` (at column 0), or
+/// `None`. `needle` is matched as a line prefix so `## Agent skills` does not
+/// match `### Agent skills sub`.
+fn find_heading(doc: &str, needle: &str) -> Option<usize> {
+    if doc.starts_with(needle) {
+        return Some(0);
+    }
+    let pat = format!("\n{needle}");
+    doc.find(&pat).map(|p| p + 1)
+}
+
+/// Write the deterministic scaffold onto the repo (ADR-0012 stage 5): the
+/// `docs/agents/*` docs, the `## Agent skills` block in `CLAUDE.md`/`AGENTS.md`,
+/// and — only when the dev opted in — the PRD/roadmap track docs. Idempotent:
+/// every write overwrites in place and the block upsert never duplicates.
+fn write_scaffold(repo: &Path, cfg: &InitConfig) -> Result<()> {
+    let agents_dir = repo.join("docs").join("agents");
+    std::fs::create_dir_all(&agents_dir).context("creating docs/agents")?;
+
+    let (tracker_name, tracker_body) = select_issue_tracker(cfg.remote_host.as_deref());
+    std::fs::write(agents_dir.join(tracker_name), tracker_body)
+        .context("writing docs/agents/issue-tracker.md")?;
+    std::fs::write(agents_dir.join("triage-labels.md"), TPL_TRIAGE)
+        .context("writing docs/agents/triage-labels.md")?;
+    std::fs::write(agents_dir.join("domain.md"), TPL_DOMAIN)
+        .context("writing docs/agents/domain.md")?;
+
+    // The block target: CLAUDE.md if present, else AGENTS.md if present, else a
+    // fresh CLAUDE.md.
+    let claude = repo.join("CLAUDE.md");
+    let agents = repo.join("AGENTS.md");
+    let target = if claude.exists() {
+        claude
+    } else if agents.exists() {
+        agents
+    } else {
+        claude
+    };
+    let existing = std::fs::read_to_string(&target).unwrap_or_default();
+    let updated = upsert_agent_skills_block(&existing, &agent_skills_block(cfg));
+    std::fs::write(&target, updated).with_context(|| format!("writing {}", target.display()))?;
+
+    if cfg.adopt_prd_roadmap {
+        let prd_dir = repo.join("docs").join("prd");
+        std::fs::create_dir_all(&prd_dir).context("creating docs/prd")?;
+        std::fs::write(repo.join("docs").join("roadmap.md"), TPL_ROADMAP)
+            .context("writing docs/roadmap.md")?;
+        std::fs::write(prd_dir.join("README.md"), TPL_PRD_README)
+            .context("writing docs/prd/README.md")?;
+        std::fs::write(prd_dir.join("_template.md"), TPL_PRD_TEMPLATE)
+            .context("writing docs/prd/_template.md")?;
+    }
+
+    Ok(())
+}
+
+/// The git-safety decision for a (clean?, answer) pair. Pure: the impure shell in
+/// [`run`] probes the tree and reads the answer, then acts on this verdict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CommitDecision {
+    NothingToCommit,
+    Commit,
+    Abort(String),
+}
+
+/// Map (is_clean, answer) to a [`CommitDecision`]. A clean tree never commits; a
+/// dirty tree commits on yes and aborts on anything else (no/empty/unknown), so a
+/// refusal stops init before any branch or scaffold write.
+fn commit_decision(is_clean: bool, answer: &str) -> CommitDecision {
+    if is_clean {
+        return CommitDecision::NothingToCommit;
+    }
+    match answer.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => CommitDecision::Commit,
+        _ => CommitDecision::Abort(
+            "ralphy init aborted: a snapshot commit is required to isolate init's changes".into(),
+        ),
+    }
+}
+
+/// The branch decision for a (current, answer) pair. Pure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BranchDecision {
+    Create(String),
+    Stay,
+}
+
+/// Map an answer to a [`BranchDecision`]. Empty/yes/y (the recommended default) →
+/// create `ralphy/init`; no/n → stay on the current branch.
+fn branch_decision(_current: &str, answer: &str) -> BranchDecision {
+    match answer.trim().to_ascii_lowercase().as_str() {
+        "" | "y" | "yes" => BranchDecision::Create("ralphy/init".into()),
+        _ => BranchDecision::Stay,
+    }
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
@@ -519,6 +710,65 @@ pub fn run(args: &InitArgs) -> Result<()> {
 
     println!("\nCaptured config:");
     print!("{}", format_config_echo(&cfg));
+
+    // ── stage 4: git safety (snapshot commit) ──────────────────────────────
+    let prompt = |label: &str| -> Result<String> {
+        print!("{label}");
+        std::io::stdout().flush().ok();
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .context("reading answer from stdin")?;
+        Ok(line)
+    };
+
+    let is_clean = git::is_clean_ignoring_ralphy(&repo)?;
+    if !is_clean {
+        println!("\nWorking tree is dirty:");
+        print!("{}", git::git(&repo, &["status", "--short"])?);
+        let answer = prompt("\nCommit a snapshot before init (git add -A && git commit)? [Y/n]: ")?;
+        match commit_decision(is_clean, &answer) {
+            CommitDecision::Abort(msg) => {
+                // INVARIANT: a refusal stops here — before any branch or write.
+                bail!("{msg}");
+            }
+            CommitDecision::Commit => {
+                git::commit_all_snapshot(&repo)?;
+                println!("Snapshot committed.");
+            }
+            CommitDecision::NothingToCommit => {}
+        }
+    }
+
+    // ── stage 4b: branch (before any scaffold write) ────────────────────────
+    let current = git::current_branch(&repo)?;
+    let answer = prompt("\nCreate branch `ralphy/init` for init's changes? [Y/n]: ")?;
+    match branch_decision(&current, &answer) {
+        BranchDecision::Create(branch) => {
+            if git::commitish_exists(&repo, &branch) {
+                git::checkout(&repo, &branch)?;
+            } else {
+                git::checkout_new_branch(&repo, &branch, &current)?;
+            }
+            println!("On branch {branch}.");
+        }
+        BranchDecision::Stay => {
+            println!("Staying on branch {current}.");
+        }
+    }
+
+    // ── stage 5: deterministic scaffold (onto the branch) ───────────────────
+    write_scaffold(&repo, &cfg)?;
+    println!("\nScaffold written:");
+    println!("  docs/agents/issue-tracker.md");
+    println!("  docs/agents/triage-labels.md");
+    println!("  docs/agents/domain.md");
+    if cfg.adopt_prd_roadmap {
+        println!("  docs/roadmap.md");
+        println!("  docs/prd/README.md");
+        println!("  docs/prd/_template.md");
+    }
+
     Ok(())
 }
 
@@ -764,6 +1014,191 @@ mod tests {
             cwd.display(),
             repo.display()
         );
+    }
+
+    // ── scaffold: template selection, block upsert, decisions (#54) ─────────
+
+    #[test]
+    fn select_issue_tracker_picks_body_by_host() {
+        assert!(select_issue_tracker(Some("github.com"))
+            .1
+            .contains("# Issue tracker: GitHub"));
+        assert!(select_issue_tracker(Some("gitlab.com"))
+            .1
+            .contains("# Issue tracker: GitLab"));
+        assert!(select_issue_tracker(None)
+            .1
+            .contains("# Issue tracker: Local Markdown"));
+        // The on-disk filename is always issue-tracker.md regardless of host.
+        assert_eq!(
+            select_issue_tracker(Some("github.com")).0,
+            "issue-tracker.md"
+        );
+    }
+
+    fn block_cfg() -> InitConfig {
+        config_of(&sample_report())
+    }
+
+    #[test]
+    fn upsert_appends_block_when_absent() {
+        let doc = "# Project\n\nSome intro.\n";
+        let block = agent_skills_block(&block_cfg());
+        let out = upsert_agent_skills_block(doc, &block);
+        assert_eq!(
+            out.matches("## Agent skills").count(),
+            1,
+            "exactly one heading:\n{out}"
+        );
+        assert!(
+            out.contains("# Project"),
+            "original content preserved:\n{out}"
+        );
+        assert!(
+            out.trim_end().ends_with("docs/agents/domain.md`."),
+            "block appended at end:\n{out}"
+        );
+    }
+
+    #[test]
+    fn upsert_replaces_existing_block_in_place() {
+        let doc = "# Project\n\n## Agent skills\n\nOLD STALE BODY.\n\n## Other\n\nkeep me.\n";
+        let block = agent_skills_block(&block_cfg());
+        let out = upsert_agent_skills_block(doc, &block);
+        assert_eq!(
+            out.matches("## Agent skills").count(),
+            1,
+            "still exactly one heading:\n{out}"
+        );
+        assert!(!out.contains("OLD STALE BODY"), "old body gone:\n{out}");
+        assert!(
+            out.contains("docs/agents/issue-tracker.md"),
+            "new summary present:\n{out}"
+        );
+        assert!(
+            out.contains("## Other"),
+            "trailing section preserved:\n{out}"
+        );
+        assert!(out.contains("keep me."), "trailing body preserved:\n{out}");
+    }
+
+    #[test]
+    fn commit_decision_maps_clean_dirty_yes_and_refusal() {
+        assert_eq!(
+            commit_decision(true, "anything"),
+            CommitDecision::NothingToCommit
+        );
+        assert_eq!(commit_decision(false, "yes"), CommitDecision::Commit);
+        assert_eq!(commit_decision(false, "y"), CommitDecision::Commit);
+        match commit_decision(false, "no") {
+            CommitDecision::Abort(msg) => assert!(!msg.is_empty()),
+            other => panic!("expected Abort, got {other:?}"),
+        }
+        // An empty answer is a refusal too — never commit on silence.
+        assert!(matches!(
+            commit_decision(false, ""),
+            CommitDecision::Abort(_)
+        ));
+    }
+
+    #[test]
+    fn branch_decision_maps_default_and_decline() {
+        assert_eq!(
+            branch_decision("main", ""),
+            BranchDecision::Create("ralphy/init".into())
+        );
+        assert_eq!(
+            branch_decision("main", "yes"),
+            BranchDecision::Create("ralphy/init".into())
+        );
+        assert_eq!(branch_decision("main", "no"), BranchDecision::Stay);
+        assert_eq!(branch_decision("main", "n"), BranchDecision::Stay);
+    }
+
+    #[test]
+    fn write_scaffold_prd_opt_in_controls_prd_docs() {
+        let dir = std::env::temp_dir().join(format!("ralphy-scaffold-prd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut cfg = block_cfg();
+        cfg.adopt_prd_roadmap = true;
+        write_scaffold(&dir, &cfg).unwrap();
+        assert!(dir.join("docs/roadmap.md").exists());
+        assert!(dir.join("docs/prd/README.md").exists());
+        assert!(dir.join("docs/prd/_template.md").exists());
+
+        let dir2 =
+            std::env::temp_dir().join(format!("ralphy-scaffold-noprd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir2);
+        std::fs::create_dir_all(&dir2).unwrap();
+        let mut cfg2 = block_cfg();
+        cfg2.adopt_prd_roadmap = false;
+        write_scaffold(&dir2, &cfg2).unwrap();
+        assert!(!dir2.join("docs/roadmap.md").exists());
+        assert!(!dir2.join("docs/prd").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    #[test]
+    fn init_git_safety_branch_and_scaffold_end_to_end() {
+        use ralphy_core::git;
+
+        let dir = std::env::temp_dir().join(format!("ralphy-init-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git::git(&dir, &["init", "-q", "-b", "main"]).unwrap();
+        git::git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
+        git::git(&dir, &["config", "user.name", "Test"]).unwrap();
+        std::fs::write(dir.join("README.md"), "hello\n").unwrap();
+        git::git(&dir, &["add", "."]).unwrap();
+        git::git(&dir, &["commit", "-q", "-m", "init"]).unwrap();
+        // Dirty the tree so the commit decision has work to do.
+        std::fs::write(dir.join("README.md"), "changed\n").unwrap();
+
+        // Drive the decision functions with literal "yes" answers, then the real
+        // git/scaffold helpers — no stdin blocking.
+        let is_clean = git::is_clean_ignoring_ralphy(&dir).unwrap();
+        assert!(!is_clean, "tree should be dirty");
+        match commit_decision(is_clean, "yes") {
+            CommitDecision::Commit => git::commit_all_snapshot(&dir).unwrap(),
+            other => panic!("expected Commit, got {other:?}"),
+        }
+        assert!(
+            git::is_clean_ignoring_ralphy(&dir).unwrap(),
+            "clean after snapshot"
+        );
+
+        let current = git::current_branch(&dir).unwrap();
+        match branch_decision(&current, "") {
+            BranchDecision::Create(branch) => {
+                git::checkout_new_branch(&dir, &branch, &current).unwrap();
+            }
+            other => panic!("expected Create, got {other:?}"),
+        }
+        assert_eq!(git::current_branch(&dir).unwrap(), "ralphy/init");
+
+        let mut cfg = block_cfg();
+        cfg.adopt_prd_roadmap = false;
+        write_scaffold(&dir, &cfg).unwrap();
+
+        assert!(dir.join("docs/agents/issue-tracker.md").exists());
+        assert!(dir.join("docs/agents/triage-labels.md").exists());
+        assert!(dir.join("docs/agents/domain.md").exists());
+        let claude = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+        assert_eq!(claude.matches("## Agent skills").count(), 1);
+        // PRD opt-out: none of the PRD docs exist.
+        assert!(!dir.join("docs/prd").exists());
+        assert!(!dir.join("docs/roadmap.md").exists());
+
+        // Idempotency: a second scaffold leaves a single block.
+        write_scaffold(&dir, &cfg).unwrap();
+        let claude2 = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+        assert_eq!(claude2.matches("## Agent skills").count(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
