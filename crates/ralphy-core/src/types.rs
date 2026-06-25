@@ -150,6 +150,13 @@ impl Workspace {
         self.ralphy_dir().join("plan.md")
     }
 
+    /// `<repo>/.ralphy/diagnosis.json` — where `ralphy init` persists the
+    /// read-only repo-diagnosis report (ADR-0012 stage 2) after validating it
+    /// against the [`crate::DiagnosisReport`] schema.
+    pub fn diagnosis_path(&self) -> PathBuf {
+        self.ralphy_dir().join("diagnosis.json")
+    }
+
     /// `<repo>/.ralphy/handoffs.md` — handoffs collected from the closed
     /// issues the current one depends on, written by the runner before the
     /// plan pass and read by the planner as predecessor context.
