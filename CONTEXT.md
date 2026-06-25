@@ -146,6 +146,28 @@ first. The human creates the label, removes it from the issue, and re-runs to
 continue. Not a triage role — a flow control, named for its semantics.
 _Avoid_: pause, hold, breakpoint.
 
+**Init / onboarding**:
+The interactive command (`ralphy init`) that brings an *unprepared* repo to a
+state `ralphy run` can work: it validates the environment, scaffolds `.ralphy/`
+and `docs/agents/*`, creates the **labels**, installs the engineering skills, and
+turns an existing backlog into **issues**. Rust owns all control flow, gates, git,
+labels, and the interactive questions; it spawns agent sessions only for the
+read/judgment work, each receiving a fully-assembled non-interactive prompt. It
+**inverts setup-pocock**: the asking moves into a Rust console Q&A, and the skill's
+templates are fed answers instead of interviewing. See [docs/adr/0012](./docs/adr/0012-init-onboarding-command.md).
+_Avoid_: setup (overloaded with the setup-pocock skill), bootstrap, scaffold (only
+one stage of init).
+
+**Repo diagnosis**:
+The read-only first agent pass of **init** that scans the target repo and returns a
+structured report (against a Rust-defined schema) describing what is and isn't
+present — existing project vs empty, backlog/milestone docs, existing agent skill
+dirs, domain docs, remote host. It runs from a **neutral cwd** with the repo passed
+as data, so the target's `CLAUDE.md`/`AGENTS.md` are *read as data*, never
+auto-loaded as instructions that could sabotage the diagnosis. Its output pre-fills
+the init Q&A.
+_Avoid_: scan, audit (reserved for security/review), analysis.
+
 ## Relationships
 
 - The **queue** = open issues carrying any **queue label**, ascending by number.
