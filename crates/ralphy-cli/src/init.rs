@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
-use ralphy_adapter_support::find_program;
+use ralphy_adapter_support::{find_program, locate_program, resolve_program};
 use ralphy_core::{git, github, DiagnosisReport, IssuesDraft, RepoKind, Workspace};
 
 #[derive(Args)]
@@ -157,30 +157,28 @@ fn github_remote(repo: &Path) -> bool {
         .unwrap_or(false)
 }
 
+// The gate's presence/login probes resolve each CLI through the SAME locator the
+// adapters spawn through (`locate_program`/`resolve_program`), so detection and
+// execution agree — a `claude` under `~/.local/bin` but off `PATH` is reported
+// present and is the binary actually run, rather than being falsely called absent.
 fn agent_present(a: &Agent) -> bool {
-    let path = std::env::var_os("PATH");
-    let pathext = std::env::var_os("PATHEXT");
-    find_program(a.cli_name(), path, pathext).is_some()
+    locate_program(a.cli_name()).is_some()
 }
 
 fn agent_logged_in(a: &Agent) -> bool {
     let hello = "hello";
-    let mut cmd = match a {
+    let bin = resolve_program(a.cli_name());
+    let mut cmd = std::process::Command::new(&bin);
+    match a {
         Agent::Claude => {
-            let mut c = std::process::Command::new("claude");
-            c.args(["-p", hello]);
-            c
+            cmd.args(["-p", hello]);
         }
         Agent::Codex => {
-            let mut c = std::process::Command::new("codex");
-            c.args(["exec", hello]);
-            c.env_remove("OPENAI_API_KEY");
-            c
+            cmd.args(["exec", hello]);
+            cmd.env_remove("OPENAI_API_KEY");
         }
         Agent::Opencode => {
-            let mut c = std::process::Command::new("opencode");
-            c.args(["run", hello]);
-            c
+            cmd.args(["run", hello]);
         }
     };
     cmd.stdin(Stdio::null())
