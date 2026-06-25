@@ -18,6 +18,7 @@ pub mod git;
 pub mod github;
 pub mod gitignore;
 pub mod handoff;
+pub mod issues_draft;
 pub mod knowledge;
 pub mod ledger;
 pub mod plan;
@@ -28,6 +29,7 @@ pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
 pub use blocked::parse_blocked_by;
 pub use diagnosis::{DiagnosisReport, RepoKind};
+pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
 pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,

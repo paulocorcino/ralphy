@@ -19,7 +19,8 @@ use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::run_headless;
 use ralphy_core::{
-    git, plan, Agent, DiagnosisReport, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace,
+    git, plan, Agent, DiagnosisReport, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit,
+    Usage, Workspace,
 };
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
@@ -43,6 +44,11 @@ const PROMPT_CONSOLIDATE: &str = include_str!("../../../assets/prompts/prompt.co
 /// The read-only repo-diagnosis charter (`ralphy init` stage 2): scan the target
 /// repo passed as data and write a [`DiagnosisReport`] JSON to a path outside it.
 const PROMPT_DIAGNOSE: &str = include_str!("../../../assets/prompts/prompt.diagnose.md");
+
+/// The backlog/milestone → issues charter (`ralphy init` stage 8): read the
+/// repo's backlog or milestone docs and emit an [`IssuesDraft`] JSON preview,
+/// never publishing to GitHub.
+const PROMPT_INIT_ISSUES: &str = include_str!("../../../assets/prompts/prompt.init-issues.md");
 
 /// The one-line charter the interactive session is launched with; it points the
 /// agent at the embedded charter and the plan, and names the exit sentinel.
@@ -529,6 +535,158 @@ pub fn diagnose_repo(
     serde_json::from_str(&raw).with_context(|| {
         format!(
             "diagnosis report at {} did not match the schema",
+            out_path.display()
+        )
+    })
+}
+
+/// Which judgment path a backlog/milestone → issues session takes (ADR-0012
+/// stage 8). `Milestone` synthesizes a PRD + milestone from milestone docs;
+/// `LooseBacklog` reshapes a loose backlog to the tracer-bullet standard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssuesMode {
+    Milestone,
+    LooseBacklog,
+}
+
+impl IssuesMode {
+    /// The token the charter's `## Inputs` block names — matches the mode names in
+    /// `prompt.init-issues.md`.
+    fn as_str(&self) -> &'static str {
+        match self {
+            IssuesMode::Milestone => "milestone",
+            IssuesMode::LooseBacklog => "loose-backlog",
+        }
+    }
+}
+
+/// The judgment inputs for one [`draft_issues`] session: which path to take, the
+/// source documents to read, and the triage label every drafted issue carries.
+/// Grouped into a struct so the session entry point stays under the argument-count
+/// lint and the call site reads as named fields.
+pub struct DraftRequest<'a> {
+    pub mode: IssuesMode,
+    pub source_docs: &'a [String],
+    pub triage_label: &'a str,
+}
+
+/// Build the backlog → issues prompt: the embedded charter followed by an
+/// `## Inputs` block naming the mode, the repo root, the source documents, the
+/// triage label every drafted issue carries, and the output path. Pure over its
+/// inputs so it unit-tests without spawning anything.
+fn build_init_issues_prompt(
+    repo: &Path,
+    mode: IssuesMode,
+    source_docs: &[String],
+    triage_label: &str,
+    out: &Path,
+) -> String {
+    let docs = if source_docs.is_empty() {
+        "(none named — scan the repo)".to_string()
+    } else {
+        source_docs
+            .iter()
+            .map(|d| format!("  - {d}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "{PROMPT_INIT_ISSUES}\n\n## Inputs\n\n\
+         - Mode: {mode}\n\
+         - Repo root: {repo}\n\
+         - Source document(s):\n{docs}\n\
+         - Triage label for every drafted issue: {triage_label}\n\
+         - Write the JSON draft to this path: {out}\n",
+        mode = mode.as_str(),
+        repo = repo.display(),
+        out = out.display(),
+    )
+}
+
+/// Run a one-shot headless `claude -p` backlog/milestone → issues session
+/// (ADR-0012 stage 8). Unlike [`diagnose_repo`] this runs IN the repo cwd — it
+/// needs the repo's domain glossary/ADRs and (on the milestone path) writes a PRD
+/// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to
+/// `out_path`, which this function reads, validates against the schema, and
+/// returns. It NEVER publishes to GitHub — that is the cli's job after the dev
+/// confirms. Mirrors [`diagnose_repo`]'s settings/auth/timeout handling.
+pub fn draft_issues(
+    repo: &Path,
+    out_path: &Path,
+    req: &DraftRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<IssuesDraft> {
+    let mode = req.mode;
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let settings_path = repo.join(".ralphy").join("ralphy.settings.json");
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+
+    // A stale draft from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(out_path);
+
+    let mut args: Vec<String> = Vec::new();
+    if let Some(m) = model {
+        args.push("--model".into());
+        args.push(m.into());
+    }
+    args.push("-p".into());
+    args.push("--dangerously-skip-permissions".into());
+    args.push("--settings".into());
+    args.push(settings_path.to_string_lossy().into_owned());
+    if let Some(e) = effort {
+        args.push("--effort".into());
+        args.push(e.into());
+    }
+
+    info!(
+        ?model,
+        ?effort,
+        mode = mode.as_str(),
+        "drafting issues with claude -p"
+    );
+    let mut cmd = Command::new(resolve_claude_binary());
+    cmd.args(&args)
+        .current_dir(repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let prompt = build_init_issues_prompt(repo, mode, req.source_docs, req.triage_label, out_path);
+    let r = run_headless(cmd, &prompt, timeout)
+        .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
+    let mut log = r.stdout;
+    log.push_str(&r.stderr);
+    let log_path = repo.join(".ralphy").join("init-issues.log");
+    let _ = fs::write(&log_path, &log);
+
+    if is_claude_auth_error(&log) {
+        bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
+    }
+    if r.timed_out {
+        bail!(
+            "backlog → issues session hit the wall timeout (see {})",
+            log_path.display()
+        );
+    }
+
+    let raw = fs::read_to_string(out_path).with_context(|| {
+        format!(
+            "issues session left no draft at {} (see {})",
+            out_path.display(),
+            log_path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "issues draft at {} did not match the schema",
             out_path.display()
         )
     })
@@ -1579,6 +1737,55 @@ mod tests {
         assert!(
             prompt.starts_with(PROMPT_DIAGNOSE),
             "prompt must lead with the embedded diagnosis charter"
+        );
+    }
+
+    #[test]
+    fn build_init_issues_prompt_names_mode_docs_label_and_output() {
+        let repo = Path::new("/abs/target/repo");
+        let out = Path::new("/abs/target/repo/.ralphy/issues-draft.json");
+        let docs = vec![
+            "docs/roadmap.md".to_string(),
+            "docs/prd/0001.md".to_string(),
+        ];
+        let prompt =
+            build_init_issues_prompt(repo, IssuesMode::Milestone, &docs, "ready-for-agent", out);
+        assert!(
+            prompt.starts_with(PROMPT_INIT_ISSUES),
+            "prompt must lead with the embedded init-issues charter"
+        );
+        assert!(
+            prompt.contains("Mode: milestone"),
+            "names the mode:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("docs/roadmap.md"),
+            "names the source docs:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("ready-for-agent"),
+            "names the triage label:\n{prompt}"
+        );
+        assert!(
+            prompt.contains(&out.display().to_string()),
+            "names the output path:\n{prompt}"
+        );
+    }
+
+    #[test]
+    fn build_init_issues_prompt_loose_backlog_mode_token() {
+        let repo = Path::new("/r");
+        let out = Path::new("/r/.ralphy/issues-draft.json");
+        let prompt = build_init_issues_prompt(
+            repo,
+            IssuesMode::LooseBacklog,
+            &["BACKLOG.md".to_string()],
+            "ready-for-agent",
+            out,
+        );
+        assert!(
+            prompt.contains("Mode: loose-backlog"),
+            "loose-backlog token:\n{prompt}"
         );
     }
 

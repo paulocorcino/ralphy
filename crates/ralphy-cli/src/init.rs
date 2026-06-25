@@ -3,8 +3,10 @@
 //! console Q&A captured into a typed config (stage 3), the git-safety snapshot +
 //! `ralphy/init` branch (stage 4), the deterministic scaffold from the embedded
 //! setup-pocock templates (stage 5), the optional sparse-checkout download of
-//! engineering skills pinned to `RALPHY_VERSION` (stage 6), and the idempotent
-//! GitHub label vocabulary creation (stage 7). Stages 8–10 are stubbed.
+//! engineering skills pinned to `RALPHY_VERSION` (stage 6), the idempotent
+//! GitHub label vocabulary creation (stage 7), and the conditional
+//! backlog/milestone → issues judgment with a local preview the dev confirms
+//! before any publish (stage 8). Stages 9–10 are stubbed.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -14,7 +16,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use clap::Args;
 use ralphy_adapter_support::find_program;
-use ralphy_core::{git, github, DiagnosisReport, RepoKind, Workspace};
+use ralphy_core::{git, github, DiagnosisReport, IssuesDraft, RepoKind, Workspace};
 
 #[derive(Args)]
 pub struct InitArgs {
@@ -837,6 +839,147 @@ fn branch_decision(_current: &str, answer: &str) -> BranchDecision {
     }
 }
 
+// ── stage 8: backlog/milestone → issues (preview, confirm, publish) ──────────
+
+/// Which judgment path stage 8 takes for the captured config — or `Skip` when the
+/// diagnosis/Q&A found no backlog or milestone (ADR-0012 stage 8 "skipped cleanly"
+/// criterion). Pure: the impure shell acts on this verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IssuesPath {
+    Milestone,
+    LooseBacklog,
+    Skip,
+}
+
+/// Decide the stage-8 path from the captured config. The milestone path wins when
+/// the dev adopted the PRD/roadmap model AND milestone docs exist; otherwise a
+/// loose backlog is reshaped when one was found; otherwise stage 8 is skipped.
+fn decide_issues_path(cfg: &InitConfig) -> IssuesPath {
+    if cfg.adopt_prd_roadmap && !cfg.milestone_docs.is_empty() {
+        IssuesPath::Milestone
+    } else if cfg.backlog_location.is_some() {
+        IssuesPath::LooseBacklog
+    } else {
+        IssuesPath::Skip
+    }
+}
+
+/// The publish decision for the drafted preview. Default is **No** (`[y/N]`): a
+/// bulk external write is never the silent default — only an explicit `y`/`yes`
+/// proceeds. Pure, mirrors [`download_decision`].
+fn publish_decision(answer: &str) -> bool {
+    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+/// A human-readable summary of the draft for the dev to confirm before any
+/// external write: the headline count (and milestone, when present) followed by
+/// one line per issue with its labels and blocked-by indices. Pure, mirrors
+/// [`github::format_label_plan`].
+fn format_draft_summary(draft: &IssuesDraft) -> String {
+    let mut out = String::new();
+    match &draft.milestone {
+        Some(ms) => out.push_str(&format!(
+            "will create {} issue(s), all in milestone \"{}\"\n",
+            draft.issue_count(),
+            ms.title
+        )),
+        None => out.push_str(&format!("will create {} issue(s)\n", draft.issue_count())),
+    }
+    if let Some(prd) = &draft.prd_path {
+        out.push_str(&format!("PRD written: {prd}\n"));
+    }
+    for (i, issue) in draft.issues.iter().enumerate() {
+        let labels = if issue.labels.is_empty() {
+            String::new()
+        } else {
+            format!("  [{}]", issue.labels.join(", "))
+        };
+        let blocked = if issue.blocked_by.is_empty() {
+            String::new()
+        } else {
+            let refs: Vec<String> = issue
+                .blocked_by
+                .iter()
+                .map(|n| format!("#{}", n + 1))
+                .collect();
+            format!("  (blocked by {})", refs.join(", "))
+        };
+        out.push_str(&format!(
+            "  {}. {}{}{}\n",
+            i + 1,
+            issue.title,
+            labels,
+            blocked
+        ));
+    }
+    out
+}
+
+/// Rewrite a drafted body's `## Blocked by` placeholder with the resolved issue
+/// numbers (or the "can start immediately" line when none). The charter emits the
+/// literal `BLOCKED_BY_PLACEHOLDER`; if it is absent (a body that didn't follow
+/// the template) the body is returned unchanged. Pure.
+fn patch_blocked_by(body: &str, blocked_numbers: &[u64]) -> String {
+    const PLACEHOLDER: &str = "BLOCKED_BY_PLACEHOLDER";
+    if !body.contains(PLACEHOLDER) {
+        return body.to_string();
+    }
+    let replacement = if blocked_numbers.is_empty() {
+        "None - can start immediately".to_string()
+    } else {
+        blocked_numbers
+            .iter()
+            .map(|n| format!("- #{n}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    body.replace(PLACEHOLDER, &replacement)
+}
+
+/// Resolve the agent-ready triage label from the scaffolded
+/// `docs/agents/triage-labels.md` (the mapping for `ready-for-agent`), falling
+/// back to the canonical `ready-for-agent` when no mapping is configured.
+fn resolve_triage_label(repo: &Path) -> String {
+    let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
+    triage_doc
+        .as_deref()
+        .and_then(|d| github::parse_triage_mapping(d, "ready-for-agent"))
+        .unwrap_or_else(|| "ready-for-agent".to_string())
+}
+
+/// Publish a confirmed draft to GitHub: create the milestone first (milestone
+/// path), then each issue in array order, mapping each draft index to its created
+/// number so a later issue's `blocked_by` indices resolve to real `#N` refs in its
+/// body. Returns the created issue numbers in array order.
+fn publish_draft(repo: &Path, draft: &IssuesDraft) -> Result<Vec<u64>> {
+    // Create the milestone first so `gh issue create --milestone <name>` resolves;
+    // each issue links to it by name (the number, returned here, is just logged).
+    let milestone_name = match &draft.milestone {
+        Some(ms) => {
+            let number = github::create_milestone(repo, &ms.title, &ms.description)?;
+            println!("  created milestone #{number}: {}", ms.title);
+            Some(ms.title.as_str())
+        }
+        None => None,
+    };
+    let mut created: Vec<u64> = Vec::with_capacity(draft.issues.len());
+    for issue in &draft.issues {
+        // A blocker index must point at an earlier (already-created) issue; guard
+        // against an out-of-range index rather than panicking on a bad draft.
+        let blocked_numbers: Vec<u64> = issue
+            .blocked_by
+            .iter()
+            .filter_map(|&idx| created.get(idx).copied())
+            .collect();
+        let body = patch_blocked_by(&issue.body, &blocked_numbers);
+        let number =
+            github::create_issue(repo, &issue.title, &body, &issue.labels, milestone_name)?;
+        println!("  created #{number}: {}", issue.title);
+        created.push(number);
+    }
+    Ok(created)
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
@@ -998,6 +1141,52 @@ pub fn run(args: &InitArgs) -> Result<()> {
         println!("Labels created/updated.");
     } else {
         println!("Skipping label creation.");
+    }
+
+    // ── stage 8: backlog/milestone → issues (preview, confirm, publish) ───────
+    match decide_issues_path(&cfg) {
+        IssuesPath::Skip => {
+            println!("\nNo backlog or milestone found — skipping issue creation.");
+        }
+        path => {
+            let (mode, source_docs) = match path {
+                IssuesPath::Milestone => (
+                    ralphy_agent_claude::IssuesMode::Milestone,
+                    cfg.milestone_docs.clone(),
+                ),
+                IssuesPath::LooseBacklog => (
+                    ralphy_agent_claude::IssuesMode::LooseBacklog,
+                    cfg.backlog_location.iter().cloned().collect(),
+                ),
+                IssuesPath::Skip => unreachable!("Skip handled above"),
+            };
+            let triage_label = resolve_triage_label(&repo);
+            let draft_path = ws.issues_draft_path();
+            println!("\nDrafting issues from the backlog/milestone (read-only preview)…");
+            let req = ralphy_agent_claude::DraftRequest {
+                mode,
+                source_docs: &source_docs,
+                triage_label: &triage_label,
+            };
+            let draft = ralphy_agent_claude::draft_issues(
+                &repo,
+                &draft_path,
+                &req,
+                None,
+                Some("medium"),
+                Duration::from_secs(600),
+            )?;
+            println!("Draft written to {}", draft_path.display());
+
+            println!("\nPreview:\n{}", format_draft_summary(&draft));
+            let answer = prompt("Publish these issues to GitHub? [y/N]: ")?;
+            if publish_decision(&answer) {
+                let created = publish_draft(&repo, &draft)?;
+                println!("Published {} issue(s).", created.len());
+            } else {
+                println!("Skipping publish; draft kept at {}.", draft_path.display());
+            }
+        }
     }
 
     Ok(())
@@ -1637,6 +1826,100 @@ mod tests {
             other => panic!("expected Failed, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ── stage 8: backlog/milestone → issues helpers (#57) ───────────────────
+
+    #[test]
+    fn decide_issues_path_milestone_backlog_and_skip() {
+        let mut cfg = config_of(&sample_report());
+        // Milestone path: opted in AND milestone docs present.
+        cfg.adopt_prd_roadmap = true;
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::Milestone);
+
+        // Not opted in but a backlog exists → loose-backlog path.
+        cfg.adopt_prd_roadmap = false;
+        cfg.backlog_location = Some("docs/backlog.md".into());
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
+
+        // Neither milestone (opt-in off) nor backlog → skip cleanly.
+        cfg.backlog_location = None;
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::Skip);
+
+        // Opted in but NO milestone docs, with a backlog → loose-backlog, not milestone.
+        cfg.adopt_prd_roadmap = true;
+        cfg.milestone_docs = vec![];
+        cfg.backlog_location = Some("BACKLOG.md".into());
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
+    }
+
+    #[test]
+    fn publish_decision_only_yes_proceeds() {
+        assert!(publish_decision("y"));
+        assert!(publish_decision("yes"));
+        assert!(publish_decision("  YES "));
+        // Default-No: silence and anything else declines.
+        assert!(!publish_decision(""));
+        assert!(!publish_decision("n"));
+        assert!(!publish_decision("maybe"));
+    }
+
+    fn sample_draft() -> IssuesDraft {
+        IssuesDraft {
+            milestone: Some(ralphy_core::MilestoneDraft {
+                title: "v1".into(),
+                description: "first".into(),
+            }),
+            prd_path: Some("docs/prd/0001.md".into()),
+            issues: vec![
+                ralphy_core::IssueDraft {
+                    title: "slice one".into(),
+                    body: "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n".into(),
+                    labels: vec!["ready-for-agent".into()],
+                    blocked_by: vec![],
+                },
+                ralphy_core::IssueDraft {
+                    title: "slice two".into(),
+                    body: "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n".into(),
+                    labels: vec!["ready-for-agent".into()],
+                    blocked_by: vec![0],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn format_draft_summary_reports_count_milestone_and_blocked_by() {
+        let summary = format_draft_summary(&sample_draft());
+        assert!(summary.contains("2 issue(s)"), "count:\n{summary}");
+        assert!(
+            summary.contains("milestone \"v1\""),
+            "milestone:\n{summary}"
+        );
+        assert!(summary.contains("docs/prd/0001.md"), "prd:\n{summary}");
+        assert!(summary.contains("slice two"), "issue title:\n{summary}");
+        // blocked_by index 0 → 1-based "#1" in the human summary.
+        assert!(
+            summary.contains("blocked by #1"),
+            "blocked-by ref:\n{summary}"
+        );
+    }
+
+    #[test]
+    fn patch_blocked_by_replaces_placeholder_and_handles_empty() {
+        let body = "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n";
+        // With blockers: real refs.
+        let patched = patch_blocked_by(body, &[7, 9]);
+        assert!(patched.contains("- #7"));
+        assert!(patched.contains("- #9"));
+        assert!(!patched.contains("BLOCKED_BY_PLACEHOLDER"));
+        // No blockers: the "can start immediately" line.
+        let none = patch_blocked_by(body, &[]);
+        assert!(none.contains("None - can start immediately"));
+        assert!(!none.contains("BLOCKED_BY_PLACEHOLDER"));
+        // Absent placeholder: returned unchanged.
+        let plain = "no placeholder here";
+        assert_eq!(patch_blocked_by(plain, &[1]), plain);
     }
 
     #[test]

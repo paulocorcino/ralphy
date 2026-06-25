@@ -241,6 +241,127 @@ pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> 
     unreachable!("the final attempt returns Ok or bails");
 }
 
+/// Parse the issue number from a `gh issue create` success line. `gh` prints the
+/// new issue's URL (e.g. `https://github.com/owner/repo/issues/42`) on stdout; the
+/// number is the trailing path segment. Tolerant of surrounding whitespace and a
+/// trailing slash.
+fn parse_issue_url(stdout: &str) -> Result<u64> {
+    for line in stdout.lines().rev() {
+        let line = line.trim().trim_end_matches('/');
+        if let Some(last) = line.rsplit('/').next() {
+            if let Ok(n) = last.parse::<u64>() {
+                return Ok(n);
+            }
+        }
+    }
+    bail!("could not parse an issue number from `gh issue create` output: {stdout:?}");
+}
+
+/// Parse the milestone number from `gh api .../milestones` JSON (the created
+/// milestone object carries a `number`).
+fn parse_milestone_number(json: &str) -> Result<u64> {
+    #[derive(serde::Deserialize)]
+    struct MilestoneJson {
+        number: u64,
+    }
+    let m: MilestoneJson =
+        serde_json::from_str(json).context("parsing `gh api .../milestones` JSON")?;
+    Ok(m.number)
+}
+
+/// Create a GitHub Milestone via `gh api repos/{owner}/{repo}/milestones` (the
+/// `{owner}`/`{repo}` placeholders are resolved by `gh` from the repo dir). Returns
+/// the created milestone's number, which [`create_issue`] links issues to. ADR-0012
+/// stage 8 (milestone path).
+pub fn create_milestone(repo_root: &Path, title: &str, description: &str) -> Result<u64> {
+    let out = gh_output(&format!("gh api milestones (create {title})"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args([
+            "api",
+            "--method",
+            "POST",
+            "repos/{owner}/{repo}/milestones",
+            "-f",
+            &format!("title={title}"),
+            "-f",
+            &format!("description={description}"),
+        ]);
+        cmd
+    })?;
+    parse_milestone_number(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Create a GitHub issue via `gh issue create`, piping the body on stdin
+/// (`--body-file -`) like [`edit_issue_body`] so multi-line bodies survive. Each
+/// label is passed with a repeated `--label`; `milestone` (a milestone *name*,
+/// which `gh issue create --milestone` resolves) links the issue when `Some` — the
+/// milestone must already exist (see [`create_milestone`]). Returns the created
+/// issue's number, parsed from the printed URL. ADR-0012 stage 8.
+///
+/// Mirrors [`edit_issue_body`]'s spawn/stdin/transient-retry shape. A retried
+/// duplicate after a 504-whose-write-landed is the one non-idempotent edge here;
+/// it is accepted for the same reason the rest of this module retries — losing the
+/// run is worse than a rare duplicate the dev can delete.
+pub fn create_issue(
+    repo_root: &Path,
+    title: &str,
+    body: &str,
+    labels: &[String],
+    milestone: Option<&str>,
+) -> Result<u64> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut backoff = Duration::from_secs(1);
+    for attempt in 1..=GH_MAX_ATTEMPTS {
+        let mut args: Vec<String> = vec![
+            "issue".into(),
+            "create".into(),
+            "--title".into(),
+            title.into(),
+            "--body-file".into(),
+            "-".into(),
+        ];
+        for label in labels {
+            args.push("--label".into());
+            args.push(label.clone());
+        }
+        if let Some(ms) = milestone {
+            args.push("--milestone".into());
+            args.push(ms.to_string());
+        }
+
+        let mut child = gh(repo_root)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+
+        let mut stdin = child.stdin.take().expect("stdin was piped");
+        let write_result = stdin.write_all(body.as_bytes());
+        drop(stdin); // close stdin (EOF) before waiting
+
+        let out = child
+            .wait_with_output()
+            .context("waiting for `gh issue create`")?;
+
+        write_result.context("writing body to `gh` stdin")?;
+        if out.status.success() {
+            return parse_issue_url(&String::from_utf8_lossy(&out.stdout));
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
+            std::thread::sleep(backoff);
+            backoff *= 2;
+            continue;
+        }
+        bail!("`gh issue create` ({title}) failed: {}", stderr.trim());
+    }
+    unreachable!("the final attempt returns Ok or bails");
+}
+
 /// Add a label to an issue via `gh issue edit <n> --add-label <label>`. When the
 /// label does not exist in the repository yet, `gh` rejects the edit — so on
 /// failure the label is created once (`gh label create`, best-effort) and the
@@ -613,6 +734,30 @@ pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_issue_url_reads_trailing_number() {
+        assert_eq!(
+            parse_issue_url("https://github.com/owner/repo/issues/42").unwrap(),
+            42
+        );
+        // Tolerates whitespace, a trailing slash, and a preamble line.
+        assert_eq!(
+            parse_issue_url("Creating issue...\nhttps://github.com/o/r/issues/7/\n").unwrap(),
+            7
+        );
+    }
+
+    #[test]
+    fn parse_issue_url_errors_without_a_number() {
+        assert!(parse_issue_url("no url here").is_err());
+    }
+
+    #[test]
+    fn parse_milestone_number_reads_number_field() {
+        let json = r#"{"number": 3, "title": "v1", "state": "open"}"#;
+        assert_eq!(parse_milestone_number(json).unwrap(), 3);
+    }
 
     #[test]
     fn transient_detector_matches_the_observed_504() {
