@@ -775,9 +775,32 @@ const CLAUDE_AUTH_ERROR_MSG: &str =
 /// failure only when it surfaces in the transcript (mid-session revocation).
 /// That gap is benign because `plan` runs headless first and bails here before
 /// `execute` is ever reached.
+///
+/// Detection is per-line and skips `user`/`assistant` transcript records. In
+/// `--output-format stream-json` (the plan path) the log carries `tool_result`
+/// records whose content is *the files the agent read* — and this adapter's own
+/// source documents the `Not logged in · Please run /login` string, so a naive
+/// whole-text scan self-triggers the moment a "repo diagnosis" plan reads
+/// `lib.rs`. The genuine signal is never a `user`/`assistant` record: it is a
+/// CLI-level message (plain text in default `-p`, a `system`/`result` record in
+/// stream-json) emitted before the model loop runs. Plain output has no JSON
+/// envelope, so its lines are scanned as-is.
 fn is_claude_auth_error(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    lower.contains("not logged in") && lower.contains("please run /login")
+    text.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('{') {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                if matches!(
+                    v.get("type").and_then(|t| t.as_str()),
+                    Some("user") | Some("assistant")
+                ) {
+                    return false;
+                }
+            }
+        }
+        let lower = line.to_ascii_lowercase();
+        lower.contains("not logged in") && lower.contains("please run /login")
+    })
 }
 
 /// Map the session's end state to an [`Outcome`]. The flag the Stop hook wrote is
@@ -1787,6 +1810,53 @@ mod tests {
         assert!(!is_claude_auth_error("Not logged in"));
         assert!(!is_claude_auth_error("Please run /login"));
         assert!(!is_claude_auth_error("all steps green\nRALPHY_DONE_EXIT\n"));
+    }
+
+    #[test]
+    fn is_claude_auth_error_ignores_file_content_in_tool_results() {
+        // A "repo diagnosis" plan reads this adapter's own source, whose doc
+        // comment quotes `Not logged in · Please run /login`. In stream-json the
+        // read lands in a `type":"user"` tool_result — it must NOT be read as a
+        // real auth failure (regression: run 20260625-145058).
+        let line = serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": [{
+                "type": "tool_result",
+                "content": "//! prints `Not logged in \u{00b7} Please run /login` on stdout",
+            }]},
+        })
+        .to_string();
+        assert!(!is_claude_auth_error(&line));
+    }
+
+    #[test]
+    fn is_claude_auth_error_ignores_assistant_prose() {
+        // The planning agent may *describe* the auth detector in its own message;
+        // an assistant record is never the genuine CLI signal.
+        let line = serde_json::json!({
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [{
+                "type": "text",
+                "text": "It checks for `Not logged in \u{00b7} Please run /login`.",
+            }]},
+        })
+        .to_string();
+        assert!(!is_claude_auth_error(&line));
+    }
+
+    #[test]
+    fn is_claude_auth_error_detects_real_signal_amid_tool_results() {
+        // The genuine CLI message (plain line in default `-p`, or a non-user
+        // record in stream-json) still fires even when file-content noise
+        // precedes it.
+        let log = format!(
+            "{}\nNot logged in \u{00b7} Please run /login\n",
+            serde_json::json!({
+                "type": "user",
+                "message": {"content": [{"type": "tool_result", "content": "harmless file body"}]},
+            })
+        );
+        assert!(is_claude_auth_error(&log));
     }
 
     // ── classify_exec_call ──────────────────────────────────────────────────
