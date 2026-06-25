@@ -374,8 +374,26 @@ fn format_config_echo(cfg: &InitConfig) -> String {
 /// system temp root, OUTSIDE the target repo, so the agent CLI cannot auto-load
 /// the target's `CLAUDE.md`/`AGENTS.md` as system instructions (ADR-0012
 /// "Considered options"). The `stamp` keeps concurrent runs from colliding.
-fn diagnosis_cwd(_repo: &Path, stamp: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("ralphy-diagnose-{stamp}"))
+fn diagnosis_cwd(repo: &Path, stamp: &str) -> PathBuf {
+    neutral_cwd_from(&std::env::temp_dir(), repo, stamp)
+}
+
+/// Pure core of [`diagnosis_cwd`]: a dir under `base` named for `stamp`. The
+/// whole point is that the cwd is OUTSIDE `repo`; if the temp `base` itself lives
+/// inside the repo (a repo-local `TMPDIR`/`TEMP`), the candidate would land in
+/// the target and both break the read-only invariant and let the CLI walk up into
+/// the target's `CLAUDE.md`/`AGENTS.md`. In that case fall back to the repo's
+/// parent so the cwd is guaranteed outside the target. Pure over its inputs so it
+/// unit-tests the fallback the happy-path test can't reach.
+fn neutral_cwd_from(base: &Path, repo: &Path, stamp: &str) -> PathBuf {
+    let name = format!("ralphy-diagnose-{stamp}");
+    let candidate = base.join(&name);
+    if candidate.starts_with(repo) {
+        if let Some(parent) = repo.parent() {
+            return parent.join(name);
+        }
+    }
+    candidate
 }
 
 /// Run the interactive, diagnosis-seeded Q&A on real stdin/stdout, resolving each
@@ -702,6 +720,20 @@ mod tests {
     }
 
     #[test]
+    fn resolve_list_empty_keeps_default_none_clears_csv_splits() {
+        let default = vec!["a.md".to_string(), "b.md".to_string()];
+        // Empty input keeps the default.
+        assert_eq!(resolve_list(&default, "  "), default);
+        // The literal `none` clears it.
+        assert!(resolve_list(&default, "none").is_empty());
+        // A CSV override splits, trims, and drops blanks.
+        assert_eq!(
+            resolve_list(&default, " x.md , , y.md "),
+            vec!["x.md".to_string(), "y.md".to_string()]
+        );
+    }
+
+    #[test]
     fn diagnosis_cwd_is_outside_repo() {
         let repo = std::env::temp_dir().join("ralphy-some-repo");
         let cwd = diagnosis_cwd(&repo, "stamp123");
@@ -709,6 +741,21 @@ mod tests {
         assert!(
             !cwd.starts_with(&repo),
             "neutral cwd {} must not be inside the repo {}",
+            cwd.display(),
+            repo.display()
+        );
+    }
+
+    #[test]
+    fn neutral_cwd_falls_back_when_temp_base_is_inside_repo() {
+        // A repo-local temp base would put the "neutral" cwd inside the target,
+        // breaking the read-only invariant — the fallback must move it outside.
+        let repo = Path::new("/some/target/repo");
+        let base_inside = repo.join("tmp");
+        let cwd = neutral_cwd_from(&base_inside, repo, "s1");
+        assert!(
+            !cwd.starts_with(repo),
+            "fallback cwd {} must be outside the repo {}",
             cwd.display(),
             repo.display()
         );
