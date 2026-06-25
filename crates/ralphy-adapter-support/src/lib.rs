@@ -191,6 +191,73 @@ mod tests {
     }
 
     #[test]
+    fn locate_program_falls_back_to_local_bin_when_off_path() {
+        // A program absent from PATH but present in ~/.local/bin must still be
+        // located — this is the gate/execution unification: the env gate would
+        // otherwise miss it, while the adapter (resolve_program) would still run it.
+        let home = std::env::temp_dir().join(format!("ralphy-locate-home-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let bin = home.join(".local").join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let name = "myagent";
+        let file = if cfg!(windows) {
+            bin.join("myagent.exe")
+        } else {
+            bin.join("myagent")
+        };
+        fs::write(&file, b"x").unwrap();
+
+        // Empty PATH so only the ~/.local/bin fallback can match.
+        let got = locate_program_with(
+            name,
+            Some(std::ffi::OsString::new()),
+            Some(".EXE".into()),
+            Some(home.clone()),
+        );
+        assert_eq!(got.as_deref(), Some(file.as_path()));
+
+        // Without a home, the fallback can't fire → None.
+        assert!(locate_program_with(
+            name,
+            Some(std::ffi::OsString::new()),
+            Some(".EXE".into()),
+            None
+        )
+        .is_none());
+
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn locate_program_prefers_path_over_local_bin() {
+        // When the program is on PATH, that wins — the fallback is only consulted
+        // when PATH has nothing.
+        let tmp = std::env::temp_dir().join(format!("ralphy-locate-path-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let on_path = if cfg!(windows) {
+            tmp.join("tool.exe")
+        } else {
+            tmp.join("tool")
+        };
+        fs::write(&on_path, b"x").unwrap();
+
+        let got = locate_program_with(
+            "tool",
+            Some(tmp.clone().into_os_string()),
+            Some(".EXE".into()),
+            // A bogus home whose ~/.local/bin doesn't exist — PATH must win anyway.
+            Some(tmp.join("nonexistent-home")),
+        )
+        .expect("PATH hit must win");
+        // Compare by parent + stem: on Windows the resolved extension casing follows
+        // PATHEXT (`.EXE`) rather than the file's `.exe`, which is harmless.
+        assert_eq!(got.parent(), on_path.parent());
+        assert_eq!(got.file_stem(), on_path.file_stem());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn blocked_reason_extracts_trimmed_reason() {
         assert_eq!(
             blocked_reason("RALPHY_BLOCKED_EXIT missing key"),
@@ -265,9 +332,55 @@ pub fn materialize_assets(
 /// escaping. A native `.exe` (the common case off Windows, and for Codex) is
 /// found first and returned unchanged.
 pub fn resolve_program(name: &str) -> std::ffi::OsString {
-    find_program(name, std::env::var_os("PATH"), std::env::var_os("PATHEXT"))
+    locate_program(name)
         .map(PathBuf::into_os_string)
         .unwrap_or_else(|| name.into())
+}
+
+/// Locate `name` as an executable: search `PATH` (+`PATHEXT` on Windows), then
+/// fall back to the XDG-conventional `~/.local/bin` where user-installed CLIs (and
+/// Ralphy itself, see the cli's `install` module) land but which a non-login shell
+/// often omits from `PATH`. Returns the resolved path, or `None` when not found
+/// anywhere.
+///
+/// This is the single source of truth for "is this program available, and where" —
+/// `resolve_program` (what every adapter spawns) and `ralphy init`'s environment
+/// gate both go through it, so **detection and execution can never disagree**: a
+/// CLI under `~/.local/bin` that the gate would otherwise miss on a bare `PATH`
+/// probe is both reported present and actually spawned.
+pub fn locate_program(name: &str) -> Option<PathBuf> {
+    locate_program_with(
+        name,
+        std::env::var_os("PATH"),
+        std::env::var_os("PATHEXT"),
+        home_dir(),
+    )
+}
+
+/// Pure core of [`locate_program`] over its inputs, so the `~/.local/bin` fallback
+/// unit-tests against a temp home without touching the real environment.
+pub fn locate_program_with(
+    name: &str,
+    path_var: Option<std::ffi::OsString>,
+    pathext: Option<std::ffi::OsString>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(found) = find_program(name, path_var, pathext) {
+        return Some(found);
+    }
+    let mut cand = home?.join(".local").join("bin").join(name);
+    if cfg!(windows) {
+        cand.set_extension("exe");
+    }
+    cand.is_file().then_some(cand)
+}
+
+/// The home directory, from the platform's usual env var (`USERPROFILE` on
+/// Windows, else `HOME`).
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
 }
 
 /// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows. Pure

@@ -1201,59 +1201,11 @@ fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> serde_json:
 /// `PATH` from the Windows registry and ignores runtime `PATH` edits, so a bare
 /// `"claude"` fails wherever the install dir isn't on the *persistent* PATH.
 /// Falls back to `~/.local/bin/claude[.exe]`, then to the bare name so the spawn
-/// error still names it.
+/// error still names it. Delegates to [`ralphy_adapter_support::resolve_program`]
+/// so detection (the `ralphy init` env gate) and execution share one resolver and
+/// can never disagree about where (or whether) `claude` is installed.
 fn resolve_claude_binary() -> std::ffi::OsString {
-    if let Some(found) = find_program(
-        "claude",
-        std::env::var_os("PATH"),
-        std::env::var_os("PATHEXT"),
-    ) {
-        return found.into_os_string();
-    }
-    if let Some(home) = dirs_home() {
-        let mut cand = home.join(".local").join("bin").join("claude");
-        if cfg!(windows) {
-            cand.set_extension("exe");
-        }
-        if cand.is_file() {
-            return cand.into_os_string();
-        }
-    }
-    "claude".into()
-}
-
-/// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows. Pure
-/// over its inputs so it unit-tests against a temp dir.
-fn find_program(
-    name: &str,
-    path_var: Option<std::ffi::OsString>,
-    pathext: Option<std::ffi::OsString>,
-) -> Option<PathBuf> {
-    let path_var = path_var?;
-    let exts: Vec<String> = if cfg!(windows) {
-        pathext
-            .and_then(|p| p.into_string().ok())
-            .unwrap_or_else(|| ".EXE".into())
-            .split(';')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        Vec::new()
-    };
-    for dir in std::env::split_paths(&path_var) {
-        let direct = dir.join(name);
-        if direct.is_file() {
-            return Some(direct);
-        }
-        for ext in &exts {
-            let cand = dir.join(name).with_extension(ext.trim_start_matches('.'));
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    None
+    ralphy_adapter_support::resolve_program("claude")
 }
 
 /// Recursively find the most-recently-modified `*.jsonl` under `base`, but only if
@@ -1877,29 +1829,6 @@ mod tests {
     fn workspace_trust_bootstraps_empty_config() {
         let out = with_workspace_trusted(serde_json::json!({}), "C:/ws");
         assert_eq!(out["projects"]["C:/ws"]["hasTrustDialogAccepted"], true);
-    }
-
-    #[test]
-    fn find_program_locates_a_file_on_the_search_path() {
-        let dir = std::env::temp_dir().join(format!("ralphy-find-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let exe = if cfg!(windows) { "tool.exe" } else { "tool" };
-        std::fs::write(dir.join(exe), b"x").unwrap();
-
-        let path_var = std::ffi::OsString::from(dir.to_string_lossy().into_owned());
-        let got = find_program("tool", Some(path_var), Some(".EXE".into()));
-        // Resolves to the real file (the extension casing follows PATHEXT, so
-        // compare by existence + parent rather than an exact path string).
-        let got = got.expect("tool should be found on the search path");
-        assert!(got.is_file());
-        assert_eq!(got.parent(), Some(dir.as_path()));
-        assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("tool"));
-
-        // A name that isn't there resolves to nothing.
-        let path_var = std::ffi::OsString::from(dir.to_string_lossy().into_owned());
-        assert!(find_program("nope", Some(path_var), Some(".EXE".into())).is_none());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
