@@ -14,18 +14,26 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use clap::Args;
+use clap::{Args, ValueEnum};
 use ralphy_adapter_support::{find_program, locate_program, resolve_program};
-use ralphy_core::{git, github, DiagnosisReport, IssuesDraft, RepoKind, Workspace};
+use ralphy_core::{
+    git, github, DiagnosisReport, DraftRequest, IssuesDraft, IssuesMode, RepoKind, Workspace,
+};
 
 #[derive(Args)]
 pub struct InitArgs {
     /// Any path inside the target repo; resolved to its git toplevel.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
+
+    /// Which agent CLI drives the AI judgment steps (repo diagnosis + issue
+    /// drafting). Must be logged in. Defaults to the first logged-in agent the
+    /// environment gate detects (claude, then codex, then opencode).
+    #[arg(long, value_enum)]
+    pub agent: Option<Agent>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Agent {
     Claude,
     Codex,
@@ -992,6 +1000,82 @@ fn publish_draft(repo: &Path, draft: &IssuesDraft) -> Result<Vec<u64>> {
     Ok(created)
 }
 
+/// Dispatch the read-only repo-diagnosis session to the selected agent's adapter.
+/// Each adapter drives the same core charter ([`ralphy_core::build_diagnose_prompt`]);
+/// only the CLI invocation differs.
+fn diagnose_with_agent(
+    agent: Agent,
+    repo: &Path,
+    neutral_cwd: &Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<DiagnosisReport> {
+    match agent {
+        Agent::Claude => {
+            ralphy_agent_claude::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+        Agent::Codex => {
+            ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+        Agent::Opencode => {
+            ralphy_agent_opencode::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+    }
+}
+
+/// Dispatch the backlog/milestone → issues draft session to the selected agent's
+/// adapter. Like [`diagnose_with_agent`], the charter is shared
+/// ([`ralphy_core::build_init_issues_prompt`]) and only the invocation differs.
+fn draft_with_agent(
+    agent: Agent,
+    repo: &Path,
+    out_path: &Path,
+    req: &DraftRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<IssuesDraft> {
+    match agent {
+        Agent::Claude => {
+            ralphy_agent_claude::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+        Agent::Codex => {
+            ralphy_agent_codex::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+        Agent::Opencode => {
+            ralphy_agent_opencode::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+    }
+}
+
+/// Choose which agent drives the AI judgment steps. An explicit `--agent` must be
+/// logged in (else a hard error names the logged-in set); with no flag, the first
+/// logged-in agent in gate order (claude → codex → opencode) is used. The gate has
+/// already guaranteed `logged_in` is non-empty before this is called.
+fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> {
+    match requested {
+        Some(a) if logged_in.contains(&a) => Ok(a),
+        Some(a) => bail!(
+            "ralphy init: --agent {} is not logged in (logged in: {})",
+            a.cli_name(),
+            if logged_in.is_empty() {
+                "none".to_string()
+            } else {
+                logged_in
+                    .iter()
+                    .map(|x| x.cli_name())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        ),
+        None => logged_in
+            .first()
+            .copied()
+            .context("no logged-in agent available (the environment gate should have caught this)"),
+    }
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
@@ -1021,13 +1105,21 @@ pub fn run(args: &InitArgs) -> Result<()> {
         );
     }
 
-    println!("Environment gate passed. Diagnosing repo (read-only)…");
+    // Pick the agent that drives diagnosis + issue drafting (explicit --agent, or
+    // the first logged-in agent the gate found). The gate above guarantees ≥1.
+    let selected_agent = select_agent(args.agent, &findings.agents_logged_in)?;
+    println!(
+        "Environment gate passed. Using agent: {}.",
+        selected_agent.cli_name()
+    );
+    println!("Diagnosing repo (read-only)…");
 
     // Diagnose from a neutral cwd OUTSIDE the repo, so the target's
     // CLAUDE.md/AGENTS.md are read as data, never auto-loaded as instructions.
     let stamp = format!("{}", std::process::id());
     let cwd = diagnosis_cwd(&repo, &stamp);
-    let report = ralphy_agent_claude::diagnose_repo(
+    let report = diagnose_with_agent(
+        selected_agent,
         &repo,
         &cwd,
         None,
@@ -1163,12 +1255,9 @@ pub fn run(args: &InitArgs) -> Result<()> {
         }
         path => {
             let (mode, source_docs) = match path {
-                IssuesPath::Milestone => (
-                    ralphy_agent_claude::IssuesMode::Milestone,
-                    cfg.milestone_docs.clone(),
-                ),
+                IssuesPath::Milestone => (IssuesMode::Milestone, cfg.milestone_docs.clone()),
                 IssuesPath::LooseBacklog => (
-                    ralphy_agent_claude::IssuesMode::LooseBacklog,
+                    IssuesMode::LooseBacklog,
                     cfg.backlog_location.iter().cloned().collect(),
                 ),
                 IssuesPath::Skip => unreachable!("Skip handled above"),
@@ -1176,12 +1265,13 @@ pub fn run(args: &InitArgs) -> Result<()> {
             let triage_label = resolve_triage_label(&repo);
             let draft_path = ws.issues_draft_path();
             println!("\nDrafting issues from the backlog/milestone (read-only preview)…");
-            let req = ralphy_agent_claude::DraftRequest {
+            let req = DraftRequest {
                 mode,
                 source_docs: &source_docs,
                 triage_label: &triage_label,
             };
-            let draft = ralphy_agent_claude::draft_issues(
+            let draft = draft_with_agent(
+                selected_agent,
                 &repo,
                 &draft_path,
                 &req,
@@ -1223,6 +1313,34 @@ mod tests {
     #[test]
     fn evaluate_gate_all_green_returns_empty() {
         assert!(evaluate_gate(&all_green()).is_empty());
+    }
+
+    // ── agent selection (ADR-0012: --agent dispatch) ────────────────────────
+
+    #[test]
+    fn select_agent_defaults_to_first_logged_in() {
+        let logged_in = vec![Agent::Codex, Agent::Opencode];
+        assert_eq!(select_agent(None, &logged_in).unwrap(), Agent::Codex);
+    }
+
+    #[test]
+    fn select_agent_honours_explicit_logged_in_choice() {
+        let logged_in = vec![Agent::Claude, Agent::Codex];
+        assert_eq!(
+            select_agent(Some(Agent::Codex), &logged_in).unwrap(),
+            Agent::Codex
+        );
+    }
+
+    #[test]
+    fn select_agent_rejects_explicit_not_logged_in() {
+        // A present-but-not-logged-in (or absent) agent is a hard error naming the
+        // logged-in set, never a silent fallback to another agent.
+        let logged_in = vec![Agent::Claude];
+        let err = select_agent(Some(Agent::Opencode), &logged_in).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("opencode"), "names the rejected agent:\n{msg}");
+        assert!(msg.contains("claude"), "names the logged-in set:\n{msg}");
     }
 
     // (b) Missing python.
