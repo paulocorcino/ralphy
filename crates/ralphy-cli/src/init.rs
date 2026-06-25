@@ -545,10 +545,13 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
         return out;
     };
 
-    // Find the end: the next top-level `## ` heading after the section's body.
+    // Find the end: the next h1/h2 heading after the section's body. Using any
+    // top-level heading (not just `## `) as the boundary means a following `# `
+    // or `## ` sibling section is preserved rather than silently clobbered; a
+    // deeper `### ` nests under our section and is replaced with it.
     let after = &doc[start..];
     let body_offset = after.find('\n').map(|n| n + 1).unwrap_or(after.len());
-    let end_rel = find_heading(&after[body_offset..], "## ").map(|p| body_offset + p);
+    let end_rel = next_top_heading(&after[body_offset..]).map(|p| body_offset + p);
 
     let mut out = String::new();
     out.push_str(&doc[..start]);
@@ -570,6 +573,21 @@ fn find_heading(doc: &str, needle: &str) -> Option<usize> {
     }
     let pat = format!("\n{needle}");
     doc.find(&pat).map(|p| p + 1)
+}
+
+/// Byte offset of the first line that opens a top-level (h1 or h2) markdown
+/// heading, or `None`. Used to bound an `## ` section: deeper `### ` headings
+/// nest within it, so only `# ` / `## ` ends it.
+fn next_top_heading(s: &str) -> Option<usize> {
+    let mut offset = 0;
+    for line in s.split_inclusive('\n') {
+        let hashes = line.chars().take_while(|&c| c == '#').count();
+        if (hashes == 1 || hashes == 2) && line[hashes..].starts_with(' ') {
+            return Some(offset);
+        }
+        offset += line.len();
+    }
+    None
 }
 
 /// Write the deterministic scaffold onto the repo (ADR-0012 stage 5): the
@@ -1080,6 +1098,21 @@ mod tests {
             "trailing section preserved:\n{out}"
         );
         assert!(out.contains("keep me."), "trailing body preserved:\n{out}");
+    }
+
+    #[test]
+    fn upsert_preserves_following_h1_sibling_section() {
+        // Regression: a `# `/`## ` section after Agent skills must survive the
+        // replace — only the section's own body (and any `### ` subsection) goes.
+        let doc =
+            "## Agent skills\n\nOLD BODY.\n\n### old sub\n\nnested old.\n\n# Top Level\n\nkeep me.\n";
+        let block = agent_skills_block(&block_cfg());
+        let out = upsert_agent_skills_block(doc, &block);
+        assert_eq!(out.matches("## Agent skills").count(), 1);
+        assert!(!out.contains("OLD BODY"), "old body gone:\n{out}");
+        assert!(!out.contains("nested old"), "nested old sub gone:\n{out}");
+        assert!(out.contains("# Top Level"), "h1 sibling preserved:\n{out}");
+        assert!(out.contains("keep me."), "h1 body preserved:\n{out}");
     }
 
     #[test]
