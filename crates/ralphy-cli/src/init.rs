@@ -198,6 +198,7 @@ pub struct InitConfig {
     pub skills_dir: Option<String>,
     pub has_context_or_adrs: bool,
     pub remote_host: Option<String>,
+    pub adopt_prd_roadmap: bool,
 }
 
 /// One seeded console question: the prompt label and the diagnosis-derived
@@ -326,6 +327,10 @@ fn seed_questions(report: &DiagnosisReport) -> Vec<Question> {
             label: "Remote host".into(),
             default: display_opt(report.remote_host.as_deref()),
         },
+        Question {
+            label: "Adopt PRD/roadmap track model (yes/no)".into(),
+            default: display_bool(!report.milestone_docs.is_empty()),
+        },
     ]
 }
 
@@ -366,6 +371,10 @@ fn format_config_echo(cfg: &InitConfig) -> String {
     out.push_str(&format!(
         "remote host:    {}\n",
         display_opt(cfg.remote_host.as_deref())
+    ));
+    out.push_str(&format!(
+        "PRD/roadmap:    {}\n",
+        display_bool(cfg.adopt_prd_roadmap)
     ));
     out
 }
@@ -440,6 +449,10 @@ fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
         report.remote_host.as_deref(),
         &read_line(&questions[6].label, &questions[6].default)?,
     );
+    let adopt_prd_roadmap = resolve_bool(
+        !report.milestone_docs.is_empty(),
+        &read_line(&questions[7].label, &questions[7].default)?,
+    );
 
     Ok(InitConfig {
         repo_kind,
@@ -449,6 +462,7 @@ fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
         skills_dir,
         has_context_or_adrs,
         remote_host,
+        adopt_prd_roadmap,
     })
 }
 
@@ -642,6 +656,7 @@ mod tests {
             skills_dir: report.skills_dir.clone(),
             has_context_or_adrs: report.has_context_or_adrs,
             remote_host: report.remote_host.clone(),
+            adopt_prd_roadmap: !report.milestone_docs.is_empty(),
         }
     }
 
@@ -685,6 +700,10 @@ mod tests {
         assert_eq!(qs[4].default, report.skills_dir.clone().unwrap());
         assert_eq!(qs[5].default, display_bool(report.has_context_or_adrs));
         assert_eq!(qs[6].default, report.remote_host.clone().unwrap());
+        assert_eq!(
+            qs[7].default,
+            display_bool(!report.milestone_docs.is_empty())
+        );
     }
 
     #[test]
@@ -717,6 +736,7 @@ mod tests {
         );
         assert!(echo.contains(".claude"), "skills dir missing:\n{echo}");
         assert!(echo.contains("github.com"), "remote missing:\n{echo}");
+        assert!(echo.contains("PRD/roadmap:"), "PRD opt-in missing:\n{echo}");
     }
 
     #[test]
