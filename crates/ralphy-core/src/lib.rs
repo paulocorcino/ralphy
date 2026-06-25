@@ -21,6 +21,7 @@ pub mod knowledge;
 pub mod ledger;
 pub mod plan;
 pub mod settings;
+pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
@@ -30,6 +31,7 @@ pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
     RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,
 };
-pub use settings::{ClaudeSettings, OpenCodeSettings, Settings};
+pub use settings::{ClaudeSettings, OpenCodeSettings, Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
 pub use types::{Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
+pub use verify::{VerifyReport, VerifySpec};

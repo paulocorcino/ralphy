@@ -81,10 +81,17 @@ For every queued issue, in ascending number order:
 2. **Execute** — the agent works the plan and commits each step. On Claude you can
    follow along and step in from the Claude **mobile app** (each session is named
    `ralphy-<n>`); Codex and OpenCode run quietly in the background.
-3. **Close on green** — once the issue is done, Ralphy closes it with a comment pointing
-   at the run branch. You still merge by hand.
+3. **Verify gate** — before closing, Ralphy itself re-runs the commands the plan listed
+   under `## Verify` (e.g. `cargo fmt --check`, `cargo test`) over the committed code. The
+   issue only closes if they pass — "green" stops meaning *the agent said so* and starts
+   meaning *the runner saw the verification pass on the code you'll merge*. Either way it
+   posts a comment recording each command and its exit code. See
+   [Verifying before close](#verifying-before-close).
+4. **Close on green** — once the gate passes, Ralphy closes the issue with a comment
+   pointing at the run branch. You still merge by hand.
 
-If an issue **doesn't** finish cleanly (blocked, stuck, or out of time), the whole run
+If an issue **doesn't** finish cleanly (blocked, stuck, out of time, or the verify gate
+fails), the whole run
 **stops** and hands you the branch as it stands — so one bad issue can't burn the rest of
 the night. Finished issues stay committed; the stalled one's partial work is left for
 you to inspect.
@@ -175,6 +182,7 @@ flag > `settings.json` > built-in default**, so a flag still wins for a one-off:
 ralphy config set opencode.model kimi-for-coding/k2p7   # OpenCode execution model default
 ralphy config set base_branch origin/develop            # default base for the run branch
 ralphy config set branch_mode current                   # default branch mode
+ralphy config set verify.command "cargo test"           # per-repo fallback verify gate
 ralphy config set claude.default_exec_model opus        # Claude run defaults (claude.*):
 ralphy config set claude.max_minutes_per_issue 120      #   plan_model, plan_effort,
 ralphy config get                                        #   exec_effort, … — see config --help
@@ -235,9 +243,57 @@ Ralphy is built to run while you sleep, so it ships its own guardrails:
   global `--deadline-hours` keep a hung issue from running forever.
 - **Stop at first failure** — one stalled issue stops the run instead of burning the rest
   of the budget.
+- **Runner-enforced verify gate** — Ralphy re-runs the plan's `## Verify` commands itself
+  before closing an issue, so an issue closes only when the runner *saw* the verification
+  pass — not because the agent said it was done. See
+  [Verifying before close](#verifying-before-close).
 - **Command guardrails** (Claude) — destructive commands like `git push`, `reset --hard`,
   branch switches, and `gh pr merge` are blocked. For Codex/OpenCode, safety rests on the
   isolated run branch and the built-in self-review.
+
+## Verifying before close
+
+For a tool that closes issues unattended overnight, "green = the agent said so" is the
+central trust gap: an agent can declare *done* without the work actually being verifiable.
+Ralphy closes that gap with a **runner-enforced verify gate** (ADR-0011). After the agent
+reports done — but **before** the issue is closed — the runner itself re-runs a set of
+commands the plan declared, over the committed code, and **only closes if they pass**.
+
+The planner emits a `## Verify` section in `.ralphy/plan.md`, one command per line:
+
+```markdown
+## Verify
+
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+- **Technology-agnostic** — the gate runs whatever commands the plan names and checks
+  exit codes. It knows nothing about Rust/Node/Python; the same machinery verifies
+  `cargo test`, `pytest`, `npm test`, or `make check`.
+- **Direct argv, no shell** — each line runs as `argv` directly (no `&&`, pipes, or
+  globs), which makes `## Verify` portable Windows↔Linux for free. The runner chains the
+  commands, runs them sequentially, and stops at the first non-zero exit. A command that
+  truly needs a shell writes `sh -c "…"` explicitly.
+- **Bounded** — the gate runs inside the per-issue time budget; a hung verification fails
+  the gate rather than going green by silence.
+
+**Pass** → the issue closes on the existing green path. **Fail** → the issue stays open,
+the run stops, and the branch is handed back with the work intact. Either way, Ralphy
+posts a comment recording **each command, its exit code, and (on failure) a tail of the
+output** — what you read in the morning to see why an issue did or didn't close.
+
+**Resolution precedence:**
+
+1. `## Verify` in the plan (per-issue, planner-emitted) — strongest.
+2. `verify.command` in `.ralphy/settings.json` (per-repo default) — used when a plan has
+   no `## Verify` section. Set it with `ralphy config set verify.command "cargo test"`.
+3. Nothing resolves → the issue closes on the agent's self-report with a **loud warning**
+   in the log (the absence of a gate is always a visible decision, never a silent hole).
+
+`## Verify: none` on its own line is the **only** explicit opt-out — for an issue with
+nothing machine-verifiable — and it skips the per-repo fallback.
 
 ## Usage limits
 

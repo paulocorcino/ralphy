@@ -14,6 +14,7 @@ use tracing::{info, warn};
 use crate::{
     acceptance, blocked, git, gitignore, handoff,
     ledger::{self, LedgerRecord},
+    verify::{self, VerifySpec},
     Agent, Execution, Issue, IssueTracker, Outcome, PlanLimit, Usage, Workspace,
 };
 
@@ -367,6 +368,17 @@ pub struct QueueConfig {
     /// reports the reset. The default (`false`) waits and auto-resumes. Derived
     /// from the executor agent. See docs/adr/0003 and docs/adr/0009.
     pub stop_on_limit_exec: bool,
+    /// The per-repo fallback verify command(s) resolved from `settings.json`
+    /// `verify.command` (ADR-0011). Used only when a plan's `## Verify` section
+    /// is *absent or empty* (`VerifySpec::Unspecified`); a plan's own commands
+    /// take precedence and `## Verify: none` skips this fallback. `None` here
+    /// means no per-repo default — an unspecified plan then closes on the agent's
+    /// self-report with a loud warning.
+    pub verify_fallback: Option<Vec<Vec<String>>>,
+    /// The bounded time budget for one issue's verify gate (ADR-0011). A gate
+    /// that runs past it is killed and counts as a failure. Derived from
+    /// `--max-minutes-per-issue`.
+    pub verify_timeout: Duration,
 }
 
 /// What happened to one issue in the queue.
@@ -396,6 +408,11 @@ pub enum StopReason {
     /// The agent hit a usage/rate limit; includes the parsed reset time when
     /// present in the transcript.
     Limit { number: u64, reset: Option<String> },
+    /// The runner-enforced verify gate failed: the executor reported `Done` but
+    /// the runner re-ran the plan's `## Verify` commands over the committed state
+    /// and one did not pass (ADR-0011). The issue stays open and the branch is
+    /// handed back. `summary` is a one-line digest of what failed.
+    VerifyFailed { number: u64, summary: String },
 }
 
 /// The result of working a queue: the branch the commits landed on, where the
@@ -477,6 +494,51 @@ fn bundle_comment(stamp: &str, reason: &str) -> String {
          a `## Parent` reference to this issue, then close this issue — \
          dependents follow the open children automatically."
     )
+}
+
+/// What the runner-enforced verify gate resolves to for one issue (ADR-0011),
+/// folding the plan's `## Verify` section with the per-repo settings fallback.
+enum VerifyPlan {
+    /// Run these commands as the gate.
+    Run(Vec<Vec<String>>),
+    /// The plan opted out with `## Verify: none` — close on the self-report, no
+    /// warning (the absence of verification was a deliberate, visible decision).
+    OptedOut,
+    /// Nothing resolved — no plan section and no settings fallback. Close on the
+    /// agent's self-report but warn loudly (no-silent-caps: a missing gate is
+    /// always a visible decision, never a silent hole).
+    NoGate,
+}
+
+/// Apply the ADR-0011 resolution precedence: a plan's `## Verify` commands win;
+/// `## Verify: none` is the explicit opt-out; an absent/empty section falls back
+/// to the per-repo `settings.json` `verify.command`, and if that is unset too the
+/// issue closes on the self-report with a loud warning.
+fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyPlan {
+    match verify::parse_verify(plan_md) {
+        VerifySpec::Commands(commands) => VerifyPlan::Run(commands),
+        VerifySpec::None => VerifyPlan::OptedOut,
+        VerifySpec::Unspecified => match fallback {
+            Some(commands) if !commands.is_empty() => VerifyPlan::Run(commands.clone()),
+            _ => VerifyPlan::NoGate,
+        },
+    }
+}
+
+/// A one-line digest of a failed gate for the `StopReason::VerifyFailed` summary:
+/// the failing command and why it failed (exit code or timeout).
+fn verify_failure_summary(report: &verify::VerifyReport) -> String {
+    match report.commands.iter().find(|c| !c.passed()) {
+        Some(c) if c.timed_out => format!("`{}` timed out", c.argv.join(" ")),
+        Some(c) => format!(
+            "`{}` exited {}",
+            c.argv.join(" "),
+            c.exit_code
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "non-zero".into())
+        ),
+        None => "verify gate failed".into(),
+    }
 }
 
 /// Refresh `.ralphy/handoffs.md` for the issue about to be planned: collect the
@@ -895,6 +957,66 @@ pub fn run_queue(
         accumulate_by_model(&mut run_usage_by_model, &exec_usage);
 
         if outcome == Outcome::Done {
+            // Runner-enforced verify gate (ADR-0011): before closing on the
+            // agent's self-reported `Done`, re-run the plan's `## Verify`
+            // commands over the committed state. Only a pass proceeds to the
+            // close path; a failure leaves the issue open, posts the artifact,
+            // and stops the run with the branch handed back. `## Verify: none`
+            // opts out; an absent section falls back to settings, then to a
+            // loud warn-and-close.
+            let plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
+            match resolve_verify(&plan_md, &cfg.verify_fallback) {
+                VerifyPlan::Run(commands) => {
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(
+                        number = issue.number,
+                        commands = commands.len(),
+                        "verify gate — running"
+                    );
+                    let report = verify::run(&commands, repo, cfg.verify_timeout);
+                    // Honesty artifact: every command + its exit code (pass or
+                    // fail), with the failing tail on a failure. Best-effort — a
+                    // comment failure must not crash a run that otherwise passed.
+                    if let Err(e) =
+                        tracker.comment(issue.number, &verify::comment(&cfg.stamp, &report))
+                    {
+                        warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+                    }
+                    if !report.passed {
+                        let summary = verify_failure_summary(&report);
+                        // consumed by the telegram notifier / presenter — keep stable
+                        info!(
+                            number = issue.number,
+                            %summary,
+                            "verify gate failed — issue not closed"
+                        );
+                        let number = issue.number;
+                        worked.push(IssueResult {
+                            number,
+                            outcome: None,
+                            closed: false,
+                            blocked_by: Vec::new(),
+                        });
+                        stop = Some(StopReason::VerifyFailed { number, summary });
+                        break;
+                    }
+                    info!(number = issue.number, "verify gate passed");
+                }
+                VerifyPlan::OptedOut => {
+                    info!(
+                        number = issue.number,
+                        "verify gate skipped — plan declared `## Verify: none`"
+                    );
+                }
+                VerifyPlan::NoGate => {
+                    warn!(
+                        number = issue.number,
+                        "issue closed without a verify gate — no `## Verify` in the plan \
+                         and no settings.json verify.command resolved"
+                    );
+                }
+            }
+
             // Close the cycle: a green queue issue is closed so it leaves the
             // queue; its labels are untouched and the branch is merged by hand.
             tracker.close(issue.number, &close_comment(&cfg.stamp, &branch))?;

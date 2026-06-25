@@ -28,7 +28,8 @@ pub struct ConfigArgs {
 pub enum ConfigCommand {
     /// Persist a config key in `.ralphy/settings.json`.
     Set {
-        /// The config key: `opencode.model`, `base_branch`, `branch_mode`, or a
+        /// The config key: `opencode.model`, `base_branch`, `branch_mode`,
+        /// `verify.command` (the per-repo fallback verify gate, ADR-0011), or a
         /// Claude-only knob (`claude.plan_model`, `claude.plan_effort`,
         /// `claude.default_exec_model`, `claude.exec_effort`,
         /// `claude.max_minutes_per_issue`). The model/effort/budget defaults are
@@ -61,10 +62,11 @@ pub fn run(args: ConfigArgs) -> Result<()> {
 /// `--help`-style docs and in the unknown-key error so the two never drift. The
 /// model/effort/budget knobs are Claude-only in the current wiring (ADR-0010).
 pub const SUPPORTED_KEYS_HELP: &str = "supported keys: \
-opencode.model, base_branch, branch_mode, \
+opencode.model, base_branch, branch_mode, verify.command, \
 claude.plan_model, claude.plan_effort, claude.default_exec_model, \
 claude.exec_effort, claude.max_minutes_per_issue \
-(model/effort/budget defaults are Claude-only today \
+(verify.command is the per-repo fallback verify gate, ADR-0011; \
+model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47))";
 
 fn require_known_key(key: &str) -> Result<()> {
@@ -72,6 +74,7 @@ fn require_known_key(key: &str) -> Result<()> {
         "opencode.model"
         | "base_branch"
         | "branch_mode"
+        | "verify.command"
         | "claude.plan_model"
         | "claude.plan_effort"
         | "claude.default_exec_model"
@@ -89,6 +92,7 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     let mut s = Settings::load(ws)?;
     match key {
         "opencode.model" => s.opencode.model = Some(value.to_owned()),
+        "verify.command" => s.verify.command = Some(value.to_owned()),
         "base_branch" => s.base_branch = Some(value.to_owned()),
         "branch_mode" => {
             // Validate through the shared parser; store the canonical lowercase
@@ -119,6 +123,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     let mut s = Settings::load(ws)?;
     match key {
         "opencode.model" => s.opencode.model = None,
+        "verify.command" => s.verify.command = None,
         "base_branch" => s.base_branch = None,
         "branch_mode" => s.branch_mode = None,
         "claude.plan_model" => s.claude.plan_model = None,
@@ -136,6 +141,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
 pub fn get(ws: &Workspace) -> Result<()> {
     let s = Settings::load(ws)?;
     print_str("opencode.model", s.opencode.model);
+    print_str("verify.command", s.verify.command);
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
     print_str("claude.plan_model", s.claude.plan_model);
@@ -366,5 +372,25 @@ mod tests {
     #[test]
     fn help_notes_claude_only() {
         assert!(SUPPORTED_KEYS_HELP.contains("Claude-only today"));
+    }
+
+    #[test]
+    fn verify_command_round_trip() {
+        let (ws, dir) = tmp_ws("verify-command");
+
+        set(&ws, "verify.command", "cargo test").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.verify.command.as_deref(), Some("cargo test"));
+
+        unset(&ws, "verify.command").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.verify.command, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn help_lists_verify_command() {
+        assert!(SUPPORTED_KEYS_HELP.contains("verify.command"));
     }
 }

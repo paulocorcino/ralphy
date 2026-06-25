@@ -76,6 +76,17 @@ you only produce a plan that a later execution loop will consume.
    (Exact line shapes are canonical — see the format reference at the end of
    this prompt; the executor parses them mechanically.)
 
+   ## Verify
+   <The command(s) the RUNNER re-runs over the committed state before it closes
+   the issue — the runner-enforced green gate (ADR-0011). One command per line,
+   run as direct argv (NO shell: no `&&`, no pipes, no globs — the runner chains
+   them and stops at the first non-zero exit). These are usually the exact
+   commands named in the `[verified]` evidence above. Write `none` on its own
+   line ONLY if nothing about this issue is machine-verifiable. Examples:>
+   cargo fmt --check
+   cargo clippy --all-targets -- -D warnings
+   cargo test -p <crate>
+
    ## Decisions
    <Only if the issue left a design choice open. Resolve it yourself — never
    defer to a human or hide it behind a vague step. One bullet per decision:>
@@ -148,6 +159,16 @@ you only produce a plan that a later execution loop will consume.
   when", not to the ledger. The machine-verifiable "Done when" bullets must be
   the union of the ledger's `[verified]` lines — reference the same conditions
   in both; do not invent a criterion in one that is absent from the other.
+- The `## Verify` section IS the runner's hard gate (ADR-0011): after the
+  executor self-reports done, the RUNNER re-runs these exact commands over the
+  committed state and refuses to close the issue if any one fails. List the
+  command(s) that prove the `[verified]` criteria — typically the same commands
+  named in their `evidence:`. Each line is run as direct argv with NO shell, so
+  it must be a single command (no `&&`, pipes, globs, or env-var expansion); a
+  command that truly needs a shell writes `sh -c "…"` explicitly. Scope a
+  monorepo inside the command itself (`cargo test -p foo`, `npm --prefix x
+  test`). Write `none` (on its own line) ONLY when nothing is machine-verifiable
+  — an honest opt-out, not a way to dodge a gate you could write.
 - Classify ledger lines by WHO can confirm them, never by how much effort it
   takes: `[review-only]` is reserved for criteria that need human JUDGMENT
   (visual appearance, UX feel, subjective quality). If a script or command
@@ -232,3 +253,13 @@ exactly these two line shapes (em dash `—`, literal `evidence:` key):
 
 - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
 - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
+
+The `## Verify` section is plain lines, one command per line, no bullets and no
+metadata — the runner tokenizes each into argv and runs it directly (ADR-0011):
+
+cargo fmt --check
+cargo test -p ralphy-core
+
+or, when nothing is machine-verifiable, the single line:
+
+none

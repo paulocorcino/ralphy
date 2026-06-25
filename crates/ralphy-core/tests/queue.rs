@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 use ralphy_core::{
     run_queue, Agent, BranchMode, Execution, Issue, IssueTracker, Outcome, Plan, PlanLimit,
@@ -417,6 +418,8 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         only_issue: None,
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
+        verify_fallback: None,
+        verify_timeout: Duration::from_secs(60),
     }
 }
 
@@ -430,6 +433,8 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         only_issue: Some(only),
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
+        verify_fallback: None,
+        verify_timeout: Duration::from_secs(60),
     }
 }
 
@@ -443,6 +448,8 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         only_issue: None,
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
+        verify_fallback: None,
+        verify_timeout: Duration::from_secs(60),
     }
 }
 
@@ -458,6 +465,8 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         only_issue: None,
         stop_on_limit_plan: true,
         stop_on_limit_exec: true,
+        verify_fallback: None,
+        verify_timeout: Duration::from_secs(60),
     }
 }
 
@@ -475,6 +484,8 @@ fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
         only_issue: None,
         stop_on_limit_plan: false,
         stop_on_limit_exec: true,
+        verify_fallback: None,
+        verify_timeout: Duration::from_secs(60),
     }
 }
 
@@ -1732,6 +1743,180 @@ fn deadline_during_wait_short_circuits_with_deadline() {
         matches!(report.stop, Some(StopReason::Deadline)),
         "deadline beats resume: {:?}",
         report.stop
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+/// A `## Verify` line whose command exits 0 on every platform (argv-only, no
+/// shell metacharacters that a non-shell argv split would mangle).
+fn verify_ok_line() -> &'static str {
+    if cfg!(windows) {
+        "cmd /c \"exit 0\""
+    } else {
+        "sh -c \"exit 0\""
+    }
+}
+
+/// A `## Verify` line whose command exits non-zero on every platform.
+fn verify_fail_line() -> &'static str {
+    if cfg!(windows) {
+        "cmd /c \"exit 3\""
+    } else {
+        "sh -c \"exit 3\""
+    }
+}
+
+#[test]
+fn verify_gate_passes_and_issue_closes() {
+    // A plan with a `## Verify` section whose command passes: the runner re-runs
+    // it over the committed state, sees it pass, posts the honesty artifact, and
+    // closes the issue on the existing green path.
+    let repo = init_repo("verify-pass");
+    let queue = vec![issue(1)];
+    let extra = format!("## Verify\n\n{}\n", verify_ok_line());
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-verify-pass", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(
+        report.stop.is_none(),
+        "a passing gate does not stop the run"
+    );
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![1], "issue closed on a passing gate");
+
+    // The honesty artifact was posted recording the gate run.
+    let comments = tracker.comments.borrow();
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("## Verify (Ralphy run stamp-verify-pass)")),
+        "verify artifact comment posted on pass: {comments:?}"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn verify_gate_fails_stops_run_and_hands_back_branch() {
+    // A plan whose `## Verify` command fails: the issue does NOT close, the run
+    // stops with StopReason::VerifyFailed, the branch is handed back with the
+    // work on it, and the honesty artifact records the failure.
+    let repo = init_repo("verify-fail");
+    let queue = vec![issue(1), issue(2)];
+    let extra = format!("## Verify\n\n{}\n", verify_fail_line());
+    // #1 executes Done but the gate fails; #2 must never be touched.
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-verify-fail", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // The gate-failed issue is not closed; #2 never ran.
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "a failed gate never closes the issue"
+    );
+    assert_eq!(*agent.executed.borrow(), vec![1], "#2 never executed");
+
+    match report.stop {
+        Some(StopReason::VerifyFailed { number, summary }) => {
+            assert_eq!(number, 1);
+            assert!(
+                summary.contains("exited") || summary.contains("timed out"),
+                "summary names the failure: {summary}"
+            );
+        }
+        other => panic!("expected VerifyFailed stop, got {other:?}"),
+    }
+
+    // Branch handed back with the work on it (New mode, stopped run).
+    assert_eq!(current_branch(&repo), report.branch);
+
+    // The honesty artifact records the failure.
+    let comments = tracker.comments.borrow();
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("Verify gate FAILED")),
+        "verify artifact comment posted on fail: {comments:?}"
+    );
+
+    // The worked entry marks the issue not-closed.
+    let r1 = report.worked.iter().find(|r| r.number == 1).unwrap();
+    assert!(!r1.closed, "gate-failed issue is not closed");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn verify_none_opts_out_and_skips_settings_fallback() {
+    // `## Verify: none` is the explicit opt-out: even with a failing settings
+    // fallback configured, the gate is skipped and the issue closes.
+    let repo = init_repo("verify-none");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra("## Verify\n\nnone\n");
+    let tracker = RecordingTracker::default();
+
+    // A failing fallback that must NOT run because the plan opted out.
+    let mut config = cfg(&repo, "stamp-verify-none", false);
+    config.verify_fallback = Some(vec![ralphy_core::verify::tokenize(verify_fail_line())]);
+
+    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
+
+    assert!(report.stop.is_none(), "opt-out closes without a gate");
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![1], "issue closed under `## Verify: none`");
+    // No artifact comment — the gate never ran.
+    assert!(
+        tracker.comments.borrow().is_empty(),
+        "opt-out posts no verify artifact"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn verify_falls_back_to_settings_when_plan_section_absent() {
+    // No `## Verify` in the plan → the runner falls back to the per-repo
+    // settings command. Here that fallback fails, stopping the run.
+    let repo = init_repo("verify-fallback");
+    let queue = vec![issue(1)];
+    // No `## Verify` section in the plan at all.
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let mut config = cfg(&repo, "stamp-verify-fallback", false);
+    config.verify_fallback = Some(vec![ralphy_core::verify::tokenize(verify_fail_line())]);
+
+    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
+
+    assert!(
+        matches!(
+            report.stop,
+            Some(StopReason::VerifyFailed { number: 1, .. })
+        ),
+        "settings fallback gate ran and failed: {:?}",
+        report.stop
+    );
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "fallback gate failure leaves the issue open"
     );
 
     fs::remove_dir_all(&repo).ok();

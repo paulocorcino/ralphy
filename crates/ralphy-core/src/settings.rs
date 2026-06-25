@@ -47,6 +47,18 @@ pub struct ClaudeSettings {
     pub max_minutes_per_issue: Option<u64>,
 }
 
+/// The per-repo verify-gate default (ADR-0011). `command` is the fallback verify
+/// command used when a plan's `## Verify` section is absent or empty — a single
+/// command line, tokenized into argv (no shell). `None` leaves the gate
+/// unconfigured, so an unspecified plan closes on the self-report with a loud warn.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VerifySettings {
+    /// The fallback verify command (`verify.command`). One command line; the
+    /// runner tokenizes it into argv and runs it directly. `None` → no fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+}
+
 /// The full settings store. Fields are additive across releases; unknown keys
 /// are preserved by the `extra` flatten so an older binary's `save` does not
 /// silently drop a future peer's keys.
@@ -64,6 +76,9 @@ pub struct Settings {
     pub branch_mode: Option<String>,
     #[serde(default)]
     pub claude: ClaudeSettings,
+    /// The runner-enforced verify gate's per-repo fallback (ADR-0011).
+    #[serde(default)]
+    pub verify: VerifySettings,
     #[serde(flatten)]
     pub extra: Map<String, serde_json::Value>,
 }

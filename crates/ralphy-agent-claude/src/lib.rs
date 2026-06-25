@@ -480,7 +480,12 @@ impl Agent for ClaudeAgent {
             args.push(e.clone());
         }
 
-        info!(model = self.plan_model.as_deref().unwrap_or(""), effort = self.plan_effort.as_deref().unwrap_or("medium"), staged, "planning with claude -p");
+        info!(
+            model = self.plan_model.as_deref().unwrap_or(""),
+            effort = self.plan_effort.as_deref().unwrap_or("medium"),
+            staged,
+            "planning with claude -p"
+        );
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)
             .current_dir(ws.repo_root())

@@ -52,6 +52,16 @@ in the exact shape the executor expects (below).
    - [verified] <criterion prose> — evidence: <step, test, or command that will prove it>
    - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
 
+   ## Verify
+   <The command(s) the RUNNER re-runs over the committed state before it closes
+   the issue — the runner-enforced green gate (ADR-0011). One command per line,
+   run as direct argv (NO shell: no `&&`, no pipes, no globs — the runner chains
+   them and stops at the first non-zero exit). Usually the same commands named in
+   the `[verified]` evidence above. Write `none` on its own line ONLY if nothing
+   is machine-verifiable. Examples:>
+   cargo fmt --check
+   cargo test -p <crate>
+
    ## Stages
    <short narrative of the stages from the staged-plan design — the "why" and
    ordering — so the executor has the design context.>
@@ -98,6 +108,13 @@ in the exact shape the executor expects (below).
 - The `## Done when` and `## Acceptance ledger` sections are REQUIRED — the
   runner parses the ledger to tick issue criteria and post evidence. Without
   them the issue's acceptance criteria are silently never updated.
+- The `## Verify` section IS the runner's hard gate (ADR-0011): after the
+  executor self-reports done, the RUNNER re-runs these exact commands over the
+  committed state and refuses to close the issue if any one fails — usually the
+  same commands named in the `[verified]` evidence. Each line is run as direct
+  argv with NO shell (no `&&`, pipes, globs); a command needing a shell writes
+  `sh -c "…"` explicitly. Write `none` (alone) ONLY when nothing is
+  machine-verifiable — an honest opt-out, not a way to dodge a gate.
 - Keep the staged ordering as the sequence of `- [ ]` steps (one per stage or
   sub-step), so the executor implements them in order.
 - Price the environment, never assume it: when any stage depends on external

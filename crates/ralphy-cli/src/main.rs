@@ -602,6 +602,19 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         // an explicit `--stop-on-limit` forces both (docs/adr/0009).
         stop_on_limit_plan: effective_stop_on_limit(args.stop_on_limit, plan_agent),
         stop_on_limit_exec: effective_stop_on_limit(args.stop_on_limit, args.agent),
+        // The runner-enforced verify gate (ADR-0011): the per-repo fallback
+        // command (tokenized into one argv) used only when a plan emits no
+        // `## Verify` section, and the gate's time budget (the per-issue budget).
+        verify_fallback: settings
+            .verify
+            .command
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(|c| vec![ralphy_core::verify::tokenize(c)]),
+        verify_timeout: std::time::Duration::from_secs(
+            resolved_claude.max_minutes_per_issue.saturating_mul(60),
+        ),
     };
 
     // The same deadline gates starting the next issue (between-issue clock).
@@ -676,6 +689,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         },
         StopReason::StopBefore { number } => ui::PanelStop::StopBefore { number },
         StopReason::Limit { number, reset } => ui::PanelStop::Limit { number, reset },
+        StopReason::VerifyFailed { number, summary } => {
+            ui::PanelStop::VerifyFailed { number, summary }
+        }
     });
 
     let panel_mode = match branch_mode {
