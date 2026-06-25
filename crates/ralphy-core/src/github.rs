@@ -455,8 +455,11 @@ pub fn plan_label_actions(
 ) -> Vec<LabelAction> {
     desired
         .iter()
-        .map(
-            |spec| match existing.iter().find(|(n, _)| n == &spec.name) {
+        .map(|spec| {
+            match existing
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(&spec.name))
+            {
                 None => LabelAction::Create(spec.clone()),
                 Some((_, existing_color)) => {
                     let norm_existing = normalize_color(existing_color);
@@ -471,8 +474,8 @@ pub fn plan_label_actions(
                         LabelAction::Skip(spec.name.clone())
                     }
                 }
-            },
-        )
+            }
+        })
         .collect()
 }
 
@@ -738,9 +741,11 @@ mod tests {
     #[test]
     fn plan_label_actions_full_matching_existing_yields_all_skip() {
         let desired = ralphy_label_specs(None);
+        // Use hash-prefixed uppercase colors to exercise normalize_color on the
+        // existing side — a raw-comparison bug would produce UpdateColor here.
         let existing: Vec<(String, String)> = desired
             .iter()
-            .map(|s| (s.name.clone(), normalize_color(&s.color)))
+            .map(|s| (s.name.clone(), format!("#{}", s.color.to_ascii_uppercase())))
             .collect();
         let actions = plan_label_actions(&desired, &existing);
         let n_create = actions
@@ -788,11 +793,17 @@ mod tests {
         assert_eq!(n_create, 0, "no Create expected for any present name");
         assert_eq!(n_update, 1, "expected exactly 1 UpdateColor");
         assert_eq!(n_skip, 7, "expected 7 Skip");
+        // Verify `to` carries the desired color and `from` the stale one.
+        let afk_spec = desired.iter().find(|s| s.name == "AFK").unwrap();
         assert!(
-            actions
-                .iter()
-                .any(|a| matches!(a, LabelAction::UpdateColor { name, .. } if name == "AFK")),
-            "expected UpdateColor for AFK"
+            actions.iter().any(|a| matches!(
+                a,
+                LabelAction::UpdateColor { name, from, to }
+                    if name == "AFK"
+                    && from == "aabbcc"
+                    && to == &normalize_color(&afk_spec.color)
+            )),
+            "expected UpdateColor for AFK with correct to/from"
         );
     }
 
@@ -867,6 +878,10 @@ mod tests {
         assert!(
             output.contains("1 unchanged"),
             "skip count missing:\n{output}"
+        );
+        assert!(
+            output.contains("kept-label"),
+            "skip name missing:\n{output}"
         );
     }
 

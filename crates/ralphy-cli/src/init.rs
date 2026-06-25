@@ -1498,6 +1498,7 @@ mod tests {
     fn labels_decision_empty_and_yes_proceed_no_declines() {
         assert!(labels_decision(""));
         assert!(labels_decision("y"));
+        assert!(labels_decision("Y"));
         assert!(labels_decision("yes"));
         assert!(labels_decision("  YES  "));
         assert!(!labels_decision("n"));
