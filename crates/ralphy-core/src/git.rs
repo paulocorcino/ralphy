@@ -180,6 +180,23 @@ pub fn rev_list_count(repo: &Path, range: &str) -> Result<usize> {
     Ok(out.trim().parse().unwrap_or(0))
 }
 
+/// Stage everything (`git add -A`) and commit a snapshot of the working tree.
+/// Used by `ralphy init` to isolate the dev's uncommitted changes before init
+/// writes its own scaffold, so the two never mingle in one diff.
+pub fn commit_all_snapshot(repo: &Path) -> Result<()> {
+    git(repo, &["add", "-A"])?;
+    git(
+        repo,
+        &[
+            "commit",
+            "-m",
+            "chore: snapshot before ralphy init",
+            "--quiet",
+        ],
+    )?;
+    Ok(())
+}
+
 /// Clean ignoring anything under `.ralphy/` — scratch and logs never count as
 /// a dirty tree (they live in the gitignored run dir).
 pub fn is_clean_ignoring_ralphy(repo: &Path) -> Result<bool> {
@@ -226,5 +243,38 @@ mod tests {
             slug.len() > "path-".len(),
             "fallback slug non-empty: {slug}"
         );
+    }
+
+    fn init_repo(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ralphy-git-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]).unwrap();
+        git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
+        git(&dir, &["config", "user.name", "Test"]).unwrap();
+        dir
+    }
+
+    #[test]
+    fn commit_all_snapshot_clears_dirty_tree_with_fixed_subject() {
+        let dir = init_repo("snapshot");
+        // Seed an initial commit so HEAD exists, then dirty the tree.
+        std::fs::write(dir.join("README.md"), "hello\n").unwrap();
+        git(&dir, &["add", "."]).unwrap();
+        git(&dir, &["commit", "-q", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("README.md"), "changed\n").unwrap();
+        std::fs::write(dir.join("new.txt"), "added\n").unwrap();
+
+        commit_all_snapshot(&dir).unwrap();
+
+        let porcelain = git(&dir, &["status", "--porcelain"]).unwrap();
+        assert!(
+            porcelain.is_empty(),
+            "tree must be clean after snapshot, got:\n{porcelain}"
+        );
+        let subject = git(&dir, &["log", "-1", "--format=%s"]).unwrap();
+        assert_eq!(subject, "chore: snapshot before ralphy init");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
