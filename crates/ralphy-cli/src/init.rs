@@ -2,9 +2,9 @@
 //! read-only repo diagnosis from a neutral cwd (stage 2) and a diagnosis-seeded
 //! console Q&A captured into a typed config (stage 3), the git-safety snapshot +
 //! `ralphy/init` branch (stage 4), the deterministic scaffold from the embedded
-//! setup-pocock templates (stage 5), and the optional sparse-checkout download of
-//! engineering skills pinned to `RALPHY_VERSION` (stage 6). Stages 7–10 are
-//! stubbed.
+//! setup-pocock templates (stage 5), the optional sparse-checkout download of
+//! engineering skills pinned to `RALPHY_VERSION` (stage 6), and the idempotent
+//! GitHub label vocabulary creation (stage 7). Stages 8–10 are stubbed.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use clap::Args;
 use ralphy_adapter_support::find_program;
-use ralphy_core::{git, DiagnosisReport, RepoKind, Workspace};
+use ralphy_core::{git, github, DiagnosisReport, RepoKind, Workspace};
 
 #[derive(Args)]
 pub struct InitArgs {
@@ -674,6 +674,15 @@ pub fn download_decision(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
+/// The label-creation decision: empty / `y` / `yes` → proceed (the default is
+/// recommended since stage 7 is idempotent); `n` / anything else → skip.
+pub fn labels_decision(answer: &str) -> bool {
+    matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    )
+}
+
 /// Build the exact git argv sequence for a sparse, pinned fetch of `subtree` from
 /// the Ralphy repo at `version`. Pure: the impure shell feeds these to `git::git`.
 /// Order: init → remote add → sparse-checkout init --cone →
@@ -972,6 +981,23 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 println!("warning: skills download failed ({msg}); continuing");
             }
         }
+    }
+
+    // ── stage 7: create GitHub label vocabulary ──────────────────────────────
+    let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
+    let desired = github::ralphy_label_specs(triage_doc.as_deref());
+    let existing = github::list_repo_labels(&repo)?;
+    let actions = github::plan_label_actions(&desired, &existing);
+    print!(
+        "\nGitHub label plan:\n{}",
+        github::format_label_plan(&actions)
+    );
+    let answer = prompt("\nCreate/update these labels on GitHub? [Y/n]: ")?;
+    if labels_decision(&answer) {
+        github::apply_label_actions(&actions, &repo)?;
+        println!("Labels created/updated.");
+    } else {
+        println!("Skipping label creation.");
     }
 
     Ok(())
@@ -1466,6 +1492,17 @@ mod tests {
         assert!(!download_decision("n"));
         assert!(!download_decision("no"));
         assert!(!download_decision("maybe"));
+    }
+
+    #[test]
+    fn labels_decision_empty_and_yes_proceed_no_declines() {
+        assert!(labels_decision(""));
+        assert!(labels_decision("y"));
+        assert!(labels_decision("yes"));
+        assert!(labels_decision("  YES  "));
+        assert!(!labels_decision("n"));
+        assert!(!labels_decision("no"));
+        assert!(!labels_decision("maybe"));
     }
 
     #[test]
