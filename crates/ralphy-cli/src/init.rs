@@ -683,6 +683,20 @@ pub fn labels_decision(answer: &str) -> bool {
     )
 }
 
+/// Resolve the git ref the skills sparse-fetch should pin to. `RALPHY_VERSION` is
+/// a `git describe` string (e.g. `v0.1.0-rc6-19-g27adb48`) for any build past a
+/// tag, which `git fetch origin <ref>` cannot resolve — so prefer the exact commit
+/// SHA (emitted by `build.rs` when built from a git checkout; GitHub resolves a
+/// reachable SHA in a `want`). Fall back to `version` for a clean release build
+/// (where `RALPHY_VERSION` is the bare tag) or a no-git source build. Pure over its
+/// inputs so the fallback unit-tests without a build env.
+fn resolve_fetch_ref(git_sha: Option<&str>, version: &str) -> String {
+    match git_sha {
+        Some(sha) if !sha.trim().is_empty() => sha.trim().to_string(),
+        _ => version.to_string(),
+    }
+}
+
 /// Build the exact git argv sequence for a sparse, pinned fetch of `subtree` from
 /// the Ralphy repo at `version`. Pure: the impure shell feeds these to `git::git`.
 /// Order: init → remote add → sparse-checkout init --cone →
@@ -953,7 +967,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
     let names = skill_names();
     let skills_dst = repo.join(skills_target(cfg.skills_dir.as_deref()));
     // NOTE: displayed list is from the build-time tree; downloaded set is from
-    // the pinned RALPHY_VERSION tag and may differ across builds.
+    // the pinned commit (see resolve_fetch_ref) and may differ across builds.
     println!("\nEngineering skills available: {}", names.join(", "));
     println!("Target: {}", skills_dst.display());
     let answer = prompt(&format!(
@@ -964,9 +978,10 @@ pub fn run(args: &InitArgs) -> Result<()> {
         println!("Skipping skills download.");
     } else {
         let version = env!("RALPHY_VERSION").to_string();
+        let fetch_ref = resolve_fetch_ref(option_env!("RALPHY_GIT_SHA"), &version);
         let subtree = SKILLS_SUBTREE.to_string();
         let fetch = |scratch: &Path| -> Result<PathBuf> {
-            for argv in sparse_fetch_commands(&version, &subtree) {
+            for argv in sparse_fetch_commands(&fetch_ref, &subtree) {
                 let args: Vec<&str> = argv.iter().map(String::as_str).collect();
                 git::git(scratch, &args)?;
             }
@@ -1504,6 +1519,19 @@ mod tests {
         assert!(!labels_decision("n"));
         assert!(!labels_decision("no"));
         assert!(!labels_decision("maybe"));
+    }
+
+    #[test]
+    fn resolve_fetch_ref_prefers_sha_falls_back_to_version() {
+        // A real SHA wins over the (unresolvable) describe string.
+        assert_eq!(
+            resolve_fetch_ref(Some("27adb48abc"), "v0.1.0-rc6-19-g27adb48"),
+            "27adb48abc"
+        );
+        // No SHA (no-git build) → the version is used as-is.
+        assert_eq!(resolve_fetch_ref(None, "v0.1.0-rc6"), "v0.1.0-rc6");
+        // An empty SHA is treated as absent.
+        assert_eq!(resolve_fetch_ref(Some("  "), "v0.1.0-rc6"), "v0.1.0-rc6");
     }
 
     #[test]
