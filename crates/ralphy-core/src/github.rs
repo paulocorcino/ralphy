@@ -4,7 +4,8 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -68,8 +69,9 @@ pub fn build_queue(batches: Vec<Vec<Issue>>) -> Vec<Issue> {
 /// it. Label-agnostic on purpose — children often sit in `needs-triage` and
 /// would be invisible to the label-filtered queue.
 pub fn list_open_issues(repo_root: &Path) -> Result<Vec<Issue>> {
-    let out = gh(repo_root)
-        .args([
+    let out = gh_output("gh issue list --state open", || {
+        let mut cmd = gh(repo_root);
+        cmd.args([
             "issue",
             "list",
             "--state",
@@ -78,15 +80,9 @@ pub fn list_open_issues(repo_root: &Path) -> Result<Vec<Issue>> {
             "number,title,body,labels",
             "--limit",
             "200",
-        ])
-        .output()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue list --state open` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
+        ]);
+        cmd
+    })?;
     parse_issue_list(&String::from_utf8_lossy(&out.stdout))
 }
 
@@ -100,14 +96,75 @@ fn gh(repo_root: &Path) -> Command {
     cmd
 }
 
+/// Total attempts for a transient-failing `gh` call (1 initial + 3 retries).
+const GH_MAX_ATTEMPTS: u32 = 4;
+
+/// Is a `gh` failure a transient GitHub edge / network blip (worth retrying)
+/// rather than a real rejection (bad label, missing issue, auth — never retry)?
+///
+/// GitHub's gateway answers an overloaded request with a 5xx HTML page —
+/// e.g. `non-200 OK status code: 504 Gateway Timeout` — which `gh` surfaces on
+/// stderr. We match those markers (and the usual transport failures) so a momentary
+/// blip is retried instead of aborting a run whose work has already landed.
+fn is_transient_gh_failure(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    [
+        "502",
+        "503",
+        "504",
+        "bad gateway",
+        "gateway timeout",
+        "service unavailable",
+        "timeout",
+        "timed out",
+        "connection reset",
+        "connection refused",
+        "could not resolve host",
+        "tls handshake",
+        "eof",
+    ]
+    .iter()
+    .any(|m| s.contains(m))
+}
+
+/// Run a `gh` invocation (built fresh by `build` each attempt — `Command` is not
+/// reusable) and return its captured output, retrying on a transient failure with
+/// exponential backoff. `op` labels the call in the final error.
+///
+/// Every call routed through here is idempotent enough that a retried duplicate is
+/// harmless next to losing the run: closing an already-closed issue, re-applying a
+/// label, re-setting a body, or (worst case) a duplicate evidence comment after a
+/// 504 whose write actually landed. A real rejection is not transient, so it bails
+/// on the first attempt — no added latency on genuine errors.
+fn gh_output(op: &str, mut build: impl FnMut() -> Command) -> Result<Output> {
+    let mut backoff = Duration::from_secs(1);
+    for attempt in 1..=GH_MAX_ATTEMPTS {
+        let out = build()
+            .output()
+            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+        if out.status.success() {
+            return Ok(out);
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
+            std::thread::sleep(backoff);
+            backoff *= 2;
+            continue;
+        }
+        bail!("`{op}` failed: {}", stderr.trim());
+    }
+    unreachable!("the final attempt returns Ok or bails");
+}
+
 /// Build the run queue from GitHub. `gh --label` is an AND filter, so query each
 /// label separately and union the batches — an issue carrying ANY queue label
 /// qualifies. Returns the deduped, ascending queue.
 pub fn list_queue(labels: &[String], repo_root: &Path) -> Result<Vec<Issue>> {
     let mut batches = Vec::with_capacity(labels.len());
     for label in labels {
-        let out = gh(repo_root)
-            .args([
+        let out = gh_output(&format!("gh issue list --label {label}"), || {
+            let mut cmd = gh(repo_root);
+            cmd.args([
                 "issue",
                 "list",
                 "--label",
@@ -118,15 +175,9 @@ pub fn list_queue(labels: &[String], repo_root: &Path) -> Result<Vec<Issue>> {
                 "number,title,body,labels",
                 "--limit",
                 "100",
-            ])
-            .output()
-            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-        if !out.status.success() {
-            bail!(
-                "`gh issue list --label {label}` failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
+            ]);
+            cmd
+        })?;
         batches.push(parse_issue_list(&String::from_utf8_lossy(&out.stdout))?);
     }
     Ok(build_queue(batches))
@@ -136,16 +187,11 @@ pub fn list_queue(labels: &[String], repo_root: &Path) -> Result<Vec<Issue>> {
 /// issue's labels are left untouched — closing alone removes it from the queue
 /// (the cycle); the human still merges the branch by hand.
 pub fn close_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
-    let out = gh(repo_root)
-        .args(["issue", "close", &number.to_string(), "--comment", comment])
-        .output()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue close {number}` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
+    gh_output(&format!("gh issue close {number}"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["issue", "close", &number.to_string(), "--comment", comment]);
+        cmd
+    })?;
     Ok(())
 }
 
@@ -155,35 +201,44 @@ pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> 
     use std::io::Write;
     use std::process::Stdio;
 
-    let mut child = gh(repo_root)
-        .args(["issue", "edit", &number.to_string(), "--body-file", "-"])
-        .stdin(Stdio::piped())
-        // Capture stdout/stderr rather than inheriting them: `gh issue edit` prints
-        // the issue URL to stdout on success, which would otherwise leak a loose
-        // line into the console UI (and `out.stderr` below would be empty on error).
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+    // Re-setting the same body is idempotent, so mirror `gh_output`'s transient
+    // retry here; the stdin pipe is why this can't route through that helper.
+    let mut backoff = Duration::from_secs(1);
+    for attempt in 1..=GH_MAX_ATTEMPTS {
+        let mut child = gh(repo_root)
+            .args(["issue", "edit", &number.to_string(), "--body-file", "-"])
+            .stdin(Stdio::piped())
+            // Capture stdout/stderr rather than inheriting them: `gh issue edit` prints
+            // the issue URL to stdout on success, which would otherwise leak a loose
+            // line into the console UI (and `out.stderr` below would be empty on error).
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
 
-    // Store the write result rather than short-circuiting with `?`: dropping
-    // `child` without calling `wait` would leave a zombie process on write failure.
-    let mut stdin = child.stdin.take().expect("stdin was piped");
-    let write_result = stdin.write_all(body.as_bytes());
-    drop(stdin); // close stdin (EOF) before waiting
+        // Store the write result rather than short-circuiting with `?`: dropping
+        // `child` without calling `wait` would leave a zombie process on write failure.
+        let mut stdin = child.stdin.take().expect("stdin was piped");
+        let write_result = stdin.write_all(body.as_bytes());
+        drop(stdin); // close stdin (EOF) before waiting
 
-    let out = child
-        .wait_with_output()
-        .context("waiting for `gh issue edit`")?;
+        let out = child
+            .wait_with_output()
+            .context("waiting for `gh issue edit`")?;
 
-    write_result.context("writing body to `gh` stdin")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue edit {number}` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
+        write_result.context("writing body to `gh` stdin")?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
+            std::thread::sleep(backoff);
+            backoff *= 2;
+            continue;
+        }
+        bail!("`gh issue edit {number}` failed: {}", stderr.trim());
     }
-    Ok(())
+    unreachable!("the final attempt returns Ok or bails");
 }
 
 /// Add a label to an issue via `gh issue edit <n> --add-label <label>`. When the
@@ -192,16 +247,14 @@ pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> 
 /// edit retried, keeping first use on a fresh repo from failing.
 pub fn add_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
     let edit = |root: &Path| -> Result<()> {
-        let out = gh(root)
-            .args(["issue", "edit", &number.to_string(), "--add-label", label])
-            .output()
-            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-        if !out.status.success() {
-            bail!(
-                "`gh issue edit {number} --add-label {label}` failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
+        gh_output(
+            &format!("gh issue edit {number} --add-label {label}"),
+            || {
+                let mut cmd = gh(root);
+                cmd.args(["issue", "edit", &number.to_string(), "--add-label", label]);
+                cmd
+            },
+        )?;
         Ok(())
     };
     if edit(repo_root).is_ok() {
@@ -224,16 +277,11 @@ pub fn add_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
 
 /// Post a comment on a GitHub issue via `gh issue comment <n> --body <comment>`.
 pub fn comment_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
-    let out = gh(repo_root)
-        .args(["issue", "comment", &number.to_string(), "--body", comment])
-        .output()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue comment {number}` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
+    gh_output(&format!("gh issue comment {number}"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["issue", "comment", &number.to_string(), "--body", comment]);
+        cmd
+    })?;
     Ok(())
 }
 
@@ -256,16 +304,11 @@ pub fn parse_issue_comments(json: &str) -> Result<Vec<String>> {
 
 /// Fetch an issue's comment bodies via `gh issue view <n> --json comments`.
 pub fn issue_comments(number: u64, repo_root: &Path) -> Result<Vec<String>> {
-    let out = gh(repo_root)
-        .args(["issue", "view", &number.to_string(), "--json", "comments"])
-        .output()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue view {number} --json comments` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
+    let out = gh_output(&format!("gh issue view {number} --json comments"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["issue", "view", &number.to_string(), "--json", "comments"]);
+        cmd
+    })?;
     parse_issue_comments(&String::from_utf8_lossy(&out.stdout))
 }
 
@@ -283,16 +326,11 @@ fn parse_issue_state(json: &str) -> Result<bool> {
 /// Return `true` when the given issue number is closed, by running
 /// `gh issue view <n> --json state`.
 pub fn issue_is_closed(number: u64, repo_root: &Path) -> Result<bool> {
-    let out = gh(repo_root)
-        .args(["issue", "view", &number.to_string(), "--json", "state"])
-        .output()
-        .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`gh issue view {number} --json state` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
+    let out = gh_output(&format!("gh issue view {number} --json state"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["issue", "view", &number.to_string(), "--json", "state"]);
+        cmd
+    })?;
     parse_issue_state(&String::from_utf8_lossy(&out.stdout))
 }
 
@@ -350,6 +388,39 @@ pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transient_detector_matches_the_observed_504() {
+        // The exact gateway response that aborted a run mid-evidence-comment.
+        let stderr = r#"failed to run git: non-200 OK status code: 504 Gateway Timeout body: "<!DOCTYPE html>...""#;
+        assert!(is_transient_gh_failure(stderr));
+    }
+
+    #[test]
+    fn transient_detector_matches_other_edge_and_transport_blips() {
+        for s in [
+            "non-200 OK status code: 502 Bad Gateway",
+            "503 Service Unavailable",
+            "request timed out",
+            "connection reset by peer",
+            "could not resolve host: api.github.com",
+        ] {
+            assert!(is_transient_gh_failure(s), "expected transient: {s}");
+        }
+    }
+
+    #[test]
+    fn transient_detector_rejects_real_rejections() {
+        // Real failures must bail on the first attempt — no pointless retries.
+        for s in [
+            "could not add label: 'needs-split' not found",
+            "GraphQL: Could not resolve to an Issue with the number of 9999",
+            "gh: Not Found (HTTP 404)",
+            "authentication required",
+        ] {
+            assert!(!is_transient_gh_failure(s), "expected non-transient: {s}");
+        }
+    }
 
     #[test]
     fn parse_issue_state_closed() {
