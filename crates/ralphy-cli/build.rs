@@ -13,6 +13,14 @@ fn main() {
     let version = git_describe().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
     println!("cargo:rustc-env=RALPHY_VERSION={version}");
 
+    // The exact commit SHA, for pinning the skills sparse-fetch to a ref `git
+    // fetch` can actually resolve (RALPHY_VERSION is a `git describe` string past a
+    // tag, which the remote can't resolve). Emitted only when built from a git
+    // checkout; the cli reads it via `option_env!`.
+    if let Some(sha) = git_sha() {
+        println!("cargo:rustc-env=RALPHY_GIT_SHA={sha}");
+    }
+
     // Emit the comma-joined list of engineering-skill subdirectory names so the
     // binary can tell the dev which skills will be installed (informational; the
     // downloaded set comes from the pinned tag, which may differ across versions).
@@ -34,6 +42,24 @@ fn skills_csv(skills_path: &str) -> String {
         .collect();
     names.sort();
     names.join(",")
+}
+
+/// `git rev-parse HEAD`: the exact commit SHA, or `None` when git isn't present or
+/// the command fails (e.g. a source tarball with no `.git`).
+fn git_sha() -> Option<String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 /// `git describe --tags --always --dirty`: the nearest tag (plus commits-ahead and
