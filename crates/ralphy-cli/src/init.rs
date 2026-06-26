@@ -3,8 +3,10 @@
 //! console Q&A captured into a typed config (stage 3), the git-safety snapshot +
 //! `ralphy/init` branch (stage 4), the deterministic scaffold from the embedded
 //! setup-pocock templates (stage 5), the optional sparse-checkout download of
-//! engineering skills pinned to `RALPHY_VERSION` (stage 6), and the idempotent
-//! GitHub label vocabulary creation (stage 7). Stages 8–10 are stubbed.
+//! engineering skills pinned to `RALPHY_VERSION` (stage 6), the idempotent
+//! GitHub label vocabulary creation (stage 7), and the conditional
+//! backlog/milestone → issues judgment with a local preview the dev confirms
+//! before any publish (stage 8). Stages 9–10 are stubbed.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -12,18 +14,26 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use clap::Args;
-use ralphy_adapter_support::find_program;
-use ralphy_core::{git, github, DiagnosisReport, RepoKind, Workspace};
+use clap::{Args, ValueEnum};
+use ralphy_adapter_support::{find_program, locate_program, resolve_program};
+use ralphy_core::{
+    git, github, DiagnosisReport, DraftRequest, IssuesDraft, IssuesMode, RepoKind, Workspace,
+};
 
 #[derive(Args)]
 pub struct InitArgs {
     /// Any path inside the target repo; resolved to its git toplevel.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
+
+    /// Which agent CLI drives the AI judgment steps (repo diagnosis + issue
+    /// drafting). Must be logged in. Defaults to the first logged-in agent the
+    /// environment gate detects (claude, then codex, then opencode).
+    #[arg(long, value_enum)]
+    pub agent: Option<Agent>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Agent {
     Claude,
     Codex,
@@ -155,30 +165,28 @@ fn github_remote(repo: &Path) -> bool {
         .unwrap_or(false)
 }
 
+// The gate's presence/login probes resolve each CLI through the SAME locator the
+// adapters spawn through (`locate_program`/`resolve_program`), so detection and
+// execution agree — a `claude` under `~/.local/bin` but off `PATH` is reported
+// present and is the binary actually run, rather than being falsely called absent.
 fn agent_present(a: &Agent) -> bool {
-    let path = std::env::var_os("PATH");
-    let pathext = std::env::var_os("PATHEXT");
-    find_program(a.cli_name(), path, pathext).is_some()
+    locate_program(a.cli_name()).is_some()
 }
 
 fn agent_logged_in(a: &Agent) -> bool {
     let hello = "hello";
-    let mut cmd = match a {
+    let bin = resolve_program(a.cli_name());
+    let mut cmd = std::process::Command::new(&bin);
+    match a {
         Agent::Claude => {
-            let mut c = std::process::Command::new("claude");
-            c.args(["-p", hello]);
-            c
+            cmd.args(["-p", hello]);
         }
         Agent::Codex => {
-            let mut c = std::process::Command::new("codex");
-            c.args(["exec", hello]);
-            c.env_remove("OPENAI_API_KEY");
-            c
+            cmd.args(["exec", hello]);
+            cmd.env_remove("OPENAI_API_KEY");
         }
         Agent::Opencode => {
-            let mut c = std::process::Command::new("opencode");
-            c.args(["run", hello]);
-            c
+            cmd.args(["run", hello]);
         }
     };
     cmd.stdin(Stdio::null())
@@ -683,6 +691,20 @@ pub fn labels_decision(answer: &str) -> bool {
     )
 }
 
+/// Resolve the git ref the skills sparse-fetch should pin to. `RALPHY_VERSION` is
+/// a `git describe` string (e.g. `v0.1.0-rc6-19-g27adb48`) for any build past a
+/// tag, which `git fetch origin <ref>` cannot resolve — so prefer the exact commit
+/// SHA (emitted by `build.rs` when built from a git checkout; GitHub resolves a
+/// reachable SHA in a `want`). Fall back to `version` for a clean release build
+/// (where `RALPHY_VERSION` is the bare tag) or a no-git source build. Pure over its
+/// inputs so the fallback unit-tests without a build env.
+fn resolve_fetch_ref(git_sha: Option<&str>, version: &str) -> String {
+    match git_sha {
+        Some(sha) if !sha.trim().is_empty() => sha.trim().to_string(),
+        _ => version.to_string(),
+    }
+}
+
 /// Build the exact git argv sequence for a sparse, pinned fetch of `subtree` from
 /// the Ralphy repo at `version`. Pure: the impure shell feeds these to `git::git`.
 /// Order: init → remote add → sparse-checkout init --cone →
@@ -837,6 +859,223 @@ fn branch_decision(_current: &str, answer: &str) -> BranchDecision {
     }
 }
 
+// ── stage 8: backlog/milestone → issues (preview, confirm, publish) ──────────
+
+/// Which judgment path stage 8 takes for the captured config — or `Skip` when the
+/// diagnosis/Q&A found no backlog or milestone (ADR-0012 stage 8 "skipped cleanly"
+/// criterion). Pure: the impure shell acts on this verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IssuesPath {
+    Milestone,
+    LooseBacklog,
+    Skip,
+}
+
+/// Decide the stage-8 path from the captured config. The milestone path wins when
+/// the dev adopted the PRD/roadmap model AND milestone docs exist; otherwise a
+/// loose backlog is reshaped when one was found; otherwise stage 8 is skipped.
+fn decide_issues_path(cfg: &InitConfig) -> IssuesPath {
+    if cfg.adopt_prd_roadmap && !cfg.milestone_docs.is_empty() {
+        IssuesPath::Milestone
+    } else if cfg.backlog_location.is_some() {
+        IssuesPath::LooseBacklog
+    } else {
+        IssuesPath::Skip
+    }
+}
+
+/// The publish decision for the drafted preview. Default is **No** (`[y/N]`): a
+/// bulk external write is never the silent default — only an explicit `y`/`yes`
+/// proceeds. Pure, mirrors [`download_decision`].
+fn publish_decision(answer: &str) -> bool {
+    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+/// A human-readable summary of the draft for the dev to confirm before any
+/// external write: the headline count (and milestone, when present) followed by
+/// one line per issue with its labels and blocked-by indices. Pure, mirrors
+/// [`github::format_label_plan`].
+fn format_draft_summary(draft: &IssuesDraft) -> String {
+    let mut out = String::new();
+    match &draft.milestone {
+        Some(ms) => out.push_str(&format!(
+            "will create {} issue(s), all in milestone \"{}\"\n",
+            draft.issue_count(),
+            ms.title
+        )),
+        None => out.push_str(&format!("will create {} issue(s)\n", draft.issue_count())),
+    }
+    if let Some(prd) = &draft.prd_path {
+        out.push_str(&format!("PRD written: {prd}\n"));
+    }
+    for (i, issue) in draft.issues.iter().enumerate() {
+        let labels = if issue.labels.is_empty() {
+            String::new()
+        } else {
+            format!("  [{}]", issue.labels.join(", "))
+        };
+        let blocked = if issue.blocked_by.is_empty() {
+            String::new()
+        } else {
+            let refs: Vec<String> = issue
+                .blocked_by
+                .iter()
+                .map(|n| format!("#{}", n + 1))
+                .collect();
+            format!("  (blocked by {})", refs.join(", "))
+        };
+        out.push_str(&format!(
+            "  {}. {}{}{}\n",
+            i + 1,
+            issue.title,
+            labels,
+            blocked
+        ));
+    }
+    out
+}
+
+/// Rewrite a drafted body's `## Blocked by` placeholder with the resolved issue
+/// numbers (or the "can start immediately" line when none). The charter emits the
+/// literal `BLOCKED_BY_PLACEHOLDER`; if it is absent (a body that didn't follow
+/// the template) the body is returned unchanged. Pure.
+fn patch_blocked_by(body: &str, blocked_numbers: &[u64]) -> String {
+    const PLACEHOLDER: &str = "BLOCKED_BY_PLACEHOLDER";
+    if !body.contains(PLACEHOLDER) {
+        return body.to_string();
+    }
+    let replacement = if blocked_numbers.is_empty() {
+        "None - can start immediately".to_string()
+    } else {
+        blocked_numbers
+            .iter()
+            .map(|n| format!("- #{n}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    body.replace(PLACEHOLDER, &replacement)
+}
+
+/// Resolve the agent-ready triage label from the scaffolded
+/// `docs/agents/triage-labels.md` (the mapping for `ready-for-agent`), falling
+/// back to the canonical `ready-for-agent` when no mapping is configured.
+fn resolve_triage_label(repo: &Path) -> String {
+    let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
+    triage_doc
+        .as_deref()
+        .and_then(|d| github::parse_triage_mapping(d, "ready-for-agent"))
+        .unwrap_or_else(|| "ready-for-agent".to_string())
+}
+
+/// Publish a confirmed draft to GitHub: create the milestone first (milestone
+/// path), then each issue in array order, mapping each draft index to its created
+/// number so a later issue's `blocked_by` indices resolve to real `#N` refs in its
+/// body. Returns the created issue numbers in array order.
+fn publish_draft(repo: &Path, draft: &IssuesDraft) -> Result<Vec<u64>> {
+    // Create the milestone first so `gh issue create --milestone <name>` resolves;
+    // each issue links to it by name (the number, returned here, is just logged).
+    let milestone_name = match &draft.milestone {
+        Some(ms) => {
+            let number = github::create_milestone(repo, &ms.title, &ms.description)?;
+            println!("  created milestone #{number}: {}", ms.title);
+            Some(ms.title.as_str())
+        }
+        None => None,
+    };
+    let mut created: Vec<u64> = Vec::with_capacity(draft.issues.len());
+    for issue in &draft.issues {
+        // A blocker index must point at an earlier (already-created) issue; guard
+        // against an out-of-range index rather than panicking on a bad draft.
+        let blocked_numbers: Vec<u64> = issue
+            .blocked_by
+            .iter()
+            .filter_map(|&idx| created.get(idx).copied())
+            .collect();
+        let body = patch_blocked_by(&issue.body, &blocked_numbers);
+        let number =
+            github::create_issue(repo, &issue.title, &body, &issue.labels, milestone_name)?;
+        println!("  created #{number}: {}", issue.title);
+        created.push(number);
+    }
+    Ok(created)
+}
+
+/// Dispatch the read-only repo-diagnosis session to the selected agent's adapter.
+/// Each adapter drives the same core charter ([`ralphy_core::build_diagnose_prompt`]);
+/// only the CLI invocation differs.
+fn diagnose_with_agent(
+    agent: Agent,
+    repo: &Path,
+    neutral_cwd: &Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<DiagnosisReport> {
+    match agent {
+        Agent::Claude => {
+            ralphy_agent_claude::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+        Agent::Codex => {
+            ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+        Agent::Opencode => {
+            ralphy_agent_opencode::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+    }
+}
+
+/// Dispatch the backlog/milestone → issues draft session to the selected agent's
+/// adapter. Like [`diagnose_with_agent`], the charter is shared
+/// ([`ralphy_core::build_init_issues_prompt`]) and only the invocation differs.
+fn draft_with_agent(
+    agent: Agent,
+    repo: &Path,
+    out_path: &Path,
+    req: &DraftRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<IssuesDraft> {
+    match agent {
+        Agent::Claude => {
+            ralphy_agent_claude::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+        Agent::Codex => {
+            ralphy_agent_codex::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+        Agent::Opencode => {
+            ralphy_agent_opencode::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+    }
+}
+
+/// Choose which agent drives the AI judgment steps. An explicit `--agent` must be
+/// logged in (else a hard error names the logged-in set); with no flag, the first
+/// logged-in agent in gate order (claude → codex → opencode) is used. The gate has
+/// already guaranteed `logged_in` is non-empty before this is called.
+fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> {
+    match requested {
+        Some(a) if logged_in.contains(&a) => Ok(a),
+        Some(a) => bail!(
+            "ralphy init: --agent {} is not logged in (logged in: {})",
+            a.cli_name(),
+            if logged_in.is_empty() {
+                "none".to_string()
+            } else {
+                logged_in
+                    .iter()
+                    .map(|x| x.cli_name())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        ),
+        None => logged_in
+            .first()
+            .copied()
+            .context("no logged-in agent available (the environment gate should have caught this)"),
+    }
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
@@ -866,13 +1105,21 @@ pub fn run(args: &InitArgs) -> Result<()> {
         );
     }
 
-    println!("Environment gate passed. Diagnosing repo (read-only)…");
+    // Pick the agent that drives diagnosis + issue drafting (explicit --agent, or
+    // the first logged-in agent the gate found). The gate above guarantees ≥1.
+    let selected_agent = select_agent(args.agent, &findings.agents_logged_in)?;
+    println!(
+        "Environment gate passed. Using agent: {}.",
+        selected_agent.cli_name()
+    );
+    println!("Diagnosing repo (read-only)…");
 
     // Diagnose from a neutral cwd OUTSIDE the repo, so the target's
     // CLAUDE.md/AGENTS.md are read as data, never auto-loaded as instructions.
     let stamp = format!("{}", std::process::id());
     let cwd = diagnosis_cwd(&repo, &stamp);
-    let report = ralphy_agent_claude::diagnose_repo(
+    let report = diagnose_with_agent(
+        selected_agent,
         &repo,
         &cwd,
         None,
@@ -953,7 +1200,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
     let names = skill_names();
     let skills_dst = repo.join(skills_target(cfg.skills_dir.as_deref()));
     // NOTE: displayed list is from the build-time tree; downloaded set is from
-    // the pinned RALPHY_VERSION tag and may differ across builds.
+    // the pinned commit (see resolve_fetch_ref) and may differ across builds.
     println!("\nEngineering skills available: {}", names.join(", "));
     println!("Target: {}", skills_dst.display());
     let answer = prompt(&format!(
@@ -964,9 +1211,10 @@ pub fn run(args: &InitArgs) -> Result<()> {
         println!("Skipping skills download.");
     } else {
         let version = env!("RALPHY_VERSION").to_string();
+        let fetch_ref = resolve_fetch_ref(option_env!("RALPHY_GIT_SHA"), &version);
         let subtree = SKILLS_SUBTREE.to_string();
         let fetch = |scratch: &Path| -> Result<PathBuf> {
-            for argv in sparse_fetch_commands(&version, &subtree) {
+            for argv in sparse_fetch_commands(&fetch_ref, &subtree) {
                 let args: Vec<&str> = argv.iter().map(String::as_str).collect();
                 git::git(scratch, &args)?;
             }
@@ -1000,6 +1248,50 @@ pub fn run(args: &InitArgs) -> Result<()> {
         println!("Skipping label creation.");
     }
 
+    // ── stage 8: backlog/milestone → issues (preview, confirm, publish) ───────
+    match decide_issues_path(&cfg) {
+        IssuesPath::Skip => {
+            println!("\nNo backlog or milestone found — skipping issue creation.");
+        }
+        path => {
+            let (mode, source_docs) = match path {
+                IssuesPath::Milestone => (IssuesMode::Milestone, cfg.milestone_docs.clone()),
+                IssuesPath::LooseBacklog => (
+                    IssuesMode::LooseBacklog,
+                    cfg.backlog_location.iter().cloned().collect(),
+                ),
+                IssuesPath::Skip => unreachable!("Skip handled above"),
+            };
+            let triage_label = resolve_triage_label(&repo);
+            let draft_path = ws.issues_draft_path();
+            println!("\nDrafting issues from the backlog/milestone (read-only preview)…");
+            let req = DraftRequest {
+                mode,
+                source_docs: &source_docs,
+                triage_label: &triage_label,
+            };
+            let draft = draft_with_agent(
+                selected_agent,
+                &repo,
+                &draft_path,
+                &req,
+                None,
+                Some("medium"),
+                Duration::from_secs(600),
+            )?;
+            println!("Draft written to {}", draft_path.display());
+
+            println!("\nPreview:\n{}", format_draft_summary(&draft));
+            let answer = prompt("Publish these issues to GitHub? [y/N]: ")?;
+            if publish_decision(&answer) {
+                let created = publish_draft(&repo, &draft)?;
+                println!("Published {} issue(s).", created.len());
+            } else {
+                println!("Skipping publish; draft kept at {}.", draft_path.display());
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1021,6 +1313,34 @@ mod tests {
     #[test]
     fn evaluate_gate_all_green_returns_empty() {
         assert!(evaluate_gate(&all_green()).is_empty());
+    }
+
+    // ── agent selection (ADR-0012: --agent dispatch) ────────────────────────
+
+    #[test]
+    fn select_agent_defaults_to_first_logged_in() {
+        let logged_in = vec![Agent::Codex, Agent::Opencode];
+        assert_eq!(select_agent(None, &logged_in).unwrap(), Agent::Codex);
+    }
+
+    #[test]
+    fn select_agent_honours_explicit_logged_in_choice() {
+        let logged_in = vec![Agent::Claude, Agent::Codex];
+        assert_eq!(
+            select_agent(Some(Agent::Codex), &logged_in).unwrap(),
+            Agent::Codex
+        );
+    }
+
+    #[test]
+    fn select_agent_rejects_explicit_not_logged_in() {
+        // A present-but-not-logged-in (or absent) agent is a hard error naming the
+        // logged-in set, never a silent fallback to another agent.
+        let logged_in = vec![Agent::Claude];
+        let err = select_agent(Some(Agent::Opencode), &logged_in).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("opencode"), "names the rejected agent:\n{msg}");
+        assert!(msg.contains("claude"), "names the logged-in set:\n{msg}");
     }
 
     // (b) Missing python.
@@ -1507,6 +1827,19 @@ mod tests {
     }
 
     #[test]
+    fn resolve_fetch_ref_prefers_sha_falls_back_to_version() {
+        // A real SHA wins over the (unresolvable) describe string.
+        assert_eq!(
+            resolve_fetch_ref(Some("27adb48abc"), "v0.1.0-rc6-19-g27adb48"),
+            "27adb48abc"
+        );
+        // No SHA (no-git build) → the version is used as-is.
+        assert_eq!(resolve_fetch_ref(None, "v0.1.0-rc6"), "v0.1.0-rc6");
+        // An empty SHA is treated as absent.
+        assert_eq!(resolve_fetch_ref(Some("  "), "v0.1.0-rc6"), "v0.1.0-rc6");
+    }
+
+    #[test]
     fn sparse_fetch_commands_contains_expected_argv() {
         let version = "v0.1.0";
         let subtree = "assets/agents_template/skills";
@@ -1637,6 +1970,100 @@ mod tests {
             other => panic!("expected Failed, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ── stage 8: backlog/milestone → issues helpers (#57) ───────────────────
+
+    #[test]
+    fn decide_issues_path_milestone_backlog_and_skip() {
+        let mut cfg = config_of(&sample_report());
+        // Milestone path: opted in AND milestone docs present.
+        cfg.adopt_prd_roadmap = true;
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::Milestone);
+
+        // Not opted in but a backlog exists → loose-backlog path.
+        cfg.adopt_prd_roadmap = false;
+        cfg.backlog_location = Some("docs/backlog.md".into());
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
+
+        // Neither milestone (opt-in off) nor backlog → skip cleanly.
+        cfg.backlog_location = None;
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::Skip);
+
+        // Opted in but NO milestone docs, with a backlog → loose-backlog, not milestone.
+        cfg.adopt_prd_roadmap = true;
+        cfg.milestone_docs = vec![];
+        cfg.backlog_location = Some("BACKLOG.md".into());
+        assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
+    }
+
+    #[test]
+    fn publish_decision_only_yes_proceeds() {
+        assert!(publish_decision("y"));
+        assert!(publish_decision("yes"));
+        assert!(publish_decision("  YES "));
+        // Default-No: silence and anything else declines.
+        assert!(!publish_decision(""));
+        assert!(!publish_decision("n"));
+        assert!(!publish_decision("maybe"));
+    }
+
+    fn sample_draft() -> IssuesDraft {
+        IssuesDraft {
+            milestone: Some(ralphy_core::MilestoneDraft {
+                title: "v1".into(),
+                description: "first".into(),
+            }),
+            prd_path: Some("docs/prd/0001.md".into()),
+            issues: vec![
+                ralphy_core::IssueDraft {
+                    title: "slice one".into(),
+                    body: "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n".into(),
+                    labels: vec!["ready-for-agent".into()],
+                    blocked_by: vec![],
+                },
+                ralphy_core::IssueDraft {
+                    title: "slice two".into(),
+                    body: "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n".into(),
+                    labels: vec!["ready-for-agent".into()],
+                    blocked_by: vec![0],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn format_draft_summary_reports_count_milestone_and_blocked_by() {
+        let summary = format_draft_summary(&sample_draft());
+        assert!(summary.contains("2 issue(s)"), "count:\n{summary}");
+        assert!(
+            summary.contains("milestone \"v1\""),
+            "milestone:\n{summary}"
+        );
+        assert!(summary.contains("docs/prd/0001.md"), "prd:\n{summary}");
+        assert!(summary.contains("slice two"), "issue title:\n{summary}");
+        // blocked_by index 0 → 1-based "#1" in the human summary.
+        assert!(
+            summary.contains("blocked by #1"),
+            "blocked-by ref:\n{summary}"
+        );
+    }
+
+    #[test]
+    fn patch_blocked_by_replaces_placeholder_and_handles_empty() {
+        let body = "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n";
+        // With blockers: real refs.
+        let patched = patch_blocked_by(body, &[7, 9]);
+        assert!(patched.contains("- #7"));
+        assert!(patched.contains("- #9"));
+        assert!(!patched.contains("BLOCKED_BY_PLACEHOLDER"));
+        // No blockers: the "can start immediately" line.
+        let none = patch_blocked_by(body, &[]);
+        assert!(none.contains("None - can start immediately"));
+        assert!(!none.contains("BLOCKED_BY_PLACEHOLDER"));
+        // Absent placeholder: returned unchanged.
+        let plain = "no placeholder here";
+        assert_eq!(patch_blocked_by(plain, &[1]), plain);
     }
 
     #[test]

@@ -18,7 +18,10 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::run_headless;
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
+use ralphy_core::{
+    build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
+    DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit, Usage, Workspace,
+};
 use tracing::info;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -337,6 +340,171 @@ fn build_codex_command(model: &str, effort: &str, root: &Path, out_path: &Path) 
         .stderr(Stdio::piped())
         .env_remove("OPENAI_API_KEY");
     cmd
+}
+
+// ── init one-shot sessions (ADR-0012 stages 2 & 8) ──────────────────────────
+
+/// Resolve the Codex model for a one-shot `init` session: the explicit override,
+/// then the user's Codex config model, then [`DEFAULT_CODEX_MODEL`]. Mirrors
+/// [`CodexAgent::resolve_model`] without needing an agent instance.
+fn resolve_init_model(model: Option<&str>) -> String {
+    model
+        .map(str::to_string)
+        .or_else(codex_config_model)
+        .unwrap_or_else(|| DEFAULT_CODEX_MODEL.to_string())
+}
+
+/// Build the headless `codex exec` command for an `init` one-shot session. Unlike
+/// [`build_codex_command`] it omits `-o`: the session writes its JSON artifact to
+/// the path named in the prompt using its own (full-access) tools, so capturing
+/// the final message would clobber that file. `cwd` is the session's working
+/// directory — a neutral dir outside the repo for diagnosis, the repo itself for
+/// the issues draft. The prompt is piped on stdin (the trailing `-`).
+///
+/// `--skip-git-repo-check` is required because the diagnosis session's cwd is a
+/// fresh neutral dir OUTSIDE any git repo (the mechanism that stops Codex from
+/// auto-loading the target's `AGENTS.md`); without the flag `codex exec` refuses
+/// to start there. It is a harmless no-op on the draft path, whose cwd is the
+/// repo itself.
+fn build_codex_init_command(model: &str, effort: &str, cwd: &Path) -> Command {
+    let mut cmd = Command::new("codex");
+    cmd.arg("exec")
+        .arg("-C")
+        .arg(cwd)
+        .arg("--skip-git-repo-check")
+        .arg("-m")
+        .arg(model)
+        .arg("-c")
+        .arg(format!("model_reasoning_effort=\"{effort}\""))
+        .arg("-s")
+        .arg("danger-full-access")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("OPENAI_API_KEY");
+    cmd
+}
+
+/// Run a one-shot headless `codex exec` repo-diagnosis session (ADR-0012 stage 2)
+/// from `neutral_cwd` — a directory OUTSIDE the target repo, so Codex never
+/// auto-loads the target's `AGENTS.md` as instructions. The target `repo` is
+/// passed as data in the prompt; the session writes its JSON report to
+/// `<neutral_cwd>/diagnosis.json`, which this function reads, validates against
+/// [`DiagnosisReport`], and returns. Mirrors the Claude adapter's
+/// `diagnose_repo` signature so the cli can dispatch on the selected agent.
+pub fn diagnose_repo(
+    repo: &Path,
+    neutral_cwd: &Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<DiagnosisReport> {
+    fs::create_dir_all(neutral_cwd).ok();
+    let out_path = neutral_cwd.join("diagnosis.json");
+    // A stale report from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(&out_path);
+
+    let model = resolve_init_model(model);
+    let effort = effort.unwrap_or("medium");
+    let prompt = build_diagnose_prompt(repo, &out_path);
+
+    info!(%model, effort, "diagnosing repo with codex exec");
+    let cmd = build_codex_init_command(&model, effort, neutral_cwd);
+    let r = run_headless(cmd, &prompt, timeout)
+        .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
+    let mut log = r.stdout;
+    log.push_str(&r.stderr);
+    let log_path = neutral_cwd.join("diagnose.log");
+    let _ = fs::write(&log_path, &log);
+
+    if is_codex_auth_error(&log) {
+        bail!("{} (see {})", CODEX_AUTH_ERROR_MSG, log_path.display());
+    }
+    if r.timed_out {
+        bail!(
+            "diagnosis session hit the wall timeout (see {})",
+            log_path.display()
+        );
+    }
+
+    let raw = fs::read_to_string(&out_path).with_context(|| {
+        format!(
+            "diagnosis session left no report at {} (see {})",
+            out_path.display(),
+            log_path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "diagnosis report at {} did not match the schema",
+            out_path.display()
+        )
+    })
+}
+
+/// Run a one-shot headless `codex exec` backlog/milestone → issues session
+/// (ADR-0012 stage 8). Unlike [`diagnose_repo`] this runs IN the repo cwd — it
+/// needs the repo's domain glossary/ADRs and (on the milestone path) writes a PRD
+/// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
+/// which this function reads, validates against the schema, and returns. It NEVER
+/// publishes to GitHub — that is the cli's job after the dev confirms.
+pub fn draft_issues(
+    repo: &Path,
+    out_path: &Path,
+    req: &DraftRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<IssuesDraft> {
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    // A stale draft from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(out_path);
+
+    let model = resolve_init_model(model);
+    let effort = effort.unwrap_or("medium");
+    let prompt =
+        build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
+
+    info!(%model, effort, mode = req.mode.as_str(), "drafting issues with codex exec");
+    let cmd = build_codex_init_command(&model, effort, repo);
+    let r = run_headless(cmd, &prompt, timeout)
+        .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
+    let mut log = r.stdout;
+    log.push_str(&r.stderr);
+    let log_path = repo.join(".ralphy").join("init-issues.log");
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let _ = fs::write(&log_path, &log);
+
+    if is_codex_auth_error(&log) {
+        bail!("{} (see {})", CODEX_AUTH_ERROR_MSG, log_path.display());
+    }
+    if r.timed_out {
+        bail!(
+            "backlog → issues session hit the wall timeout (see {})",
+            log_path.display()
+        );
+    }
+
+    let raw = fs::read_to_string(out_path).with_context(|| {
+        format!(
+            "issues session left no draft at {} (see {})",
+            out_path.display(),
+            log_path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "issues draft at {} did not match the schema",
+            out_path.display()
+        )
+    })
 }
 
 /// The actionable message surfaced when a run hits a Codex authentication

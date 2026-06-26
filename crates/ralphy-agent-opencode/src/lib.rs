@@ -29,7 +29,10 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::{resolve_program, run_headless};
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Usage, Workspace};
+use ralphy_core::{
+    build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
+    DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, Usage, Workspace,
+};
 use tracing::info;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -93,6 +96,139 @@ fn is_opencode_auth_error(text: &str) -> bool {
 /// verbatim with the Claude and Codex paths — it already names the
 /// `RALPHY_DONE_EXIT` / `RALPHY_BLOCKED_EXIT` sentinels and is not Claude-specific.
 const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
+
+// ── init one-shot sessions (ADR-0012 stages 2 & 8) ──────────────────────────
+
+/// The minimal `OPENCODE_CONFIG_CONTENT` for a one-shot `init` session: an empty
+/// JSON object. The diagnosis/draft sessions read the repo and write a JSON
+/// artifact with the agent's own tools — they need no ralphy skills wired in, so
+/// no `skills.paths` is injected (unlike `plan`/`execute`).
+const INIT_OPENCODE_CONFIG: &str = "{}";
+
+/// Run a one-shot headless `opencode run` repo-diagnosis session (ADR-0012 stage
+/// 2) from `neutral_cwd` — a directory OUTSIDE the target repo, so OpenCode never
+/// auto-loads the target's `AGENTS.md` as instructions. The target `repo` is
+/// passed as data in the prompt; the session writes its JSON report to
+/// `<neutral_cwd>/diagnosis.json`, which this function reads, validates against
+/// [`DiagnosisReport`], and returns. Mirrors the Claude/Codex adapters'
+/// `diagnose_repo` signature so the cli can dispatch on the selected agent.
+pub fn diagnose_repo(
+    repo: &Path,
+    neutral_cwd: &Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<DiagnosisReport> {
+    // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
+    // accepted for a uniform init dispatch signature and ignored.
+    let _ = effort;
+    fs::create_dir_all(neutral_cwd).ok();
+    let out_path = neutral_cwd.join("diagnosis.json");
+    // A stale report from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(&out_path);
+
+    let prompt = build_diagnose_prompt(repo, &out_path);
+    info!(?model, "diagnosing repo with opencode run");
+    let cmd = build_opencode_command(model, None, neutral_cwd, INIT_OPENCODE_CONFIG);
+    let r = run_headless(cmd, &prompt, timeout)
+        .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
+    let mut log = r.stdout;
+    log.push_str(&r.stderr);
+    let log_path = neutral_cwd.join("diagnose.log");
+    let _ = fs::write(&log_path, &log);
+
+    if is_opencode_auth_error(&log) {
+        bail!("{} (see {})", OPENCODE_AUTH_ERROR_MSG, log_path.display());
+    }
+    if r.timed_out {
+        bail!(
+            "diagnosis session hit the wall timeout (see {})",
+            log_path.display()
+        );
+    }
+
+    let raw = fs::read_to_string(&out_path).with_context(|| {
+        format!(
+            "diagnosis session left no report at {} (see {})",
+            out_path.display(),
+            log_path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "diagnosis report at {} did not match the schema",
+            out_path.display()
+        )
+    })
+}
+
+/// Run a one-shot headless `opencode run` backlog/milestone → issues session
+/// (ADR-0012 stage 8). Unlike [`diagnose_repo`] this runs IN the repo cwd — it
+/// needs the repo's domain glossary/ADRs and (on the milestone path) writes a PRD
+/// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
+/// which this function reads, validates against the schema, and returns. It NEVER
+/// publishes to GitHub — that is the cli's job after the dev confirms.
+pub fn draft_issues(
+    repo: &Path,
+    out_path: &Path,
+    req: &DraftRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<IssuesDraft> {
+    // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
+    // accepted for a uniform init dispatch signature and ignored.
+    let _ = effort;
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    // A stale draft from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(out_path);
+
+    let prompt =
+        build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
+    info!(
+        ?model,
+        mode = req.mode.as_str(),
+        "drafting issues with opencode run"
+    );
+    let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
+    let r = run_headless(cmd, &prompt, timeout)
+        .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
+    let mut log = r.stdout;
+    log.push_str(&r.stderr);
+    let log_path = repo.join(".ralphy").join("init-issues.log");
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let _ = fs::write(&log_path, &log);
+
+    if is_opencode_auth_error(&log) {
+        bail!("{} (see {})", OPENCODE_AUTH_ERROR_MSG, log_path.display());
+    }
+    if r.timed_out {
+        bail!(
+            "backlog → issues session hit the wall timeout (see {})",
+            log_path.display()
+        );
+    }
+
+    let raw = fs::read_to_string(out_path).with_context(|| {
+        format!(
+            "issues session left no draft at {} (see {})",
+            out_path.display(),
+            log_path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "issues draft at {} did not match the schema",
+            out_path.display()
+        )
+    })
+}
 
 /// Drives the `opencode` CLI. `model` is the operator override (omitted entirely
 /// when `None`, deferring to OpenCode's own resolution, ADR-0005 D4); `variant`
