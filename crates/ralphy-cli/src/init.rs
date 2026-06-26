@@ -1084,6 +1084,16 @@ fn publish_draft_with(
     Ok(())
 }
 
+/// Reload a persisted [`IssuesDraft`] from `issues-draft.json` — the draft a
+/// prior run's `created_issues` prefix corresponds to. Used on a partial-publish
+/// resume so the remainder publishes against the SAME draft, never a regenerated
+/// one (which could reorder the prefix and duplicate a published issue).
+fn load_issues_draft(path: &Path) -> Result<IssuesDraft> {
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
+}
+
 /// The impure wrapper: wire [`publish_draft_with`]'s closures to the real
 /// `github::` POSTs and persist the checkpoint to `.ralphy/init-state.json` after
 /// each create.
@@ -1419,6 +1429,39 @@ pub fn run(args: &InitArgs) -> Result<()> {
         }
         return Ok(());
     }
+
+    // Partial-publish resume: a prior run already created some issues
+    // (`created_issues` non-empty) but did not finish (a transient `gh` error
+    // mid-loop, or a crash). The persisted `issues-draft.json` is the draft those
+    // numbers correspond to — RELOAD it and publish only the remainder. We must
+    // NOT re-draft here: a regenerated draft could reorder the prefix and make
+    // `skip(created_issues.len())` recreate an already-published issue, breaking
+    // the never-duplicate invariant. A clean re-draft happens only below, when no
+    // issue has been published yet.
+    if !state.created_issues.is_empty() {
+        let draft_path = ws.issues_draft_path();
+        if !draft_path.exists() {
+            bail!(
+                "ralphy init: resume recorded {} published issue(s) but the draft at {} is gone, \
+                 so the remaining issues can't be published safely — delete \
+                 .ralphy/init-state.json to restart issue creation from scratch",
+                state.created_issues.len(),
+                draft_path.display()
+            );
+        }
+        let draft = load_issues_draft(&draft_path)?;
+        println!(
+            "\nResuming publish: {} issue(s) already created; publishing the rest from {}…",
+            state.created_issues.len(),
+            draft_path.display()
+        );
+        publish_draft(&repo, &draft, &mut state, &ws)?;
+        println!("Published {} issue(s) total.", state.created_issues.len());
+        state.mark(Stage::Issues);
+        state.save(&ws)?;
+        return Ok(());
+    }
+
     match decide_issues_path(&cfg) {
         IssuesPath::Skip => {
             println!("\nNo backlog or milestone found — skipping issue creation.");
@@ -2398,6 +2441,26 @@ mod tests {
         assert_eq!(state.milestone_created.as_deref(), Some("v1"));
         // save after milestone + after each of 3 issues.
         assert_eq!(save_calls, 4);
+    }
+
+    #[test]
+    fn load_issues_draft_round_trips_persisted_draft() {
+        // The partial-publish resume path reloads this exact file instead of
+        // regenerating, so it must parse what publish writes.
+        let dir = std::env::temp_dir().join(format!("ralphy-draft-reload-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ws = Workspace::new(&dir);
+        std::fs::create_dir_all(ws.ralphy_dir()).unwrap();
+
+        let draft = three_issue_draft();
+        let path = ws.issues_draft_path();
+        std::fs::write(&path, serde_json::to_string_pretty(&draft).unwrap()).unwrap();
+
+        let back = load_issues_draft(&path).unwrap();
+        assert_eq!(back, draft);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
