@@ -360,11 +360,18 @@ fn resolve_init_model(model: Option<&str>) -> String {
 /// the final message would clobber that file. `cwd` is the session's working
 /// directory — a neutral dir outside the repo for diagnosis, the repo itself for
 /// the issues draft. The prompt is piped on stdin (the trailing `-`).
+///
+/// `--skip-git-repo-check` is required because the diagnosis session's cwd is a
+/// fresh neutral dir OUTSIDE any git repo (the mechanism that stops Codex from
+/// auto-loading the target's `AGENTS.md`); without the flag `codex exec` refuses
+/// to start there. It is a harmless no-op on the draft path, whose cwd is the
+/// repo itself.
 fn build_codex_init_command(model: &str, effort: &str, cwd: &Path) -> Command {
     let mut cmd = Command::new("codex");
     cmd.arg("exec")
         .arg("-C")
         .arg(cwd)
+        .arg("--skip-git-repo-check")
         .arg("-m")
         .arg(model)
         .arg("-c")
