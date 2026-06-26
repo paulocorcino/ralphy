@@ -1430,15 +1430,16 @@ pub fn run(args: &InitArgs) -> Result<()> {
         return Ok(());
     }
 
-    // Partial-publish resume: a prior run already created some issues
-    // (`created_issues` non-empty) but did not finish (a transient `gh` error
-    // mid-loop, or a crash). The persisted `issues-draft.json` is the draft those
-    // numbers correspond to — RELOAD it and publish only the remainder. We must
-    // NOT re-draft here: a regenerated draft could reorder the prefix and make
-    // `skip(created_issues.len())` recreate an already-published issue, breaking
-    // the never-duplicate invariant. A clean re-draft happens only below, when no
-    // issue has been published yet.
-    if !state.created_issues.is_empty() {
+    // Partial-publish resume: a prior run already created the milestone and/or
+    // some issues but did not finish (a transient `gh` error mid-loop, or a
+    // crash). The persisted `issues-draft.json` is the draft those numbers — and
+    // the created milestone title — correspond to, so RELOAD it and publish only
+    // the remainder. We must NOT re-draft here: a regenerated draft could reorder
+    // the prefix (making `skip(created_issues.len())` recreate an already-
+    // published issue) or carry a different milestone title than the one already
+    // on GitHub. A clean re-draft happens only below, when nothing was published
+    // yet (no milestone created and no issues created).
+    if !state.created_issues.is_empty() || state.milestone_created.is_some() {
         let draft_path = ws.issues_draft_path();
         if !draft_path.exists() {
             bail!(
@@ -1450,6 +1451,19 @@ pub fn run(args: &InitArgs) -> Result<()> {
             );
         }
         let draft = load_issues_draft(&draft_path)?;
+        // Guard against a tampered/truncated draft: it must hold at least the
+        // already-published prefix, else `skip` would silently drop the remainder
+        // and we'd mark the stage done having published nothing more.
+        if draft.issues.len() < state.created_issues.len() {
+            bail!(
+                "ralphy init: the draft at {} has {} issue(s) but {} were already published — \
+                 it no longer matches the checkpoint; delete .ralphy/init-state.json to restart \
+                 issue creation from scratch",
+                draft_path.display(),
+                draft.issues.len(),
+                state.created_issues.len()
+            );
+        }
         println!(
             "\nResuming publish: {} issue(s) already created; publishing the rest from {}…",
             state.created_issues.len(),
