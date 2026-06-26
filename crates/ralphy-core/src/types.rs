@@ -150,6 +150,21 @@ impl Workspace {
         self.ralphy_dir().join("plan.md")
     }
 
+    /// `<repo>/.ralphy/diagnosis.json` — where `ralphy init` persists the
+    /// read-only repo-diagnosis report (ADR-0012 stage 2) after validating it
+    /// against the [`crate::DiagnosisReport`] schema.
+    pub fn diagnosis_path(&self) -> PathBuf {
+        self.ralphy_dir().join("diagnosis.json")
+    }
+
+    /// `<repo>/.ralphy/issues-draft.json` — the local preview draft a judgment
+    /// session writes (ADR-0012 stage 8): the issues/milestone `ralphy init`
+    /// summarizes for the dev to confirm before any of them are published to
+    /// GitHub. Validated against the [`crate::IssuesDraft`] schema.
+    pub fn issues_draft_path(&self) -> PathBuf {
+        self.ralphy_dir().join("issues-draft.json")
+    }
+
     /// `<repo>/.ralphy/handoffs.md` — handoffs collected from the closed
     /// issues the current one depends on, written by the runner before the
     /// plan pass and read by the planner as predecessor context.

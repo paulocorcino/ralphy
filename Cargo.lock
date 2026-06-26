@@ -840,6 +840,7 @@ dependencies = [
  "console",
  "directories",
  "indicatif",
+ "ralphy-adapter-support",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
  "ralphy-agent-opencode",
