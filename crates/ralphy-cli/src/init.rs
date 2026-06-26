@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, ValueEnum};
+use console::Style;
 use ralphy_adapter_support::{find_program, locate_program, resolve_program};
 use ralphy_core::{
     git, github, gitignore, DiagnosisReport, DraftRequest, IssuesDraft, IssuesMode, RepoKind,
@@ -281,12 +282,16 @@ impl InitState {
     }
 }
 
-/// One seeded console question: the prompt label and the diagnosis-derived
-/// default the dev confirms (empty input) or overrides.
+/// One seeded console question: a short label, a one-line explanation of what
+/// the field means and how to answer it, and the diagnosis-derived default the
+/// dev confirms (empty input) or overrides. `clearable` is true for optional
+/// fields that `none` can blank — it tailors the per-question keep/clear hint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Question {
     pub label: String,
+    pub help: String,
     pub default: String,
+    pub clearable: bool,
 }
 
 /// The display form of an optional text field: the value, or the literal `none`
@@ -380,36 +385,57 @@ fn resolve_list(default: &[String], raw: &str) -> Vec<String> {
 fn seed_questions(report: &DiagnosisReport) -> Vec<Question> {
     vec![
         Question {
-            label: "Repo kind (empty/existing)".into(),
+            label: "Repository type".into(),
+            help: "A new empty repo to set up, or an existing project to work in? \
+                   (empty / existing)"
+                .into(),
             default: display_kind(report.repo_kind),
+            clearable: false,
         },
         Question {
-            label: "Language / build".into(),
+            label: "Language & build".into(),
+            help: "Main language and build/test command for this project. (e.g. cargo, npm)"
+                .into(),
             default: display_opt(report.language_build.as_deref()),
+            clearable: true,
         },
         Question {
-            label: "Backlog location".into(),
+            label: "Backlog".into(),
+            help: "Where your list of work to do lives, if any. (a link, a label, or a file path)"
+                .into(),
             default: display_opt(report.backlog_location.as_deref()),
+            clearable: true,
         },
         Question {
-            label: "Milestone docs (comma-separated)".into(),
+            label: "Planning docs".into(),
+            help: "Roadmap or spec files to turn into tasks, if any. (file paths, comma-separated)"
+                .into(),
             default: display_list(&report.milestone_docs),
+            clearable: true,
         },
         Question {
-            label: "Skills directory".into(),
+            label: "Skills folder".into(),
+            help: "Folder holding the agent's skill files, if any. (e.g. .claude/skills)".into(),
             default: display_opt(report.skills_dir.as_deref()),
+            clearable: true,
         },
         Question {
-            label: "Has CONTEXT.md or ADRs (yes/no)".into(),
+            label: "Architecture docs".into(),
+            help: "Do you already have notes about how the project is built? (yes / no)".into(),
             default: display_bool(report.has_context_or_adrs),
+            clearable: false,
         },
         Question {
-            label: "Remote host".into(),
+            label: "Code host".into(),
+            help: "Where your code is hosted. (e.g. github.com)".into(),
             default: display_opt(report.remote_host.as_deref()),
+            clearable: true,
         },
         Question {
-            label: "Adopt PRD/roadmap track model (yes/no)".into(),
+            label: "Plan work from the docs above".into(),
+            help: "Use the planning docs above to draft your first tasks? (yes / no)".into(),
             default: display_bool(!report.milestone_docs.is_empty()),
+            clearable: false,
         },
     ]
 }
@@ -459,6 +485,31 @@ fn format_config_echo(cfg: &InitConfig) -> String {
     out
 }
 
+/// Echo the captured config as a styled key/value list (dim labels, green values)
+/// on a colour TTY, or the plain [`format_config_echo`] text otherwise. Labels
+/// mirror the friendly Q&A wording so the summary reads as a recap of the answers.
+fn print_captured_config(cfg: &InitConfig) {
+    if !qa_color() {
+        print!("{}", format_config_echo(cfg));
+        return;
+    }
+    let row = |label: &str, value: String| {
+        println!(
+            "  {} {}",
+            forced(Style::new().dim()).apply_to(format!("{label:<18}")),
+            forced(Style::new().green()).apply_to(value)
+        );
+    };
+    row("Repository type", display_kind(cfg.repo_kind));
+    row("Language & build", display_opt(cfg.language_build.as_deref()));
+    row("Backlog", display_opt(cfg.backlog_location.as_deref()));
+    row("Planning docs", display_list(&cfg.milestone_docs));
+    row("Skills folder", display_opt(cfg.skills_dir.as_deref()));
+    row("Architecture docs", display_bool(cfg.has_context_or_adrs));
+    row("Code host", display_opt(cfg.remote_host.as_deref()));
+    row("Plan from docs", display_bool(cfg.adopt_prd_roadmap));
+}
+
 /// The neutral working directory for the diagnosis session: a fresh dir under the
 /// system temp root, OUTSIDE the target repo, so the agent CLI cannot auto-load
 /// the target's `CLAUDE.md`/`AGENTS.md` as system instructions (ADR-0012
@@ -485,13 +536,232 @@ fn neutral_cwd_from(base: &Path, repo: &Path, stamp: &str) -> PathBuf {
     candidate
 }
 
+/// Whether the console Q&A should emit ANSI styling: an attended stdout TTY
+/// without `NO_COLOR`, mirroring the presenter's detection in `ui.rs` so init and
+/// the run queue agree on when to colour.
+fn qa_color() -> bool {
+    console::Term::stdout().is_term() && std::env::var_os("NO_COLOR").is_none()
+}
+
+/// The content width the Q&A wraps to: the terminal's columns, clamped so help
+/// stays readable on a narrow pane and doesn't sprawl across an ultra-wide one.
+fn qa_width() -> usize {
+    (console::Term::stdout().size().1 as usize).clamp(48, 92)
+}
+
+/// `force_styling` overrides console's own TTY probe: the caller's `color`
+/// decision (from [`qa_color`]) is already authoritative, so honour it — this is
+/// what keeps the styled path testable off a TTY.
+fn forced(style: Style) -> Style {
+    style.force_styling(true)
+}
+
+/// Greedy word-wrap `text` into lines no wider than `width`, breaking only on
+/// whitespace (a word longer than `width` overflows its own line rather than
+/// splitting mid-word — the bug the old single-line prompt showed as `em\npty`).
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut cur = String::new();
+    for word in text.split_whitespace() {
+        if cur.is_empty() {
+            cur.push_str(word);
+        } else if cur.chars().count() + 1 + word.chars().count() <= width {
+            cur.push(' ');
+            cur.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut cur));
+            cur.push_str(word);
+        }
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+/// Render one question's prompt block as a small wizard step: a `[idx/total]`
+/// counter and bold-cyan label, the explanation word-wrapped under it with a
+/// hanging indent, then the seeded default and cursor arrow the answer is typed
+/// after. Pure over `color`/`width` so both the styled and the plain (non-TTY /
+/// `NO_COLOR`) forms are unit-testable.
+fn render_question(q: &Question, idx: usize, total: usize, color: bool, width: usize) -> String {
+    // 8 columns aligns the help and value lines under the label, past "  [n/n] ".
+    const INDENT: &str = "        ";
+    let help_width = width.saturating_sub(INDENT.len()).max(24);
+    let help = wrap_text(&q.help, help_width).join(&format!("\n{INDENT}"));
+    if color {
+        let counter = forced(Style::new().dim()).apply_to(format!("[{idx}/{total}]"));
+        let label = forced(Style::new().cyan().bold()).apply_to(&q.label);
+        let help = forced(Style::new().dim()).apply_to(help);
+        let default = forced(Style::new().green()).apply_to(&q.default);
+        let arrow = forced(Style::new().cyan().bold()).apply_to("›");
+        let opt = if q.clearable {
+            forced(Style::new().dim()).apply_to(" · optional").to_string()
+        } else {
+            String::new()
+        };
+        format!("\n  {counter} {label}\n{INDENT}{help}\n{INDENT}{default}{opt} {arrow} ")
+    } else {
+        let opt = if q.clearable { " (optional)" } else { "" };
+        format!(
+            "\n  [{idx}/{total}] {}\n{INDENT}{}\n{INDENT}{}{opt} > ",
+            q.label, help, q.default
+        )
+    }
+}
+
+/// Print the environment-gate findings as a styled checklist (green ✓ / red ✗,
+/// dim agent status) on a colour TTY, falling back to the plain [`format_report`]
+/// text the unit tests and non-TTY consumers depend on.
+fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
+    if !qa_color() {
+        print!("{}", format_report(f, fails));
+        return;
+    }
+    let mark = |good: bool| {
+        if good {
+            forced(Style::new().green().bold()).apply_to("✓").to_string()
+        } else {
+            forced(Style::new().red().bold()).apply_to("✗").to_string()
+        }
+    };
+    let dim = |s: &str| forced(Style::new().dim()).apply_to(s.to_string()).to_string();
+
+    println!("\n{}", forced(Style::new().cyan().bold()).apply_to("Environment"));
+    println!("  {} python", mark(f.python));
+    println!("  {} gh auth", mark(f.gh_authenticated));
+    println!("  {} GitHub remote", mark(f.github_remote));
+    println!("  {}", dim("agents"));
+    for agent in &Agent::ALL {
+        let name = agent.cli_name();
+        let present = f.agents_present.contains(agent);
+        let logged = present && f.agents_logged_in.contains(agent);
+        let (glyph, status) = if logged {
+            (forced(Style::new().green().bold()).apply_to("✓").to_string(), "logged in")
+        } else if present {
+            (dim("·"), "not logged in")
+        } else {
+            (dim("·"), "absent")
+        };
+        println!("    {glyph} {name:<9} {}", dim(status));
+    }
+    if fails.is_empty() {
+        println!(
+            "  {} {}",
+            mark(true),
+            forced(Style::new().green()).apply_to("all checks passed")
+        );
+    } else {
+        println!("  {} {} blocker(s)", mark(false), fails.len());
+    }
+}
+
+/// Print a secondary status line dimmed on a colour TTY (plain otherwise), so the
+/// running commentary recedes behind the headers and prompts.
+fn print_note(text: &str) {
+    if qa_color() {
+        println!("{}", forced(Style::new().dim()).apply_to(text));
+    } else {
+        println!("{text}");
+    }
+}
+
+/// Print a success line: a green ✓ and the message, so finished steps read at a
+/// glance the same way the gate's checklist does. Plain (`✓ text`) off a TTY.
+fn print_ok(text: &str) {
+    if qa_color() {
+        println!("  {} {text}", forced(Style::new().green().bold()).apply_to("✓"));
+    } else {
+        println!("  {text}");
+    }
+}
+
+/// Print a list row under a section — a dim bullet and the item — for the file
+/// lists and plans the stages emit (scaffold files, label actions, …).
+fn print_bullet(text: &str) {
+    if qa_color() {
+        println!("  {} {text}", forced(Style::new().dim()).apply_to("·"));
+    } else {
+        println!("  - {text}");
+    }
+}
+
+/// Ask a yes/no question with a styled, single-line prompt (a cyan `›`, the
+/// question, a dim `[Y/n]`/`[y/N]` reflecting `default_yes`) and return the raw
+/// answer for the stage's decision fn to resolve. Centralises every confirmation
+/// so they all look alike instead of bare `print!("… [Y/n]: ")`.
+fn ask_yes_no(question: &str, default_yes: bool) -> Result<String> {
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    if qa_color() {
+        print!(
+            "\n  {} {question} {} ",
+            forced(Style::new().cyan().bold()).apply_to("›"),
+            forced(Style::new().dim()).apply_to(hint)
+        );
+    } else {
+        print!("\n  > {question} {hint} ");
+    }
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .context("reading answer from stdin")?;
+    Ok(line)
+}
+
+/// Run `f` while a spinner animates next to `message` on a colour TTY, so the
+/// multi-second agent calls (diagnosis, issue drafting) show life instead of a
+/// frozen cursor. Off a TTY it just prints the message and runs `f` — no ANSI,
+/// no animation. The spinner is cleared when `f` returns; the caller prints the
+/// outcome line.
+fn with_spinner<T>(message: &str, f: impl FnOnce() -> T) -> T {
+    if !qa_color() {
+        print_note(message);
+        return f();
+    }
+    let pb = indicatif::ProgressBar::new_spinner();
+    // `unwrap` is safe: the template is a compile-time constant that always parses.
+    let style = indicatif::ProgressStyle::with_template("  {spinner:.cyan} {msg}")
+        .unwrap()
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " "]);
+    pb.set_style(style);
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(Duration::from_millis(90));
+    let out = f();
+    pb.finish_and_clear();
+    out
+}
+
+/// Print a styled section header — a bold-cyan title and an optional dim subtitle
+/// — so init's stages read like the run queue's branded output rather than bare
+/// `println!`s.
+fn print_section(title: &str, subtitle: Option<&str>) {
+    if qa_color() {
+        println!("\n{}", forced(Style::new().cyan().bold()).apply_to(title));
+        if let Some(s) = subtitle {
+            println!("{}", forced(Style::new().dim()).apply_to(s));
+        }
+    } else {
+        println!("\n{title}");
+        if let Some(s) = subtitle {
+            println!("{s}");
+        }
+    }
+}
+
 /// Run the interactive, diagnosis-seeded Q&A on real stdin/stdout, resolving each
 /// answer into an [`InitConfig`]. The pure resolvers do the work; this is the thin
 /// impure shell (printing prompts, reading lines).
 fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
     let questions = seed_questions(report);
-    let read_line = |label: &str, default: &str| -> Result<String> {
-        print!("{label} [{default}]: ");
+    let color = qa_color();
+    let width = qa_width();
+    let total = questions.len();
+    let read_line = |i: usize| -> Result<String> {
+        print!("{}", render_question(&questions[i], i + 1, total, color, width));
         std::io::stdout().flush().ok();
         let mut line = String::new();
         std::io::stdin()
@@ -501,38 +771,14 @@ fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
     };
 
     // Indices match the order in `seed_questions`.
-    let repo_kind = resolve_kind(
-        report.repo_kind,
-        &read_line(&questions[0].label, &questions[0].default)?,
-    );
-    let language_build = resolve_text(
-        report.language_build.as_deref(),
-        &read_line(&questions[1].label, &questions[1].default)?,
-    );
-    let backlog_location = resolve_text(
-        report.backlog_location.as_deref(),
-        &read_line(&questions[2].label, &questions[2].default)?,
-    );
-    let milestone_docs = resolve_list(
-        &report.milestone_docs,
-        &read_line(&questions[3].label, &questions[3].default)?,
-    );
-    let skills_dir = resolve_text(
-        report.skills_dir.as_deref(),
-        &read_line(&questions[4].label, &questions[4].default)?,
-    );
-    let has_context_or_adrs = resolve_bool(
-        report.has_context_or_adrs,
-        &read_line(&questions[5].label, &questions[5].default)?,
-    );
-    let remote_host = resolve_text(
-        report.remote_host.as_deref(),
-        &read_line(&questions[6].label, &questions[6].default)?,
-    );
-    let adopt_prd_roadmap = resolve_bool(
-        !report.milestone_docs.is_empty(),
-        &read_line(&questions[7].label, &questions[7].default)?,
-    );
+    let repo_kind = resolve_kind(report.repo_kind, &read_line(0)?);
+    let language_build = resolve_text(report.language_build.as_deref(), &read_line(1)?);
+    let backlog_location = resolve_text(report.backlog_location.as_deref(), &read_line(2)?);
+    let milestone_docs = resolve_list(&report.milestone_docs, &read_line(3)?);
+    let skills_dir = resolve_text(report.skills_dir.as_deref(), &read_line(4)?);
+    let has_context_or_adrs = resolve_bool(report.has_context_or_adrs, &read_line(5)?);
+    let remote_host = resolve_text(report.remote_host.as_deref(), &read_line(6)?);
+    let adopt_prd_roadmap = resolve_bool(!report.milestone_docs.is_empty(), &read_line(7)?);
 
     Ok(InitConfig {
         repo_kind,
@@ -1190,31 +1436,59 @@ fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> 
     }
 }
 
+/// The model init pins for the AI judgment steps (diagnosis + issue drafting).
+/// Claude gets `sonnet` (these steps don't warrant opus, and pinning keeps init
+/// off the dev's personal `claude` default); other agents keep their CLI default
+/// (`None`). Pure so the mapping unit-tests.
+fn init_model_for(agent: Agent) -> Option<&'static str> {
+    match agent {
+        Agent::Claude => Some("sonnet"),
+        Agent::Codex | Agent::Opencode => None,
+    }
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
+
+    // Reuse the run command's branding banner so `init` opens with the same face:
+    // the `🦊 Ralphy - vX` header + `📦 project · 🌿 branch · 🔗 url` info line. Seed
+    // the face with the repo name so it's stable for this repo; the info-line
+    // segments are best-effort (a detached HEAD or local-only repo drops a part).
+    let repo_name = repo.file_name().and_then(|s| s.to_str()).unwrap_or("repo");
+    let banner = crate::ui::Presenter::new().handle();
+    banner.print_header(repo_name);
+    let branch = git::current_branch(&repo).ok();
+    let url = git::origin_url(&repo).map(|u| crate::ui::normalize_remote_url(&u));
+    banner.print_info_line(repo_name, branch.as_deref(), url.as_deref());
+    // Tear down the banner's live region now: init has no progress bars, and
+    // leaving it active swallows the blank line the gate section prints next.
+    banner.finalize();
 
     // Ignore `.ralphy/` before any snapshot commit, so the checkpoint
     // (`init-state.json`) and every other scratch artifact stay out of commits.
     gitignore::ensure_ralphy_ignored(&repo)?;
 
-    let agents_present: Vec<Agent> = Agent::ALL.iter().copied().filter(agent_present).collect();
-
-    let agents_logged_in: Vec<Agent> = agents_present
-        .iter()
-        .copied()
-        .filter(agent_logged_in)
-        .collect();
-
-    let findings = EnvFindings {
-        python: python_present(),
-        gh_authenticated: gh_authenticated(),
-        github_remote: github_remote(&repo),
-        agents_present,
-        agents_logged_in,
-    };
+    // Run the (subprocess-backed: `gh auth status`, agent `whoami`/login probes)
+    // environment checks behind a spinner so the multi-second wait shows life.
+    let findings = with_spinner("Analyzing the environment…", || {
+        let agents_present: Vec<Agent> =
+            Agent::ALL.iter().copied().filter(agent_present).collect();
+        let agents_logged_in: Vec<Agent> = agents_present
+            .iter()
+            .copied()
+            .filter(agent_logged_in)
+            .collect();
+        EnvFindings {
+            python: python_present(),
+            gh_authenticated: gh_authenticated(),
+            github_remote: github_remote(&repo),
+            agents_present,
+            agents_logged_in,
+        }
+    });
 
     let fails = evaluate_gate(&findings);
-    print!("{}", format_report(&findings, &fails));
+    print_gate_report(&findings, &fails);
 
     if !fails.is_empty() {
         bail!(
@@ -1226,10 +1500,16 @@ pub fn run(args: &InitArgs) -> Result<()> {
     // Pick the agent that drives diagnosis + issue drafting (explicit --agent, or
     // the first logged-in agent the gate found). The gate above guarantees ≥1.
     let selected_agent = select_agent(args.agent, &findings.agents_logged_in)?;
-    println!(
-        "Environment gate passed. Using agent: {}.",
+    print_note(&format!(
+        "Gate passed — using agent: {}.",
         selected_agent.cli_name()
-    );
+    ));
+    // The model for init's AI judgment steps (diagnosis + issue drafting). For
+    // claude, pin sonnet: the read-only diagnosis and the issue drafting are
+    // well-scoped tasks that don't warrant opus, and pinning here keeps init off
+    // whatever the dev's `claude` default happens to be. Other agents keep their
+    // CLI default (`None`).
+    let init_model = init_model_for(selected_agent);
     // Load the checkpoint: a re-run resumes from it (ADR-0012 stage 9).
     let ws = Workspace::new(&repo);
     let mut state = InitState::load(&ws)?;
@@ -1237,7 +1517,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
     // The captured config is the resume key for stages 2–3: present ⇒ the costly
     // agent diagnosis and the interactive Q&A already ran, so skip both.
     let cfg = if let Some(cfg) = state.config.clone() {
-        println!("Resuming: diagnosis + Q&A already captured — skipping.");
+        print_note("Resuming: diagnosis + Q&A already captured — skipping.");
         cfg
     } else {
         // Reload a persisted report when one exists (a crash during the
@@ -1245,33 +1525,44 @@ pub fn run(args: &InitArgs) -> Result<()> {
         // diagnosis from a neutral cwd OUTSIDE the repo — so the target's
         // CLAUDE.md/AGENTS.md are read as data, never auto-loaded as instructions.
         let report = if ws.diagnosis_path().exists() {
-            println!(
+            print_note(&format!(
                 "Reusing persisted diagnosis at {}.",
                 ws.diagnosis_path().display()
-            );
+            ));
             let raw = std::fs::read_to_string(ws.diagnosis_path())
                 .with_context(|| format!("reading {}", ws.diagnosis_path().display()))?;
             serde_json::from_str(&raw)
                 .with_context(|| format!("parsing {}", ws.diagnosis_path().display()))?
         } else {
-            println!("Diagnosing repo (read-only)…");
             let stamp = format!("{}", std::process::id());
             let cwd = diagnosis_cwd(&repo, &stamp);
-            let report = diagnose_with_agent(
-                selected_agent,
-                &repo,
-                &cwd,
-                None,
-                Some("medium"),
-                Duration::from_secs(300),
-            )?;
+            let report = with_spinner("Scanning your repo (read-only)…", || {
+                diagnose_with_agent(
+                    selected_agent,
+                    &repo,
+                    &cwd,
+                    init_model,
+                    Some("medium"),
+                    Duration::from_secs(300),
+                )
+            })?;
             persist_report(&ws, &report)?;
-            println!("Diagnosis written to {}", ws.diagnosis_path().display());
+            print_note(&format!(
+                "Diagnosis written to {}",
+                ws.diagnosis_path().display()
+            ));
             report
         };
 
         // Console Q&A pre-filled by the diagnosis — the dev confirms/corrects.
-        println!("\nConfirm or correct the findings (Enter keeps the default, 'none' clears):");
+        print_section(
+            "Confirm the diagnosis",
+            Some(
+                "Ralphy pre-filled these 8 fields from its read-only scan. For each one: press \
+                 Enter to keep the value shown, type a new value to change it, or 'none' to clear \
+                 an optional field.",
+            ),
+        );
         let cfg = run_qa(&report)?;
         state.config = Some(cfg.clone());
         state.mark(Stage::Diagnose);
@@ -1279,27 +1570,21 @@ pub fn run(args: &InitArgs) -> Result<()> {
         cfg
     };
 
-    println!("\nCaptured config:");
-    print!("{}", format_config_echo(&cfg));
+    print_section("Captured config", None);
+    print_captured_config(&cfg);
 
     // ── stage 4: git safety (snapshot commit) ──────────────────────────────
-    let prompt = |label: &str| -> Result<String> {
-        print!("{label}");
-        std::io::stdout().flush().ok();
-        let mut line = String::new();
-        std::io::stdin()
-            .read_line(&mut line)
-            .context("reading answer from stdin")?;
-        Ok(line)
-    };
-
     if !state.is_done(Stage::Git) {
         let is_clean = git::is_clean_ignoring_ralphy(&repo)?;
         if !is_clean {
-            println!("\nWorking tree is dirty:");
-            print!("{}", git::git(&repo, &["status", "--short"])?);
-            let answer =
-                prompt("\nCommit a snapshot before init (git add -A && git commit)? [Y/n]: ")?;
+            print_section(
+                "Git safety",
+                Some("You have uncommitted changes. Ralphy can save them in a commit first."),
+            );
+            for l in git::git(&repo, &["status", "--short"])?.lines() {
+                print_bullet(l.trim_end());
+            }
+            let answer = ask_yes_no("Save your current changes in a commit first?", true)?;
             match commit_decision(is_clean, &answer) {
                 CommitDecision::Abort(msg) => {
                     // INVARIANT: a refusal stops here — before any branch or write.
@@ -1307,7 +1592,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 }
                 CommitDecision::Commit => {
                     git::commit_all_snapshot(&repo)?;
-                    println!("Snapshot committed.");
+                    print_ok("Changes committed.");
                 }
                 CommitDecision::NothingToCommit => {}
             }
@@ -1315,7 +1600,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
 
         // ── stage 4b: branch (before any scaffold write) ────────────────────
         let current = git::current_branch(&repo)?;
-        let answer = prompt("\nCreate branch `ralphy/init` for init's changes? [Y/n]: ")?;
+        let answer = ask_yes_no("Do Ralphy's setup on a new branch `ralphy/init`?", true)?;
         match branch_decision(&current, &answer) {
             BranchDecision::Create(branch) => {
                 if git::commitish_exists(&repo, &branch) {
@@ -1323,52 +1608,57 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 } else {
                     git::checkout_new_branch(&repo, &branch, &current)?;
                 }
-                println!("On branch {branch}.");
+                print_ok(&format!("Working on branch {branch}."));
             }
             BranchDecision::Stay => {
-                println!("Staying on branch {current}.");
+                print_ok(&format!("Staying on branch {current}."));
             }
         }
         state.mark(Stage::Git);
         state.save(&ws)?;
     } else {
-        println!("Resuming: git safety + branch already done — skipping.");
+        print_note("Resuming: git safety + branch already done — skipping.");
     }
 
     // ── stage 5: deterministic scaffold (onto the branch) ───────────────────
     if !state.is_done(Stage::Scaffold) {
         write_scaffold(&repo, &cfg)?;
-        println!("\nScaffold written:");
-        println!("  docs/agents/issue-tracker.md");
-        println!("  docs/agents/triage-labels.md");
-        println!("  docs/agents/domain.md");
+        print_section("Project files", Some("Created starter docs for the agent to use:"));
+        print_bullet("docs/agents/issue-tracker.md");
+        print_bullet("docs/agents/triage-labels.md");
+        print_bullet("docs/agents/domain.md");
         if cfg.adopt_prd_roadmap {
-            println!("  docs/roadmap.md");
-            println!("  docs/prd/README.md");
-            println!("  docs/prd/_template.md");
+            print_bullet("docs/roadmap.md");
+            print_bullet("docs/prd/README.md");
+            print_bullet("docs/prd/_template.md");
         }
         state.mark(Stage::Scaffold);
         state.save(&ws)?;
     } else {
-        println!("Resuming: scaffold already written — skipping.");
+        print_note("Resuming: scaffold already written — skipping.");
     }
 
     // ── stage 6: download engineering skills ────────────────────────────────
     if state.is_done(Stage::Skills) {
-        println!("Resuming: skills step already done — skipping.");
+        print_note("Resuming: skills step already done — skipping.");
     } else {
         let names = skill_names();
         let skills_dst = repo.join(skills_target(cfg.skills_dir.as_deref()));
         // NOTE: displayed list is from the build-time tree; downloaded set is from
         // the pinned commit (see resolve_fetch_ref) and may differ across builds.
-        println!("\nEngineering skills available: {}", names.join(", "));
-        println!("Target: {}", skills_dst.display());
-        let answer = prompt(&format!(
-            "Download these engineering skills into {}? [y/N]: ",
-            skills_dst.display()
-        ))?;
+        print_section(
+            "Agent skills",
+            Some(&format!(
+                "Optional ready-made skills, installed into {}:",
+                skills_dst.display()
+            )),
+        );
+        for name in &names {
+            print_bullet(name);
+        }
+        let answer = ask_yes_no("Install these skills?", false)?;
         if !download_decision(&answer) {
-            println!("Skipping skills download.");
+            print_note("Skipped — no skills installed.");
         } else {
             let version = env!("RALPHY_VERSION").to_string();
             let fetch_ref = resolve_fetch_ref(option_env!("RALPHY_GIT_SHA"), &version);
@@ -1380,13 +1670,12 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 }
                 Ok(scratch.join(&subtree))
             };
-            match install_skills_step(&skills_dst, fetch)? {
-                Outcome::Installed(n) => {
-                    println!("Installed {n} skill(s) into {}.", skills_dst.display())
-                }
-                Outcome::Skipped => println!("Skills already up to date."),
+            let outcome = with_spinner("Installing skills…", || install_skills_step(&skills_dst, fetch))?;
+            match outcome {
+                Outcome::Installed(n) => print_ok(&format!("Installed {n} skill(s).")),
+                Outcome::Skipped => print_ok("Skills already up to date."),
                 Outcome::Failed(msg) => {
-                    println!("warning: skills download failed ({msg}); continuing");
+                    print_note(&format!("warning: skills download failed ({msg}); continuing"));
                 }
             }
         }
@@ -1396,22 +1685,27 @@ pub fn run(args: &InitArgs) -> Result<()> {
 
     // ── stage 7: create GitHub label vocabulary ──────────────────────────────
     if state.is_done(Stage::Labels) {
-        println!("Resuming: labels already done — skipping.");
+        print_note("Resuming: labels already done — skipping.");
     } else {
         let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
         let desired = github::ralphy_label_specs(triage_doc.as_deref());
         let existing = github::list_repo_labels(&repo)?;
         let actions = github::plan_label_actions(&desired, &existing);
-        print!(
-            "\nGitHub label plan:\n{}",
-            github::format_label_plan(&actions)
+        print_section(
+            "GitHub labels",
+            Some("Labels Ralphy uses to track and triage issues:"),
         );
-        let answer = prompt("\nCreate/update these labels on GitHub? [Y/n]: ")?;
+        for l in github::format_label_plan(&actions).lines() {
+            print_bullet(l.trim());
+        }
+        let answer = ask_yes_no("Create/update these labels on GitHub?", true)?;
         if labels_decision(&answer) {
-            github::apply_label_actions(&actions, &repo)?;
-            println!("Labels created/updated.");
+            with_spinner("Applying labels on GitHub…", || {
+                github::apply_label_actions(&actions, &repo)
+            })?;
+            print_ok("Labels created/updated.");
         } else {
-            println!("Skipping label creation.");
+            print_note("Skipped — labels unchanged.");
         }
         state.mark(Stage::Labels);
         state.save(&ws)?;
@@ -1420,14 +1714,17 @@ pub fn run(args: &InitArgs) -> Result<()> {
     // ── stage 8: backlog/milestone → issues (preview, confirm, publish) ───────
     if state.is_done(Stage::Issues) {
         if state.created_issues.is_empty() {
-            println!("Resuming: issue stage already done — nothing was published.");
+            print_note("Resuming: issue stage already done — nothing was published.");
         } else {
             let nums: Vec<String> = state
                 .created_issues
                 .iter()
                 .map(|n| format!("#{n}"))
                 .collect();
-            println!("Resuming: issues already published ({}).", nums.join(", "));
+            print_note(&format!(
+                "Resuming: issues already published ({}).",
+                nums.join(", ")
+            ));
         }
         return finalize(&repo, &cfg, &findings.agents_logged_in);
     }
@@ -1466,13 +1763,18 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 state.created_issues.len()
             );
         }
-        println!(
-            "\nResuming publish: {} issue(s) already created; publishing the rest from {}…",
+        print_note(&format!(
+            "Resuming publish: {} issue(s) already created; publishing the rest from {}…",
             state.created_issues.len(),
             draft_path.display()
-        );
-        publish_draft(&repo, &draft, &mut state, &ws)?;
-        println!("Published {} issue(s) total.", state.created_issues.len());
+        ));
+        with_spinner("Publishing remaining issues…", || {
+            publish_draft(&repo, &draft, &mut state, &ws)
+        })?;
+        print_ok(&format!(
+            "Published {} issue(s) total.",
+            state.created_issues.len()
+        ));
         state.mark(Stage::Issues);
         state.save(&ws)?;
         return finalize(&repo, &cfg, &findings.agents_logged_in);
@@ -1480,7 +1782,10 @@ pub fn run(args: &InitArgs) -> Result<()> {
 
     match decide_issues_path(&cfg) {
         IssuesPath::Skip => {
-            println!("\nNo backlog or milestone found — skipping issue creation.");
+            print_section(
+                "First tasks",
+                Some("No backlog or planning docs found — skipping task creation."),
+            );
             // Nothing to publish — the stage completed; record it so a re-run
             // doesn't reconsider an empty backlog.
             state.mark(Stage::Issues);
@@ -1497,34 +1802,44 @@ pub fn run(args: &InitArgs) -> Result<()> {
             };
             let triage_label = resolve_triage_label(&repo);
             let draft_path = ws.issues_draft_path();
-            println!("\nDrafting issues from the backlog/milestone (read-only preview)…");
+            print_section(
+                "First tasks",
+                Some("Reading your docs to draft a first set of tasks (nothing is published yet)."),
+            );
             let req = DraftRequest {
                 mode,
                 source_docs: &source_docs,
                 triage_label: &triage_label,
             };
-            let draft = draft_with_agent(
-                selected_agent,
-                &repo,
-                &draft_path,
-                &req,
-                None,
-                Some("medium"),
-                Duration::from_secs(600),
-            )?;
-            println!("Draft written to {}", draft_path.display());
+            let draft = with_spinner("Drafting tasks…", || {
+                draft_with_agent(
+                    selected_agent,
+                    &repo,
+                    &draft_path,
+                    &req,
+                    init_model,
+                    Some("medium"),
+                    Duration::from_secs(600),
+                )
+            })?;
+            print_note(&format!("Draft written to {}", draft_path.display()));
 
-            println!("\nPreview:\n{}", format_draft_summary(&draft));
-            let answer = prompt("Publish these issues to GitHub? [y/N]: ")?;
+            println!();
+            for l in format_draft_summary(&draft).lines() {
+                print_bullet(l);
+            }
+            let answer = ask_yes_no("Publish these tasks as issues on GitHub?", false)?;
             if publish_decision(&answer) {
-                publish_draft(&repo, &draft, &mut state, &ws)?;
-                println!("Published {} issue(s).", state.created_issues.len());
+                with_spinner("Publishing issues…", || {
+                    publish_draft(&repo, &draft, &mut state, &ws)
+                })?;
+                print_ok(&format!("Published {} issue(s).", state.created_issues.len()));
                 state.mark(Stage::Issues);
                 state.save(&ws)?;
             } else {
                 // A declined publish leaves the draft on disk; do NOT mark Issues
                 // done, so a re-run still offers to publish it (per Decisions).
-                println!("Skipping publish; draft kept at {}.", draft_path.display());
+                print_note(&format!("Skipped — draft kept at {}.", draft_path.display()));
             }
         }
     }
@@ -1617,6 +1932,42 @@ pub fn format_final_report(r: &VerifyReport) -> String {
     out
 }
 
+/// Print the final verify report as a styled checklist (green ✓ / red ✗ for the
+/// required artifacts, dim summary lines, a highlighted next step) on a colour
+/// TTY, or the plain [`format_final_report`] text otherwise.
+fn print_final_report(r: &VerifyReport) {
+    if !qa_color() {
+        print!("{}", format_final_report(r));
+        return;
+    }
+    let mark = |ok: bool| {
+        if ok {
+            forced(Style::new().green().bold()).apply_to("✓").to_string()
+        } else {
+            forced(Style::new().red().bold()).apply_to("✗").to_string()
+        }
+    };
+    print_section("Setup complete", None);
+    println!("  {} .ralphy/", mark(r.ralphy_present));
+    for (path, present) in &r.docs {
+        println!("  {} {path}", mark(*present));
+    }
+    print_note(&format!("branch: {}", r.branch));
+    print_note(&format!("agents: {}", r.logged_in.join(", ")));
+    print_note(&format!(
+        "labels: {} · skills: {} · queued issues: {}",
+        r.ralphy_label_count,
+        r.skill_count,
+        r.queue.len()
+    ));
+    if r.queue.is_empty() {
+        print_note("note: no issue is queued for the agent yet");
+    } else {
+        let n = suggested_issue(&r.queue).unwrap();
+        print_ok(&format!("Next: {}", next_step_command(n)));
+    }
+}
+
 /// Spawn the current binary as `ralphy run --repo <repo> --only-issue <n>
 /// --dry-run`, inheriting stdio. A non-zero exit is surfaced as a warning line
 /// but does NOT fail `finalize` — the smoke test is diagnostic.
@@ -1700,7 +2051,7 @@ fn finalize(repo: &Path, cfg: &InitConfig, logged_in: &[Agent]) -> Result<()> {
         logged_in: logged_in_names,
     };
 
-    print!("{}", format_final_report(&r));
+    print_final_report(&r);
 
     let missing = required_artifacts_missing(&r);
     if !missing.is_empty() {
@@ -1712,19 +2063,14 @@ fn finalize(repo: &Path, cfg: &InitConfig, logged_in: &[Agent]) -> Result<()> {
 
     if !r.queue.is_empty() {
         let n = suggested_issue(&r.queue).unwrap();
-        print!("\nRun a --dry-run smoke test now? [y/N]: ");
-        std::io::stdout().flush().ok();
-        let mut answer = String::new();
-        std::io::stdin()
-            .read_line(&mut answer)
-            .context("reading smoke test answer from stdin")?;
+        let answer = ask_yes_no("Try a safe practice run now (no changes made)?", false)?;
         if smoke_test_decision(&answer) {
             run_smoke_test(repo, n)?;
         } else {
-            println!(
-                "Smoke test skipped. Run it yourself: {}",
+            print_note(&format!(
+                "Skipped. Run it yourself anytime: {}",
                 next_step_command(n)
-            );
+            ));
         }
     }
 
@@ -1757,6 +2103,13 @@ mod tests {
     fn select_agent_defaults_to_first_logged_in() {
         let logged_in = vec![Agent::Codex, Agent::Opencode];
         assert_eq!(select_agent(None, &logged_in).unwrap(), Agent::Codex);
+    }
+
+    #[test]
+    fn init_model_pins_sonnet_for_claude_only() {
+        assert_eq!(init_model_for(Agent::Claude), Some("sonnet"));
+        assert_eq!(init_model_for(Agent::Codex), None);
+        assert_eq!(init_model_for(Agent::Opencode), None);
     }
 
     #[test]
@@ -1941,6 +2294,53 @@ mod tests {
             qs[7].default,
             display_bool(!report.milestone_docs.is_empty())
         );
+    }
+
+    #[test]
+    fn render_question_plain_shows_counter_label_help_and_default() {
+        let q = Question {
+            label: "Repo kind".into(),
+            help: "Empty repo to scaffold, or existing codebase to adopt?".into(),
+            default: "existing".into(),
+            clearable: false,
+        };
+        let out = render_question(&q, 1, 8, false, 80);
+        // No ANSI escapes on the plain path, and every part is present.
+        assert!(!out.contains('\u{1b}'));
+        assert!(out.contains("[1/8]"));
+        assert!(out.contains("Repo kind"));
+        assert!(out.contains("existing codebase to adopt"));
+        assert!(out.contains("existing"));
+        // A non-clearable field is not marked optional.
+        assert!(!out.contains("optional"));
+    }
+
+    #[test]
+    fn render_question_clearable_marks_optional_and_color_emits_ansi() {
+        let q = Question {
+            label: "Backlog location".into(),
+            help: "Where the backlog lives.".into(),
+            default: "none".into(),
+            clearable: true,
+        };
+        assert!(render_question(&q, 3, 8, false, 80).contains("optional"));
+        // The styled path wraps content in ANSI escapes.
+        assert!(render_question(&q, 3, 8, true, 80).contains('\u{1b}'));
+    }
+
+    #[test]
+    fn wrap_text_breaks_on_whitespace_within_width() {
+        let lines = wrap_text("the quick brown fox jumps", 9);
+        assert!(lines.iter().all(|l| l.chars().count() <= 9), "{lines:?}");
+        // Joining with spaces round-trips the words in order.
+        assert_eq!(lines.join(" "), "the quick brown fox jumps");
+    }
+
+    #[test]
+    fn wrap_text_overflows_a_word_longer_than_width() {
+        // A single word wider than `width` lands on its own line, never split.
+        let lines = wrap_text("short superlongunbreakableword end", 8);
+        assert!(lines.contains(&"superlongunbreakableword".to_string()), "{lines:?}");
     }
 
     #[test]
