@@ -248,6 +248,16 @@ enum CliAgent {
     OpenCode,
 }
 
+impl CliAgent {
+    fn cli_name(self) -> &'static str {
+        match self {
+            CliAgent::Claude => "claude",
+            CliAgent::Codex => "codex",
+            CliAgent::OpenCode => "opencode",
+        }
+    }
+}
+
 /// The CLI's own branch-mode enum so `clap` stays a CLI concern; it converts into
 /// the core's `BranchMode` (see docs/adr/0002).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -386,6 +396,8 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
 
 fn run_cmd(args: RunArgs) -> Result<()> {
     let repo_root = git::resolve_toplevel(&args.repo)?;
+    let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
+    preflight_agents(args.agent, plan_agent)?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let ws = Workspace::new(&repo_root);
     let run_dir = ws.run_dir(&stamp);
@@ -572,7 +584,6 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             90,
         ),
     };
-    let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     let executor = build_agent(
         args.agent,
         &args,
@@ -819,6 +830,36 @@ fn resolve_plan_agent(plan_agent: Option<CliAgent>, agent: CliAgent) -> CliAgent
     plan_agent.unwrap_or(agent)
 }
 
+/// Pure predicate layer: returns `Err(message)` for the first agent whose
+/// `cli_name()` the `locate` closure reports absent, else `Ok(())`. The
+/// `locate` indirection lets unit tests inject a fake resolver with no PATH
+/// dependency.
+fn check_agents_present(
+    executor: CliAgent,
+    planner: CliAgent,
+    locate: impl Fn(&str) -> bool,
+) -> Result<(), String> {
+    for which in [executor, planner] {
+        let cli = which.cli_name();
+        if !locate(cli) {
+            return Err(format!(
+                "the `{cli}` CLI was not found on PATH, PATHEXT, or ~/.local/bin. \
+                Install it, or select another agent with --agent / --plan-agent."
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Thin wrapper that wires `check_agents_present` to the real `locate_program`
+/// resolver and maps the string error into `anyhow`.
+fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<()> {
+    check_agents_present(executor, planner, |n| {
+        ralphy_adapter_support::locate_program(n).is_some()
+    })
+    .map_err(|e| anyhow::anyhow!(e))
+}
+
 fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
     flag || matches!(agent, CliAgent::OpenCode)
 }
@@ -981,5 +1022,40 @@ mod tests {
             CliAgent::Claude,
             "explicit --plan-agent overrides --agent"
         );
+    }
+
+    #[test]
+    fn check_agents_present_aborts_when_executor_absent() {
+        let result = check_agents_present(CliAgent::Claude, CliAgent::Claude, |_| false);
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("claude"),
+            "message must name the missing cli: {err}"
+        );
+        assert!(
+            err.contains("--agent"),
+            "message must mention --agent: {err}"
+        );
+        assert!(
+            err.contains("--plan-agent"),
+            "message must mention --plan-agent: {err}"
+        );
+    }
+
+    #[test]
+    fn check_agents_present_gates_planner() {
+        // executor (Claude) is present; planner (Codex) is absent → Err naming codex.
+        let result = check_agents_present(CliAgent::Claude, CliAgent::Codex, |n| n == "claude");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("codex"),
+            "message must name the absent planner: {err}"
+        );
+    }
+
+    #[test]
+    fn check_agents_present_ok_when_all_present() {
+        let result = check_agents_present(CliAgent::Claude, CliAgent::Codex, |_| true);
+        assert!(result.is_ok());
     }
 }
