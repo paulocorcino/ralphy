@@ -930,20 +930,27 @@ fn write_scaffold(repo: &Path, cfg: &InitConfig) -> Result<()> {
     std::fs::write(agents_dir.join("domain.md"), TPL_DOMAIN)
         .context("writing docs/agents/domain.md")?;
 
-    // The block target: CLAUDE.md if present, else AGENTS.md if present, else a
-    // fresh CLAUDE.md.
-    let claude = repo.join("CLAUDE.md");
-    let agents = repo.join("AGENTS.md");
-    let target = if claude.exists() {
-        claude
-    } else if agents.exists() {
-        agents
-    } else {
-        claude
-    };
-    let existing = std::fs::read_to_string(&target).unwrap_or_default();
-    let updated = upsert_agent_skills_block(&existing, &agent_skills_block(cfg));
-    std::fs::write(&target, updated).with_context(|| format!("writing {}", target.display()))?;
+    // SUSPENDED (under evaluation): do not create or modify the repo's
+    // CLAUDE.md/AGENTS.md. The `## Agent skills` block write is intentionally
+    // disabled while we decide whether injecting it into the target repo is
+    // necessary. The helpers (`agent_skills_block`/`upsert_agent_skills_block`)
+    // are kept and still covered by unit tests; only the on-disk write here is
+    // turned off. Re-enable by uncommenting the block below.
+    //
+    // // The block target: CLAUDE.md if present, else AGENTS.md if present, else a
+    // // fresh CLAUDE.md.
+    // let claude = repo.join("CLAUDE.md");
+    // let agents = repo.join("AGENTS.md");
+    // let target = if claude.exists() {
+    //     claude
+    // } else if agents.exists() {
+    //     agents
+    // } else {
+    //     claude
+    // };
+    // let existing = std::fs::read_to_string(&target).unwrap_or_default();
+    // let updated = upsert_agent_skills_block(&existing, &agent_skills_block(cfg));
+    // std::fs::write(&target, updated).with_context(|| format!("writing {}", target.display()))?;
 
     if cfg.adopt_prd_roadmap {
         let prd_dir = repo.join("docs").join("prd");
@@ -2639,16 +2646,18 @@ mod tests {
         assert!(dir.join("docs/agents/issue-tracker.md").exists());
         assert!(dir.join("docs/agents/triage-labels.md").exists());
         assert!(dir.join("docs/agents/domain.md").exists());
-        let claude = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
-        assert_eq!(claude.matches("## Agent skills").count(), 1);
+        // SUSPENDED (under evaluation): the scaffold no longer writes the
+        // `## Agent skills` block, so neither CLAUDE.md nor AGENTS.md is created.
+        assert!(!dir.join("CLAUDE.md").exists());
+        assert!(!dir.join("AGENTS.md").exists());
         // PRD opt-out: none of the PRD docs exist.
         assert!(!dir.join("docs/prd").exists());
         assert!(!dir.join("docs/roadmap.md").exists());
 
-        // Idempotency: a second scaffold leaves a single block.
+        // Idempotency: a second scaffold still writes no agent-instruction file.
         write_scaffold(&dir, &cfg).unwrap();
-        let claude2 = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
-        assert_eq!(claude2.matches("## Agent skills").count(), 1);
+        assert!(!dir.join("CLAUDE.md").exists());
+        assert!(!dir.join("AGENTS.md").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
