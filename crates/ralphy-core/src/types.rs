@@ -157,6 +157,15 @@ impl Workspace {
         self.ralphy_dir().join("diagnosis.json")
     }
 
+    /// `<repo>/.ralphy/init-state.json` — the `ralphy init` checkpoint
+    /// (ADR-0012 stage 9): which onboarding stages completed and the numbers of
+    /// issues already published, so a re-run skips done stages and never
+    /// recreates published issues. Gitignored like everything else under
+    /// `.ralphy/`.
+    pub fn init_state_path(&self) -> PathBuf {
+        self.ralphy_dir().join("init-state.json")
+    }
+
     /// `<repo>/.ralphy/issues-draft.json` — the local preview draft a judgment
     /// session writes (ADR-0012 stage 8): the issues/milestone `ralphy init`
     /// summarizes for the dev to confirm before any of them are published to
@@ -251,5 +260,12 @@ mod tests {
         // `model` is untouched by summing — it stays the receiver's value.
         assert_eq!(a.model.as_deref(), Some("claude-opus-4-8"));
         assert_eq!(a.total(), 345);
+    }
+
+    #[test]
+    fn init_state_path_is_under_ralphy_dir() {
+        let ws = Workspace::new("/some/repo");
+        assert!(ws.init_state_path().starts_with(ws.ralphy_dir()));
+        assert!(ws.init_state_path().ends_with("init-state.json"));
     }
 }

@@ -1033,37 +1033,73 @@ fn resolve_triage_label(repo: &Path) -> String {
         .unwrap_or_else(|| "ready-for-agent".to_string())
 }
 
-/// Publish a confirmed draft to GitHub: create the milestone first (milestone
-/// path), then each issue in array order, mapping each draft index to its created
-/// number so a later issue's `blocked_by` indices resolve to real `#N` refs in its
-/// body. Returns the created issue numbers in array order.
-fn publish_draft(repo: &Path, draft: &IssuesDraft) -> Result<Vec<u64>> {
-    // Create the milestone first so `gh issue create --milestone <name>` resolves;
-    // each issue links to it by name (the number, returned here, is just logged).
-    let milestone_name = match &draft.milestone {
-        Some(ms) => {
-            let number = github::create_milestone(repo, &ms.title, &ms.description)?;
+/// Publish a confirmed draft, threading the [`InitState`] checkpoint so a crash
+/// mid-publish never recreates an already-published issue or milestone on resume
+/// (ADR-0012 stage 9). The closures inject the external writes (`create_milestone`,
+/// `create_issue`) and the persist step (`save`), mirroring `install_skills_step`.
+///
+/// INVARIANT (held at every step): each issue/milestone is created AT MOST ONCE
+/// across runs. The milestone is created only when `state.milestone_created` is
+/// `None`; issues are created only beyond `state.created_issues.len()` (the
+/// persisted prefix). `save` runs after EVERY create, so a crash leaves a prefix
+/// the next run resumes PAST, never before — `created_issues[i]` is the published
+/// number of `draft.issues[i]`, so a later issue's `blocked_by` index resolves
+/// against that prefix.
+fn publish_draft_with(
+    draft: &IssuesDraft,
+    state: &mut InitState,
+    mut save: impl FnMut(&InitState) -> Result<()>,
+    mut create_milestone: impl FnMut(&str, &str) -> Result<u64>,
+    mut create_issue: impl FnMut(&str, &str, &[String], Option<&str>) -> Result<u64>,
+) -> Result<()> {
+    // Create the milestone first (so `gh issue create --milestone <name>` resolves)
+    // — but only once across runs. Each issue links to it by name.
+    if let Some(ms) = &draft.milestone {
+        if state.milestone_created.is_none() {
+            let number = create_milestone(&ms.title, &ms.description)?;
             println!("  created milestone #{number}: {}", ms.title);
-            Some(ms.title.as_str())
+            state.milestone_created = Some(ms.title.clone());
+            save(state)?;
         }
-        None => None,
-    };
-    let mut created: Vec<u64> = Vec::with_capacity(draft.issues.len());
-    for issue in &draft.issues {
-        // A blocker index must point at an earlier (already-created) issue; guard
-        // against an out-of-range index rather than panicking on a bad draft.
+    }
+    let milestone_name = draft.milestone.as_ref().map(|ms| ms.title.as_str());
+
+    // Resume past the persisted prefix: the first `created_issues.len()` draft
+    // entries are already on GitHub.
+    for issue in draft.issues.iter().skip(state.created_issues.len()) {
+        // A blocker index must point at an earlier (already-created) issue; the
+        // persisted prefix makes this resolve on resume. Guard an out-of-range
+        // index rather than panicking on a bad draft.
         let blocked_numbers: Vec<u64> = issue
             .blocked_by
             .iter()
-            .filter_map(|&idx| created.get(idx).copied())
+            .filter_map(|&idx| state.created_issues.get(idx).copied())
             .collect();
         let body = patch_blocked_by(&issue.body, &blocked_numbers);
-        let number =
-            github::create_issue(repo, &issue.title, &body, &issue.labels, milestone_name)?;
+        let number = create_issue(&issue.title, &body, &issue.labels, milestone_name)?;
         println!("  created #{number}: {}", issue.title);
-        created.push(number);
+        state.created_issues.push(number);
+        save(state)?;
     }
-    Ok(created)
+    Ok(())
+}
+
+/// The impure wrapper: wire [`publish_draft_with`]'s closures to the real
+/// `github::` POSTs and persist the checkpoint to `.ralphy/init-state.json` after
+/// each create.
+fn publish_draft(
+    repo: &Path,
+    draft: &IssuesDraft,
+    state: &mut InitState,
+    ws: &Workspace,
+) -> Result<()> {
+    publish_draft_with(
+        draft,
+        state,
+        |s| s.save(ws),
+        |title, description| github::create_milestone(repo, title, description),
+        |title, body, labels, milestone| github::create_issue(repo, title, body, labels, milestone),
+    )
 }
 
 /// Dispatch the read-only repo-diagnosis session to the selected agent's adapter.
@@ -1145,6 +1181,10 @@ fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> 
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
+    // Ignore `.ralphy/` before any snapshot commit, so the checkpoint
+    // (`init-state.json`) and every other scratch artifact stay out of commits.
+    gitignore::ensure_ralphy_ignored(&repo)?;
+
     let agents_present: Vec<Agent> = Agent::ALL.iter().copied().filter(agent_present).collect();
 
     let agents_logged_in: Vec<Agent> = agents_present
@@ -1178,28 +1218,54 @@ pub fn run(args: &InitArgs) -> Result<()> {
         "Environment gate passed. Using agent: {}.",
         selected_agent.cli_name()
     );
-    println!("Diagnosing repo (read-only)…");
-
-    // Diagnose from a neutral cwd OUTSIDE the repo, so the target's
-    // CLAUDE.md/AGENTS.md are read as data, never auto-loaded as instructions.
-    let stamp = format!("{}", std::process::id());
-    let cwd = diagnosis_cwd(&repo, &stamp);
-    let report = diagnose_with_agent(
-        selected_agent,
-        &repo,
-        &cwd,
-        None,
-        Some("medium"),
-        Duration::from_secs(300),
-    )?;
-
+    // Load the checkpoint: a re-run resumes from it (ADR-0012 stage 9).
     let ws = Workspace::new(&repo);
-    persist_report(&ws, &report)?;
-    println!("Diagnosis written to {}", ws.diagnosis_path().display());
+    let mut state = InitState::load(&ws)?;
 
-    // Console Q&A pre-filled by the diagnosis — the dev confirms/corrects.
-    println!("\nConfirm or correct the findings (Enter keeps the default, 'none' clears):");
-    let cfg = run_qa(&report)?;
+    // The captured config is the resume key for stages 2–3: present ⇒ the costly
+    // agent diagnosis and the interactive Q&A already ran, so skip both.
+    let cfg = if let Some(cfg) = state.config.clone() {
+        println!("Resuming: diagnosis + Q&A already captured — skipping.");
+        cfg
+    } else {
+        // Reload a persisted report when one exists (a crash during the
+        // interactive Q&A left `diagnosis.json` but no config), otherwise run the
+        // diagnosis from a neutral cwd OUTSIDE the repo — so the target's
+        // CLAUDE.md/AGENTS.md are read as data, never auto-loaded as instructions.
+        let report = if ws.diagnosis_path().exists() {
+            println!(
+                "Reusing persisted diagnosis at {}.",
+                ws.diagnosis_path().display()
+            );
+            let raw = std::fs::read_to_string(ws.diagnosis_path())
+                .with_context(|| format!("reading {}", ws.diagnosis_path().display()))?;
+            serde_json::from_str(&raw)
+                .with_context(|| format!("parsing {}", ws.diagnosis_path().display()))?
+        } else {
+            println!("Diagnosing repo (read-only)…");
+            let stamp = format!("{}", std::process::id());
+            let cwd = diagnosis_cwd(&repo, &stamp);
+            let report = diagnose_with_agent(
+                selected_agent,
+                &repo,
+                &cwd,
+                None,
+                Some("medium"),
+                Duration::from_secs(300),
+            )?;
+            persist_report(&ws, &report)?;
+            println!("Diagnosis written to {}", ws.diagnosis_path().display());
+            report
+        };
+
+        // Console Q&A pre-filled by the diagnosis — the dev confirms/corrects.
+        println!("\nConfirm or correct the findings (Enter keeps the default, 'none' clears):");
+        let cfg = run_qa(&report)?;
+        state.config = Some(cfg.clone());
+        state.mark(Stage::Diagnose);
+        state.save(&ws)?;
+        cfg
+    };
 
     println!("\nCaptured config:");
     print!("{}", format_config_echo(&cfg));
@@ -1215,109 +1281,151 @@ pub fn run(args: &InitArgs) -> Result<()> {
         Ok(line)
     };
 
-    let is_clean = git::is_clean_ignoring_ralphy(&repo)?;
-    if !is_clean {
-        println!("\nWorking tree is dirty:");
-        print!("{}", git::git(&repo, &["status", "--short"])?);
-        let answer = prompt("\nCommit a snapshot before init (git add -A && git commit)? [Y/n]: ")?;
-        match commit_decision(is_clean, &answer) {
-            CommitDecision::Abort(msg) => {
-                // INVARIANT: a refusal stops here — before any branch or write.
-                bail!("{msg}");
+    if !state.is_done(Stage::Git) {
+        let is_clean = git::is_clean_ignoring_ralphy(&repo)?;
+        if !is_clean {
+            println!("\nWorking tree is dirty:");
+            print!("{}", git::git(&repo, &["status", "--short"])?);
+            let answer =
+                prompt("\nCommit a snapshot before init (git add -A && git commit)? [Y/n]: ")?;
+            match commit_decision(is_clean, &answer) {
+                CommitDecision::Abort(msg) => {
+                    // INVARIANT: a refusal stops here — before any branch or write.
+                    bail!("{msg}");
+                }
+                CommitDecision::Commit => {
+                    git::commit_all_snapshot(&repo)?;
+                    println!("Snapshot committed.");
+                }
+                CommitDecision::NothingToCommit => {}
             }
-            CommitDecision::Commit => {
-                git::commit_all_snapshot(&repo)?;
-                println!("Snapshot committed.");
-            }
-            CommitDecision::NothingToCommit => {}
         }
-    }
 
-    // ── stage 4b: branch (before any scaffold write) ────────────────────────
-    let current = git::current_branch(&repo)?;
-    let answer = prompt("\nCreate branch `ralphy/init` for init's changes? [Y/n]: ")?;
-    match branch_decision(&current, &answer) {
-        BranchDecision::Create(branch) => {
-            if git::commitish_exists(&repo, &branch) {
-                git::checkout(&repo, &branch)?;
-            } else {
-                git::checkout_new_branch(&repo, &branch, &current)?;
+        // ── stage 4b: branch (before any scaffold write) ────────────────────
+        let current = git::current_branch(&repo)?;
+        let answer = prompt("\nCreate branch `ralphy/init` for init's changes? [Y/n]: ")?;
+        match branch_decision(&current, &answer) {
+            BranchDecision::Create(branch) => {
+                if git::commitish_exists(&repo, &branch) {
+                    git::checkout(&repo, &branch)?;
+                } else {
+                    git::checkout_new_branch(&repo, &branch, &current)?;
+                }
+                println!("On branch {branch}.");
             }
-            println!("On branch {branch}.");
+            BranchDecision::Stay => {
+                println!("Staying on branch {current}.");
+            }
         }
-        BranchDecision::Stay => {
-            println!("Staying on branch {current}.");
-        }
+        state.mark(Stage::Git);
+        state.save(&ws)?;
+    } else {
+        println!("Resuming: git safety + branch already done — skipping.");
     }
 
     // ── stage 5: deterministic scaffold (onto the branch) ───────────────────
-    write_scaffold(&repo, &cfg)?;
-    println!("\nScaffold written:");
-    println!("  docs/agents/issue-tracker.md");
-    println!("  docs/agents/triage-labels.md");
-    println!("  docs/agents/domain.md");
-    if cfg.adopt_prd_roadmap {
-        println!("  docs/roadmap.md");
-        println!("  docs/prd/README.md");
-        println!("  docs/prd/_template.md");
+    if !state.is_done(Stage::Scaffold) {
+        write_scaffold(&repo, &cfg)?;
+        println!("\nScaffold written:");
+        println!("  docs/agents/issue-tracker.md");
+        println!("  docs/agents/triage-labels.md");
+        println!("  docs/agents/domain.md");
+        if cfg.adopt_prd_roadmap {
+            println!("  docs/roadmap.md");
+            println!("  docs/prd/README.md");
+            println!("  docs/prd/_template.md");
+        }
+        state.mark(Stage::Scaffold);
+        state.save(&ws)?;
+    } else {
+        println!("Resuming: scaffold already written — skipping.");
     }
 
     // ── stage 6: download engineering skills ────────────────────────────────
-    let names = skill_names();
-    let skills_dst = repo.join(skills_target(cfg.skills_dir.as_deref()));
-    // NOTE: displayed list is from the build-time tree; downloaded set is from
-    // the pinned commit (see resolve_fetch_ref) and may differ across builds.
-    println!("\nEngineering skills available: {}", names.join(", "));
-    println!("Target: {}", skills_dst.display());
-    let answer = prompt(&format!(
-        "Download these engineering skills into {}? [y/N]: ",
-        skills_dst.display()
-    ))?;
-    if !download_decision(&answer) {
-        println!("Skipping skills download.");
+    if state.is_done(Stage::Skills) {
+        println!("Resuming: skills step already done — skipping.");
     } else {
-        let version = env!("RALPHY_VERSION").to_string();
-        let fetch_ref = resolve_fetch_ref(option_env!("RALPHY_GIT_SHA"), &version);
-        let subtree = SKILLS_SUBTREE.to_string();
-        let fetch = |scratch: &Path| -> Result<PathBuf> {
-            for argv in sparse_fetch_commands(&fetch_ref, &subtree) {
-                let args: Vec<&str> = argv.iter().map(String::as_str).collect();
-                git::git(scratch, &args)?;
-            }
-            Ok(scratch.join(&subtree))
-        };
-        match install_skills_step(&skills_dst, fetch)? {
-            Outcome::Installed(n) => {
-                println!("Installed {n} skill(s) into {}.", skills_dst.display())
-            }
-            Outcome::Skipped => println!("Skills already up to date."),
-            Outcome::Failed(msg) => {
-                println!("warning: skills download failed ({msg}); continuing");
+        let names = skill_names();
+        let skills_dst = repo.join(skills_target(cfg.skills_dir.as_deref()));
+        // NOTE: displayed list is from the build-time tree; downloaded set is from
+        // the pinned commit (see resolve_fetch_ref) and may differ across builds.
+        println!("\nEngineering skills available: {}", names.join(", "));
+        println!("Target: {}", skills_dst.display());
+        let answer = prompt(&format!(
+            "Download these engineering skills into {}? [y/N]: ",
+            skills_dst.display()
+        ))?;
+        if !download_decision(&answer) {
+            println!("Skipping skills download.");
+        } else {
+            let version = env!("RALPHY_VERSION").to_string();
+            let fetch_ref = resolve_fetch_ref(option_env!("RALPHY_GIT_SHA"), &version);
+            let subtree = SKILLS_SUBTREE.to_string();
+            let fetch = |scratch: &Path| -> Result<PathBuf> {
+                for argv in sparse_fetch_commands(&fetch_ref, &subtree) {
+                    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+                    git::git(scratch, &args)?;
+                }
+                Ok(scratch.join(&subtree))
+            };
+            match install_skills_step(&skills_dst, fetch)? {
+                Outcome::Installed(n) => {
+                    println!("Installed {n} skill(s) into {}.", skills_dst.display())
+                }
+                Outcome::Skipped => println!("Skills already up to date."),
+                Outcome::Failed(msg) => {
+                    println!("warning: skills download failed ({msg}); continuing");
+                }
             }
         }
+        state.mark(Stage::Skills);
+        state.save(&ws)?;
     }
 
     // ── stage 7: create GitHub label vocabulary ──────────────────────────────
-    let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
-    let desired = github::ralphy_label_specs(triage_doc.as_deref());
-    let existing = github::list_repo_labels(&repo)?;
-    let actions = github::plan_label_actions(&desired, &existing);
-    print!(
-        "\nGitHub label plan:\n{}",
-        github::format_label_plan(&actions)
-    );
-    let answer = prompt("\nCreate/update these labels on GitHub? [Y/n]: ")?;
-    if labels_decision(&answer) {
-        github::apply_label_actions(&actions, &repo)?;
-        println!("Labels created/updated.");
+    if state.is_done(Stage::Labels) {
+        println!("Resuming: labels already done — skipping.");
     } else {
-        println!("Skipping label creation.");
+        let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
+        let desired = github::ralphy_label_specs(triage_doc.as_deref());
+        let existing = github::list_repo_labels(&repo)?;
+        let actions = github::plan_label_actions(&desired, &existing);
+        print!(
+            "\nGitHub label plan:\n{}",
+            github::format_label_plan(&actions)
+        );
+        let answer = prompt("\nCreate/update these labels on GitHub? [Y/n]: ")?;
+        if labels_decision(&answer) {
+            github::apply_label_actions(&actions, &repo)?;
+            println!("Labels created/updated.");
+        } else {
+            println!("Skipping label creation.");
+        }
+        state.mark(Stage::Labels);
+        state.save(&ws)?;
     }
 
     // ── stage 8: backlog/milestone → issues (preview, confirm, publish) ───────
+    if state.is_done(Stage::Issues) {
+        if state.created_issues.is_empty() {
+            println!("Resuming: issue stage already done — nothing was published.");
+        } else {
+            let nums: Vec<String> = state
+                .created_issues
+                .iter()
+                .map(|n| format!("#{n}"))
+                .collect();
+            println!("Resuming: issues already published ({}).", nums.join(", "));
+        }
+        return Ok(());
+    }
     match decide_issues_path(&cfg) {
         IssuesPath::Skip => {
             println!("\nNo backlog or milestone found — skipping issue creation.");
+            // Nothing to publish — the stage completed; record it so a re-run
+            // doesn't reconsider an empty backlog.
+            state.mark(Stage::Issues);
+            state.save(&ws)?;
         }
         path => {
             let (mode, source_docs) = match path {
@@ -1350,9 +1458,13 @@ pub fn run(args: &InitArgs) -> Result<()> {
             println!("\nPreview:\n{}", format_draft_summary(&draft));
             let answer = prompt("Publish these issues to GitHub? [y/N]: ")?;
             if publish_decision(&answer) {
-                let created = publish_draft(&repo, &draft)?;
-                println!("Published {} issue(s).", created.len());
+                publish_draft(&repo, &draft, &mut state, &ws)?;
+                println!("Published {} issue(s).", state.created_issues.len());
+                state.mark(Stage::Issues);
+                state.save(&ws)?;
             } else {
+                // A declined publish leaves the draft on disk; do NOT mark Issues
+                // done, so a re-run still offers to publish it (per Decisions).
                 println!("Skipping publish; draft kept at {}.", draft_path.display());
             }
         }
@@ -2180,6 +2292,112 @@ mod tests {
         // Absent placeholder: returned unchanged.
         let plain = "no placeholder here";
         assert_eq!(patch_blocked_by(plain, &[1]), plain);
+    }
+
+    fn three_issue_draft() -> IssuesDraft {
+        let issue = |title: &str, blocked_by: Vec<usize>| ralphy_core::IssueDraft {
+            title: title.into(),
+            body: "## Blocked by\n\nBLOCKED_BY_PLACEHOLDER\n".into(),
+            labels: vec!["ready-for-agent".into()],
+            blocked_by,
+        };
+        IssuesDraft {
+            milestone: Some(ralphy_core::MilestoneDraft {
+                title: "v1".into(),
+                description: "first".into(),
+            }),
+            prd_path: None,
+            issues: vec![
+                issue("slice one", vec![]),
+                issue("slice two", vec![0]),
+                issue("slice three", vec![1]),
+            ],
+        }
+    }
+
+    #[test]
+    fn publish_draft_with_never_recreates_persisted_prefix() {
+        // Resume case: two issues + the milestone already published. Only the 3rd
+        // issue is created; the milestone is NOT recreated.
+        let draft = three_issue_draft();
+        let mut state = InitState {
+            created_issues: vec![101, 102],
+            milestone_created: Some("v1".into()),
+            ..InitState::default()
+        };
+
+        let mut ms_calls = 0;
+        let mut issue_titles: Vec<String> = Vec::new();
+        let mut save_calls = 0;
+        publish_draft_with(
+            &draft,
+            &mut state,
+            |_s| {
+                save_calls += 1;
+                Ok(())
+            },
+            |_t, _d| {
+                ms_calls += 1;
+                Ok(999)
+            },
+            |title, body, _labels, milestone| {
+                issue_titles.push(title.to_string());
+                // The 3rd issue is blocked_by index 1 → must resolve to the
+                // persisted #102, proving blocked-by resolves against the prefix.
+                assert!(body.contains("- #102"), "blocked-by resolved:\n{body}");
+                assert_eq!(milestone, Some("v1"));
+                Ok(103)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(issue_titles, vec!["slice three".to_string()]);
+        assert_eq!(ms_calls, 0, "milestone must NOT be recreated");
+        assert_eq!(state.created_issues, vec![101, 102, 103]);
+        assert!(save_calls >= 1, "save must fire after the create");
+
+        // Fresh case: nothing published yet. Milestone created once, all 3 issues
+        // created in order, numbers accumulate.
+        let draft = three_issue_draft();
+        let mut state = InitState::default();
+        let mut ms_calls = 0;
+        let mut next = 200u64;
+        let mut issue_titles: Vec<String> = Vec::new();
+        let mut save_calls = 0;
+        publish_draft_with(
+            &draft,
+            &mut state,
+            |_s| {
+                save_calls += 1;
+                Ok(())
+            },
+            |_t, _d| {
+                ms_calls += 1;
+                Ok(1)
+            },
+            |title, _body, _labels, milestone| {
+                issue_titles.push(title.to_string());
+                assert_eq!(milestone, Some("v1"));
+                let n = next;
+                next += 1;
+                Ok(n)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(ms_calls, 1, "milestone created exactly once");
+        assert_eq!(
+            issue_titles,
+            vec![
+                "slice one".to_string(),
+                "slice two".to_string(),
+                "slice three".to_string()
+            ]
+        );
+        assert_eq!(state.created_issues, vec![200, 201, 202]);
+        assert_eq!(state.milestone_created.as_deref(), Some("v1"));
+        // save after milestone + after each of 3 issues.
+        assert_eq!(save_calls, 4);
     }
 
     #[test]
