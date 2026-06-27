@@ -772,9 +772,9 @@ impl ClaudeAgent {
         fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
             .context("writing .ralphy/exec.md")?;
 
-        // Grant the one-time workspace trust so the interactive session doesn't
-        // stall on Claude's first-run "do you trust this folder?" dialog.
-        ensure_workspace_trusted(ws.repo_root());
+        // Pre-clear Claude's first-run interactive gates (workspace trust AND the
+        // theme/onboarding wizard) so the live session doesn't stall on a keypress.
+        ensure_interactive_session_ready(ws.repo_root());
 
         let settings_path = self.write_exec_settings()?;
         let plugin_dir = materialize_plugin(ws)?;
@@ -1226,14 +1226,17 @@ fn dirs_home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Pre-accept Claude Code's workspace-trust dialog for `repo_root`. The headless
-/// `-p` planning path is exempt from that dialog, but an *interactive* session
-/// stalls on it forever waiting for a keypress — so an autonomous orchestrator
-/// must grant the one-time trust the operator would otherwise click. Best-effort:
-/// reads `~/.claude.json`, sets the flag for this workspace, and writes it back,
-/// preserving everything else. A failure here just means the live session may
-/// stall (surfaced as a Timeout), never a crash.
-fn ensure_workspace_trusted(repo_root: &Path) {
+/// Pre-clear the first-run gates that block an *interactive* Claude session for
+/// `repo_root`: the workspace-trust dialog AND the theme/onboarding wizard. The
+/// headless `-p` planning path is exempt from both, but a live session stalls on
+/// either forever waiting for a keypress — so an autonomous orchestrator must
+/// grant up front what the operator would otherwise click. (Observed in the wild:
+/// on a profile with `hasCompletedOnboarding=false`, every live exec hung at
+/// "Choose the text style…" and silently burned the whole budget.) Best-effort:
+/// reads `~/.claude.json`, sets the flags, and writes it back, preserving
+/// everything else. A failure here just means the live session may stall
+/// (surfaced as a Timeout), never a crash.
+fn ensure_interactive_session_ready(repo_root: &Path) {
     let Some(home) = dirs_home() else {
         return;
     };
@@ -1245,7 +1248,7 @@ fn ensure_workspace_trusted(repo_root: &Path) {
     // Claude keys projects by the cwd it is launched with; we launch it at
     // `repo_root`, whose display form uses forward slashes on every platform.
     let key = repo_root.to_string_lossy().replace('\\', "/");
-    let updated = with_workspace_trusted(root, &key);
+    let updated = with_onboarding_completed(with_workspace_trusted(root, &key));
     if let Ok(s) = serde_json::to_string_pretty(&updated) {
         let _ = fs::write(&cfg_path, s);
     }
@@ -1264,6 +1267,21 @@ fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> serde_json:
                 entry.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
             }
         }
+    }
+    root
+}
+
+/// Mark Claude Code's first-run onboarding wizard complete on a parsed
+/// `~/.claude.json`, so an interactive session boots straight into the prompt
+/// instead of the "Let's get started" / theme picker. Sets the top-level
+/// `hasCompletedOnboarding` flag and seeds a `theme` only when one is absent (so
+/// a user's chosen theme is never overwritten). Leaves all other content intact.
+/// Pure, so it unit-tests without the filesystem.
+fn with_onboarding_completed(mut root: serde_json::Value) -> serde_json::Value {
+    use serde_json::{json, Value};
+    if let Some(obj) = root.as_object_mut() {
+        obj.insert("hasCompletedOnboarding".into(), Value::Bool(true));
+        obj.entry("theme").or_insert_with(|| json!("dark"));
     }
     root
 }
@@ -1879,6 +1897,22 @@ mod tests {
     fn workspace_trust_bootstraps_empty_config() {
         let out = with_workspace_trusted(serde_json::json!({}), "C:/ws");
         assert_eq!(out["projects"]["C:/ws"]["hasTrustDialogAccepted"], true);
+    }
+
+    #[test]
+    fn onboarding_completed_sets_flag_and_seeds_theme_once() {
+        use serde_json::json;
+
+        // No theme yet → flag set and a default theme seeded.
+        let out = with_onboarding_completed(json!({ "numStartups": 7 }));
+        assert_eq!(out["hasCompletedOnboarding"], true);
+        assert_eq!(out["theme"], "dark");
+        assert_eq!(out["numStartups"], 7);
+
+        // An existing theme is never overwritten.
+        let out = with_onboarding_completed(json!({ "theme": "light" }));
+        assert_eq!(out["hasCompletedOnboarding"], true);
+        assert_eq!(out["theme"], "light");
     }
 
     #[test]
