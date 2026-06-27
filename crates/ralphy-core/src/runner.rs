@@ -336,7 +336,7 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
 }
 
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
-const STOP_BEFORE_LABEL: &str = "stop-before";
+pub const STOP_BEFORE_LABEL: &str = "stop-before";
 
 /// The label applied to an issue the planner judged a bundle (multiple backlog
 /// tasks under one number): the queue is parked on a human running `/to-issues`

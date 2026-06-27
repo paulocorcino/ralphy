@@ -48,8 +48,8 @@ pub fn parse_parent(body: &str) -> Vec<u64> {
 
 /// Order a queue so every issue comes after the issues it depends on, with
 /// ascending number as the tie-break — the sequence shown to the user IS the
-/// sequence executed. Two kinds of edges, both derived from bodies already in
-/// hand (no tracker calls):
+/// sequence executed. Edges are derived from bodies already in hand (no tracker
+/// calls):
 ///
 /// - `## Blocked by` refs that point at another QUEUE member;
 /// - for refs absent from the queue (e.g. a closed, retired bundle), the queue
@@ -57,39 +57,107 @@ pub fn parse_parent(body: &str) -> Vec<u64> {
 ///   dependent must come after the split's children.
 ///
 /// Refs to issues that are neither in the queue nor split into queue members
-/// impose no order here; the runner's blocked-by gate still owns correctness
-/// at execution time. On a dependency cycle the un-orderable remainder is
-/// appended in ascending order (the gate will skip what is truly blocked).
+/// impose no order here; the runner's blocked-by gate still owns correctness at
+/// execution time. On a dependency cycle the un-orderable remainder is appended
+/// in ascending order (the gate will skip what is truly blocked).
+///
+/// This is the context-free form: every out-of-queue blocker is treated as
+/// satisfied. When the broader set of open issues is available, prefer
+/// [`sort_queue_in_graph`], which follows transitive edges *through* issues
+/// outside the queue.
 pub fn sort_queue(queue: Vec<Issue>) -> Vec<Issue> {
-    let numbers: BTreeSet<u64> = queue.iter().map(|i| i.number).collect();
-    // children_of[n] = queue members declaring `## Parent` #n.
+    // With no broader context, the only issues that can carry edges are the queue
+    // members themselves — pass the queue as its own context to reuse one code path.
+    let context = queue.clone();
+    sort_queue_in_graph(queue, &context)
+}
+
+/// Like [`sort_queue`], but order the queue within the *full* open-issue graph.
+///
+/// A blocker that sits outside the queue but is itself open (e.g. a chain of
+/// spikes the operator labelled only partway) still constrains a queue member: we
+/// walk the `## Blocked by` edges through those out-of-queue nodes — treating them
+/// as transparent — until we reach another queue member, which becomes the real
+/// predecessor. A blocker that is *closed* (absent from `open`) is pruned, exactly
+/// as the runtime gate treats an already-satisfied dependency; if it was a retired
+/// bundle, its `## Parent` children in the queue stand in for it.
+///
+/// `open` is the set of currently-open issues (queue members included). It is read
+/// only for edge derivation; the returned order is a permutation of `queue`.
+pub fn sort_queue_in_graph(queue: Vec<Issue>, open: &[Issue]) -> Vec<Issue> {
+    let in_queue: BTreeSet<u64> = queue.iter().map(|i| i.number).collect();
+    let open_numbers: BTreeSet<u64> = open.iter().map(|i| i.number).collect();
+    // Body lookup spanning the open set and the queue (a queue member should
+    // always be open, but fall back to its own body if `open` omits it).
+    let mut body_of: BTreeMap<u64, &str> = BTreeMap::new();
+    for i in open {
+        body_of.insert(i.number, i.body.as_str());
+    }
+    for i in &queue {
+        body_of.entry(i.number).or_insert(i.body.as_str());
+    }
+    // children_of[n] = queue members declaring `## Parent` #n — the stand-ins for
+    // a retired (closed) bundle #n that is absent from the open graph.
     let mut children_of: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
     for i in &queue {
         for p in parse_parent(&i.body) {
             children_of.entry(p).or_default().push(i.number);
         }
     }
-    // deps[x] = queue members that must precede x.
+
+    // deps[x] = queue members that must precede x. For each queue member, walk the
+    // blocked-by graph: an in-queue ref is a direct predecessor; an open
+    // out-of-queue ref is transparent (recurse into its own blockers); a closed
+    // ref substitutes its split children.
     let mut deps: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
     for i in &queue {
-        let entry = deps.entry(i.number).or_default();
-        for n in parse_blocked_by(&i.body) {
-            if numbers.contains(&n) {
-                entry.insert(n);
-            } else if let Some(children) = children_of.get(&n) {
-                entry.extend(children.iter().copied().filter(|&c| c != i.number));
+        let mut acc: BTreeSet<u64> = BTreeSet::new();
+        let mut seen: BTreeSet<u64> = BTreeSet::new();
+        let mut stack: Vec<u64> = vec![i.number];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue; // already expanded — also breaks blocked-by cycles
+            }
+            let body = match body_of.get(&node) {
+                Some(b) => *b,
+                None => continue,
+            };
+            for n in parse_blocked_by(body) {
+                if n == i.number {
+                    continue; // never depend on yourself
+                }
+                if in_queue.contains(&n) {
+                    acc.insert(n); // terminal: a real in-queue predecessor
+                } else if open_numbers.contains(&n) {
+                    stack.push(n); // transparent: keep walking its blockers
+                } else if let Some(children) = children_of.get(&n) {
+                    // closed/absent ref that was split: its queue children stand in.
+                    acc.extend(children.iter().copied().filter(|&c| c != i.number));
+                }
             }
         }
+        deps.insert(i.number, acc);
     }
-    // Kahn's algorithm, always taking the smallest ready number first.
+
+    kahn(queue, &deps)
+}
+
+/// Kahn's algorithm over `deps` (the must-precede set per issue number), always
+/// taking the smallest ready number first so ties break ascending. On a cycle the
+/// un-orderable remainder is emitted in ascending order — the runtime gate still
+/// owns correctness.
+fn kahn(queue: Vec<Issue>, deps: &BTreeMap<u64, BTreeSet<u64>>) -> Vec<Issue> {
+    let empty = BTreeSet::new();
     let mut by_number: BTreeMap<u64, Issue> = queue.into_iter().map(|i| (i.number, i)).collect();
     let mut placed: BTreeSet<u64> = BTreeSet::new();
     let mut out: Vec<Issue> = Vec::with_capacity(by_number.len());
     while !by_number.is_empty() {
-        let ready = by_number
-            .keys()
-            .copied()
-            .find(|n| deps[n].iter().all(|d| placed.contains(d)));
+        let ready = by_number.keys().copied().find(|n| {
+            deps.get(n)
+                .unwrap_or(&empty)
+                .iter()
+                .all(|d| placed.contains(d))
+        });
         match ready {
             Some(n) => {
                 placed.insert(n);
@@ -224,5 +292,84 @@ mod tests {
         ];
         // #3 is orderable; the 1↔2 cycle is appended ascending.
         assert_eq!(numbers(&sort_queue(q)), vec![3, 1, 2]);
+    }
+
+    #[test]
+    fn in_graph_orders_through_open_out_of_queue_blocker() {
+        // #5 is blocked by open #8 (NOT in the queue), which is itself blocked by
+        // in-queue #7. Context-free `sort_queue` sees #5 as a root and floats it to
+        // the front; the graph form follows #5 → #8 → #7 and orders #5 after #7.
+        let q = vec![issue(5, "## Blocked by\n- #8\n"), issue(7, "")];
+        let open = vec![
+            issue(5, "## Blocked by\n- #8\n"),
+            issue(7, ""),
+            issue(8, "## Blocked by\n- #7\n"),
+        ];
+        // Without context: #5 looks unblocked and sorts first.
+        assert_eq!(numbers(&sort_queue(q.clone())), vec![5, 7]);
+        // With the open graph: #5 lands after its true predecessor #7.
+        assert_eq!(numbers(&sort_queue_in_graph(q, &open)), vec![7, 5]);
+    }
+
+    #[test]
+    fn in_graph_prunes_closed_out_of_queue_blocker() {
+        // #5 is blocked by #8, but #8 is closed (absent from `open`). The edge is
+        // pruned — #5 is genuinely unblocked and sorts ascending. Mirrors the
+        // runtime gate, which skips nothing for an already-closed blocker.
+        let q = vec![issue(5, "## Blocked by\n- #8\n"), issue(7, "")];
+        let open = vec![issue(5, "## Blocked by\n- #8\n"), issue(7, "")]; // #8 not open
+        assert_eq!(numbers(&sort_queue_in_graph(q, &open)), vec![5, 7]);
+    }
+
+    #[test]
+    fn in_graph_resolves_the_bioledger_chain() {
+        // The real bioledger queue {5,7,8,9,10,14,15,16,17,18,19,20,21}: the chain
+        // is severed at out-of-queue nodes (#5→#26→…→#11→#19; #15→#13→#10), so the
+        // context-free order floats #5 and #15 to the front. The graph form follows
+        // the transitive edges and produces the single true chain.
+        let queue_bodies: &[(u64, &str)] = &[
+            (5, "## Blocked by\n- #26\n"),
+            (7, "## Blocked by\n- #14\n"),
+            (8, "## Blocked by\n- #7\n"),
+            (9, "## Blocked by\n- #8\n"),
+            (10, "## Blocked by\n- #9\n"),
+            (14, "## Blocked by\n- #20\n"),
+            (15, "## Blocked by\n- #13\n"),
+            (16, "## Blocked by\n- #15\n"),
+            (17, "## Blocked by\n- #16\n"),
+            (18, "## Blocked by\n- #17\n"),
+            (19, "## Blocked by\n- #18\n"),
+            (20, "## Blocked by\n- #21\n"),
+            (21, ""),
+        ];
+        // The open issues outside the queue that bridge the chain.
+        let bridge_bodies: &[(u64, &str)] = &[
+            (6, "## Blocked by\n- #12\n"),
+            (11, "## Blocked by\n- #19\n"),
+            (12, "## Blocked by\n- #25\n"),
+            (13, "## Blocked by\n- #10\n"),
+            (22, "## Blocked by\n- #11\n"),
+            (23, "## Blocked by\n- #22\n"),
+            (24, "## Blocked by\n- #23\n"),
+            (25, "## Blocked by\n- #24\n"),
+            (26, "## Blocked by\n- #6\n"),
+        ];
+        let q: Vec<Issue> = queue_bodies.iter().map(|(n, b)| issue(*n, b)).collect();
+        let open: Vec<Issue> = queue_bodies
+            .iter()
+            .chain(bridge_bodies)
+            .map(|(n, b)| issue(*n, b))
+            .collect();
+
+        // Context-free: the severed chain floats #5 and #15.. to the front.
+        assert_eq!(
+            numbers(&sort_queue(q.clone())),
+            vec![5, 15, 16, 17, 18, 19, 21, 20, 14, 7, 8, 9, 10]
+        );
+        // Graph-aware: one clean chain, #21 first and #5 last.
+        assert_eq!(
+            numbers(&sort_queue_in_graph(q, &open)),
+            vec![21, 20, 14, 7, 8, 9, 10, 15, 16, 17, 18, 19, 5]
+        );
     }
 }

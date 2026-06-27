@@ -38,7 +38,7 @@ pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
 pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
-    RunOutcome, RunReport, StopReason, WaitOutcome, WallClock,
+    RunOutcome, RunReport, StopReason, WaitOutcome, WallClock, STOP_BEFORE_LABEL,
 };
 pub use settings::{ClaudeSettings, OpenCodeSettings, Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};

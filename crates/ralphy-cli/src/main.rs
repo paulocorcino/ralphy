@@ -445,7 +445,23 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // number as tie-break — the pending list shown to the user IS the sequence
     // run_queue will work, and a dependency-consistent order lets one run drain
     // a graph whose numbering disagrees with its edges.
-    let queue = ralphy_core::blocked::sort_queue(queue);
+    //
+    // Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
+    // itself open (a partially-labelled chain) still orders the queue: edges are
+    // walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
+    // failure fall back to in-queue-only ordering rather than abort the run. Skip
+    // the extra call when ordering can't matter (0 or 1 issue).
+    let queue = if queue.len() > 1 {
+        match github::list_open_issues(&repo_root) {
+            Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
+            Err(e) => {
+                warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
+                ralphy_core::blocked::sort_queue(queue)
+            }
+        }
+    } else {
+        ralphy_core::blocked::sort_queue(queue)
+    };
 
     // Derive the run title once, before any on-screen line, so it can seed both the
     // console branding header and the Telegram card — the face then matches across
@@ -477,8 +493,26 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         return Ok(());
     }
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
+    // Where the run will halt: the first issue carrying `stop-before` in the sorted
+    // order (0 = none). `--only-issue` overrides the label, so the cut never applies
+    // there. Emitted so the pending bar can mark the boundary up front (the run won't
+    // touch that issue or anything after it). Mirrors the runner's gate in runner.rs.
+    let stop_before = if args.only_issue.is_some() {
+        0
+    } else {
+        queue
+            .iter()
+            .find(|i| i.labels.iter().any(|l| l == ralphy_core::STOP_BEFORE_LABEL))
+            .map(|i| i.number)
+            .unwrap_or(0)
+    };
     // message consumed by the telegram notifier / presenter — keep stable
-    info!(count = queue.len(), order = %order.join(" -> "), "queue built");
+    info!(
+        count = queue.len(),
+        order = %order.join(" -> "),
+        stop_before,
+        "queue built"
+    );
 
     // Start the Telegram notifier worker now that the queue (and thus the title)
     // is known. `try_start_notifier` runs `getMe`; on failure it warns once and

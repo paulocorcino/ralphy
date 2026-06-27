@@ -96,15 +96,20 @@ pub struct QueueState {
     total: u64,
     pending: Vec<u64>,
     completed: u64,
+    /// The first issue carrying `stop-before`: the run halts before it, so the
+    /// pending bar marks the cut. `None` when no queue issue is tagged.
+    stop_before: Option<u64>,
 }
 
 impl QueueState {
-    /// Build from the `queue built` `count` and parsed `order`.
-    pub fn built(count: u64, order: Vec<u64>) -> Self {
+    /// Build from the `queue built` `count`, parsed `order`, and `stop_before`
+    /// boundary (the first `stop-before` issue, or `None`).
+    pub fn built(count: u64, order: Vec<u64>, stop_before: Option<u64>) -> Self {
         QueueState {
             total: count,
             pending: order,
             completed: 0,
+            stop_before,
         }
     }
 
@@ -133,8 +138,20 @@ impl QueueState {
         self.pending.clear();
     }
 
-    /// Render `▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)`. ANSI-free by construction.
+    /// Render `▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)` with emoji on. ANSI-free by
+    /// construction. Thin wrapper over [`bar_label_opts`](Self::bar_label_opts).
     pub fn bar_label(&self) -> String {
+        self.bar_label_opts(RenderOpts {
+            color: false,
+            emoji: true,
+        })
+    }
+
+    /// Render the queue bar, marking where a `stop-before` halts the run: the
+    /// tagged issue is prefixed in the pending list (`… #10 ⛔ stop-before #15 …`),
+    /// so the operator sees up front that nothing from that issue onward will run
+    /// this session. `opts.emoji` picks the glyph; the bar itself is ANSI-free.
+    pub fn bar_label_opts(&self, opts: RenderOpts) -> String {
         let done = self.completed.min(self.total) as usize;
         let left = (self.total.saturating_sub(self.completed)) as usize;
         let filled = "▰".repeat(done);
@@ -142,7 +159,22 @@ impl QueueState {
         let pending = if self.pending.is_empty() {
             String::new()
         } else {
-            let nums: Vec<String> = self.pending.iter().map(|n| format!("#{n}")).collect();
+            let nums: Vec<String> = self
+                .pending
+                .iter()
+                .map(|&n| {
+                    if Some(n) == self.stop_before {
+                        // The cut: this issue (and everything after it) won't run.
+                        if opts.emoji {
+                            format!("⛔ stop-before #{n}")
+                        } else {
+                            format!("|stop-before #{n}|")
+                        }
+                    } else {
+                        format!("#{n}")
+                    }
+                })
+                .collect();
             format!(" (pending {})", nums.join(" "))
         };
         format!("{filled}{empty} {}/{}{pending}", self.completed, self.total)
@@ -901,13 +933,17 @@ impl Presenter {
     /// guarded behind `self.opts.color`, so `--verbose`/non-TTY draw nothing.
     fn drive(&self, s: &mut LiveState, event: &RunEvent) -> LineExtra {
         match event {
-            RunEvent::QueueBuilt { count, order } => {
-                s.queue = Some(QueueState::built(*count, order.clone()));
+            RunEvent::QueueBuilt {
+                count,
+                order,
+                stop_before,
+            } => {
+                s.queue = Some(QueueState::built(*count, order.clone(), *stop_before));
                 if self.opts.color {
                     let bar = self.multi.add(ProgressBar::new_spinner());
                     bar.set_style(ProgressStyle::with_template("{msg}").expect("static template"));
                     if let Some(q) = s.queue.as_ref() {
-                        bar.set_message(q.bar_label());
+                        bar.set_message(q.bar_label_opts(self.opts));
                     }
                     s.queue_bar = Some(bar);
                 }
@@ -1055,7 +1091,7 @@ impl Presenter {
         if let Some(bar) = s.queue_bar.as_ref() {
             let msg = match (&s.sleep, &s.queue) {
                 (Some(reset), _) => sleep_label(reset, self.opts),
-                (None, Some(q)) => q.bar_label(),
+                (None, Some(q)) => q.bar_label_opts(self.opts),
                 (None, None) => return,
             };
             bar.set_message(msg);
@@ -1595,7 +1631,7 @@ mod tests {
     fn queue_state_advances_through_all_terminal_outcomes_to_n_over_n() {
         // A queue of five issues, each leaving via a distinct terminal transition:
         // done, non-green, blocked, stop-before, and a superseded infeasible plan.
-        let mut q = QueueState::built(5, vec![10, 11, 12, 13, 14]);
+        let mut q = QueueState::built(5, vec![10, 11, 12, 13, 14], None);
         assert_eq!(q.bar_label(), "▱▱▱▱▱ 0/5 (pending #10 #11 #12 #13 #14)");
 
         // done
@@ -1627,12 +1663,44 @@ mod tests {
     fn queue_state_finish_flushes_trailing_issue_to_n_over_n() {
         // A trailing infeasible issue with no following `issue started`: only the
         // end-of-run `finish` flushes the bar to N/N.
-        let mut q = QueueState::built(3, vec![1, 2, 3]);
+        let mut q = QueueState::built(3, vec![1, 2, 3], None);
         q.advance(1);
         q.advance(2);
         assert_eq!(q.bar_label(), "▰▰▱ 2/3 (pending #3)");
         q.finish();
         assert_eq!(q.bar_label(), "▰▰▰ 3/3");
+    }
+
+    #[test]
+    fn queue_state_marks_the_stop_before_cut_in_the_pending_list() {
+        // The bioledger order: the run works #21..#10, then halts before #15.
+        let q = QueueState::built(
+            13,
+            vec![21, 20, 14, 7, 8, 9, 10, 15, 16, 17, 18, 19, 5],
+            Some(15),
+        );
+        let emoji = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        assert_eq!(
+            q.bar_label_opts(emoji),
+            "▱▱▱▱▱▱▱▱▱▱▱▱▱ 0/13 \
+             (pending #21 #20 #14 #7 #8 #9 #10 ⛔ stop-before #15 #16 #17 #18 #19 #5)"
+        );
+        // ASCII fallback for a no-emoji terminal: same cut, glyph-free marker.
+        let ascii = RenderOpts {
+            color: false,
+            emoji: false,
+        };
+        assert!(
+            q.bar_label_opts(ascii).contains("#10 |stop-before #15| #16"),
+            "ascii marker brackets the boundary issue: {}",
+            q.bar_label_opts(ascii)
+        );
+        // No `stop_before` → no marker, unchanged rendering.
+        let plain = QueueState::built(2, vec![1, 2], None);
+        assert_eq!(plain.bar_label(), "▱▱ 0/2 (pending #1 #2)");
     }
 
     #[test]
@@ -1706,7 +1774,7 @@ mod tests {
 
     #[test]
     fn bar_label_no_colour_emits_no_ansi() {
-        let mut q = QueueState::built(6, vec![1, 2, 3, 4, 5, 6]);
+        let mut q = QueueState::built(6, vec![1, 2, 3, 4, 5, 6], None);
         q.advance(1);
         q.advance(2);
         q.advance(3);

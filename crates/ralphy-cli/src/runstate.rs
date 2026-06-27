@@ -81,8 +81,13 @@ impl UsageLite {
 /// event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunEvent {
-    /// The queue was built: its size and the issue numbers in order.
-    QueueBuilt { count: u64, order: Vec<u64> },
+    /// The queue was built: its size, the issue numbers in order, and the first
+    /// issue carrying `stop-before` (where the run will halt), if any.
+    QueueBuilt {
+        count: u64,
+        order: Vec<u64>,
+        stop_before: Option<u64>,
+    },
     /// Work began on an issue (number + title).
     IssueStarted { number: u64, title: String },
     /// The planning phase started for the active issue (adapter event). Carries
@@ -426,6 +431,8 @@ pub struct EventFields {
     pub count: Option<u64>,
     pub budget_min: Option<u64>,
     pub order: Option<String>,
+    /// The first `stop-before` issue number on a `queue built` event (0 = none).
+    pub stop_before: Option<u64>,
     pub outcome: Option<String>,
     pub reset: Option<String>,
     pub target_epoch: Option<i64>,
@@ -453,6 +460,7 @@ impl Default for EventFields {
             count: None,
             budget_min: None,
             order: None,
+            stop_before: None,
             outcome: None,
             reset: None,
             target_epoch: None,
@@ -474,6 +482,7 @@ impl Visit for EventFields {
             "open_steps" => self.open_steps = Some(value),
             "count" => self.count = Some(value),
             "budget_min" => self.budget_min = Some(value),
+            "stop_before" => self.stop_before = Some(value),
             "tokens" => self.tokens = Some(value),
             "up" => self.up = Some(value),
             "cr" => self.cr = Some(value),
@@ -570,6 +579,8 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         "queue built" => Some(RunEvent::QueueBuilt {
             count: fields.count.unwrap_or(0),
             order: parse_order(fields.order.as_deref()),
+            // 0 is the "no stop-before in this queue" sentinel (issue numbers are ≥1).
+            stop_before: fields.stop_before.filter(|&n| n != 0),
         }),
         "issue started" => Some(RunEvent::IssueStarted {
             number,
@@ -670,6 +681,7 @@ mod tests {
             RunEvent::QueueBuilt {
                 count: 2,
                 order: vec![1, 2],
+                stop_before: None,
             },
             RunEvent::IssueStarted {
                 number: 1,
@@ -877,11 +889,13 @@ mod tests {
                 message: "queue built".into(),
                 count: Some(3),
                 order: Some("#1 -> #2 -> #3".into()),
+                stop_before: Some(2),
                 ..Default::default()
             }),
             Some(RunEvent::QueueBuilt {
                 count: 3,
-                order: vec![1, 2, 3]
+                order: vec![1, 2, 3],
+                stop_before: Some(2),
             })
         );
         assert_eq!(
