@@ -8,6 +8,9 @@ durable.
 ## Context on disk (in this repo)
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
 - `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth.
+- `.ralphy/verify-failure.md` — present ONLY when the runner's verify gate failed
+  on previously committed work. When it exists it is your TOP priority — see the
+  repair section below before doing anything else.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
   depends on: environment traps, working command sequences, residue. Treat them
   as leads from predecessors, not truths — verify before relying on one.
@@ -19,6 +22,22 @@ durable.
   service), grep this folder first; ignore `knowledge/raw/` (archived input).
   Same caveat: leads, not truths.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
+
+## If `.ralphy/verify-failure.md` is present (a failed verify gate)
+A previous session emitted `RALPHY_DONE_EXIT`, but the runner re-ran the plan's
+`## Verify` commands over the committed code and the gate did NOT pass. The repo
+is handed back to you to REPAIR — this takes precedence over everything below:
+- Read `.ralphy/verify-failure.md` first. It names the failing command(s) and
+  shows the output tail.
+- Reproduce the failure by running that EXACT command yourself, then fix the ROOT
+  cause and commit the fix (Conventional Commits, reference the issue).
+- Do NOT make the gate pass by weakening, deleting, or skipping the verify
+  command, or by editing the plan's `## Verify` section — the runner re-runs the
+  SAME commands and the gate is the authority. Gaming it only wastes the attempt.
+- The plan's steps are already `- [x]`; you need not redo them. When the failing
+  command would now pass, emit `RALPHY_DONE_EXIT` again so the runner re-checks
+  the gate. The runner gives you a bounded number of repair attempts before it
+  stops and hands the branch to a human, so spend each one on the real cause.
 
 ## Do this
 1. Read `.ralphy/plan.md`, `.ralphy/handoffs.md` (when present), AND

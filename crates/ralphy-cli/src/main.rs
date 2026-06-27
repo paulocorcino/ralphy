@@ -705,9 +705,6 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         },
         StopReason::StopBefore { number } => ui::PanelStop::StopBefore { number },
         StopReason::Limit { number, reset } => ui::PanelStop::Limit { number, reset },
-        StopReason::VerifyFailed { number, summary } => {
-            ui::PanelStop::VerifyFailed { number, summary }
-        }
     });
 
     let panel_mode = match branch_mode {

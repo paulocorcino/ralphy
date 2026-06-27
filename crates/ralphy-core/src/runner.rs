@@ -408,11 +408,6 @@ pub enum StopReason {
     /// The agent hit a usage/rate limit; includes the parsed reset time when
     /// present in the transcript.
     Limit { number: u64, reset: Option<String> },
-    /// The runner-enforced verify gate failed: the executor reported `Done` but
-    /// the runner re-ran the plan's `## Verify` commands over the committed state
-    /// and one did not pass (ADR-0011). The issue stays open and the branch is
-    /// handed back. `summary` is a one-line digest of what failed.
-    VerifyFailed { number: u64, summary: String },
 }
 
 /// The result of working a queue: the branch the commits landed on, where the
@@ -525,8 +520,43 @@ fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyP
     }
 }
 
-/// A one-line digest of a failed gate for the `StopReason::VerifyFailed` summary:
-/// the failing command and why it failed (exit code or timeout).
+/// How many times a failed verify gate is handed back to the agent to repair
+/// before the runner gives up and stops the run (ADR-0011 amendment). The gate
+/// stays the authority across every attempt — a repair earns the close only by
+/// making the runner *see* the same commands pass; the budget just bounds how
+/// long the agent gets to react before the branch is handed back for a human.
+const VERIFY_MAX_REPAIRS: u32 = 2;
+
+/// The scratch file the runner drops in the workspace to hand a failed gate back
+/// to the executor (read by the exec charter's repair clause). Vendor-neutral —
+/// the runner writes it, any adapter's prompt reads it. Cleared once the gate
+/// goes green so it never bleeds into a later run on the same worktree.
+const VERIFY_FAILURE_FILE: &str = "verify-failure.md";
+
+/// Write the repair brief for a failed gate so the next `execute()` can read why
+/// it failed and fix the root cause. Best-effort: a write failure just means the
+/// agent retries blind, which is strictly no worse than not repairing at all.
+fn write_verify_failure(ws: &Workspace, stamp: &str, report: &verify::VerifyReport) {
+    let path = ws.ralphy_dir().join(VERIFY_FAILURE_FILE);
+    if let Err(e) = std::fs::write(&path, verify::repair_brief(stamp, report)) {
+        warn!(error = %e, "writing the verify-failure repair brief failed");
+    }
+}
+
+/// Remove the repair brief. Called when the gate passes and at each issue's start
+/// so the file only ever reflects the current run's gate state. Absent file is a
+/// no-op.
+fn clear_verify_failure(ws: &Workspace) {
+    let path = ws.ralphy_dir().join(VERIFY_FAILURE_FILE);
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            warn!(error = %e, "removing the stale verify-failure brief failed");
+        }
+    }
+}
+
+/// A one-line digest of a failed gate for the skip log/artifact: the failing
+/// command and why it failed (exit code or timeout).
 fn verify_failure_summary(report: &verify::VerifyReport) -> String {
     match report.commands.iter().find(|c| !c.passed()) {
         Some(c) if c.timed_out => format!("`{}` timed out", c.argv.join(" ")),
@@ -885,6 +915,11 @@ pub fn run_queue(
         // two consecutive limit outcomes that commit nothing; any commit resets
         // the streak. The cap is checked *before* the next wait so a stalled
         // issue is abandoned without first burning another reset window.
+        // Start each issue with no repair brief on disk: the gate only writes one
+        // when *this* run's verify fails, so a brief left by a prior run (stopped
+        // on a red gate, then resumed) never silently steers the first execute.
+        clear_verify_failure(&ws);
+
         let mut no_commit_streak = 0u32;
         let mut deadline_cut = false;
         let mut exec_usage = Usage::default();
@@ -960,53 +995,101 @@ pub fn run_queue(
             // Runner-enforced verify gate (ADR-0011): before closing on the
             // agent's self-reported `Done`, re-run the plan's `## Verify`
             // commands over the committed state. Only a pass proceeds to the
-            // close path; a failure leaves the issue open, posts the artifact,
-            // and stops the run with the branch handed back. `## Verify: none`
-            // opts out; an absent section falls back to settings, then to a
-            // loud warn-and-close.
+            // close path. On a failure the runner no longer stops outright — it
+            // hands the failing commands back to the agent (up to
+            // `VERIFY_MAX_REPAIRS` times) and re-runs the SAME gate after each
+            // attempt. The gate stays the authority: a repair earns the close
+            // only by making the runner *see* the commands pass, never by a
+            // fresh self-report. Only when the repair budget is exhausted does
+            // the run stop with the branch handed back. `## Verify: none` opts
+            // out; an absent section falls back to settings, then to a loud
+            // warn-and-close.
             let plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
-            match resolve_verify(&plan_md, &cfg.verify_fallback) {
+            // Tokens the agent spends on repairs, accounted as their own phase so
+            // the initial execute line stays truthful and the repair cost is never
+            // hidden (ADR-0008). Folded into the run totals below either way.
+            let mut repair_usage = Usage::default();
+            // Set when a repair attempt itself hits a usage limit: that is the
+            // run's limit, not a verify failure, so it stops with the reset rather
+            // than burning the rest of the repair budget on an agent that cannot
+            // work. `None` while the gate is still being worked.
+            let mut repair_limit: Option<Outcome> = None;
+            // `None` once the gate is green (proceed to close); `Some(summary)`
+            // when the repair budget is spent (stop, branch handed back).
+            let gate_failure: Option<String> = match resolve_verify(&plan_md, &cfg.verify_fallback)
+            {
                 VerifyPlan::Run(commands) => {
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(
-                        number = issue.number,
-                        commands = commands.len(),
-                        "verify gate — running"
-                    );
-                    let report = verify::run(&commands, repo, cfg.verify_timeout);
-                    // Honesty artifact: every command + its exit code (pass or
-                    // fail), with the failing tail on a failure. Best-effort — a
-                    // comment failure must not crash a run that otherwise passed.
-                    if let Err(e) =
-                        tracker.comment(issue.number, &verify::comment(&cfg.stamp, &report))
-                    {
-                        warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
-                    }
-                    if !report.passed {
-                        let summary = verify_failure_summary(&report);
+                    let mut attempt = 0u32;
+                    loop {
                         // consumed by the telegram notifier / presenter — keep stable
                         info!(
                             number = issue.number,
-                            %summary,
-                            "verify gate failed — issue not closed"
+                            commands = commands.len(),
+                            "verify gate — running"
                         );
-                        let number = issue.number;
-                        worked.push(IssueResult {
-                            number,
-                            outcome: None,
-                            closed: false,
-                            blocked_by: Vec::new(),
-                        });
-                        stop = Some(StopReason::VerifyFailed { number, summary });
-                        break;
+                        let report = verify::run(&commands, repo, cfg.verify_timeout);
+                        // Honesty artifact: every command + its exit code (pass or
+                        // fail), with the failing tail on a failure. Best-effort — a
+                        // comment failure must not crash a run that otherwise passed.
+                        if let Err(e) =
+                            tracker.comment(issue.number, &verify::comment(&cfg.stamp, &report))
+                        {
+                            warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+                        }
+                        if report.passed {
+                            info!(number = issue.number, "verify gate passed");
+                            clear_verify_failure(&ws);
+                            break None;
+                        }
+
+                        let summary = verify_failure_summary(&report);
+                        if attempt >= VERIFY_MAX_REPAIRS {
+                            // consumed by the telegram notifier / presenter — keep stable
+                            info!(
+                                number = issue.number,
+                                %summary,
+                                attempts = attempt,
+                                "verify gate failed — issue not closed"
+                            );
+                            break Some(summary);
+                        }
+
+                        attempt += 1;
+                        info!(
+                            number = issue.number,
+                            %summary,
+                            attempt,
+                            max = VERIFY_MAX_REPAIRS,
+                            "verify gate failed — handing back to the agent to repair"
+                        );
+                        // Hand the failure to the executor through the workspace
+                        // (the same vendor-neutral channel as plan.md), then re-run
+                        // execute() against the unchanged plan. The repair runs
+                        // within the issue's own time budget, like every execute.
+                        write_verify_failure(&ws, &cfg.stamp, &report);
+                        let Execution {
+                            outcome: repair_outcome,
+                            usage,
+                        } = agent.execute(&plan, &ws)?;
+                        repair_usage.add_tokens(&usage);
+                        // A usage limit mid-repair stops the run on the limit; we do
+                        // not re-verify (the agent never got to fix anything) and do
+                        // not spend another attempt.
+                        if let Outcome::Limit(_) = repair_outcome {
+                            repair_limit = Some(repair_outcome);
+                            break Some(summary);
+                        }
+                        // Any other outcome (Done, Blocked, …) loops back to re-run
+                        // the gate: the deterministic commands — not the agent's
+                        // word — decide whether the repair earned the close.
                     }
-                    info!(number = issue.number, "verify gate passed");
                 }
                 VerifyPlan::OptedOut => {
                     info!(
                         number = issue.number,
                         "verify gate skipped — plan declared `## Verify: none`"
                     );
+                    None
                 }
                 VerifyPlan::NoGate => {
                     warn!(
@@ -1014,7 +1097,73 @@ pub fn run_queue(
                         "issue closed without a verify gate — no `## Verify` in the plan \
                          and no settings.json verify.command resolved"
                     );
+                    None
                 }
+            };
+
+            // Account the repair phase before branching on the gate result, so the
+            // run totals and the per-issue ledger are honest whether the gate went
+            // green or the budget ran out (ADR-0008). One `repair` line per issue,
+            // regardless of how many attempts ran. Best-effort.
+            if repair_usage.total() > 0 {
+                let repair_rec = LedgerRecord {
+                    project: project.clone(),
+                    actor_email: actor_email.clone(),
+                    actor_name: actor_name.clone(),
+                    ralphy_version: env!("CARGO_PKG_VERSION").into(),
+                    issue: issue.number,
+                    phase: "repair".into(),
+                    agent: agent.name().into(),
+                    model: repair_usage
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "unknown".into()),
+                    outcome: if gate_failure.is_none() {
+                        "done"
+                    } else {
+                        "verify-failed"
+                    }
+                    .into(),
+                    tokens: repair_usage.clone(),
+                    ts: chrono::Utc::now().to_rfc3339(),
+                };
+                if let Err(e) = ledger::append(&repair_rec) {
+                    warn!(number = issue.number, error = %e, "writing repair usage ledger line failed");
+                }
+                run_usage.add_tokens(&repair_usage);
+                accumulate_by_model(&mut run_usage_by_model, &repair_usage);
+            }
+
+            if let Some(summary) = gate_failure {
+                let number = issue.number;
+                // A repair that hit a usage limit is the *run's* limit, not this
+                // issue's fault: there are no tokens left to work the rest of the
+                // queue, so stop on the reset (the same global stance the execute
+                // path already takes on a limit).
+                if let Some(Outcome::Limit(reset)) = repair_limit {
+                    worked.push(IssueResult {
+                        number,
+                        outcome: Some(Outcome::Limit(reset.clone())),
+                        closed: false,
+                        blocked_by: Vec::new(),
+                    });
+                    stop = Some(StopReason::Limit { number, reset });
+                    break;
+                }
+                // A verify failure no longer halts the queue: the repair budget is
+                // spent, so leave THIS issue open (its commits stay on the branch
+                // for a human to pick up — see the artifact comment) and march on
+                // to the next issue. The issue is reported skipped-on-verify so the
+                // miss is visible, never a silent close.
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(number, %summary, "verify gate failed — skipping issue");
+                worked.push(IssueResult {
+                    number,
+                    outcome: None,
+                    closed: false,
+                    blocked_by: Vec::new(),
+                });
+                continue;
             }
 
             // Close the cycle: a green queue issue is closed so it leaves the
@@ -1024,9 +1173,9 @@ pub fn run_queue(
             // Record the closed issue before writing evidence so the result is
             // always present in the report even if write_evidence errors out.
             // consumed by the telegram notifier / presenter — keep stable. The
-            // `tokens` field carries the issue's total (plan + execute) so the live
-            // UI can show inline per-issue tokens (ADR-0008 D11).
-            let issue_total = plan.usage.total() + exec_usage.total();
+            // `tokens` field carries the issue's total (plan + execute + repair)
+            // so the live UI can show inline per-issue tokens (ADR-0008 D11).
+            let issue_total = plan.usage.total() + exec_usage.total() + repair_usage.total();
             // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
             // carry the *execution* phase breakdown so the live UI can combine it
             // with the planning usage it stashed at `plan written` (ADR-0008 D11).

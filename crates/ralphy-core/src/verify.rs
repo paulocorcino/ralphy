@@ -319,6 +319,52 @@ pub fn comment(stamp: &str, report: &VerifyReport) -> String {
     out
 }
 
+/// Render the repair brief the runner drops in the workspace after a failed gate
+/// (ADR-0011 amendment). The executor's charter reads it to fix the root cause
+/// and re-signal done, after which the runner re-runs the SAME commands. It names
+/// the failing command(s) and shows the output tail, and is blunt that the gate —
+/// not weakening the commands — is the only way through.
+pub fn repair_brief(stamp: &str, report: &VerifyReport) -> String {
+    let mut out = format!("# Verify gate failed — repair required (Ralphy run {stamp})\n\n");
+    out.push_str(
+        "A previous session emitted `RALPHY_DONE_EXIT`, but the runner re-ran the \
+         plan's `## Verify` commands over your committed work and the gate did NOT \
+         pass. The repo is handed back to you to REPAIR.\n\n\
+         Fix the ROOT CAUSE of the failure below, commit the fix, then emit \
+         `RALPHY_DONE_EXIT` again so the runner re-checks the gate. Do NOT make the \
+         gate pass by weakening, deleting, or skipping a verify command or by \
+         editing the plan's `## Verify` section — the runner re-runs the SAME \
+         commands and the gate is the authority.\n\n",
+    );
+
+    out.push_str("Gate commands (✗ marks where it failed):\n\n```\n");
+    for cmd in &report.commands {
+        let line = cmd.argv.join(" ");
+        if cmd.passed() {
+            out.push_str(&format!("\u{2713} {line}    exit 0\n"));
+        } else if cmd.timed_out {
+            out.push_str(&format!("\u{2717} {line}    timed out\n"));
+        } else {
+            let code = cmd
+                .exit_code
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "killed".into());
+            out.push_str(&format!("\u{2717} {line}    exit {code}\n"));
+        }
+    }
+    out.push_str("```\n");
+
+    if let Some(last) = report.commands.last() {
+        if !last.output_tail.is_empty() {
+            out.push_str("\nOutput tail of the failing command:\n\n```\n");
+            out.push_str(&last.output_tail);
+            out.push_str("\n```\n");
+        }
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,5 +532,32 @@ mod tests {
         assert!(c.contains("\u{2713} cargo fmt"));
         assert!(c.contains("\u{2717} cargo test    exit 101"));
         assert!(c.contains("panicked at assertion"), "failing tail shown");
+    }
+
+    #[test]
+    fn repair_brief_names_failure_and_forbids_weakening() {
+        let report = VerifyReport {
+            commands: vec![CommandOutcome {
+                argv: vec!["pnpm".into(), "install".into()],
+                exit_code: Some(1),
+                timed_out: false,
+                output_tail: "ERR_PNPM_LOCKFILE_MISMATCH".into(),
+            }],
+            passed: false,
+        };
+        let b = repair_brief("stamp-9", &report);
+        assert!(b.contains("repair required"));
+        assert!(b.contains("\u{2717} pnpm install    exit 1"));
+        assert!(
+            b.contains("ERR_PNPM_LOCKFILE_MISMATCH"),
+            "failing tail shown"
+        );
+        // The gate is the authority — the brief must forbid gaming it.
+        assert!(b.contains("RALPHY_DONE_EXIT"));
+        assert!(b.to_lowercase().contains("root cause"));
+        assert!(
+            b.contains("SAME"),
+            "must say the runner re-runs the same commands"
+        );
     }
 }

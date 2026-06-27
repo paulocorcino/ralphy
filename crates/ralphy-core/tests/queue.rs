@@ -49,6 +49,9 @@ struct ScriptedAgent {
     /// If set, appended verbatim to the plan body (extra sections such as
     /// `## Feasible`, `## Handoff`, `## Plan friction`).
     extra: Option<String>,
+    /// Per-issue plan extras that override `extra` for the matching issue number.
+    /// Lets one queue mix, say, a failing and a passing `## Verify` gate.
+    extra_by_issue: Vec<(u64, String)>,
 }
 
 impl ScriptedAgent {
@@ -69,6 +72,7 @@ impl ScriptedAgent {
             steps: 1,
             ledger: None,
             extra: None,
+            extra_by_issue: Vec::new(),
         }
     }
 
@@ -80,6 +84,14 @@ impl ScriptedAgent {
     /// Append extra sections verbatim to every plan this agent writes.
     fn with_plan_extra(mut self, extra: impl Into<String>) -> Self {
         self.extra = Some(extra.into());
+        self
+    }
+
+    /// Append an extra section to ONLY the plan for `number`, overriding
+    /// `with_plan_extra` for that issue. Lets a single queue carry both a failing
+    /// and a passing verify gate.
+    fn with_plan_extra_for(mut self, number: u64, extra: impl Into<String>) -> Self {
+        self.extra_by_issue.push((number, extra.into()));
         self
     }
 
@@ -117,11 +129,13 @@ impl Agent for ScriptedAgent {
             .as_deref()
             .map(|l| format!("\n## Acceptance ledger\n\n{l}"))
             .unwrap_or_default();
-        let extra_section = self
-            .extra
-            .as_deref()
-            .map(|e| format!("\n{e}\n"))
-            .unwrap_or_default();
+        let extra = self
+            .extra_by_issue
+            .iter()
+            .find(|(n, _)| *n == issue.number)
+            .map(|(_, e)| e.as_str())
+            .or(self.extra.as_deref());
+        let extra_section = extra.map(|e| format!("\n{e}\n")).unwrap_or_default();
         let body = format!(
             "# Plan for #{}\n\n## Steps\n{}{}{}",
             issue.number,
@@ -1807,15 +1821,18 @@ fn verify_gate_passes_and_issue_closes() {
 }
 
 #[test]
-fn verify_gate_fails_stops_run_and_hands_back_branch() {
-    // A plan whose `## Verify` command fails: the issue does NOT close, the run
-    // stops with StopReason::VerifyFailed, the branch is handed back with the
-    // work on it, and the honesty artifact records the failure.
+fn verify_gate_fails_skips_issue_and_continues_queue() {
+    // A plan whose `## Verify` command always fails: the runner hands the failure
+    // back to the agent up to VERIFY_MAX_REPAIRS times, re-running the SAME gate
+    // after each attempt. When the budget is spent the issue is left OPEN (not
+    // closed) but the run does NOT stop — it moves on to the next issue. The
+    // honesty artifact records the failure for the skipped issue.
     let repo = init_repo("verify-fail");
     let queue = vec![issue(1), issue(2)];
-    let extra = format!("## Verify\n\n{}\n", verify_fail_line());
-    // #1 executes Done but the gate fails; #2 must never be touched.
-    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(extra);
+    // #1's gate fails forever; #2 has a passing gate and must still get its turn.
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
+        .with_plan_extra_for(1, format!("## Verify\n\n{}\n", verify_fail_line()))
+        .with_plan_extra_for(2, format!("## Verify\n\n{}\n", verify_ok_line()));
     let tracker = RecordingTracker::default();
 
     let report = run_queue(
@@ -1827,39 +1844,104 @@ fn verify_gate_fails_stops_run_and_hands_back_branch() {
     )
     .unwrap();
 
-    // The gate-failed issue is not closed; #2 never ran.
+    // A verify failure no longer stops the run — the whole queue is worked.
     assert!(
-        tracker.closes.borrow().is_empty(),
-        "a failed gate never closes the issue"
+        report.stop.is_none(),
+        "a failed gate skips the issue but does not stop the run"
     );
-    assert_eq!(*agent.executed.borrow(), vec![1], "#2 never executed");
 
-    match report.stop {
-        Some(StopReason::VerifyFailed { number, summary }) => {
-            assert_eq!(number, 1);
-            assert!(
-                summary.contains("exited") || summary.contains("timed out"),
-                "summary names the failure: {summary}"
-            );
-        }
-        other => panic!("expected VerifyFailed stop, got {other:?}"),
-    }
+    // #1 ran once + VERIFY_MAX_REPAIRS (2) repair attempts; then #2 ran once.
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![1, 1, 1, 2],
+        "#1 repaired twice then skipped; #2 still executed"
+    );
 
-    // Branch handed back with the work on it (New mode, stopped run).
-    assert_eq!(current_branch(&repo), report.branch);
+    // #1 (gate red) is left open; #2 (gate green) is closed — the queue advanced.
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![2], "only the passing issue closed");
 
-    // The honesty artifact records the failure.
+    // The honesty artifact records #1's failure.
     let comments = tracker.comments.borrow();
     assert!(
         comments
             .iter()
             .any(|(n, b)| *n == 1 && b.contains("Verify gate FAILED")),
-        "verify artifact comment posted on fail: {comments:?}"
+        "verify artifact comment posted on the skipped issue: {comments:?}"
     );
 
-    // The worked entry marks the issue not-closed.
+    // The worked entry marks #1 a skip (not closed, no outcome); #2 closed.
     let r1 = report.worked.iter().find(|r| r.number == 1).unwrap();
     assert!(!r1.closed, "gate-failed issue is not closed");
+    assert!(r1.outcome.is_none(), "a verify skip carries no outcome");
+    let r2 = report.worked.iter().find(|r| r.number == 2).unwrap();
+    assert!(r2.closed, "the passing issue closed");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+/// A `## Verify` line that fails until the agent's second execute lands, then
+/// passes — it keys off the marker file `ScriptedAgent` commits on its 1st repair
+/// (`issue-1-1.txt`, where the suffix is the prior execute count). This lets a
+/// repair attempt actually flip the gate green.
+fn verify_pass_after_repair_line() -> &'static str {
+    if cfg!(windows) {
+        "cmd /c \"if exist issue-1-1.txt (exit 0) else (exit 3)\""
+    } else {
+        "sh -c \"test -f issue-1-1.txt\""
+    }
+}
+
+#[test]
+fn verify_gate_repairs_then_closes() {
+    // The gate fails on the first run, the runner hands it back, the agent's
+    // repair execute lands a commit that flips the gate green, and the issue
+    // closes — without the run ever stopping. This is the repair loop's reason to
+    // exist: a fixable verify failure no longer hands the branch to a human.
+    let repo = init_repo("verify-repair");
+    let queue = vec![issue(1)];
+    let extra = format!("## Verify\n\n{}\n", verify_pass_after_repair_line());
+    // Empty script → every execute defaults to Done + a commit. The 1st execute
+    // commits issue-1-0.txt (gate still red), the 1st repair commits issue-1-1.txt
+    // (gate goes green).
+    let agent = ScriptedAgent::new(vec![]).with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-verify-repair", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(
+        report.stop.is_none(),
+        "a repaired gate does not stop the run"
+    );
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![1, 1],
+        "#1 ran once + one repair that fixed the gate"
+    );
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![1], "issue closed after the repair went green");
+
+    // Both the failing and the passing gate runs left honesty artifacts.
+    let comments = tracker.comments.borrow();
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("Verify gate FAILED")),
+        "the first (failed) gate run is recorded"
+    );
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("All verify commands passed")),
+        "the repaired (passing) gate run is recorded"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -1893,8 +1975,10 @@ fn verify_none_opts_out_and_skips_settings_fallback() {
 
 #[test]
 fn verify_falls_back_to_settings_when_plan_section_absent() {
-    // No `## Verify` in the plan → the runner falls back to the per-repo
-    // settings command. Here that fallback fails, stopping the run.
+    // No `## Verify` in the plan → the runner falls back to the per-repo settings
+    // command. Here that fallback fails on every attempt, so after the repair
+    // budget the issue is skipped (left open) and — as the only issue — the run
+    // ends cleanly without stopping.
     let repo = init_repo("verify-fallback");
     let queue = vec![issue(1)];
     // No `## Verify` section in the plan at all.
@@ -1907,16 +1991,21 @@ fn verify_falls_back_to_settings_when_plan_section_absent() {
     let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
 
     assert!(
-        matches!(
-            report.stop,
-            Some(StopReason::VerifyFailed { number: 1, .. })
-        ),
-        "settings fallback gate ran and failed: {:?}",
+        report.stop.is_none(),
+        "a failed fallback gate skips the issue, it does not stop the run: {:?}",
         report.stop
     );
     assert!(
         tracker.closes.borrow().is_empty(),
         "fallback gate failure leaves the issue open"
+    );
+    // The fallback gate actually ran (and failed) — its artifact is posted.
+    let comments = tracker.comments.borrow();
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("Verify gate FAILED")),
+        "fallback gate failure posts the verify artifact: {comments:?}"
     );
 
     fs::remove_dir_all(&repo).ok();

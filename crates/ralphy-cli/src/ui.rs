@@ -83,6 +83,7 @@ fn skip_label(kind: SkipKind) -> &'static str {
     match kind {
         SkipKind::BlockedBy => "skipped (blocked)",
         SkipKind::StopBefore => "skipped (stop-before)",
+        SkipKind::VerifyFailed => "skipped (verify failed)",
     }
 }
 
@@ -229,7 +230,6 @@ pub enum PanelStop {
     NonGreen { number: u64, outcome: String },
     StopBefore { number: u64 },
     Limit { number: u64, reset: Option<String> },
-    VerifyFailed { number: u64, summary: String },
 }
 
 /// Input data for [`render_totals_panel`]. Derived from `QueueReport` in `main.rs`
@@ -476,9 +476,6 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
                 reset: None,
             } => {
                 format!("Stopped: usage limit on #{number}. No parseable reset time; re-run after the limit clears.")
-            }
-            PanelStop::VerifyFailed { number, summary } => {
-                format!("Stopped: verify gate failed on #{number} ({summary}). Issue left open, branch handed back; see the issue's `## Verify` comment.")
             }
         };
         lines.push(if opts.color {

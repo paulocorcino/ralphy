@@ -90,10 +90,54 @@ verification is always a visible decision, never a silent hole.
 
 - **Pass** → the existing close path runs unchanged (close-on-green, acceptance
   evidence, handoff, knowledge note).
-- **Fail** → the issue does **not** close. A new `StopReason::VerifyFailed { number,
-  summary }` stops the run and hands back the branch with the issue's work intact —
-  reusing the exact stop-on-first-failure semantics that already exist. No new
-  concept in the flow; one new stop reason.
+- **Fail** → the issue does **not** close. The runner hands the failing commands
+  back to the agent for a bounded number of **repair attempts** (`VERIFY_MAX_REPAIRS`,
+  currently 2; see the amendment below) and re-runs the SAME gate after each. When
+  the repair budget is exhausted the issue is left **open** and the run **moves on
+  to the next issue** — a red gate no longer halts the whole queue.
+
+## Amendment (2026-06-26): bounded repair, then skip-and-continue
+
+The original decision stopped the *entire run* on the first gate failure. Two
+problems in practice: (1) many gate failures are *fixable in place* — a stale
+lockfile, a missing dependency, a trivially broken test — so stopping outright made
+a human step in for something the agent could have closed itself; and (2) halting
+the whole queue for one bad issue starved every later, independent issue of its
+turn. The gate now (1) gives the agent a bounded chance to repair, and (2) on a
+still-red gate, skips that issue and continues the queue instead of stopping.
+
+Mechanics, all runner-side so the **trust model is unchanged**:
+
+- On a failed gate, the runner writes `.ralphy/verify-failure.md` (a vendor-neutral
+  repair brief: the failing command(s), the output tail, and a blunt instruction to
+  fix the *root cause* and never weaken the gate) and re-runs `execute()` against
+  the unchanged plan. The exec charter reads that file as its top priority.
+- After each repair the runner re-runs the **same** `## Verify` commands. A repair
+  earns the close **only** by making the runner *see* the gate pass — it never gets
+  to self-report past a red gate. The deterministic commands stay the authority;
+  this is explicitly *not* the rejected "gate as a shipped skill".
+- The budget is `VERIFY_MAX_REPAIRS = 2` attempts. Repairs run within the issue's
+  existing `--max-minutes-per-issue` budget (no new time knob).
+- **Budget exhausted → skip, not stop.** The issue is left open with its commits on
+  the branch and the failing artifact comment, and the run continues with the next
+  issue. The miss is reported as a `verify failed` **skip** (not a close, not a
+  silent hole) so it is visible in the live card and the final counts — consistent
+  with the no-silent-caps ethos. `StopReason::VerifyFailed` is therefore retired.
+- **The one thing that still stops:** a usage limit *during* a repair. That is a
+  global resource exhaustion, not this issue's fault — there are no tokens left to
+  work the rest of the queue — so it stops on the limit's reset, the same stance
+  the execute path already takes.
+- Repair tokens are accounted as their own `repair` ledger phase (ADR-0008), so the
+  initial `execute` line stays truthful and the repair cost is never hidden.
+- The brief is cleared when the gate goes green and at each issue's start, so it
+  reflects only the current run's gate state — never bleeding into a later run on
+  the same worktree.
+
+**Consequence to weigh:** because the run branch accumulates, a later issue builds
+on top of a skipped issue's (unverified) commits. This matches how the queue already
+accumulates *passing* issues on one branch; the skipped issue's work is not rolled
+back. A human reconciles the branch at merge time, guided by the per-issue verify
+artifacts.
 
 ### The honesty artifact
 

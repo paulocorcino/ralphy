@@ -46,11 +46,13 @@ pub fn ralphy_header(seed: &str) -> String {
     )
 }
 
-/// Why an issue was skipped: a `blocked-by` dependency or a `stop-before` label.
+/// Why an issue was skipped: a `blocked-by` dependency, a `stop-before` label, or
+/// a verify gate that stayed red after the runner's repair attempts (ADR-0011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipKind {
     BlockedBy,
     StopBefore,
+    VerifyFailed,
 }
 
 /// A normalized token-usage breakdown carried on a [`RunEvent`] for the live UI:
@@ -118,7 +120,8 @@ pub enum RunEvent {
     /// An issue finished non-green and stopped the run; `outcome` is the core's
     /// `Outcome` debug string (e.g. `Stuck`, `Blocked`, `Timeout`).
     NonGreen { number: u64, outcome: String },
-    /// An issue was skipped (blocked-by an open issue, or a `stop-before` label).
+    /// An issue was skipped (blocked-by an open issue, a `stop-before` label, or a
+    /// verify gate still red after the repair budget).
     Skipped { number: u64, kind: SkipKind },
     /// The planner judged the issue a bundle (several backlog tasks under one
     /// number): the queue is parked on a human split. Follows the infeasible
@@ -613,6 +616,13 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         "stop-before label — halting run before this issue" => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::StopBefore,
+        }),
+        // The verify gate stayed red after the repair budget: the issue is left
+        // open and the queue marches on (ADR-0011). Surfaced as a skip so the miss
+        // is visible in the live card and the final counts.
+        "verify gate failed — skipping issue" => Some(RunEvent::Skipped {
+            number,
+            kind: SkipKind::VerifyFailed,
         }),
         "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
         // The run entered a usage-limit sleep; the fold carries the reset hint and
