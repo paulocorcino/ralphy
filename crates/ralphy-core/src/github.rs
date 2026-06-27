@@ -269,6 +269,25 @@ fn parse_milestone_number(json: &str) -> Result<u64> {
     Ok(m.number)
 }
 
+/// Create a GitHub repository from the local repo at `repo_root` via
+/// `gh repo create`, wiring `origin` to the new remote and pushing the current
+/// branch. `name` is the new repo's name (the bootstrap derives it from the
+/// directory); `private` selects visibility. Used by `ralphy init`'s bootstrap to
+/// give a freshly `git init`-ed directory the GitHub remote the environment gate
+/// requires. The local repo must already have a commit (see
+/// [`crate::git::initial_commit`]) so `--push` has something to send.
+pub fn create_repo(repo_root: &Path, name: &str, private: bool) -> Result<()> {
+    let visibility = if private { "--private" } else { "--public" };
+    gh_output(&format!("gh repo create {name}"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args([
+            "repo", "create", name, "--source", ".", "--remote", "origin", "--push", visibility,
+        ]);
+        cmd
+    })?;
+    Ok(())
+}
+
 /// Create a GitHub Milestone via `gh api repos/{owner}/{repo}/milestones` (the
 /// `{owner}`/`{repo}` placeholders are resolved by `gh` from the repo dir). Returns
 /// the created milestone's number, which [`create_issue`] links issues to. ADR-0012

@@ -394,8 +394,7 @@ fn seed_questions(report: &DiagnosisReport) -> Vec<Question> {
         },
         Question {
             label: "Language & build".into(),
-            help: "Main language and build/test command for this project. (e.g. cargo, npm)"
-                .into(),
+            help: "Main language and build/test command for this project. (e.g. cargo, npm)".into(),
             default: display_opt(report.language_build.as_deref()),
             clearable: true,
         },
@@ -501,7 +500,10 @@ fn print_captured_config(cfg: &InitConfig) {
         );
     };
     row("Repository type", display_kind(cfg.repo_kind));
-    row("Language & build", display_opt(cfg.language_build.as_deref()));
+    row(
+        "Language & build",
+        display_opt(cfg.language_build.as_deref()),
+    );
     row("Backlog", display_opt(cfg.backlog_location.as_deref()));
     row("Planning docs", display_list(&cfg.milestone_docs));
     row("Skills folder", display_opt(cfg.skills_dir.as_deref()));
@@ -599,7 +601,9 @@ fn render_question(q: &Question, idx: usize, total: usize, color: bool, width: u
         let default = forced(Style::new().green()).apply_to(&q.default);
         let arrow = forced(Style::new().cyan().bold()).apply_to("›");
         let opt = if q.clearable {
-            forced(Style::new().dim()).apply_to(" · optional").to_string()
+            forced(Style::new().dim())
+                .apply_to(" · optional")
+                .to_string()
         } else {
             String::new()
         };
@@ -623,14 +627,23 @@ fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
     }
     let mark = |good: bool| {
         if good {
-            forced(Style::new().green().bold()).apply_to("✓").to_string()
+            forced(Style::new().green().bold())
+                .apply_to("✓")
+                .to_string()
         } else {
             forced(Style::new().red().bold()).apply_to("✗").to_string()
         }
     };
-    let dim = |s: &str| forced(Style::new().dim()).apply_to(s.to_string()).to_string();
+    let dim = |s: &str| {
+        forced(Style::new().dim())
+            .apply_to(s.to_string())
+            .to_string()
+    };
 
-    println!("\n{}", forced(Style::new().cyan().bold()).apply_to("Environment"));
+    println!(
+        "\n{}",
+        forced(Style::new().cyan().bold()).apply_to("Environment")
+    );
     println!("  {} python", mark(f.python));
     println!("  {} gh auth", mark(f.gh_authenticated));
     println!("  {} GitHub remote", mark(f.github_remote));
@@ -640,7 +653,12 @@ fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
         let present = f.agents_present.contains(agent);
         let logged = present && f.agents_logged_in.contains(agent);
         let (glyph, status) = if logged {
-            (forced(Style::new().green().bold()).apply_to("✓").to_string(), "logged in")
+            (
+                forced(Style::new().green().bold())
+                    .apply_to("✓")
+                    .to_string(),
+                "logged in",
+            )
         } else if present {
             (dim("·"), "not logged in")
         } else {
@@ -673,7 +691,10 @@ fn print_note(text: &str) {
 /// glance the same way the gate's checklist does. Plain (`✓ text`) off a TTY.
 fn print_ok(text: &str) {
     if qa_color() {
-        println!("  {} {text}", forced(Style::new().green().bold()).apply_to("✓"));
+        println!(
+            "  {} {text}",
+            forced(Style::new().green().bold()).apply_to("✓")
+        );
     } else {
         println!("  {text}");
     }
@@ -761,7 +782,10 @@ fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
     let width = qa_width();
     let total = questions.len();
     let read_line = |i: usize| -> Result<String> {
-        print!("{}", render_question(&questions[i], i + 1, total, color, width));
+        print!(
+            "{}",
+            render_question(&questions[i], i + 1, total, color, width)
+        );
         std::io::stdout().flush().ok();
         let mut line = String::new();
         std::io::stdin()
@@ -1003,6 +1027,36 @@ pub fn download_decision(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
+/// The bootstrap decision when the target directory is not yet a git repository.
+/// The prompt shows `[Y/n]`, so the recommended default (empty/`y`/`yes`) creates
+/// the repo (`git init` + `gh repo create`); any other answer declines and init
+/// keeps the original "not a git repository" error. Pure, mirrors [`labels_decision`].
+pub fn create_repo_decision(answer: &str) -> bool {
+    matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    )
+}
+
+/// Resolve the repo-visibility answer to whether the new GitHub repo is private.
+/// The prompt shows `[Y/n]`, so the default (empty/`y`/`yes`) is private — the
+/// safer default for a freshly created repo; an explicit `n`/`no` makes it public.
+/// Pure.
+pub fn private_visibility_decision(answer: &str) -> bool {
+    !matches!(answer.trim().to_ascii_lowercase().as_str(), "n" | "no")
+}
+
+/// Derive the GitHub repo name from the (absolute) target directory: its final
+/// path segment, falling back to `repo` when the path has no usable base name
+/// (e.g. a drive/filesystem root). Pure over its input.
+pub fn repo_name_from_path(path: &Path) -> String {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("repo")
+        .to_string()
+}
+
 /// The label-creation decision: empty / `y` / `yes` → proceed (the default is
 /// recommended since stage 7 is idempotent); `n` / anything else → skip.
 pub fn labels_decision(answer: &str) -> bool {
@@ -1150,14 +1204,15 @@ enum CommitDecision {
 }
 
 /// Map (is_clean, answer) to a [`CommitDecision`]. A clean tree never commits; a
-/// dirty tree commits on yes and aborts on anything else (no/empty/unknown), so a
-/// refusal stops init before any branch or scaffold write.
+/// dirty tree commits on the recommended default (empty/yes/y — the prompt shows
+/// `[Y/n]`, so accepting it commits the snapshot) and aborts only on an explicit
+/// decline, which stops init before any branch or scaffold write.
 fn commit_decision(is_clean: bool, answer: &str) -> CommitDecision {
     if is_clean {
         return CommitDecision::NothingToCommit;
     }
     match answer.trim().to_ascii_lowercase().as_str() {
-        "y" | "yes" => CommitDecision::Commit,
+        "" | "y" | "yes" => CommitDecision::Commit,
         _ => CommitDecision::Abort(
             "ralphy init aborted: a snapshot commit is required to isolate init's changes".into(),
         ),
@@ -1203,6 +1258,17 @@ fn decide_issues_path(cfg: &InitConfig) -> IssuesPath {
     } else {
         IssuesPath::Skip
     }
+}
+
+/// The draft decision for the task-drafting step. The prompt shows `[Y/n]`, so the
+/// recommended default (empty/yes/y) drafts a preview — nothing is published, this
+/// is a read-only agent call — and only an explicit decline skips it. Pure, mirrors
+/// [`labels_decision`].
+fn draft_decision(answer: &str) -> bool {
+    matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    )
 }
 
 /// The publish decision for the drafted preview. Default is **No** (`[y/N]`): a
@@ -1454,8 +1520,76 @@ fn init_model_for(agent: Agent) -> Option<&'static str> {
     }
 }
 
+/// Resolve the target to its git toplevel, or — when it is not yet a git
+/// repository — offer to bootstrap one before the environment gate (which assumes
+/// a repo: it probes the `origin` remote). Creating a GitHub repo is only useful
+/// if init can reach GitHub, so this first requires an authenticated `gh` (a hard
+/// error names the fix otherwise); then, on the dev's confirmation, it runs
+/// `git init` + an initial commit + `gh repo create` (visibility asked), wiring
+/// `origin` so the gate's GitHub-remote check passes. A decline keeps the original
+/// "not a git repository" error.
+fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
+    if git::is_repo(target) {
+        return git::resolve_toplevel(target);
+    }
+
+    print_section(
+        "No git repository",
+        Some("This directory isn't a git repository yet."),
+    );
+
+    // Creating a GitHub repo needs an authenticated `gh`; check it up front so the
+    // dev fixes auth before we offer to create anything.
+    if !gh_authenticated() {
+        bail!(
+            "ralphy init: this directory is not a git repository and `gh` is not authenticated, \
+             so a repo can't be created — run `gh auth login`, then re-run `ralphy init` \
+             (or `git init` and add a GitHub remote yourself)"
+        );
+    }
+
+    let answer = ask_yes_no("Create a git repository and a GitHub repo here?", true)?;
+    if !create_repo_decision(&answer) {
+        bail!(
+            "not a git repository: {} (pass --repo <repo>, or re-run and accept repo creation)",
+            target.display()
+        );
+    }
+
+    // Resolve to an absolute path so the repo name comes from the real directory (a
+    // bare `.` has no file name) and the git/gh calls below have a stable cwd. The
+    // dir may not exist yet — create it, then canonicalize.
+    let abs = match std::fs::canonicalize(target) {
+        Ok(p) => p,
+        Err(_) => {
+            std::fs::create_dir_all(target)
+                .with_context(|| format!("creating {}", target.display()))?;
+            std::fs::canonicalize(target)
+                .with_context(|| format!("resolving {}", target.display()))?
+        }
+    };
+    let name = repo_name_from_path(&abs);
+
+    let private =
+        private_visibility_decision(&ask_yes_no("Make the new GitHub repo private?", true)?);
+
+    git::init(&abs)?;
+    git::initial_commit(&abs)?;
+    print_ok("Initialized git repository.");
+
+    let visibility = if private { "private" } else { "public" };
+    with_spinner("Creating the GitHub repository…", || {
+        github::create_repo(&abs, &name, private)
+    })?;
+    print_ok(&format!("Created {visibility} GitHub repo {name}."));
+
+    // Return git's own toplevel (a clean, forward-slash path) rather than the
+    // canonicalized — possibly extended-length — `abs`.
+    git::resolve_toplevel(&abs)
+}
+
 pub fn run(args: &InitArgs) -> Result<()> {
-    let repo = git::resolve_toplevel(&args.repo)?;
+    let repo = resolve_or_bootstrap_repo(&args.repo)?;
 
     // Reuse the run command's branding banner so `init` opens with the same face:
     // the `🦊 Ralphy - vX` header + `📦 project · 🌿 branch · 🔗 url` info line. Seed
@@ -1478,8 +1612,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
     // Run the (subprocess-backed: `gh auth status`, agent `whoami`/login probes)
     // environment checks behind a spinner so the multi-second wait shows life.
     let findings = with_spinner("Analyzing the environment…", || {
-        let agents_present: Vec<Agent> =
-            Agent::ALL.iter().copied().filter(agent_present).collect();
+        let agents_present: Vec<Agent> = Agent::ALL.iter().copied().filter(agent_present).collect();
         let agents_logged_in: Vec<Agent> = agents_present
             .iter()
             .copied()
@@ -1630,7 +1763,10 @@ pub fn run(args: &InitArgs) -> Result<()> {
     // ── stage 5: deterministic scaffold (onto the branch) ───────────────────
     if !state.is_done(Stage::Scaffold) {
         write_scaffold(&repo, &cfg)?;
-        print_section("Project files", Some("Created starter docs for the agent to use:"));
+        print_section(
+            "Project files",
+            Some("Created starter docs for the agent to use:"),
+        );
         print_bullet("docs/agents/issue-tracker.md");
         print_bullet("docs/agents/triage-labels.md");
         print_bullet("docs/agents/domain.md");
@@ -1677,12 +1813,16 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 }
                 Ok(scratch.join(&subtree))
             };
-            let outcome = with_spinner("Installing skills…", || install_skills_step(&skills_dst, fetch))?;
+            let outcome = with_spinner("Installing skills…", || {
+                install_skills_step(&skills_dst, fetch)
+            })?;
             match outcome {
                 Outcome::Installed(n) => print_ok(&format!("Installed {n} skill(s).")),
                 Outcome::Skipped => print_ok("Skills already up to date."),
                 Outcome::Failed(msg) => {
-                    print_note(&format!("warning: skills download failed ({msg}); continuing"));
+                    print_note(&format!(
+                        "warning: skills download failed ({msg}); continuing"
+                    ));
                 }
             }
         }
@@ -1807,12 +1947,19 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 ),
                 IssuesPath::Skip => unreachable!("Skip handled above"),
             };
-            let triage_label = resolve_triage_label(&repo);
-            let draft_path = ws.issues_draft_path();
             print_section(
                 "First tasks",
-                Some("Reading your docs to draft a first set of tasks (nothing is published yet)."),
+                Some("Ralphy can read your docs to draft a first set of tasks (nothing is published yet)."),
             );
+            let answer = ask_yes_no("Draft a first set of tasks from your docs?", true)?;
+            if !draft_decision(&answer) {
+                // Declined — don't run the agent. Leave Stage::Issues unmarked so a
+                // re-run offers drafting again (mirrors a declined publish).
+                print_note("Skipped — no tasks drafted.");
+                return finalize(&repo, &cfg, &findings.agents_logged_in);
+            }
+            let triage_label = resolve_triage_label(&repo);
+            let draft_path = ws.issues_draft_path();
             let req = DraftRequest {
                 mode,
                 source_docs: &source_docs,
@@ -1840,13 +1987,19 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 with_spinner("Publishing issues…", || {
                     publish_draft(&repo, &draft, &mut state, &ws)
                 })?;
-                print_ok(&format!("Published {} issue(s).", state.created_issues.len()));
+                print_ok(&format!(
+                    "Published {} issue(s).",
+                    state.created_issues.len()
+                ));
                 state.mark(Stage::Issues);
                 state.save(&ws)?;
             } else {
                 // A declined publish leaves the draft on disk; do NOT mark Issues
                 // done, so a re-run still offers to publish it (per Decisions).
-                print_note(&format!("Skipped — draft kept at {}.", draft_path.display()));
+                print_note(&format!(
+                    "Skipped — draft kept at {}.",
+                    draft_path.display()
+                ));
             }
         }
     }
@@ -1949,7 +2102,9 @@ fn print_final_report(r: &VerifyReport) {
     }
     let mark = |ok: bool| {
         if ok {
-            forced(Style::new().green().bold()).apply_to("✓").to_string()
+            forced(Style::new().green().bold())
+                .apply_to("✓")
+                .to_string()
         } else {
             forced(Style::new().red().bold()).apply_to("✗").to_string()
         }
@@ -2137,6 +2292,40 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("opencode"), "names the rejected agent:\n{msg}");
         assert!(msg.contains("claude"), "names the logged-in set:\n{msg}");
+    }
+
+    // ── pre-gate bootstrap (not-a-git-repo) decisions ───────────────────────
+
+    #[test]
+    fn create_repo_decision_defaults_to_yes() {
+        // Empty (Enter on a [Y/n] prompt) and explicit yes proceed; anything else
+        // declines, keeping the original "not a git repository" error.
+        assert!(create_repo_decision(""));
+        assert!(create_repo_decision("y"));
+        assert!(create_repo_decision("YES"));
+        assert!(!create_repo_decision("n"));
+        assert!(!create_repo_decision("no"));
+        assert!(!create_repo_decision("huh"));
+    }
+
+    #[test]
+    fn private_visibility_defaults_to_private() {
+        // The default and yes mean private; only an explicit no makes it public.
+        assert!(private_visibility_decision(""));
+        assert!(private_visibility_decision("y"));
+        assert!(private_visibility_decision("anything"));
+        assert!(!private_visibility_decision("n"));
+        assert!(!private_visibility_decision("NO"));
+    }
+
+    #[test]
+    fn repo_name_from_path_uses_final_segment() {
+        assert_eq!(
+            repo_name_from_path(Path::new("/home/dev/subtitle-downloader")),
+            "subtitle-downloader"
+        );
+        // A root with no usable base name falls back to `repo`.
+        assert_eq!(repo_name_from_path(Path::new("/")), "repo");
     }
 
     // (b) Missing python.
@@ -2347,7 +2536,10 @@ mod tests {
     fn wrap_text_overflows_a_word_longer_than_width() {
         // A single word wider than `width` lands on its own line, never split.
         let lines = wrap_text("short superlongunbreakableword end", 8);
-        assert!(lines.contains(&"superlongunbreakableword".to_string()), "{lines:?}");
+        assert!(
+            lines.contains(&"superlongunbreakableword".to_string()),
+            "{lines:?}"
+        );
     }
 
     #[test]
@@ -2549,15 +2741,12 @@ mod tests {
         );
         assert_eq!(commit_decision(false, "yes"), CommitDecision::Commit);
         assert_eq!(commit_decision(false, "y"), CommitDecision::Commit);
+        // Empty input accepts the `[Y/n]` default and commits the snapshot.
+        assert_eq!(commit_decision(false, ""), CommitDecision::Commit);
         match commit_decision(false, "no") {
             CommitDecision::Abort(msg) => assert!(!msg.is_empty()),
             other => panic!("expected Abort, got {other:?}"),
         }
-        // An empty answer is a refusal too — never commit on silence.
-        assert!(matches!(
-            commit_decision(false, ""),
-            CommitDecision::Abort(_)
-        ));
     }
 
     #[test]
@@ -2890,6 +3079,17 @@ mod tests {
         cfg.milestone_docs = vec![];
         cfg.backlog_location = Some("BACKLOG.md".into());
         assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
+    }
+
+    #[test]
+    fn draft_decision_empty_and_yes_proceed_no_declines() {
+        // Default-Yes: silence accepts the `[Y/n]` default and drafts.
+        assert!(draft_decision(""));
+        assert!(draft_decision("y"));
+        assert!(draft_decision("  YES "));
+        assert!(!draft_decision("n"));
+        assert!(!draft_decision("no"));
+        assert!(!draft_decision("nah"));
     }
 
     #[test]

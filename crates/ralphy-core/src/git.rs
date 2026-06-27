@@ -42,6 +42,49 @@ pub fn resolve_toplevel(path: &Path) -> Result<PathBuf> {
     ))
 }
 
+/// Whether `path` is inside a git work tree. `ralphy init` uses this to decide
+/// whether to bootstrap a fresh repo (`git init` + a GitHub remote) before
+/// resolving the toplevel, rather than failing hard on a non-repo directory.
+pub fn is_repo(path: &Path) -> bool {
+    raw(path, &["rev-parse", "--is-inside-work-tree"])
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// `git init` a fresh repository at `path`, creating the directory first when it
+/// does not exist yet. Used by `ralphy init`'s bootstrap to turn a plain directory
+/// into a git repo before the environment gate runs.
+pub fn init(path: &Path) -> Result<()> {
+    std::fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
+    let out = raw(path, &["init", "--quiet"])?;
+    if !out.status.success() {
+        bail!(
+            "`git init` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// Stage everything and record the first commit. `--allow-empty` keeps a brand-new
+/// empty directory working — it still gets a born branch and a commit to push, so
+/// the later `current_branch` / GitHub-push steps in `ralphy init` don't trip over
+/// an unborn HEAD. Used right after [`init`], before the GitHub remote is created.
+pub fn initial_commit(repo: &Path) -> Result<()> {
+    git(repo, &["add", "-A"])?;
+    git(
+        repo,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "chore: initial commit",
+            "--quiet",
+        ],
+    )?;
+    Ok(())
+}
+
 /// Best-effort `git fetch origin`. A missing remote is not fatal here.
 pub fn fetch_origin(repo: &Path) -> Result<()> {
     let _ = raw(repo, &["fetch", "origin", "--quiet"])?;
