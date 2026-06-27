@@ -62,6 +62,16 @@ pub enum VerifySpec {
   consequence is deliberate: **no `&&`, no pipes, no globs**. Chaining is the
   runner's job, not the markdown's. A command that genuinely needs a shell writes
   `sh -c "…"` explicitly — the discouraged path, not the default.
+  - **Windows shim resolution (a no-shell exception that proves the rule).** A bare
+    `CreateProcess` (Rust's `Command`) only appends `.exe`, so it never finds — and
+    could never execute — the `.cmd` shims the Node ecosystem ships (`pnpm`, `npm`,
+    `yarn`, `npx`). Without help the gate fails to even spawn them ("program not
+    found"), which is exactly how a Node monorepo's gate went red while the agent's
+    own shelled `pnpm install` had passed. So on Windows the runner resolves the
+    program through `PATHEXT` and routes a resolved `.cmd`/`.bat` through `cmd /C`.
+    This is **not** the rejected shell-the-whole-line path: the tokenized args still
+    pass as separate `argv` entries, so no user `&&`/pipe is reinterpreted — only the
+    one resolved script runs. Unix is unaffected.
 - **Sequential, all must exit 0, stop on first failure** — an implicit `&&`. The
   first non-zero exit fails the gate.
 - **Runs in `repo_root`, over the commit.** Monorepos scope inside the command

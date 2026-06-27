@@ -184,8 +184,13 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         };
     };
 
-    let mut child = match Command::new(program)
-        .args(rest)
+    // Resolve the program so the gate's no-shell argv spawn (ADR-0011) still finds
+    // Windows shell shims: `pnpm`/`npm`/`yarn`/`npx` are `.cmd` scripts a bare
+    // `CreateProcess` never locates (it only appends `.exe`) and cannot execute
+    // even if named. On Unix this is a pass-through. See [`spawn_command`].
+    let (spawn_program, spawn_args) = spawn_command(program, rest);
+    let mut child = match Command::new(&spawn_program)
+        .args(&spawn_args)
         .current_dir(repo_root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -257,6 +262,101 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         timed_out,
         output_tail: tail(&combined),
     }
+}
+
+/// Bridge the gate's deliberate no-shell argv execution (ADR-0011) to Windows'
+/// shell-only program shims. On Windows, `pnpm`/`npm`/`yarn`/`npx` are `.cmd`
+/// scripts that a bare `CreateProcess` never finds (it only appends `.exe`) and
+/// could not execute even if named (a `.cmd` is not an executable image). We
+/// resolve the name through `PATHEXT` and, for a `.cmd`/`.bat`, route it through
+/// `cmd /C` — the args still pass as separate argv entries, so no user `&&`/pipe is
+/// reintroduced; only the one resolved script runs. On Unix the program and args
+/// pass through unchanged.
+#[cfg(windows)]
+fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    use std::ffi::OsString;
+    match resolve_program(program) {
+        Some(path) => {
+            let is_batch = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
+                .unwrap_or(false);
+            if is_batch {
+                let mut args: Vec<OsString> = vec![OsString::from("/C"), path.into_os_string()];
+                args.extend(rest.iter().map(OsString::from));
+                (OsString::from("cmd"), args)
+            } else {
+                (
+                    path.into_os_string(),
+                    rest.iter().map(OsString::from).collect(),
+                )
+            }
+        }
+        // Unresolved: keep the original name so the spawn surfaces the same
+        // "program not found" failure as before, naming the real command.
+        None => (
+            OsString::from(program),
+            rest.iter().map(OsString::from).collect(),
+        ),
+    }
+}
+
+#[cfg(not(windows))]
+fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    use std::ffi::OsString;
+    (
+        OsString::from(program),
+        rest.iter().map(OsString::from).collect(),
+    )
+}
+
+/// Resolve `program` against the live `PATH`/`PATHEXT`. Windows-only; Unix needs no
+/// such resolution. Split from [`resolve_in`] so the resolution logic unit-tests
+/// without mutating the process environment.
+#[cfg(windows)]
+fn resolve_program(program: &str) -> Option<std::path::PathBuf> {
+    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+    let exts: Vec<&str> = pathext.split(';').filter(|s| !s.is_empty()).collect();
+    let search: Vec<std::path::PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    resolve_in(program, &search, &exts)
+}
+
+/// Find `program` in `search`, honoring `exts` (the `PATHEXT` list, each entry
+/// carrying its leading dot) so a bare `pnpm` resolves to `pnpm.cmd`. A name that
+/// already carries a path separator is used as-is (a relative name resolves against
+/// the spawn's `current_dir`). A name without an extension matches ONLY via the
+/// `PATHEXT` candidates — never a bare, extensionless file, which on Windows is the
+/// non-executable bash shim that ships beside the `.cmd`.
+#[cfg(windows)]
+fn resolve_in(
+    program: &str,
+    search: &[std::path::PathBuf],
+    exts: &[&str],
+) -> Option<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+    if program.contains('/') || program.contains('\\') {
+        return Some(PathBuf::from(program));
+    }
+    let has_ext = Path::new(program).extension().is_some();
+    for dir in search {
+        if has_ext {
+            let cand = dir.join(program);
+            if cand.is_file() {
+                return Some(cand);
+            }
+        } else {
+            for ext in exts {
+                let cand = dir.join(format!("{program}{ext}"));
+                if cand.is_file() {
+                    return Some(cand);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Keep the last [`TAIL_BYTES`] of `s`, trimmed to a whole-line boundary so the
@@ -532,6 +632,39 @@ mod tests {
         assert!(c.contains("\u{2713} cargo fmt"));
         assert!(c.contains("\u{2717} cargo test    exit 101"));
         assert!(c.contains("panicked at assertion"), "failing tail shown");
+    }
+
+    /// On Windows `pnpm` ships as a bare bash shim AND a `pnpm.cmd`; only the
+    /// `.cmd` is executable, and PATHEXT resolution must return it — not the
+    /// extensionless file a bare `CreateProcess` would choke on. This is the exact
+    /// failure that left a Node monorepo's gate red with "program not found".
+    #[cfg(windows)]
+    #[test]
+    fn resolve_in_finds_cmd_shim_not_the_bare_shell_file() {
+        let dir =
+            std::env::temp_dir().join(format!("ralphy-verify-resolve-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("pnpm"), "#!/bin/sh\n").unwrap(); // bash shim
+        std::fs::write(dir.join("pnpm.cmd"), "@echo off\n").unwrap(); // cmd shim
+        let exts = [".COM", ".EXE", ".BAT", ".CMD"];
+
+        let got = resolve_in("pnpm", std::slice::from_ref(&dir), &exts)
+            .expect("pnpm resolves via PATHEXT");
+        // Filesystem is case-insensitive; compare on name (lowercased) + parent so
+        // a `.CMD`-vs-`.cmd` PathBuf mismatch doesn't fail a correct resolution.
+        assert_eq!(
+            got.file_name().unwrap().to_string_lossy().to_lowercase(),
+            "pnpm.cmd",
+            "resolves to the .cmd shim, not the bare bash file"
+        );
+        assert_eq!(got.parent().unwrap(), dir);
+
+        assert!(
+            resolve_in("definitely-absent-xyz", std::slice::from_ref(&dir), &exts).is_none(),
+            "a missing program stays unresolved"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
