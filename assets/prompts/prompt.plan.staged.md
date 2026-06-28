@@ -18,13 +18,15 @@ in the exact shape the executor expects (below).
   traps they hit, command sequences that work, and residue they left. Feed it
   into the staged design — it is paid-for knowledge. Treat entries as leads,
   not truths; verify against the tree before anchoring a stage on one.
-- `.ralphy/references.md` — when present, the SOURCE title, state, and body of
-  the issues this one names in its `## Blocked by` and `## Parent` sections,
+- `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
+  of the issues this one names in its `## Blocked by` and `## Parent` sections,
   fetched fresh this pass. Feed it into the staged design instead of inferring
   those issues' scope from how a `#N` mention or a comment describes them — this
   is the referenced spec itself, not a paraphrase. Entries are leads: the
   `state` shown was current at fetch time and the body may have moved since, so
-  re-check at source if a stage hinges on one. Only structured-section refs are
+  re-check at source if a stage hinges on one. Only the body is reproduced, NOT
+  the comment thread — open a reference's URL or run `gh issue view <n>` to read
+  its discussion when a stage depends on it. Only structured-section refs are
   here; prose `#N` mentions are not pre-fetched (see the verify-at-source rule).
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
@@ -82,6 +84,16 @@ in the exact shape the executor expects (below).
    <short narrative of the stages from the staged-plan design — the "why" and
    ordering — so the executor has the design context.>
 
+   ## Caveats
+   <Every qualifier that limits the result but is NOT itself a stage: an input the
+   work trusts that is provisional or unreviewed, a dependency whose state caps
+   confidence, an explicit "resolve/verify X before relying on Y" note in the
+   body, a comment, or a reference. Copy each WITH its source and how this plan
+   handles it. Write `none` only if you truly found none — never silently drop a
+   caveat the issue, its comments, or a referenced issue raised; a dropped caveat
+   becomes false confidence the next session inherits.>
+   - <caveat> (source: <#issue / comment / references.md / file>) — handled: <how this plan accounts for it>
+
    ## Steps
    - [ ] <stage 1 / sub-step — small, focused, committable in one iteration>
    - [ ] <stage 2 ...>
@@ -122,6 +134,15 @@ in the exact shape the executor expects (below).
   confident claim: a second-hand caveat restated as fact becomes a load-bearing
   breadcrumb the next session inherits. If you cannot reach the source, mark the
   reference `(unverified — from <where you saw it>)` rather than stating it plainly.
+- Carry every caveat forward — never let one evaporate: when the issue body, a
+  comment, or a referenced issue raises a qualifier that limits the result (an
+  input that is provisional or pending review, a dependency whose state caps
+  confidence, a "resolve X before relying on Y" note), record it under
+  `## Caveats` with its source and how this plan handles it — even when you
+  proceed anyway. A caveat that bears on whether the output can be TRUSTED also
+  belongs in `## Feasible` or the relevant ledger line. The single most common
+  silent failure is gating on a provisional oracle without ever saying it is
+  provisional.
 - Name the exact expected value in every command-backed oracle: a "Done when"
   bullet or `[verified]` evidence that runs a command must state the literal
   value it asserts — the exact status code, output substring, or count —

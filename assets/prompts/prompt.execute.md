@@ -13,17 +13,23 @@ durable.
   superseded ideas, or machine-generated notes (including Ralphy's own prior-run
   comments). Act on a comment only when it clearly bears on this issue.
 - `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth.
+  Honor its `## Caveats` section: do not let a flagged qualifier (a provisional
+  input, an unreviewed oracle, a "resolve X first" note) silently disappear —
+  if one still holds when you finish, surface it in the `## Handoff` so the PR
+  reviewer and the next session inherit it, never a false all-clear.
 - `.ralphy/verify-failure.md` — present ONLY when the runner's verify gate failed
   on previously committed work. When it exists it is your TOP priority — see the
   repair section below before doing anything else.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
   depends on: environment traps, working command sequences, residue. Treat them
   as leads from predecessors, not truths — verify before relying on one.
-- `.ralphy/references.md` — when present, the SOURCE title, state, and body of
-  the issues named in this one's `## Blocked by` / `## Parent` sections. Consult
-  it when a step touches what a referenced issue delivered or specified, rather
-  than inferring its scope from a `#N` mention. Leads, not truths — the state was
-  current at fetch time; verify at source before relying on a detail.
+- `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
+  of the issues named in this one's `## Blocked by` / `## Parent` sections.
+  Consult it when a step touches what a referenced issue delivered or specified,
+  rather than inferring its scope from a `#N` mention. Only the body is here, not
+  the comment thread — open a reference's URL or run `gh issue view <n>` to read
+  its discussion. Leads, not truths — the state was current at fetch time; verify
+  at source before relying on a detail.
 - `.ralphy/knowledge/` — when present, the accumulated local cache. Read
   `KNOWLEDGE.md` FIRST when it exists (curated, organized by topic); the loose
   `issue-<N>.md` files beside it are newer, not-yet-consolidated notes

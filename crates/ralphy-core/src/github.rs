@@ -455,7 +455,7 @@ pub fn issue_comments(number: u64, repo_root: &Path) -> Result<Vec<String>> {
     parse_issue_comments(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// Parse `gh issue view --json number,title,state,body` into a [`Reference`].
+/// Parse `gh issue view --json number,title,state,body,url` into a [`Reference`].
 fn parse_reference(json: &str) -> Result<crate::references::Reference> {
     #[derive(serde::Deserialize)]
     struct RefJson {
@@ -466,6 +466,8 @@ fn parse_reference(json: &str) -> Result<crate::references::Reference> {
         state: String,
         #[serde(default)]
         body: String,
+        #[serde(default)]
+        url: String,
     }
     let r: RefJson =
         serde_json::from_str(json).context("parsing `gh issue view` reference JSON")?;
@@ -474,17 +476,20 @@ fn parse_reference(json: &str) -> Result<crate::references::Reference> {
         state: r.state,
         title: r.title,
         body: r.body,
+        url: r.url,
     })
 }
 
-/// Fetch a single issue's number, title, lifecycle state, and body via
-/// `gh issue view <n> --json number,title,state,body` — the source a structured
-/// reference (`## Blocked by` / `## Parent`) points at, reproduced for the
-/// planner. One call carries everything `references.md` renders, distinct from
-/// the state-only [`issue_is_closed`] and the comments-only [`issue_comments`].
+/// Fetch a single issue's number, title, state, body, and URL via
+/// `gh issue view <n> --json number,title,state,body,url` — the source a
+/// structured reference (`## Blocked by` / `## Parent`) points at, reproduced for
+/// the planner. The `url` is the handle the planner follows to pull the comment
+/// thread on demand (this call omits comments by design). One call carries
+/// everything `references.md` renders, distinct from the state-only
+/// [`issue_is_closed`] and the comments-only [`issue_comments`].
 pub fn fetch_reference(number: u64, repo_root: &Path) -> Result<crate::references::Reference> {
     let out = gh_output(
-        &format!("gh issue view {number} --json number,title,state,body"),
+        &format!("gh issue view {number} --json number,title,state,body,url"),
         || {
             let mut cmd = gh(repo_root);
             cmd.args([
@@ -492,7 +497,7 @@ pub fn fetch_reference(number: u64, repo_root: &Path) -> Result<crate::reference
                 "view",
                 &number.to_string(),
                 "--json",
-                "number,title,state,body",
+                "number,title,state,body,url",
             ]);
             cmd
         },
@@ -846,7 +851,7 @@ mod tests {
                     "--repo",
                     REPO,
                     "--json",
-                    "number,title,state,body",
+                    "number,title,state,body,url",
                 ])
                 .output()
                 .expect("spawn gh");
@@ -868,6 +873,9 @@ mod tests {
         assert!(file.contains("## #15 (CLOSED)"));
         assert!(file.contains("ground truth") || file.to_lowercase().contains("corpus"));
         assert!(file.contains("treat it as a lead"));
+        // The source URL travels with each reference (the handle for comments).
+        assert!(file.contains("/bioledger-platform/issues/13"));
+        assert!(file.contains("/bioledger-platform/issues/15"));
     }
 
     #[test]
@@ -929,13 +937,13 @@ mod tests {
 
     #[test]
     fn parse_reference_reads_number_state_title_body() {
-        let json =
-            r#"{"number":13,"title":"S2a corpus","state":"OPEN","body":"ground truth corpus"}"#;
+        let json = r#"{"number":13,"title":"S2a corpus","state":"OPEN","body":"ground truth corpus","url":"https://github.com/o/r/issues/13"}"#;
         let r = parse_reference(json).unwrap();
         assert_eq!(r.number, 13);
         assert_eq!(r.state, "OPEN");
         assert_eq!(r.title, "S2a corpus");
         assert!(r.body.contains("ground truth"));
+        assert_eq!(r.url, "https://github.com/o/r/issues/13");
     }
 
     #[test]
@@ -945,6 +953,7 @@ mod tests {
         assert_eq!(r.state, "CLOSED");
         assert!(r.title.is_empty());
         assert!(r.body.is_empty());
+        assert!(r.url.is_empty());
     }
 
     #[test]

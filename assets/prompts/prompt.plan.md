@@ -19,15 +19,17 @@ you only produce a plan that a later execution loop will consume.
   Treat entries as leads, not truths: they were true at the predecessor's
   close and may have gone stale; verify against the tree before anchoring a
   step on one.
-- `.ralphy/references.md` — when present, the SOURCE title, state, and body of
-  the issues this one names in its `## Blocked by` and `## Parent` sections,
+- `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
+  of the issues this one names in its `## Blocked by` and `## Parent` sections,
   fetched fresh this pass. Read it instead of inferring those issues' scope from
   how a `#N` mention or a comment describes them — this is the referenced spec
   itself, not a paraphrase. Entries are leads: the `state` shown was current at
   fetch time and the body may have moved since, so re-check at source if a
-  verdict or step hinges on one. Only the structured-section refs are here;
-  prose `#N` mentions elsewhere are not pre-fetched (see the verify-at-source
-  rule below).
+  verdict or step hinges on one. Only the body is reproduced, NOT the comment
+  thread — when a referenced issue's discussion (a caveat, a clarification)
+  bears on a decision, open its URL or run `gh issue view <n>` to read it. Only
+  the structured-section refs are here; prose `#N` mentions elsewhere are not
+  pre-fetched (see the verify-at-source rule below).
 - `.ralphy/knowledge/` — when present, the accumulated local cache. Read
   `KNOWLEDGE.md` FIRST when it exists — it is the curated, deduplicated
   consolidation, organized by topic. The loose `issue-<N>.md` files beside it
@@ -112,6 +114,16 @@ you only produce a plan that a later execution loop will consume.
    defer to a human or hide it behind a vague step. One bullet per decision:>
    - Decision: <what you chose>. Why: <one-line rationale>.
 
+   ## Caveats
+   <Every qualifier that limits the result but is NOT itself a step: an input the
+   work trusts that is provisional or unreviewed, a dependency whose state caps
+   confidence, an explicit "resolve/verify X before relying on Y" note in the
+   body, a comment, or a reference. Copy each WITH its source and how this plan
+   handles it. Write `none` only if you truly found none — never silently drop a
+   caveat the issue, its comments, or a referenced issue raised; a dropped caveat
+   becomes false confidence the next session inherits.>
+   - <caveat> (source: <#issue / comment / references.md / file>) — handled: <how this plan accounts for it>
+
    ## Steps
    - [ ] <smallest sensible step 1 — one focused change. NAME the real file and
          the function/module it touches, e.g. "in `path/to/file`, add
@@ -185,6 +197,15 @@ you only produce a plan that a later execution loop will consume.
   human and do not paper over it with a vague step. Reserve `Feasible: no` for
   issues genuinely under-specified to implement or not autonomously verifiable,
   never for a choice you could simply make.
+- Carry every caveat forward — never let one evaporate: when the issue body, a
+  comment, or a referenced issue raises a qualifier that limits the result (an
+  input that is provisional or pending review, a dependency whose state caps
+  confidence, a "resolve X before relying on Y" note), record it under
+  `## Caveats` with its source and how this plan handles it — even when you
+  proceed anyway. A caveat that bears on whether the output can be TRUSTED also
+  belongs in `## Feasible` or the relevant ledger line. The single most common
+  silent failure is gating on a provisional oracle without ever saying it is
+  provisional.
 - The `## Acceptance ledger` does NOT change the green gate —
   `RALPHY_DONE_EXIT` is still keyed to the plan's machine-verifiable "Done
   when", not to the ledger. The machine-verifiable "Done when" bullets must be
