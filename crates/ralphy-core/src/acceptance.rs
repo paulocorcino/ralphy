@@ -64,8 +64,26 @@ pub struct TickResult {
     pub unmatched: Vec<String>,
 }
 
+/// Normalize an acceptance line for matching only: drop the inline-markdown
+/// delimiters (`*`, `_`, and backtick) that a ledger criterion routinely loses
+/// when it is transcribed from the issue's AC bullet, and collapse runs of
+/// whitespace. Applied to BOTH sides of the comparison, so an identifier like
+/// `blob_id` reduces identically on each side and still matches — this affects
+/// matching alone; the ticked line keeps its original text verbatim.
+fn normalize_ac(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '*' | '_' | '`'))
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Apply verified verdicts to an issue body by flipping `- [ ] <criterion>` to
-/// `- [x] <criterion>` on exact trimmed-line match. Review-only verdicts are
+/// `- [x] <criterion>`. Matching is verbatim *modulo inline markdown and
+/// whitespace* (see [`normalize_ac`]) — the ledger criterion is frequently
+/// transcribed without the issue line's `**bold**`/`` `code` `` markers, and an
+/// exact-string match would silently drop those ticks. Review-only verdicts are
 /// never ticked. Already-ticked lines are left untouched.
 pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
     let mut body_lines: Vec<String> = body.lines().map(str::to_string).collect();
@@ -77,11 +95,14 @@ pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
         if verdict.kind != VerdictKind::Verified {
             continue;
         }
-        let target = format!("- [ ] {}", verdict.criterion);
+        let target = normalize_ac(&format!("- [ ] {}", verdict.criterion));
         let mut found = false;
         for line in body_lines.iter_mut() {
-            if !found && line.trim() == target.as_str() {
-                *line = line.replacen("- [ ]", "- [x]", 1);
+            // Compare normalized forms, but flip the box on the original line so
+            // its markdown survives. Replacing `[ ]` (not `- [ ]`) tolerates
+            // bullet/whitespace variants the normalized match also accepts.
+            if !found && normalize_ac(line) == target {
+                *line = line.replacen("[ ]", "[x]", 1);
                 found = true;
             }
         }
@@ -240,6 +261,47 @@ some note
             vec!["Parser returns typed verdicts", "Empty ledger is a no-op"]
         );
         assert!(result.unmatched.is_empty());
+    }
+
+    #[test]
+    fn apply_ledger_ticks_through_inline_markdown_mismatch() {
+        // The #10 failure: the issue's AC line carries inline `**bold**`/`` `code` ``
+        // that the ledger criterion dropped when it was transcribed. A verbatim
+        // match left these verified criteria unticked; normalized matching ticks
+        // them while preserving the line's original markdown.
+        let body = "## Acceptance criteria\n\
+            - [ ] Teste **\"Wallet A não busca blob de B\"**: posse do `blob_id` busca; sem ela, nega — provado contra um Supabase real\n\
+            - [ ] Rate-limit anti-abuso por sessão demonstrado **sem** linha `auth↔blob` persistida\n";
+        let verdicts = vec![
+            Verdict {
+                // criterion as the ledger recorded it: bold + backticks stripped.
+                criterion:
+                    "Teste \"Wallet A não busca blob de B\": posse do blob_id busca; sem ela, nega — provado contra um Supabase real"
+                        .into(),
+                kind: VerdictKind::Verified,
+                evidence: "proof.sh".into(),
+            },
+            Verdict {
+                criterion: "Rate-limit anti-abuso por sessão demonstrado sem linha auth↔blob persistida"
+                    .into(),
+                kind: VerdictKind::Verified,
+                evidence: "capability.test.mjs".into(),
+            },
+        ];
+        let result = apply_ledger(body, &verdicts);
+        assert!(
+            result.unmatched.is_empty(),
+            "inline markdown must not block matching: {:?}",
+            result.unmatched
+        );
+        assert_eq!(result.ticked.len(), 2, "both verified criteria tick");
+        // The ticked lines keep their original markdown — only the box flips.
+        assert!(result.new_body.contains(
+            "- [x] Teste **\"Wallet A não busca blob de B\"**: posse do `blob_id` busca"
+        ));
+        assert!(result
+            .new_body
+            .contains("- [x] Rate-limit anti-abuso por sessão demonstrado **sem** linha `auth↔blob` persistida"));
     }
 
     #[test]
