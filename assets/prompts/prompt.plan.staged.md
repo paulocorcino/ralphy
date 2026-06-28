@@ -5,9 +5,14 @@ in the exact shape the executor expects (below).
 
 ## Context on disk
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels, and
-  `comments`: the issue's comment thread in order). Read the comments too — a
-  human may have refined the spec, answered a question, or flagged a constraint
-  there rather than editing the body.
+  `comments`: the issue's comment thread in order). The `body` is the
+  authoritative spec; `comments` are secondary context, NOT directives of equal
+  weight. Judge each comment's relevance and recency before acting on it: some
+  genuinely refine the spec, answer a question, or flag a constraint — fold
+  those in — but the thread also carries tangents, superseded ideas, and
+  machine-generated notes (including Ralphy's own prior-run evidence and handoff
+  comments). Let a comment shape the plan only when it clearly bears on this
+  issue; never let low-signal chatter pull it off the body's intent.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this
   one depends on (`Blocked by`): what predecessors delivered, environment
   traps they hit, command sequences that work, and residue they left. Feed it

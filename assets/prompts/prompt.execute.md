@@ -7,9 +7,11 @@ durable.
 
 ## Context on disk (in this repo)
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels, and
-  `comments`: the issue's comment thread in order). Read the comments too — a
-  human may have refined the spec or flagged a constraint there rather than in
-  the body.
+  `comments`: the issue's comment thread in order). The `body` is the
+  authoritative spec; weigh `comments` by relevance and recency rather than
+  treating each as an equal directive — the thread can carry tangents,
+  superseded ideas, or machine-generated notes (including Ralphy's own prior-run
+  comments). Act on a comment only when it clearly bears on this issue.
 - `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth.
 - `.ralphy/verify-failure.md` — present ONLY when the runner's verify gate failed
   on previously committed work. When it exists it is your TOP priority — see the
