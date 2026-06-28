@@ -167,6 +167,21 @@ you only produce a plan that a later execution loop will consume.
   monorepo inside the command itself (`cargo test -p foo`, `npm --prefix x
   test`). Write `none` (on its own line) ONLY when nothing is machine-verifiable
   — an honest opt-out, not a way to dodge a gate you could write.
+- A `## Verify` made only of static checks (type-check, lint, dependency/boundary
+  rules, presence-of-declaration tests) proves the code TYPES and the boundary
+  holds — not that the artifact RUNS. When the issue creates or changes something
+  loaded or executed at runtime (build config, manifest, entrypoint, migration,
+  schema), include at least one command that EXERCISES it end-to-end
+  (loads/builds/boots/runs it), not only commands that inspect source statically.
+  Pick the LIGHTEST command that proves the artifact LOADS (config parses,
+  manifest resolves, app boots) — not one that runs behavior the issue
+  deliberately leaves stubbed. If nothing can exercise it yet because the
+  runtime/harness to do so is itself later work, that is honest: keep the static
+  checks and record the un-exercised artifact as a `[review-only]` line — do NOT
+  invent a command that cannot run, nor mark the issue infeasible over it.
+  And never list as a verify command a test this same change authored that merely
+  asserts a value it also wrote — a declaration echoing itself goes green while
+  proving nothing.
 - Classify ledger lines by WHO can confirm them, never by how much effort it
   takes: `[review-only]` is reserved for criteria that need human JUDGMENT
   (visual appearance, UX feel, subjective quality). If a script or command
