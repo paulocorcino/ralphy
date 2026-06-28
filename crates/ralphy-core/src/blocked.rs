@@ -24,7 +24,10 @@ pub fn parse_blocked_by(body: &str) -> Vec<u64> {
     let ref_re = Regex::new(r"(?m)^\s*-\s*#(\d+)").expect("valid regex");
     ref_re
         .captures_iter(section)
-        .map(|c| c[1].parse::<u64>().expect("matched digits"))
+        // `\d+` is unbounded, so an absurd digit run (issue bodies are
+        // IO-controlled) can overflow u64; drop the impossible ref rather than
+        // panic and take down the whole run.
+        .filter_map(|c| c[1].parse::<u64>().ok())
         .collect()
 }
 
@@ -42,7 +45,8 @@ pub fn parse_parent(body: &str) -> Vec<u64> {
     let ref_re = Regex::new(r"#(\d+)").expect("valid regex");
     ref_re
         .captures_iter(section)
-        .map(|c| c[1].parse::<u64>().expect("matched digits"))
+        // See `parse_blocked_by`: an overflowing digit run must not panic.
+        .filter_map(|c| c[1].parse::<u64>().ok())
         .collect()
 }
 
@@ -206,6 +210,16 @@ mod tests {
         // "#3" appears in prose, not as a bullet item — must be ignored.
         let body = "## Blocked by\nStep #3 must finish before #7 merges\n- #7\n";
         assert_eq!(parse_blocked_by(body), vec![7]);
+    }
+
+    #[test]
+    fn overflowing_ref_is_dropped_not_panicked() {
+        // Issue bodies are IO-controlled; a digit run past u64::MAX must drop
+        // the ref, never panic (regression for the parse().expect() crash).
+        let body = "## Blocked by\n- #99999999999999999999999\n- #7\n";
+        assert_eq!(parse_blocked_by(body), vec![7]);
+        let parent = "## Parent\n\nSplit from #99999999999999999999999 and #3.\n";
+        assert_eq!(parse_parent(parent), vec![3]);
     }
 
     #[test]

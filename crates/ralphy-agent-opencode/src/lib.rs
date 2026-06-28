@@ -630,10 +630,9 @@ fn session_id_from_stream(stdout: &str) -> Option<String> {
 /// message records into (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when
 /// no home is known.
 fn opencode_db_path() -> Option<PathBuf> {
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    let home = ralphy_adapter_support::home_dir()?;
     Some(
-        PathBuf::from(home)
-            .join(".local")
+        home.join(".local")
             .join("share")
             .join("opencode")
             .join("opencode.db"),
@@ -851,7 +850,8 @@ mod tests {
 
     #[test]
     fn opencode_zero_minutes_disables_the_per_issue_cap() {
-        let uncapped = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
+        let uncapped =
+            OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
         let capped =
             OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
         assert!(uncapped.issue_deadline() > capped.issue_deadline());

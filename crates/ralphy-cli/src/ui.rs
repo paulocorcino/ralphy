@@ -1694,7 +1694,8 @@ mod tests {
             emoji: false,
         };
         assert!(
-            q.bar_label_opts(ascii).contains("#10 |stop-before #15| #16"),
+            q.bar_label_opts(ascii)
+                .contains("#10 |stop-before #15| #16"),
             "ascii marker brackets the boundary issue: {}",
             q.bar_label_opts(ascii)
         );

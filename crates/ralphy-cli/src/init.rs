@@ -836,6 +836,10 @@ const TPL_PRD_README: &str =
 const TPL_PRD_TEMPLATE: &str =
     include_str!("../../../assets/plugin/skills/setup-pocock/prd-template.md");
 
+// SUSPENDED (see `write_scaffold`): the `## Agent skills` block write is parked
+// under evaluation. These helpers are kept and unit-tested for re-enabling, so
+// they read as dead in a non-test build — allow it rather than delete the work.
+#[allow(dead_code)]
 const AGENT_SKILLS_HEADING: &str = "## Agent skills";
 
 /// Select the issue-tracker template by the remote host. A host containing
@@ -858,6 +862,7 @@ fn select_issue_tracker(remote_host: Option<&str>) -> (&'static str, &'static st
 /// Render the `## Agent skills` block from the captured config: three one-line
 /// summaries (issue tracker, triage labels, domain docs), each pointing at the
 /// `docs/agents/*.md` file written alongside it.
+#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
 fn agent_skills_block(cfg: &InitConfig) -> String {
     let tracker = match select_issue_tracker(cfg.remote_host.as_deref()).1 {
         b if b == TPL_ISSUE_GITHUB => "GitHub issues (use the `gh` CLI)",
@@ -879,6 +884,7 @@ fn agent_skills_block(cfg: &InitConfig) -> String {
 /// Replace an existing `## Agent skills` section in `doc` (from that heading up to
 /// the next top-level `## ` heading or EOF) with `block`, or append `block` when
 /// no such section exists. The result contains the heading exactly once. Pure.
+#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
 fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
     let block = block.trim_end();
     let Some(start) = find_heading(doc, AGENT_SKILLS_HEADING) else {
@@ -915,6 +921,7 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
 /// Byte offset of the first line that starts with `needle` (at column 0), or
 /// `None`. `needle` is matched as a line prefix so `## Agent skills` does not
 /// match `### Agent skills sub`.
+#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
 fn find_heading(doc: &str, needle: &str) -> Option<usize> {
     if doc.starts_with(needle) {
         return Some(0);
@@ -926,6 +933,7 @@ fn find_heading(doc: &str, needle: &str) -> Option<usize> {
 /// Byte offset of the first line that opens a top-level (h1 or h2) markdown
 /// heading, or `None`. Used to bound an `## ` section: deeper `### ` headings
 /// nest within it, so only `# ` / `## ` ends it.
+#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
 fn next_top_heading(s: &str) -> Option<usize> {
     let mut offset = 0;
     for line in s.split_inclusive('\n') {

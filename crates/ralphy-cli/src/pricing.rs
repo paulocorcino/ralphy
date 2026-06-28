@@ -233,6 +233,11 @@ fn warn_unknown(model: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialises tests that mutate the process-global `RALPHY_PRICING_FILE`, so
+    /// `cargo test`'s parallel runner can't race them (mirrors telegram config).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn one_million_each() -> Usage {
         Usage {
@@ -304,6 +309,7 @@ mod tests {
 
     #[test]
     fn override_file_reprices_a_model_differently_from_defaults() {
+        let _g = ENV_LOCK.lock().unwrap();
         // Write a temp override that doubles opus input, point the loader at it.
         let dir = std::env::temp_dir().join(format!("ralphy-pricing-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");

@@ -788,6 +788,7 @@ version = "0.1.0-rc8"
 dependencies = [
  "anyhow",
  "include_dir",
+ "tracing",
 ]
 
 [[package]]

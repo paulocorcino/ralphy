@@ -4,6 +4,8 @@
 //! testable without a network: [`UreqTransport`] is the real blocking `ureq`
 //! impl, and tests inject a fake. No async runtime is involved.
 
+use std::time::Duration;
+
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
@@ -24,13 +26,21 @@ pub trait Transport {
 /// `https://api.telegram.org/bot{token}/{method}` with `ureq`.
 pub struct UreqTransport {
     token: String,
+    agent: ureq::Agent,
 }
 
 impl UreqTransport {
-    /// Build a transport for `token`.
+    /// Build a transport for `token`. The agent carries connect/read timeouts so
+    /// a wedged network can't hang `setup`/`test` or the notifier's pre-spawn
+    /// `getMe` (which runs on the main thread before the bounded worker).
     pub fn new(token: impl Into<String>) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(10))
+            .timeout_read(Duration::from_secs(20))
+            .build();
         Self {
             token: token.into(),
+            agent,
         }
     }
 
@@ -41,14 +51,25 @@ impl UreqTransport {
 
 impl Transport for UreqTransport {
     fn get(&self, method: &str) -> Result<Value> {
-        let resp = ureq::get(&self.url(method)).call();
-        envelope(resp, method)
+        let resp = self.agent.get(&self.url(method)).call();
+        envelope(resp, method).map_err(|e| redact_token(e, &self.token))
     }
 
     fn post(&self, method: &str, body: Value) -> Result<Value> {
-        let resp = ureq::post(&self.url(method)).send_json(body);
-        envelope(resp, method)
+        let resp = self.agent.post(&self.url(method)).send_json(body);
+        envelope(resp, method).map_err(|e| redact_token(e, &self.token))
     }
+}
+
+/// Scrub the bot token from an error before it can reach a log or stderr. The
+/// request URL embeds the token, and `ureq::Error` Display-renders the offending
+/// URL, so the token would otherwise leak through the anyhow source chain.
+fn redact_token(e: anyhow::Error, token: &str) -> anyhow::Error {
+    if token.is_empty() {
+        return e;
+    }
+    let rendered = format!("{e:#}").replace(token, "***");
+    anyhow::anyhow!(rendered)
 }
 
 /// Turn a `ureq` result into the Bot API's JSON envelope.
@@ -243,6 +264,18 @@ mod tests {
         let client = BotClient::new(fake);
         let err = client.get_me().unwrap_err().to_string();
         assert!(err.contains("Unauthorized"), "got: {err}");
+    }
+
+    #[test]
+    fn redact_token_scrubs_secret_from_error() {
+        let token = "123456:SECRET";
+        let leaked = anyhow::anyhow!("https://api.telegram.org/bot{token}/getMe failed");
+        let scrubbed = format!("{:#}", redact_token(leaked, token));
+        assert!(!scrubbed.contains(token), "token leaked: {scrubbed}");
+        assert!(
+            scrubbed.contains("***"),
+            "expected redaction marker: {scrubbed}"
+        );
     }
 
     #[test]
