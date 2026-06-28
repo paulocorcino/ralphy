@@ -16,10 +16,15 @@
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use regex::Regex;
 use serde_json::Value;
+
+/// Captures the reason trailing a `RALPHY_BLOCKED_EXIT` sentinel. Compiled once.
+static BLOCKED_EXIT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"RALPHY_BLOCKED_EXIT\s*(.*)").expect("valid regex"));
 
 /// What the Stop hook decided to write to the flag file. Rendered with
 /// [`FlagWrite::contents`]; the orchestrator reads it back verbatim.
@@ -74,8 +79,7 @@ fn classify_message(msg: &str) -> Option<FlagWrite> {
     if msg.contains("RALPHY_DONE_EXIT") {
         return Some(FlagWrite::Done);
     }
-    let re = Regex::new(r"RALPHY_BLOCKED_EXIT\s*(.*)").expect("valid regex");
-    if let Some(caps) = re.captures(msg) {
+    if let Some(caps) = BLOCKED_EXIT_RE.captures(msg) {
         let reason = caps.get(1).map_or("", |m| m.as_str()).trim();
         return Some(FlagWrite::Blocked(reason.to_string()));
     }

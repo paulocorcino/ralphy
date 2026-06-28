@@ -240,7 +240,11 @@ impl IssueTracker for RecordingTracker {
     }
 
     fn issue_comments(&self, number: u64) -> anyhow::Result<Vec<String>> {
-        Ok(self.comment_threads.get(&number).cloned().unwrap_or_default())
+        Ok(self
+            .comment_threads
+            .get(&number)
+            .cloned()
+            .unwrap_or_default())
     }
 
     fn open_children(&self, number: u64) -> anyhow::Result<Vec<u64>> {
@@ -1458,8 +1462,8 @@ fn issue_comments_are_attached_to_the_planner_issue_json() {
     )
     .unwrap();
 
-    let issue_json = fs::read_to_string(repo.join(".ralphy").join("issue.json"))
-        .expect("issue.json written");
+    let issue_json =
+        fs::read_to_string(repo.join(".ralphy").join("issue.json")).expect("issue.json written");
     let parsed: serde_json::Value = serde_json::from_str(&issue_json).expect("valid JSON");
     let comments = parsed["comments"].as_array().expect("comments array");
     assert_eq!(comments.len(), 2, "both comments carried into issue.json");

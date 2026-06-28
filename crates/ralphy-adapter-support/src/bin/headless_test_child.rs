@@ -6,6 +6,11 @@
 //!   stderr, then exit 0.
 //! - `sleep` — sleep ~60s (the timeout-and-kill case); never exits on its own
 //!   within a test's patience.
+//! - `sleep-with-grandchild` — spawn a copy of itself (in `sleep` mode) that
+//!   inherits this process's stdout, then sleep ~60s. The grandchild keeps the
+//!   stdout pipe write-end open after the direct child dies, so it exercises
+//!   `run_headless`'s process-tree kill: a plain `child.kill()` would leave the
+//!   reader blocked on the still-open pipe.
 //! - `large` — emit a large (>64KB) stream to stdout, then exit 0 (the
 //!   no-truncation case).
 //!
@@ -33,6 +38,15 @@ fn main() {
             let _ = std::io::stderr().flush();
         }
         "sleep" => {
+            std::thread::sleep(Duration::from_secs(60));
+        }
+        "sleep-with-grandchild" => {
+            // Spawn a grandchild that inherits our stdout, so the pipe write-end
+            // stays open even after we are killed. Then sleep. Only a process-tree
+            // kill closes the pipe and lets the reader reach EOF.
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe).arg("sleep").spawn();
+            }
             std::thread::sleep(Duration::from_secs(60));
         }
         "large" => {

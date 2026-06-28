@@ -682,7 +682,7 @@ impl Agent for ClaudeAgent {
         child
             .stdin
             .take()
-            .expect("stdin was piped")
+            .context("claude plan child stdin was not piped")?
             .write_all(prompt.as_bytes())
             .context("piping the plan prompt to claude")?;
 
@@ -1226,11 +1226,10 @@ fn latest_transcript_text_since(
     fs::read_to_string(newest).ok()
 }
 
-/// The home directory, from the platform's usual env var.
+/// The home directory, from the platform's usual env var. Thin alias over the
+/// shared [`ralphy_adapter_support::home_dir`] so the env dance lives in one place.
 fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
+    ralphy_adapter_support::home_dir()
 }
 
 /// Pre-clear the first-run gates that block an *interactive* Claude session for

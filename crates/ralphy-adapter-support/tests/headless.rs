@@ -64,6 +64,28 @@ fn timeout_kills_child_and_returns_promptly() {
 }
 
 #[test]
+fn timeout_with_surviving_grandchild_still_returns_promptly() {
+    // A grandchild inherits the child's stdout pipe and outlives the direct child.
+    // Only run_headless's process-tree kill closes that pipe; without it the reader
+    // would block on the still-open write-end and the collect grace would hang.
+    let started = Instant::now();
+    let r = run_headless(
+        child_cmd("sleep-with-grandchild"),
+        "ignored prompt",
+        Duration::from_millis(300),
+    )
+    .expect("run_headless should not error when killing a tree on timeout");
+    let elapsed = started.elapsed();
+
+    assert!(r.timed_out, "the child tree outlived the timeout");
+    assert!(r.exit.is_none(), "a killed child reports exit == None");
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "tree-kill closes the inherited pipe so the reader doesn't hang (took {elapsed:?})"
+    );
+}
+
+#[test]
 fn large_output_is_captured_complete() {
     let r = run_headless(
         child_cmd("large"),

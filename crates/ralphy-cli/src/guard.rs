@@ -11,8 +11,72 @@
 //! over the tool name, tool input, and the tool dir path, so it unit-tests
 //! without touching the filesystem or environment.
 
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde_json::Value;
+
+/// The Bash deny-list, ported from `guard.ps1`: each `(regex, why)` pair blocks a
+/// destructive command. Compiled once — the guard hook fires before *every*
+/// Bash/Edit/Write call, so recompiling these per invocation was wasted work on
+/// the one hot safety path.
+static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+    [
+        (
+            r"\bgit\s+push\b",
+            "pushing is the orchestrator's job, not the agent's",
+        ),
+        (
+            r"\bgit\s+reset\s+--hard\b",
+            "hard reset can destroy uncommitted work",
+        ),
+        (r"\bgit\s+clean\b", "git clean deletes untracked files"),
+        (
+            r"\bgit\s+rebase\b",
+            "history rewrite is not allowed in the loop",
+        ),
+        (
+            r"\bgit\s+(checkout|switch)\b",
+            "the agent must stay on the run branch the orchestrator created",
+        ),
+        (
+            r"\bgit\s+worktree\b",
+            "worktrees are the orchestrator's business, not the agent's",
+        ),
+        (
+            r"\bgh\s+pr\s+(merge|close)\b",
+            "merging/closing PRs is a human decision",
+        ),
+        (
+            r"\bgh\s+(release|repo|workflow|secret|auth)\b",
+            "repo/release/workflow/secret/auth ops are out of scope",
+        ),
+        (r"\bcargo\s+publish\b", "publishing crates is out of scope"),
+        (
+            r"\brm\s+.*-[a-z]*r[a-z]*f|\brm\s+.*-[a-z]*f[a-z]*r",
+            "recursive force-delete is blocked",
+        ),
+        (r"Remove-Item\b.*-Recurse", "recursive delete is blocked"),
+        (r"\b(del|rmdir)\s+.*/s\b", "recursive delete is blocked"),
+        (
+            // `format` only as a command name (start of command or after a
+            // separator) — `--format json` / `--format=%H` flags are benign.
+            r"(?:^|[;&|]\s*)format(?:\.com)?\s|\b(mkfs|diskpart)\b",
+            "disk-level command is blocked",
+        ),
+        (
+            r"\bcurl\b.*\|\s*(sh|bash|pwsh|powershell)",
+            "piping a download into a shell is blocked",
+        ),
+        (
+            r"iwr\b.*\|\s*iex|Invoke-Expression",
+            "remote code execution is blocked",
+        ),
+    ]
+    .into_iter()
+    .map(|(rx, why)| (Regex::new(rx).expect("valid guard regex"), why))
+    .collect()
+});
 
 /// The decision returned by [`evaluate_guard`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,80 +111,9 @@ fn evaluate_bash(tool_input: &Value) -> GuardDecision {
         return GuardDecision::Allow;
     }
 
-    struct Rule {
-        rx: &'static str,
-        why: &'static str,
-    }
-
-    let rules = [
-        Rule {
-            rx: r"\bgit\s+push\b",
-            why: "pushing is the orchestrator's job, not the agent's",
-        },
-        Rule {
-            rx: r"\bgit\s+reset\s+--hard\b",
-            why: "hard reset can destroy uncommitted work",
-        },
-        Rule {
-            rx: r"\bgit\s+clean\b",
-            why: "git clean deletes untracked files",
-        },
-        Rule {
-            rx: r"\bgit\s+rebase\b",
-            why: "history rewrite is not allowed in the loop",
-        },
-        Rule {
-            rx: r"\bgit\s+(checkout|switch)\b",
-            why: "the agent must stay on the run branch the orchestrator created",
-        },
-        Rule {
-            rx: r"\bgit\s+worktree\b",
-            why: "worktrees are the orchestrator's business, not the agent's",
-        },
-        Rule {
-            rx: r"\bgh\s+pr\s+(merge|close)\b",
-            why: "merging/closing PRs is a human decision",
-        },
-        Rule {
-            rx: r"\bgh\s+(release|repo|workflow|secret|auth)\b",
-            why: "repo/release/workflow/secret/auth ops are out of scope",
-        },
-        Rule {
-            rx: r"\bcargo\s+publish\b",
-            why: "publishing crates is out of scope",
-        },
-        Rule {
-            rx: r"\brm\s+.*-[a-z]*r[a-z]*f|\brm\s+.*-[a-z]*f[a-z]*r",
-            why: "recursive force-delete is blocked",
-        },
-        Rule {
-            rx: r"Remove-Item\b.*-Recurse",
-            why: "recursive delete is blocked",
-        },
-        Rule {
-            rx: r"\b(del|rmdir)\s+.*/s\b",
-            why: "recursive delete is blocked",
-        },
-        Rule {
-            // `format` only as a command name (start of command or after a
-            // separator) — `--format json` / `--format=%H` flags are benign.
-            rx: r"(?:^|[;&|]\s*)format(?:\.com)?\s|\b(mkfs|diskpart)\b",
-            why: "disk-level command is blocked",
-        },
-        Rule {
-            rx: r"\bcurl\b.*\|\s*(sh|bash|pwsh|powershell)",
-            why: "piping a download into a shell is blocked",
-        },
-        Rule {
-            rx: r"iwr\b.*\|\s*iex|Invoke-Expression",
-            why: "remote code execution is blocked",
-        },
-    ];
-
-    for rule in &rules {
-        let re = Regex::new(rule.rx).expect("valid guard regex");
+    for (re, why) in BASH_DENY_RULES.iter() {
         if re.is_match(cmd) {
-            return GuardDecision::Deny(rule.why.to_string());
+            return GuardDecision::Deny((*why).to_string());
         }
     }
     GuardDecision::Allow

@@ -9,3 +9,4 @@ description = "Shared, vendor-neutral adapter machinery for Ralphy: the headless
 [dependencies]
 anyhow.workspace = true
 include_dir.workspace = true
+tracing.workspace = true

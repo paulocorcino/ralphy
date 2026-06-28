@@ -271,8 +271,8 @@ fn codex_config_path() -> Option<PathBuf> {
     if let Some(codex_home) = std::env::var_os("CODEX_HOME") {
         return Some(PathBuf::from(codex_home).join("config.toml"));
     }
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
-    Some(PathBuf::from(home).join(".codex").join("config.toml"))
+    let home = ralphy_adapter_support::home_dir()?;
+    Some(home.join(".codex").join("config.toml"))
 }
 
 /// The top-level `model = "..."` from the user's Codex config, if present and
@@ -548,7 +548,12 @@ fn parse_codex_reset_hint(text: &str) -> Option<String> {
         // can safely index back into line (no Unicode expansion hazard).
         let lower = line.to_ascii_lowercase();
         if let Some(pos) = lower.find("try again at ") {
-            let rest = line[pos + "try again at ".len()..].trim();
+            // Strip trailing sentence punctuation an error line leaves on the hint
+            // (e.g. "… try again at <ts>.") so the hint is clean for the parser.
+            let rest = line[pos + "try again at ".len()..]
+                .trim()
+                .trim_end_matches('.')
+                .trim();
             if !rest.is_empty() {
                 return Some(rest.to_string());
             }
@@ -580,7 +585,12 @@ fn classify_codex_outcome(
     if exited_cleanly && committed && ralphy_adapter_support::done_sentinel(out) {
         return Outcome::Done;
     }
-    if is_codex_limit_text(log) {
+    // A genuine usage limit makes Codex fail (non-zero or killed exit), so only a
+    // non-clean exit can be a limit. Gating on the exit avoids the false positive
+    // where the executed task merely echoed "usage limit" text from the source it
+    // read — mirrors the Claude adapter's structural (not whole-log-substring)
+    // limit detection.
+    if !exited_cleanly && is_codex_limit_text(log) {
         return Outcome::Limit(parse_codex_reset_hint(log));
     }
     Outcome::Stuck
@@ -681,8 +691,8 @@ fn codex_sessions_dir() -> Option<PathBuf> {
     if let Some(codex_home) = std::env::var_os("CODEX_HOME") {
         return Some(PathBuf::from(codex_home).join("sessions"));
     }
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
-    Some(PathBuf::from(home).join(".codex").join("sessions"))
+    let home = ralphy_adapter_support::home_dir()?;
+    Some(home.join(".codex").join("sessions"))
 }
 
 /// Recursively collect `rollout-*.jsonl` files under `dir` (Codex nests them by
@@ -1270,7 +1280,7 @@ mod tests {
         let text = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
         assert_eq!(
             parse_codex_reset_hint(text).as_deref(),
-            Some("2026-06-09T18:00:00Z.")
+            Some("2026-06-09T18:00:00Z")
         );
     }
 
@@ -1293,7 +1303,7 @@ mod tests {
         assert!(is_codex_limit_text(log));
         assert_eq!(
             parse_codex_reset_hint(log).as_deref(),
-            Some("Jun 10th, 2026 12:23 AM.")
+            Some("Jun 10th, 2026 12:23 AM")
         );
     }
 
@@ -1304,7 +1314,7 @@ mod tests {
         let log = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
         assert_eq!(
             classify_codex_outcome(false, false, false, "", log),
-            Outcome::Limit(Some("2026-06-09T18:00:00Z.".into()))
+            Outcome::Limit(Some("2026-06-09T18:00:00Z".into()))
         );
     }
 

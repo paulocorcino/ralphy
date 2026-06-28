@@ -54,6 +54,20 @@ mod tests {
     static FIXTURE: include_dir::Dir<'_> =
         include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/sample");
 
+    /// Mark a freshly-written fixture executable so `find_program`'s Unix
+    /// execute-bit check accepts it. A no-op off Unix (Windows gates on PATHEXT).
+    fn mark_executable(p: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(p).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(p, perms).unwrap();
+        }
+        #[cfg(not(unix))]
+        let _ = p;
+    }
+
     #[test]
     fn materialize_assets_clears_extracts_and_writes_gitignore() {
         let tmp = std::env::temp_dir().join(format!("ralphy-mat-assets-{}", std::process::id()));
@@ -108,6 +122,7 @@ mod tests {
         let exe = tmp.join("tool.exe");
         let target = if cfg!(windows) { &exe } else { &bare };
         fs::write(target, b"x").unwrap();
+        mark_executable(target);
 
         let path_var = tmp.clone().into_os_string();
         let got = find_program("tool", Some(path_var), Some(".EXE".into()))
@@ -147,6 +162,7 @@ mod tests {
         } else {
             let bare = tmp.join("opencode");
             fs::write(&bare, b"#!/bin/sh").unwrap();
+            mark_executable(&bare);
             let got = find_program("opencode", Some(path_var), None);
             assert_eq!(got.as_deref(), Some(bare.as_path()));
         }
@@ -206,6 +222,7 @@ mod tests {
             bin.join("myagent")
         };
         fs::write(&file, b"x").unwrap();
+        mark_executable(&file);
 
         // Empty PATH so only the ~/.local/bin fallback can match.
         let got = locate_program_with(
@@ -241,6 +258,7 @@ mod tests {
             tmp.join("tool")
         };
         fs::write(&on_path, b"x").unwrap();
+        mark_executable(&on_path);
 
         let got = locate_program_with(
             "tool",
@@ -285,7 +303,7 @@ mod tests {
         );
     }
 }
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -306,13 +324,29 @@ pub fn materialize_assets(
     dest_dir: &Path,
     gitignore_dir: Option<&Path>,
 ) -> Result<()> {
+    // Extract into a sibling staging dir first, then swap it over `dest_dir`. A
+    // failed extract (disk full, permission) leaves the previous good copy
+    // untouched instead of a half-populated tree — the slow, failure-prone step
+    // happens off to the side, and only the fast remove+rename touches `dest_dir`.
+    let staging = dest_dir.with_file_name(format!(
+        "{}.tmp-{}",
+        dest_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("asset"),
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&staging); // clear any leftover from a crashed run
+    fs::create_dir_all(&staging).context("creating the asset staging directory")?;
+    if let Err(e) = asset.extract(&staging) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(e).context("extracting the embedded asset tree");
+    }
     if dest_dir.exists() {
         fs::remove_dir_all(dest_dir).context("clearing the stale materialized asset directory")?;
     }
-    fs::create_dir_all(dest_dir).context("creating the asset destination directory")?;
-    asset
-        .extract(dest_dir)
-        .context("extracting the embedded asset tree")?;
+    fs::rename(&staging, dest_dir)
+        .context("swapping the materialized asset directory into place")?;
     if let Some(dir) = gitignore_dir {
         fs::write(dir.join(".gitignore"), "*\n").context("writing .gitignore")?;
     }
@@ -372,15 +406,33 @@ pub fn locate_program_with(
     if cfg!(windows) {
         cand.set_extension("exe");
     }
-    cand.is_file().then_some(cand)
+    is_executable_file(&cand).then_some(cand)
 }
 
 /// The home directory, from the platform's usual env var (`USERPROFILE` on
-/// Windows, else `HOME`).
-fn home_dir() -> Option<PathBuf> {
+/// Windows, else `HOME`). Exported so every adapter shares one definition instead
+/// of re-deriving the `USERPROFILE`-or-`HOME` dance.
+pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)
+}
+
+/// True when `p` is a regular file the OS would actually run. On Unix this
+/// requires an execute bit, so a non-executable data file sharing the program's
+/// name on `PATH` can't shadow a real binary later in the search; off Unix, being
+/// a regular file is enough (Windows gates executability on `PATHEXT` separately).
+#[cfg(unix)]
+fn is_executable_file(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(p)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(p: &Path) -> bool {
+    p.is_file()
 }
 
 /// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows. Pure
@@ -420,7 +472,7 @@ pub fn find_program(
                             .any(|x| x.trim_start_matches('.').eq_ignore_ascii_case(e))
                     })
         } else {
-            direct.is_file()
+            is_executable_file(&direct)
         };
         if direct_ok {
             return Some(direct);
@@ -467,34 +519,59 @@ pub struct HeadlessOutput {
 /// reported. Output is then collected with a 5s grace so a child that flushed late
 /// is still captured complete.
 pub fn run_headless(mut cmd: Command, prompt: &str, timeout: Duration) -> Result<HeadlessOutput> {
+    // On Unix, run the child in its own process group so a timeout can signal the
+    // whole tree, not just the direct child. An agent CLI that spawned helpers
+    // would otherwise leave a grandchild holding the stdout pipe open, blocking the
+    // reader forever and forcing the collect grace to return empty — silently
+    // dropping the very output the limit/auth detectors scan.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
     let mut child = cmd
         .spawn()
         .context("failed to spawn the headless child process")?;
 
     // Spawn the stdout/stderr reader threads *before* writing stdin, so a prompt
     // larger than the pipe buffer (~64KB) can't deadlock against a child that
-    // starts emitting output before it finishes draining stdin.
-    let mut stdin = child.stdin.take().expect("stdin was piped");
-    let stdout = child.stdout.take().expect("stdout was piped");
-    let stderr = child.stderr.take().expect("stderr was piped");
+    // starts emitting output before it finishes draining stdin. A misconfigured
+    // `Command` (no piped stdio) degrades to a run error, not a panic.
+    let mut stdin = child
+        .stdin
+        .take()
+        .context("headless child stdin was not piped")?;
+    let stdout = child
+        .stdout
+        .take()
+        .context("headless child stdout was not piped")?;
+    let stderr = child
+        .stderr
+        .take()
+        .context("headless child stderr was not piped")?;
 
     let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
     let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
-    thread::spawn(move || {
+    let out_handle = thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = BufReader::new(stdout).read_to_end(&mut buf);
         let _ = tx_out.send(buf);
     });
-    thread::spawn(move || {
+    let err_handle = thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = BufReader::new(stderr).read_to_end(&mut buf);
         let _ = tx_err.send(buf);
     });
 
-    stdin
-        .write_all(prompt.as_bytes())
-        .context("piping the prompt to the headless child")?;
+    // A broken pipe here means the child exited before draining stdin — its own
+    // signal, not a fatal error. Warn and fall through to the poll loop, which
+    // reaps the child, rather than `?`-returning with the child still unreaped.
+    let stdin_result = stdin.write_all(prompt.as_bytes());
     drop(stdin); // close stdin so the child sees EOF
+    if let Err(e) = stdin_result {
+        tracing::warn!(error = %e, "writing the prompt to the headless child failed (it likely exited early)");
+    }
 
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
@@ -503,21 +580,85 @@ pub fn run_headless(mut cmd: Command, prompt: &str, timeout: Duration) -> Result
             break Some(s);
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_tree(&mut child);
             timed_out = true;
             break None;
         }
         thread::sleep(Duration::from_millis(500));
     };
 
+    // Collect with a bounded grace so a child that flushed late is still captured.
+    // After a natural exit (or `kill_tree`) the pipes reach EOF and the readers
+    // finish, so this normally returns the full buffer; on the rare stuck reader we
+    // warn (a truncated capture is observable) and leak that one thread rather than
+    // block the whole run on it.
     let collect = Duration::from_secs(5);
-    let stdout_bytes = rx_out.recv_timeout(collect).unwrap_or_default();
-    let stderr_bytes = rx_err.recv_timeout(collect).unwrap_or_default();
+    let stdout_bytes = recv_and_join(&rx_out, out_handle, collect, "stdout");
+    let stderr_bytes = recv_and_join(&rx_err, err_handle, collect, "stderr");
     Ok(HeadlessOutput {
         stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
         stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
         timed_out,
         exit,
     })
+}
+
+/// Await one reader thread's captured bytes within `grace`, then join it. On a
+/// natural exit or after [`kill_tree`] the pipe hits EOF and the thread sends
+/// promptly, so the join is immediate; if the grace elapses the thread is still
+/// blocked (a descendant survived) — warn that the capture may be truncated and
+/// leak that one thread instead of blocking the run on a join that would hang.
+fn recv_and_join(
+    rx: &mpsc::Receiver<Vec<u8>>,
+    handle: thread::JoinHandle<()>,
+    grace: Duration,
+    stream: &str,
+) -> Vec<u8> {
+    match rx.recv_timeout(grace) {
+        Ok(buf) => {
+            let _ = handle.join();
+            buf
+        }
+        Err(_) => {
+            tracing::warn!(
+                stream,
+                "headless reader did not finish within the collect grace — output may be truncated"
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// Kill the child and every descendant it spawned. `child.kill()` signals only the
+/// direct child, so a helper process started by an agent CLI would survive and
+/// hold the stdout pipe open. Best-effort on every arm; always reaps the child.
+///
+/// Boundary: on Unix this signals the child's process *group*, which covers every
+/// descendant that inherited it (the common case). A descendant that calls
+/// `setsid()` to start its own group escapes — `recv_and_join` then bounds the
+/// wait and warns rather than hanging. Windows `taskkill /T` walks the real tree
+/// and has no such gap.
+fn kill_tree(child: &mut std::process::Child) {
+    let pid = child.id();
+    #[cfg(windows)]
+    {
+        // `taskkill /T` terminates the whole tree rooted at PID.
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(unix)]
+    {
+        // The child leads its own process group (set at spawn), so a negative pgid
+        // signals the whole tree. Dependency-free via the `kill` utility.
+        let _ = Command::new("kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill(); // direct child / fallback
+    let _ = child.wait(); // reap so no zombie lingers
 }
