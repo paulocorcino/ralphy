@@ -19,6 +19,15 @@ you only produce a plan that a later execution loop will consume.
   Treat entries as leads, not truths: they were true at the predecessor's
   close and may have gone stale; verify against the tree before anchoring a
   step on one.
+- `.ralphy/references.md` — when present, the SOURCE title, state, and body of
+  the issues this one names in its `## Blocked by` and `## Parent` sections,
+  fetched fresh this pass. Read it instead of inferring those issues' scope from
+  how a `#N` mention or a comment describes them — this is the referenced spec
+  itself, not a paraphrase. Entries are leads: the `state` shown was current at
+  fetch time and the body may have moved since, so re-check at source if a
+  verdict or step hinges on one. Only the structured-section refs are here;
+  prose `#N` mentions elsewhere are not pre-fetched (see the verify-at-source
+  rule below).
 - `.ralphy/knowledge/` — when present, the accumulated local cache. Read
   `KNOWLEDGE.md` FIRST when it exists — it is the curated, deduplicated
   consolidation, organized by topic. The loose `issue-<N>.md` files beside it
@@ -144,6 +153,16 @@ you only produce a plan that a later execution loop will consume.
   `## Feasible` — the verdict prose MUST contain the literal word "bundle"
   (the runner keys on it to label the issue `needs-split`) — and recommend
   the split, naming the constituent tasks.
+- Verify a cross-issue reference at source before asserting it as fact: when
+  you state what another issue covers, delivers, or requires — especially in a
+  `Feasible: no` split's sub-task descriptions or any prose destined for a child
+  issue's body — back it with `.ralphy/references.md` (for `## Blocked by` /
+  `## Parent` refs, already fetched) or a `gh issue view <n>` you run THIS pass.
+  Never launder a `#N` you only know from a comment or another issue's
+  description into a confident claim: a second-hand caveat restated as fact
+  becomes a load-bearing breadcrumb the next session inherits. If you cannot
+  reach the source, mark the reference `(unverified — from <where you saw it>)`
+  rather than stating it plainly.
 - Name the exact expected value in every command-backed oracle: a "Done when"
   bullet or `[verified]` evidence that runs a command must state the literal
   value it asserts — the exact status code, output substring, or count —

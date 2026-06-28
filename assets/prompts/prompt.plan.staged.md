@@ -18,6 +18,14 @@ in the exact shape the executor expects (below).
   traps they hit, command sequences that work, and residue they left. Feed it
   into the staged design — it is paid-for knowledge. Treat entries as leads,
   not truths; verify against the tree before anchoring a stage on one.
+- `.ralphy/references.md` — when present, the SOURCE title, state, and body of
+  the issues this one names in its `## Blocked by` and `## Parent` sections,
+  fetched fresh this pass. Feed it into the staged design instead of inferring
+  those issues' scope from how a `#N` mention or a comment describes them — this
+  is the referenced spec itself, not a paraphrase. Entries are leads: the
+  `state` shown was current at fetch time and the body may have moved since, so
+  re-check at source if a stage hinges on one. Only structured-section refs are
+  here; prose `#N` mentions are not pre-fetched (see the verify-at-source rule).
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
   and builds run.
@@ -105,6 +113,15 @@ in the exact shape the executor expects (below).
   from an unpinned URL are leads, not facts. Record each fetch (URL + what
   it settled) under `## Decisions`; if a needed fetch fails, mark the claim
   `(assumed — unverified)` instead of stating it with a confident voice.
+- Verify a cross-issue reference at source before asserting it as fact: when
+  you state what another issue covers, delivers, or requires — especially in a
+  split's sub-task descriptions or any prose destined for a child issue's body —
+  back it with `.ralphy/references.md` (for `## Blocked by` / `## Parent` refs,
+  already fetched) or a `gh issue view <n>` you run THIS pass. Never launder a
+  `#N` you only know from a comment or another issue's description into a
+  confident claim: a second-hand caveat restated as fact becomes a load-bearing
+  breadcrumb the next session inherits. If you cannot reach the source, mark the
+  reference `(unverified — from <where you saw it>)` rather than stating it plainly.
 - Name the exact expected value in every command-backed oracle: a "Done when"
   bullet or `[verified]` evidence that runs a command must state the literal
   value it asserts — the exact status code, output substring, or count —

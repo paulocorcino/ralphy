@@ -50,6 +50,26 @@ pub fn parse_parent(body: &str) -> Vec<u64> {
         .collect()
 }
 
+/// Collect the issue numbers named in the two STRUCTURED reference sections —
+/// `## Blocked by` and `## Parent` — deduped (first occurrence wins) and with
+/// `self_number` removed. These are the refs the runner pre-fetches into
+/// `.ralphy/references.md`: a dependency or provenance link the planner is apt
+/// to restate as fact in a child issue, so it should read the source rather than
+/// paraphrase a `#N` mention. Blocked-by refs lead (the harder dependency), then
+/// the parent. Prose `#N` mentions outside these sections are intentionally
+/// excluded — `parse_blocked_by`'s bullet-only match and `parse_parent`'s
+/// section scoping already draw that line.
+pub fn structured_refs(body: &str, self_number: u64) -> Vec<u64> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for n in parse_blocked_by(body).into_iter().chain(parse_parent(body)) {
+        if n != self_number && seen.insert(n) {
+            out.push(n);
+        }
+    }
+    out
+}
+
 /// Order a queue so every issue comes after the issues it depends on, with
 /// ascending number as the tie-break — the sequence shown to the user IS the
 /// sequence executed. Edges are derived from bodies already in hand (no tracker
@@ -238,6 +258,26 @@ mod tests {
     fn parse_parent_stops_at_next_heading() {
         let body = "## Parent\n\nSplit from #3.\n\n## Blocked by\n- #16\n";
         assert_eq!(parse_parent(body), vec![3]);
+    }
+
+    #[test]
+    fn structured_refs_unions_blocked_by_and_parent_deduped() {
+        // #13 appears in both sections; it must surface once, blocked-by first.
+        let body = "## Parent\n\nSplit from #15. See also #13.\n\n## Blocked by\n- #13\n- #7\n";
+        assert_eq!(structured_refs(body, 29), vec![13, 7, 15]);
+    }
+
+    #[test]
+    fn structured_refs_excludes_self_and_prose_mentions() {
+        // A prose `#99` outside the structured sections is ignored; a self-ref
+        // (#5 blocking itself, malformed) is dropped.
+        let body = "Background mentions #99.\n\n## Blocked by\n- #5\n- #7\n";
+        assert_eq!(structured_refs(body, 5), vec![7]);
+    }
+
+    #[test]
+    fn structured_refs_empty_without_sections() {
+        assert!(structured_refs("## What to build\nstuff with #3 inline\n", 1).is_empty());
     }
 
     fn issue(number: u64, body: &str) -> Issue {

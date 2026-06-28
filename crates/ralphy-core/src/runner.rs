@@ -14,6 +14,7 @@ use tracing::{info, warn};
 use crate::{
     acceptance, blocked, git, gitignore, handoff,
     ledger::{self, LedgerRecord},
+    references,
     verify::{self, VerifySpec},
     Agent, Execution, Issue, IssueTracker, Outcome, PlanLimit, Usage, Workspace,
 };
@@ -626,6 +627,45 @@ fn write_handoffs(
     }
 }
 
+/// Refresh `.ralphy/references.md` for the issue about to be planned: fetch the
+/// source (title, state, body) of every issue named in its `## Blocked by` and
+/// `## Parent` sections and render them, or remove a stale file when the issue
+/// names none. The planner reads this so a `#N` reference reaches it as the
+/// referenced issue's actual spec, not a paraphrase it might restate as fact in
+/// a child issue. Best-effort and depth-1: a fetch failure (a cross-repo or
+/// deleted ref, say) logs a warning and skips that ref, and the fetched bodies'
+/// own references are not followed transitively.
+fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn IssueTracker) {
+    let refs = blocked::structured_refs(&issue.body, issue.number);
+    let mut entries: Vec<references::Reference> = Vec::new();
+    for n in refs {
+        match tracker.reference(n) {
+            Ok(Some(r)) => entries.push(r),
+            Ok(None) => {}
+            Err(e) => {
+                warn!(number = issue.number, reference = n, error = %e, "fetching referenced issue failed — skipping")
+            }
+        }
+    }
+    let path = ws.references_path();
+    match references::render_references_file(&entries) {
+        Some(content) => {
+            if let Err(e) = std::fs::write(&path, content) {
+                warn!(number = issue.number, error = %e, "writing .ralphy/references.md failed");
+            } else {
+                info!(
+                    number = issue.number,
+                    references = entries.len(),
+                    "references collected for planner"
+                );
+            }
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 /// Persist the durable knowledge a green close leaves behind: the environment
 /// facts and working commands extracted from the plan's `## Handoff`, written
 /// to `.ralphy/knowledge/issue-<N>.md`. The folder accumulates across issues
@@ -815,6 +855,12 @@ pub fn run_queue(
         // warning, never a stop — but the file is always refreshed (or removed)
         // so a previous issue's handoffs never leak into this one.
         write_handoffs(&ws, issue.number, &closed_blockers, tracker);
+
+        // Reproduce the source of the issues this one references in its
+        // `## Blocked by` / `## Parent` sections into `.ralphy/references.md`, so
+        // the planner reads the referenced spec at source rather than restating a
+        // `#N` mention as fact in a child issue. Best-effort like the handoffs.
+        write_references(&ws, issue, tracker);
 
         // Plan, auto-resuming through usage-limit reset windows the same way
         // execution does. A usage limit during planning surfaces as a typed

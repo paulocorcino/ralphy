@@ -19,6 +19,11 @@ durable.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
   depends on: environment traps, working command sequences, residue. Treat them
   as leads from predecessors, not truths — verify before relying on one.
+- `.ralphy/references.md` — when present, the SOURCE title, state, and body of
+  the issues named in this one's `## Blocked by` / `## Parent` sections. Consult
+  it when a step touches what a referenced issue delivered or specified, rather
+  than inferring its scope from a `#N` mention. Leads, not truths — the state was
+  current at fetch time; verify at source before relying on a detail.
 - `.ralphy/knowledge/` — when present, the accumulated local cache. Read
   `KNOWLEDGE.md` FIRST when it exists (curated, organized by topic); the loose
   `issue-<N>.md` files beside it are newer, not-yet-consolidated notes

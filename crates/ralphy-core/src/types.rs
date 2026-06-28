@@ -189,6 +189,15 @@ impl Workspace {
         self.ralphy_dir().join("handoffs.md")
     }
 
+    /// `<repo>/.ralphy/references.md` — the source title, state, and body of
+    /// the issues named in the current issue's `## Blocked by` / `## Parent`
+    /// sections, written by the runner before the plan pass so the planner reads
+    /// the referenced spec rather than paraphrasing a `#N` mention. Refreshed
+    /// (or removed) per issue like `handoffs.md`.
+    pub fn references_path(&self) -> PathBuf {
+        self.ralphy_dir().join("references.md")
+    }
+
     /// `<repo>/.ralphy/knowledge` — the accumulated local knowledge cache:
     /// one `issue-<N>.md` per issue closed green, holding the environment
     /// facts and working commands mechanically extracted from its handoff at
@@ -275,5 +284,12 @@ mod tests {
         let ws = Workspace::new("/some/repo");
         assert!(ws.init_state_path().starts_with(ws.ralphy_dir()));
         assert!(ws.init_state_path().ends_with("init-state.json"));
+    }
+
+    #[test]
+    fn references_path_is_under_ralphy_dir() {
+        let ws = Workspace::new("/some/repo");
+        assert!(ws.references_path().starts_with(ws.ralphy_dir()));
+        assert!(ws.references_path().ends_with("references.md"));
     }
 }

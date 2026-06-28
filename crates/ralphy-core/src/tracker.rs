@@ -62,6 +62,16 @@ pub trait IssueTracker {
         Ok(Vec::new())
     }
 
+    /// Fetch the source of an issue named in a STRUCTURED reference section
+    /// (`## Blocked by` / `## Parent`) of the issue being planned: its title,
+    /// state, and body, so the planner reads the referenced spec instead of
+    /// paraphrasing a `#N` mention into a child issue. Default `None` so non-`gh`
+    /// implementations feed no references.
+    fn reference(&self, number: u64) -> Result<Option<crate::references::Reference>> {
+        let _ = number;
+        Ok(None)
+    }
+
     /// The OPEN issues whose `## Parent` section references `number` — the
     /// live children of a retired bundle. A closed blocker with open children
     /// still blocks: its work moved into the children, so the dependent must
@@ -123,6 +133,10 @@ impl IssueTracker for GhTracker {
 
     fn issue_comments(&self, number: u64) -> Result<Vec<String>> {
         github::issue_comments(number, &self.repo_root)
+    }
+
+    fn reference(&self, number: u64) -> Result<Option<crate::references::Reference>> {
+        github::fetch_reference(number, &self.repo_root).map(Some)
     }
 
     fn open_children(&self, number: u64) -> Result<Vec<u64>> {

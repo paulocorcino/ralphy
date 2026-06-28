@@ -38,12 +38,13 @@ pub mod issues_draft;
 pub mod knowledge;
 pub mod ledger;
 pub mod plan;
+pub mod references;
 pub mod settings;
 pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
-pub use blocked::parse_blocked_by;
+pub use blocked::{parse_blocked_by, structured_refs};
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use init_session::{
     build_diagnose_prompt, build_init_issues_prompt, DraftRequest, IssuesMode, PROMPT_DIAGNOSE,
@@ -51,6 +52,7 @@ pub use init_session::{
 };
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
+pub use references::Reference;
 pub use runner::{
     run, run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, RunConfig,
     RunOutcome, RunReport, StopReason, WaitOutcome, WallClock, STOP_BEFORE_LABEL,
