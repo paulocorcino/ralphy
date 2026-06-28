@@ -213,7 +213,7 @@ impl CodexAgent {
         Self {
             model,
             run_dir,
-            max_minutes_per_issue: 90,
+            max_minutes_per_issue: ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
             run_deadline: None,
         }
     }
@@ -234,9 +234,16 @@ impl CodexAgent {
     }
 
     /// The deadline for the current issue: the per-issue budget, clamped to the
-    /// run's global deadline when one is set.
+    /// run's global deadline when one is set. A budget of `0` disables the
+    /// per-issue cap — the issue is then bounded only by the run deadline (or the
+    /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
     fn issue_deadline(&self) -> Instant {
-        let per_issue = Instant::now() + Duration::from_secs(self.max_minutes_per_issue * 60);
+        let budget = if self.max_minutes_per_issue == 0 {
+            ralphy_core::UNBOUNDED_ISSUE_HORIZON
+        } else {
+            Duration::from_secs(self.max_minutes_per_issue * 60)
+        };
+        let per_issue = Instant::now() + budget;
         match self.run_deadline {
             Some(rd) => per_issue.min(rd),
             None => per_issue,
@@ -884,6 +891,22 @@ mod tests {
             .with_max_minutes_per_issue(1000)
             .with_run_deadline(Some(rd));
         assert!(clamped.issue_deadline() <= rd);
+    }
+
+    #[test]
+    fn codex_zero_minutes_disables_the_per_issue_cap() {
+        // `0` → no per-issue cap: the deadline sits at the far-future horizon,
+        // well past any finite budget.
+        let uncapped = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
+        let capped = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
+        assert!(uncapped.issue_deadline() > capped.issue_deadline());
+
+        // …but an uncapped issue is still bounded by the run deadline when set.
+        let rd = Instant::now() + Duration::from_secs(1);
+        let bounded = CodexAgent::new(None, PathBuf::from("/run"))
+            .with_max_minutes_per_issue(0)
+            .with_run_deadline(Some(rd));
+        assert!(bounded.issue_deadline() <= rd);
     }
 
     // ── classify_codex_outcome ──────────────────────────────────────────────

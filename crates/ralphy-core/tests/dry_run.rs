@@ -105,6 +105,7 @@ fn issue() -> Issue {
         title: "walking skeleton".into(),
         body: "body".into(),
         labels: vec![],
+        comments: vec![],
     }
 }
 

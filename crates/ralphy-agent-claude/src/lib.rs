@@ -116,7 +116,7 @@ impl Default for ExecConfig {
             exec_model: None,
             exec_effort: Some("medium".into()),
             default_exec_model: "sonnet".into(),
-            max_minutes_per_issue: 45,
+            max_minutes_per_issue: ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
             remote_control: true,
             headless_exec: false,
             max_exec_calls: 6,
@@ -170,9 +170,16 @@ impl ClaudeAgent {
     }
 
     /// The deadline for the current issue: the per-issue budget, clamped to the
-    /// run's global deadline when one is set.
+    /// run's global deadline when one is set. A budget of `0` disables the
+    /// per-issue cap — the issue is then bounded only by the run deadline (or the
+    /// far-future [`UNBOUNDED_ISSUE_HORIZON`] when no run deadline is set).
     fn issue_deadline(&self) -> Instant {
-        let per_issue = Instant::now() + Duration::from_secs(self.exec.max_minutes_per_issue * 60);
+        let budget = if self.exec.max_minutes_per_issue == 0 {
+            ralphy_core::UNBOUNDED_ISSUE_HORIZON
+        } else {
+            Duration::from_secs(self.exec.max_minutes_per_issue * 60)
+        };
+        let per_issue = Instant::now() + budget;
         match self.exec.run_deadline {
             Some(rd) => per_issue.min(rd),
             None => per_issue,
@@ -1608,6 +1615,7 @@ mod tests {
             title: "test".into(),
             body: String::new(),
             labels: labels.iter().map(|s| s.to_string()).collect(),
+            comments: vec![],
         }
     }
 
@@ -1696,6 +1704,31 @@ mod tests {
             false,
             6,
         )
+    }
+
+    fn agent_with_minutes(minutes: u64) -> ClaudeAgent {
+        ClaudeAgent::new(None, None, PathBuf::from("/run")).with_exec_config(
+            None,
+            Some("medium".into()),
+            "sonnet".into(),
+            minutes,
+            true,
+            false,
+            6,
+        )
+    }
+
+    #[test]
+    fn issue_deadline_zero_minutes_disables_the_cap() {
+        // `0` → no per-issue cap: the deadline sits past any finite budget…
+        let uncapped = agent_with_minutes(0);
+        let capped = agent_with_minutes(1000);
+        assert!(uncapped.issue_deadline() > capped.issue_deadline());
+
+        // …yet the run deadline still bounds an uncapped issue when present.
+        let rd = Instant::now() + Duration::from_secs(1);
+        let bounded = agent_with_minutes(0).with_run_deadline(Some(rd));
+        assert!(bounded.issue_deadline() <= rd);
     }
 
     #[test]

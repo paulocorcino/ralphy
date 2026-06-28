@@ -5,6 +5,21 @@
 //! or a model. Everything vendor-specific lives behind [`Agent`], inside an
 //! adapter. See docs/adr/0002 for the boundary this enforces.
 
+use std::time::Duration;
+
+/// Default per-issue wall-clock budget in minutes, used when neither
+/// `--max-minutes-per-issue` nor `claude.max_minutes_per_issue` is set. The
+/// single source of truth for every adapter's default — keep adapter `Default`
+/// impls pointing here rather than re-spelling a literal.
+pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 90;
+
+/// The horizon an adapter substitutes for the per-issue deadline when the budget
+/// is disabled (`max_minutes_per_issue == 0`): far enough out to never fire in a
+/// real run, but finite so `Instant` arithmetic and subprocess timeouts stay
+/// well-defined. The issue is then bounded only by the run-level deadline
+/// (`--deadline-hours`), if one is set.
+pub const UNBOUNDED_ISSUE_HORIZON: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+
 mod agent;
 pub(crate) mod markdown;
 mod runner;

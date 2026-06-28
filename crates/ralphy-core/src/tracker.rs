@@ -53,6 +53,15 @@ pub trait IssueTracker {
         Ok(None)
     }
 
+    /// Fetch an issue's comment bodies in thread order — the discussion the
+    /// runner attaches to the selected issue before planning, so the planner
+    /// and executor read it alongside the body. Default empty so non-`gh`
+    /// implementations never feed comments.
+    fn issue_comments(&self, number: u64) -> Result<Vec<String>> {
+        let _ = number;
+        Ok(Vec::new())
+    }
+
     /// The OPEN issues whose `## Parent` section references `number` — the
     /// live children of a retired bundle. A closed blocker with open children
     /// still blocks: its work moved into the children, so the dependent must
@@ -110,6 +119,10 @@ impl IssueTracker for GhTracker {
     fn handoff_comment(&self, number: u64) -> Result<Option<String>> {
         let comments = github::issue_comments(number, &self.repo_root)?;
         Ok(crate::handoff::find_handoff_comment(&comments))
+    }
+
+    fn issue_comments(&self, number: u64) -> Result<Vec<String>> {
+        github::issue_comments(number, &self.repo_root)
     }
 
     fn open_children(&self, number: u64) -> Result<Vec<u64>> {

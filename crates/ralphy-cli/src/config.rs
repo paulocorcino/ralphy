@@ -106,7 +106,7 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         "claude.exec_effort" => s.claude.exec_effort = Some(value.to_owned()),
         "claude.max_minutes_per_issue" => {
             let n = value.parse::<u64>().map_err(|_| {
-                anyhow!("claude.max_minutes_per_issue must be a positive integer, got '{value}'")
+                anyhow!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
             })?;
             s.claude.max_minutes_per_issue = Some(n);
         }
@@ -362,8 +362,14 @@ mod tests {
         );
         let err = set(&ws, "claude.max_minutes_per_issue", "abc").unwrap_err();
         assert!(
-            err.to_string().contains("must be a positive integer"),
+            err.to_string().contains("must be a non-negative integer"),
             "got: {err}"
+        );
+        // `0` is a valid value — it disables the per-issue cap.
+        set(&ws, "claude.max_minutes_per_issue", "0").unwrap();
+        assert_eq!(
+            Settings::load(&ws).unwrap().claude.max_minutes_per_issue,
+            Some(0)
         );
 
         fs::remove_dir_all(&dir).ok();

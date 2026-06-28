@@ -232,6 +232,7 @@ mod tests {
             title: format!("issue {number}"),
             body: body.into(),
             labels: vec![],
+            comments: vec![],
         }
     }
 

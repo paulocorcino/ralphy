@@ -185,6 +185,7 @@ ralphy config set branch_mode current                   # default branch mode
 ralphy config set verify.command "cargo test"           # per-repo fallback verify gate
 ralphy config set claude.default_exec_model opus        # Claude run defaults (claude.*):
 ralphy config set claude.max_minutes_per_issue 120      #   plan_model, plan_effort,
+ralphy config set claude.max_minutes_per_issue 0        #   0 = no per-issue cap (default 90)
 ralphy config get                                        #   exec_effort, … — see config --help
 ralphy config unset opencode.model                      # clear a key
 ```

@@ -177,7 +177,8 @@ struct RunArgs {
     default_exec_model: Option<String>,
 
     /// Per-issue wall-clock budget (minutes) before the session is reclaimed
-    /// (default: 90, or `claude.max_minutes_per_issue` in settings.json).
+    /// (default: 90, or `claude.max_minutes_per_issue` in settings.json). `0`
+    /// disables the cap — the issue is then bounded only by `--deadline-hours`.
     #[arg(long)]
     max_minutes_per_issue: Option<u64>,
 
@@ -615,7 +616,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         max_minutes_per_issue: config::resolve_u64(
             args.max_minutes_per_issue,
             settings.claude.max_minutes_per_issue,
-            90,
+            ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
         ),
     };
     let executor = build_agent(
@@ -662,8 +663,15 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             .map(str::trim)
             .filter(|c| !c.is_empty())
             .map(|c| vec![ralphy_core::verify::tokenize(c)]),
+        // The verify gate borrows the per-issue budget, but a disabled budget
+        // (`0` = no per-issue cap) must not collapse the gate to a 0s timeout —
+        // fall back to the default window so verify still has room to run.
         verify_timeout: std::time::Duration::from_secs(
-            resolved_claude.max_minutes_per_issue.saturating_mul(60),
+            match resolved_claude.max_minutes_per_issue {
+                0 => ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
+                n => n,
+            }
+            .saturating_mul(60),
         ),
     };
 

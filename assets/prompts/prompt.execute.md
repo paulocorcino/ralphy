@@ -6,7 +6,10 @@ checkboxes + the git history, so committing each step is what makes progress
 durable.
 
 ## Context on disk (in this repo)
-- `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
+- `.ralphy/issue.json` — the GitHub issue (number, title, body, labels, and
+  `comments`: the issue's comment thread in order). Read the comments too — a
+  human may have refined the spec or flagged a constraint there rather than in
+  the body.
 - `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth.
 - `.ralphy/verify-failure.md` — present ONLY when the runner's verify gate failed
   on previously committed work. When it exists it is your TOP priority — see the

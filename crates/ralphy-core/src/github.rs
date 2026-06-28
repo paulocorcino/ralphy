@@ -34,6 +34,9 @@ impl From<GhIssue> for Issue {
             title: g.title,
             body: g.body,
             labels: g.labels.into_iter().map(|l| l.name).collect(),
+            // `gh issue list`/`view` here fetch number,title,body,labels only —
+            // comments are filled later, per selected issue, by the runner.
+            comments: Vec::new(),
         }
     }
 }
@@ -1116,6 +1119,7 @@ mod tests {
             title: format!("issue {number}"),
             body: String::new(),
             labels: vec![],
+            comments: vec![],
         }
     }
 

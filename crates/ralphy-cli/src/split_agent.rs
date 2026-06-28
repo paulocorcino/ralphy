@@ -103,6 +103,7 @@ mod tests {
             title: String::new(),
             body: String::new(),
             labels: vec![],
+            comments: vec![],
         }
     }
 

@@ -14,6 +14,14 @@ pub struct Issue {
     pub body: String,
     #[serde(default)]
     pub labels: Vec<String>,
+    /// The issue's comment bodies, in thread order. Empty as built by the queue
+    /// (`gh issue list` does not carry comments); the runner fills it just before
+    /// planning by fetching the selected issue's comments, so the planner and
+    /// executor see the discussion — not just the original body — via
+    /// `.ralphy/issue.json`. `#[serde(default)]` keeps older `issue.json` files
+    /// and the queue's comment-less issues deserializing cleanly.
+    #[serde(default)]
+    pub comments: Vec<String>,
 }
 
 /// A normalized, vendor-agnostic token-usage record (ADR-0008 D4). Each adapter

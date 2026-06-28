@@ -3,7 +3,10 @@ for a single GitHub issue. You will NOT write production code in this pass —
 you only produce a plan that a later execution loop will consume.
 
 ## Context on disk
-- `.ralphy/issue.json` — the GitHub issue (number, title, body, labels).
+- `.ralphy/issue.json` — the GitHub issue (number, title, body, labels, and
+  `comments`: the issue's comment thread in order). Read the comments too — a
+  human may have refined the spec, answered a question, or flagged a constraint
+  there rather than editing the body.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this
   one depends on (`Blocked by`): what predecessors delivered, environment
   traps they hit, command sequences that work, and residue they left. Read it

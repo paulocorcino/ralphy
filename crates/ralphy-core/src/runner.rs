@@ -759,6 +759,30 @@ pub fn run_queue(
         // consumed by the telegram notifier / presenter — keep stable
         info!(number = issue.number, title = %issue.title, "issue started");
 
+        // Attach the issue's own comment thread so the planner and executor read
+        // the discussion alongside the body — guidance, clarifications, and prior
+        // attempts a human left in comments rather than in the original body.
+        // Best-effort enrichment: a fetch failure is a warning, never a stop, and
+        // planning proceeds with the body alone. The queue's issue carries no
+        // comments (the list query omits them), so this clone is where they land.
+        let mut issue = issue.clone();
+        match tracker.issue_comments(issue.number) {
+            Ok(comments) => {
+                if !comments.is_empty() {
+                    info!(
+                        number = issue.number,
+                        comments = comments.len(),
+                        "comments attached for planner"
+                    );
+                }
+                issue.comments = comments;
+            }
+            Err(e) => {
+                warn!(number = issue.number, error = %e, "fetching issue comments failed — planning with body only")
+            }
+        }
+        let issue = &issue;
+
         // Persist the current issue where the planner reads it. The adapter's
         // prompt reads `.ralphy/issue.json`, so the loop must refresh it before
         // each plan — `.ralphy/` is gitignored and survives the branch checkout.

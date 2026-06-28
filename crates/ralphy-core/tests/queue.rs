@@ -200,6 +200,9 @@ struct RecordingTracker {
     labels: RefCell<Vec<(u64, String)>>,
     /// Scripted handoff comments returned by `handoff_comment`, by issue number.
     handoffs: HashMap<u64, String>,
+    /// Scripted comment threads returned by `issue_comments`, by issue number —
+    /// the discussion the runner attaches to an issue before planning.
+    comment_threads: HashMap<u64, Vec<String>>,
     /// Scripted open children returned by `open_children`, by parent number —
     /// the open issues whose `## Parent` references a retired bundle.
     children: HashMap<u64, Vec<u64>>,
@@ -234,6 +237,10 @@ impl IssueTracker for RecordingTracker {
 
     fn handoff_comment(&self, number: u64) -> anyhow::Result<Option<String>> {
         Ok(self.handoffs.get(&number).cloned())
+    }
+
+    fn issue_comments(&self, number: u64) -> anyhow::Result<Vec<String>> {
+        Ok(self.comment_threads.get(&number).cloned().unwrap_or_default())
     }
 
     fn open_children(&self, number: u64) -> anyhow::Result<Vec<u64>> {
@@ -401,6 +408,7 @@ fn issue(number: u64) -> Issue {
         title: format!("issue {number}"),
         body: String::new(),
         labels: vec![],
+        comments: vec![],
     }
 }
 
@@ -410,6 +418,7 @@ fn issue_labeled(number: u64, labels: &[&str]) -> Issue {
         title: format!("issue {number}"),
         body: String::new(),
         labels: labels.iter().map(|s| s.to_string()).collect(),
+        comments: vec![],
     }
 }
 
@@ -419,6 +428,7 @@ fn issue_with_body(number: u64, body: impl Into<String>) -> Issue {
         title: format!("issue {number}"),
         body: body.into(),
         labels: vec![],
+        comments: vec![],
     }
 }
 
@@ -1418,6 +1428,45 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
 
         fs::remove_dir_all(&repo).ok();
     }
+}
+
+#[test]
+fn issue_comments_are_attached_to_the_planner_issue_json() {
+    // The runner fetches the selected issue's comment thread and folds it into
+    // `.ralphy/issue.json` (the `comments` array), so the planner reads the
+    // discussion, not just the body.
+    let repo = init_repo("comments-attach");
+    let queue = vec![issue_with_body(5, "original body")];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker {
+        comment_threads: HashMap::from([(
+            5u64,
+            vec![
+                "first clarification from a human".to_string(),
+                "second: use the staging endpoint".to_string(),
+            ],
+        )]),
+        ..Default::default()
+    };
+
+    run_queue(
+        &cfg(&repo, "stamp-comments", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let issue_json = fs::read_to_string(repo.join(".ralphy").join("issue.json"))
+        .expect("issue.json written");
+    let parsed: serde_json::Value = serde_json::from_str(&issue_json).expect("valid JSON");
+    let comments = parsed["comments"].as_array().expect("comments array");
+    assert_eq!(comments.len(), 2, "both comments carried into issue.json");
+    assert_eq!(comments[0], "first clarification from a human");
+    assert_eq!(comments[1], "second: use the staging endpoint");
+
+    fs::remove_dir_all(&repo).ok();
 }
 
 #[test]
