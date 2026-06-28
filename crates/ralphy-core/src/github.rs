@@ -829,7 +829,11 @@ mod tests {
         // 1. Our pure extractor over the real body: structured refs only.
         let refs = crate::blocked::structured_refs(body_29, 29);
         println!("\nstructured_refs(#29) = {refs:?}");
-        assert_eq!(refs, vec![13, 15], "blocked-by (#13) leads, then parent (#15)");
+        assert_eq!(
+            refs,
+            vec![13, 15],
+            "blocked-by (#13) leads, then parent (#15)"
+        );
 
         // 2. Fetch each ref from the live repo and run OUR parser on the output.
         let mut fetched = Vec::new();
@@ -854,8 +858,8 @@ mod tests {
         }
 
         // 3. Our renderer produces the file the planner reads.
-        let file = crate::references::render_references_file(&fetched)
-            .expect("non-empty references file");
+        let file =
+            crate::references::render_references_file(&fetched).expect("non-empty references file");
         println!("\n----- .ralphy/references.md -----\n{file}\n---------------------------------");
 
         // Evidence assertions: both refs present with their real state, source
