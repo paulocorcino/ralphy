@@ -156,7 +156,7 @@ fn gh_output(op: &str, mut build: impl FnMut() -> Command) -> Result<Output> {
         }
         bail!("`{op}` failed: {}", stderr.trim());
     }
-    unreachable!("the final attempt returns Ok or bails");
+    bail!("`{op}` exhausted {GH_MAX_ATTEMPTS} attempts");
 }
 
 /// Build the run queue from GitHub. `gh --label` is an AND filter, so query each
@@ -241,7 +241,7 @@ pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> 
         }
         bail!("`gh issue edit {number}` failed: {}", stderr.trim());
     }
-    unreachable!("the final attempt returns Ok or bails");
+    bail!("`gh issue edit {number}` exhausted {GH_MAX_ATTEMPTS} attempts");
 }
 
 /// Parse the issue number from a `gh issue create` success line. `gh` prints the
@@ -381,7 +381,7 @@ pub fn create_issue(
         }
         bail!("`gh issue create` ({title}) failed: {}", stderr.trim());
     }
-    unreachable!("the final attempt returns Ok or bails");
+    bail!("`gh issue create` ({title}) exhausted {GH_MAX_ATTEMPTS} attempts");
 }
 
 /// Add a label to an issue via `gh issue edit <n> --add-label <label>`. When the

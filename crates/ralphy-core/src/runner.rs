@@ -23,6 +23,12 @@ use crate::{
 /// spinning the resume loop, mirroring the execute-path no-commit cap.
 const MAX_PLAN_LIMIT_RESUMES: u32 = 2;
 
+/// Upper bound on a single usage-limit wait. A reset hint that resolves farther
+/// out than this is treated as a stop (`DeadlinePassed`) rather than parked on —
+/// guards against a malformed/hostile hint parking the run for the unbounded
+/// issue horizon (~365 days) when no run-level deadline is set.
+const MAX_RESET_WAIT: Duration = Duration::from_secs(12 * 60 * 60);
+
 /// How a [`RunClock::wait_for_reset`] wait ended: the reset time arrived and the
 /// run may resume, or the global deadline cut the wait short (deadline beats
 /// resume).
@@ -74,6 +80,16 @@ impl RunClock for WallClock {
         };
 
         if self.deadline_passed() {
+            return WaitOutcome::DeadlinePassed;
+        }
+        // A reset farther out than the max wait is a stop, regardless of whether a
+        // run deadline is set — without this, a hint resolving to the unbounded
+        // issue horizon would park the run for ~365 days.
+        if target - Local::now()
+            > chrono::Duration::from_std(MAX_RESET_WAIT)
+                .unwrap_or_else(|_| chrono::Duration::hours(12))
+        {
+            info!(%reset, "reset lands beyond the max wait — not waiting");
             return WaitOutcome::DeadlinePassed;
         }
         // A reset beyond the global deadline never sleeps — the deadline wins the
@@ -134,7 +150,9 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
 
     let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
         Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
-        None => (None, reset.trim()),
+        // Use `trimmed` (trailing punctuation already stripped), not the raw
+        // `reset`, so a bare hint like "15:00." parses instead of failing.
+        None => (None, trimmed),
     };
     let (h, m) = hhmm.split_once(':')?;
     let hour: u32 = h.parse().ok()?;
@@ -905,9 +923,17 @@ pub fn run_queue(
                         if let Err(e) = tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
                             warn!(number = issue.number, error = %e, "applying needs-split label failed");
                         }
-                        tracker.comment(issue.number, &bundle_comment(&cfg.stamp, &reason))?;
-                    } else {
-                        tracker.comment(issue.number, &infeasible_comment(&cfg.stamp, &reason))?;
+                        // Best-effort: a failed verdict comment must not abort
+                        // the queue over a non-green skip.
+                        if let Err(e) =
+                            tracker.comment(issue.number, &bundle_comment(&cfg.stamp, &reason))
+                        {
+                            warn!(number = issue.number, error = %e, "posting bundle verdict comment failed");
+                        }
+                    } else if let Err(e) =
+                        tracker.comment(issue.number, &infeasible_comment(&cfg.stamp, &reason))
+                    {
+                        warn!(number = issue.number, error = %e, "posting infeasible verdict comment failed");
                     }
                 }
             }
@@ -948,19 +974,22 @@ pub fn run_queue(
         let mut deadline_cut = false;
         let mut exec_usage = Usage::default();
         let outcome = loop {
-            let before_sha = git::head_sha(repo).unwrap_or_default();
+            let before_sha = git::head_sha(repo).ok();
             let Execution { outcome, usage } = agent.execute(&plan, &ws)?;
             // Accumulate across the resume loop so the single execute ledger line
             // carries the whole issue's execution cost, not just the last attempt.
             exec_usage.add_tokens(&usage);
-            let after_sha = git::head_sha(repo).unwrap_or_default();
+            let after_sha = git::head_sha(repo).ok();
 
             // Track progress: a commit resets the streak, a no-commit execute
             // advances it. Done/non-limit outcomes break below before it matters.
-            if before_sha != after_sha {
-                no_commit_streak = 0;
-            } else {
-                no_commit_streak += 1;
+            // If either SHA read failed, progress is unknown — leave the streak
+            // untouched rather than collapse both errors to "" and read it as a
+            // false no-commit.
+            match (&before_sha, &after_sha) {
+                (Some(b), Some(a)) if b != a => no_commit_streak = 0,
+                (Some(_), Some(_)) => no_commit_streak += 1,
+                _ => {}
             }
 
             let reset = match &outcome {
@@ -1384,6 +1413,19 @@ mod tests {
         let now = at(2026, 6, 9, 10, 0);
         let got = next_reset("15:00", now).unwrap();
         assert_eq!(got, at(2026, 6, 9, 15, 0), "bare future time stays today");
+    }
+
+    #[test]
+    fn next_reset_bare_time_tolerates_trailing_period() {
+        // A bare hint with trailing sentence punctuation must parse like the
+        // absolute form does, not fall through to None.
+        let now = at(2026, 6, 9, 10, 0);
+        let got = next_reset("15:00.", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 9, 15, 0),
+            "bare time strips trailing period"
+        );
     }
 
     #[test]
