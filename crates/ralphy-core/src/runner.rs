@@ -357,6 +357,21 @@ pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunRepor
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";
 
+/// Labels that mark an issue as a human gate (ADR-0014): a blocker parked until a
+/// person acts, not agent work the queue will clear. The canonical
+/// `ready-for-human` triage role and its fixed `HITL` alias (ADR-0001). A human
+/// gate is never a queue member (it is never queried), so it only ever surfaces
+/// as a *blocker* in another issue's `## Blocked by`.
+pub const HUMAN_GATE_LABELS: [&str; 2] = ["ready-for-human", "HITL"];
+
+/// Whether a label set marks a human gate — used to split an open blocker into
+/// "waiting on a human" (parked) versus ordinary agent work the queue resolves.
+fn is_human_gate(labels: &[String]) -> bool {
+    labels
+        .iter()
+        .any(|l| HUMAN_GATE_LABELS.contains(&l.as_str()))
+}
+
 /// The label applied to an issue the planner judged a bundle (multiple backlog
 /// tasks under one number): the queue is parked on a human running `/to-issues`
 /// to open the children (`## Parent: #N`) and close the bundle — the
@@ -413,6 +428,11 @@ pub struct IssueResult {
     /// Open blocker issue numbers that caused this issue to be skipped. Empty
     /// when the issue was not blocked.
     pub blocked_by: Vec<u64>,
+    /// The subset of `blocked_by` that are human gates (`ready-for-human`/`HITL`,
+    /// ADR-0014): blockers parked until a person acts, not agent work the queue
+    /// will clear. Empty when no blocker is a human gate. The run still continues
+    /// past the issue — only this chain stalls; this field is for visibility.
+    pub human_blockers: Vec<u64>,
 }
 
 /// Why the queue loop stopped before reaching the end.
@@ -799,17 +819,43 @@ pub fn run_queue(
             }
         }
         if !open_blockers.is_empty() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                blockers = ?open_blockers,
-                "blocked by open issue(s) — skipping"
-            );
+            // Split the open blockers into human gates (ready-for-human/HITL —
+            // parked until a person acts, ADR-0014) and ordinary agent work the
+            // queue will clear. A label-fetch failure is non-fatal: it degrades
+            // to the generic "blocked" reason rather than aborting the AFK run,
+            // since classification is a visibility concern, not a correctness gate.
+            let mut human_blockers: Vec<u64> = Vec::new();
+            for &n in &open_blockers {
+                match tracker.issue_labels(n) {
+                    Ok(labels) if is_human_gate(&labels) => human_blockers.push(n),
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!(blocker = n, error = %e, "could not fetch blocker labels — treating as agent work");
+                    }
+                }
+            }
+            if human_blockers.is_empty() {
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(
+                    number = issue.number,
+                    blockers = ?open_blockers,
+                    "blocked by open issue(s) — skipping"
+                );
+            } else {
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(
+                    number = issue.number,
+                    blockers = ?open_blockers,
+                    human_blockers = ?human_blockers,
+                    "blocked — waiting on human"
+                );
+            }
             worked.push(IssueResult {
                 number: issue.number,
                 outcome: None,
                 closed: false,
                 blocked_by: open_blockers,
+                human_blockers,
             });
             continue;
         }
@@ -898,6 +944,7 @@ pub fn run_queue(
                     outcome: Some(Outcome::Limit(limit.reset.clone())),
                     closed: false,
                     blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -988,6 +1035,7 @@ pub fn run_queue(
                 outcome: None,
                 closed: false,
                 blocked_by: Vec::new(),
+                human_blockers: Vec::new(),
             });
             continue;
         }
@@ -999,6 +1047,7 @@ pub fn run_queue(
                 outcome: None,
                 closed: false,
                 blocked_by: Vec::new(),
+                human_blockers: Vec::new(),
             });
             continue;
         }
@@ -1245,6 +1294,7 @@ pub fn run_queue(
                         outcome: Some(Outcome::Limit(reset.clone())),
                         closed: false,
                         blocked_by: Vec::new(),
+                        human_blockers: Vec::new(),
                     });
                     stop = Some(StopReason::Limit { number, reset });
                     break;
@@ -1261,6 +1311,7 @@ pub fn run_queue(
                     outcome: None,
                     closed: false,
                     blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
                 });
                 continue;
             }
@@ -1293,6 +1344,7 @@ pub fn run_queue(
                 outcome: Some(Outcome::Done),
                 closed: true,
                 blocked_by: Vec::new(),
+                human_blockers: Vec::new(),
             });
 
             // Write acceptance evidence when the plan carries a ledger, and
@@ -1324,6 +1376,7 @@ pub fn run_queue(
             outcome: Some(outcome.clone()),
             closed: false,
             blocked_by: Vec::new(),
+            human_blockers: Vec::new(),
         });
         stop = Some(if deadline_cut {
             StopReason::Deadline

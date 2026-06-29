@@ -128,6 +128,11 @@ pub enum RunEvent {
     /// An issue was skipped (blocked-by an open issue, a `stop-before` label, or a
     /// verify gate still red after the repair budget).
     Skipped { number: u64, kind: SkipKind },
+    /// An issue is stalled on a human gate (`ready-for-human`/`HITL`) in its
+    /// dependency path (ADR-0014): `on` names the human-blocker issue(s) a person
+    /// must act on. The run continues — only this chain waits — but the operator
+    /// needs to see *which* issue is theirs to clear.
+    HumanBlocked { number: u64, on: Vec<u64> },
     /// The planner judged the issue a bundle (several backlog tasks under one
     /// number): the queue is parked on a human split. Follows the infeasible
     /// `PlanWritten { open_steps: 0 }` and upgrades the status.
@@ -164,6 +169,10 @@ pub enum IssueStatus {
     Infeasible,
     NeedsSplit,
     NonGreen,
+    /// Stalled on a human gate (`ready-for-human`/`HITL`) in its dependency path
+    /// (ADR-0014). Distinct from a generic dependency skip so the operator can
+    /// see which chains are waiting on a person, not on the queue.
+    Hitl,
 }
 
 impl IssueStatus {
@@ -177,6 +186,7 @@ impl IssueStatus {
                 | IssueStatus::Infeasible
                 | IssueStatus::NeedsSplit
                 | IssueStatus::NonGreen
+                | IssueStatus::Hitl
         )
     }
 }
@@ -208,6 +218,9 @@ pub struct Counts {
     pub non_green: usize,
     pub planning: usize,
     pub executing: usize,
+    /// Issues stalled on a human gate in their path (ADR-0014) — the
+    /// "waiting on human" bucket, kept distinct from generic skips.
+    pub hitl: usize,
 }
 
 /// The transport-agnostic state of a run, folded from its event stream.
@@ -334,6 +347,11 @@ impl RunState {
             RunEvent::Skipped { number, .. } => {
                 self.entry_mut(number).status = IssueStatus::Skipped;
             }
+            RunEvent::HumanBlocked { number, .. } => {
+                // Its own status so the card and counts surface "waiting on human"
+                // apart from a generic dependency skip (ADR-0014).
+                self.entry_mut(number).status = IssueStatus::Hitl;
+            }
             RunEvent::NeedsSplit { number } => {
                 let Some(n) = self.resolve(number) else {
                     return;
@@ -379,6 +397,7 @@ impl RunState {
                 IssueStatus::NonGreen => c.non_green += 1,
                 IssueStatus::Planning => c.planning += 1,
                 IssueStatus::Executing => c.executing += 1,
+                IssueStatus::Hitl => c.hitl += 1,
             }
         }
         c
@@ -447,6 +466,9 @@ pub struct EventFields {
     pub cr: Option<u64>,
     pub cw: Option<u64>,
     pub out: Option<u64>,
+    /// The Debug-formatted human-blocker list (`[30]`) on a `blocked — waiting on
+    /// human` event (ADR-0014): the issue(s) a person must clear.
+    pub human_blockers: Option<String>,
 }
 
 impl Default for EventFields {
@@ -471,6 +493,7 @@ impl Default for EventFields {
             cr: None,
             cw: None,
             out: None,
+            human_blockers: None,
         }
     }
 }
@@ -519,6 +542,9 @@ impl Visit for EventFields {
             "order" => self.order = Some(rendered),
             "outcome" => self.outcome = Some(rendered),
             "reset" => self.reset = Some(rendered.clone()),
+            // The `?`-formatted `Vec<u64>` human-blocker list (`[30]`), kept raw
+            // for the decoder to read the numbers out of (ADR-0014).
+            "human_blockers" => self.human_blockers = Some(rendered),
             // Debug-formatted `Option<String>` / `&str` adapter fields: strip the
             // `Some("…")` / quote wrapping and treat `None`/empty as absent so the
             // decoder never carries a literal `None` or `""` into a display label.
@@ -624,6 +650,13 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             kind: SkipKind::BlockedBy,
         }),
+        // A human gate (`ready-for-human`/`HITL`) sits in the issue's path: the
+        // chain is parked until a person acts, but the run continues. `on` names
+        // the issue(s) the operator must clear (ADR-0014).
+        "blocked — waiting on human" => Some(RunEvent::HumanBlocked {
+            number,
+            on: parse_u64_list(fields.human_blockers.as_deref()),
+        }),
         "stop-before label — halting run before this issue" => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::StopBefore,
@@ -669,6 +702,31 @@ fn parse_order(order: Option<&str>) -> Vec<u64> {
                 .ok()
         })
         .collect()
+}
+
+/// Read the issue numbers out of a Debug-formatted `Vec<u64>` like `[30, 18]`
+/// (the runner's `human_blockers` field), tolerating `[]`/absent as empty. Each
+/// run of ASCII digits is one number, so the bracket/comma framing is ignored.
+fn parse_u64_list(raw: Option<&str>) -> Vec<u64> {
+    let Some(s) = raw else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for ch in s.chars() {
+        if ch.is_ascii_digit() {
+            cur.push(ch);
+        } else if !cur.is_empty() {
+            if let Ok(n) = cur.parse() {
+                out.push(n);
+            }
+            cur.clear();
+        }
+    }
+    if let Ok(n) = cur.parse() {
+        out.push(n);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -874,6 +932,31 @@ mod tests {
         assert_eq!(state.most_recent_finished().map(|e| e.number), Some(2));
     }
 
+    #[test]
+    fn human_blocked_is_its_own_status_and_bucket() {
+        // A HumanBlocked event folds to the Hitl status (not generic Skipped) and
+        // tallies its own bucket — so the card and counts surface "waiting on
+        // human" distinctly (ADR-0014).
+        let mut state = RunState::new("t", 2);
+        state.apply(RunEvent::HumanBlocked {
+            number: 5,
+            on: vec![30],
+        });
+        let entry = state.issues.iter().find(|e| e.number == 5).unwrap();
+        assert_eq!(entry.status, IssueStatus::Hitl);
+        let c = state.counts();
+        assert_eq!(c.hitl, 1);
+        assert_eq!(c.skipped, 0, "a human gate is not a generic skip");
+    }
+
+    #[test]
+    fn parse_u64_list_reads_debug_vec_and_tolerates_empty() {
+        assert_eq!(parse_u64_list(Some("[30]")), vec![30]);
+        assert_eq!(parse_u64_list(Some("[30, 18]")), vec![30, 18]);
+        assert!(parse_u64_list(Some("[]")).is_empty());
+        assert!(parse_u64_list(None).is_empty());
+    }
+
     // -----------------------------------------------------------------------
     // Decoder suite
     // -----------------------------------------------------------------------
@@ -1031,6 +1114,18 @@ mod tests {
             Some(RunEvent::Skipped {
                 number: 8,
                 kind: SkipKind::StopBefore
+            })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "blocked — waiting on human".into(),
+                number: Some(16),
+                human_blockers: Some("[30]".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::HumanBlocked {
+                number: 16,
+                on: vec![30]
             })
         );
     }

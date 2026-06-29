@@ -737,7 +737,19 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         .iter()
         .filter(|r| r.outcome.is_some() && r.outcome != Some(Outcome::Done))
         .count() as u64;
-    let skipped = report.worked.iter().filter(|r| r.outcome.is_none()).count() as u64;
+    // Issues stalled on a human gate in their path (ADR-0014) get their own
+    // bucket and are kept out of the generic skipped tally, mirroring how the
+    // live card gives them a distinct status.
+    let hitl = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome.is_none() && !r.human_blockers.is_empty())
+        .count() as u64;
+    let skipped = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
+        .count() as u64;
 
     let panel_stop = report.stop.map(|s| match s {
         StopReason::Deadline => ui::PanelStop::Deadline,
@@ -790,6 +802,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         done,
         blocked: num_blocked,
         skipped,
+        hitl,
         commits: report.commits,
         stop: panel_stop,
         branch_mode: panel_mode,

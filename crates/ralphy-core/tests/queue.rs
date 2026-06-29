@@ -206,6 +206,9 @@ struct RecordingTracker {
     /// Scripted open children returned by `open_children`, by parent number —
     /// the open issues whose `## Parent` references a retired bundle.
     children: HashMap<u64, Vec<u64>>,
+    /// Scripted labels returned by `issue_labels`, by issue number — lets a test
+    /// mark an open blocker as a human gate (`ready-for-human`/`HITL`, ADR-0014).
+    issue_labels: HashMap<u64, Vec<String>>,
 }
 
 impl IssueTracker for RecordingTracker {
@@ -249,6 +252,10 @@ impl IssueTracker for RecordingTracker {
 
     fn open_children(&self, number: u64) -> anyhow::Result<Vec<u64>> {
         Ok(self.children.get(&number).cloned().unwrap_or_default())
+    }
+
+    fn issue_labels(&self, number: u64) -> anyhow::Result<Vec<String>> {
+        Ok(self.issue_labels.get(&number).cloned().unwrap_or_default())
     }
 }
 
@@ -1632,6 +1639,89 @@ fn closed_blocker_with_open_children_still_blocks() {
 
         fs::remove_dir_all(&repo).ok();
     }
+}
+
+#[test]
+fn human_gate_blocker_is_classified_and_run_continues() {
+    // #5 is blocked by #2, an OPEN issue carrying `ready-for-human` (a human
+    // gate, ADR-0014). #7 is independent and runnable. Expected: #5 is skipped
+    // with #2 recorded in BOTH blocked_by and human_blockers; the run does NOT
+    // stop — #7 still runs to a green close. Only #5's chain stalls.
+    let repo = init_repo("human-gate");
+    let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n"), issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #7 executes
+    let tracker = RecordingTracker {
+        // #2 is open (absent from closed_issues) and carries the human gate.
+        issue_labels: HashMap::from([(2u64, vec!["ready-for-human".to_string()])]),
+        ..Default::default()
+    };
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-human-gate", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let r5 = report
+        .worked
+        .iter()
+        .find(|r| r.number == 5)
+        .expect("#5 in worked");
+    assert!(r5.outcome.is_none(), "#5 skipped, never planned");
+    assert!(!r5.closed, "#5 not closed");
+    assert_eq!(r5.blocked_by, vec![2], "#5 still records its open blocker");
+    assert_eq!(
+        r5.human_blockers,
+        vec![2],
+        "#2 is classified as a human gate"
+    );
+
+    // The run continued: #7 ran and closed green; no stop.
+    assert!(agent.executed.borrow().contains(&7), "#7 must have run");
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![7], "only #7 closed");
+    assert!(report.stop.is_none(), "a human gate never stops the whole run");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn ordinary_open_blocker_is_not_a_human_gate() {
+    // #5 is blocked by open #2 carrying only `ready-for-agent` (ordinary agent
+    // work the queue will clear). Expected: skipped, blocked_by == [2], but
+    // human_blockers empty — it is NOT a human gate.
+    let repo = init_repo("agent-blocker");
+    let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n")];
+    let agent = ScriptedAgent::new(vec![]);
+    let tracker = RecordingTracker {
+        issue_labels: HashMap::from([(2u64, vec!["ready-for-agent".to_string()])]),
+        ..Default::default()
+    };
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-agent-blocker", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let r5 = report
+        .worked
+        .iter()
+        .find(|r| r.number == 5)
+        .expect("#5 in worked");
+    assert_eq!(r5.blocked_by, vec![2]);
+    assert!(
+        r5.human_blockers.is_empty(),
+        "an agent-work blocker is not a human gate"
+    );
+
+    fs::remove_dir_all(&repo).ok();
 }
 
 #[test]

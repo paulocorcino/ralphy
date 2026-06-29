@@ -87,6 +87,21 @@ fn skip_label(kind: SkipKind) -> &'static str {
     }
 }
 
+/// A human-gate skip label, naming the blocker(s) the operator must clear: e.g.
+/// `waiting on human at #30` (ADR-0014). Falls back to the bare phrase when the
+/// blocker list is empty (a label fetch the runner could not resolve).
+fn human_blocked_label(on: &[u64]) -> String {
+    if on.is_empty() {
+        return "waiting on human".to_string();
+    }
+    let at = on
+        .iter()
+        .map(|n| format!("#{n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("waiting on human at {at}")
+}
+
 /// The pure state behind the queue progress bar: a fixed `total`, the ordered
 /// `pending` issue numbers, and a `completed` count. Every terminal outcome
 /// advances it by one; [`finish`](Self::finish) flushes it to `N/N`. Kept pure
@@ -273,6 +288,9 @@ pub struct PanelData {
     pub done: u64,
     pub blocked: u64,
     pub skipped: u64,
+    /// Issues stalled on a human gate in their path (ADR-0014) — surfaced in the
+    /// counts line only when non-zero, so ordinary runs stay unchanged.
+    pub hitl: u64,
     pub commits: usize,
     pub stop: Option<PanelStop>,
     pub branch_mode: PanelBranchMode,
@@ -367,6 +385,14 @@ fn render_line(
             pick("⏭️", "[skip]", opts.emoji),
             Style::new().dim(),
             format!("#{number} {}{dur}", skip_label(*kind)),
+        ),
+        // A human gate gets its own glyph (🙋) and a non-dim style: it asks for a
+        // person — and names which issue (`at #30`) — unlike an ordinary
+        // dependency skip the queue clears on its own (ADR-0014).
+        RunEvent::HumanBlocked { number, on } => (
+            pick("🙋", "[hitl]", opts.emoji),
+            Style::new().yellow(),
+            format!("#{number} {}{dur}", human_blocked_label(on)),
         ),
         RunEvent::NeedsSplit { number } => (
             pick("🧩", "[split]", opts.emoji),
@@ -476,6 +502,18 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     } else {
         format!("{done_part} · {blocked_part} · {skipped_part}")
     });
+
+    // "Waiting on human" bucket (ADR-0014) — appended only when something is
+    // stalled on a human gate, so ordinary runs keep their three-part line.
+    if data.hitl > 0 {
+        let hitl_icon = pick("🙋", "[hitl]", opts.emoji);
+        let hitl_raw = format!("{hitl_icon} {} waiting on human", data.hitl);
+        lines.push(if opts.color {
+            Style::new().yellow().apply_to(&hitl_raw).to_string()
+        } else {
+            hitl_raw
+        });
+    }
 
     // Commits line
     let commits_raw = format!("{} commit(s) on '{}'", data.commits, data.branch);
@@ -1045,7 +1083,9 @@ impl Presenter {
                 }
                 extra
             }
-            RunEvent::NonGreen { number, .. } | RunEvent::Skipped { number, .. } => {
+            RunEvent::NonGreen { number, .. }
+            | RunEvent::Skipped { number, .. }
+            | RunEvent::HumanBlocked { number, .. } => {
                 let duration = s
                     .active
                     .as_ref()
@@ -1562,6 +1602,67 @@ mod tests {
     }
 
     #[test]
+    fn render_plain_human_blocked_names_the_blocker() {
+        let ts = Local
+            .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
+            .single()
+            .unwrap();
+        let hitl = render_plain_line(
+            &RunEvent::HumanBlocked {
+                number: 16,
+                on: vec![30],
+            },
+            &ts,
+            None,
+        )
+        .expect("HumanBlocked renders a line");
+        // Names the issue the operator must clear, not a bare phrase.
+        assert!(hitl.contains("#16 waiting on human at #30"), "{hitl}");
+        // The human-gate glyph (🙋), not the generic skip glyph, and no "skipped"
+        // wording — it asks for a person, not a queue retry.
+        assert!(hitl.contains("🙋"), "{hitl}");
+        assert!(!hitl.contains("skipped"), "{hitl}");
+
+        // With no resolved blocker, it degrades to the bare phrase.
+        let bare = render_plain_line(
+            &RunEvent::HumanBlocked {
+                number: 7,
+                on: vec![],
+            },
+            &ts,
+            None,
+        )
+        .expect("HumanBlocked renders a line");
+        assert!(bare.contains("#7 waiting on human"), "{bare}");
+        assert!(!bare.contains(" at "), "{bare}");
+    }
+
+    #[test]
+    fn totals_panel_shows_waiting_on_human_only_when_nonzero() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: false,
+        };
+        // Zero → the counts line stays the three-part triad, no hitl line.
+        let none = render_totals_panel(&panel_base(), opts);
+        assert!(
+            !none.iter().any(|l| l.contains("waiting on human")),
+            "{none:?}"
+        );
+
+        // Non-zero → a dedicated waiting-on-human line appears.
+        let data = PanelData {
+            hitl: 2,
+            ..panel_base()
+        };
+        let lines = render_totals_panel(&data, opts);
+        assert!(
+            lines.iter().any(|l| l.contains("2 waiting on human")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
     fn normalize_remote_url_handles_ssh_https_and_dot_git() {
         // SCP-style SSH → https, `.git` stripped.
         assert_eq!(
@@ -1814,6 +1915,7 @@ mod tests {
             done: 3,
             blocked: 1,
             skipped: 2,
+            hitl: 0,
             commits: 5,
             stop: None,
             branch_mode: PanelBranchMode::New,

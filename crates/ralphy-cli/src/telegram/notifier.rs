@@ -67,6 +67,7 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
         IssueStatus::Infeasible => "🤷",
         IssueStatus::NeedsSplit => "🧩",
         IssueStatus::NonGreen => "❌",
+        IssueStatus::Hitl => "🙋",
     }
 }
 
@@ -90,6 +91,12 @@ fn counters_line(state: &RunState) -> String {
     );
     if c.needs_split > 0 {
         line.push_str(&format!(" · 🧩 {}", c.needs_split));
+    }
+    // A `🙋 N` counter appears only when a chain is parked on a human gate
+    // (ADR-0014) — the common card stays unchanged, but a run waiting on a
+    // person is visibly different.
+    if c.hitl > 0 {
+        line.push_str(&format!(" · 🙋 {}", c.hitl));
     }
     line
 }
@@ -205,6 +212,13 @@ pub fn render_final_push(state: &RunState) -> String {
     } else {
         String::new()
     };
+    // A chain parked on a human gate (ADR-0014) is a pending human step the
+    // footer must name, or a run that ends "green" hides it.
+    let hitl_part = if c.hitl > 0 {
+        format!(", 🙋 {} waiting on human", c.hitl)
+    } else {
+        String::new()
+    };
     // The end-of-run knowledge consolidation, when it ran: a `📚 N consolidated`
     // segment so the curation step is visible on the terminal card.
     let knowledge_part = match state.consolidated {
@@ -213,7 +227,7 @@ pub fn render_final_push(state: &RunState) -> String {
     };
     truncate_chars(
         format!(
-            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped{split_part}{knowledge_part}",
+            "🏁 {} — {} · ✅ {} done, ⏭️ {} skipped{hitl_part}{split_part}{knowledge_part}",
             state.title, head, c.done, c.skipped
         ),
         TELEGRAM_LIMIT,

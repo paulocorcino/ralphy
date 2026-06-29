@@ -527,6 +527,33 @@ pub fn issue_is_closed(number: u64, repo_root: &Path) -> Result<bool> {
     parse_issue_state(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// Parse the `{"labels":[{"name":"..."}]}` JSON from `gh issue view --json labels`
+/// into the bare label names. A dedicated parser (not [`parse_issue`]) because the
+/// `labels`-only projection carries no `number`/`title` for [`Issue`] to require.
+fn parse_issue_labels(json: &str) -> Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct LabelsJson {
+        #[serde(default)]
+        labels: Vec<GhLabel>,
+    }
+    let j: LabelsJson =
+        serde_json::from_str(json).context("parsing `gh issue view --json labels`")?;
+    Ok(j.labels.into_iter().map(|l| l.name).collect())
+}
+
+/// The label names on an issue, via `gh issue view <n> --json labels`. The
+/// blocked-by gate uses it to classify an open blocker as a human gate
+/// (`ready-for-human`/`HITL`) versus ordinary agent work the queue will clear
+/// (ADR-0014).
+pub fn issue_labels(number: u64, repo_root: &Path) -> Result<Vec<String>> {
+    let out = gh_output(&format!("gh issue view {number} --json labels"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["issue", "view", &number.to_string(), "--json", "labels"]);
+        cmd
+    })?;
+    parse_issue_labels(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Parse a `docs/agents/triage-labels.md` table row. Scans `doc` for
 /// `|`-delimited rows, strips backticks, trims each cell, and returns cell[2]
 /// when cell[1] == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.
@@ -900,6 +927,18 @@ mod tests {
     fn parse_milestone_number_reads_number_field() {
         let json = r#"{"number": 3, "title": "v1", "state": "open"}"#;
         assert_eq!(parse_milestone_number(json).unwrap(), 3);
+    }
+
+    #[test]
+    fn parse_issue_labels_reads_names_and_tolerates_empty() {
+        // `gh issue view --json labels` shape: a `labels` array of `{name,...}`.
+        let json = r#"{"labels": [{"name": "ready-for-human"}, {"name": "needs-triage"}]}"#;
+        assert_eq!(
+            parse_issue_labels(json).unwrap(),
+            vec!["ready-for-human".to_string(), "needs-triage".to_string()]
+        );
+        // No labels → empty, not an error.
+        assert!(parse_issue_labels(r#"{"labels": []}"#).unwrap().is_empty());
     }
 
     #[test]

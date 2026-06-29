@@ -81,6 +81,15 @@ pub trait IssueTracker {
         let _ = number;
         Ok(Vec::new())
     }
+
+    /// The labels on an open blocker, so the blocked-by gate can tell a human
+    /// gate (`ready-for-human`/`HITL`, parked until a person acts — ADR-0014)
+    /// apart from ordinary agent work the queue will clear on its own. Default
+    /// empty so non-`gh` implementations classify every blocker as agent work.
+    fn issue_labels(&self, number: u64) -> Result<Vec<String>> {
+        let _ = number;
+        Ok(Vec::new())
+    }
 }
 
 /// The production tracker: closes issues and writes acceptance evidence through
@@ -146,5 +155,9 @@ impl IssueTracker for GhTracker {
             .filter(|i| crate::blocked::parse_parent(&i.body).contains(&number))
             .map(|i| i.number)
             .collect())
+    }
+
+    fn issue_labels(&self, number: u64) -> Result<Vec<String>> {
+        github::issue_labels(number, &self.repo_root)
     }
 }
