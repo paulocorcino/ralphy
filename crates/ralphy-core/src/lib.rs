@@ -38,13 +38,14 @@ pub mod issues_draft;
 pub mod knowledge;
 pub mod ledger;
 pub mod plan;
+pub mod protocol;
 pub mod references;
 pub mod settings;
 pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
-pub use blocked::{parse_blocked_by, structured_refs};
+pub use blocked::{parse_blocked_by, referenced_issues, structured_refs};
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use init_session::{
     build_diagnose_prompt, build_init_issues_prompt, DraftRequest, IssuesMode, PROMPT_DIAGNOSE,

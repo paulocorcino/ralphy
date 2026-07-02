@@ -52,17 +52,70 @@ pub fn parse_parent(body: &str) -> Vec<u64> {
 
 /// Collect the issue numbers named in the two STRUCTURED reference sections —
 /// `## Blocked by` and `## Parent` — deduped (first occurrence wins) and with
-/// `self_number` removed. These are the refs the runner pre-fetches into
-/// `.ralphy/references.md`: a dependency or provenance link the planner is apt
-/// to restate as fact in a child issue, so it should read the source rather than
-/// paraphrase a `#N` mention. Blocked-by refs lead (the harder dependency), then
-/// the parent. Prose `#N` mentions outside these sections are intentionally
-/// excluded — `parse_blocked_by`'s bullet-only match and `parse_parent`'s
-/// section scoping already draw that line.
+/// `self_number` removed. Blocked-by refs lead (the harder dependency), then the
+/// parent. Prose `#N` mentions outside these sections are excluded —
+/// `parse_blocked_by`'s bullet-only match and `parse_parent`'s section scoping
+/// draw that line.
+///
+/// This is the strictly-structured set, kept for callers that want only the
+/// load-bearing dependency/provenance edges (e.g. ordering evidence). The runner
+/// pre-fetches the broader [`referenced_issues`] set into `.ralphy/references.md`.
 pub fn structured_refs(body: &str, self_number: u64) -> Vec<u64> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for n in parse_blocked_by(body).into_iter().chain(parse_parent(body)) {
+        if n != self_number && seen.insert(n) {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// Extract every `#N` issue reference appearing anywhere in `body`, in order of
+/// first appearance, deduped. Unlike [`parse_blocked_by`]'s bullet-only rule this
+/// is a whole-body scan: an inline `see #28 for the provisional corpus` mention
+/// counts, because such a reference can be just as load-bearing as a structured
+/// one — an inlined `#N` caveat was exactly what got laundered into a confident
+/// claim before any structured section was involved.
+///
+/// The match mirrors GitHub's autolink boundary so non-references are not swept
+/// in: `#` must start a line or follow a non-word char, and the digits must end
+/// on a word boundary. That rejects hex colors (`#28a745`), letter anchors
+/// (`#L42`), and `word#3`.
+fn parse_body_refs(body: &str) -> Vec<u64> {
+    let ref_re = Regex::new(r"(?:^|\W)#(\d+)\b").expect("valid regex");
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for c in ref_re.captures_iter(body) {
+        // `\d+` is unbounded; an absurd digit run (bodies are IO-controlled) can
+        // overflow u64 — drop the impossible ref rather than panic.
+        if let Ok(n) = c[1].parse::<u64>() {
+            if seen.insert(n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
+/// Collect every issue number referenced by `body` — the two STRUCTURED sections
+/// (`## Blocked by`, then `## Parent`) first because they are the load-bearing
+/// dependency/provenance links, then every other inline `#N` mention in order of
+/// appearance — deduped (first occurrence wins) and with `self_number` removed.
+///
+/// This is what the runner pre-fetches into `.ralphy/references.md`: a planner
+/// that would restate a `#N` as fact should read the source, and an inlined
+/// mention is as apt to be restated as a structured one (the laundered-caveat
+/// failure mode). Depth is still one — the fetched bodies' own refs aren't
+/// followed.
+pub fn referenced_issues(body: &str, self_number: u64) -> Vec<u64> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for n in parse_blocked_by(body)
+        .into_iter()
+        .chain(parse_parent(body))
+        .chain(parse_body_refs(body))
+    {
         if n != self_number && seen.insert(n) {
             out.push(n);
         }
@@ -278,6 +331,41 @@ mod tests {
     #[test]
     fn structured_refs_empty_without_sections() {
         assert!(structured_refs("## What to build\nstuff with #3 inline\n", 1).is_empty());
+    }
+
+    #[test]
+    fn referenced_issues_includes_inline_body_refs_after_structured() {
+        // #13/#7 structured (blocked-by), #15 structured (parent); #28 only inline
+        // in prose. All four surface, structured first, inline last, deduped.
+        let body = "Uses the provisional corpus from #28.\n\n\
+            ## Parent\n\nSplit from #15.\n\n\
+            ## Blocked by\n- #13\n- #7\n";
+        assert_eq!(referenced_issues(body, 29), vec![13, 7, 15, 28]);
+    }
+
+    #[test]
+    fn referenced_issues_dedupes_inline_against_structured() {
+        // #13 appears both as a blocked-by bullet and inline in prose — once only.
+        let body = "Background references #13 throughout.\n\n## Blocked by\n- #13\n";
+        assert_eq!(referenced_issues(body, 1), vec![13]);
+    }
+
+    #[test]
+    fn referenced_issues_excludes_self_and_non_refs() {
+        // Self (#5) dropped; the hex color and letter-anchor are not refs; the
+        // genuine inline #7 survives.
+        let body = "Self ref #5. Color #28a745, anchor #L42, but see #7.";
+        assert_eq!(referenced_issues(body, 5), vec![7]);
+    }
+
+    #[test]
+    fn referenced_issues_finds_refs_with_no_structured_sections() {
+        // A thin body that only names a blocker in prose still yields the ref —
+        // the exact case the structured-only set missed.
+        assert_eq!(
+            referenced_issues("Blocked by #3 until the schema lands.", 1),
+            vec![3]
+        );
     }
 
     fn issue(number: u64, body: &str) -> Issue {

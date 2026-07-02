@@ -19,8 +19,9 @@ in the exact shape the executor expects (below).
   into the staged design — it is paid-for knowledge. Treat entries as leads,
   not truths; verify against the tree before anchoring a stage on one.
 - `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
-  of the issues this one names in its `## Blocked by` and `## Parent` sections,
-  fetched fresh this pass. Feed it into the staged design instead of inferring
+  of the issues this one references — those in its `## Blocked by` and `## Parent`
+  sections plus any inline `#N` mention in the body — fetched fresh this pass.
+  Feed it into the staged design instead of inferring
   those issues' scope from how a `#N` mention or a comment describes them — this
   is the referenced spec itself, not a paraphrase. Entries are leads: the
   `state` shown was current at fetch time and the body may have moved since, so

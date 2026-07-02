@@ -58,6 +58,13 @@ pub struct VerifySettings {
     /// runner tokenizes it into argv and runs it directly. `None` → no fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// When `true`, an issue whose verify resolution lands on no gate at all
+    /// (no `## Verify` in the plan AND no `verify.command` fallback) is NOT
+    /// closed on the agent's self-report: it is labeled `ready-for-human` and
+    /// left open, and the run continues (ADR-0015). `None`/`false` keeps the
+    /// ADR-0011 behavior — close with a loud warning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_verify_gate: Option<bool>,
 }
 
 /// The full settings store. Fields are additive across releases; unknown keys
@@ -185,6 +192,23 @@ mod tests {
             back.contains("future_key"),
             "flatten must preserve unknown keys; got:\n{back}"
         );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn require_verify_gate_round_trips_and_defaults_unset() {
+        let (ws, dir) = tmp_ws("require-gate");
+
+        // Out of the box: unset (the runner treats that as `false`).
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.verify.require_verify_gate, None);
+
+        let mut s = s;
+        s.verify.require_verify_gate = Some(true);
+        s.save(&ws).unwrap();
+        let reloaded = Settings::load(&ws).unwrap();
+        assert_eq!(reloaded.verify.require_verify_gate, Some(true));
 
         fs::remove_dir_all(&dir).ok();
     }

@@ -60,6 +60,7 @@ you only produce a plan that a later execution loop will consume.
    <one or two sentences. If "no", explain what is missing — the loop will
    skip the issue and leave a comment.>
 
+{{execution-model}}
    ## Done when
    - <machine-verifiable condition(s) — what the project's tests, a build, or
      a scripted command sequence prove, e.g. "the test suite passes, including
@@ -121,11 +122,7 @@ you only produce a plan that a later execution loop will consume.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
-   - [ ] Self-review: run the **inline `reviewer` skill** (auto-discovered via
-         `skills.paths`), invoked by name over ONLY the commits you made for
-         this issue — **not** a subagent, and not the whole branch. Resolve
-         every HIGH finding before finishing; if one cannot be fixed
-         autonomously, record it under `## Notes & decisions` and block.
+{{self-review-step}}
    - [ ] the project's format and test commands pass with no new warnings
    ```
 
@@ -279,16 +276,7 @@ you only produce a plan that a later execution loop will consume.
   green on ONE minimal unit — then fan out the rest. A session can stall at
   any step: easy-first ordering leaves valuable-but-unverifiable residue;
   skeleton-first leaves a spine that stands alone.
-- The penultimate step is a self-review: run the **inline `reviewer`
-  skill** (auto-discovered via `skills.paths`) over ONLY the commits you made
-  for this issue — **not** a subagent, and not the whole branch. Include it
-  by DEFAULT; omit it only when the change carries no domain logic at all
-  (pure data/fixtures/docs), and record that omission as a `## Decisions`
-  bullet with a one-line why. A plan that includes the step buys a real
-  review: the executor must record the reviewer's findings in the plan, so
-  do not include it as ritual for changes where it cannot find anything
-  tests don't. Resolve every HIGH finding before declaring done.
-- The LAST step is always a green-build/test gate.
+{{self-review-guidance}}
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
 - Write the plan in the project's working language (English unless
@@ -303,7 +291,7 @@ you only produce a plan that a later execution loop will consume.
 Canonical format reference — the executor's `parse_ledger` function matches
 exactly these two line shapes (em dash `—`, literal `evidence:` key):
 
-- [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
+{{ledger-example}}
 - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
 
 The `## Verify` section is plain lines, one command per line, no bullets and no

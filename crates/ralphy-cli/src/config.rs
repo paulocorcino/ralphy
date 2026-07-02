@@ -63,9 +63,12 @@ pub fn run(args: ConfigArgs) -> Result<()> {
 /// model/effort/budget knobs are Claude-only in the current wiring (ADR-0010).
 pub const SUPPORTED_KEYS_HELP: &str = "supported keys: \
 opencode.model, base_branch, branch_mode, verify.command, \
+verify.require_verify_gate, \
 claude.plan_model, claude.plan_effort, claude.default_exec_model, \
 claude.exec_effort, claude.max_minutes_per_issue \
 (verify.command is the per-repo fallback verify gate, ADR-0011; \
+verify.require_verify_gate=true parks a gateless issue for a human \
+instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47))";
 
@@ -75,6 +78,7 @@ fn require_known_key(key: &str) -> Result<()> {
         | "base_branch"
         | "branch_mode"
         | "verify.command"
+        | "verify.require_verify_gate"
         | "claude.plan_model"
         | "claude.plan_effort"
         | "claude.default_exec_model"
@@ -93,6 +97,12 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     match key {
         "opencode.model" => s.opencode.model = Some(value.to_owned()),
         "verify.command" => s.verify.command = Some(value.to_owned()),
+        "verify.require_verify_gate" => {
+            let b = value.parse::<bool>().map_err(|_| {
+                anyhow!("verify.require_verify_gate must be 'true' or 'false', got '{value}'")
+            })?;
+            s.verify.require_verify_gate = Some(b);
+        }
         "base_branch" => s.base_branch = Some(value.to_owned()),
         "branch_mode" => {
             // Validate through the shared parser; store the canonical lowercase
@@ -124,6 +134,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     match key {
         "opencode.model" => s.opencode.model = None,
         "verify.command" => s.verify.command = None,
+        "verify.require_verify_gate" => s.verify.require_verify_gate = None,
         "base_branch" => s.base_branch = None,
         "branch_mode" => s.branch_mode = None,
         "claude.plan_model" => s.claude.plan_model = None,
@@ -142,6 +153,10 @@ pub fn get(ws: &Workspace) -> Result<()> {
     let s = Settings::load(ws)?;
     print_str("opencode.model", s.opencode.model);
     print_str("verify.command", s.verify.command);
+    match s.verify.require_verify_gate {
+        Some(b) => println!("verify.require_verify_gate = {b}"),
+        None => println!("verify.require_verify_gate: not set"),
+    }
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
     print_str("claude.plan_model", s.claude.plan_model);

@@ -20,11 +20,17 @@ durable.
 - `.ralphy/verify-failure.md` — present ONLY when the runner's verify gate failed
   on previously committed work. When it exists it is your TOP priority — see the
   repair section below before doing anything else.
+- `.ralphy/protocol-failure.md` — present ONLY when the runner's structural
+  protocol lint rejected a previous `RALPHY_DONE_EXIT` (unticked steps, missing
+  `## Handoff`/`## Plan friction`/`## Self-review findings`, placeholder
+  `evidence:` lines). When it exists, complete the protocol — see the section
+  below.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this one
   depends on: environment traps, working command sequences, residue. Treat them
   as leads from predecessors, not truths — verify before relying on one.
 - `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
-  of the issues named in this one's `## Blocked by` / `## Parent` sections.
+  of the issues this one references — its `## Blocked by` / `## Parent` sections
+  plus any inline `#N` mention in the body.
   Consult it when a step touches what a referenced issue delivered or specified,
   rather than inferring its scope from a `#N` mention. Only the body is here, not
   the comment thread — open a reference's URL or run `gh issue view <n>` to read
@@ -55,6 +61,21 @@ is handed back to you to REPAIR — this takes precedence over everything below:
   the gate. The runner gives you a bounded number of repair attempts before it
   stops and hands the branch to a human, so spend each one on the real cause.
 
+## If `.ralphy/protocol-failure.md` is present (a failed protocol lint)
+A previous session emitted `RALPHY_DONE_EXIT`, but the runner's deterministic
+lint over `.ralphy/plan.md` found the completion protocol unfinished. The brief
+names exactly which structural checks failed. Complete them HONESTLY, then emit
+`RALPHY_DONE_EXIT` again:
+- Tick a step `- [x]` ONLY if its work is genuinely done and committed — if work
+  remains, finish it (or split the step) first.
+- Write any missing `## Handoff` / `## Plan friction` / `## Self-review
+  findings` section with real content, as this charter specifies — not filler.
+- Replace planner placeholder `evidence:` text in the `## Acceptance ledger`
+  with the real commit hash, test name, or captured command output.
+The lint checks structure only and the runner re-runs the SAME checks. You get
+exactly ONE hand-back: a second violation closes the issue with the failure
+report published for the human reviewer.
+
 ## Do this
 1. Read `.ralphy/plan.md`, `.ralphy/handoffs.md` (when present), AND
    `.ralphy/knowledge/KNOWLEDGE.md` (when present) — predecessors paid real
@@ -72,7 +93,8 @@ is handed back to you to REPAIR — this takes precedence over everything below:
    and make ONE focused commit (Conventional Commits, reference the issue, e.g.
    `feat: ... (#<number>)`).
 3. When EVERY step is `- [x]` and the project's tests are green, print this on
-   its own line and then STOP — the runner reads this token to mark the issue done:
+   its own line and then STOP — the runner reads this token to mark the issue
+   done, and verifies every step is ticked before accepting it:
 
        RALPHY_DONE_EXIT
 
@@ -96,9 +118,8 @@ is handed back to you to REPAIR — this takes precedence over everything below:
   tick it ONLY after appending a `## Self-review findings` section to
   `.ralphy/plan.md` recording the subagent's finding counts by severity
   (write `0 HIGH, 0 MEDIUM, 0 LOW` if clean) and how each HIGH was resolved.
-  Ticking the step without that section is a protocol violation — a checkbox
-  with no artifact proves nothing, and "no HIGH findings expected" is a
-  prediction, not a review.
+  "No HIGH findings expected" is a prediction, not a review — and the runner
+  verifies the section exists before accepting `RALPHY_DONE_EXIT`.
 - Only the machine-verifiable part of the plan's "Done when" gates the DONE
   token. Machine-verifiable means a test, a build, OR a command sequence you
   can run whose output proves the behavior (e.g. `docker compose up -d` plus
@@ -133,7 +154,8 @@ honest at every stopping point, not only when blocked:
 - Before emitting the exit token (done OR blocked), append a `## Plan friction`
   section to `.ralphy/plan.md` — at most 3 bullets: what the plan got wrong,
   what it missed, what you had to improvise. Write `- none` if the plan held
-  up. Be blunt, not polite — the runner publishes this on the issue at close
+  up; the runner verifies the section exists before accepting `RALPHY_DONE_EXIT`.
+  Be blunt, not polite — the runner publishes this on the issue at close
   and it feeds future planning, so a silent improvisation is lost learning.
   Friction bullets written at the moment of divergence (see the checkpoint
   above) beat ones reconstructed at the end: post-victory writeups are easy
@@ -145,7 +167,8 @@ honest at every stopping point, not only when blocked:
 planner). As you complete each step, update the matching ledger line:
 
 1. Replace the `evidence:` text with the real commit hash, test name, or other
-   concrete backing for that criterion.
+   concrete backing for that criterion — the runner verifies no planner
+   placeholder `evidence:` text remains before accepting `RALPHY_DONE_EXIT`.
 2. Keep `[verified]` only when a **passing test or an executed command whose
    output you captured** backs the criterion. Before downgrading, ATTEMPT the
    verification: probe the environment first (e.g. `docker info`, network
@@ -168,7 +191,8 @@ when every machine-verifiable "Done when" condition is green and every step is
 ## Write the handoff
 
 Before emitting `RALPHY_DONE_EXIT` (and on `RALPHY_BLOCKED_EXIT` too, with
-whatever is known so far), append a `## Handoff` section to `.ralphy/plan.md`.
+whatever is known so far), append a `## Handoff` section to `.ralphy/plan.md` —
+the runner verifies it exists before accepting the done token.
 The runner posts it on the GitHub issue at close, and future sessions working
 dependent issues receive it as starting context — it is how your hard-won
 discoveries reach your successors instead of dying with this session. Keep it

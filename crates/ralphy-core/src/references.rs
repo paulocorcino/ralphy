@@ -1,17 +1,20 @@
-//! Pre-fetching the issues named in the current issue's STRUCTURED reference
-//! sections (`## Blocked by` and `## Parent`) so the planner reads their source
-//! spec instead of paraphrasing a `#N` mention. Pure rendering lives here; the
-//! fetch is I/O ([`crate::github::fetch_reference`]) and the orchestration is the
-//! runner ([`write_references`](../runner) before the plan pass).
+//! Pre-fetching the issues the current issue's body references — its
+//! `## Blocked by` and `## Parent` sections plus any inline `#N` mention — so the
+//! planner reads their source spec instead of paraphrasing a `#N`. Pure rendering
+//! lives here; the fetch is I/O ([`crate::github::fetch_reference`]) and the
+//! orchestration is the runner ([`write_references`](../runner) before the plan
+//! pass).
 //!
-//! Why only the structured sections: a `#N` written as a `- ` bullet under
-//! `## Blocked by`, or inline under `## Parent`, is a load-bearing dependency or
-//! provenance link the planner is apt to restate as fact in a child issue's
-//! body — the exact way a second-hand caveat got laundered into a confident
-//! claim before. Prose `#N` mentions elsewhere are deliberately left out (the
-//! same scoping [`crate::blocked::parse_blocked_by`] draws): too noisy to fetch
-//! wholesale, and the planning prompt instructs verifying those at source on
-//! demand. Depth is one: the fetched bodies' own references are not followed.
+//! Why the whole body, not just the structured sections: a `#N` written as a
+//! `- ` bullet under `## Blocked by`, inline under `## Parent`, OR mentioned in
+//! prose is a load-bearing dependency, provenance, or context link the planner is
+//! apt to restate as fact in a child issue — and an inlined `#N` caveat is exactly
+//! how a second-hand qualifier got laundered into a confident claim before. The
+//! reference set ([`crate::blocked::referenced_issues`]) leads with the structured
+//! refs, then adds inline ones, matching GitHub's autolink boundary so hex colors
+//! and anchors are not swept in. Depth is one: the fetched bodies' own references
+//! are not followed; their comment threads are not downloaded (open the URL on
+//! demand).
 
 /// One referenced issue, fetched from source: its number, lifecycle state
 /// (`OPEN`/`CLOSED`, verbatim from `gh`), title, body, and the issue URL. The
@@ -34,13 +37,15 @@ pub fn render_references_file(refs: &[Reference]) -> Option<String> {
         return None;
     }
     let mut out = String::from(
-        "# Referenced issues (Blocked by / Parent)\n\n\
-         The current issue's `## Blocked by` and `## Parent` sections name these\n\
-         issues; each one's source title and body are reproduced below so you read\n\
-         the referenced spec, not a paraphrase of it. The `state` shown was current\n\
-         at fetch time — treat it as a lead and re-check if a decision hinges on it.\n\
-         Only the body is reproduced; to read a referenced issue's comment thread\n\
-         (caveats, clarifications), open its URL or run `gh issue view <n>`.\n",
+        "# Referenced issues\n\n\
+         The current issue's body references these issues — via its `## Blocked by`\n\
+         and `## Parent` sections and any inline `#N` mention; each one's source\n\
+         title and body are reproduced below so you read the referenced spec, not\n\
+         a paraphrase of it. The `state` shown was current at fetch time —\n\
+         treat it as a lead and re-check if a decision hinges on it. Only the\n\
+         body is reproduced; to read a referenced issue's\n\
+         comment thread (caveats, clarifications), open its URL or run\n\
+         `gh issue view <n>`.\n",
     );
     for r in refs {
         out.push_str(&format!(

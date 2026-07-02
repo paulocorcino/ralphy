@@ -20,8 +20,8 @@ you only produce a plan that a later execution loop will consume.
   close and may have gone stale; verify against the tree before anchoring a
   step on one.
 - `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
-  of the issues this one names in its `## Blocked by` and `## Parent` sections,
-  fetched fresh this pass. Read it instead of inferring those issues' scope from
+  of the issues this one references — those in its `## Blocked by` and `## Parent`
+  sections plus any inline `#N` mention in the body — fetched fresh this pass. Read it instead of inferring those issues' scope from
   how a `#N` mention or a comment describes them — this is the referenced spec
   itself, not a paraphrase. Entries are leads: the `state` shown was current at
   fetch time and the body may have moved since, so re-check at source if a
