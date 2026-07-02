@@ -122,6 +122,15 @@ impl ClaudeSettings {
     pub const SECTION: &'static str = "claude";
 }
 
+/// The planner's `## Execution model: sonnet|opus` judgment, lowercased, if any.
+/// Claude-vocabulary parsing lives here, not in core (ADR-0002 amendment, #79):
+/// core's `Plan.recommended_model` is an opaque token it only carries across.
+fn recommended_model(md: &str) -> Option<String> {
+    let re = regex::Regex::new(r"(?im)^\s*##\s*Execution model:\s*(opus|sonnet)")
+        .expect("valid regex");
+    re.captures(md).map(|c| c[1].to_lowercase())
+}
+
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
 /// the `exec_*` fields configure the interactive execution session. `run_dir` is
 /// where the settings file, the captured logs, and the per-issue flag file live.
@@ -744,7 +753,7 @@ impl Agent for ClaudeAgent {
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
-            recommended_model: plan::recommended_model(&md),
+            recommended_model: recommended_model(&md),
             path: plan_path,
             usage: parse_plan_usage(&log),
         })
@@ -1713,6 +1722,15 @@ mod tests {
             skill.contains("STAGED_PLAN_NONINTERACTIVE"),
             "staged-plan skill must read the non-interactive flag"
         );
+    }
+
+    #[test]
+    fn reads_recommended_model() {
+        assert_eq!(
+            recommended_model("## Execution model: Opus\nbecause").as_deref(),
+            Some("opus")
+        );
+        assert_eq!(recommended_model("no judgment here"), None);
     }
 
     fn plan_with(recommended: Option<&str>) -> Plan {

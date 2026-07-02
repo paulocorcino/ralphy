@@ -78,8 +78,10 @@ pub struct Plan {
     /// Number of open `- [ ]` steps. Zero means the planner judged the issue
     /// infeasible (the core treats it as a skip, not a failure).
     pub open_steps: usize,
-    /// The planner's complexity judgment, if it emitted one. An adapter
-    /// capability, never a core guarantee — the core only carries it across.
+    /// The planner's complexity judgment, if it emitted one: an opaque
+    /// model/tier token only the adapter that wrote the plan can interpret.
+    /// An adapter capability, never a core guarantee — the core carries it
+    /// across without parsing it (ADR-0002).
     pub recommended_model: Option<String>,
     /// The token usage the planning phase consumed, filled by the adapter
     /// (ADR-0008 D4). `Usage::default()` when the adapter does not capture it.
