@@ -121,6 +121,41 @@ pub fn read_transcript_last_assistant(path: &str) -> Option<String> {
     text
 }
 
+/// Run the `hook post` subcommand (PostToolUse, matcher `Bash`): close the
+/// timing loop the guard's verification-cost gate opened. The PreToolUse guard
+/// stamps when a plan `## Verify` command starts; this hook, firing right after
+/// the tool returns, records the elapsed wall clock as that command's durable
+/// cost — so even the first session in a fresh repo learns an expensive suite's
+/// price after paying it once. Best-effort and always `Ok`: cost knowledge is
+/// an optimization, never worth failing a session over.
+pub fn run_post_hook() -> Result<()> {
+    let mut payload = String::new();
+    if std::io::stdin().read_to_string(&mut payload).is_err() {
+        return Ok(());
+    }
+    let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+        return Ok(());
+    };
+    if value.get("tool_name").and_then(Value::as_str) != Some("Bash") {
+        return Ok(());
+    }
+    let Some(command) = value
+        .get("tool_input")
+        .and_then(|t| t.get("command"))
+        .and_then(Value::as_str)
+    else {
+        return Ok(());
+    };
+    let Some(root) = crate::guard::project_root(&value) else {
+        return Ok(());
+    };
+    let Ok(plan_md) = fs::read_to_string(root.join(".ralphy").join("plan.md")) else {
+        return Ok(());
+    };
+    ralphy_core::cmdcost::note_finish(&root, command, &plan_md);
+    Ok(())
+}
+
 /// Run the `hook stop` subcommand: read the payload from stdin, classify it, and
 /// write the flag file named by `$RALPHY_FLAG_FILE`. No-op when that env var is
 /// unset. Always returns `Ok` — the hook must never fail the session.

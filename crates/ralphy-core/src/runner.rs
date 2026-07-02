@@ -1318,6 +1318,18 @@ fn verify_gate(
                     "verify gate — running"
                 );
                 let report = verify::run(&commands, &cx.cfg.repo_root, cx.cfg.verify_timeout);
+                // Feed the durable command-cost knowledge the verification-cost
+                // gate reads: the gate just measured the real price of each
+                // `## Verify` command, so future sessions (this repo, any issue)
+                // know which ones are too expensive for an inner loop.
+                crate::cmdcost::record_gate_costs(
+                    &cx.cfg.repo_root,
+                    &report
+                        .commands
+                        .iter()
+                        .map(|c| (c.argv.clone(), c.secs))
+                        .collect::<Vec<_>>(),
+                );
                 // Honesty artifact: every command + its exit code (pass or
                 // fail), with the failing tail on a failure. Best-effort — a
                 // comment failure must not crash a run that otherwise passed.

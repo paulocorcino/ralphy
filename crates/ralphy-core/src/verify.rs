@@ -125,6 +125,9 @@ pub struct CommandOutcome {
     /// Last few lines of combined stdout+stderr — empty on success when there was
     /// no output. Captured on every command so the artifact comment can show it.
     pub output_tail: String,
+    /// Measured wall-clock seconds — feeds the durable command-cost knowledge
+    /// (`cmdcost`) the verification-cost gate reads.
+    pub secs: f64,
 }
 
 impl CommandOutcome {
@@ -174,6 +177,7 @@ const TAIL_BYTES: usize = 4000;
 /// Run a single command, draining its output through threads (so a chatty command
 /// never deadlocks on a full pipe) and killing it if the shared `deadline` passes.
 fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutcome {
+    let started = Instant::now();
     // An empty argv cannot be run; treat it as a spawn failure so the gate stops.
     let Some((program, rest)) = argv.split_first() else {
         return CommandOutcome {
@@ -181,6 +185,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
             exit_code: None,
             timed_out: false,
             output_tail: "empty command".into(),
+            secs: 0.0,
         };
     };
 
@@ -204,6 +209,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
                 exit_code: None,
                 timed_out: false,
                 output_tail: format!("failed to spawn `{program}`: {e}"),
+                secs: 0.0,
             };
         }
     };
@@ -261,6 +267,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         exit_code: status.and_then(|s| s.code()),
         timed_out,
         output_tail: tail(&combined),
+        secs: started.elapsed().as_secs_f64(),
     }
 }
 
@@ -619,12 +626,14 @@ mod tests {
                     exit_code: Some(0),
                     timed_out: false,
                     output_tail: String::new(),
+                    secs: 0.1,
                 },
                 CommandOutcome {
                     argv: vec!["cargo".into(), "test".into()],
                     exit_code: Some(101),
                     timed_out: false,
                     output_tail: "panicked at assertion".into(),
+                    secs: 0.1,
                 },
             ],
             passed: false,
@@ -677,6 +686,7 @@ mod tests {
                 exit_code: Some(1),
                 timed_out: false,
                 output_tail: "ERR_PNPM_LOCKFILE_MISMATCH".into(),
+                secs: 0.1,
             }],
             passed: false,
         };

@@ -121,6 +121,11 @@ already own.
   green" means. The runner's verify gate re-runs the plan's `## Verify`
   commands after you exit anyway, so a second in-session suite run proves
   nothing the gate won't re-prove for free.
+- This discipline is mechanically enforced: a hook DENIES re-running a
+  `## Verify` command already measured as expensive while more than one plan
+  step is still open. A denial is not an error to work around — run the scoped
+  test it names, keep working the steps, and the command unlocks on the final
+  open step. Never dodge it by retyping the suite under a different name.
 
 ## Prove behavior, not just compilation
 - A step that changes what the user can see or do is NOT done when it merely

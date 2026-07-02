@@ -275,7 +275,11 @@ impl ClaudeAgent {
     fn write_exec_settings(&self) -> Result<PathBuf> {
         let exe =
             std::env::current_exe().context("locating the ralphy binary for the Stop hook")?;
-        let json = exec_settings_json(&stop_hook_command(&exe), &guard_hook_command(&exe));
+        let json = exec_settings_json(
+            &stop_hook_command(&exe),
+            &guard_hook_command(&exe),
+            &post_hook_command(&exe),
+        );
         let path = self.run_dir.join("ralphy.settings.json");
         fs::write(&path, json).context("writing exec settings")?;
         Ok(path)
@@ -292,9 +296,17 @@ fn guard_hook_command(exe: &Path) -> String {
     format!("\"{}\" hook guard", exe.display())
 }
 
+/// Quote the post-hook command line for the platform: `"<exe>" hook post`.
+fn post_hook_command(exe: &Path) -> String {
+    format!("\"{}\" hook post", exe.display())
+}
+
 /// Build the execution settings JSON: the headless skip flags, a `Stop` hook
-/// running `stop_command`, and a `PreToolUse` guard running `guard_command`.
-fn exec_settings_json(stop_command: &str, guard_command: &str) -> String {
+/// running `stop_command`, a `PreToolUse` guard running `guard_command`, and a
+/// `PostToolUse` Bash timer running `post_command` (the other half of the
+/// verification-cost gate: the guard stamps a verify command's start, this hook
+/// records its measured duration).
+fn exec_settings_json(stop_command: &str, guard_command: &str, post_command: &str) -> String {
     let settings = serde_json::json!({
         "skipDangerousModePermissionPrompt": true,
         "skipAutoPermissionPrompt": true,
@@ -310,6 +322,12 @@ fn exec_settings_json(stop_command: &str, guard_command: &str) -> String {
                 {
                     "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
                     "hooks": [ { "type": "command", "command": guard_command } ]
+                }
+            ],
+            "PostToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [ { "type": "command", "command": post_command } ]
                 }
             ]
         }
@@ -1996,8 +2014,12 @@ mod tests {
     }
 
     #[test]
-    fn settings_have_stop_hook_and_pretooluse_guard() {
-        let json = exec_settings_json("\"ralphy.exe\" hook stop", "\"ralphy.exe\" hook guard");
+    fn settings_have_stop_hook_pretooluse_guard_and_posttooluse_timer() {
+        let json = exec_settings_json(
+            "\"ralphy.exe\" hook stop",
+            "\"ralphy.exe\" hook guard",
+            "\"ralphy.exe\" hook post",
+        );
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["skipDangerousModePermissionPrompt"], true);
         assert_eq!(v["skipAutoPermissionPrompt"], true);
@@ -2012,6 +2034,11 @@ mod tests {
         let guard_cmd = &v["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
         assert_eq!(guard_cmd, "\"ralphy.exe\" hook guard");
         assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["type"], "command");
+        // PostToolUse Bash timer (verification-cost gate) is wired.
+        assert_eq!(v["hooks"]["PostToolUse"][0]["matcher"], "Bash");
+        let post_cmd = &v["hooks"]["PostToolUse"][0]["hooks"][0]["command"];
+        assert_eq!(post_cmd, "\"ralphy.exe\" hook post");
+        assert_eq!(v["hooks"]["PostToolUse"][0]["hooks"][0]["type"], "command");
     }
 
     #[test]

@@ -382,12 +382,54 @@ pub fn run_guard_hook() -> ! {
     };
 
     match evaluate_guard(tool_name, tool_input, &ctx) {
-        GuardDecision::Allow => std::process::exit(0),
+        GuardDecision::Allow => {
+            // Verification-cost gate (Bash only): deny re-paying a plan
+            // `## Verify` command already measured as expensive while the plan
+            // still has real work open. Safety-neutral and fail-open — any
+            // missing file or unknown cost allows.
+            if tool_name == "Bash" {
+                if let Some(reason) = evaluate_cmd_cost(&payload, tool_input) {
+                    eprintln!("BLOCKED by Ralphy guard: {reason}");
+                    std::process::exit(2);
+                }
+            }
+            std::process::exit(0)
+        }
         GuardDecision::Deny(reason) => {
             eprintln!("BLOCKED by Ralphy guard: {reason}");
             std::process::exit(2);
         }
     }
+}
+
+/// The verification-cost gate over one allowed Bash call: consult the durable
+/// cost knowledge under the project's `.ralphy/` and either deny (returning the
+/// steering message) or stamp the command's start for the Post hook to time.
+/// The project root comes from the payload's `cwd` (raw, NOT the lower-cased
+/// [`GuardContext`] form — this one is used for file IO); missing plan or state
+/// degrades to allow.
+fn evaluate_cmd_cost(payload: &Value, tool_input: &Value) -> Option<String> {
+    let command = tool_input.get("command").and_then(Value::as_str)?;
+    let root = project_root(payload)?;
+    let plan_md = std::fs::read_to_string(root.join(".ralphy").join("plan.md")).ok()?;
+    let state = ralphy_core::cmdcost::load(&root);
+    match ralphy_core::cmdcost::decide(command, &plan_md, &state) {
+        ralphy_core::cmdcost::CostDecision::Deny(reason) => Some(reason),
+        ralphy_core::cmdcost::CostDecision::Allow => {
+            ralphy_core::cmdcost::note_start(&root, command, &plan_md);
+            None
+        }
+    }
+}
+
+/// The project root for hook file IO: the payload's `cwd` (the agent session
+/// runs in the project directory), falling back to the process cwd.
+pub(crate) fn project_root(payload: &Value) -> Option<std::path::PathBuf> {
+    payload
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
 }
 
 #[cfg(test)]
