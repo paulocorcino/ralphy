@@ -226,22 +226,15 @@ fn classify_delete(tokens: &[String]) -> Option<(DeleteKind, &[String])> {
                 return None;
             }
         }
-        "remove-item" => {
+        "remove-item"
             if args
                 .iter()
-                .any(|t| t.to_lowercase().starts_with("-recurse"))
-            {
-                DeleteKind::RemoveItem
-            } else {
-                return None;
-            }
+                .any(|t| t.to_lowercase().starts_with("-recurse")) =>
+        {
+            DeleteKind::RemoveItem
         }
-        "del" | "rmdir" | "rd" => {
-            if args.iter().any(|t| t.eq_ignore_ascii_case("/s")) {
-                DeleteKind::DelRmdir
-            } else {
-                return None;
-            }
+        "del" | "rmdir" | "rd" if args.iter().any(|t| t.eq_ignore_ascii_case("/s")) => {
+            DeleteKind::DelRmdir
         }
         _ => return None,
     };
