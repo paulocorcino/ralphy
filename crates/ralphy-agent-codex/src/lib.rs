@@ -191,7 +191,9 @@ const DEFAULT_CODEX_MODEL: &str = "gpt-5-codex";
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` that emits a vendor-neutral
 /// `low|medium|high` complexity tier (mapped to reasoning effort) instead of a
-/// Claude model name. Single source of truth lives at `assets/prompts/`.
+/// Claude model name. Copied to `.ralphy/plan-charter.md` for the live session
+/// to read; only a one-line pointer is piped on stdin. Single source of truth
+/// lives at `assets/prompts/`.
 const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.plan.codex.md");
 
 /// The vendor-neutral execution charter, piped to `codex exec` on stdin. Shared
@@ -730,6 +732,11 @@ impl Agent for CodexAgent {
         // Plan fresh every run; never reuse a stale artifact.
         let _ = fs::remove_file(&plan_path);
 
+        // Full charter on disk (mirrors .ralphy/exec.md); rewritten each plan
+        // call so a resumed session still finds it.
+        fs::write(ws.plan_charter_path(), PROMPT_PLAN_CODEX)
+            .context("writing .ralphy/plan-charter.md")?;
+
         let model = self.resolve_model();
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let _ = fs::remove_file(&out_path);
@@ -749,7 +756,7 @@ impl Agent for CodexAgent {
             .issue_deadline()
             .saturating_duration_since(Instant::now());
         info!(model = %model, effort = "high", "planning with codex exec");
-        let (_, _, log) = self.run_codex(cmd, PROMPT_PLAN_CODEX, timeout)?;
+        let (_, _, log) = self.run_codex(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
         let after = sessions_dir
             .as_deref()
             .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
@@ -1330,6 +1337,27 @@ mod tests {
     }
 
     // ── PROMPT_PLAN_CODEX reviewer step ────────────────────────────────────
+
+    #[test]
+    fn plan_charter_file_carries_full_prompt() {
+        // The full charter lands on disk (mirrors exec.md) and per-issue stdin
+        // stays a one-line pointer — pins the byte reduction issue #80 delivers.
+        let base =
+            std::env::temp_dir().join(format!("ralphy-codex-charter-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+
+        fs::write(ws.plan_charter_path(), PROMPT_PLAN_CODEX).unwrap();
+        assert_eq!(
+            fs::read_to_string(ws.plan_charter_path()).unwrap(),
+            PROMPT_PLAN_CODEX
+        );
+        assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_CODEX.len());
+
+        let _ = fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn prompt_plan_codex_contains_reviewer_step() {

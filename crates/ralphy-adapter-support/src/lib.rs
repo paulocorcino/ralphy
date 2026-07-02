@@ -51,6 +51,14 @@ pub use session_files::{list_session_files, session_files_appeared};
 /// repair briefs (ADR-0002 amendment, #79).
 pub const DONE_SENTINEL: &str = "RALPHY_DONE_EXIT";
 
+/// The one-line plan charter delivered per issue. It points the agent at the
+/// full planning charter written to `.ralphy/plan-charter.md` at the top of
+/// each plan call (mirroring `.ralphy/exec.md`) and restates the output
+/// contract. Planning has no completion sentinel — the runner detects success
+/// by `.ralphy/plan.md` appearing on disk — so unlike the exec charter this
+/// names no sentinel.
+pub const PLAN_CHARTER: &str = "Read .ralphy/plan-charter.md and follow it exactly to plan the issue described by .ralphy/issue.json. Write the plan to .ralphy/plan.md.";
+
 /// Returns `true` when `text` contains the [`DONE_SENTINEL`] token, as
 /// defined by `assets/prompts/prompt.execute.md`.
 pub fn done_sentinel(text: &str) -> bool {
@@ -76,6 +84,22 @@ mod tests {
 
     static FIXTURE: include_dir::Dir<'_> =
         include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/sample");
+
+    /// Anti-drift: the per-issue pointer charter must name the on-disk
+    /// artifacts (charter, issue, plan output), must not invent a completion
+    /// sentinel (plan success is `.ralphy/plan.md` appearing on disk), and
+    /// must stay a pointer — never regrow into a full charter.
+    #[test]
+    fn plan_charter_points_at_disk_artifacts() {
+        assert!(PLAN_CHARTER.contains(".ralphy/plan-charter.md"));
+        assert!(PLAN_CHARTER.contains(".ralphy/issue.json"));
+        assert!(PLAN_CHARTER.contains(".ralphy/plan.md"));
+        assert!(
+            !PLAN_CHARTER.contains(DONE_SENTINEL),
+            "planning has no completion sentinel"
+        );
+        assert!(PLAN_CHARTER.len() < 512, "must stay a one-line pointer");
+    }
 
     /// Mark a freshly-written fixture executable so `find_program`'s Unix
     /// execute-bit check accepts it. A no-op off Unix (Windows gates on PATHEXT).

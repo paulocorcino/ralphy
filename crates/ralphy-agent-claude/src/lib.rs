@@ -28,7 +28,9 @@ use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_
 use tracing::info;
 
 /// The planning prompt, embedded so the binary is self-contained as a global
-/// tool. Single source of truth lives at `assets/prompts/`.
+/// tool. Copied to `.ralphy/plan-charter.md` for the live session to read;
+/// only a one-line pointer is piped on stdin. Single source of truth lives at
+/// `assets/prompts/`.
 const PROMPT_PLAN: &str = include_str!("../../../assets/prompts/prompt.plan.md");
 
 /// The staged-plan planning prompt, used when the issue carries the
@@ -83,6 +85,13 @@ fn plan_prompt_for(issue: &Issue) -> (&'static str, bool) {
     } else {
         (PROMPT_PLAN, false)
     }
+}
+
+/// Write the selected planning charter to `.ralphy/plan-charter.md` (mirrors
+/// `.ralphy/exec.md`); rewritten each plan call so a resumed session and a
+/// `stagedplan` label switch both see the right content.
+fn write_plan_charter(ws: &Workspace, prompt: &str) -> Result<()> {
+    fs::write(ws.plan_charter_path(), prompt).context("writing .ralphy/plan-charter.md")
 }
 
 /// The env var a staged plan sets so the `staged-plan` skill knows it is running
@@ -679,6 +688,7 @@ impl Agent for ClaudeAgent {
         let plugin_dir = materialize_plugin(ws)?;
 
         let (prompt, staged) = plan_prompt_for(issue);
+        write_plan_charter(ws, prompt)?;
 
         // `--model` first (as the ps1 oracle does), then the headless flags.
         let mut args: Vec<String> = Vec::new();
@@ -723,13 +733,15 @@ impl Agent for ClaudeAgent {
             .spawn()
             .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
 
-        // Pipe the prompt on stdin; dropping the handle closes it so claude sees EOF.
+        // Pipe only the one-line pointer charter on stdin (the full charter is
+        // on disk at .ralphy/plan-charter.md); dropping the handle closes it so
+        // claude sees EOF.
         child
             .stdin
             .take()
             .context("claude plan child stdin was not piped")?
-            .write_all(prompt.as_bytes())
-            .context("piping the plan prompt to claude")?;
+            .write_all(ralphy_adapter_support::PLAN_CHARTER.as_bytes())
+            .context("piping the plan pointer charter to claude")?;
 
         let out = child.wait_with_output().context("waiting for claude")?;
         let mut log = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -1732,6 +1744,45 @@ mod tests {
     fn charter_and_prompt_name_the_done_sentinel() {
         assert!(EXEC_CHARTER.contains(ralphy_adapter_support::DONE_SENTINEL));
         assert!(PROMPT_EXECUTE.contains(ralphy_adapter_support::DONE_SENTINEL));
+    }
+
+    /// The charter file must carry whichever prompt `plan_prompt_for` selected,
+    /// and a rewrite (as every `plan()` call performs) must replace a staged
+    /// charter with the standard one after a label switch.
+    #[test]
+    fn plan_charter_file_carries_selected_prompt() {
+        let base = std::env::temp_dir().join(format!("ralphy-plan-charter-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+
+        let (staged_prompt, _) = plan_prompt_for(&issue_with_labels(&["stagedplan"]));
+        write_plan_charter(&ws, staged_prompt).expect("write staged charter");
+        assert_eq!(
+            fs::read_to_string(ws.plan_charter_path()).unwrap(),
+            PROMPT_PLAN_STAGED,
+            "staged issue must put the staged charter on disk"
+        );
+
+        let (standard_prompt, _) = plan_prompt_for(&issue_with_labels(&["bug"]));
+        write_plan_charter(&ws, standard_prompt).expect("rewrite standard charter");
+        assert_eq!(
+            fs::read_to_string(ws.plan_charter_path()).unwrap(),
+            PROMPT_PLAN,
+            "the per-call rewrite must replace a stale staged charter"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// The per-issue stdin payload must stay a one-line pointer, not regrow
+    /// into the full charter — pins the byte reduction issue #80 delivers.
+    #[test]
+    fn plan_pointer_is_a_pointer_not_the_charter() {
+        let pointer = ralphy_adapter_support::PLAN_CHARTER;
+        assert!(pointer.len() * 50 < PROMPT_PLAN.len());
+        assert!(pointer.len() * 50 < PROMPT_PLAN_STAGED.len());
     }
 
     #[test]
