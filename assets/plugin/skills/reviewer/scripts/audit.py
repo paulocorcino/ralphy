@@ -9,10 +9,12 @@ Inputs:
                              command, no class bundling).
   --report <path|->          optional full report body (or any subset
                              containing `## Findings` / `## Verification`).
-                             Material files whose path is cited in this body
-                             are inferred as implicit-reviewed and removed
-                             from `gap`. Coverage format F intentionally has
-                             no positive marker; this flag lets the audit
+                             Only citations inside the `## Findings` and
+                             `## Verification` sections count as
+                             implicit-reviewed and are removed from `gap` —
+                             a mention in `## Notes` or `## Coverage` is not
+                             review. Coverage format F intentionally has no
+                             positive marker; this flag lets the audit
                              observe the citations that already exist.
 
 Output (stdout): one of
@@ -35,9 +37,15 @@ ADR-0003 format defects (informational; do not change exit code):
   - F1 category-empty       → `format-defect: category-empty`
   - F2 bundled not-exercised → `format-defect: bundled-not-exercised`
 
-Exit codes: 0 on pass/partial; 2 on gap. Auto-narrow and format defects
-are informational, not blocking — the verdict ceiling lives in the Stop
-hook.
+Subagent-mandate defects (blocking; force exit 2 even on pass/partial):
+  - `format-defect: subagent-mandate-unverifiable` (threshold crossed,
+    --report not supplied)
+  - `format-defect: subagent-invoked-line-missing`
+  - `format-defect: subagent-skip-uncited`
+
+Exit codes: 0 on pass/partial without mandate defects; 2 on gap or on any
+subagent-mandate defect. Auto-narrow and F1/F2 format defects are
+informational, not blocking — the verdict ceiling lives in the Stop hook.
 """
 
 from __future__ import annotations
@@ -160,6 +168,32 @@ def aggregate_reasons(reasons: list[str]) -> str:
         if r not in seen:
             seen.append(r)
     return "; ".join(seen) if seen else "no reason"
+
+
+def citation_scope(text: str) -> str:
+    """Return only the `## Findings` and `## Verification` sections of a
+    report body. Citation scanning must not see the rest of the report —
+    a path mentioned in `## Notes`, `## Coverage`, or a `not exercised:`
+    line is not evidence of review and must not clear it from `gap`.
+
+    If the text contains no `## ` headers at all, it is treated as a bare
+    excerpt and returned whole.
+    """
+    chunks: list[str] = []
+    in_target = False
+    found_header = False
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("## "):
+            found_header = True
+            title = stripped[3:].strip().lower()
+            in_target = title in {"findings", "verification"}
+            continue
+        if in_target:
+            chunks.append(line)
+    if not found_header:
+        return text
+    return "\n".join(chunks)
 
 
 def find_cited_files(text: str, material: set[str]) -> set[str]:
@@ -327,10 +361,34 @@ def parse_skip_clauses(report_text: str) -> dict[str, str]:
     return skips
 
 
+def count_package_boundaries(material: set[str], package_roots: list[str]) -> int:
+    """Count distinct package roots (from fact_pack `package_roots`) that
+    contain at least one material file. Each file is attributed to its
+    deepest matching root; `.` catches files under no nested root."""
+    roots = sorted(
+        {r.rstrip("/") for r in package_roots if r and r != "."},
+        key=len,
+        reverse=True,
+    )
+    has_dot_root = "." in package_roots
+    hit: set[str] = set()
+    for f in material:
+        for r in roots:
+            if f == r or f.startswith(r + "/"):
+                hit.add(r)
+                break
+        else:
+            if has_dot_root:
+                hit.add(".")
+    return len(hit)
+
+
 def threshold_crossed(
-    material: set[str], not_exercised_text: str
+    material: set[str], package_roots: list[str]
 ) -> tuple[bool, list[str]]:
-    """Return (crossed, reasons). Mirrors SKILL.md threshold definition."""
+    """Return (crossed, reasons). Mirrors the SKILL.md threshold definition:
+    material_set > 10 files, infra/test paths touched, or more than one
+    package/module boundary modified."""
     import re
     reasons: list[str] = []
     if len(material) > 10:
@@ -341,16 +399,19 @@ def threshold_crossed(
     infra_hits = [f for f in material if infra_pat.search(f)]
     if infra_hits:
         reasons.append(f"infra/test paths touched ({len(infra_hits)} files)")
+    boundaries = count_package_boundaries(material, package_roots)
+    if boundaries > 1:
+        reasons.append(f"package boundaries touched ({boundaries})")
     return (bool(reasons), reasons)
 
 
 def check_subagent_mandate(
     report_text: str | None,
     material: set[str],
-    not_exercised_text: str,
+    package_roots: list[str],
 ) -> list[str]:
     """Return list of format-defect lines if mandate is violated. Empty if OK."""
-    crossed, reasons = threshold_crossed(material, not_exercised_text)
+    crossed, reasons = threshold_crossed(material, package_roots)
     if not crossed:
         return []
     if report_text is None:
@@ -426,9 +487,9 @@ def main() -> int:
         default=None,
         help=(
             "Optional path to the full report body (or `## Findings` + "
-            "`## Verification` excerpt), or '-' for stdin. Material files "
-            "cited in this body are inferred as implicit-reviewed and removed "
-            "from `gap`."
+            "`## Verification` excerpt), or '-' for stdin. Only material "
+            "files cited inside `## Findings` / `## Verification` are "
+            "inferred as implicit-reviewed and removed from `gap`."
         ),
     )
     args = ap.parse_args()
@@ -465,7 +526,7 @@ def main() -> int:
     cited: set[str] = set()
     if args.report:
         report_text = load_text(args.report)
-        cited = find_cited_files(report_text, material)
+        cited = find_cited_files(citation_scope(report_text), material)
 
     gap = sorted(
         material - explicit_not_reviewed - claimed_excluded - cited - {""}
@@ -495,9 +556,10 @@ def main() -> int:
             ]
         bundled = detect_bundled(ne_entries)
 
+    package_roots: list[str] = list(fact_pack.get("package_roots", []))
     report_text_for_mandate = report_text if args.report else None
     subagent_defects = check_subagent_mandate(
-        report_text_for_mandate, material, ne_text_raw
+        report_text_for_mandate, material, package_roots
     )
 
     out_lines = [

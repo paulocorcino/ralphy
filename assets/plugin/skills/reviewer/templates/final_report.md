@@ -21,7 +21,7 @@ excluded:
 not-reviewed:
   - <path> (<reason>)
 
-narrowed-by-user-request: <true|false>   # required when scope: partial
+narrowed-by-user-request: true   # only when the user explicitly requested narrowed scope; omit the line otherwise
 
 ## Open Questions
 

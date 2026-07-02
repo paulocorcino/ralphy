@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -84,7 +85,11 @@ CANDIDATE_MANIFESTS = [
     "Jenkinsfile",
 ]
 
-GENERATED_MARKERS = ("// @generated", "# Code generated")
+# "Code generated" covers the Go convention (`// Code generated ... DO NOT
+# EDIT.`) and its `#` variant; "@generated" covers the Facebook/Buck-style
+# marker regardless of comment leader.
+GENERATED_MARKERS = ("@generated", "Code generated")
+GENERATED_SCAN_LINES = 5
 
 
 def run_git(repo: Path, *args: str) -> str:
@@ -101,9 +106,16 @@ def run_git(repo: Path, *args: str) -> str:
 
 
 def resolve_base(repo: Path, requested: str | None) -> str:
-    if requested:
-        return requested
-    for candidate in ("origin/main", "origin/master", "main", "master"):
+    """Return a verified base ref, or "" when none resolves.
+
+    An explicitly requested base is verified too — an unresolvable base
+    would otherwise yield an empty diff and a silent `material: 0` /
+    `audit: pass`, which is a false green.
+    """
+    candidates = (
+        [requested] if requested else ["origin/main", "origin/master", "main", "master"]
+    )
+    for candidate in candidates:
         sha = run_git(repo, "rev-parse", "--verify", "--quiet", candidate)
         if sha:
             return candidate
@@ -147,13 +159,23 @@ def is_binary(path: Path) -> bool:
 
 
 def is_generated(path: Path) -> bool:
+    """Check the first GENERATED_SCAN_LINES non-empty lines for a marker.
+
+    Markers frequently sit below a shebang or license header, so inspecting
+    only the first non-empty line misses them.
+    """
     try:
         with path.open("r", encoding="utf-8", errors="ignore") as fh:
+            seen = 0
             for raw in fh:
                 line = raw.strip()
                 if not line:
                     continue
-                return any(marker in line for marker in GENERATED_MARKERS)
+                if any(marker in line for marker in GENERATED_MARKERS):
+                    return True
+                seen += 1
+                if seen >= GENERATED_SCAN_LINES:
+                    return False
     except OSError:
         return False
     return False
@@ -193,15 +215,20 @@ def existing_files(repo: Path, candidates: Iterable[str]) -> list[str]:
 
 
 def find_package_roots(repo: Path) -> list[str]:
-    """Locate directories containing a package manifest. Skips excluded dirs."""
+    """Locate directories containing a package manifest.
+
+    Uses os.walk with in-place pruning so excluded dirs (node_modules,
+    target, .git, ...) are never descended into — rglob-then-filter walks
+    them anyway, which is minutes of stat calls on a large monorepo.
+    """
     markers = {"package.json", "go.mod", "Cargo.toml", "pyproject.toml"}
     roots: set[str] = set()
-    for marker in markers:
-        for path in repo.rglob(marker):
-            if any(part in BUILD_DIR_PARTS for part in path.relative_to(repo).parts):
-                continue
-            rel_dir = path.parent.relative_to(repo).as_posix()
-            roots.add(rel_dir or ".")
+    for dirpath, dirnames, filenames in os.walk(repo):
+        dirnames[:] = [
+            d for d in dirnames if d not in BUILD_DIR_PARTS and d != ".git"
+        ]
+        if markers & set(filenames):
+            roots.add(Path(dirpath).relative_to(repo).as_posix())
     return sorted(roots) if roots else ["."]
 
 
@@ -210,6 +237,16 @@ def main() -> int:
     ap.add_argument("--repo", default=".", help="Path to repo root (default: current dir)")
     ap.add_argument("--target", default="working-tree", help="Target ref or 'working-tree'")
     ap.add_argument("--base", default=None, help="Base ref (default: origin/main → main)")
+    ap.add_argument(
+        "--out",
+        default=None,
+        help=(
+            "Write JSON to this path (UTF-8) instead of stdout. Prefer this "
+            "over shell redirection on Windows, where PowerShell's `>` "
+            "re-encodes stdout (UTF-16 on 5.1) and breaks the UTF-8 read "
+            "in audit.py."
+        ),
+    )
     args = ap.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -218,6 +255,20 @@ def main() -> int:
         return 1
 
     base = resolve_base(repo, args.base)
+    if not base:
+        print(
+            json.dumps(
+                {
+                    "error": (
+                        f"cannot resolve base ref "
+                        f"({args.base or 'origin/main, origin/master, main, master'}): "
+                        "ref does not exist in this repo; pass a valid --base"
+                    )
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 1
     head = run_git(repo, "rev-parse", "HEAD")
     branch = run_git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     changed = list_changed(repo, args.target, base)
@@ -244,8 +295,11 @@ def main() -> int:
         "manifests": existing_files(repo, CANDIDATE_MANIFESTS),
         "package_roots": find_package_roots(repo),
     }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    text = json.dumps(payload, indent=2) + "\n"
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
     return 0
 
 

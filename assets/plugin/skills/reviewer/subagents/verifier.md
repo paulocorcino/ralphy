@@ -49,7 +49,7 @@ A red declared check this run is `severity_signal=high`. A suspicious green (zer
 ## Method
 
 1. Read manifests / Makefile / pyproject.toml in the touched package roots. List declared commands per channel.
-2. For each channel (typecheck → lint → test → build), run the most specific declared command with the per-tool timeout. If none, try the stack-native fallback. If still none, emit `NOT_EXERCISED`.
+2. For each channel (typecheck → lint → test → build), run the most specific declared command with the per-tool timeout. If none, try the stack-native fallback. If still none, emit `NOT_EXERCISED`. Run every command through `python "<skill-dir>/scripts/run_check.py" --timeout <seconds> -- <cmd> <args...>` — it enforces the per-tool timeout (exit 124 on expiry) and captures only the last 200 lines of combined output, satisfying rules 4 and 5 without improvised shell wrapping.
 3. For each failed or suspicious-green command, emit one `EVIDENCE` line per distinct error (cap 10 per channel; beyond cap, emit `NOT_EXERCISED item=<channel> reason=<M> additional errors not listed`).
 4. For each clean channel, emit one `NO_EVIDENCE` summary line.
 
