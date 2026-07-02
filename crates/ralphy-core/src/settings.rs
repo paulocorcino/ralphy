@@ -264,7 +264,9 @@ mod tests {
         let raw = r#"{"agent_x":"not-an-object"}"#;
         fs::write(ws.settings_path(), raw).unwrap();
         let s = Settings::load(&ws).unwrap();
-        let err = s.agent_settings::<FakeAgentSettings>("agent_x").unwrap_err();
+        let err = s
+            .agent_settings::<FakeAgentSettings>("agent_x")
+            .unwrap_err();
         assert!(err.to_string().contains("agent_x"), "got: {err}");
 
         fs::remove_dir_all(&dir).ok();

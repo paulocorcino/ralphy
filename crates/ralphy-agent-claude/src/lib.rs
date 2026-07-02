@@ -133,8 +133,8 @@ impl ClaudeSettings {
 /// Claude-vocabulary parsing lives here, not in core (ADR-0002 amendment, #79):
 /// core's `Plan.recommended_model` is an opaque token it only carries across.
 fn recommended_model(md: &str) -> Option<String> {
-    let re = regex::Regex::new(r"(?im)^\s*##\s*Execution model:\s*(opus|sonnet)")
-        .expect("valid regex");
+    let re =
+        regex::Regex::new(r"(?im)^\s*##\s*Execution model:\s*(opus|sonnet)").expect("valid regex");
     re.captures(md).map(|c| c[1].to_lowercase())
 }
 

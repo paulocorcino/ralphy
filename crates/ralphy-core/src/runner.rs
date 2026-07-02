@@ -597,7 +597,12 @@ const VERIFY_FAILURE_FILE: &str = "verify-failure.md";
 /// Write the repair brief for a failed gate so the next `execute()` can read why
 /// it failed and fix the root cause. Best-effort: a write failure just means the
 /// agent retries blind, which is strictly no worse than not repairing at all.
-fn write_verify_failure(ws: &Workspace, stamp: &str, report: &verify::VerifyReport, done_signal: &str) {
+fn write_verify_failure(
+    ws: &Workspace,
+    stamp: &str,
+    report: &verify::VerifyReport,
+    done_signal: &str,
+) {
     let path = ws.ralphy_dir().join(VERIFY_FAILURE_FILE);
     if let Err(e) = std::fs::write(&path, verify::repair_brief(stamp, report, done_signal)) {
         warn!(error = %e, "writing the verify-failure repair brief failed");

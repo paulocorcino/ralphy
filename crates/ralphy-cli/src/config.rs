@@ -464,8 +464,17 @@ mod tests {
         // A typed save keeps the vendor sections and the unknown peer key.
         s.save(&ws).unwrap();
         let back = fs::read_to_string(ws.settings_path()).unwrap();
-        for needle in ["opencode", "kimi-for-coding/k2p7", "claude", "plan_model", "future_key"] {
-            assert!(back.contains(needle), "missing '{needle}' after save:\n{back}");
+        for needle in [
+            "opencode",
+            "kimi-for-coding/k2p7",
+            "claude",
+            "plan_model",
+            "future_key",
+        ] {
+            assert!(
+                back.contains(needle),
+                "missing '{needle}' after save:\n{back}"
+            );
         }
 
         fs::remove_dir_all(&dir).ok();
