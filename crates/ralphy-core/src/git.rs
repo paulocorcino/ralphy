@@ -204,6 +204,18 @@ pub fn delete_branch(repo: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+/// Create a lightweight local tag at `target`. Used for the run's pre-run undo
+/// marker (`ralphy/pre-run-<stamp>`) — never pushed, so it stays a local recibo.
+pub fn tag(repo: &Path, name: &str, target: &str) -> Result<()> {
+    git(repo, &["tag", name, target])?;
+    Ok(())
+}
+
+pub fn delete_tag(repo: &Path, name: &str) -> Result<()> {
+    git(repo, &["tag", "-d", name])?;
+    Ok(())
+}
+
 /// The current HEAD commit SHA. Used as the compare ref in `current` branch mode,
 /// captured before any work so commit counts mean "work this run added".
 pub fn head_sha(repo: &Path) -> Result<String> {

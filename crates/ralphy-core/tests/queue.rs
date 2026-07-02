@@ -398,6 +398,25 @@ fn branch_exists(repo: &Path, branch: &str) -> bool {
         .success()
 }
 
+/// The commit SHA `refname` resolves to, or `None` when it does not resolve
+/// (e.g. a deleted tag).
+fn rev_parse(repo: &Path, refname: &str) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{refname}^{{commit}}"),
+        ])
+        .output()
+        .expect("spawn git");
+    out.status
+        .success()
+        .then(|| String::from_utf8(out.stdout).unwrap().trim().to_string())
+}
+
 /// The tracked file paths at `refname` (recursive), one per entry.
 fn git_ls(repo: &Path, refname: &str) -> Vec<String> {
     let out = Command::new("git")
@@ -1068,6 +1087,94 @@ fn current_mode_commits_on_current_branch() {
     assert!(report.commits > 0, "current-mode work counted");
     // The repo is left on the same branch — nothing is checked out or deleted.
     assert_eq!(current_branch(&repo), "main");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn undo_tag_marks_pre_run_head_in_current_mode() {
+    let repo = init_repo("undo-current");
+    let pre_run = rev_parse(&repo, "HEAD").expect("pre-run HEAD resolves");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg_current(&repo, "stamp-undo-current"),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // The report hands back the marker, and the local tag points at the commit
+    // the branch stood on before the run — `git reset --hard <tag>` is the undo.
+    let tag = report.undo_tag.as_deref().expect("undo tag reported");
+    assert_eq!(tag, "ralphy/pre-run-stamp-undo-current");
+    assert_eq!(
+        rev_parse(&repo, tag).as_deref(),
+        Some(pre_run.as_str()),
+        "tag marks the pre-run HEAD"
+    );
+    // The work itself is untouched — commits still on the live branch.
+    assert!(report.commits > 0);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn undo_tag_marks_the_base_in_new_mode() {
+    let repo = init_repo("undo-new");
+    let base = rev_parse(&repo, "main").expect("base resolves");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-undo-new", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // In New mode the marker is the cut point of the run branch (the base).
+    let tag = report.undo_tag.as_deref().expect("undo tag reported");
+    assert_eq!(tag, "ralphy/pre-run-stamp-undo-new");
+    assert_eq!(
+        rev_parse(&repo, tag).as_deref(),
+        Some(base.as_str()),
+        "tag marks the base the run branch was cut from"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn undo_tag_dropped_when_the_run_adds_no_commits() {
+    let repo = init_repo("undo-dry");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-undo-dry", true),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // Nothing to undo: the report carries no marker and the tag is gone from
+    // the repo (mirrors the empty-branch delete).
+    assert!(report.undo_tag.is_none(), "no undo tag on an empty run");
+    assert!(
+        rev_parse(&repo, "ralphy/pre-run-stamp-undo-dry").is_none(),
+        "empty run's tag deleted"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }

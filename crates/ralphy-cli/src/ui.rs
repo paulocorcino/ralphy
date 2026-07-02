@@ -295,6 +295,9 @@ pub struct PanelData {
     pub stop: Option<PanelStop>,
     pub branch_mode: PanelBranchMode,
     pub dry_run: bool,
+    /// The run's local `ralphy/pre-run-<stamp>` undo tag, when one exists (the
+    /// runner deletes it on a zero-commit run). Drives the `↩ undo:` line.
+    pub undo_tag: Option<String>,
     /// This run's token breakdown across all phases, for the compact footer meter
     /// (ADR-0008 D11). `model` is unused at the footer — USD is supplied below.
     pub run_breakdown: UsageLite,
@@ -591,6 +594,31 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     } else {
         closing_raw
     });
+
+    // Undo line: only when the run left commits behind and the pre-run tag
+    // exists (the runner deletes it on a zero-commit run). The command is
+    // mode-aware — `Current` rewinds the live branch to the marker; `New`
+    // simply drops the run branch (checking out `orig` first when a stop left
+    // the repo parked on it).
+    if data.commits > 0 {
+        if let Some(tag) = &data.undo_tag {
+            let undo_icon = pick("↩️", "[undo]", opts.emoji);
+            let cmd = match data.branch_mode {
+                PanelBranchMode::Current => format!("git reset --hard {tag}"),
+                PanelBranchMode::New if stopped => format!(
+                    "git checkout {} && git branch -D {}",
+                    data.orig_branch, data.branch
+                ),
+                PanelBranchMode::New => format!("git branch -D {}", data.branch),
+            };
+            let undo_raw = format!("{undo_icon}  undo (pre-run tag '{tag}'): {cmd}");
+            lines.push(if opts.color {
+                Style::new().dim().apply_to(&undo_raw).to_string()
+            } else {
+                undo_raw
+            });
+        }
+    }
 
     // Next-step line: New mode only, absent when dry-run + zero commits
     if data.branch_mode == PanelBranchMode::New && !(data.dry_run && data.commits == 0) {
@@ -1663,6 +1691,85 @@ mod tests {
     }
 
     #[test]
+    fn totals_panel_undo_line_is_mode_aware() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: false,
+        };
+
+        // New + clean run (repo back on orig): undo drops the run branch.
+        let new_clean = render_totals_panel(&panel_base(), opts);
+        assert!(
+            new_clean.iter().any(|l| l.contains(
+                "undo (pre-run tag 'ralphy/pre-run-20260610-120000'): \
+                 git branch -D afk/run-20260610-120000"
+            )),
+            "{new_clean:?}"
+        );
+
+        // New + stopped (repo parked on the run branch): checkout orig first.
+        let stopped = render_totals_panel(
+            &PanelData {
+                stop: Some(PanelStop::Deadline),
+                ..panel_base()
+            },
+            opts,
+        );
+        assert!(
+            stopped
+                .iter()
+                .any(|l| l.contains("git checkout main && git branch -D afk/run-20260610-120000")),
+            "{stopped:?}"
+        );
+
+        // Current: undo rewinds the live branch to the marker.
+        let current = render_totals_panel(
+            &PanelData {
+                branch_mode: PanelBranchMode::Current,
+                branch: "main".to_string(),
+                ..panel_base()
+            },
+            opts,
+        );
+        assert!(
+            current
+                .iter()
+                .any(|l| l.contains("git reset --hard ralphy/pre-run-20260610-120000")),
+            "{current:?}"
+        );
+    }
+
+    #[test]
+    fn totals_panel_undo_line_absent_without_tag_or_commits() {
+        let opts = RenderOpts {
+            color: false,
+            emoji: false,
+        };
+        // No tag (creation failed or the runner dropped it) → no undo line.
+        let no_tag = render_totals_panel(
+            &PanelData {
+                undo_tag: None,
+                ..panel_base()
+            },
+            opts,
+        );
+        assert!(!no_tag.iter().any(|l| l.contains("undo")), "{no_tag:?}");
+
+        // Zero commits → nothing to undo, even if a tag value leaked through.
+        let no_commits = render_totals_panel(
+            &PanelData {
+                commits: 0,
+                ..panel_base()
+            },
+            opts,
+        );
+        assert!(
+            !no_commits.iter().any(|l| l.contains("undo")),
+            "{no_commits:?}"
+        );
+    }
+
+    #[test]
     fn normalize_remote_url_handles_ssh_https_and_dot_git() {
         // SCP-style SSH → https, `.git` stripped.
         assert_eq!(
@@ -1920,6 +2027,7 @@ mod tests {
             stop: None,
             branch_mode: PanelBranchMode::New,
             dry_run: false,
+            undo_tag: Some("ralphy/pre-run-20260610-120000".to_string()),
             run_breakdown: UsageLite {
                 input: 8_400_000,
                 ..Default::default()

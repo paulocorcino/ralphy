@@ -399,6 +399,11 @@ pub struct QueueReport {
     /// Number of commits the run added over the compare ref (the base in `New`
     /// mode, the pre-run HEAD in `Current` mode).
     pub commits: usize,
+    /// The local `ralphy/pre-run-<stamp>` tag marking where the run started —
+    /// the undo handle (`git reset --hard <tag>` in `Current` mode). `None` when
+    /// tagging failed or the run added no commits (the tag is then deleted:
+    /// nothing to undo).
+    pub undo_tag: Option<String>,
     /// One `git log --oneline` entry per counted commit.
     pub oneline: Vec<String>,
     /// The token usage this run consumed across every phase it worked — the sum
@@ -1554,6 +1559,19 @@ fn run_queue_with(
         cfg.branch_mode,
     )?;
 
+    // Pre-run undo marker: a local tag at the compare ref (the base in `New`
+    // mode, the pre-run HEAD in `Current` mode), so undoing the whole run is one
+    // copyable command instead of reflog archaeology. Best-effort — a run must
+    // never fail over its own bookkeeping.
+    let undo_tag_name = format!("ralphy/pre-run-{}", cfg.stamp);
+    let mut undo_tag = match repo.tag(&undo_tag_name, &compare_ref) {
+        Ok(()) => Some(undo_tag_name),
+        Err(e) => {
+            warn!(tag = %undo_tag_name, error = %e, "creating the pre-run undo tag failed");
+            None
+        }
+    };
+
     // Identity for every ledger line this run writes (ADR-0008 D6/D7), read once
     // from git: the project slug (remote, or a path-hash fallback) and the actor.
     // The accumulators fold every phase's usage into the run totals; the per-model
@@ -1818,6 +1836,17 @@ fn run_queue_with(
     let commits = repo.rev_list_count(&range).unwrap_or(0);
     let oneline = repo.log_oneline(&range).unwrap_or_default();
 
+    // A run that added nothing has nothing to undo — drop the marker so tags
+    // never accumulate for dry runs and empty queues (mirrors the empty-branch
+    // delete in `restore`).
+    if commits == 0 {
+        if let Some(tag) = undo_tag.take() {
+            if let Err(e) = repo.delete_tag(&tag) {
+                warn!(%tag, error = %e, "deleting the empty run's undo tag failed");
+            }
+        }
+    }
+
     // Closing-state matrix, keyed on mode × outcome × dry-run (ps1 `finally`):
     //  - Current: commits already live on the branch — never check out or delete.
     //  - New + dry-run: plans only — return to orig and drop the empty branch.
@@ -1846,6 +1875,7 @@ fn run_queue_with(
         worked,
         stop,
         commits,
+        undo_tag,
         oneline,
         run_usage: ledger.run_usage,
         run_usage_by_model: ledger.run_usage_by_model,

@@ -62,6 +62,17 @@ pub trait Repo {
         Ok(())
     }
 
+    /// Create a lightweight local tag at `target` (the pre-run undo marker).
+    fn tag(&self, name: &str, target: &str) -> Result<()> {
+        let _ = (name, target);
+        Ok(())
+    }
+
+    fn delete_tag(&self, name: &str) -> Result<()> {
+        let _ = name;
+        Ok(())
+    }
+
     /// Number of commits in `range` (e.g. `base..branch`).
     fn rev_list_count(&self, range: &str) -> Result<usize> {
         let _ = range;
@@ -133,6 +144,14 @@ impl Repo for GitRepo {
 
     fn delete_branch(&self, branch: &str) -> Result<()> {
         git::delete_branch(&self.repo_root, branch)
+    }
+
+    fn tag(&self, name: &str, target: &str) -> Result<()> {
+        git::tag(&self.repo_root, name, target)
+    }
+
+    fn delete_tag(&self, name: &str) -> Result<()> {
+        git::delete_tag(&self.repo_root, name)
     }
 
     fn rev_list_count(&self, range: &str) -> Result<usize> {

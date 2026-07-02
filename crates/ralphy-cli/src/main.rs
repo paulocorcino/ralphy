@@ -867,6 +867,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stop: panel_stop,
         branch_mode: panel_mode,
         dry_run: args.dry_run,
+        undo_tag: report.undo_tag,
         run_breakdown: to_lite(run_usage),
         project_breakdown: to_lite(&project_usage),
         project_id: slug,
