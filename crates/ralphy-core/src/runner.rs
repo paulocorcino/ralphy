@@ -12,9 +12,10 @@ use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
 use crate::{
-    acceptance, blocked, git, gitignore, handoff, knowledge,
-    ledger::{self, LedgerRecord},
+    acceptance, blocked, gitignore, handoff, knowledge,
+    ledger::{FileLedger, LedgerRecord, LedgerSink},
     protocol, references,
+    repo::{GitRepo, Repo},
     verify::{self, VerifySpec},
     Agent, Execution, Issue, IssueTracker, Outcome, PlanLimit, Usage, Workspace,
 };
@@ -221,29 +222,30 @@ pub enum BranchMode {
 /// HEAD SHA captured before any work, so the commit count means "work this run
 /// added" in both modes.
 fn prepare_branch(
-    repo: &Path,
+    repo: &dyn Repo,
+    repo_root: &Path,
     base_branch: &str,
     stamp: &str,
     mode: BranchMode,
 ) -> Result<(String, String, String)> {
     // Best-effort: make sure the base ref is up to date. A missing remote (e.g.
     // a local-only repo) is not fatal here — base existence is checked below.
-    let _ = git::fetch_origin(repo);
+    let _ = repo.fetch_origin();
 
     // Precondition: a clean tree, checked before any mutation (our own `.gitignore`
     // edit included) so a first run can never trip this.
-    if !git::is_clean_ignoring_ralphy(repo)? {
+    if !repo.is_clean_ignoring_ralphy()? {
         bail!(
             "working tree at {} is not clean — commit or stash first",
-            repo.display()
+            repo_root.display()
         );
     }
 
-    let orig = git::current_branch(repo)?;
+    let orig = repo.current_branch()?;
     if orig == "HEAD" {
         bail!(
             "repo at {} is in detached HEAD — checkout a branch first",
-            repo.display()
+            repo_root.display()
         );
     }
 
@@ -251,16 +253,16 @@ fn prepare_branch(
         BranchMode::Current => {
             // Commit straight onto the current branch — no new branch, base
             // ignored. Compare against where this branch stood before the run.
-            let compare_ref = git::head_sha(repo)?;
+            let compare_ref = repo.head_sha()?;
             info!(branch = %orig, "running in place on current branch");
             (orig.clone(), orig, compare_ref)
         }
         BranchMode::New => {
-            if !git::commitish_exists(repo, base_branch) {
+            if !repo.commitish_exists(base_branch) {
                 bail!("base branch '{base_branch}' not found");
             }
             let branch = format!("afk/run-{stamp}");
-            git::checkout_new_branch(repo, &branch, base_branch)?;
+            repo.checkout_new_branch(&branch, base_branch)?;
             info!(%branch, base = %base_branch, was = %orig, "run branch created");
             (orig, branch, base_branch.to_string())
         }
@@ -272,7 +274,7 @@ fn prepare_branch(
     // `.ralphy/` from a prior run — and no-op; the run branch, cut from a base that
     // does NOT ignore it, would then let the agent's `git add` sweep scratch
     // (`plan.md`, logs) into the deliverable.
-    gitignore::ensure_ralphy_ignored(repo)?;
+    gitignore::ensure_ralphy_ignored(repo_root)?;
 
     Ok(prepared)
 }
@@ -750,17 +752,39 @@ pub fn run_queue(
     tracker: &dyn IssueTracker,
     clock: &dyn RunClock,
 ) -> Result<QueueReport> {
-    let repo = cfg.repo_root.as_path();
-    let ws = Workspace::new(repo);
+    // The production seams: real git over the repo root, the JSONL usage file.
+    // The 5-arg signature is the frozen public commitment (ADR-0006/0009); the
+    // injectable seams live on the private worker below, reached by unit tests.
+    let repo = GitRepo::new(&cfg.repo_root);
+    run_queue_with(cfg, queue, agent, tracker, clock, &repo, &FileLedger)
+}
 
-    let (orig, branch, compare_ref) =
-        prepare_branch(repo, &cfg.base_branch, &cfg.stamp, cfg.branch_mode)?;
+/// [`run_queue`] with every collaborator injectable — the seam the in-crate
+/// unit tests drive with fakes (no on-disk git repo, no usage file).
+fn run_queue_with(
+    cfg: &QueueConfig,
+    queue: &[Issue],
+    agent: &dyn Agent,
+    tracker: &dyn IssueTracker,
+    clock: &dyn RunClock,
+    repo: &dyn Repo,
+    sink: &dyn LedgerSink,
+) -> Result<QueueReport> {
+    let ws = Workspace::new(&cfg.repo_root);
+
+    let (orig, branch, compare_ref) = prepare_branch(
+        repo,
+        &cfg.repo_root,
+        &cfg.base_branch,
+        &cfg.stamp,
+        cfg.branch_mode,
+    )?;
 
     // Identity for every ledger line this run writes (ADR-0008 D6/D7), read once
     // from git: the project slug (remote, or a path-hash fallback) and the actor.
-    let project = git::project_slug(repo);
-    let actor_email = git::user_email(repo).unwrap_or_default();
-    let actor_name = git::user_name(repo).unwrap_or_default();
+    let project = repo.project_slug();
+    let actor_email = repo.user_email().unwrap_or_default();
+    let actor_name = repo.user_name().unwrap_or_default();
 
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
@@ -1011,7 +1035,7 @@ pub fn run_queue(
             tokens: plan.usage.clone(),
             ts: chrono::Utc::now().to_rfc3339(),
         };
-        if let Err(e) = ledger::append(&plan_rec) {
+        if let Err(e) = sink.append(&plan_rec) {
             warn!(number = issue.number, error = %e, "writing plan usage ledger line failed");
         }
         run_usage.add_tokens(&plan.usage);
@@ -1087,12 +1111,12 @@ pub fn run_queue(
         let mut deadline_cut = false;
         let mut exec_usage = Usage::default();
         let outcome = loop {
-            let before_sha = git::head_sha(repo).ok();
+            let before_sha = repo.head_sha().ok();
             let Execution { outcome, usage } = agent.execute(&plan, &ws)?;
             // Accumulate across the resume loop so the single execute ledger line
             // carries the whole issue's execution cost, not just the last attempt.
             exec_usage.add_tokens(&usage);
-            let after_sha = git::head_sha(repo).ok();
+            let after_sha = repo.head_sha().ok();
 
             // Track progress: a commit resets the streak, a no-commit execute
             // advances it. Done/non-limit outcomes break below before it matters.
@@ -1151,7 +1175,7 @@ pub fn run_queue(
             tokens: exec_usage.clone(),
             ts: chrono::Utc::now().to_rfc3339(),
         };
-        if let Err(e) = ledger::append(&exec_rec) {
+        if let Err(e) = sink.append(&exec_rec) {
             warn!(number = issue.number, error = %e, "writing execute usage ledger line failed");
         }
         run_usage.add_tokens(&exec_usage);
@@ -1220,7 +1244,7 @@ pub fn run_queue(
                     tokens: protocol_usage.clone(),
                     ts: chrono::Utc::now().to_rfc3339(),
                 };
-                if let Err(e) = ledger::append(&protocol_rec) {
+                if let Err(e) = sink.append(&protocol_rec) {
                     warn!(number = issue.number, error = %e, "writing protocol-repair usage ledger line failed");
                 }
                 run_usage.add_tokens(&protocol_usage);
@@ -1283,7 +1307,7 @@ pub fn run_queue(
                             commands = commands.len(),
                             "verify gate — running"
                         );
-                        let report = verify::run(&commands, repo, cfg.verify_timeout);
+                        let report = verify::run(&commands, &cfg.repo_root, cfg.verify_timeout);
                         // Honesty artifact: every command + its exit code (pass or
                         // fail), with the failing tail on a failure. Best-effort — a
                         // comment failure must not crash a run that otherwise passed.
@@ -1392,7 +1416,7 @@ pub fn run_queue(
                     tokens: repair_usage.clone(),
                     ts: chrono::Utc::now().to_rfc3339(),
                 };
-                if let Err(e) = ledger::append(&repair_rec) {
+                if let Err(e) = sink.append(&repair_rec) {
                     warn!(number = issue.number, error = %e, "writing repair usage ledger line failed");
                 }
                 run_usage.add_tokens(&repair_usage);
@@ -1561,8 +1585,8 @@ pub fn run_queue(
     // matching the ps1 `finally` block. Failures here are non-fatal reporting
     // concerns (e.g. a dropped branch in cleanup) — default to zero / empty.
     let range = format!("{compare_ref}..{branch}");
-    let commits = git::rev_list_count(repo, &range).unwrap_or(0);
-    let oneline = git::log_oneline(repo, &range).unwrap_or_default();
+    let commits = repo.rev_list_count(&range).unwrap_or(0);
+    let oneline = repo.log_oneline(&range).unwrap_or_default();
 
     // Closing-state matrix, keyed on mode × outcome × dry-run (ps1 `finally`):
     //  - Current: commits already live on the branch — never check out or delete.
@@ -1579,7 +1603,7 @@ pub fn run_queue(
                 // tracked file (e.g. a plan.md committed on the base), and a
                 // non-force checkout would abort and strand the repo on the
                 // run branch after an otherwise green run (ADR-0005, #41).
-                if let Err(e) = git::checkout_force(repo, &orig) {
+                if let Err(e) = repo.checkout_force(&orig) {
                     warn!("could not return to '{orig}': {e}");
                 }
             }
@@ -1606,19 +1630,22 @@ pub fn run_queue(
 /// so checking it out is pointless and the empty-branch delete would target the
 /// checked-out branch. Centralizing the guard here keeps every cleanup path —
 /// including the mid-loop error paths — from ever touching the live branch.
-fn restore(repo: &Path, orig: &str, branch: &str, base: &str, mode: BranchMode) {
+fn restore(repo: &dyn Repo, orig: &str, branch: &str, base: &str, mode: BranchMode) {
     if mode == BranchMode::Current {
         return;
     }
     // Force: the run branch may carry the uncommitted `.gitignore` edit (a dry run
     // never commits it), which must be discarded rather than dragged onto `orig`.
-    if let Err(e) = git::checkout_force(repo, orig) {
+    if let Err(e) = repo.checkout_force(orig) {
         warn!("could not return to '{orig}': {e}");
         return;
     }
-    let empty = git::rev_list_count(repo, &format!("{base}..{branch}")).unwrap_or(1) == 0;
+    let empty = repo
+        .rev_list_count(&format!("{base}..{branch}"))
+        .unwrap_or(1)
+        == 0;
     if empty {
-        if let Err(e) = git::delete_branch(repo, branch) {
+        if let Err(e) = repo.delete_branch(branch) {
             warn!("could not delete empty run branch '{branch}': {e}");
         }
     }
