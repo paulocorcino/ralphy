@@ -74,8 +74,9 @@ fn opencode_skills_config(skills_dir: &Path) -> String {
 /// via `skills.paths`, **not** a subagent. Headless custom-subagent dispatch is
 /// blocked upstream (`opencode#29616`/`#20059`: Task tool `subagent_type` is
 /// hardcoded to `explore`/`general`), so the inline skill is the only working
-/// headless mechanism (ADR-0005 D8). Single source of truth lives at
-/// `assets/prompts/`.
+/// headless mechanism (ADR-0005 D8). Copied to `.ralphy/plan-charter.md` for
+/// the live session to read; only a one-line pointer is piped on stdin. Single
+/// source of truth lives at `assets/prompts/`.
 const PROMPT_PLAN_OPENCODE: &str = include_str!("../../../assets/prompts/prompt.plan.opencode.md");
 
 /// The actionable message shown when `is_opencode_auth_error` fires — tells the
@@ -726,6 +727,11 @@ impl Agent for OpenCodeAgent {
         // Plan fresh every run; never reuse a stale artifact.
         let _ = fs::remove_file(&plan_path);
 
+        // Full charter on disk (mirrors .ralphy/exec.md); rewritten each plan
+        // call so a resumed session still finds it.
+        fs::write(ws.plan_charter_path(), PROMPT_PLAN_OPENCODE)
+            .context("writing .ralphy/plan-charter.md")?;
+
         let cmd = build_opencode_command(
             self.model.as_deref(),
             self.variant.as_deref(),
@@ -736,7 +742,8 @@ impl Agent for OpenCodeAgent {
             .issue_deadline()
             .saturating_duration_since(Instant::now());
         info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
-        let (_, _, stdout_text, log) = self.run_opencode(cmd, PROMPT_PLAN_OPENCODE, timeout)?;
+        let (_, _, stdout_text, log) =
+            self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
 
         if !plan_path.exists() {
             if is_opencode_auth_error(&log) {
@@ -1304,6 +1311,27 @@ mod tests {
     }
 
     // ── prompt asset ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn plan_charter_file_carries_full_prompt() {
+        // The full charter lands on disk (mirrors exec.md) and per-issue stdin
+        // stays a one-line pointer — pins the byte reduction issue #80 delivers.
+        let base =
+            std::env::temp_dir().join(format!("ralphy-opencode-charter-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+
+        fs::write(ws.plan_charter_path(), PROMPT_PLAN_OPENCODE).unwrap();
+        assert_eq!(
+            fs::read_to_string(ws.plan_charter_path()).unwrap(),
+            PROMPT_PLAN_OPENCODE
+        );
+        assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_OPENCODE.len());
+
+        let _ = fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn prompt_plan_opencode_has_no_execution_model_line() {

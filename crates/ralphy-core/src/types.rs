@@ -160,6 +160,15 @@ impl Workspace {
         self.ralphy_dir().join("plan.md")
     }
 
+    /// `<repo>/.ralphy/plan-charter.md` — the full planning charter an adapter
+    /// writes before each plan pass so the per-issue prompt can be a one-line
+    /// pointer (mirrors `.ralphy/exec.md`). Rewritten every `plan()` call, so a
+    /// resumed session and a staged-vs-standard label switch both see the right
+    /// content.
+    pub fn plan_charter_path(&self) -> PathBuf {
+        self.ralphy_dir().join("plan-charter.md")
+    }
+
     /// `<repo>/.ralphy/diagnosis.json` — where `ralphy init` persists the
     /// read-only repo-diagnosis report (ADR-0012 stage 2) after validating it
     /// against the [`crate::DiagnosisReport`] schema.
