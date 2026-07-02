@@ -17,7 +17,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
-use ralphy_adapter_support::run_headless;
+use ralphy_adapter_support::{
+    list_session_files, run_headless, run_json_session, session_files_appeared, JsonSession,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
     DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit, Usage, Workspace,
@@ -73,6 +75,17 @@ fn plan_prompt_for(issue: &Issue) -> (&'static str, bool) {
         (PROMPT_PLAN_STAGED, true)
     } else {
         (PROMPT_PLAN, false)
+    }
+}
+
+/// The env var a staged plan sets so the `staged-plan` skill knows it is running
+/// non-interactively (no TTY to prompt on). Returns `Some((key, value))` when
+/// `staged`, otherwise `None` so the standard plan leaves the environment clean.
+fn staged_plan_env(staged: bool) -> Option<(&'static str, &'static str)> {
+    if staged {
+        Some(("STAGED_PLAN_NONINTERACTIVE", "1"))
+    } else {
+        None
     }
 }
 
@@ -489,39 +502,29 @@ pub fn diagnose_repo(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let r = run_headless(cmd, &build_diagnose_prompt(repo, &out_path), timeout)
-        .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
-    let _ = fs::write(neutral_cwd.join("diagnose.log"), &log);
-
-    if is_claude_auth_error(&log) {
-        bail!(
-            "{} (see {})",
-            CLAUDE_AUTH_ERROR_MSG,
-            neutral_cwd.join("diagnose.log").display()
-        );
-    }
-    if r.timed_out {
-        bail!(
-            "diagnosis session hit the wall timeout (see {})",
-            neutral_cwd.join("diagnose.log").display()
-        );
-    }
-
-    let raw = fs::read_to_string(&out_path).with_context(|| {
-        format!(
-            "diagnosis session left no report at {} (see {})",
-            out_path.display(),
-            neutral_cwd.join("diagnose.log").display()
-        )
-    })?;
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "diagnosis report at {} did not match the schema",
-            out_path.display()
-        )
-    })
+    let log_path = neutral_cwd.join("diagnose.log");
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &build_diagnose_prompt(repo, &out_path),
+            timeout,
+            log_path: &log_path,
+            out_path: &out_path,
+            spawn_err: "failed to spawn the `claude` CLI (is it installed and on PATH?)",
+            auth_msg: CLAUDE_AUTH_ERROR_MSG,
+            timeout_msg: "diagnosis session hit the wall timeout",
+            missing_msg: "diagnosis session left no report",
+        },
+        is_claude_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "diagnosis report at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
 }
 
 /// Run a one-shot headless `claude -p` backlog/milestone → issues session
@@ -581,36 +584,29 @@ pub fn draft_issues(
         .stderr(Stdio::piped());
 
     let prompt = build_init_issues_prompt(repo, mode, req.source_docs, req.triage_label, out_path);
-    let r = run_headless(cmd, &prompt, timeout)
-        .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
     let log_path = repo.join(".ralphy").join("init-issues.log");
-    let _ = fs::write(&log_path, &log);
-
-    if is_claude_auth_error(&log) {
-        bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
-    }
-    if r.timed_out {
-        bail!(
-            "backlog → issues session hit the wall timeout (see {})",
-            log_path.display()
-        );
-    }
-
-    let raw = fs::read_to_string(out_path).with_context(|| {
-        format!(
-            "issues session left no draft at {} (see {})",
-            out_path.display(),
-            log_path.display()
-        )
-    })?;
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "issues draft at {} did not match the schema",
-            out_path.display()
-        )
-    })
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path,
+            spawn_err: "failed to spawn the `claude` CLI (is it installed and on PATH?)",
+            auth_msg: CLAUDE_AUTH_ERROR_MSG,
+            timeout_msg: "backlog → issues session hit the wall timeout",
+            missing_msg: "issues session left no draft",
+        },
+        is_claude_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "issues draft at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
 }
 
 impl Agent for ClaudeAgent {
@@ -671,8 +667,8 @@ impl Agent for ClaudeAgent {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if staged {
-            cmd.env("STAGED_PLAN_NONINTERACTIVE", "1");
+        if let Some((key, value)) = staged_plan_env(staged) {
+            cmd.env(key, value);
         }
         let mut child = cmd
             .spawn()
@@ -730,16 +726,16 @@ impl Agent for ClaudeAgent {
         let transcript_dir = self.transcript_dir(ws);
         let before = transcript_dir
             .as_deref()
-            .map(list_jsonl)
+            .map(|d| list_session_files(d, "jsonl", false, None))
             .unwrap_or_default();
 
         let outcome = self.execute_outcome(plan, ws)?;
 
         let after = transcript_dir
             .as_deref()
-            .map(list_jsonl)
+            .map(|d| list_session_files(d, "jsonl", false, None))
             .unwrap_or_default();
-        let per_transcript: Vec<Usage> = appeared_files(&before, &after)
+        let per_transcript: Vec<Usage> = session_files_appeared(&before, &after)
             .iter()
             .filter_map(|p| fs::read_to_string(p).ok())
             .map(|t| parse_transcript_usage(&t))
@@ -977,8 +973,9 @@ fn is_claude_auth_error(text: &str) -> bool {
                 }
             }
         }
-        let lower = line.to_ascii_lowercase();
-        lower.contains("not logged in") && lower.contains("please run /login")
+        // One AND-group: the genuine CLI banner carries both substrings on the
+        // same line, so an AND avoids matching prose that mentions only one.
+        ralphy_adapter_support::auth_error(line, &[&["not logged in", "please run /login"]])
     })
 }
 
@@ -1036,8 +1033,9 @@ enum HeadlessReason {
 /// 4. `RALPHY_DONE_EXIT` or zero open steps → `Done`.
 /// 5. Otherwise → `None` (continue).
 fn classify_exec_call(out: &str, exited: bool, open_steps: usize) -> Option<HeadlessReason> {
-    if is_limit_text(out) {
-        return Some(HeadlessReason::Limit(parse_reset_hhmm(out)));
+    if let Some(reset) = ralphy_adapter_support::detect_limit(out, is_limit_text, parse_reset_hhmm)
+    {
+        return Some(HeadlessReason::Limit(reset));
     }
     if !exited {
         return Some(HeadlessReason::Timeout);
@@ -1124,19 +1122,13 @@ fn is_limit_text(text: &str) -> bool {
 /// [`parse_reset_hhmm`] (e.g. `"You've hit your session limit · resets 8:10am"`
 /// → `Some("08:10")`).
 fn transcript_limit(jsonl: &str) -> Option<Option<String>> {
-    for line in jsonl.lines() {
-        let line = line.trim();
-        if !line.starts_with('{') {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if line_is_rate_limit_error(&v) {
-            return Some(limit_line_text(&v).as_deref().and_then(parse_reset_hhmm));
-        }
-    }
-    None
+    // Shares the line-delimited-JSON scan scaffold with OpenCode's limit parser
+    // (`scan_json_lines`); the rate-limit *predicate* and reset-hint *format* stay
+    // Claude-specific.
+    ralphy_adapter_support::scan_json_lines(jsonl, |v| {
+        line_is_rate_limit_error(v)
+            .then(|| limit_line_text(v).as_deref().and_then(parse_reset_hhmm))
+    })
 }
 
 /// Whether a parsed transcript line is Claude's own rate-limit error — either an
@@ -1448,33 +1440,6 @@ fn dashed_cwd(cwd: &str) -> String {
         .collect()
 }
 
-/// The `*.jsonl` files directly under `dir` (non-recursive). Empty when `dir` is
-/// missing — the snapshot-diff (D10) treats that as "no transcripts yet".
-fn list_jsonl(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                out.push(path);
-            }
-        }
-    }
-    out
-}
-
-/// The files present in `after` but not in `before` — the appeared-over-grew rule
-/// (ADR-0008 D10). A file that merely *grew* (present in both) is a concurrent
-/// pre-existing session and is excluded; only a freshly *appeared* transcript is
-/// attributed to this run. Pure over its inputs.
-fn appeared_files(before: &[PathBuf], after: &[PathBuf]) -> Vec<PathBuf> {
-    after
-        .iter()
-        .filter(|p| !before.contains(p))
-        .cloned()
-        .collect()
-}
-
 /// Sum `cache_creation` tokens from a transcript `usage` block: prefer the flat
 /// `cache_creation_input_tokens`, else sum the `cache_creation` 5m/1h ephemeral
 /// sub-tiers (they total to the flat field, so taking the flat first avoids
@@ -1682,6 +1647,39 @@ mod tests {
         let issue = issue_with_labels(&[]);
         let (_, staged) = plan_prompt_for(&issue);
         assert!(!staged);
+    }
+
+    #[test]
+    fn staged_plan_env_set_when_staged() {
+        assert_eq!(
+            staged_plan_env(true),
+            Some(("STAGED_PLAN_NONINTERACTIVE", "1")),
+            "a staged plan must flag the skill as non-interactive"
+        );
+    }
+
+    #[test]
+    fn staged_plan_env_absent_when_not_staged() {
+        assert_eq!(
+            staged_plan_env(false),
+            None,
+            "the standard plan must not touch the environment"
+        );
+    }
+
+    #[test]
+    fn staged_prompt_and_skill_reference_noninteractive_flag() {
+        // Anti-drift: the env the adapter sets is only meaningful if the staged
+        // prompt (and the skill it invokes) still read STAGED_PLAN_NONINTERACTIVE.
+        assert!(
+            PROMPT_PLAN_STAGED.contains("STAGED_PLAN_NONINTERACTIVE"),
+            "staged plan prompt must reference the non-interactive flag it is handed"
+        );
+        let skill = include_str!("../../../assets/plugin/skills/staged-plan/SKILL.md");
+        assert!(
+            skill.contains("STAGED_PLAN_NONINTERACTIVE"),
+            "staged-plan skill must read the non-interactive flag"
+        );
     }
 
     fn plan_with(recommended: Option<&str>) -> Plan {
@@ -2265,18 +2263,6 @@ mod tests {
         assert_eq!(
             dashed_cwd("C:\\Dev\\.ralph-worktrees\\issue-10"),
             "C--Dev--ralph-worktrees-issue-10"
-        );
-    }
-
-    #[test]
-    fn appeared_files_returns_new_not_grown() {
-        let before = vec![PathBuf::from("/p/a.jsonl")];
-        let after = vec![PathBuf::from("/p/a.jsonl"), PathBuf::from("/p/b.jsonl")];
-        // `a.jsonl` was present before (it merely grew) → excluded; only the
-        // freshly appeared `b.jsonl` is this run's transcript.
-        assert_eq!(
-            appeared_files(&before, &after),
-            vec![PathBuf::from("/p/b.jsonl")]
         );
     }
 

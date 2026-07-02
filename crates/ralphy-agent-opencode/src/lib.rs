@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
-use ralphy_adapter_support::{resolve_program, run_headless};
+use ralphy_adapter_support::{resolve_program, run_headless, run_json_session, JsonSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
     DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, Usage, Workspace,
@@ -89,7 +89,7 @@ const OPENCODE_AUTH_ERROR_MSG: &str =
 /// `providerautherror` is specific enough to avoid false positives from our own
 /// prompt text mentioning `opencode auth login`.
 fn is_opencode_auth_error(text: &str) -> bool {
-    text.to_ascii_lowercase().contains("providerautherror")
+    ralphy_adapter_support::auth_error(text, &[&["providerautherror"]])
 }
 
 /// The vendor-neutral execution charter, piped to `opencode run` on stdin. Shared
@@ -131,36 +131,29 @@ pub fn diagnose_repo(
     let prompt = build_diagnose_prompt(repo, &out_path);
     info!(?model, "diagnosing repo with opencode run");
     let cmd = build_opencode_command(model, None, neutral_cwd, INIT_OPENCODE_CONFIG);
-    let r = run_headless(cmd, &prompt, timeout)
-        .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
     let log_path = neutral_cwd.join("diagnose.log");
-    let _ = fs::write(&log_path, &log);
-
-    if is_opencode_auth_error(&log) {
-        bail!("{} (see {})", OPENCODE_AUTH_ERROR_MSG, log_path.display());
-    }
-    if r.timed_out {
-        bail!(
-            "diagnosis session hit the wall timeout (see {})",
-            log_path.display()
-        );
-    }
-
-    let raw = fs::read_to_string(&out_path).with_context(|| {
-        format!(
-            "diagnosis session left no report at {} (see {})",
-            out_path.display(),
-            log_path.display()
-        )
-    })?;
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "diagnosis report at {} did not match the schema",
-            out_path.display()
-        )
-    })
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path: &out_path,
+            spawn_err: "failed to spawn the `opencode` CLI (is it installed and on PATH?)",
+            auth_msg: OPENCODE_AUTH_ERROR_MSG,
+            timeout_msg: "diagnosis session hit the wall timeout",
+            missing_msg: "diagnosis session left no report",
+        },
+        is_opencode_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "diagnosis report at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
 }
 
 /// Run a one-shot headless `opencode run` backlog/milestone → issues session
@@ -195,39 +188,32 @@ pub fn draft_issues(
         "drafting issues with opencode run"
     );
     let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
-    let r = run_headless(cmd, &prompt, timeout)
-        .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     if let Some(parent) = log_path.parent() {
         fs::create_dir_all(parent).ok();
     }
-    let _ = fs::write(&log_path, &log);
-
-    if is_opencode_auth_error(&log) {
-        bail!("{} (see {})", OPENCODE_AUTH_ERROR_MSG, log_path.display());
-    }
-    if r.timed_out {
-        bail!(
-            "backlog → issues session hit the wall timeout (see {})",
-            log_path.display()
-        );
-    }
-
-    let raw = fs::read_to_string(out_path).with_context(|| {
-        format!(
-            "issues session left no draft at {} (see {})",
-            out_path.display(),
-            log_path.display()
-        )
-    })?;
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "issues draft at {} did not match the schema",
-            out_path.display()
-        )
-    })
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path,
+            spawn_err: "failed to spawn the `opencode` CLI (is it installed and on PATH?)",
+            auth_msg: OPENCODE_AUTH_ERROR_MSG,
+            timeout_msg: "backlog → issues session hit the wall timeout",
+            missing_msg: "issues session left no draft",
+        },
+        is_opencode_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "issues draft at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
 }
 
 /// Drives the `opencode` CLI. `model` is the operator override (omitted entirely
@@ -473,21 +459,17 @@ fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
 ///    "quota exceeded".
 /// 3. Zen provider `*UsageLimitError` name suffix.
 fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-            continue;
-        };
-        if !is_error_event(&val) {
-            continue;
+    // Shares the line-delimited-JSON scan scaffold with the Claude adapter's
+    // transcript limit scan (`scan_json_lines`); the error-shape decoding and the
+    // limit predicate below stay OpenCode-specific.
+    ralphy_adapter_support::scan_json_lines(stdout, |val| {
+        if !is_error_event(val) {
+            return None;
         }
         // Read the error fields from wherever this shape carries them: `error.data`
         // (opencode 1.16.2), `error`, or the flat payload (`part`/top level).
-        let name = error_name(&val);
-        let detail = error_detail(&val);
+        let name = error_name(val);
+        let detail = error_detail(val);
         let status = detail
             .get("statusCode")
             .and_then(|v| v.as_u64())
@@ -505,11 +487,8 @@ fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
             || msg.contains("too many requests")
             || msg.contains("quota exceeded");
 
-        if is_limit {
-            return Some(parse_opencode_reset_hint(detail));
-        }
-    }
-    None
+        is_limit.then(|| parse_opencode_reset_hint(detail))
+    })
 }
 
 /// Map an execution call's end state onto a core [`Outcome`] (ADR-0005 D2): the

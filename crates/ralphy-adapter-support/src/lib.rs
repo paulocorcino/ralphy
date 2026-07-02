@@ -1,23 +1,30 @@
 //! Adapter support: the shared, vendor-neutral machinery every Ralphy **adapter**
-//! leans on. This crate owns the **OS-level headless plumbing** — spawn a child
-//! `Command`, drain stdout/stderr without deadlocking, poll to
-//! completion-or-timeout, kill on the deadline, and collect the captured output —
-//! and nothing more.
+//! leans on. This crate owns the mechanical plumbing that is identical by nature
+//! across vendors: the **OS-level headless runner** (spawn a child `Command`,
+//! drain stdout/stderr without deadlocking, poll to completion-or-timeout, kill on
+//! the deadline, collect the captured output), the **one-shot JSON session runner**
+//! ([`run_json_session`]), **auth-error** and **usage-limit** detection scaffolds
+//! ([`auth_error`], [`detect_limit`], [`scan_json_lines`]), and the
+//! **session-file snapshot-diff** helpers ([`session_files_appeared`],
+//! [`list_session_files`]). Every one of these takes the vendor-specific part —
+//! markers, formats, extensions, schema closures — as a parameter.
 //!
 //! ## Why this does NOT reopen ADR-0004
 //!
 //! ADR-0004 states there is "deliberately no shared 'headless runner' that both
 //! bend to fit." That prohibition is about a shared **`Outcome`-detection**
 //! runner — the semantic completion protocol each vendor must shape itself. This
-//! crate extracts **only the OS-level plumbing** (spawn / drain / poll / kill /
-//! collect), which is identical by nature, not by imposition. It owns **no**
-//! completion protocol and produces **no** `Outcome`: it hands back the raw,
-//! still-separate stdout and stderr, and each adapter's `classify_*` function
-//! still maps that captured output onto its own `Outcome`. The completion
-//! semantics remain entirely per-adapter, so this extraction is the mechanical
-//! floor *beneath* the seam ADR-0004 protects, not a violation of it. (This
-//! rationale is recorded here so a future architecture review does not re-flag the
-//! shared crate as an ADR-0004 violation.)
+//! crate extracts **only mechanical plumbing**, which is identical by nature, not
+//! by imposition. It owns **no** completion protocol and produces **no**
+//! `Outcome`: the headless runner hands back raw, still-separate stdout and
+//! stderr; the JSON runner returns whatever the adapter's own validation closure
+//! parses; the auth/limit scaffolds return a `bool`/`Option`, never an `Outcome`.
+//! Each adapter's `classify_*` function still maps captured output onto its own
+//! `Outcome`, and every vendor-specific decision (which markers signal auth, which
+//! reset-string format to parse) stays in the adapter. This extraction is the
+//! mechanical floor *beneath* the seam ADR-0004 protects, not a violation of it.
+//! (This rationale is recorded here so a future architecture review does not
+//! re-flag the shared crate as an ADR-0004 violation.)
 //!
 //! The public surface speaks only `std` types ([`Command`], [`Duration`],
 //! [`ExitStatus`], [`String`]) — no `portable-pty`, no vendor names. Building the
@@ -27,6 +34,15 @@
 use std::fs;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+
+mod detect;
+pub use detect::{auth_error, detect_limit, scan_json_lines};
+
+mod json_session;
+pub use json_session::{run_json_session, JsonSession};
+
+mod session_files;
+pub use session_files::{list_session_files, session_files_appeared};
 
 /// Returns `true` when `text` contains the `RALPHY_DONE_EXIT` sentinel, as
 /// defined by `assets/prompts/prompt.execute.md`.
