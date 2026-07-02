@@ -180,5 +180,6 @@ stalled network can never slow the run.
   scope; the stored token is reusable and the transport sits behind a thin
   module boundary, so a second use needs no redesign here.
 
-Status: proposed. No code is written by this ADR; it is the contract a later
-implementation slice (and the issues derived from it) must honour.
+Status: accepted — implemented as `crates/ralphy-cli/src/telegram/`
+(`notifier`, `client`, `config`), covering D1–D7 including the D6 `RunState`
+fold and the D5 log-only events.

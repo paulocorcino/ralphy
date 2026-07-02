@@ -17,8 +17,10 @@ directly, plus a source-level study of OpenCode's retry/limit handling
 (`packages/opencode/src/session/retry.ts`, `cli/cmd/run.ts`, the SDK error types,
 and issues #8203/#10432/#15562).
 
-Status: proposed. No code is written by this ADR; it is the contract a later
-implementation session follows, the way ADR-0004 preceded the Codex crate.
+Status: accepted — implemented as `crates/ralphy-agent-opencode` and validated
+live against a real OpenCode install (see
+[ADR-0005-opencode-validation](./0005-opencode-validation.md)). D4's model
+default was later amended by [ADR-0010](./0010-settings-and-opencode-model-default.md).
 
 ## D1 — Selection is per run, via `--agent`; the core is untouched
 

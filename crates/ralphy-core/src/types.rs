@@ -229,6 +229,15 @@ impl Workspace {
         self.knowledge_dir().join("raw")
     }
 
+    /// `<repo>/.ralphy/knowledge/citations.jsonl` — the cache's hit-rate log:
+    /// one JSON line per green close recording which `KNOWLEDGE.md` /
+    /// `handoffs.md` bullets that session's `**Knowledge used**` cited.
+    /// Append-only and never archived, so the consolidation curator can judge
+    /// "never cited across the last N closes" when pruning bullets.
+    pub fn citations_path(&self) -> PathBuf {
+        self.knowledge_dir().join("citations.jsonl")
+    }
+
     /// `<repo>/.ralphy/runs/<stamp>` — per-run logs and scratch.
     pub fn run_dir(&self, stamp: &str) -> PathBuf {
         self.ralphy_dir().join("runs").join(stamp)

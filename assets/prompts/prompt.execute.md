@@ -216,7 +216,8 @@ under ~30 lines, telegraphic, with these exact sub-headings:
   if you did not consult them or found nothing load-bearing. Be honest,
   including `none`: this is the cache's hit-rate signal, and a never-cited bullet
   is exactly what tells the curator what to prune. (This sub-heading is not
-  folded into the cache; it travels only on the issue for measurement.)
+  folded into the cache; the runner appends it to `knowledge/citations.jsonl`,
+  the hit-rate log the consolidation curator prunes against.)
 
 Route by derivability — keep the cache from filling with facts that rot. Before
 writing any bullet under **Environment facts & traps**, apply this litmus: could

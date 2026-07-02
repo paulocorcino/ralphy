@@ -1,6 +1,7 @@
 # `ralphy init`: a Rust-orchestrated onboarding command
 
-Status: proposed.
+Status: accepted — implemented as `crates/ralphy-cli/src/init.rs` (staged
+pipeline, gates, checkpoint, skills sparse-fetch).
 
 A repo is not usable by `ralphy run` until a lot of scaffolding exists: the
 `.ralphy/` workspace, the `docs/agents/*` config the engineering skills read, the

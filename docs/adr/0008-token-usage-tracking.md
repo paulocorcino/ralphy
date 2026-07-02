@@ -17,11 +17,11 @@ existing transcript-reading code Ralphy already runs
 ([`ralphy-agent-claude/src/lib.rs:832`](../../crates/ralphy-agent-claude/src/lib.rs#L832),
 [`:949`](../../crates/ralphy-agent-claude/src/lib.rs#L949)).
 
-Status: proposed. No production code is written by this ADR; it is the contract a
-later implementation session follows, the way ADR-0004/0005 preceded their
-crates. The spike that accompanies it pierces **one** risky seam end-to-end —
-Claude's interactive-exec transcript correlation (D5, D10) — and leaves the two
-documented-and-easy seams (OpenCode, Codex) as proven-by-design.
+Status: accepted — implemented: the `Usage` type, the append-only
+`.ralphy/usage.jsonl` ledger, `ralphy usage`, read-time pricing, and all four
+harvest paths (Claude interactive-exec transcript correlation, Claude headless,
+Codex rollouts, OpenCode `opencode.db`) are in production. D5's
+`server_tool_use` web-tool request counts remain the one recorded gap.
 
 ## D1 — Harvest the vendor's own `usage`; no proxy, no OTEL collector, no unified disk-reader
 

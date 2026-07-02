@@ -1319,6 +1319,59 @@ fn green_close_posts_handoff_and_friction_comment() {
         body.contains("## Plan friction") && body.contains("given precondition"),
         "friction reaches the issue"
     );
+    // A handoff without a `Knowledge used` block warns but records nothing.
+    assert!(
+        !Workspace::new(&repo).citations_path().exists(),
+        "no citations.jsonl entry when the field is absent"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_close_appends_knowledge_used_citations() {
+    let repo = init_repo("citations-close");
+    let cited = "## Handoff\n\n- **Delivered**: fix (abc1234)\n- **Knowledge used**:\n  - \"Toolchain & platform\" — cargo test needs docker up first\n  - handoffs.md #5: schema rejects empty DEVICEID\n\n## Plan friction\n\n- none";
+    let none = "## Handoff\n\n- **Delivered**: docs (def5678)\n- **Knowledge used**: none\n\n## Plan friction\n\n- none";
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
+        .with_plan_extra_for(1, cited)
+        .with_plan_extra_for(2, none);
+    let tracker = RecordingTracker::default();
+
+    run_queue(
+        &cfg(&repo, "stamp-citations", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // One JSON line per green close, in queue order — the hit-rate log the
+    // consolidation curator prunes against.
+    let content = fs::read_to_string(Workspace::new(&repo).citations_path())
+        .expect("citations.jsonl written");
+    let entries: Vec<ralphy_core::knowledge::CitationEntry> = content
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is one CitationEntry"))
+        .collect();
+    assert_eq!(entries.len(), 2, "one entry per green close: {content}");
+    assert_eq!(entries[0].issue, 1);
+    assert_eq!(entries[0].stamp, "stamp-citations");
+    assert_eq!(
+        entries[0].citations,
+        vec![
+            "\"Toolchain & platform\" — cargo test needs docker up first".to_string(),
+            "handoffs.md #5: schema rejects empty DEVICEID".to_string(),
+        ]
+    );
+    assert_eq!(entries[1].issue, 2);
+    assert_eq!(
+        entries[1].citations,
+        Vec::<String>::new(),
+        "an honest `none` is recorded as an empty list"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }

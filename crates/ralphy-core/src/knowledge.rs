@@ -6,11 +6,47 @@
 //! owns only the deterministic checks and file moves around it.
 
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
 
 use crate::Workspace;
+
+/// How many green closes without a citation make a `KNOWLEDGE.md` bullet a
+/// pruning candidate. The consolidation prompt states this window in prose;
+/// the contract test pins the two against each other.
+pub const CITATION_PRUNE_WINDOW: usize = 5;
+
+/// One green close's `**Knowledge used**` report — a line of the append-only
+/// `.ralphy/knowledge/citations.jsonl` hit-rate log. `citations` loosely quote
+/// the `KNOWLEDGE.md` / `handoffs.md` bullets the session relied on; an empty
+/// list is an honest `none` and still counts toward the pruning window.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct CitationEntry {
+    pub issue: u64,
+    pub stamp: String,
+    pub date: String,
+    pub citations: Vec<String>,
+}
+
+/// Append one entry to `.ralphy/knowledge/citations.jsonl` as a single JSON
+/// line, creating the directory and file on first use. The file is never
+/// archived or cleared — unlike `issue-<N>.md` notes it must survive
+/// consolidations, or the cross-run "never cited" judgment loses its history.
+pub fn append_citation(ws: &Workspace, entry: &CitationEntry) -> Result<()> {
+    fs::create_dir_all(ws.knowledge_dir()).context("creating .ralphy/knowledge")?;
+    let mut line = serde_json::to_string(entry).context("serializing citation entry")?;
+    line.push('\n');
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(ws.citations_path())
+        .context("opening citations.jsonl")?
+        .write_all(line.as_bytes())
+        .context("appending to citations.jsonl")
+}
 
 /// The loose per-issue notes under `.ralphy/knowledge/` — `issue-<N>.md` files
 /// not yet archived into `raw/`. Sorted by issue number so callers report them
@@ -175,9 +211,12 @@ mod tests {
         write_note(&ws, 21, "a");
         write_note(&ws, 3, "b");
         write_note(&ws, 16, "c");
-        // Neither the curated file nor a stray file counts as a loose note.
+        // Neither the curated file, a stray file, nor the citations log counts
+        // as a loose note — citations.jsonl must never be archived or trigger
+        // a consolidation by itself.
         fs::write(ws.knowledge_file(), "curated").unwrap();
         fs::write(ws.knowledge_dir().join("notes.txt"), "stray").unwrap();
+        fs::write(ws.citations_path(), "{}\n").unwrap();
 
         let notes = loose_notes(&ws);
         let names: Vec<_> = notes
@@ -317,6 +356,63 @@ mod tests {
             vec![PathBuf::from("issue-3.md"), PathBuf::from("issue-21.md")]
         );
         assert_eq!(leftover, vec![PathBuf::from("issue-16.md")]);
+    }
+
+    #[test]
+    fn append_citation_accumulates_one_json_line_per_close() {
+        let ws = temp_ws("citations");
+        let first = CitationEntry {
+            issue: 3,
+            stamp: "run-a".into(),
+            date: "2026-06-11".into(),
+            citations: vec!["cargo test needs docker up first".into()],
+        };
+        // An honest `none` close is recorded too — it is the denominator of
+        // the pruning window.
+        let second = CitationEntry {
+            issue: 5,
+            stamp: "run-b".into(),
+            date: "2026-06-12".into(),
+            citations: Vec::new(),
+        };
+        append_citation(&ws, &first).unwrap();
+        append_citation(&ws, &second).unwrap();
+
+        let content = fs::read_to_string(ws.citations_path()).unwrap();
+        let entries: Vec<CitationEntry> = content
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(entries, vec![first, second]);
+
+        let _ = fs::remove_dir_all(ws.repo_root());
+    }
+
+    #[test]
+    fn prompt_and_citation_log_agree_on_the_jsonl_contract() {
+        // The consolidation prompt shows the exact JSON line `append_citation`
+        // writes and states the pruning window; this pins prompt and code
+        // together so neither can drift alone.
+        let prompt = include_str!("../../../assets/prompts/prompt.consolidate.md");
+        let entry = CitationEntry {
+            issue: 3,
+            stamp: "run-stamp".into(),
+            date: "2026-06-11".into(),
+            citations: vec!["cargo test needs docker up first".into()],
+        };
+        let line = serde_json::to_string(&entry).unwrap();
+        assert!(
+            prompt.contains(&line),
+            "prompt.consolidate.md must show the exact JSON line append_citation writes: {line}"
+        );
+        assert!(
+            prompt.contains(&format!("most recent {CITATION_PRUNE_WINDOW} entries")),
+            "prompt must state the pruning window"
+        );
+        assert!(
+            prompt.contains(&format!("fewer than {CITATION_PRUNE_WINDOW} entries")),
+            "prompt must state the too-young skip clause"
+        );
     }
 
     #[test]

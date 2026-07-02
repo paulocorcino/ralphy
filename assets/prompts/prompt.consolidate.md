@@ -12,6 +12,12 @@ code, and no human is watching — never ask questions.
   exists.
 - `.ralphy/knowledge/raw/` — raw notes already folded in by earlier
   consolidations. Reference only — re-read one only to resolve a conflict.
+- `.ralphy/knowledge/citations.jsonl` — the hit-rate log, when present: one
+  JSON line per green close, e.g.
+  `{"issue":3,"stamp":"run-stamp","date":"2026-06-11","citations":["cargo test needs docker up first"]}`.
+  Each citation loosely quotes a `KNOWLEDGE.md` / `handoffs.md` bullet that
+  session actually relied on; an empty `citations` array means the session
+  cited nothing. Input for the prune-by-hit-rate rule below.
 
 ## Your task
 Write `.ralphy/knowledge/KNOWLEDGE.md` merging the current KNOWLEDGE.md (if
@@ -58,6 +64,14 @@ naming what it proves>
   absent: a planner will trust it. Record each deletion as a one-line
   `<!-- removed #<issue>: <fact> — contradicted by <file:symbol> -->` comment at
   the very bottom of the file, so the invalidation is auditable.
+- Prune by hit rate: match each citation in `citations.jsonl` to a KNOWLEDGE.md
+  bullet by judgment — citations are loose quotes of a bullet's topic or first
+  words, not exact strings. A bullet matched by NO citation across the
+  most recent 5 entries of the log is a removal candidate: verify it against
+  the tree first (same discipline as above) and record each removal as
+  `<!-- removed #<issue>: <fact> — never cited in last 5 closes -->` at the
+  bottom of the file. Skip this rule entirely when `citations.jsonl` is absent
+  or has fewer than 5 entries — the signal is too young to prune on.
 - When command variants differ, prefer the FUNCTIONALLY STRICTER one, not the
   majority wording: a gate that cannot fail is not a gate (e.g. `gofmt -l .`
   in a `&&` chain exits 0 even with unformatted files — `test -z "$(gofmt -l

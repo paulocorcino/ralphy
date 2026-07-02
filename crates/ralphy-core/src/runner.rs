@@ -12,7 +12,7 @@ use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
 use crate::{
-    acceptance, blocked, git, gitignore, handoff,
+    acceptance, blocked, git, gitignore, handoff, knowledge,
     ledger::{self, LedgerRecord},
     protocol, references,
     verify::{self, VerifySpec},
@@ -781,6 +781,29 @@ fn write_knowledge(ws: &Workspace, issue: &Issue, stamp: &str, note: &str) {
         warn!(number = issue.number, error = %e, "writing knowledge note failed");
     } else {
         info!(number = issue.number, path = %path.display(), "knowledge note written");
+    }
+}
+
+/// Append the close's `**Knowledge used**` citations to the hit-rate log at
+/// `.ralphy/knowledge/citations.jsonl` — the input the consolidation curator
+/// prunes never-cited `KNOWLEDGE.md` bullets against. An empty list (an honest
+/// `none`) is recorded too: it is the denominator of the pruning window.
+/// Best-effort like `write_knowledge`: a failure warns, never stops the run.
+fn record_citations(ws: &Workspace, issue: &Issue, stamp: &str, citations: Vec<String>) {
+    let entry = knowledge::CitationEntry {
+        issue: issue.number,
+        stamp: stamp.to_string(),
+        date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        citations,
+    };
+    if let Err(e) = knowledge::append_citation(ws, &entry) {
+        warn!(number = issue.number, error = %e, "appending citation entry failed");
+    } else {
+        info!(
+            number = issue.number,
+            citations = entry.citations.len(),
+            "knowledge citations recorded"
+        );
     }
 }
 
@@ -1564,6 +1587,21 @@ pub fn run_queue(
                 }
                 if let Some(note) = handoff::knowledge_note(&plan_md) {
                     write_knowledge(&ws, issue, &cfg.stamp, &note);
+                } else if handoff::has_handoff(&plan_md) {
+                    warn!(
+                        number = issue.number,
+                        "handoff present but no `Environment facts & traps` / \
+                         `Commands that work` blocks — no knowledge note cached"
+                    );
+                }
+                match handoff::knowledge_used(&plan_md) {
+                    Some(citations) => record_citations(&ws, issue, &cfg.stamp, citations),
+                    None if handoff::has_handoff(&plan_md) => warn!(
+                        number = issue.number,
+                        "handoff present but no `Knowledge used` block — \
+                         hit-rate signal lost for this close"
+                    ),
+                    None => {}
                 }
             }
 
@@ -1613,7 +1651,11 @@ pub fn run_queue(
             if cfg.dry_run {
                 restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
             } else if stop.is_none() {
-                if let Err(e) = git::checkout(repo, &orig) {
+                // Force, same as `restore`: `.ralphy/` scratch may modify a
+                // tracked file (e.g. a plan.md committed on the base), and a
+                // non-force checkout would abort and strand the repo on the
+                // run branch after an otherwise green run (ADR-0005, #41).
+                if let Err(e) = git::checkout_force(repo, &orig) {
                     warn!("could not return to '{orig}': {e}");
                 }
             }

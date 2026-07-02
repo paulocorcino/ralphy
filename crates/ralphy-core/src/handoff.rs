@@ -86,6 +86,14 @@ pub fn render_handoffs_file(entries: &[(u64, String)]) -> Option<String> {
     Some(out)
 }
 
+/// Whether the plan carries a non-blank `## Handoff` section at all. Lets the
+/// runner tell "no handoff" apart from "handoff whose blocks didn't match
+/// [`knowledge_note`]'s expected labels" — the second is a lesson silently
+/// lost unless surfaced.
+pub fn has_handoff(plan_md: &str) -> bool {
+    !section(plan_md, r"(?im)^##\s+Handoff\s*$").is_empty()
+}
+
 /// Extract the durable-knowledge bullets from a plan's `## Handoff` section:
 /// the `**Environment facts & traps**` and `**Commands that work**` entries,
 /// verbatim with their sub-lines. `Delivered` and `Residue` are issue-specific
@@ -108,16 +116,57 @@ pub fn knowledge_note(plan_md: &str) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
+/// Extract the `**Knowledge used**` citations from a plan's `## Handoff`
+/// section: the cache's hit-rate signal — which `KNOWLEDGE.md` / `handoffs.md`
+/// bullets the session says it relied on. Returns `None` when the handoff or
+/// the key is absent (the caller warns; drift must be visible), `Some(vec![])`
+/// for an honest `none` (or a key with nothing parseable under it — tolerant
+/// degradation), and `Some(items)` otherwise: the inline tail after the key
+/// plus any sub-bullet lines, one citation each.
+pub fn knowledge_used(plan_md: &str) -> Option<Vec<String>> {
+    let handoff = section(plan_md, r"(?im)^##\s+Handoff\s*$");
+    if handoff.is_empty() {
+        return None;
+    }
+    let block = bullet_block(handoff, "Knowledge used");
+    if block.is_empty() {
+        return None;
+    }
+    let mut items: Vec<String> = Vec::new();
+    for line in block.lines() {
+        // The key line itself contributes only its inline tail after the `:`.
+        let line = match line.split_once("**Knowledge used**") {
+            Some((_, tail)) => tail.trim_start_matches(':'),
+            None => line,
+        };
+        let item = line.trim().trim_start_matches('-').trim();
+        if item.is_empty() || item.starts_with("```") {
+            continue;
+        }
+        items.push(item.to_string());
+    }
+    if let [only] = items.as_slice() {
+        if only
+            .trim_matches(['`', '"', '\'', '.'])
+            .eq_ignore_ascii_case("none")
+        {
+            return Some(Vec::new());
+        }
+    }
+    Some(items)
+}
+
 /// The handoff sub-headings the prompts specify — the block boundaries for
 /// `bullet_block`. Executors write them either as bullets (`- **Key**: ...`)
 /// or as standalone bold lines (`**Key**:` followed by sub-bullets); both
 /// shapes are accepted, and a block ends at the next KNOWN sub-heading so a
 /// content line that merely starts bold never truncates it.
-const HANDOFF_KEYS: [&str; 4] = [
+const HANDOFF_KEYS: [&str; 5] = [
     "Delivered",
     "Environment facts & traps",
     "Commands that work",
     "Residue",
+    "Knowledge used",
 ];
 
 /// The `<key>` sub-heading line and everything under it, up to the next known
@@ -338,5 +387,85 @@ curl http://localhost:8088/
         let md = "## Handoff\n\n- **Delivered**: docs only\n- **Residue**: none\n";
         assert_eq!(knowledge_note(md), None);
         assert_eq!(knowledge_note("# Plan\n\n## Steps\n- [x] x\n"), None);
+    }
+
+    #[test]
+    fn knowledge_used_reads_inline_tail_of_bullet_form() {
+        let md = "\
+## Handoff
+
+- **Delivered**: the fix (abc1234)
+- **Knowledge used**: \"Host port 8080 is occupied\" bullet from KNOWLEDGE.md
+";
+        assert_eq!(
+            knowledge_used(md),
+            Some(vec![
+                "\"Host port 8080 is occupied\" bullet from KNOWLEDGE.md".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn knowledge_used_reads_sub_bullets_of_standalone_bold_form() {
+        let md = "\
+## Handoff
+
+**Delivered**:
+- the fix (abc1234)
+
+**Knowledge used**:
+- \"Toolchain & platform\" — cargo test needs docker up first
+- handoffs.md #5: schema rejects empty DEVICEID
+
+## Plan friction
+
+- none
+";
+        assert_eq!(
+            knowledge_used(md),
+            Some(vec![
+                "\"Toolchain & platform\" — cargo test needs docker up first".to_string(),
+                "handoffs.md #5: schema rejects empty DEVICEID".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn knowledge_used_explicit_none_is_empty_list() {
+        let md = "## Handoff\n\n- **Knowledge used**: none\n";
+        assert_eq!(knowledge_used(md), Some(Vec::new()));
+        let backticked = "## Handoff\n\n- **Knowledge used**: `none`\n";
+        assert_eq!(knowledge_used(backticked), Some(Vec::new()));
+    }
+
+    #[test]
+    fn knowledge_used_absent_key_or_handoff_is_none() {
+        // PLAN_WITH_BOTH predates the field — the caller warns on this.
+        assert_eq!(knowledge_used(PLAN_WITH_BOTH), None);
+        assert_eq!(knowledge_used("# Plan\n\n## Steps\n- [x] x\n"), None);
+    }
+
+    #[test]
+    fn knowledge_used_malformed_degrades_to_empty_list() {
+        // Key present but no inline tail and no sub-bullets: tolerate, don't
+        // error — the signal for this close is simply "nothing cited".
+        let md = "## Handoff\n\n- **Knowledge used**\n- **Residue**: none\n";
+        assert_eq!(knowledge_used(md), Some(Vec::new()));
+    }
+
+    #[test]
+    fn knowledge_note_does_not_leak_a_following_knowledge_used_block() {
+        // Pins the HANDOFF_KEYS addition: before it, a trailing `Knowledge
+        // used` block was swallowed by whichever known block preceded it.
+        let md = "\
+## Handoff
+
+- **Commands that work**: docker compose up -d
+- **Knowledge used**: \"proxy strips the TAG header\" bullet
+";
+        let note = knowledge_note(md).expect("note present");
+        assert!(note.contains("docker compose up -d"));
+        assert!(!note.contains("Knowledge used"));
+        assert!(!note.contains("proxy strips the TAG header"));
     }
 }
