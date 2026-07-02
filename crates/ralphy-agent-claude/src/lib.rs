@@ -914,12 +914,14 @@ impl ClaudeAgent {
         let mut limit_transcript: Option<String> = None;
         let mut next_transcript_poll = Instant::now();
         let mut dsr_carry: Vec<u8> = Vec::new();
+        let mut login_watch = LoginTuiWatch::new();
         loop {
             // Act as the terminal: tee output and answer cursor-position queries.
             while let Ok(chunk) = rx.try_recv() {
                 if scan_dsr_request(&mut dsr_carry, &chunk) {
                     let _ = session.write_all(CURSOR_POSITION_REPLY);
                 }
+                login_watch.feed(&chunk);
                 if let Some(f) = log.as_mut() {
                     let _ = f.write_all(&chunk);
                 }
@@ -930,10 +932,19 @@ impl ClaudeAgent {
             }
             if Instant::now() >= next_transcript_poll {
                 if let Some(t) = latest_transcript_text_since(transcript_dir, transcript_since) {
+                    // Any transcript activity proves the model loop started —
+                    // a logged-out session never produces one (see LoginTuiWatch).
+                    login_watch.disarm();
                     if transcript_limit(&t).is_some() {
                         limit_transcript = Some(t);
                         break;
                     }
+                } else if login_watch.detected() {
+                    // Logged-out interactive session: the login TUI stalls
+                    // without exiting, so fail fast with the auth message
+                    // instead of burning the wall budget into a misleading
+                    // `Timeout` (issue #72). The caller kills the session.
+                    bail!("{CLAUDE_AUTH_ERROR_MSG}");
                 }
                 next_transcript_poll = Instant::now() + Duration::from_secs(2);
             }
@@ -1026,6 +1037,126 @@ fn is_claude_auth_error(text: &str) -> bool {
         // same line, so an AND avoids matching prose that mentions only one.
         ralphy_adapter_support::auth_error(line, &[&["not logged in", "please run /login"]])
     })
+}
+
+/// Flatten raw PTY bytes into matchable text: ANSI escape sequences are
+/// dropped, and the ones that *position* text (CSI cursor-forward `ESC[nC`,
+/// cursor-position `ESC[r;cH`/`f`) become a single space — the interactive TUI
+/// separates the words of one visual line with cursor moves instead of spaces
+/// (`Not<ESC[1C>logged<ESC[1C>in`), so without this no substring can match.
+/// CR/LF also become spaces so a phrase split across writes still joins.
+fn strip_pty_escapes(raw: &[u8]) -> String {
+    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i] {
+            0x1b => {
+                i += 1;
+                match raw.get(i) {
+                    // CSI: params/intermediates until a final byte in 0x40-0x7e.
+                    Some(b'[') => {
+                        i += 1;
+                        while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
+                            i += 1;
+                        }
+                        if matches!(raw.get(i), Some(b'C') | Some(b'H') | Some(b'f')) {
+                            out.push(b' ');
+                        }
+                        i += 1;
+                    }
+                    // OSC: swallow until BEL or ST (ESC \).
+                    Some(b']') => {
+                        i += 1;
+                        while i < raw.len() {
+                            if raw[i] == 0x07 {
+                                i += 1;
+                                break;
+                            }
+                            if raw[i] == 0x1b && raw.get(i + 1) == Some(&b'\\') {
+                                i += 2;
+                                break;
+                            }
+                            i += 1;
+                        }
+                    }
+                    // Two-byte escape (ESC c, ESC =, ...): drop the pair.
+                    Some(_) => i += 1,
+                    None => {}
+                }
+            }
+            b'\r' | b'\n' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Return `true` when raw interactive PTY output shows the logged-out REPL.
+/// The signature is the status-line pair `Not logged in · Run /login`
+/// (captured from CLI v2.1.198 — see tests/fixtures/login_tui_exec.log); the
+/// headless banner says `Please run /login`, so `run /login` matches both.
+/// Both substrings are required, mirroring [`is_claude_auth_error`]'s AND rule.
+fn is_login_tui_output(raw: &[u8]) -> bool {
+    let text = strip_pty_escapes(raw).to_lowercase();
+    text.contains("not logged in") && text.contains("run /login")
+}
+
+/// Rolling watch over the live PTY stream for the logged-out login TUI.
+///
+/// A logged-out *interactive* session renders the login TUI and stalls without
+/// exiting, so the `child_exited` auth check never runs and the session used
+/// to burn its whole wall budget and surface as a misleading `Timeout`
+/// (issue #72). The watch accumulates a bounded tail of the raw output and is
+/// consulted on the session's poll cadence.
+///
+/// Once the JSONL transcript shows any activity the watch disarms for the rest
+/// of the session: a live transcript proves the model loop started (a
+/// logged-out session never produces one), and from then on agent output that
+/// merely *echoes* the signature — reading this source, for instance — must
+/// not trip it.
+struct LoginTuiWatch {
+    buf: Vec<u8>,
+    disarmed: bool,
+}
+
+impl LoginTuiWatch {
+    /// Plenty for the login screen; the TUI redraws, so the signature recurs.
+    const MAX_BUF: usize = 32 * 1024;
+
+    fn new() -> Self {
+        Self {
+            buf: Vec::new(),
+            disarmed: false,
+        }
+    }
+
+    /// Accumulate a PTY chunk (keeps the most recent [`Self::MAX_BUF`] bytes).
+    fn feed(&mut self, chunk: &[u8]) {
+        if self.disarmed {
+            return;
+        }
+        self.buf.extend_from_slice(chunk);
+        if self.buf.len() > Self::MAX_BUF {
+            let cut = self.buf.len() - Self::MAX_BUF;
+            self.buf.drain(..cut);
+        }
+    }
+
+    /// Transcript activity observed — stop watching and drop the buffer.
+    fn disarm(&mut self) {
+        self.disarmed = true;
+        self.buf = Vec::new();
+    }
+
+    fn detected(&self) -> bool {
+        !self.disarmed && is_login_tui_output(&self.buf)
+    }
 }
 
 /// Map the session's end state to an [`Outcome`]. The flag the Stop hook wrote is
@@ -2042,6 +2173,130 @@ mod tests {
         assert!(!is_claude_auth_error("Not logged in"));
         assert!(!is_claude_auth_error("Please run /login"));
         assert!(!is_claude_auth_error("all steps green\nRALPHY_DONE_EXIT\n"));
+    }
+
+    /// Raw PTY bytes of a logged-out interactive session (CLI v2.1.198),
+    /// captured on Windows ConPTY: the REPL renders with a
+    /// `Not logged in · Run /login` status line whose words are separated by
+    /// cursor-forward escapes, not spaces.
+    const LOGIN_TUI_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/login_tui_exec.log");
+
+    #[test]
+    fn login_tui_fixture_detected() {
+        assert!(is_login_tui_output(LOGIN_TUI_FIXTURE));
+    }
+
+    #[test]
+    fn normal_pty_output_not_detected() {
+        // ANSI-heavy healthy-session shapes: a working REPL status line and
+        // agent prose that mentions login without the logged-out signature.
+        let healthy = b"\x1b[38;2;153;153;153m\x1b[17;3H?\x1b[1Cfor\x1b[1Cshortcuts\
+            \x1b[18;83H\x1b[1Chigh\x1b[1C\xc2\xb7\x1b[1C/effort\x1b[m\r\n\
+            Running\x1b[1Ccargo\x1b[1Ctest...\r\n";
+        assert!(!is_login_tui_output(healthy));
+        assert!(!is_login_tui_output(
+            b"the user is logged in \xc2\xb7 no action"
+        ));
+    }
+
+    #[test]
+    fn strip_pty_escapes_turns_cursor_moves_into_spaces() {
+        // The fixture's exact word-separation shape: `ESC[1C` between words.
+        let raw = b"\x1b[38;2;255;107;128mNot\x1b[1Clogged\x1b[1Cin\x1b[1C\xc2\xb7\x1b[1CRun\x1b[1C/login\x1b[38;2;153;153;153m";
+        assert_eq!(strip_pty_escapes(raw), "Not logged in \u{b7} Run /login");
+    }
+
+    #[test]
+    fn strip_pty_escapes_drops_osc_and_csi() {
+        let raw = b"\x1b]0;claude\x07plain\x1b[2mtext\x1b[m";
+        assert_eq!(strip_pty_escapes(raw), "plaintext");
+    }
+
+    /// Live end-to-end proof for issue #72: spawn a real logged-out `claude`
+    /// in a PTY (isolated `CLAUDE_CONFIG_DIR`, onboarding pre-completed,
+    /// workspace pre-trusted, no credentials) and assert the watch flags it on
+    /// the same poll cadence `drive_session` uses. Needs the `claude` binary
+    /// and ~15s, so it is opt-in: `cargo test -p ralphy-agent-claude -- --ignored`.
+    #[test]
+    #[ignore = "spawns the real claude CLI; run manually with -- --ignored"]
+    fn live_logged_out_interactive_session_is_detected() {
+        use std::io::Read as _;
+        use std::sync::mpsc;
+
+        let base = std::env::temp_dir().join(format!("ralphy-login-e2e-{}", std::process::id()));
+        let cfg_dir = base.join("cfg");
+        let work_dir = base.join("ws");
+        fs::create_dir_all(&cfg_dir).unwrap();
+        fs::create_dir_all(&work_dir).unwrap();
+        let key = work_dir.to_string_lossy().replace('\\', "/");
+        fs::write(
+            cfg_dir.join(".claude.json"),
+            serde_json::json!({
+                "hasCompletedOnboarding": true,
+                "theme": "dark",
+                "projects": { key: { "hasTrustDialogAccepted": true } },
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let cmd = PtyCommand::new(resolve_claude_binary())
+            .cwd(&work_dir)
+            .env("CLAUDE_CONFIG_DIR", cfg_dir.as_os_str())
+            .size(30, 100);
+        let mut session = PtySession::spawn(cmd).expect("spawning claude");
+        let mut reader = session.reader().unwrap();
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut watch = LoginTuiWatch::new();
+        let mut dsr_carry: Vec<u8> = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let detected = loop {
+            while let Ok(chunk) = rx.try_recv() {
+                if scan_dsr_request(&mut dsr_carry, &chunk) {
+                    let _ = session.write_all(CURSOR_POSITION_REPLY);
+                }
+                watch.feed(&chunk);
+            }
+            if watch.detected() {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(500));
+        };
+        let _ = session.kill();
+        let _ = fs::remove_dir_all(&base);
+        assert!(
+            detected,
+            "a logged-out interactive claude session must be flagged as an auth failure"
+        );
+    }
+
+    #[test]
+    fn login_watch_detects_across_chunks_and_disarms_on_transcript() {
+        // The signature arrives split across PTY chunks.
+        let mut watch = LoginTuiWatch::new();
+        let mid = LOGIN_TUI_FIXTURE.len() / 2;
+        watch.feed(&LOGIN_TUI_FIXTURE[..mid]);
+        watch.feed(&LOGIN_TUI_FIXTURE[mid..]);
+        assert!(watch.detected());
+
+        // Once the transcript shows activity the watch must stay quiet even if
+        // the signature bytes appear again (agent echoing this source).
+        let mut watch = LoginTuiWatch::new();
+        watch.disarm();
+        watch.feed(LOGIN_TUI_FIXTURE);
+        assert!(!watch.detected());
     }
 
     #[test]

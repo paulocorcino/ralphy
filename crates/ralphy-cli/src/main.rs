@@ -23,6 +23,7 @@ mod init;
 mod install;
 mod models;
 mod pricing;
+mod runlock;
 mod runstate;
 mod split_agent;
 mod telegram;
@@ -214,6 +215,12 @@ struct RunArgs {
     /// Override the auto-derived Telegram card title for this run.
     #[arg(long)]
     title: Option<String>,
+
+    /// Skip this invocation (exit 0) when another run is already active in the
+    /// repo — the anti-overlap flag scheduled invocations pass so a timer never
+    /// piles a run onto a live one. Without it a live run only warns.
+    #[arg(long)]
+    if_idle: bool,
 }
 
 #[derive(Args)]
@@ -471,9 +478,46 @@ fn run_cmd(args: RunArgs) -> Result<()> {
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
+    std::fs::create_dir_all(ws.ralphy_dir()).ok();
+
+    // Presence lock (issue #72): the concurrency policy lives in the invocation.
+    // `--if-idle` defers to a live run (clean exit 0, so a scheduler's history
+    // shows no false failures); without it a live lock only warns — intentional
+    // concurrency stays the human's call. Stale locks (dead PID after a crash
+    // or reboot) are taken over so a crash never silences a schedule.
+    match runlock::inspect(&ws.run_lock_path(), runlock::pid_is_alive) {
+        runlock::LockState::HeldAlive(info) if args.if_idle => {
+            let since = chrono::DateTime::parse_from_rfc3339(&info.started_at)
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or(info.started_at);
+            let msg = format!("skipped: run in progress since {since}, pid {}", info.pid);
+            info!("{msg}");
+            // finalize before printing so the live region is cleared first (ADR-0006).
+            presenter.finalize();
+            presenter.print_notice(&msg);
+            return Ok(());
+        }
+        runlock::LockState::HeldAlive(info) => {
+            warn!(
+                pid = info.pid,
+                since = %info.started_at,
+                "a run is already active in this repo — proceeding anyway"
+            );
+        }
+        runlock::LockState::Stale(info) => {
+            warn!(
+                pid = info.pid,
+                "ignoring stale run.lock (process not running)"
+            );
+        }
+        runlock::LockState::Corrupt => warn!("ignoring unreadable run.lock"),
+        runlock::LockState::Free => {}
+    }
+    // Held for the rest of run_cmd; Drop removes the file on every exit path.
+    let _run_lock = runlock::acquire(&ws.run_lock_path())?;
+
     // Build the queue: the whole queue by default, or just `--only-issue` when set
     // (applied as a post-build filter, parity with the ps1 `$OnlyIssue`).
-    std::fs::create_dir_all(ws.ralphy_dir()).ok();
     let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
     let mut queue = github::list_queue(&effective_labels, &repo_root)?;
     if let Some(only) = args.only_issue {
@@ -1086,6 +1130,22 @@ mod tests {
             args.queue_label.is_empty(),
             "no --queue-label must leave the set empty so defaults apply"
         );
+    }
+
+    #[test]
+    fn if_idle_flag_parses_and_defaults_off() {
+        let cli = Cli::try_parse_from(["ralphy", "run", "--if-idle"])
+            .expect("run with --if-idle must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected the `run` subcommand");
+        };
+        assert!(args.if_idle);
+
+        let cli = Cli::try_parse_from(["ralphy", "run"]).expect("bare run must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected the `run` subcommand");
+        };
+        assert!(!args.if_idle, "--if-idle must default to off");
     }
 
     #[test]

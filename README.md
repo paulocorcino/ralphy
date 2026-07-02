@@ -159,10 +159,24 @@ ralphy run --exec-variant high             # OpenCode effort passthrough
 ralphy run --no-remote-control             # turn off mobile Remote Control (Claude)
 ralphy run --queue-label my-label          # use your own queue label
 ralphy run --no-telegram                   # mute the Telegram monitor for this run
+ralphy run --if-idle                       # no-op (exit 0) if a run is already active — for schedulers
 ```
 
 Run `ralphy run --help` for the full list (planning model/effort, time budgets, and
 more).
+
+### Scheduled runs (`--if-idle`)
+
+Ralphy is *the run, not the cron*: put `ralphy run --if-idle` on a timer (Windows
+Task Scheduler, cron, GitHub Actions) and the queue drains on schedule. Every run
+holds a presence lock (`.ralphy/run.lock`) for its lifetime; an `--if-idle`
+invocation that finds a live run logs `skipped: run in progress since <time>,
+pid <X>` and exits 0, so a timer never piles a run onto a live one and the
+scheduler's history shows no false failures. A stale lock left by a crash or
+reboot is ignored and taken over. Without the flag a live lock only warns —
+intentional concurrency stays your call. Copy-pasteable recipes per platform,
+each with its traps (working directory, non-interactive auth, log capture):
+[docs/scheduling.md](docs/scheduling.md).
 
 ### Branch modes
 
