@@ -1039,6 +1039,36 @@ mod tests {
     }
 
     #[test]
+    fn queue_label_is_repeatable_and_preserves_order() {
+        // The resolver (`resolve_queue_labels`) treats a non-empty explicit set as
+        // a full replacement; this guards the CLI seam that feeds it — multiple
+        // `--queue-label` flags must arrive intact and in order, and an absent flag
+        // must yield an empty vec so the defaults path is taken.
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "run",
+            "--queue-label",
+            "foo",
+            "--queue-label",
+            "bar",
+        ])
+        .expect("run with repeated --queue-label must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected the `run` subcommand");
+        };
+        assert_eq!(args.queue_label, vec!["foo", "bar"]);
+
+        let cli = Cli::try_parse_from(["ralphy", "run"]).expect("bare run must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected the `run` subcommand");
+        };
+        assert!(
+            args.queue_label.is_empty(),
+            "no --queue-label must leave the set empty so defaults apply"
+        );
+    }
+
+    #[test]
     fn effective_stop_on_limit_codex_passes_flag_through() {
         // Codex emits an absolute RFC3339 reset, so it auto-resumes by default like
         // Claude — the flag is no longer forced on.

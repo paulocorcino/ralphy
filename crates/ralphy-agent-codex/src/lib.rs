@@ -17,7 +17,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
-use ralphy_adapter_support::run_headless;
+use ralphy_adapter_support::{
+    list_session_files, run_headless, run_json_session, session_files_appeared, JsonSession,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
     DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit, Usage, Workspace,
@@ -419,36 +421,29 @@ pub fn diagnose_repo(
 
     info!(%model, effort, "diagnosing repo with codex exec");
     let cmd = build_codex_init_command(&model, effort, neutral_cwd);
-    let r = run_headless(cmd, &prompt, timeout)
-        .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
     let log_path = neutral_cwd.join("diagnose.log");
-    let _ = fs::write(&log_path, &log);
-
-    if is_codex_auth_error(&log) {
-        bail!("{} (see {})", CODEX_AUTH_ERROR_MSG, log_path.display());
-    }
-    if r.timed_out {
-        bail!(
-            "diagnosis session hit the wall timeout (see {})",
-            log_path.display()
-        );
-    }
-
-    let raw = fs::read_to_string(&out_path).with_context(|| {
-        format!(
-            "diagnosis session left no report at {} (see {})",
-            out_path.display(),
-            log_path.display()
-        )
-    })?;
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "diagnosis report at {} did not match the schema",
-            out_path.display()
-        )
-    })
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path: &out_path,
+            spawn_err: "failed to spawn the `codex` CLI (is it installed and on PATH?)",
+            auth_msg: CODEX_AUTH_ERROR_MSG,
+            timeout_msg: "diagnosis session hit the wall timeout",
+            missing_msg: "diagnosis session left no report",
+        },
+        is_codex_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "diagnosis report at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
 }
 
 /// Run a one-shot headless `codex exec` backlog/milestone → issues session
@@ -479,39 +474,32 @@ pub fn draft_issues(
 
     info!(%model, effort, mode = req.mode.as_str(), "drafting issues with codex exec");
     let cmd = build_codex_init_command(&model, effort, repo);
-    let r = run_headless(cmd, &prompt, timeout)
-        .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     if let Some(parent) = log_path.parent() {
         fs::create_dir_all(parent).ok();
     }
-    let _ = fs::write(&log_path, &log);
-
-    if is_codex_auth_error(&log) {
-        bail!("{} (see {})", CODEX_AUTH_ERROR_MSG, log_path.display());
-    }
-    if r.timed_out {
-        bail!(
-            "backlog → issues session hit the wall timeout (see {})",
-            log_path.display()
-        );
-    }
-
-    let raw = fs::read_to_string(out_path).with_context(|| {
-        format!(
-            "issues session left no draft at {} (see {})",
-            out_path.display(),
-            log_path.display()
-        )
-    })?;
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "issues draft at {} did not match the schema",
-            out_path.display()
-        )
-    })
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path,
+            spawn_err: "failed to spawn the `codex` CLI (is it installed and on PATH?)",
+            auth_msg: CODEX_AUTH_ERROR_MSG,
+            timeout_msg: "backlog → issues session hit the wall timeout",
+            missing_msg: "issues session left no draft",
+        },
+        is_codex_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "issues draft at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
 }
 
 /// The actionable message surfaced when a run hits a Codex authentication
@@ -527,8 +515,14 @@ const CODEX_AUTH_ERROR_MSG: &str =
 /// real cause. Either signal alone is auth-specific; matching either keeps the
 /// detector robust to Codex reformatting one of the two lines.
 fn is_codex_auth_error(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    lower.contains("401 unauthorized") || lower.contains("missing bearer or basic authentication")
+    // OR of two single-substring groups: either signal alone is auth-specific.
+    ralphy_adapter_support::auth_error(
+        text,
+        &[
+            &["401 unauthorized"],
+            &["missing bearer or basic authentication"],
+        ],
+    )
 }
 
 /// Return `true` when `text` contains a Codex usage-limit message (case-insensitive).
@@ -590,8 +584,12 @@ fn classify_codex_outcome(
     // where the executed task merely echoed "usage limit" text from the source it
     // read — mirrors the Claude adapter's structural (not whole-log-substring)
     // limit detection.
-    if !exited_cleanly && is_codex_limit_text(log) {
-        return Outcome::Limit(parse_codex_reset_hint(log));
+    if !exited_cleanly {
+        if let Some(reset) =
+            ralphy_adapter_support::detect_limit(log, is_codex_limit_text, parse_codex_reset_hint)
+        {
+            return Outcome::Limit(reset);
+        }
     }
     Outcome::Stuck
 }
@@ -695,41 +693,6 @@ fn codex_sessions_dir() -> Option<PathBuf> {
     Some(home.join(".codex").join("sessions"))
 }
 
-/// Recursively collect `rollout-*.jsonl` files under `dir` (Codex nests them by
-/// `<YYYY>/<MM>/<DD>/`). Empty when `dir` is missing or unreadable — best-effort,
-/// never failing the run.
-fn list_rollouts(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            out.extend(list_rollouts(&path));
-        } else if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("rollout-") && n.ends_with(".jsonl"))
-        {
-            out.push(path);
-        }
-    }
-    out
-}
-
-/// Files present in `after` but not in `before` — the appeared-over-grew rule
-/// (ADR-0008 D10), mirroring the Claude adapter's `appeared_files`. A file that
-/// merely grew (present in both) is a concurrent pre-existing session and is
-/// excluded; only a freshly *appeared* rollout is attributed to this run.
-fn appeared(before: &[PathBuf], after: &[PathBuf]) -> Vec<PathBuf> {
-    after
-        .iter()
-        .filter(|p| !before.contains(p))
-        .cloned()
-        .collect()
-}
-
 /// Snapshot-diff token capture: for each rollout that APPEARED between `before`
 /// and `after`, parse its cumulative usage and fold into one `Usage` (the model
 /// carried from the resolved invocation model). Mirrors `ClaudeAgent::execute`'s
@@ -739,7 +702,7 @@ fn fold_rollout_usage(before: &[PathBuf], after: &[PathBuf], model: Option<Strin
         model: model.clone(),
         ..Usage::default()
     };
-    appeared(before, after)
+    session_files_appeared(before, after)
         .iter()
         .filter_map(|p| fs::read_to_string(p).ok())
         .map(|t| parse_codex_rollout_usage(&t, model.clone()))
@@ -773,7 +736,7 @@ impl Agent for CodexAgent {
         let sessions_dir = codex_sessions_dir();
         let before = sessions_dir
             .as_deref()
-            .map(list_rollouts)
+            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
             .unwrap_or_default();
 
         // Planning always runs at `high` effort (ADR-0004 D3).
@@ -785,7 +748,7 @@ impl Agent for CodexAgent {
         let (_, _, log) = self.run_codex(cmd, PROMPT_PLAN_CODEX, timeout)?;
         let after = sessions_dir
             .as_deref()
-            .map(list_rollouts)
+            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
             .unwrap_or_default();
 
         if !plan_path.exists() {
@@ -793,11 +756,12 @@ impl Agent for CodexAgent {
             // as a typed `PlanLimit` (with the parsed reset hint) so the runner
             // routes it through the same stop-and-report / auto-resume path as an
             // execute-time `Outcome::Limit`, rather than aborting the whole run.
-            if is_codex_limit_text(&log) {
-                return Err(PlanLimit {
-                    reset: parse_codex_reset_hint(&log),
-                }
-                .into());
+            if let Some(reset) = ralphy_adapter_support::detect_limit(
+                &log,
+                is_codex_limit_text,
+                parse_codex_reset_hint,
+            ) {
+                return Err(PlanLimit { reset }.into());
             }
             // An auth failure won't self-heal (unlike a usage limit), so stop the
             // run with an actionable message instead of a generic "no plan".
@@ -840,7 +804,7 @@ impl Agent for CodexAgent {
         let sessions_dir = codex_sessions_dir();
         let before = sessions_dir
             .as_deref()
-            .map(list_rollouts)
+            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
             .unwrap_or_default();
         let timeout = self
             .issue_deadline()
@@ -850,7 +814,7 @@ impl Agent for CodexAgent {
         let (exited_cleanly, timed_out, log) = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
         let after = sessions_dir
             .as_deref()
-            .map(list_rollouts)
+            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
             .unwrap_or_default();
 
         // A signed-out account never makes progress: stop the run with an
@@ -1359,17 +1323,6 @@ mod tests {
         let usage = parse_codex_rollout_usage("not json\n{}\n", Some("gpt-5-codex".into()));
         assert_eq!(usage.total(), 0);
         assert_eq!(usage.model.as_deref(), Some("gpt-5-codex"));
-    }
-
-    // ── appeared ────────────────────────────────────────────────────────────
-
-    #[test]
-    fn appeared_returns_new_not_grown() {
-        let before = vec![PathBuf::from("/s/a.jsonl")];
-        let after = vec![PathBuf::from("/s/a.jsonl"), PathBuf::from("/s/b.jsonl")];
-        // `a.jsonl` was present before (it merely grew) → excluded; only the
-        // freshly appeared `b.jsonl` is this run's rollout.
-        assert_eq!(appeared(&before, &after), vec![PathBuf::from("/s/b.jsonl")]);
     }
 
     // ── PROMPT_PLAN_CODEX reviewer step ────────────────────────────────────

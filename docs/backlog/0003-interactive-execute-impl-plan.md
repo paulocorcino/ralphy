@@ -14,7 +14,7 @@ run branch, detects completion from the transcript, and returns an `Outcome`.
 
 | Layer | Change |
 |---|---|
-| `ralphy-core` | **None.** `Outcome` already exists; `runner::run` already calls `agent.execute()` for non-dry runs. PTY, timeout, sentinels are adapter-owned. |
+| `ralphy-core` | **None.** `Outcome` already exists; the runner loop (`runner::run_queue`) already calls `agent.execute()` for non-dry runs. PTY, timeout, sentinels are adapter-owned. |
 | `ralphy-cli` | New `ralphy hook stop` subcommand; exec-model/effort/timeout/remote-control flags; build `ClaudeAgent` with exec config; clear `ANTHROPIC_API_KEY`. |
 | `ralphy-agent-claude` | Implement `execute()` over `ralphy-pty`; settings w/ Stop hook; flag-file polling; reclaim + timeout; outcome classification; one tier→model point. |
 
