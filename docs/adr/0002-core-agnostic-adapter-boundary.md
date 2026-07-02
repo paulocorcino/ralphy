@@ -50,3 +50,34 @@ future adapter would inherit a Claude-shaped assumption.
 - The plan artifact may keep emitting Claude model names (`sonnet`/`opus`) at
   parity, confined to a single tier↔model translation point in the Claude adapter;
   moving to an abstract tier is a deliberate later improvement, not part of the port.
+
+## Amendment (2026-07-02): vendor vocabulary is injected into core, never known by it (#79)
+
+The boundary now also covers *vocabulary*, not just execution mode. Four moves:
+
+- **Completion sentinel.** The `RALPHY_DONE_EXIT` literal is named once, as
+  `ralphy_adapter_support::DONE_SENTINEL`. Detection stays in the adapters
+  (`done_sentinel`/`blocked_reason`). The core's repair briefs
+  (`protocol::failure_brief`, `verify::repair_brief` — the ADR-0011/ADR-0015
+  hand-back files) still *quote* the token so the brief speaks the agent's own
+  protocol, but they receive it as data: `QueueConfig.done_signal`, populated by
+  the CLI from the constant. Core source contains no sentinel literal. "Lint
+  this completion" is thus a structured request (plan markdown in,
+  `ProtocolReport` out, token threaded through for prose) — chosen over a
+  core-owned constant because this ADR and ADR-0004 already place every
+  completion-protocol decision with the adapters.
+- **Model names.** The `## Execution model: opus|sonnet` parser moved into the
+  Claude adapter (its only caller; Codex already kept a private tier mirror).
+  `Plan.recommended_model` is an opaque token the core carries across without
+  interpreting — this formalizes the "tier vs literal model name is
+  adapter-internal" consequence above.
+- **Settings.** `Settings` keeps only agent-agnostic keys plus a generic
+  per-agent section blob (`agent_settings`/`set_agent_settings` over the
+  ADR-0010 `extra` flatten); `ClaudeSettings`/`OpenCodeSettings` live in their
+  adapter crates. The on-disk `settings.json` schema and the ADR-0010
+  flag > settings > default precedence are unchanged.
+- **Paths.** `Workspace::plugin_dir` moved into the Claude adapter, derived
+  from the vendor-neutral `ralphy_dir()`.
+
+Enforced by: `grep -riE "opencode|claude|codex|opus|sonnet|RALPHY_DONE_EXIT"
+crates/ralphy-core/src` returning no hits (#79).

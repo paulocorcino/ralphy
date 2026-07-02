@@ -505,6 +505,7 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
+        done_signal: "DONE_TOKEN".into(),
     }
 }
 
@@ -521,6 +522,7 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
+        done_signal: "DONE_TOKEN".into(),
     }
 }
 
@@ -537,6 +539,7 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
+        done_signal: "DONE_TOKEN".into(),
     }
 }
 
@@ -555,6 +558,7 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
+        done_signal: "DONE_TOKEN".into(),
     }
 }
 
@@ -575,6 +579,7 @@ fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
+        done_signal: "DONE_TOKEN".into(),
     }
 }
 

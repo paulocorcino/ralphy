@@ -346,6 +346,12 @@ pub struct QueueConfig {
     /// ADR-0011 warn-and-close behavior. From `settings.json`
     /// `verify.require_verify_gate`.
     pub require_verify_gate: bool,
+    /// The literal completion token the active adapter's charter tells the
+    /// agent to emit. The runner never DETECTS it — completion detection lives
+    /// in the adapters (ADR-0002) — it only quotes it in the verify/protocol
+    /// repair briefs so the hand-back speaks the agent's own protocol. Supplied
+    /// by the caller (the CLI passes the adapter layer's constant).
+    pub done_signal: String,
 }
 
 /// What happened to one issue in the queue.
@@ -591,9 +597,9 @@ const VERIFY_FAILURE_FILE: &str = "verify-failure.md";
 /// Write the repair brief for a failed gate so the next `execute()` can read why
 /// it failed and fix the root cause. Best-effort: a write failure just means the
 /// agent retries blind, which is strictly no worse than not repairing at all.
-fn write_verify_failure(ws: &Workspace, stamp: &str, report: &verify::VerifyReport) {
+fn write_verify_failure(ws: &Workspace, stamp: &str, report: &verify::VerifyReport, done_signal: &str) {
     let path = ws.ralphy_dir().join(VERIFY_FAILURE_FILE);
-    if let Err(e) = std::fs::write(&path, verify::repair_brief(stamp, report)) {
+    if let Err(e) = std::fs::write(&path, verify::repair_brief(stamp, report, done_signal)) {
         warn!(error = %e, "writing the verify-failure repair brief failed");
     }
 }
@@ -619,9 +625,14 @@ const PROTOCOL_FAILURE_FILE: &str = "protocol-failure.md";
 /// Write the protocol repair brief so the next `execute()` can read which
 /// structural checks failed and complete the charter's protocol. Best-effort:
 /// a write failure means the agent retries blind, no worse than not bouncing.
-fn write_protocol_failure(ws: &Workspace, stamp: &str, report: &protocol::ProtocolReport) {
+fn write_protocol_failure(
+    ws: &Workspace,
+    stamp: &str,
+    report: &protocol::ProtocolReport,
+    done_signal: &str,
+) {
     let path = ws.ralphy_dir().join(PROTOCOL_FAILURE_FILE);
-    if let Err(e) = std::fs::write(&path, protocol::failure_brief(stamp, report)) {
+    if let Err(e) = std::fs::write(&path, protocol::failure_brief(stamp, report, done_signal)) {
         warn!(error = %e, "writing the protocol-failure repair brief failed");
     }
 }
@@ -1197,7 +1208,7 @@ fn protocol_gate(
             failed = %lint.failed_labels().join(", "),
             "protocol lint failed — handing back to the executor once"
         );
-        write_protocol_failure(cx.ws, &cx.cfg.stamp, &lint);
+        write_protocol_failure(cx.ws, &cx.cfg.stamp, &lint, &cx.cfg.done_signal);
         let Execution {
             outcome: bounce_outcome,
             usage,
@@ -1336,7 +1347,7 @@ fn verify_gate(
                 // (the same vendor-neutral channel as plan.md), then re-run
                 // execute() against the unchanged plan. The repair runs
                 // within the issue's own time budget, like every execute.
-                write_verify_failure(cx.ws, &cx.cfg.stamp, &report);
+                write_verify_failure(cx.ws, &cx.cfg.stamp, &report, &cx.cfg.done_signal);
                 let Execution {
                     outcome: repair_outcome,
                     usage,
@@ -2278,6 +2289,7 @@ mod tests {
             verify_fallback: None,
             verify_timeout: Duration::from_secs(60),
             require_verify_gate: false,
+            done_signal: "DONE_TOKEN".into(),
         }
     }
 

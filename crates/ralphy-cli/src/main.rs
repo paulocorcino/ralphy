@@ -729,6 +729,10 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         // parked for a human (`ready-for-human`) instead of closed on the
         // self-report. Absent/false preserves the ADR-0011 warn-and-close.
         require_verify_gate: settings.verify.require_verify_gate.unwrap_or(false),
+        // The completion token the core quotes in its repair briefs. Named once
+        // at the adapter layer; the core receives it as data and never learns
+        // the literal (ADR-0002 amendment, #79).
+        done_signal: ralphy_adapter_support::DONE_SENTINEL.to_owned(),
     };
 
     // The same deadline gates starting the next issue (between-issue clock).

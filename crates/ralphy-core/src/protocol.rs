@@ -1,7 +1,8 @@
 //! The deterministic protocol lint over `.ralphy/plan.md` (ADR-0015).
 //!
-//! When the executor emits `RALPHY_DONE_EXIT`, the runner runs these structural
-//! checks over the plan before accepting the self-report. The lint asserts
+//! When the executor signals completion (the adapter-defined done sentinel),
+//! the runner runs these structural checks over the plan before accepting the
+//! self-report. The lint asserts
 //! PRESENCE AND SHAPE only — every step ticked, the charter's closing sections
 //! written, no planner placeholder left in the acceptance ledger. It never
 //! judges the truthfulness of what a section says; that stays with the human at
@@ -167,18 +168,20 @@ pub fn comment_block(report: &ProtocolReport) -> String {
 /// after a lint violation (ADR-0015) — the same hand-back mechanism as
 /// `verify-failure.md`. It names exactly which structural checks failed and is
 /// explicit that each must be satisfied honestly (finish the work, write the
-/// artifact), never by ticking or filler.
-pub fn failure_brief(stamp: &str, report: &ProtocolReport) -> String {
+/// artifact), never by ticking or filler. `done_signal` is the completion token
+/// the active adapter's charter defines — received as data so the brief speaks
+/// the agent's own protocol without the core knowing the literal (ADR-0002).
+pub fn failure_brief(stamp: &str, report: &ProtocolReport, done_signal: &str) -> String {
     let mut out =
         format!("# Protocol lint failed — completion artifacts required (Ralphy run {stamp})\n\n");
-    out.push_str(
-        "You emitted `RALPHY_DONE_EXIT`, but the runner's structural lint over \
+    out.push_str(&format!(
+        "You emitted `{done_signal}`, but the runner's structural lint over \
          `.ralphy/plan.md` found the charter's completion protocol unfinished. The \
          session is handed back ONCE to complete it.\n\nFailed checks (\u{2717}):\n\n",
-    );
+    ));
     out.push_str(&render_checks(report));
-    out.push_str(
-        "\nFix each failed check HONESTLY, then emit `RALPHY_DONE_EXIT` again:\n\
+    out.push_str(&format!(
+        "\nFix each failed check HONESTLY, then emit `{done_signal}` again:\n\
          - Tick a step `- [x]` ONLY when its work is genuinely done and committed; if \
            work remains, finish it (or split the step and finish the rest) first.\n\
          - Write any missing `## Handoff` / `## Plan friction` / `## Self-review \
@@ -189,7 +192,7 @@ pub fn failure_brief(stamp: &str, report: &ProtocolReport) -> String {
          The lint checks structure only, so completing the protocol satisfies it in \
          minutes. The runner re-runs the SAME checks; a second violation closes the \
          issue with this failure report published for the human reviewer.\n",
-    );
+    ));
     out
 }
 
@@ -361,10 +364,11 @@ mod tests {
     #[test]
     fn failure_brief_names_checks_and_forbids_gaming() {
         let report = lint("## Steps\n- [ ] pending\n");
-        let brief = failure_brief("stamp-7", &report);
+        let brief = failure_brief("stamp-7", &report, "DONE_TOKEN");
         assert!(brief.contains("Ralphy run stamp-7"));
         assert!(brief.contains("\u{2717} every plan step ticked"));
-        assert!(brief.contains("RALPHY_DONE_EXIT"));
+        // The brief quotes the injected completion token, not a hardcoded one.
+        assert!(brief.contains("`DONE_TOKEN`"));
         assert!(brief.contains("HONESTLY"));
         assert!(
             brief.contains("SAME"),

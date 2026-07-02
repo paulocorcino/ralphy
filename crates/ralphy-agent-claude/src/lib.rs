@@ -1594,6 +1594,15 @@ mod tests {
     use ralphy_core::{Issue, Plan};
     use std::path::PathBuf;
 
+    /// Anti-drift: the charter this adapter launches sessions with and the
+    /// embedded execution prompt must both name the shared completion sentinel;
+    /// `ralphy_adapter_support::DONE_SENTINEL` is the single source of truth.
+    #[test]
+    fn charter_and_prompt_name_the_done_sentinel() {
+        assert!(EXEC_CHARTER.contains(ralphy_adapter_support::DONE_SENTINEL));
+        assert!(PROMPT_EXECUTE.contains(ralphy_adapter_support::DONE_SENTINEL));
+    }
+
     #[test]
     fn scan_dsr_request_detects_split_sequence() {
         // Sequence split across two chunks: first call must return false, second true.

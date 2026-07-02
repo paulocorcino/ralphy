@@ -423,19 +423,21 @@ pub fn comment(stamp: &str, report: &VerifyReport) -> String {
 /// (ADR-0011 amendment). The executor's charter reads it to fix the root cause
 /// and re-signal done, after which the runner re-runs the SAME commands. It names
 /// the failing command(s) and shows the output tail, and is blunt that the gate —
-/// not weakening the commands — is the only way through.
-pub fn repair_brief(stamp: &str, report: &VerifyReport) -> String {
+/// not weakening the commands — is the only way through. `done_signal` is the
+/// completion token the active adapter's charter defines, received as data
+/// (ADR-0002) so the brief speaks the agent's own protocol.
+pub fn repair_brief(stamp: &str, report: &VerifyReport, done_signal: &str) -> String {
     let mut out = format!("# Verify gate failed — repair required (Ralphy run {stamp})\n\n");
-    out.push_str(
-        "A previous session emitted `RALPHY_DONE_EXIT`, but the runner re-ran the \
+    out.push_str(&format!(
+        "A previous session emitted `{done_signal}`, but the runner re-ran the \
          plan's `## Verify` commands over your committed work and the gate did NOT \
          pass. The repo is handed back to you to REPAIR.\n\n\
          Fix the ROOT CAUSE of the failure below, commit the fix, then emit \
-         `RALPHY_DONE_EXIT` again so the runner re-checks the gate. Do NOT make the \
+         `{done_signal}` again so the runner re-checks the gate. Do NOT make the \
          gate pass by weakening, deleting, or skipping a verify command or by \
          editing the plan's `## Verify` section — the runner re-runs the SAME \
          commands and the gate is the authority.\n\n",
-    );
+    ));
 
     out.push_str("Gate commands (✗ marks where it failed):\n\n```\n");
     for cmd in &report.commands {
@@ -678,15 +680,16 @@ mod tests {
             }],
             passed: false,
         };
-        let b = repair_brief("stamp-9", &report);
+        let b = repair_brief("stamp-9", &report, "DONE_TOKEN");
         assert!(b.contains("repair required"));
         assert!(b.contains("\u{2717} pnpm install    exit 1"));
         assert!(
             b.contains("ERR_PNPM_LOCKFILE_MISMATCH"),
             "failing tail shown"
         );
-        // The gate is the authority — the brief must forbid gaming it.
-        assert!(b.contains("RALPHY_DONE_EXIT"));
+        // The gate is the authority — the brief must forbid gaming it, quoting
+        // the injected completion token rather than a hardcoded one.
+        assert!(b.contains("`DONE_TOKEN`"));
         assert!(b.to_lowercase().contains("root cause"));
         assert!(
             b.contains("SAME"),
