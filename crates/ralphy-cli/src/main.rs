@@ -673,6 +673,10 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             }
             .saturating_mul(60),
         ),
+        // ADR-0015: when set, a `Done` that resolves to no verify gate at all is
+        // parked for a human (`ready-for-human`) instead of closed on the
+        // self-report. Absent/false preserves the ADR-0011 warn-and-close.
+        require_verify_gate: settings.verify.require_verify_gate.unwrap_or(false),
     };
 
     // The same deadline gates starting the next issue (between-issue clock).

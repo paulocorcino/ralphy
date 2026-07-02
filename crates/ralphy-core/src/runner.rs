@@ -14,7 +14,7 @@ use tracing::{info, warn};
 use crate::{
     acceptance, blocked, git, gitignore, handoff,
     ledger::{self, LedgerRecord},
-    references,
+    protocol, references,
     verify::{self, VerifySpec},
     Agent, Execution, Issue, IssueTracker, Outcome, PlanLimit, Usage, Workspace,
 };
@@ -413,6 +413,13 @@ pub struct QueueConfig {
     /// that runs past it is killed and counts as a failure. Derived from
     /// `--max-minutes-per-issue`.
     pub verify_timeout: Duration,
+    /// When true, an issue whose verify resolution lands on [`VerifyPlan::NoGate`]
+    /// (no `## Verify` in the plan and no settings fallback) is NOT closed on the
+    /// agent's self-report: it is labeled `ready-for-human`, a comment explains
+    /// why, and the run continues to the next issue (ADR-0015). `false` keeps the
+    /// ADR-0011 warn-and-close behavior. From `settings.json`
+    /// `verify.require_verify_gate`.
+    pub require_verify_gate: bool,
 }
 
 /// What happened to one issue in the queue.
@@ -497,10 +504,29 @@ fn accumulate_by_model(by_model: &mut BTreeMap<String, Usage>, usage: &Usage) {
         .add_tokens(usage);
 }
 
-/// The close comment the runner leaves on a green queue issue. Mirrors the ps1
-/// oracle so overnight-run behaviour is unchanged.
-fn close_comment(stamp: &str, branch: &str) -> String {
-    format!("Closed by Ralphy run {stamp} (green on branch '{branch}'; merge by hand).")
+/// The close comment the runner leaves on a green queue issue: the ps1-oracle
+/// close line plus the protocol-lint result (ADR-0015) — ✓/✗ per structural
+/// check, with a loud warning when the issue closed carrying violations.
+fn close_comment(stamp: &str, branch: &str, lint: &protocol::ProtocolReport) -> String {
+    format!(
+        "Closed by Ralphy run {stamp} (green on branch '{branch}'; merge by hand).\n\n{}",
+        protocol::comment_block(lint)
+    )
+}
+
+/// The comment posted when `require_verify_gate` parks a gateless issue for a
+/// human (ADR-0015): why the runner did not close on the self-report, and what
+/// the human does next.
+fn no_gate_comment(stamp: &str, branch: &str) -> String {
+    format!(
+        "Ralphy run {stamp} did NOT close this issue: the executor reported done, \
+         but no verify gate resolved — the plan carries no `## Verify` commands and \
+         no `verify.command` fallback is configured — and `verify.require_verify_gate` \
+         is set (ADR-0015).\n\n\
+         The work is committed on branch '{branch}'. Next step (human): review the \
+         branch, run whatever verification applies, then close this issue by hand. \
+         The `ready-for-human` label marks this gate; the run continued past it."
+    )
 }
 
 /// The comment posted when the planner judges an issue infeasible: the verdict
@@ -559,6 +585,21 @@ fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyP
     }
 }
 
+/// What the verify gate decided for a `Done` issue: proceed to the close,
+/// leave it open after a spent repair budget, or — with `require_verify_gate`
+/// and no gate resolved — park it for a human (ADR-0015).
+enum GateDecision {
+    /// Gate passed, was opted out of, or (without `require_verify_gate`) no
+    /// gate resolved: proceed to the close path.
+    Green,
+    /// The gate failed and the repair budget is spent; carries the one-line
+    /// failure summary. The issue is left open and the queue continues.
+    Failed(String),
+    /// `require_verify_gate` is set and no gate resolved: label
+    /// `ready-for-human`, leave the issue open, continue the queue.
+    NeedsHuman,
+}
+
 /// How many times a failed verify gate is handed back to the agent to repair
 /// before the runner gives up and stops the run (ADR-0011 amendment). The gate
 /// stays the authority across every attempt — a repair earns the close only by
@@ -590,6 +631,33 @@ fn clear_verify_failure(ws: &Workspace) {
     if path.exists() {
         if let Err(e) = std::fs::remove_file(&path) {
             warn!(error = %e, "removing the stale verify-failure brief failed");
+        }
+    }
+}
+
+/// The scratch file the runner drops in the workspace to hand a protocol-lint
+/// violation back to the executor (ADR-0015) — the same vendor-neutral channel
+/// as [`VERIFY_FAILURE_FILE`]. Written on the first violation only (one bounce);
+/// cleared at each issue's start and once the lint is settled.
+const PROTOCOL_FAILURE_FILE: &str = "protocol-failure.md";
+
+/// Write the protocol repair brief so the next `execute()` can read which
+/// structural checks failed and complete the charter's protocol. Best-effort:
+/// a write failure means the agent retries blind, no worse than not bouncing.
+fn write_protocol_failure(ws: &Workspace, stamp: &str, report: &protocol::ProtocolReport) {
+    let path = ws.ralphy_dir().join(PROTOCOL_FAILURE_FILE);
+    if let Err(e) = std::fs::write(&path, protocol::failure_brief(stamp, report)) {
+        warn!(error = %e, "writing the protocol-failure repair brief failed");
+    }
+}
+
+/// Remove the protocol repair brief. Called at each issue's start and once the
+/// lint is settled, so a stale brief never steers a later session.
+fn clear_protocol_failure(ws: &Workspace) {
+    let path = ws.ralphy_dir().join(PROTOCOL_FAILURE_FILE);
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            warn!(error = %e, "removing the stale protocol-failure brief failed");
         }
     }
 }
@@ -648,15 +716,16 @@ fn write_handoffs(
 }
 
 /// Refresh `.ralphy/references.md` for the issue about to be planned: fetch the
-/// source (title, state, body) of every issue named in its `## Blocked by` and
-/// `## Parent` sections and render them, or remove a stale file when the issue
-/// names none. The planner reads this so a `#N` reference reaches it as the
-/// referenced issue's actual spec, not a paraphrase it might restate as fact in
-/// a child issue. Best-effort and depth-1: a fetch failure (a cross-repo or
-/// deleted ref, say) logs a warning and skips that ref, and the fetched bodies'
-/// own references are not followed transitively.
+/// source (title, state, body) of every issue the body references — its
+/// `## Blocked by` and `## Parent` sections plus any inline `#N` mention — and
+/// render them, or remove a stale file when the issue names none. The planner
+/// reads this so a `#N` reference reaches it as the referenced issue's actual
+/// spec, not a paraphrase it might restate as fact in a child issue. Best-effort
+/// and depth-1: a fetch failure (a cross-repo or deleted ref, say) logs a warning
+/// and skips that ref, and the fetched bodies' own references are not followed
+/// transitively.
 fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn IssueTracker) {
-    let refs = blocked::structured_refs(&issue.body, issue.number);
+    let refs = blocked::referenced_issues(&issue.body, issue.number);
     let mut entries: Vec<references::Reference> = Vec::new();
     for n in refs {
         match tracker.reference(n) {
@@ -1060,10 +1129,12 @@ pub fn run_queue(
         // two consecutive limit outcomes that commit nothing; any commit resets
         // the streak. The cap is checked *before* the next wait so a stalled
         // issue is abandoned without first burning another reset window.
-        // Start each issue with no repair brief on disk: the gate only writes one
-        // when *this* run's verify fails, so a brief left by a prior run (stopped
-        // on a red gate, then resumed) never silently steers the first execute.
+        // Start each issue with no repair brief on disk: the gates only write one
+        // when *this* run's verify or protocol lint fails, so a brief left by a
+        // prior run (stopped on a red gate, then resumed) never silently steers
+        // the first execute.
         clear_verify_failure(&ws);
+        clear_protocol_failure(&ws);
 
         let mut no_commit_streak = 0u32;
         let mut deadline_cut = false;
@@ -1140,6 +1211,99 @@ pub fn run_queue(
         accumulate_by_model(&mut run_usage_by_model, &exec_usage);
 
         if outcome == Outcome::Done {
+            // Deterministic protocol lint (ADR-0015): before anything else,
+            // structurally lint the plan the executor claims is finished —
+            // every step ticked, the charter's closing sections present, no
+            // planner placeholder left in the ledger. Presence and shape only,
+            // never truthfulness. On a violation the session is handed back to
+            // the executor ONCE via `protocol-failure.md` (the verify-failure
+            // mechanism); a second violation falls back to closing with the
+            // lint report and a loud warning in the close comment.
+            let mut plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
+            let mut lint = protocol::lint(&plan_md);
+            // Tokens the one protocol bounce consumes, accounted as their own
+            // phase like verify repairs (ADR-0008).
+            let mut protocol_usage = Usage::default();
+            // Set when the bounce itself hits a usage limit: that is the run's
+            // limit, so stop on the reset instead of judging the lint again.
+            let mut protocol_limit: Option<Option<String>> = None;
+            if !lint.passed() {
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(
+                    number = issue.number,
+                    failed = %lint.failed_labels().join(", "),
+                    "protocol lint failed — handing back to the executor once"
+                );
+                write_protocol_failure(&ws, &cfg.stamp, &lint);
+                let Execution {
+                    outcome: bounce_outcome,
+                    usage,
+                } = agent.execute(&plan, &ws)?;
+                protocol_usage.add_tokens(&usage);
+                if let Outcome::Limit(reset) = bounce_outcome {
+                    protocol_limit = Some(reset);
+                } else {
+                    // Re-run the SAME checks over the (possibly) repaired plan;
+                    // whatever they say now is final — no second bounce.
+                    plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
+                    lint = protocol::lint(&plan_md);
+                }
+            }
+            clear_protocol_failure(&ws);
+
+            if protocol_usage.total() > 0 {
+                let protocol_rec = LedgerRecord {
+                    project: project.clone(),
+                    actor_email: actor_email.clone(),
+                    actor_name: actor_name.clone(),
+                    ralphy_version: env!("CARGO_PKG_VERSION").into(),
+                    issue: issue.number,
+                    phase: "protocol-repair".into(),
+                    agent: agent.name().into(),
+                    model: protocol_usage
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "unknown".into()),
+                    outcome: if lint.passed() {
+                        "done"
+                    } else {
+                        "protocol-failed"
+                    }
+                    .into(),
+                    tokens: protocol_usage.clone(),
+                    ts: chrono::Utc::now().to_rfc3339(),
+                };
+                if let Err(e) = ledger::append(&protocol_rec) {
+                    warn!(number = issue.number, error = %e, "writing protocol-repair usage ledger line failed");
+                }
+                run_usage.add_tokens(&protocol_usage);
+                accumulate_by_model(&mut run_usage_by_model, &protocol_usage);
+            }
+
+            // A usage limit mid-bounce is the run's limit — no tokens are left
+            // to work the rest of the queue, so stop on the reset.
+            if let Some(reset) = protocol_limit {
+                worked.push(IssueResult {
+                    number: issue.number,
+                    outcome: Some(Outcome::Limit(reset.clone())),
+                    closed: false,
+                    blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
+                });
+                stop = Some(StopReason::Limit {
+                    number: issue.number,
+                    reset,
+                });
+                break;
+            }
+            if !lint.passed() {
+                warn!(
+                    number = issue.number,
+                    failed = %lint.failed_labels().join(", "),
+                    "protocol lint still failing after the bounce — closing with the report"
+                );
+            }
+
             // Runner-enforced verify gate (ADR-0011): before closing on the
             // agent's self-reported `Done`, re-run the plan's `## Verify`
             // commands over the committed state. Only a pass proceeds to the
@@ -1150,9 +1314,9 @@ pub fn run_queue(
             // only by making the runner *see* the commands pass, never by a
             // fresh self-report. Only when the repair budget is exhausted does
             // the run stop with the branch handed back. `## Verify: none` opts
-            // out; an absent section falls back to settings, then to a loud
-            // warn-and-close.
-            let plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
+            // out; an absent section falls back to settings, then — depending
+            // on `require_verify_gate` — to a loud warn-and-close or to parking
+            // the issue for a human (ADR-0015).
             // Tokens the agent spends on repairs, accounted as their own phase so
             // the initial execute line stays truthful and the repair cost is never
             // hidden (ADR-0008). Folded into the run totals below either way.
@@ -1162,10 +1326,7 @@ pub fn run_queue(
             // than burning the rest of the repair budget on an agent that cannot
             // work. `None` while the gate is still being worked.
             let mut repair_limit: Option<Outcome> = None;
-            // `None` once the gate is green (proceed to close); `Some(summary)`
-            // when the repair budget is spent (stop, branch handed back).
-            let gate_failure: Option<String> = match resolve_verify(&plan_md, &cfg.verify_fallback)
-            {
+            let gate: GateDecision = match resolve_verify(&plan_md, &cfg.verify_fallback) {
                 VerifyPlan::Run(commands) => {
                     let mut attempt = 0u32;
                     loop {
@@ -1187,7 +1348,7 @@ pub fn run_queue(
                         if report.passed {
                             info!(number = issue.number, "verify gate passed");
                             clear_verify_failure(&ws);
-                            break None;
+                            break GateDecision::Green;
                         }
 
                         let summary = verify_failure_summary(&report);
@@ -1199,7 +1360,7 @@ pub fn run_queue(
                                 attempts = attempt,
                                 "verify gate failed — issue not closed"
                             );
-                            break Some(summary);
+                            break GateDecision::Failed(summary);
                         }
 
                         attempt += 1;
@@ -1225,7 +1386,7 @@ pub fn run_queue(
                         // not spend another attempt.
                         if let Outcome::Limit(_) = repair_outcome {
                             repair_limit = Some(repair_outcome);
-                            break Some(summary);
+                            break GateDecision::Failed(summary);
                         }
                         // Any other outcome (Done, Blocked, …) loops back to re-run
                         // the gate: the deterministic commands — not the agent's
@@ -1237,7 +1398,16 @@ pub fn run_queue(
                         number = issue.number,
                         "verify gate skipped — plan declared `## Verify: none`"
                     );
-                    None
+                    GateDecision::Green
+                }
+                VerifyPlan::NoGate if cfg.require_verify_gate => {
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(
+                        number = issue.number,
+                        "no verify gate resolved and require_verify_gate is set — \
+                         parking the issue for a human"
+                    );
+                    GateDecision::NeedsHuman
                 }
                 VerifyPlan::NoGate => {
                     warn!(
@@ -1245,7 +1415,7 @@ pub fn run_queue(
                         "issue closed without a verify gate — no `## Verify` in the plan \
                          and no settings.json verify.command resolved"
                     );
-                    None
+                    GateDecision::Green
                 }
             };
 
@@ -1266,10 +1436,10 @@ pub fn run_queue(
                         .model
                         .clone()
                         .unwrap_or_else(|| "unknown".into()),
-                    outcome: if gate_failure.is_none() {
-                        "done"
-                    } else {
+                    outcome: if matches!(gate, GateDecision::Failed(_)) {
                         "verify-failed"
+                    } else {
+                        "done"
                     }
                     .into(),
                     tokens: repair_usage.clone(),
@@ -1282,50 +1452,83 @@ pub fn run_queue(
                 accumulate_by_model(&mut run_usage_by_model, &repair_usage);
             }
 
-            if let Some(summary) = gate_failure {
-                let number = issue.number;
-                // A repair that hit a usage limit is the *run's* limit, not this
-                // issue's fault: there are no tokens left to work the rest of the
-                // queue, so stop on the reset (the same global stance the execute
-                // path already takes on a limit).
-                if let Some(Outcome::Limit(reset)) = repair_limit {
+            match gate {
+                GateDecision::Failed(summary) => {
+                    let number = issue.number;
+                    // A repair that hit a usage limit is the *run's* limit, not this
+                    // issue's fault: there are no tokens left to work the rest of the
+                    // queue, so stop on the reset (the same global stance the execute
+                    // path already takes on a limit).
+                    if let Some(Outcome::Limit(reset)) = repair_limit {
+                        worked.push(IssueResult {
+                            number,
+                            outcome: Some(Outcome::Limit(reset.clone())),
+                            closed: false,
+                            blocked_by: Vec::new(),
+                            human_blockers: Vec::new(),
+                        });
+                        stop = Some(StopReason::Limit { number, reset });
+                        break;
+                    }
+                    // A verify failure no longer halts the queue: the repair budget is
+                    // spent, so leave THIS issue open (its commits stay on the branch
+                    // for a human to pick up — see the artifact comment) and march on
+                    // to the next issue. The issue is reported skipped-on-verify so the
+                    // miss is visible, never a silent close.
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(number, %summary, "verify gate failed — skipping issue");
                     worked.push(IssueResult {
                         number,
-                        outcome: Some(Outcome::Limit(reset.clone())),
+                        outcome: None,
                         closed: false,
                         blocked_by: Vec::new(),
                         human_blockers: Vec::new(),
                     });
-                    stop = Some(StopReason::Limit { number, reset });
-                    break;
+                    continue;
                 }
-                // A verify failure no longer halts the queue: the repair budget is
-                // spent, so leave THIS issue open (its commits stay on the branch
-                // for a human to pick up — see the artifact comment) and march on
-                // to the next issue. The issue is reported skipped-on-verify so the
-                // miss is visible, never a silent close.
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(number, %summary, "verify gate failed — skipping issue");
-                worked.push(IssueResult {
-                    number,
-                    outcome: None,
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                });
-                continue;
+                GateDecision::NeedsHuman => {
+                    let number = issue.number;
+                    // ADR-0015: the one hole where a false self-report closed an
+                    // issue unchecked is now a human gate. Label + comment are
+                    // best-effort — the issue staying OPEN is the guarantee, and
+                    // a failed label must not abort the rest of the queue.
+                    if let Err(e) = tracker.add_label(number, HUMAN_GATE_LABELS[0]) {
+                        warn!(number, error = %e, "applying ready-for-human label failed");
+                    }
+                    if let Err(e) = tracker.comment(number, &no_gate_comment(&cfg.stamp, &branch)) {
+                        warn!(number, error = %e, "posting the no-gate comment failed");
+                    }
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(
+                        number,
+                        "no verify gate — issue left open for a human, run continues"
+                    );
+                    worked.push(IssueResult {
+                        number,
+                        outcome: Some(Outcome::Done),
+                        closed: false,
+                        blocked_by: Vec::new(),
+                        human_blockers: Vec::new(),
+                    });
+                    continue;
+                }
+                GateDecision::Green => {}
             }
 
             // Close the cycle: a green queue issue is closed so it leaves the
             // queue; its labels are untouched and the branch is merged by hand.
-            tracker.close(issue.number, &close_comment(&cfg.stamp, &branch))?;
+            tracker.close(issue.number, &close_comment(&cfg.stamp, &branch, &lint))?;
 
             // Record the closed issue before writing evidence so the result is
             // always present in the report even if write_evidence errors out.
             // consumed by the telegram notifier / presenter — keep stable. The
-            // `tokens` field carries the issue's total (plan + execute + repair)
-            // so the live UI can show inline per-issue tokens (ADR-0008 D11).
-            let issue_total = plan.usage.total() + exec_usage.total() + repair_usage.total();
+            // `tokens` field carries the issue's total (plan + execute + protocol
+            // bounce + repair) so the live UI can show inline per-issue tokens
+            // (ADR-0008 D11).
+            let issue_total = plan.usage.total()
+                + exec_usage.total()
+                + protocol_usage.total()
+                + repair_usage.total();
             // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
             // carry the *execution* phase breakdown so the live UI can combine it
             // with the planning usage it stashed at `plan written` (ADR-0008 D11).

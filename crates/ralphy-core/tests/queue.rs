@@ -52,6 +52,15 @@ struct ScriptedAgent {
     /// Per-issue plan extras that override `extra` for the matching issue number.
     /// Lets one queue mix, say, a failing and a passing `## Verify` gate.
     extra_by_issue: Vec<(u64, String)>,
+    /// When true, `plan` writes a protocol-dirty plan (unticked steps, no
+    /// `## Handoff` / `## Plan friction`) so the ADR-0015 lint fires. The
+    /// default is a lint-clean plan, keeping the lint transparent to tests
+    /// that are not about it.
+    lint_dirty: bool,
+    /// When true, an `execute` that finds `.ralphy/protocol-failure.md` (the
+    /// ADR-0015 bounce brief) repairs the plan: ticks every step and appends
+    /// the missing closing sections — a well-behaved executor.
+    fix_protocol: bool,
 }
 
 impl ScriptedAgent {
@@ -73,7 +82,22 @@ impl ScriptedAgent {
             ledger: None,
             extra: None,
             extra_by_issue: Vec::new(),
+            lint_dirty: false,
+            fix_protocol: false,
         }
+    }
+
+    /// Write protocol-dirty plans (unticked steps, no closing sections) so the
+    /// ADR-0015 lint fails on the first DONE.
+    fn lint_dirty(mut self) -> Self {
+        self.lint_dirty = true;
+        self
+    }
+
+    /// Repair the plan when a bounce brief (`protocol-failure.md`) is present.
+    fn with_protocol_fix(mut self) -> Self {
+        self.fix_protocol = true;
+        self
     }
 
     fn with_ledger(mut self, ledger: impl Into<String>) -> Self {
@@ -136,13 +160,30 @@ impl Agent for ScriptedAgent {
             .map(|(_, e)| e.as_str())
             .or(self.extra.as_deref());
         let extra_section = extra.map(|e| format!("\n{e}\n")).unwrap_or_default();
-        let body = format!(
+        // Lint-clean by default (ADR-0015): steps ticked and the closing
+        // sections present, so tests not about the protocol lint never trip it.
+        // `lint_dirty` scripts the opposite; an extra already carrying one of
+        // the closing headings keeps its own version.
+        let step_line = if self.lint_dirty {
+            "- [ ] do a thing\n"
+        } else {
+            "- [x] do a thing\n"
+        };
+        let mut body = format!(
             "# Plan for #{}\n\n## Steps\n{}{}{}",
             issue.number,
-            "- [ ] do a thing\n".repeat(self.steps),
+            step_line.repeat(self.steps),
             ledger_section,
             extra_section,
         );
+        if !self.lint_dirty {
+            if !body.contains("## Handoff") {
+                body.push_str("\n## Handoff\n\n- **Delivered**: scripted work\n");
+            }
+            if !body.contains("## Plan friction") {
+                body.push_str("\n## Plan friction\n\n- none\n");
+            }
+        }
         fs::write(&path, body)?;
         Ok(Plan {
             open_steps: self.steps,
@@ -155,6 +196,14 @@ impl Agent for ScriptedAgent {
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Execution> {
         // The most recently planned issue is the one being executed.
         let number = *self.planned.borrow().last().unwrap();
+        // A well-behaved executor's reaction to the ADR-0015 bounce brief:
+        // tick every step and append the missing closing sections.
+        if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
+            let plan_md = fs::read_to_string(ws.plan_path())?;
+            let fixed = plan_md.replace("- [ ]", "- [x]")
+                + "\n## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
+            fs::write(ws.plan_path(), fixed)?;
+        }
         let n = self.executed.borrow().len();
         self.executed.borrow_mut().push(number);
         let (outcome, commits) = self
@@ -455,6 +504,7 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         stop_on_limit_exec: false,
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
+        require_verify_gate: false,
     }
 }
 
@@ -470,6 +520,7 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         stop_on_limit_exec: false,
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
+        require_verify_gate: false,
     }
 }
 
@@ -485,6 +536,7 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         stop_on_limit_exec: false,
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
+        require_verify_gate: false,
     }
 }
 
@@ -502,6 +554,7 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         stop_on_limit_exec: true,
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
+        require_verify_gate: false,
     }
 }
 
@@ -521,6 +574,7 @@ fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
         stop_on_limit_exec: true,
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
+        require_verify_gate: false,
     }
 }
 
@@ -1683,7 +1737,10 @@ fn human_gate_blocker_is_classified_and_run_continues() {
     assert!(agent.executed.borrow().contains(&7), "#7 must have run");
     let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
     assert_eq!(closes, vec![7], "only #7 closed");
-    assert!(report.stop.is_none(), "a human gate never stops the whole run");
+    assert!(
+        report.stop.is_none(),
+        "a human gate never stops the whole run"
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -2107,9 +2164,14 @@ fn verify_none_opts_out_and_skips_settings_fallback() {
     assert!(report.stop.is_none(), "opt-out closes without a gate");
     let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
     assert_eq!(closes, vec![1], "issue closed under `## Verify: none`");
-    // No artifact comment — the gate never ran.
+    // No verify-artifact comment — the gate never ran. (The close still posts
+    // the plan's handoff report, which is unrelated to the gate.)
     assert!(
-        tracker.comments.borrow().is_empty(),
+        !tracker
+            .comments
+            .borrow()
+            .iter()
+            .any(|(_, b)| b.contains("## Verify (")),
         "opt-out posts no verify artifact"
     );
 
@@ -2210,6 +2272,174 @@ fn green_issue_writes_one_plan_and_one_execute_ledger_line() {
         "plan outcome: {}",
         plan_lines[0]
     );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn require_verify_gate_parks_no_gate_issue_and_continues() {
+    // ADR-0015: `require_verify_gate` + a plan resolving to NoGate (no
+    // `## Verify`, no fallback) → the issue is NOT closed on the self-report; it
+    // is labeled ready-for-human with an explanatory comment, and the run
+    // continues — the next issue (which has a real gate) still closes.
+    let repo = init_repo("require-gate");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
+        .with_plan_extra_for(2, format!("## Verify\n\n{}\n", verify_ok_line()));
+    let tracker = RecordingTracker::default();
+
+    let mut config = cfg(&repo, "stamp-require-gate", false);
+    config.require_verify_gate = true;
+
+    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
+
+    // #1 (gateless) stays open and is parked; #2 (gated, green) closes.
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![2], "the gateless issue must not close");
+    assert_eq!(
+        tracker.labels.borrow().as_slice(),
+        &[(1u64, "ready-for-human".to_string())],
+        "the gateless issue is labeled for a human"
+    );
+    let comments = tracker.comments.borrow();
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("require_verify_gate")),
+        "the parked issue carries the explanatory comment: {comments:?}"
+    );
+
+    // The run continued past the parked issue — no stop.
+    assert!(report.stop.is_none(), "a parked issue never stops the run");
+    let r1 = report.worked.iter().find(|r| r.number == 1).unwrap();
+    assert_eq!(r1.outcome, Some(Outcome::Done), "the work itself finished");
+    assert!(!r1.closed, "but the issue was not closed");
+    let r2 = report.worked.iter().find(|r| r.number == 2).unwrap();
+    assert!(r2.closed, "the gated issue closed normally");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn no_gate_without_require_flag_closes_with_warn_regression() {
+    // Regression for ADR-0011: with `require_verify_gate` absent/false, a plan
+    // resolving to NoGate closes exactly as before — no label, no parking.
+    let repo = init_repo("no-gate-regression");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]); // no ## Verify, no fallback
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-no-gate", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let closes = tracker.closes.borrow();
+    let numbers: Vec<u64> = closes.iter().map(|(n, _)| *n).collect();
+    assert_eq!(
+        numbers,
+        vec![1],
+        "NoGate + flag off still closes (warn only)"
+    );
+    assert!(
+        tracker.labels.borrow().is_empty(),
+        "no ready-for-human label without the flag"
+    );
+    // The close comment carries the protocol-lint result (ADR-0015).
+    assert!(
+        closes[0].1.contains("## Protocol lint"),
+        "lint result published in the close comment: {}",
+        closes[0].1
+    );
+    assert!(report.stop.is_none());
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn protocol_lint_bounces_once_and_repaired_plan_closes_clean() {
+    // ADR-0015: a protocol-dirty plan (unticked steps, missing sections) makes
+    // the runner write `protocol-failure.md` and re-run the executor ONCE; the
+    // well-behaved executor repairs the plan, the re-lint passes, and the issue
+    // closes with an all-✓ lint block in the close comment.
+    let repo = init_repo("lint-bounce");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done])
+        .lint_dirty()
+        .with_protocol_fix();
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-lint-bounce", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![1, 1],
+        "exactly one bounce back to the executor"
+    );
+    let closes = tracker.closes.borrow();
+    assert_eq!(closes.len(), 1, "repaired issue closed");
+    let (_, comment) = &closes[0];
+    assert!(
+        comment.contains("## Protocol lint"),
+        "lint result published: {comment}"
+    );
+    assert!(
+        !comment.contains('\u{2717}'),
+        "all checks green after the repair: {comment}"
+    );
+    // The bounce brief never leaks into the next issue.
+    assert!(
+        !repo.join(".ralphy").join("protocol-failure.md").exists(),
+        "protocol-failure.md cleared after the lint settled"
+    );
+    assert!(report.stop.is_none());
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn protocol_lint_second_violation_closes_with_report() {
+    // ADR-0015: an executor that ignores the bounce brief gets no second one —
+    // the issue closes anyway (today's behavior) with the ✗ report and a
+    // warning in the close comment for the human reviewer.
+    let repo = init_repo("lint-unrepaired");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).lint_dirty(); // never repairs
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-lint-unrepaired", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![1, 1],
+        "one bounce only — never a second"
+    );
+    let closes = tracker.closes.borrow();
+    assert_eq!(closes.len(), 1, "second violation still closes");
+    let (_, comment) = &closes[0];
+    assert!(
+        comment.contains('\u{2717}') && comment.contains('\u{26a0}'),
+        "close comment carries the failed checks and the warning: {comment}"
+    );
+    assert!(report.stop.is_none());
 
     fs::remove_dir_all(&repo).ok();
 }
