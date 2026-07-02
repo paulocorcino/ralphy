@@ -844,6 +844,7 @@ dependencies = [
  "console",
  "directories",
  "indicatif",
+ "libc",
  "ralphy-adapter-support",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
@@ -856,6 +857,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

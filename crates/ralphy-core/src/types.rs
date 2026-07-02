@@ -250,6 +250,13 @@ impl Workspace {
     pub fn settings_path(&self) -> PathBuf {
         self.ralphy_dir().join("settings.json")
     }
+
+    /// `<repo>/.ralphy/run.lock` — the presence lock a live run holds (PID +
+    /// start time) so scheduled invocations (`ralphy run --if-idle`) can defer
+    /// instead of piling onto it. A signal, not a mutex.
+    pub fn run_lock_path(&self) -> PathBuf {
+        self.ralphy_dir().join("run.lock")
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +287,13 @@ mod tests {
         // `model` is untouched by summing — it stays the receiver's value.
         assert_eq!(a.model.as_deref(), Some("model-a"));
         assert_eq!(a.total(), 345);
+    }
+
+    #[test]
+    fn run_lock_path_is_under_ralphy_dir() {
+        let ws = Workspace::new("/some/repo");
+        assert!(ws.run_lock_path().starts_with(ws.ralphy_dir()));
+        assert!(ws.run_lock_path().ends_with("run.lock"));
     }
 
     #[test]
