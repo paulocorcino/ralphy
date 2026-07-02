@@ -802,6 +802,7 @@ dependencies = [
  "ralphy-core",
  "ralphy-pty",
  "regex",
+ "serde",
  "serde_json",
  "tracing",
 ]
@@ -828,6 +829,7 @@ dependencies = [
  "ralphy-adapter-support",
  "ralphy-core",
  "rusqlite",
+ "serde",
  "serde_json",
  "tracing",
 ]

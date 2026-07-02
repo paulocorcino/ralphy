@@ -89,6 +89,39 @@ fn staged_plan_env(staged: bool) -> Option<(&'static str, &'static str)> {
     }
 }
 
+/// Claude-specific run defaults persisted under the [`ClaudeSettings::SECTION`]
+/// section of `.ralphy/settings.json` (ADR-0010). The core stores the section as
+/// opaque JSON; this adapter owns the schema (ADR-0002 amendment, #79). Each
+/// field is `None` out of the box, leaving the hardcoded run defaults in place;
+/// resolution precedence stays per-run flag > settings.json > hardcoded default.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ClaudeSettings {
+    /// Planning model default (`--plan-model`). `None` → hardcoded `opus`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_model: Option<String>,
+    /// Planning effort default (`--plan-effort`). `None` → hardcoded `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_effort: Option<String>,
+    /// Execution model used when the plan emits no complexity judgment
+    /// (`--default-exec-model`). `None` → hardcoded `sonnet`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_exec_model: Option<String>,
+    /// Execution effort default (`--exec-effort`). `None` → hardcoded `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec_effort: Option<String>,
+    /// Per-issue wall-clock budget in minutes (`--max-minutes-per-issue`).
+    /// `None` → [`ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE`]; `Some(0)`
+    /// disables the per-issue cap (the issue is then bounded only by
+    /// `--deadline-hours`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_minutes_per_issue: Option<u64>,
+}
+
+impl ClaudeSettings {
+    /// The settings-file section this struct lives under.
+    pub const SECTION: &'static str = "claude";
+}
+
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
 /// the `exec_*` fields configure the interactive execution session. `run_dir` is
 /// where the settings file, the captured logs, and the per-issue flag file live.

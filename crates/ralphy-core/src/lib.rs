@@ -7,10 +7,10 @@
 
 use std::time::Duration;
 
-/// Default per-issue wall-clock budget in minutes, used when neither
-/// `--max-minutes-per-issue` nor `claude.max_minutes_per_issue` is set. The
-/// single source of truth for every adapter's default — keep adapter `Default`
-/// impls pointing here rather than re-spelling a literal.
+/// Default per-issue wall-clock budget in minutes, used when neither the
+/// `--max-minutes-per-issue` flag nor a persisted per-agent settings default
+/// is set. The single source of truth for every adapter's default — keep
+/// adapter `Default` impls pointing here rather than re-spelling a literal.
 pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 90;
 
 /// The horizon an adapter substitutes for the per-issue deadline when the budget
@@ -60,7 +60,7 @@ pub use runner::{
     run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, StopReason,
     WaitOutcome, WallClock, STOP_BEFORE_LABEL,
 };
-pub use settings::{ClaudeSettings, OpenCodeSettings, Settings, VerifySettings};
+pub use settings::{Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
 pub use types::{Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 pub use verify::{VerifyReport, VerifySpec};

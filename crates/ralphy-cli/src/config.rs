@@ -12,6 +12,8 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
 use clap::{Args, Subcommand};
+use ralphy_agent_claude::ClaudeSettings;
+use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
 #[derive(Args)]
@@ -88,6 +90,22 @@ fn require_known_key(key: &str) -> Result<()> {
     }
 }
 
+/// Load-mutate-store the Claude section of the settings. The section is opaque
+/// JSON to the core; a malformed section is a hard error here (unlike run-time
+/// resolution, which warns and defaults) so `config set` fails loud.
+fn with_claude(s: &mut Settings, f: impl FnOnce(&mut ClaudeSettings)) -> Result<()> {
+    let mut c: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    f(&mut c);
+    s.set_agent_settings(ClaudeSettings::SECTION, &c)
+}
+
+/// Load-mutate-store the OpenCode section; same contract as [`with_claude`].
+fn with_opencode(s: &mut Settings, f: impl FnOnce(&mut OpenCodeSettings)) -> Result<()> {
+    let mut o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
+    f(&mut o);
+    s.set_agent_settings(OpenCodeSettings::SECTION, &o)
+}
+
 pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     require_known_key(key)?;
     if value.trim().is_empty() {
@@ -95,7 +113,7 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     }
     let mut s = Settings::load(ws)?;
     match key {
-        "opencode.model" => s.opencode.model = Some(value.to_owned()),
+        "opencode.model" => with_opencode(&mut s, |o| o.model = Some(value.to_owned()))?,
         "verify.command" => s.verify.command = Some(value.to_owned()),
         "verify.require_verify_gate" => {
             let b = value.parse::<bool>().map_err(|_| {
@@ -110,15 +128,17 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             parse_branch_mode(value)?;
             s.branch_mode = Some(value.to_owned());
         }
-        "claude.plan_model" => s.claude.plan_model = Some(value.to_owned()),
-        "claude.plan_effort" => s.claude.plan_effort = Some(value.to_owned()),
-        "claude.default_exec_model" => s.claude.default_exec_model = Some(value.to_owned()),
-        "claude.exec_effort" => s.claude.exec_effort = Some(value.to_owned()),
+        "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
+        "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = Some(value.to_owned()))?,
+        "claude.default_exec_model" => {
+            with_claude(&mut s, |c| c.default_exec_model = Some(value.to_owned()))?
+        }
+        "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = Some(value.to_owned()))?,
         "claude.max_minutes_per_issue" => {
             let n = value.parse::<u64>().map_err(|_| {
                 anyhow!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
             })?;
-            s.claude.max_minutes_per_issue = Some(n);
+            with_claude(&mut s, |c| c.max_minutes_per_issue = Some(n))?;
         }
         _ => unreachable!(),
     }
@@ -132,16 +152,16 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     require_known_key(key)?;
     let mut s = Settings::load(ws)?;
     match key {
-        "opencode.model" => s.opencode.model = None,
+        "opencode.model" => with_opencode(&mut s, |o| o.model = None)?,
         "verify.command" => s.verify.command = None,
         "verify.require_verify_gate" => s.verify.require_verify_gate = None,
         "base_branch" => s.base_branch = None,
         "branch_mode" => s.branch_mode = None,
-        "claude.plan_model" => s.claude.plan_model = None,
-        "claude.plan_effort" => s.claude.plan_effort = None,
-        "claude.default_exec_model" => s.claude.default_exec_model = None,
-        "claude.exec_effort" => s.claude.exec_effort = None,
-        "claude.max_minutes_per_issue" => s.claude.max_minutes_per_issue = None,
+        "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = None)?,
+        "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = None)?,
+        "claude.default_exec_model" => with_claude(&mut s, |c| c.default_exec_model = None)?,
+        "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = None)?,
+        "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -151,7 +171,9 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
 
 pub fn get(ws: &Workspace) -> Result<()> {
     let s = Settings::load(ws)?;
-    print_str("opencode.model", s.opencode.model);
+    let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
+    let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
         Some(b) => println!("verify.require_verify_gate = {b}"),
@@ -159,11 +181,11 @@ pub fn get(ws: &Workspace) -> Result<()> {
     }
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
-    print_str("claude.plan_model", s.claude.plan_model);
-    print_str("claude.plan_effort", s.claude.plan_effort);
-    print_str("claude.default_exec_model", s.claude.default_exec_model);
-    print_str("claude.exec_effort", s.claude.exec_effort);
-    match s.claude.max_minutes_per_issue {
+    print_str("claude.plan_model", claude.plan_model);
+    print_str("claude.plan_effort", claude.plan_effort);
+    print_str("claude.default_exec_model", claude.default_exec_model);
+    print_str("claude.exec_effort", claude.exec_effort);
+    match claude.max_minutes_per_issue {
         Some(n) => println!("claude.max_minutes_per_issue = {n}"),
         None => println!("claude.max_minutes_per_issue: not set"),
     }
@@ -334,12 +356,14 @@ mod tests {
         // set stores the value.
         set(&ws, "opencode.model", "kimi-for-coding/k2p7").unwrap();
         let s = Settings::load(&ws).unwrap();
-        assert_eq!(s.opencode.model.as_deref(), Some("kimi-for-coding/k2p7"));
+        let o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION).unwrap();
+        assert_eq!(o.model.as_deref(), Some("kimi-for-coding/k2p7"));
 
         // unset clears it.
         unset(&ws, "opencode.model").unwrap();
         let s = Settings::load(&ws).unwrap();
-        assert_eq!(s.opencode.model, None);
+        let o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION).unwrap();
+        assert_eq!(o.model, None);
 
         // Unknown key errors.
         let err = set(&ws, "bad.key", "x").unwrap_err();
@@ -357,16 +381,18 @@ mod tests {
         set(&ws, "branch_mode", "current").unwrap();
 
         let s = Settings::load(&ws).unwrap();
+        let c: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION).unwrap();
         assert_eq!(s.base_branch.as_deref(), Some("origin/dev"));
-        assert_eq!(s.claude.max_minutes_per_issue, Some(45));
+        assert_eq!(c.max_minutes_per_issue, Some(45));
         assert_eq!(s.branch_mode.as_deref(), Some("current"));
 
         unset(&ws, "base_branch").unwrap();
         unset(&ws, "claude.max_minutes_per_issue").unwrap();
         unset(&ws, "branch_mode").unwrap();
         let s = Settings::load(&ws).unwrap();
+        let c: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION).unwrap();
         assert_eq!(s.base_branch, None);
-        assert_eq!(s.claude.max_minutes_per_issue, None);
+        assert_eq!(c.max_minutes_per_issue, None);
         assert_eq!(s.branch_mode, None);
 
         // Invalid branch_mode and non-integer budget are rejected at set time.
@@ -382,10 +408,65 @@ mod tests {
         );
         // `0` is a valid value — it disables the per-issue cap.
         set(&ws, "claude.max_minutes_per_issue", "0").unwrap();
+        let c: ClaudeSettings = Settings::load(&ws)
+            .unwrap()
+            .agent_settings(ClaudeSettings::SECTION)
+            .unwrap();
+        assert_eq!(c.max_minutes_per_issue, Some(0));
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A `.ralphy/settings.json` written by a pre-#79 binary (typed vendor
+    /// fields in core) must still parse, resolve with the ADR-0010 precedence
+    /// (flag > settings > default), and survive a typed save without losing
+    /// the vendor sections or unknown peer keys.
+    #[test]
+    fn previous_version_settings_file_still_parses_with_precedence() {
+        let (ws, dir) = tmp_ws("back-compat");
+
+        // Byte-for-byte shape a pre-#79 `save` produced (typed fields first,
+        // including sections a config touch left present).
+        let raw = r#"{
+  "opencode": { "model": "kimi-for-coding/k2p7" },
+  "base_branch": "origin/dev",
+  "branch_mode": "current",
+  "claude": { "plan_model": "opus", "max_minutes_per_issue": 45 },
+  "verify": { "command": "cargo test" },
+  "future_key": 123
+}"#;
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+        fs::write(ws.settings_path(), raw).unwrap();
+
+        let s = Settings::load(&ws).unwrap();
+        let c: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION).unwrap();
+        let o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION).unwrap();
+        assert_eq!(o.model.as_deref(), Some("kimi-for-coding/k2p7"));
+        assert_eq!(c.plan_model.as_deref(), Some("opus"));
+        assert_eq!(c.max_minutes_per_issue, Some(45));
+        assert_eq!(s.base_branch.as_deref(), Some("origin/dev"));
+        assert_eq!(s.branch_mode.as_deref(), Some("current"));
+        assert_eq!(s.verify.command.as_deref(), Some("cargo test"));
+
+        // ADR-0010 precedence: flag > settings > default.
         assert_eq!(
-            Settings::load(&ws).unwrap().claude.max_minutes_per_issue,
-            Some(0)
+            resolve_str(Some("flag".into()), c.plan_model.clone(), "default"),
+            "flag"
         );
+        assert_eq!(resolve_str(None, c.plan_model.clone(), "default"), "opus");
+        assert_eq!(resolve_u64(None, c.max_minutes_per_issue, 90), 45);
+        // A field the file never set falls through to the hardcoded default.
+        assert_eq!(
+            resolve_str(None, c.default_exec_model.clone(), "sonnet"),
+            "sonnet"
+        );
+
+        // A typed save keeps the vendor sections and the unknown peer key.
+        s.save(&ws).unwrap();
+        let back = fs::read_to_string(ws.settings_path()).unwrap();
+        for needle in ["opencode", "kimi-for-coding/k2p7", "claude", "plan_model", "future_key"] {
+            assert!(back.contains(needle), "missing '{needle}' after save:\n{back}");
+        }
 
         fs::remove_dir_all(&dir).ok();
     }

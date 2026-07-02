@@ -613,7 +613,22 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             ralphy_core::Settings::default()
         }
     };
-    let persisted_opencode_model = settings.opencode.model.clone();
+    // Each adapter's settings section is opaque JSON to the core; deserialize
+    // the typed slices here with the same warn-and-default tolerance as the
+    // file load, so a malformed section never aborts a run (ADR-0002 amendment).
+    let claude_settings: ralphy_agent_claude::ClaudeSettings = settings
+        .agent_settings(ralphy_agent_claude::ClaudeSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed claude settings section — its persisted defaults ignored");
+            Default::default()
+        });
+    let opencode_settings: ralphy_agent_opencode::OpenCodeSettings = settings
+        .agent_settings(ralphy_agent_opencode::OpenCodeSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed opencode settings section — its persisted defaults ignored");
+            Default::default()
+        });
+    let persisted_opencode_model = opencode_settings.model.clone();
     let base_branch = config::resolve_str(
         args.base_branch.clone(),
         settings.base_branch.clone(),
@@ -632,27 +647,27 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let resolved_claude = ResolvedClaude {
         plan_model: config::resolve_str(
             args.plan_model.clone(),
-            settings.claude.plan_model.clone(),
+            claude_settings.plan_model.clone(),
             "opus",
         ),
         plan_effort: config::resolve_str(
             args.plan_effort.clone(),
-            settings.claude.plan_effort.clone(),
+            claude_settings.plan_effort.clone(),
             "medium",
         ),
         exec_effort: config::resolve_str(
             args.exec_effort.clone(),
-            settings.claude.exec_effort.clone(),
+            claude_settings.exec_effort.clone(),
             "medium",
         ),
         default_exec_model: config::resolve_str(
             args.default_exec_model.clone(),
-            settings.claude.default_exec_model.clone(),
+            claude_settings.default_exec_model.clone(),
             "sonnet",
         ),
         max_minutes_per_issue: config::resolve_u64(
             args.max_minutes_per_issue,
-            settings.claude.max_minutes_per_issue,
+            claude_settings.max_minutes_per_issue,
             ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
         ),
     };
