@@ -125,9 +125,9 @@ impl RunClock for WallClock {
 }
 
 /// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
-/// one of: an absolute RFC3339 instant (`"2026-06-09T18:00:00Z"`, as Codex emits),
-/// a bare `"HH:mm"`, or a weekday-qualified `"Wkd HH:mm"` (the relative forms Claude
-/// emits). An absolute instant is unambiguous and used as-is — `now` is ignored. A
+/// one of: an absolute RFC3339 instant (`"2026-06-09T18:00:00Z"`, as some adapters
+/// emit), a bare `"HH:mm"`, or a weekday-qualified `"Wkd HH:mm"` (the relative
+/// forms others emit). An absolute instant is unambiguous and used as-is — `now` is ignored. A
 /// bare time resolves to today, rolled to tomorrow when already past `now`; a
 /// weekday-qualified time resolves to the next date carrying that weekday (today
 /// only when the time is still ahead, else next week). Pure over its inputs so the
@@ -135,7 +135,7 @@ impl RunClock for WallClock {
 /// unparseable hint.
 fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     // Strip trailing sentence punctuation an adapter may leave on the hint (e.g.
-    // Codex's "… Try again at 2026-06-09T18:00:00Z.").
+    // "… Try again at 2026-06-09T18:00:00Z.").
     let trimmed = reset.trim().trim_end_matches('.').trim();
 
     // An absolute RFC3339 instant is unambiguous (carries its own date and zone):
@@ -1889,15 +1889,15 @@ mod tests {
     #[test]
     fn accumulate_by_model_splits_and_sums_per_model_with_unknown_fallback() {
         let mut by_model: BTreeMap<String, Usage> = BTreeMap::new();
-        let opus = |i| Usage {
+        let usage_a = |i| Usage {
             input: i,
             output: 0,
             cache_read: 0,
             cache_creation: 0,
-            model: Some("claude-opus-4-8".into()),
+            model: Some("model-a".into()),
         };
-        accumulate_by_model(&mut by_model, &opus(100));
-        accumulate_by_model(&mut by_model, &opus(200));
+        accumulate_by_model(&mut by_model, &usage_a(100));
+        accumulate_by_model(&mut by_model, &usage_a(200));
         // A phase with no captured model is keyed under `unknown`, not dropped.
         accumulate_by_model(
             &mut by_model,
@@ -1908,7 +1908,7 @@ mod tests {
             },
         );
 
-        assert_eq!(by_model["claude-opus-4-8"].input, 300, "opus rows summed");
+        assert_eq!(by_model["model-a"].input, 300, "same-model rows summed");
         assert_eq!(
             by_model["unknown"].input, 7,
             "model-less rows fall to unknown"
@@ -1980,7 +1980,7 @@ mod tests {
 
     #[test]
     fn next_reset_absolute_rfc3339_used_directly() {
-        // An absolute instant (Codex's format) ignores `now` and resolves to the
+        // An absolute instant ignores `now` and resolves to the
         // exact instant it names. Compare epochs so the assertion is timezone-
         // independent (the result is the same instant regardless of local zone).
         let now = at(2026, 6, 9, 10, 0);
@@ -1995,7 +1995,7 @@ mod tests {
 
     #[test]
     fn next_reset_absolute_tolerates_trailing_period() {
-        // Codex's message is a sentence: "… Try again at 2026-06-09T18:00:00Z."
+        // Some adapters emit a sentence: "… Try again at 2026-06-09T18:00:00Z."
         let now = at(2026, 6, 9, 10, 0);
         let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
             .unwrap()
@@ -2010,7 +2010,7 @@ mod tests {
 
     #[test]
     fn next_reset_absolute_ignores_trailing_prose() {
-        // Codex may trail the datetime with prose: "…Z (in 3 hours)".
+        // The datetime may be trailed with prose: "…Z (in 3 hours)".
         let now = at(2026, 6, 9, 10, 0);
         let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
             .unwrap()

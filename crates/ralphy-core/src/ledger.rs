@@ -32,7 +32,8 @@ pub struct LedgerRecord {
     pub issue: u64,
     /// `plan` | `execute`.
     pub phase: String,
-    /// The adapter label (`claude` | `codex` | `opencode`), self-reported.
+    /// The adapter's self-reported vendor label ([`crate::Agent::name`]),
+    /// opaque to the core.
     pub agent: String,
     /// The model the price table resolves on (D8), or `unknown`.
     pub model: String,
@@ -252,15 +253,15 @@ mod tests {
             ralphy_version: "0.1.0-rc5".into(),
             issue: 42,
             phase: "execute".into(),
-            agent: "claude".into(),
-            model: "claude-opus-4-8".into(),
+            agent: "agent-a".into(),
+            model: "model-a".into(),
             outcome: "done".into(),
             tokens: Usage {
                 input: 100,
                 output: 9,
                 cache_read: 1710,
                 cache_creation: 94,
-                model: Some("claude-opus-4-8".into()),
+                model: Some("model-a".into()),
             },
             ts: "2026-06-15T12:34:56+00:00".into(),
         }
@@ -316,14 +317,14 @@ mod tests {
     fn read_rows_parses_good_lines_and_skips_malformed() {
         // Two well-formed lines and one malformed (unparseable) middle line.
         let jsonl = "\
-{\"project\":\"owner/repo\",\"actor_email\":\"a@x.io\",\"actor_name\":\"A\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"claude\",\"model\":\"claude-opus-4-8\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5},\"ts\":\"2026-06-15T12:00:00+00:00\"}
+{\"project\":\"owner/repo\",\"actor_email\":\"a@x.io\",\"actor_name\":\"A\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"agent-a\",\"model\":\"model-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5},\"ts\":\"2026-06-15T12:00:00+00:00\"}
 { this is not valid json
-{\"project\":\"owner/repo\",\"actor_email\":\"b@x.io\",\"actor_name\":\"B\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"codex\",\"model\":\"claude-sonnet-4-6\",\"outcome\":\"done\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7},\"ts\":\"2026-06-15T12:05:00+00:00\"}
+{\"project\":\"owner/repo\",\"actor_email\":\"b@x.io\",\"actor_name\":\"B\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"agent-b\",\"model\":\"model-b\",\"outcome\":\"done\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7},\"ts\":\"2026-06-15T12:05:00+00:00\"}
 ";
         let rows = read_rows(jsonl);
         assert_eq!(rows.len(), 2, "malformed middle line is skipped");
 
-        assert_eq!(rows[0].model, "claude-opus-4-8");
+        assert_eq!(rows[0].model, "model-a");
         assert_eq!(rows[0].phase, "plan");
         assert_eq!(rows[0].actor_email, "a@x.io");
         assert_eq!(rows[0].issue, 42);
@@ -331,9 +332,9 @@ mod tests {
         assert_eq!(rows[0].tokens.cache_read, 100);
         assert_eq!(rows[0].ts, "2026-06-15T12:00:00+00:00");
 
-        assert_eq!(rows[1].model, "claude-sonnet-4-6");
+        assert_eq!(rows[1].model, "model-b");
         assert_eq!(rows[1].phase, "execute");
-        assert_eq!(rows[1].agent, "codex");
+        assert_eq!(rows[1].agent, "agent-b");
         assert_eq!(rows[1].tokens.output, 2);
     }
 

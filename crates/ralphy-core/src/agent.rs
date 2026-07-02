@@ -11,9 +11,9 @@ use crate::{Execution, Issue, Plan, Workspace};
 /// execute an issue and receives a domain result — it never learns *how* the
 /// agent is driven.
 pub trait Agent {
-    /// The adapter's self-reported label (`"claude"` / `"codex"` / `"opencode"`),
-    /// stamped onto each ledger line (ADR-0008 D6). The core only carries it
-    /// through and never branches on the value, so the vendor-agnostic boundary
+    /// The adapter's self-reported vendor label, stamped onto each ledger line
+    /// (ADR-0008 D6). An opaque string to the core: it only carries the value
+    /// through and never branches on it, so the vendor-agnostic boundary
     /// (ADR-0002) holds.
     fn name(&self) -> &'static str;
 
