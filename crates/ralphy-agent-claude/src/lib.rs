@@ -57,13 +57,20 @@ const SETTINGS_JSON: &str = r#"{"skipDangerousModePermissionPrompt":true,"skipAu
 /// lives at the repo root under `assets/plugin`.
 static PLUGIN: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin");
 
+/// `<repo>/.ralphy/plugin` — where this adapter materializes its embedded
+/// Claude Code plugin. Derived from the vendor-neutral `ralphy_dir()`; the
+/// core does not know the subdir exists (ADR-0002 amendment, #79).
+fn plugin_dir(ws: &Workspace) -> PathBuf {
+    ws.ralphy_dir().join("plugin")
+}
+
 /// Materialize the embedded plugin into the workspace's `.ralphy/plugin` so it
 /// can be handed to `claude` via `--plugin-dir`. Re-extracted from scratch each
 /// call (the tree is tiny) so a stale or partly-written copy never lingers, and
 /// the run never depends on whatever skills are installed globally. Returns the
 /// plugin directory to pass on the command line.
 fn materialize_plugin(ws: &Workspace) -> Result<PathBuf> {
-    let dir = ws.plugin_dir();
+    let dir = plugin_dir(ws);
     ralphy_adapter_support::materialize_assets(&PLUGIN, &dir, None)?;
     Ok(dir)
 }
@@ -87,6 +94,48 @@ fn staged_plan_env(staged: bool) -> Option<(&'static str, &'static str)> {
     } else {
         None
     }
+}
+
+/// Claude-specific run defaults persisted under the [`ClaudeSettings::SECTION`]
+/// section of `.ralphy/settings.json` (ADR-0010). The core stores the section as
+/// opaque JSON; this adapter owns the schema (ADR-0002 amendment, #79). Each
+/// field is `None` out of the box, leaving the hardcoded run defaults in place;
+/// resolution precedence stays per-run flag > settings.json > hardcoded default.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ClaudeSettings {
+    /// Planning model default (`--plan-model`). `None` → hardcoded `opus`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_model: Option<String>,
+    /// Planning effort default (`--plan-effort`). `None` → hardcoded `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_effort: Option<String>,
+    /// Execution model used when the plan emits no complexity judgment
+    /// (`--default-exec-model`). `None` → hardcoded `sonnet`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_exec_model: Option<String>,
+    /// Execution effort default (`--exec-effort`). `None` → hardcoded `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec_effort: Option<String>,
+    /// Per-issue wall-clock budget in minutes (`--max-minutes-per-issue`).
+    /// `None` → [`ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE`]; `Some(0)`
+    /// disables the per-issue cap (the issue is then bounded only by
+    /// `--deadline-hours`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_minutes_per_issue: Option<u64>,
+}
+
+impl ClaudeSettings {
+    /// The settings-file section this struct lives under.
+    pub const SECTION: &'static str = "claude";
+}
+
+/// The planner's `## Execution model: sonnet|opus` judgment, lowercased, if any.
+/// Claude-vocabulary parsing lives here, not in core (ADR-0002 amendment, #79):
+/// core's `Plan.recommended_model` is an opaque token it only carries across.
+fn recommended_model(md: &str) -> Option<String> {
+    let re =
+        regex::Regex::new(r"(?im)^\s*##\s*Execution model:\s*(opus|sonnet)").expect("valid regex");
+    re.captures(md).map(|c| c[1].to_lowercase())
 }
 
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
@@ -711,7 +760,7 @@ impl Agent for ClaudeAgent {
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
-            recommended_model: plan::recommended_model(&md),
+            recommended_model: recommended_model(&md),
             path: plan_path,
             usage: parse_plan_usage(&log),
         })
@@ -1545,6 +1594,15 @@ mod tests {
     use ralphy_core::{Issue, Plan};
     use std::path::PathBuf;
 
+    /// Anti-drift: the charter this adapter launches sessions with and the
+    /// embedded execution prompt must both name the shared completion sentinel;
+    /// `ralphy_adapter_support::DONE_SENTINEL` is the single source of truth.
+    #[test]
+    fn charter_and_prompt_name_the_done_sentinel() {
+        assert!(EXEC_CHARTER.contains(ralphy_adapter_support::DONE_SENTINEL));
+        assert!(PROMPT_EXECUTE.contains(ralphy_adapter_support::DONE_SENTINEL));
+    }
+
     #[test]
     fn scan_dsr_request_detects_split_sequence() {
         // Sequence split across two chunks: first call must return false, second true.
@@ -1605,7 +1663,7 @@ mod tests {
         let ws = Workspace::new(&base);
 
         let dir = materialize_plugin(&ws).expect("materialize");
-        assert_eq!(dir, ws.plugin_dir());
+        assert_eq!(dir, plugin_dir(&ws));
         assert!(
             dir.join(".claude-plugin/plugin.json").is_file(),
             "plugin manifest must be materialized"
@@ -1680,6 +1738,15 @@ mod tests {
             skill.contains("STAGED_PLAN_NONINTERACTIVE"),
             "staged-plan skill must read the non-interactive flag"
         );
+    }
+
+    #[test]
+    fn reads_recommended_model() {
+        assert_eq!(
+            recommended_model("## Execution model: Opus\nbecause").as_deref(),
+            Some("opus")
+        );
+        assert_eq!(recommended_model("no judgment here"), None);
     }
 
     fn plan_with(recommended: Option<&str>) -> Plan {

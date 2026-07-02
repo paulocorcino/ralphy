@@ -30,8 +30,8 @@ pub struct DiagnosisReport {
     pub backlog_location: Option<String>,
     /// Milestone / roadmap / PRD documents found (paths relative to the repo).
     pub milestone_docs: Vec<String>,
-    /// An existing agent-skills directory (`.agents`/`.claude`/`.codex`/`.cursor`)
-    /// path, if one is present.
+    /// An existing agent-skills directory (e.g. `.agents`, `.cursor`, or a
+    /// vendor-specific dotdir) path, if one is present.
     pub skills_dir: Option<String>,
     /// Whether the repo already carries a `CONTEXT.md` or any ADRs.
     pub has_context_or_adrs: bool,
@@ -50,7 +50,7 @@ mod tests {
         "language_build": "Rust / cargo",
         "backlog_location": "docs/backlog.md",
         "milestone_docs": ["docs/roadmap.md", "docs/prd/0001.md"],
-        "skills_dir": ".claude",
+        "skills_dir": ".agents",
         "has_context_or_adrs": true,
         "remote_host": "github.com"
     }"#;
@@ -62,7 +62,7 @@ mod tests {
             language_build: Some("Rust / cargo".into()),
             backlog_location: Some("docs/backlog.md".into()),
             milestone_docs: vec!["docs/roadmap.md".into(), "docs/prd/0001.md".into()],
-            skills_dir: Some(".claude".into()),
+            skills_dir: Some(".agents".into()),
             has_context_or_adrs: true,
             remote_host: Some("github.com".into()),
         };

@@ -1,6 +1,8 @@
 # Ralphy settings file + persistent OpenCode model default (amends ADR-0005 D4)
 
-Status: accepted — amends ADR-0005 D4.
+Status: accepted — amends ADR-0005 D4. The vendor-named settings structs later
+moved into their adapter crates, with the schema and precedence unchanged — see
+ADR-0002, Amendment (2026-07-02).
 
 Introduce a per-repo `.ralphy/settings.json` as the foundation for operator
 configuration, and use its first key to persist an OpenCode execution-model

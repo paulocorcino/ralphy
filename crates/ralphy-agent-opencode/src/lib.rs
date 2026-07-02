@@ -216,6 +216,22 @@ pub fn draft_issues(
     )
 }
 
+/// OpenCode-specific settings persisted under the [`OpenCodeSettings::SECTION`]
+/// section of `.ralphy/settings.json` (ADR-0010). The core stores the section as
+/// opaque JSON; this adapter owns the schema (ADR-0002 amendment, #79).
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OpenCodeSettings {
+    /// The model id to pass as `-m <id>` when no `--exec-model` flag is given.
+    /// `None` / empty → OpenCode resolves the model itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+impl OpenCodeSettings {
+    /// The settings-file section this struct lives under.
+    pub const SECTION: &'static str = "opencode";
+}
+
 /// Drives the `opencode` CLI. `model` is the operator override (omitted entirely
 /// when `None`, deferring to OpenCode's own resolution, ADR-0005 D4); `variant`
 /// is the operator's optional effort knob, passed through only when set (D3);

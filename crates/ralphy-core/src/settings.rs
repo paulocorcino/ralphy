@@ -3,6 +3,12 @@
 //! [`Settings`] is persisted to `<repo>/.ralphy/settings.json`. Unknown keys
 //! are tolerated and round-tripped via `#[serde(flatten)]` so an older binary
 //! never silently drops a key written by a newer one.
+//!
+//! The store holds only agent-agnostic keys. Each adapter's settings live in a
+//! top-level section named after the adapter, kept as raw JSON in `extra` and
+//! (de)serialized by the adapter's own typed struct through
+//! [`Settings::agent_settings`] / [`Settings::set_agent_settings`] — the core
+//! never interprets a section's contents (ADR-0002 amendment, #79).
 
 use std::fs;
 use std::io::ErrorKind;
@@ -12,41 +18,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
 use crate::Workspace;
-
-/// OpenCode-specific settings.
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OpenCodeSettings {
-    /// The model id to pass as `-m <id>` when no `--exec-model` flag is given.
-    /// `None` / empty → OpenCode resolves the model itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-}
-
-/// Claude-specific run defaults (ADR-0010). These knobs are consumed only by the
-/// Claude adapter in the current wiring, so they are namespaced under `claude.*`;
-/// a Codex peer can be added later as a sibling struct without migration. Each
-/// field is `None` out of the box, leaving the hardcoded run defaults in place.
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ClaudeSettings {
-    /// Planning model default (`--plan-model`). `None` → hardcoded `opus`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan_model: Option<String>,
-    /// Planning effort default (`--plan-effort`). `None` → hardcoded `medium`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan_effort: Option<String>,
-    /// Execution model used when the plan emits no complexity judgment
-    /// (`--default-exec-model`). `None` → hardcoded `sonnet`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_exec_model: Option<String>,
-    /// Execution effort default (`--exec-effort`). `None` → hardcoded `medium`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exec_effort: Option<String>,
-    /// Per-issue wall-clock budget in minutes (`--max-minutes-per-issue`).
-    /// `None` → [`crate::DEFAULT_MAX_MINUTES_PER_ISSUE`]; `Some(0)` disables the
-    /// per-issue cap (the issue is then bounded only by `--deadline-hours`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_minutes_per_issue: Option<u64>,
-}
 
 /// The per-repo verify-gate default (ADR-0011). `command` is the fallback verify
 /// command used when a plan's `## Verify` section is absent or empty — a single
@@ -69,11 +40,10 @@ pub struct VerifySettings {
 
 /// The full settings store. Fields are additive across releases; unknown keys
 /// are preserved by the `extra` flatten so an older binary's `save` does not
-/// silently drop a future peer's keys.
+/// silently drop a future peer's keys. Per-agent sections (e.g. a vendor's
+/// model/effort defaults) also live in `extra` — see [`Settings::agent_settings`].
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
-    #[serde(default)]
-    pub opencode: OpenCodeSettings,
     /// Agent-agnostic base branch default (`--base-branch`). `None` → hardcoded
     /// `origin/main`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,8 +52,6 @@ pub struct Settings {
     /// lowercase canonical string `"new"`/`"current"`. `None` → hardcoded `new`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch_mode: Option<String>,
-    #[serde(default)]
-    pub claude: ClaudeSettings,
     /// The runner-enforced verify gate's per-repo fallback (ADR-0011).
     #[serde(default)]
     pub verify: VerifySettings,
@@ -114,6 +82,32 @@ impl Settings {
         let text = serde_json::to_string_pretty(self).context("serializing settings")?;
         fs::write(&path, text).with_context(|| format!("writing {}", path.display()))
     }
+
+    /// Deserialize one agent's settings section — a top-level key in the
+    /// settings file named after the adapter — into the adapter's own typed
+    /// struct. An absent section yields `T::default()`. Unknown keys *inside*
+    /// a section are ignored on load (as they were when the sections were
+    /// typed fields here), so a typed re-save preserves today's behavior.
+    pub fn agent_settings<T: serde::de::DeserializeOwned + Default>(
+        &self,
+        section: &str,
+    ) -> Result<T> {
+        match self.extra.get(section) {
+            Some(v) => serde_json::from_value(v.clone())
+                .with_context(|| format!("parsing settings section '{section}'")),
+            None => Ok(T::default()),
+        }
+    }
+
+    /// Serialize an adapter's typed settings struct back into its section.
+    /// The section key is written even when the struct is all-default; callers
+    /// that want an absent key should remove it from `extra` instead.
+    pub fn set_agent_settings<T: Serialize>(&mut self, section: &str, value: &T) -> Result<()> {
+        let v = serde_json::to_value(value)
+            .with_context(|| format!("serializing settings section '{section}'"))?;
+        self.extra.insert(section.to_owned(), v);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -135,30 +129,45 @@ mod tests {
         (ws, dir)
     }
 
+    /// A stand-in for an adapter's typed settings slice; the core only ever
+    /// sees the section as raw JSON.
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    struct FakeAgentSettings {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    }
+
     #[test]
     fn round_trip_set_and_unset() {
         let (ws, dir) = tmp_ws("round-trip");
 
-        // Default load on missing file.
+        // Default load on missing file: no section, so the typed view defaults.
         let s = Settings::load(&ws).unwrap();
-        assert_eq!(s.opencode.model, None);
+        let a: FakeAgentSettings = s.agent_settings("agent_x").unwrap();
+        assert_eq!(a.model, None);
 
-        // Set a model, save, reload.
+        // Set a model in the section, save, reload.
         let mut s = s;
-        s.opencode.model = Some("kimi-for-coding/k2p7".into());
+        s.set_agent_settings(
+            "agent_x",
+            &FakeAgentSettings {
+                model: Some("model-1".into()),
+            },
+        )
+        .unwrap();
         s.save(&ws).unwrap();
         let reloaded = Settings::load(&ws).unwrap();
-        assert_eq!(
-            reloaded.opencode.model.as_deref(),
-            Some("kimi-for-coding/k2p7")
-        );
+        let a: FakeAgentSettings = reloaded.agent_settings("agent_x").unwrap();
+        assert_eq!(a.model.as_deref(), Some("model-1"));
 
-        // Unset the model, save, reload.
+        // Clear the model, save, reload.
         let mut s = reloaded;
-        s.opencode.model = None;
+        s.set_agent_settings("agent_x", &FakeAgentSettings { model: None })
+            .unwrap();
         s.save(&ws).unwrap();
         let reloaded = Settings::load(&ws).unwrap();
-        assert_eq!(reloaded.opencode.model, None);
+        let a: FakeAgentSettings = reloaded.agent_settings("agent_x").unwrap();
+        assert_eq!(a.model, None);
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -176,15 +185,11 @@ mod tests {
         let mut s = Settings::load(&ws).unwrap();
         s.base_branch = Some("origin/dev".into());
         s.branch_mode = Some("current".into());
-        s.claude.max_minutes_per_issue = Some(45);
-        s.claude.plan_model = Some("opus".into());
         s.save(&ws).unwrap();
 
         let reloaded = Settings::load(&ws).unwrap();
         assert_eq!(reloaded.base_branch.as_deref(), Some("origin/dev"));
         assert_eq!(reloaded.branch_mode.as_deref(), Some("current"));
-        assert_eq!(reloaded.claude.max_minutes_per_issue, Some(45));
-        assert_eq!(reloaded.claude.plan_model.as_deref(), Some("opus"));
 
         // The unknown peer key must survive the typed save.
         let back = fs::read_to_string(ws.settings_path()).unwrap();
@@ -216,14 +221,15 @@ mod tests {
     #[test]
     fn unknown_key_tolerance() {
         let (ws, dir) = tmp_ws("unknown-key");
-        // Write a settings file containing an unknown peer key.
-        let raw = r#"{"opencode":{"model":"x"},"future_key":123}"#;
+        // Write a settings file containing an agent section and an unknown peer key.
+        let raw = r#"{"agent_x":{"model":"x"},"future_key":123}"#;
         fs::create_dir_all(ws.ralphy_dir()).unwrap();
         fs::write(ws.settings_path(), raw).unwrap();
 
-        // Load succeeds and surfaces the opencode model.
+        // Load succeeds and the typed view surfaces the section's model.
         let s = Settings::load(&ws).unwrap();
-        assert_eq!(s.opencode.model.as_deref(), Some("x"));
+        let a: FakeAgentSettings = s.agent_settings("agent_x").unwrap();
+        assert_eq!(a.model.as_deref(), Some("x"));
 
         // Save and re-read the raw file — `future_key` must survive.
         s.save(&ws).unwrap();
@@ -232,6 +238,36 @@ mod tests {
             back.contains("future_key"),
             "flatten must preserve unknown keys; got:\n{back}"
         );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn agent_section_round_trips_through_save() {
+        let (ws, dir) = tmp_ws("agent-section");
+
+        let mut s = Settings::default();
+        s.set_agent_settings(
+            "agent_x",
+            &FakeAgentSettings {
+                model: Some("model-2".into()),
+            },
+        )
+        .unwrap();
+        s.save(&ws).unwrap();
+
+        let reloaded = Settings::load(&ws).unwrap();
+        let a: FakeAgentSettings = reloaded.agent_settings("agent_x").unwrap();
+        assert_eq!(a.model.as_deref(), Some("model-2"));
+
+        // A malformed section is a section-level error, not a load failure.
+        let raw = r#"{"agent_x":"not-an-object"}"#;
+        fs::write(ws.settings_path(), raw).unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let err = s
+            .agent_settings::<FakeAgentSettings>("agent_x")
+            .unwrap_err();
+        assert!(err.to_string().contains("agent_x"), "got: {err}");
 
         fs::remove_dir_all(&dir).ok();
     }

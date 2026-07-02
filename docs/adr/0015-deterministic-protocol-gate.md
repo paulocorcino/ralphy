@@ -1,6 +1,8 @@
 # Deterministic protocol gate at DONE acceptance
 
-Status: accepted.
+Status: accepted. The completion token quoted in the runner's repair briefs is
+now injected as data (`QueueConfig.done_signal`) rather than known by the core —
+see ADR-0002, Amendment (2026-07-02).
 
 ADR-0011 made green mean "the runner *saw* the verify commands pass". Two holes
 remained, both at the same point of the flow — accepting `RALPHY_DONE_EXIT`:

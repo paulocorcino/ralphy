@@ -44,10 +44,17 @@ pub use json_session::{run_json_session, JsonSession};
 mod session_files;
 pub use session_files::{list_session_files, session_files_appeared};
 
-/// Returns `true` when `text` contains the `RALPHY_DONE_EXIT` sentinel, as
+/// The completion sentinel every Ralphy execution charter tells the agent to
+/// emit — the single source of truth for the literal (the prose in
+/// `assets/prompts/prompt.execute.md` must match). Detection stays in the
+/// adapters; the core only ever receives this token as data to quote in its
+/// repair briefs (ADR-0002 amendment, #79).
+pub const DONE_SENTINEL: &str = "RALPHY_DONE_EXIT";
+
+/// Returns `true` when `text` contains the [`DONE_SENTINEL`] token, as
 /// defined by `assets/prompts/prompt.execute.md`.
 pub fn done_sentinel(text: &str) -> bool {
-    text.contains("RALPHY_DONE_EXIT")
+    text.contains(DONE_SENTINEL)
 }
 
 /// Returns the trimmed reason from the first `RALPHY_BLOCKED_EXIT <reason>` line
