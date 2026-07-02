@@ -1126,6 +1126,32 @@ fn dirty_tree_aborts_before_branch_work() {
 }
 
 #[test]
+fn aborts_when_base_is_missing() {
+    let repo = init_repo("nobase");
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let mut config = cfg(&repo, "stamp-nobase", false);
+    config.base_branch = "origin/does-not-exist".into();
+
+    let err = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap_err();
+
+    assert!(err.to_string().contains("not found"), "got: {err}");
+    assert_eq!(current_branch(&repo), "main", "left where it started");
+    assert!(
+        !branch_exists(&repo, "afk/run-stamp-nobase"),
+        "no run branch created on a missing-base abort"
+    );
+    assert!(
+        agent.planned.borrow().is_empty(),
+        "nothing planned on abort"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
 fn gitignore_gets_ralphy_on_first_run() {
     let repo = init_repo("gitignore");
     // Reset .gitignore to one that does NOT mention .ralphy/, and commit it so the

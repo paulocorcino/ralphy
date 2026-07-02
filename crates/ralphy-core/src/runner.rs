@@ -211,41 +211,9 @@ pub enum BranchMode {
     Current,
 }
 
-/// Everything the core needs for one run — model-free by construction (model and
-/// effort are adapter concerns, set when the adapter is built).
-pub struct RunConfig {
-    /// Git toplevel of the repo to work, in place.
-    pub repo_root: std::path::PathBuf,
-    /// Commit-ish the run branch is cut from (e.g. `origin/main`).
-    pub base_branch: String,
-    /// Plan only; make no source changes and leave no branch behind.
-    pub dry_run: bool,
-    /// Run identifier, also the run branch suffix: `afk/run-<stamp>`.
-    pub stamp: String,
-    /// Where commits land: a fresh run branch (`New`) or the current branch
-    /// (`Current`). The single-issue `run` path is effectively always `New`.
-    pub branch_mode: BranchMode,
-}
-
-#[derive(Debug)]
-pub enum RunOutcome {
-    /// Planned and stopped; the empty run branch was dropped.
-    DryRun { open_steps: usize },
-    /// Executed to an [`Outcome`] (later slice).
-    Executed(Outcome),
-}
-
-#[derive(Debug)]
-pub struct RunReport {
-    pub branch: String,
-    pub orig_branch: String,
-    pub outcome: RunOutcome,
-}
-
 /// Verify preconditions and prepare the branch commits will land on, returning
-/// `(orig_branch, branch, compare_ref)`. Shared by [`run`] and [`run_queue`] so
-/// both entry points agree on the clean-tree check, the `.gitignore` ensure, and
-/// the detached-HEAD guard.
+/// `(orig_branch, branch, compare_ref)`. The single entry point for [`run_queue`]
+/// to the clean-tree check, the `.gitignore` ensure, and the detached-HEAD guard.
 ///
 /// In `New` mode a fresh `afk/run-<stamp>` branch is cut off `base_branch` (which
 /// must exist) and `compare_ref == base_branch`. In `Current` mode no branch is
@@ -309,51 +277,6 @@ fn prepare_branch(
     Ok(prepared)
 }
 
-/// Plan (and, in a non-dry run, execute) a single issue onto a fresh run branch.
-pub fn run(cfg: &RunConfig, issue: &Issue, agent: &dyn Agent) -> Result<RunReport> {
-    let repo = cfg.repo_root.as_path();
-    let ws = Workspace::new(repo);
-
-    let (orig, branch, _compare_ref) =
-        prepare_branch(repo, &cfg.base_branch, &cfg.stamp, cfg.branch_mode)?;
-
-    // Plan, restoring the repo on any failure so a dry run never strands a branch.
-    let plan = match agent.plan(issue, &ws) {
-        Ok(p) => p,
-        Err(e) => {
-            restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-            return Err(e);
-        }
-    };
-    info!(
-        open_steps = plan.open_steps,
-        up = plan.usage.input,
-        cr = plan.usage.cache_read,
-        cw = plan.usage.cache_creation,
-        out = plan.usage.output,
-        model = plan.usage.model.as_deref().unwrap_or(""),
-        "plan written"
-    );
-
-    if cfg.dry_run {
-        restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-        return Ok(RunReport {
-            branch,
-            orig_branch: orig,
-            outcome: RunOutcome::DryRun {
-                open_steps: plan.open_steps,
-            },
-        });
-    }
-
-    let Execution { outcome, usage: _ } = agent.execute(&plan, &ws)?;
-    Ok(RunReport {
-        branch,
-        orig_branch: orig,
-        outcome: RunOutcome::Executed(outcome),
-    })
-}
-
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";
 
@@ -378,7 +301,8 @@ fn is_human_gate(labels: &[String]) -> bool {
 /// follow-the-split blocker gate handles the rest.
 const NEEDS_SPLIT_LABEL: &str = "needs-split";
 
-/// Everything the core needs to work a whole queue. Like [`RunConfig`] but the
+/// Everything the core needs to work a whole queue — model-free by construction
+/// (model and effort are adapter concerns, set when the adapter is built). The
 /// issues come from the caller (built via [`crate::github::list_queue`]) so the
 /// loop itself stays `gh`-free and testable.
 pub struct QueueConfig {
