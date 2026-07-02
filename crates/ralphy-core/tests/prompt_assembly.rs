@@ -1,14 +1,15 @@
-//! Anti-drift gate for the plan prompt variants (issue #71).
+//! Anti-drift gate for the plan prompt variants (issues #71, #75).
 //!
-//! The three plan prompt artifacts (`prompt.plan.md`, `prompt.plan.codex.md`,
-//! `prompt.plan.opencode.md`) are ASSEMBLED from one canonical template plus a
-//! small per-vendor overlay under `assets/prompts/plan/`. The adapters keep
-//! embedding the assembled artifacts via `include_str!` — this test re-runs the
-//! assembly and fails if any artifact no longer matches template + overlay,
-//! i.e. if the shared prose was edited in one artifact instead of the template.
+//! The four plan prompt artifacts (`prompt.plan.md`, `prompt.plan.codex.md`,
+//! `prompt.plan.opencode.md`, `prompt.plan.staged.md`) are ASSEMBLED from one
+//! canonical template plus a small per-variant overlay under
+//! `assets/prompts/plan/`. The adapters keep embedding the assembled artifacts
+//! via `include_str!` — this test re-runs the assembly and fails if any
+//! artifact no longer matches template + overlay, i.e. if the shared prose was
+//! edited in one artifact instead of the template.
 //!
 //! To change a prompt: edit `assets/prompts/plan/template.md` (shared prose) or
-//! `assets/prompts/plan/overlay.<vendor>.md` (vendor block), then regenerate
+//! `assets/prompts/plan/overlay.<variant>.md` (variant block), then regenerate
 //! the artifacts with:
 //!
 //! ```sh
@@ -19,17 +20,22 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-const SLOTS: [&str; 4] = [
+const SLOTS: [&str; 8] = [
     "execution-model",
     "self-review-step",
     "self-review-guidance",
     "ledger-example",
+    "planning-mode-intro",
+    "skill-invocation",
+    "stages-section",
+    "mode-rules",
 ];
 
-const VENDORS: [(&str, &str); 3] = [
+const VARIANTS: [(&str, &str); 4] = [
     ("claude", "prompt.plan.md"),
     ("codex", "prompt.plan.codex.md"),
     ("opencode", "prompt.plan.opencode.md"),
+    ("staged", "prompt.plan.staged.md"),
 ];
 
 fn prompts_dir() -> PathBuf {
@@ -91,7 +97,7 @@ fn assemble(template: &str, slots: &BTreeMap<String, String>) -> String {
     out
 }
 
-/// The three checked-in plan prompt artifacts must be exactly what template +
+/// The four checked-in plan prompt artifacts must be exactly what template +
 /// overlay assemble to. A shared-prose edit made in one artifact (instead of in
 /// `plan/template.md`) diverges from the assembly and fails here; so does an
 /// edited template whose artifacts were not regenerated.
@@ -102,15 +108,15 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
         .expect("assets/prompts/plan/template.md must exist");
 
     let regen = std::env::var_os("RALPHY_REGEN_PROMPTS").is_some();
-    for (vendor, artifact) in VENDORS {
-        let overlay_path = dir.join(format!("plan/overlay.{vendor}.md"));
+    for (variant, artifact) in VARIANTS {
+        let overlay_path = dir.join(format!("plan/overlay.{variant}.md"));
         let overlay = fs::read_to_string(&overlay_path)
             .unwrap_or_else(|e| panic!("{} must exist: {e}", overlay_path.display()));
         let slots = parse_overlay(&overlay);
         assert_eq!(
             slots.len(),
             SLOTS.len(),
-            "overlay.{vendor}.md must define exactly the {} known slots, found: {:?}",
+            "overlay.{variant}.md must define exactly the {} known slots, found: {:?}",
             SLOTS.len(),
             slots.keys().collect::<Vec<_>>()
         );
@@ -126,7 +132,7 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
             .unwrap_or_else(|e| panic!("{} must exist: {e}", artifact_path.display()));
         assert_eq!(
             assembled, on_disk,
-            "{artifact} drifted from plan/template.md + plan/overlay.{vendor}.md — \
+            "{artifact} drifted from plan/template.md + plan/overlay.{variant}.md — \
              edit the template/overlay sources and regenerate with \
              `RALPHY_REGEN_PROMPTS=1 cargo test -p ralphy-core --test prompt_assembly` \
              (never edit the assembled artifact directly)"
@@ -134,14 +140,14 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
     }
 }
 
-/// The vendor-specific surface is ONLY the four named slots: every overlay must
+/// The variant-specific surface is ONLY the named slots: every overlay must
 /// define all of them and nothing else, so a new divergence cannot sneak in as
 /// an extra ad-hoc slot without widening this list deliberately.
 #[test]
 fn overlays_define_exactly_the_known_slots() {
     let dir = prompts_dir();
-    for (vendor, _) in VENDORS {
-        let overlay = fs::read_to_string(dir.join(format!("plan/overlay.{vendor}.md")))
+    for (variant, _) in VARIANTS {
+        let overlay = fs::read_to_string(dir.join(format!("plan/overlay.{variant}.md")))
             .expect("overlay must exist");
         let slots = parse_overlay(&overlay);
         let names: Vec<&str> = slots.keys().map(String::as_str).collect();
@@ -149,7 +155,7 @@ fn overlays_define_exactly_the_known_slots() {
         expected.sort_unstable();
         assert_eq!(
             names, expected,
-            "overlay.{vendor}.md slot set diverged from the canonical list"
+            "overlay.{variant}.md slot set diverged from the canonical list"
         );
     }
 }

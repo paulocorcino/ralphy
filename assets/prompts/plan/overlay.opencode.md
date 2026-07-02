@@ -18,3 +18,7 @@
 - The LAST step is always a green-build/test gate.
 <!-- slot: ledger-example -->
 - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
+<!-- slot: planning-mode-intro -->
+<!-- slot: skill-invocation -->
+<!-- slot: stages-section -->
+<!-- slot: mode-rules -->
