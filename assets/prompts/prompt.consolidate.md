@@ -33,6 +33,8 @@ before relying on one.
 <the exact, copy-pasteable command sequences, each with a one-line comment
 naming what it proves>
 ```
+
+<!-- folded: #3, #16, #21 -->
 ```
 
 ## Rules
@@ -60,10 +62,19 @@ naming what it proves>
   majority wording: a gate that cannot fail is not a gate (e.g. `gofmt -l .`
   in a `&&` chain exits 0 even with unformatted files — `test -z "$(gofmt -l
   .)"` actually gates). Judge each variant by whether it fails on violation.
-- Curate, don't accumulate: the whole file must stay under ~150 lines. Cut
-  narrative, keep symptom + fix; keep exact values (ports, flags, literal
+- Curate, don't accumulate: the whole file must stay under ~150 lines — the
+  runner REJECTS the whole consolidation (nothing archived) past 200 lines.
+  Cut narrative, keep symptom + fix; keep exact values (ports, flags, literal
   strings) — they are the payload. When over budget, drop the facts least
   likely to recur (one-off fixture details) before platform/toolchain traps.
+- The VERY LAST line of the file must be exactly one marker
+  `<!-- folded: #3, #16, #21 -->` listing every loose `issue-<N>.md` you fully
+  folded in this session (a note whose facts were all duplicates of existing
+  bullets counts as folded — aggregate its number into their provenance). If
+  you folded nothing, write `<!-- folded: none -->`. This line is the archive
+  contract: the runner archives ONLY the notes listed, so leave off any note
+  you could not fold — it stays loose for the next pass. It goes after any
+  `<!-- removed ... -->` comments.
 - Never invent: every bullet must trace to a loose note, the previous
   KNOWLEDGE.md, or something you verified in the tree this session.
 - Do NOT delete, move, or rename any files — the runner archives the consumed
