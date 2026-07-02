@@ -27,9 +27,9 @@ pub struct Issue {
 /// A normalized, vendor-agnostic token-usage record (ADR-0008 D4). Each adapter
 /// fills it from the counts its CLI already reports; the core only sums it and
 /// never branches on `model`. `cache_read`/`cache_creation` are kept as separate
-/// fields (not folded into `input`) because Claude reports cache reads at ~1/10th
-/// the price of fresh input, so collapsing them would overstate cost by an order
-/// of magnitude (ADR-0008 D2). `model` rides along because price resolves on it
+/// fields (not folded into `input`) because vendors price cache reads at a
+/// fraction (~1/10th) of fresh input, so collapsing them would overstate cost by
+/// an order of magnitude (ADR-0008 D2). `model` rides along because price resolves on it
 /// (D8) and is only knowable per-record.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
@@ -245,14 +245,6 @@ impl Workspace {
         self.ralphy_dir().join("runs").join(stamp)
     }
 
-    /// `<repo>/.ralphy/plugin` — the Claude Code plugin Ralphy materializes each
-    /// run (the `reviewer` / `staged-plan` skills the prompts depend on). Passed
-    /// to every `claude` call via `--plugin-dir`, so a run never depends on
-    /// whatever skills happen to be installed globally on the machine.
-    pub fn plugin_dir(&self) -> PathBuf {
-        self.ralphy_dir().join("plugin")
-    }
-
     /// `<repo>/.ralphy/settings.json` — the per-repo operator config store
     /// (ADR-0010). Gitignored like everything else under `.ralphy/`.
     pub fn settings_path(&self) -> PathBuf {
@@ -271,14 +263,14 @@ mod tests {
             output: 1,
             cache_read: 100,
             cache_creation: 5,
-            model: Some("claude-opus-4-8".into()),
+            model: Some("model-a".into()),
         };
         let b = Usage {
             input: 20,
             output: 2,
             cache_read: 200,
             cache_creation: 7,
-            model: Some("claude-sonnet-4-6".into()),
+            model: Some("model-b".into()),
         };
         a.add_tokens(&b);
         assert_eq!(a.input, 30);
@@ -286,7 +278,7 @@ mod tests {
         assert_eq!(a.cache_read, 300);
         assert_eq!(a.cache_creation, 12);
         // `model` is untouched by summing — it stays the receiver's value.
-        assert_eq!(a.model.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(a.model.as_deref(), Some("model-a"));
         assert_eq!(a.total(), 345);
     }
 

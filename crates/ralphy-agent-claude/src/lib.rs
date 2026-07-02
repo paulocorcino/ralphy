@@ -57,13 +57,20 @@ const SETTINGS_JSON: &str = r#"{"skipDangerousModePermissionPrompt":true,"skipAu
 /// lives at the repo root under `assets/plugin`.
 static PLUGIN: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin");
 
+/// `<repo>/.ralphy/plugin` — where this adapter materializes its embedded
+/// Claude Code plugin. Derived from the vendor-neutral `ralphy_dir()`; the
+/// core does not know the subdir exists (ADR-0002 amendment, #79).
+fn plugin_dir(ws: &Workspace) -> PathBuf {
+    ws.ralphy_dir().join("plugin")
+}
+
 /// Materialize the embedded plugin into the workspace's `.ralphy/plugin` so it
 /// can be handed to `claude` via `--plugin-dir`. Re-extracted from scratch each
 /// call (the tree is tiny) so a stale or partly-written copy never lingers, and
 /// the run never depends on whatever skills are installed globally. Returns the
 /// plugin directory to pass on the command line.
 fn materialize_plugin(ws: &Workspace) -> Result<PathBuf> {
-    let dir = ws.plugin_dir();
+    let dir = plugin_dir(ws);
     ralphy_adapter_support::materialize_assets(&PLUGIN, &dir, None)?;
     Ok(dir)
 }
@@ -1647,7 +1654,7 @@ mod tests {
         let ws = Workspace::new(&base);
 
         let dir = materialize_plugin(&ws).expect("materialize");
-        assert_eq!(dir, ws.plugin_dir());
+        assert_eq!(dir, plugin_dir(&ws));
         assert!(
             dir.join(".claude-plugin/plugin.json").is_file(),
             "plugin manifest must be materialized"
