@@ -5,7 +5,7 @@
 //! table; the ledger is never touched.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -29,7 +29,10 @@ pub struct UsageArgs {
     #[arg(long)]
     pub since: Option<String>,
 
-    /// Read this `owner/repo` project's ledger instead of resolving from `--repo`.
+    /// Read another project's ledger instead of resolving from `--repo`. Accepts
+    /// either a verbatim `owner/repo` slug OR a path to a repo (e.g. `.` or an
+    /// absolute path), which is resolved to its slug the same way `--repo` is —
+    /// so `--project .` means "this repo", not a project literally named ".".
     #[arg(long)]
     pub project: Option<String>,
 
@@ -252,20 +255,41 @@ pub fn export_json(rows: &[UsageRow], table: &PriceTable) -> Result<String> {
     ))?)
 }
 
+/// Resolve the ledger project slug. An explicit `--project` that names an existing
+/// directory (`.`, `./sub`, an absolute repo path) is resolved to its git slug —
+/// the same resolution `--repo` uses — so a path is never mistaken for a project
+/// literally named after that path. Any other `--project` value is a verbatim
+/// `owner/repo` slug. With no `--project`, `--repo` is resolved.
+fn resolve_slug(project: Option<&str>, repo: &Path) -> Result<String> {
+    match project {
+        Some(p) if Path::new(p).is_dir() => {
+            let root = git::resolve_toplevel(Path::new(p))?;
+            Ok(git::project_slug(&root))
+        }
+        Some(p) => Ok(p.to_string()),
+        None => {
+            let root = git::resolve_toplevel(repo)?;
+            Ok(git::project_slug(&root))
+        }
+    }
+}
+
 /// `ralphy usage`: read the project's ledger and print the balance / group-by cut
 /// or an export.
 pub fn usage_cmd(args: UsageArgs) -> Result<()> {
-    let slug = match &args.project {
-        Some(p) => p.clone(),
-        None => {
-            let repo_root = git::resolve_toplevel(&args.repo)?;
-            git::project_slug(&repo_root)
-        }
-    };
+    let slug = resolve_slug(args.project.as_deref(), &args.repo)?;
 
     let mut rows = read_project_rows(&slug);
     if let Some(since) = &args.since {
         rows = filter_since(rows, since);
+    }
+
+    // A silent `balance: 0` reads as "this repo has no usage" even when the real
+    // cause is a slug that matched nothing — the exact footgun `--project <path>`
+    // used to hit. Name the resolved slug on stderr so the zero is legible without
+    // polluting stdout (which CSV/JSON consumers parse).
+    if rows.is_empty() {
+        eprintln!("note: no ledger rows for project '{slug}' (nothing recorded, or the --project slug does not match)");
     }
 
     let table = PriceTable::load();
@@ -338,6 +362,24 @@ mod tests {
                 tok(50, 5),
             ),
         ]
+    }
+
+    #[test]
+    fn resolve_slug_passes_through_a_verbatim_owner_repo() {
+        // A slug that is not an existing directory is taken verbatim — no git
+        // resolution, so an offline `--project owner/repo` still reads that ledger.
+        let slug = resolve_slug(Some("acme/widgets"), Path::new(".")).expect("verbatim slug");
+        assert_eq!(slug, "acme/widgets");
+    }
+
+    #[test]
+    fn resolve_slug_treats_a_dot_project_as_a_path_not_a_literal_slug() {
+        // `.` is an existing directory, so it must NOT survive as the literal slug
+        // "." — it resolves through git like `--repo` does. The crate dir is inside
+        // the ralphy repo, so resolution yields a real slug distinct from ".".
+        let slug = resolve_slug(Some("."), Path::new(".")).expect("path resolves");
+        assert_ne!(slug, ".", "`.` must be resolved, not used as a literal slug");
+        assert!(!slug.is_empty());
     }
 
     #[test]
