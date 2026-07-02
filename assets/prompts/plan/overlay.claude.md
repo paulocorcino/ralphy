@@ -30,3 +30,7 @@
   LAST step is always a green-build/test gate.
 <!-- slot: ledger-example -->
 - [verified] cargo test passes with new test covering parse_ledger — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
+<!-- slot: planning-mode-intro -->
+<!-- slot: skill-invocation -->
+<!-- slot: stages-section -->
+<!-- slot: mode-rules -->
