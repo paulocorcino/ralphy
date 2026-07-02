@@ -430,6 +430,55 @@ fn accumulate_by_model(by_model: &mut BTreeMap<String, Usage>, usage: &Usage) {
         .add_tokens(usage);
 }
 
+/// One run's ledger identity (ADR-0008 D6/D7, read once from git) plus its
+/// token accumulators, threaded through the phases so every phase line is
+/// built and folded in one place instead of four hand-rolled copies.
+struct RunLedger<'a> {
+    sink: &'a dyn LedgerSink,
+    project: String,
+    actor_email: String,
+    actor_name: String,
+    /// The adapter label, `agent.name()`.
+    agent: &'static str,
+    run_usage: Usage,
+    run_usage_by_model: BTreeMap<String, Usage>,
+}
+
+impl RunLedger<'_> {
+    /// Append one phase line (best-effort — a write failure warns, never stops
+    /// the run, D9) and fold the usage into the run totals.
+    fn record_phase(&mut self, issue: u64, phase: &str, outcome: &str, usage: &Usage) {
+        let rec = LedgerRecord {
+            project: self.project.clone(),
+            actor_email: self.actor_email.clone(),
+            actor_name: self.actor_name.clone(),
+            ralphy_version: env!("CARGO_PKG_VERSION").into(),
+            issue,
+            phase: phase.into(),
+            agent: self.agent.into(),
+            model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
+            outcome: outcome.into(),
+            tokens: usage.clone(),
+            ts: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(e) = self.sink.append(&rec) {
+            warn!(number = issue, error = %e, "writing {} usage ledger line failed", phase);
+        }
+        self.run_usage.add_tokens(usage);
+        accumulate_by_model(&mut self.run_usage_by_model, usage);
+    }
+
+    /// [`record_phase`](Self::record_phase) for the conditional repair phases:
+    /// a phase that consumed nothing writes no line AND folds nothing — an
+    /// unconditional fold would plant a zero-usage `unknown` key in the
+    /// per-model split the report exposes.
+    fn record_phase_if_used(&mut self, issue: u64, phase: &str, outcome: &str, usage: &Usage) {
+        if usage.total() > 0 {
+            self.record_phase(issue, phase, outcome, usage);
+        }
+    }
+}
+
 /// The close comment the runner leaves on a green queue issue: the ps1-oracle
 /// close line plus the protocol-lint result (ADR-0015) — ✓/✗ per structural
 /// check, with a loud warning when the issue closed carrying violations.
@@ -782,16 +831,20 @@ fn run_queue_with(
 
     // Identity for every ledger line this run writes (ADR-0008 D6/D7), read once
     // from git: the project slug (remote, or a path-hash fallback) and the actor.
-    let project = repo.project_slug();
-    let actor_email = repo.user_email().unwrap_or_default();
-    let actor_name = repo.user_name().unwrap_or_default();
+    // The accumulators fold every phase's usage into the run totals; the per-model
+    // split feeds the read-time USD footer (D8).
+    let mut ledger = RunLedger {
+        sink,
+        project: repo.project_slug(),
+        actor_email: repo.user_email().unwrap_or_default(),
+        actor_name: repo.user_name().unwrap_or_default(),
+        agent: agent.name(),
+        run_usage: Usage::default(),
+        run_usage_by_model: BTreeMap::new(),
+    };
 
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
-    let mut run_usage = Usage::default();
-    // Per-model token accumulation for the read-time USD footer (D8): keyed by the
-    // phase's resolved model, summed across every phase the run worked.
-    let mut run_usage_by_model: BTreeMap<String, Usage> = BTreeMap::new();
 
     'queue: for issue in queue {
         // Don't start a new issue past the global budget. Work already committed
@@ -1022,24 +1075,7 @@ fn run_queue_with(
         // ledger. The plan line carries `ok` — the issue's terminal outcome is its
         // execute line's, joined by `issue` at read-time. Best-effort: a write
         // failure warns, never stops the run (D9).
-        let plan_rec = LedgerRecord {
-            project: project.clone(),
-            actor_email: actor_email.clone(),
-            actor_name: actor_name.clone(),
-            ralphy_version: env!("CARGO_PKG_VERSION").into(),
-            issue: issue.number,
-            phase: "plan".into(),
-            agent: agent.name().into(),
-            model: plan.usage.model.clone().unwrap_or_else(|| "unknown".into()),
-            outcome: "ok".into(),
-            tokens: plan.usage.clone(),
-            ts: chrono::Utc::now().to_rfc3339(),
-        };
-        if let Err(e) = sink.append(&plan_rec) {
-            warn!(number = issue.number, error = %e, "writing plan usage ledger line failed");
-        }
-        run_usage.add_tokens(&plan.usage);
-        accumulate_by_model(&mut run_usage_by_model, &plan.usage);
+        ledger.record_phase(issue.number, "plan", "ok", &plan.usage);
 
         // An infeasible plan (no actionable steps) is a skip, not a failure, and
         // not green — the runner neither closes it nor stops the run. The
@@ -1162,24 +1198,12 @@ fn run_queue_with(
         // Record the execute phase's accumulated token usage with this issue's
         // terminal outcome (ADR-0008 D6). One line per issue regardless of how
         // many resume attempts ran. Best-effort (D9).
-        let exec_rec = LedgerRecord {
-            project: project.clone(),
-            actor_email: actor_email.clone(),
-            actor_name: actor_name.clone(),
-            ralphy_version: env!("CARGO_PKG_VERSION").into(),
-            issue: issue.number,
-            phase: "execute".into(),
-            agent: agent.name().into(),
-            model: exec_usage.model.clone().unwrap_or_else(|| "unknown".into()),
-            outcome: outcome_label(&outcome).into(),
-            tokens: exec_usage.clone(),
-            ts: chrono::Utc::now().to_rfc3339(),
-        };
-        if let Err(e) = sink.append(&exec_rec) {
-            warn!(number = issue.number, error = %e, "writing execute usage ledger line failed");
-        }
-        run_usage.add_tokens(&exec_usage);
-        accumulate_by_model(&mut run_usage_by_model, &exec_usage);
+        ledger.record_phase(
+            issue.number,
+            "execute",
+            outcome_label(&outcome),
+            &exec_usage,
+        );
 
         if outcome == Outcome::Done {
             // Deterministic protocol lint (ADR-0015): before anything else,
@@ -1222,34 +1246,16 @@ fn run_queue_with(
             }
             clear_protocol_failure(&ws);
 
-            if protocol_usage.total() > 0 {
-                let protocol_rec = LedgerRecord {
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
-                    actor_name: actor_name.clone(),
-                    ralphy_version: env!("CARGO_PKG_VERSION").into(),
-                    issue: issue.number,
-                    phase: "protocol-repair".into(),
-                    agent: agent.name().into(),
-                    model: protocol_usage
-                        .model
-                        .clone()
-                        .unwrap_or_else(|| "unknown".into()),
-                    outcome: if lint.passed() {
-                        "done"
-                    } else {
-                        "protocol-failed"
-                    }
-                    .into(),
-                    tokens: protocol_usage.clone(),
-                    ts: chrono::Utc::now().to_rfc3339(),
-                };
-                if let Err(e) = sink.append(&protocol_rec) {
-                    warn!(number = issue.number, error = %e, "writing protocol-repair usage ledger line failed");
-                }
-                run_usage.add_tokens(&protocol_usage);
-                accumulate_by_model(&mut run_usage_by_model, &protocol_usage);
-            }
+            ledger.record_phase_if_used(
+                issue.number,
+                "protocol-repair",
+                if lint.passed() {
+                    "done"
+                } else {
+                    "protocol-failed"
+                },
+                &protocol_usage,
+            );
 
             // A usage limit mid-bounce is the run's limit — no tokens are left
             // to work the rest of the queue, so stop on the reset.
@@ -1394,34 +1400,16 @@ fn run_queue_with(
             // run totals and the per-issue ledger are honest whether the gate went
             // green or the budget ran out (ADR-0008). One `repair` line per issue,
             // regardless of how many attempts ran. Best-effort.
-            if repair_usage.total() > 0 {
-                let repair_rec = LedgerRecord {
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
-                    actor_name: actor_name.clone(),
-                    ralphy_version: env!("CARGO_PKG_VERSION").into(),
-                    issue: issue.number,
-                    phase: "repair".into(),
-                    agent: agent.name().into(),
-                    model: repair_usage
-                        .model
-                        .clone()
-                        .unwrap_or_else(|| "unknown".into()),
-                    outcome: if matches!(gate, GateDecision::Failed(_)) {
-                        "verify-failed"
-                    } else {
-                        "done"
-                    }
-                    .into(),
-                    tokens: repair_usage.clone(),
-                    ts: chrono::Utc::now().to_rfc3339(),
-                };
-                if let Err(e) = sink.append(&repair_rec) {
-                    warn!(number = issue.number, error = %e, "writing repair usage ledger line failed");
-                }
-                run_usage.add_tokens(&repair_usage);
-                accumulate_by_model(&mut run_usage_by_model, &repair_usage);
-            }
+            ledger.record_phase_if_used(
+                issue.number,
+                "repair",
+                if matches!(gate, GateDecision::Failed(_)) {
+                    "verify-failed"
+                } else {
+                    "done"
+                },
+                &repair_usage,
+            );
 
             match gate {
                 GateDecision::Failed(summary) => {
@@ -1617,8 +1605,8 @@ fn run_queue_with(
         stop,
         commits,
         oneline,
-        run_usage,
-        run_usage_by_model,
+        run_usage: ledger.run_usage,
+        run_usage_by_model: ledger.run_usage_by_model,
     })
 }
 
