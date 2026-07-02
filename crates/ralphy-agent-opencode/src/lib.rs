@@ -306,6 +306,11 @@ impl OpenCodeAgent {
 /// skills path (D7), runs in the repo root, and defensively removes both
 /// `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` so an inherited key can't switch
 /// the run to metered API billing (D6). The prompt is written on stdin.
+///
+/// GUARD ASYMMETRY: `--dangerously-skip-permissions` runs with no equivalent
+/// of the Claude adapter's PreToolUse guard hook (opencode has no such hook
+/// point wired here) — safety rests on the isolated run branch and the
+/// prompt's hard rules.
 fn build_opencode_command(
     model: Option<&str>,
     variant: Option<&str>,

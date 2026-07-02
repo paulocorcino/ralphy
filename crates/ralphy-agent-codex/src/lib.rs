@@ -330,6 +330,10 @@ fn tier_to_effort(tier: Option<&str>) -> &'static str {
 /// ADR-0004 D5), and pipes stdin/stdout/stderr. The prompt is written on stdin
 /// (the trailing `-`); the agent's final message is captured to `out_path` for the
 /// sentinel read.
+///
+/// GUARD ASYMMETRY: `danger-full-access` runs with no equivalent of the Claude
+/// adapter's PreToolUse guard hook (codex-cli has no such hook point) — safety
+/// here rests on the isolated run branch and the prompt's hard rules.
 fn build_codex_command(model: &str, effort: &str, root: &Path, out_path: &Path) -> Command {
     let mut cmd = Command::new("codex");
     cmd.arg("exec")

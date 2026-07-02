@@ -249,9 +249,12 @@ travel everywhere.
 
 ## Hard rules
 - NEVER run `git push`, `git reset --hard`, `git rebase`, `git checkout`,
-  `git switch`, `gh pr ...`, or a recursive delete. A hook blocks these. You
-  are on a shared run branch that a human reviews and merges by hand — just
-  commit your work onto it; never push, switch, or open a PR.
+  `git switch`, `gh pr ...`, or a recursive delete that reaches OUTSIDE the
+  worktree or the system temp dir. A hook blocks these. Recursive deletes
+  inside the worktree or temp (build artifacts, `node_modules`, browser
+  profiles) are fine. You are on a shared run branch that a human reviews and
+  merges by hand — just commit your work onto it; never push, switch, or open
+  a PR.
 - `.ralphy/` is gitignored BY THE RUNNER, deliberately: it is scratch, not
   deliverable. Never commit anything under it, never `git add --force` it,
   and never edit `.gitignore` to expose it. `plan.md` durability comes from

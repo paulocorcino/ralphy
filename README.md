@@ -249,8 +249,10 @@ Ralphy is built to run while you sleep, so it ships its own guardrails:
   pass — not because the agent said it was done. See
   [Verifying before close](#verifying-before-close).
 - **Command guardrails** (Claude) — destructive commands like `git push`, `reset --hard`,
-  branch switches, and `gh pr merge` are blocked. For Codex/OpenCode, safety rests on the
-  isolated run branch and the built-in self-review.
+  branch switches, and `gh pr merge` are blocked; recursive deletes are allowed inside the
+  worktree and the system temp dir (build artifacts, e2e browser profiles) but blocked
+  everywhere else. For Codex/OpenCode, safety rests on the isolated run branch and the
+  built-in self-review.
 
 ## Verifying before close
 
