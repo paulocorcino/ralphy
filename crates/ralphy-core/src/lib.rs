@@ -40,6 +40,7 @@ pub mod ledger;
 pub mod plan;
 pub mod protocol;
 pub mod references;
+pub mod repo;
 pub mod settings;
 pub mod verify;
 
@@ -54,6 +55,7 @@ pub use init_session::{
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
 pub use references::Reference;
+pub use repo::{GitRepo, Repo};
 pub use runner::{
     run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, StopReason,
     WaitOutcome, WallClock, STOP_BEFORE_LABEL,

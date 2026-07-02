@@ -49,7 +49,7 @@ If two specs / ADRs / clauses disagree, cite both and name the controlling claus
 - `LOW`: minor drift or local cleanup with real but limited risk.
 - `INFO`: useful context only; keep out of `## Findings` unless `## Notes` needs it.
 
-The main reviewer may **downgrade** a subagent `severity_signal` after adjudication, but **may not promote** above the subagent's declared signal. This is defense against a subagent that overreaches in isolated context.
+The main reviewer may **downgrade** a subagent `severity_signal` after adjudication, but **may not promote** above the subagent's declared signal on that signal alone. This is defense against a subagent that overreaches in isolated context. Exception: if the main reviewer independently reproduces the evidence this run (re-runs the failing check, walks the cited path itself), that independent evidence is adjudicated on its own merits under the calibration rules — the subagent's lower signal does not cap it.
 
 **HIGH → verdict mapping.** A `HIGH` that violates a *dispositive* brief acceptance criterion forces `verdict: BLOCKED`. APPROVED-WITH-FIXES is reserved for `HIGH` findings that do not gate the brief's primary mandate. "Whose fault is the gap" (channel-side, harness-side, upstream issue filed) does not change this — if the brief says the work is not done until X passes and X does not pass, the verdict is BLOCKED. Re-scope is the user's call, not the reviewer's.
 
@@ -161,20 +161,22 @@ Before emitting the final report, write the draft `## Coverage` block and the fu
 
 ```
 # POSIX
-python3 "<skill-dir>/scripts/fact_pack.py" --repo <repo> --base <base> --target HEAD > /tmp/fact_pack.json
+python3 "<skill-dir>/scripts/fact_pack.py" --repo <repo> --base <base> --target HEAD --out /tmp/fact_pack.json
 python3 "<skill-dir>/scripts/audit.py" --coverage /tmp/coverage.md --fact-pack /tmp/fact_pack.json --not-exercised /tmp/not_exercised.md --report /tmp/report.md
 
 # Windows (PowerShell)
-python "<skill-dir>\scripts\fact_pack.py" --repo <repo> --base <base> --target HEAD > "$env:TEMP\fact_pack.json"
+python "<skill-dir>\scripts\fact_pack.py" --repo <repo> --base <base> --target HEAD --out "$env:TEMP\fact_pack.json"
 python "<skill-dir>\scripts\audit.py" --coverage "$env:TEMP\coverage.md" --fact-pack "$env:TEMP\fact_pack.json" --not-exercised "$env:TEMP\not_exercised.md" --report "$env:TEMP\report.md"
 ```
+
+Always write the fact pack via `--out`, never via shell `>` redirection — on Windows PowerShell the `>` operator re-encodes stdout (UTF-16 on 5.1), which breaks the UTF-8 read in `audit.py`.
 
 - `<repo>` is the target repo's working tree. `<base>` matches the report's `base:` field (e.g. `origin/main`).
 - `--target HEAD` is the right choice when the work under review is committed to a branch (the common case). Use `--target working-tree` only when the work is uncommitted on disk — otherwise `git diff <base>` against an unchanged working tree may underreport.
 - **Tmp-file pre-flight.** Before writing `<tmp-dir>/coverage.md`, `<tmp-dir>/not_exercised.md`, or `<tmp-dir>/report.md`, delete any stale copies in a single call (`rm -f <tmp-dir>/coverage.md <tmp-dir>/not_exercised.md <tmp-dir>/report.md` on POSIX; `Remove-Item -Force -ErrorAction SilentlyContinue "$env:TEMP\coverage.md","$env:TEMP\not_exercised.md","$env:TEMP\report.md"` on Windows). This prevents the Edit-tool "must Read before Write" failure when a stale file from a prior run exists at those paths.
 - `<tmp-dir>/coverage.md` contains the literal `## Coverage` block.
 - `<tmp-dir>/not_exercised.md` contains the literal `not exercised:` block from the report header (one line per command, with concrete blocker). Omit `--not-exercised` if the report's `not exercised:` is `none`.
-- `<tmp-dir>/report.md` contains the full draft report body (or, at minimum, `## Findings` and `## Verification`). The audit scans this body for material file citations — files cited there count as implicit-reviewed and are removed from `gap`. Coverage format F has no positive marker by design; `--report` is how the audit observes the citations already in the report. Omit `--report` only if there is no `## Findings` to scan.
+- `<tmp-dir>/report.md` contains the full draft report body (or, at minimum, `## Findings` and `## Verification`). The audit scans only the `## Findings` and `## Verification` sections for material file citations — files cited there count as implicit-reviewed and are removed from `gap`; a mention in `## Notes` or `## Coverage` does not count. Coverage format F has no positive marker by design; `--report` is how the audit observes the citations already in the report. Omit `--report` only if there is no `## Findings` to scan AND the mandatory threshold is not crossed — above the threshold the audit needs the report body to verify the `invoked:` line and fails with `format-defect: subagent-mandate-unverifiable` (exit 2) without it.
 - **First-pass `gap` is expected, not a defect.** The first run of `audit.py` typically returns `audit: gap` listing files neither cited in the report nor placed in `not-reviewed`. Treat this as a worklist: for each gap file, either (a) cite it in `## Findings` if it carries a finding, or (b) add it to `not-reviewed` (as an enumerated path or under a `category:` prefix) with a one-phrase reason. Re-run `audit.py` until it returns `pass` or `partial`. Do not edit the audit script to silence the gap.
 
 Place the literal stdout of `audit.py` verbatim in the report's `audit_output:` trailer and populate the header `audit:` field from the first line. The report must always carry a populated `audit:` value (`pass | partial | gap | scope-auto-narrowed`).

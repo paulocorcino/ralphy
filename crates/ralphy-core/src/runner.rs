@@ -12,11 +12,12 @@ use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use tracing::{info, warn};
 
 use crate::{
-    acceptance, blocked, git, gitignore, handoff, knowledge,
-    ledger::{self, LedgerRecord},
+    acceptance, blocked, gitignore, handoff, knowledge,
+    ledger::{FileLedger, LedgerRecord, LedgerSink},
     protocol, references,
+    repo::{GitRepo, Repo},
     verify::{self, VerifySpec},
-    Agent, Execution, Issue, IssueTracker, Outcome, PlanLimit, Usage, Workspace,
+    Agent, Execution, Issue, IssueTracker, Outcome, Plan, PlanLimit, Usage, Workspace,
 };
 
 /// Consecutive plan-time usage limits that make no progress before the runner
@@ -221,29 +222,30 @@ pub enum BranchMode {
 /// HEAD SHA captured before any work, so the commit count means "work this run
 /// added" in both modes.
 fn prepare_branch(
-    repo: &Path,
+    repo: &dyn Repo,
+    repo_root: &Path,
     base_branch: &str,
     stamp: &str,
     mode: BranchMode,
 ) -> Result<(String, String, String)> {
     // Best-effort: make sure the base ref is up to date. A missing remote (e.g.
     // a local-only repo) is not fatal here — base existence is checked below.
-    let _ = git::fetch_origin(repo);
+    let _ = repo.fetch_origin();
 
     // Precondition: a clean tree, checked before any mutation (our own `.gitignore`
     // edit included) so a first run can never trip this.
-    if !git::is_clean_ignoring_ralphy(repo)? {
+    if !repo.is_clean_ignoring_ralphy()? {
         bail!(
             "working tree at {} is not clean — commit or stash first",
-            repo.display()
+            repo_root.display()
         );
     }
 
-    let orig = git::current_branch(repo)?;
+    let orig = repo.current_branch()?;
     if orig == "HEAD" {
         bail!(
             "repo at {} is in detached HEAD — checkout a branch first",
-            repo.display()
+            repo_root.display()
         );
     }
 
@@ -251,16 +253,16 @@ fn prepare_branch(
         BranchMode::Current => {
             // Commit straight onto the current branch — no new branch, base
             // ignored. Compare against where this branch stood before the run.
-            let compare_ref = git::head_sha(repo)?;
+            let compare_ref = repo.head_sha()?;
             info!(branch = %orig, "running in place on current branch");
             (orig.clone(), orig, compare_ref)
         }
         BranchMode::New => {
-            if !git::commitish_exists(repo, base_branch) {
+            if !repo.commitish_exists(base_branch) {
                 bail!("base branch '{base_branch}' not found");
             }
             let branch = format!("afk/run-{stamp}");
-            git::checkout_new_branch(repo, &branch, base_branch)?;
+            repo.checkout_new_branch(&branch, base_branch)?;
             info!(%branch, base = %base_branch, was = %orig, "run branch created");
             (orig, branch, base_branch.to_string())
         }
@@ -272,7 +274,7 @@ fn prepare_branch(
     // `.ralphy/` from a prior run — and no-op; the run branch, cut from a base that
     // does NOT ignore it, would then let the agent's `git add` sweep scratch
     // (`plan.md`, logs) into the deliverable.
-    gitignore::ensure_ralphy_ignored(repo)?;
+    gitignore::ensure_ralphy_ignored(repo_root)?;
 
     Ok(prepared)
 }
@@ -426,6 +428,55 @@ fn accumulate_by_model(by_model: &mut BTreeMap<String, Usage>, usage: &Usage) {
         .entry(usage.model.clone().unwrap_or_else(|| "unknown".into()))
         .or_default()
         .add_tokens(usage);
+}
+
+/// One run's ledger identity (ADR-0008 D6/D7, read once from git) plus its
+/// token accumulators, threaded through the phases so every phase line is
+/// built and folded in one place instead of four hand-rolled copies.
+struct RunLedger<'a> {
+    sink: &'a dyn LedgerSink,
+    project: String,
+    actor_email: String,
+    actor_name: String,
+    /// The adapter label, `agent.name()`.
+    agent: &'static str,
+    run_usage: Usage,
+    run_usage_by_model: BTreeMap<String, Usage>,
+}
+
+impl RunLedger<'_> {
+    /// Append one phase line (best-effort — a write failure warns, never stops
+    /// the run, D9) and fold the usage into the run totals.
+    fn record_phase(&mut self, issue: u64, phase: &str, outcome: &str, usage: &Usage) {
+        let rec = LedgerRecord {
+            project: self.project.clone(),
+            actor_email: self.actor_email.clone(),
+            actor_name: self.actor_name.clone(),
+            ralphy_version: env!("CARGO_PKG_VERSION").into(),
+            issue,
+            phase: phase.into(),
+            agent: self.agent.into(),
+            model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
+            outcome: outcome.into(),
+            tokens: usage.clone(),
+            ts: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(e) = self.sink.append(&rec) {
+            warn!(number = issue, error = %e, "writing {} usage ledger line failed", phase);
+        }
+        self.run_usage.add_tokens(usage);
+        accumulate_by_model(&mut self.run_usage_by_model, usage);
+    }
+
+    /// [`record_phase`](Self::record_phase) for the conditional repair phases:
+    /// a phase that consumed nothing writes no line AND folds nothing — an
+    /// unconditional fold would plant a zero-usage `unknown` key in the
+    /// per-model split the report exposes.
+    fn record_phase_if_used(&mut self, issue: u64, phase: &str, outcome: &str, usage: &Usage) {
+        if usage.total() > 0 {
+            self.record_phase(issue, phase, outcome, usage);
+        }
+    }
 }
 
 /// The close comment the runner leaves on a green queue issue: the ps1-oracle
@@ -739,6 +790,715 @@ fn write_issue_json(ws: &Workspace, issue: &Issue) -> Result<()> {
     Ok(())
 }
 
+/// Everything one issue's phase functions share, built once per run after
+/// [`prepare_branch`]. All borrows are shared — the mutable [`RunLedger`]
+/// travels as its own argument so a phase can hold both.
+struct IssueCtx<'a> {
+    cfg: &'a QueueConfig,
+    ws: &'a Workspace,
+    repo: &'a dyn Repo,
+    agent: &'a dyn Agent,
+    tracker: &'a dyn IssueTracker,
+    clock: &'a dyn RunClock,
+    /// The branch commits land on, for close/no-gate comments.
+    branch: &'a str,
+}
+
+/// What [`prepare_issue`] decided for one queue member.
+enum Prepared {
+    /// The enriched clone (comment thread attached), persisted to `.ralphy/`
+    /// and ready to plan.
+    Ready(Issue),
+    /// Open blockers gate the issue — skip it. Carries the open blockers and
+    /// their human-gate subset for the report.
+    Blocked { open: Vec<u64>, human: Vec<u64> },
+}
+
+/// Gate and stage one issue before planning: the blocked-by/human-gate
+/// classification, the comment-thread enrichment, and the `.ralphy/` staging
+/// writes (`issue.json`, handoffs, references). An `Err` is fatal to the run —
+/// the caller restores the branch and propagates.
+fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
+    // Blocked-by gate: skip any issue whose declared blockers are still open.
+    // Checked before write_issue_json so a blocked issue never touches the
+    // planner. is_closed errors are fatal (the tracker is authoritative).
+    // Closed blockers are kept: they are the handoff sources below.
+    //
+    // A closed blocker can be a retired bundle whose work was split into
+    // child issues (their `## Parent` references it). Closing the bundle
+    // does not finish its work — the gate follows the split: while any
+    // child is open, the dependent stays blocked on those children.
+    let refs = blocked::parse_blocked_by(&issue.body);
+    let mut open_blockers: Vec<u64> = Vec::new();
+    let mut closed_blockers: Vec<u64> = Vec::new();
+    for n in refs {
+        match cx.tracker.is_closed(n) {
+            Ok(true) => match cx.tracker.open_children(n) {
+                Ok(children) if children.is_empty() => closed_blockers.push(n),
+                Ok(children) => {
+                    info!(
+                        number = issue.number,
+                        blocker = n,
+                        children = ?children,
+                        "blocker closed but split into open children — still blocking"
+                    );
+                    open_blockers.extend(children);
+                }
+                Err(e) => return Err(e),
+            },
+            Ok(false) => open_blockers.push(n),
+            Err(e) => return Err(e),
+        }
+    }
+    if !open_blockers.is_empty() {
+        // Split the open blockers into human gates (ready-for-human/HITL —
+        // parked until a person acts, ADR-0014) and ordinary agent work the
+        // queue will clear. A label-fetch failure is non-fatal: it degrades
+        // to the generic "blocked" reason rather than aborting the AFK run,
+        // since classification is a visibility concern, not a correctness gate.
+        let mut human_blockers: Vec<u64> = Vec::new();
+        for &n in &open_blockers {
+            match cx.tracker.issue_labels(n) {
+                Ok(labels) if is_human_gate(&labels) => human_blockers.push(n),
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(blocker = n, error = %e, "could not fetch blocker labels — treating as agent work");
+                }
+            }
+        }
+        if human_blockers.is_empty() {
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                blockers = ?open_blockers,
+                "blocked by open issue(s) — skipping"
+            );
+        } else {
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                blockers = ?open_blockers,
+                human_blockers = ?human_blockers,
+                "blocked — waiting on human"
+            );
+        }
+        return Ok(Prepared::Blocked {
+            open: open_blockers,
+            human: human_blockers,
+        });
+    }
+
+    // consumed by the telegram notifier / presenter — keep stable
+    info!(number = issue.number, title = %issue.title, "issue started");
+
+    // Attach the issue's own comment thread so the planner and executor read
+    // the discussion alongside the body — guidance, clarifications, and prior
+    // attempts a human left in comments rather than in the original body.
+    // Best-effort enrichment: a fetch failure is a warning, never a stop, and
+    // planning proceeds with the body alone. The queue's issue carries no
+    // comments (the list query omits them), so this clone is where they land.
+    let mut issue = issue.clone();
+    match cx.tracker.issue_comments(issue.number) {
+        Ok(comments) => {
+            if !comments.is_empty() {
+                info!(
+                    number = issue.number,
+                    comments = comments.len(),
+                    "comments attached for planner"
+                );
+            }
+            issue.comments = comments;
+        }
+        Err(e) => {
+            warn!(number = issue.number, error = %e, "fetching issue comments failed — planning with body only")
+        }
+    }
+
+    // Persist the current issue where the planner reads it. The adapter's
+    // prompt reads `.ralphy/issue.json`, so the loop must refresh it before
+    // each plan — `.ralphy/` is gitignored and survives the branch checkout.
+    write_issue_json(cx.ws, &issue)?;
+
+    // Shoulders of giants: collect the handoffs the closed blockers left on
+    // their issues into `.ralphy/handoffs.md`, where the planner reads them
+    // as predecessor context. Best-effort enrichment — a fetch failure is a
+    // warning, never a stop — but the file is always refreshed (or removed)
+    // so a previous issue's handoffs never leak into this one.
+    write_handoffs(cx.ws, issue.number, &closed_blockers, cx.tracker);
+
+    // Reproduce the source of the issues this one references in its
+    // `## Blocked by` / `## Parent` sections into `.ralphy/references.md`, so
+    // the planner reads the referenced spec at source rather than restating a
+    // `#N` mention as fact in a child issue. Best-effort like the handoffs.
+    write_references(cx.ws, &issue, cx.tracker);
+
+    Ok(Prepared::Ready(issue))
+}
+
+/// What the plan phase decided for one prepared issue.
+enum PlanPhase {
+    /// A feasible plan was written — proceed to execute.
+    Planned(Plan),
+    /// The planner judged the issue infeasible or a bundle; the verdict is
+    /// posted on the issue — skip to the next one.
+    Infeasible,
+    /// A plan-time usage limit stops the run (configured stop, no reset to
+    /// wait for, or the no-progress cap).
+    StopLimit { reset: Option<String> },
+    /// The global deadline cut a reset wait short — stop the run.
+    StopDeadline,
+}
+
+/// Plan one issue, auto-resuming through usage-limit reset windows the same
+/// way execution does, and record the plan's ledger line. A usage limit during
+/// planning surfaces as a typed `PlanLimit` (not a generic failure): wait for
+/// the reset and re-plan, unless `stop_on_limit_plan`, no reset was parsed, or
+/// repeated no-progress limits hit the cap — any of which stops and reports
+/// the limit. A genuine (non-limit) planning failure is an `Err`: the caller
+/// restores the branch and propagates.
+fn plan_phase(cx: &IssueCtx, issue: &Issue, ledger: &mut RunLedger) -> Result<PlanPhase> {
+    let mut plan_limit_streak = 0u32;
+    let plan = loop {
+        let e = match cx.agent.plan(issue, cx.ws) {
+            Ok(p) => break p,
+            Err(e) => e,
+        };
+        let limit = e.downcast::<PlanLimit>()?;
+
+        plan_limit_streak += 1;
+        let capped = plan_limit_streak > MAX_PLAN_LIMIT_RESUMES;
+        // Stop-and-report when configured, when no reset was parsed (nothing
+        // to wait for), or when the cap is hit — never delete the branch, so
+        // it is handed back exactly like an execute-time limit stop.
+        if cx.cfg.stop_on_limit_plan || limit.reset.is_none() || capped {
+            info!(
+                number = issue.number,
+                reset = ?limit.reset,
+                "usage limit while planning — stopping run"
+            );
+            return Ok(PlanPhase::StopLimit { reset: limit.reset });
+        }
+
+        // Deadline beats resume: a reset past the deadline stops the run.
+        let reset = limit.reset.expect("reset present: checked above");
+        if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
+            info!(
+                number = issue.number,
+                "deadline beats resume while planning — stopping run"
+            );
+            return Ok(PlanPhase::StopDeadline);
+        }
+        // Otherwise loop: re-plan after the reset window.
+    };
+    // consumed by the telegram notifier / presenter — keep stable
+    info!(
+        number = issue.number,
+        open_steps = plan.open_steps,
+        up = plan.usage.input,
+        cr = plan.usage.cache_read,
+        cw = plan.usage.cache_creation,
+        out = plan.usage.output,
+        model = plan.usage.model.as_deref().unwrap_or(""),
+        "plan written"
+    );
+
+    // Record the plan phase's token usage (ADR-0008 D6). Written before the
+    // feasibility branch so even an infeasible plan's planning cost is on the
+    // ledger. The plan line carries `ok` — the issue's terminal outcome is its
+    // execute line's, joined by `issue` at read-time. Best-effort: a write
+    // failure warns, never stops the run (D9).
+    ledger.record_phase(issue.number, "plan", "ok", &plan.usage);
+
+    // An infeasible plan (no actionable steps) is a skip, not a failure, and
+    // not green — the runner neither closes it nor stops the run. The
+    // planner's reasoning is posted on the issue so the verdict is
+    // actionable instead of dying in the gitignored plan.md.
+    if !plan.is_feasible() {
+        if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
+            if let Some(reason) = handoff::infeasible_reason(&plan_md) {
+                if handoff::is_bundle_reason(&reason) {
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(number = issue.number, "bundle plan — needs split");
+                    // Best-effort: a label failure must not stop the run —
+                    // the comment below still carries the verdict.
+                    if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
+                        warn!(number = issue.number, error = %e, "applying needs-split label failed");
+                    }
+                    // Best-effort: a failed verdict comment must not abort
+                    // the queue over a non-green skip.
+                    if let Err(e) = cx
+                        .tracker
+                        .comment(issue.number, &bundle_comment(&cx.cfg.stamp, &reason))
+                    {
+                        warn!(number = issue.number, error = %e, "posting bundle verdict comment failed");
+                    }
+                } else if let Err(e) = cx
+                    .tracker
+                    .comment(issue.number, &infeasible_comment(&cx.cfg.stamp, &reason))
+                {
+                    warn!(number = issue.number, error = %e, "posting infeasible verdict comment failed");
+                }
+            }
+        }
+        return Ok(PlanPhase::Infeasible);
+    }
+
+    Ok(PlanPhase::Planned(plan))
+}
+
+/// How one issue's execution ended.
+enum ExecPhase {
+    /// The executor self-reported done — proceed to the gates. Carries the
+    /// accumulated execute usage the close path folds into the issue total.
+    Done { exec_usage: Usage },
+    /// Any non-`Done` terminal outcome — the loop records it and stops the
+    /// run (the execute ledger line is already written). `deadline_cut`
+    /// marks a resume wait the deadline cut short.
+    NonGreen {
+        outcome: Outcome,
+        deadline_cut: bool,
+    },
+}
+
+/// Execute one planned issue, auto-resuming through usage-limit reset windows
+/// by default, and record the execute ledger line. On `Outcome::Limit` with a
+/// parsed reset (and not `stop_on_limit_exec`), wait for the reset and re-run
+/// `execute()` only — never `plan()`, which would delete the on-disk `plan.md`
+/// the resume depends on (ADR-0003). A progress-aware cap abandons the issue
+/// after two consecutive limit outcomes that commit nothing; any commit resets
+/// the streak. The cap is checked *before* the next wait so a stalled issue is
+/// abandoned without first burning another reset window. An `execute()` error
+/// propagates without a restore, exactly like the pre-extraction loop.
+fn execute_phase(
+    cx: &IssueCtx,
+    issue: &Issue,
+    plan: &Plan,
+    ledger: &mut RunLedger,
+) -> Result<ExecPhase> {
+    // Start each issue with no repair brief on disk: the gates only write one
+    // when *this* run's verify or protocol lint fails, so a brief left by a
+    // prior run (stopped on a red gate, then resumed) never silently steers
+    // the first execute.
+    clear_verify_failure(cx.ws);
+    clear_protocol_failure(cx.ws);
+
+    let mut no_commit_streak = 0u32;
+    let mut deadline_cut = false;
+    let mut exec_usage = Usage::default();
+    let outcome = loop {
+        let before_sha = cx.repo.head_sha().ok();
+        let Execution { outcome, usage } = cx.agent.execute(plan, cx.ws)?;
+        // Accumulate across the resume loop so the single execute ledger line
+        // carries the whole issue's execution cost, not just the last attempt.
+        exec_usage.add_tokens(&usage);
+        let after_sha = cx.repo.head_sha().ok();
+
+        // Track progress: a commit resets the streak, a no-commit execute
+        // advances it. Done/non-limit outcomes break below before it matters.
+        // If either SHA read failed, progress is unknown — leave the streak
+        // untouched rather than collapse both errors to "" and read it as a
+        // false no-commit.
+        match (&before_sha, &after_sha) {
+            (Some(b), Some(a)) if b != a => no_commit_streak = 0,
+            (Some(_), Some(_)) => no_commit_streak += 1,
+            _ => {}
+        }
+
+        let reset = match &outcome {
+            Outcome::Limit(Some(r)) if !cx.cfg.stop_on_limit_exec => r.clone(),
+            // Done, any non-limit outcome, a bare `Limit(None)`, or
+            // `stop_on_limit_exec` all leave the loop with the outcome as-is.
+            _ => break outcome,
+        };
+
+        // Progress-aware cap: two consecutive no-commit limits abandon the
+        // issue. Checked before waiting so a stuck issue gives up at once.
+        if no_commit_streak >= 2 {
+            info!(
+                number = issue.number,
+                "progress-aware cap reached — abandoning issue"
+            );
+            break outcome;
+        }
+
+        // Deadline beats resume: a reset beyond the deadline, or a deadline
+        // already/just passed, stops the run instead of waiting.
+        if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
+            info!(
+                number = issue.number,
+                "deadline beats resume — stopping the run"
+            );
+            deadline_cut = true;
+            break outcome;
+        }
+        // Otherwise loop: re-run execute() against the same on-disk plan.md.
+    };
+
+    // Record the execute phase's accumulated token usage with this issue's
+    // terminal outcome (ADR-0008 D6). One line per issue regardless of how
+    // many resume attempts ran. Best-effort (D9).
+    ledger.record_phase(
+        issue.number,
+        "execute",
+        outcome_label(&outcome),
+        &exec_usage,
+    );
+
+    Ok(if outcome == Outcome::Done {
+        ExecPhase::Done { exec_usage }
+    } else {
+        ExecPhase::NonGreen {
+            outcome,
+            deadline_cut,
+        }
+    })
+}
+
+/// How the protocol lint settled for a `Done` issue.
+enum ProtocolGate {
+    /// The lint settled — passed, or still failing after the one bounce (the
+    /// loud warn already logged; the close comment carries the report).
+    /// Carries what the verify gate and close path need.
+    Settled {
+        lint: protocol::ProtocolReport,
+        plan_md: String,
+        protocol_usage: Usage,
+    },
+    /// The bounce itself hit a usage limit — that is the run's limit, so stop
+    /// on the reset instead of judging the lint again.
+    StopLimit { reset: Option<String> },
+}
+
+/// Deterministic protocol lint (ADR-0015): before anything else, structurally
+/// lint the plan the executor claims is finished — every step ticked, the
+/// charter's closing sections present, no planner placeholder left in the
+/// ledger. Presence and shape only, never truthfulness. On a violation the
+/// session is handed back to the executor ONCE via `protocol-failure.md` (the
+/// verify-failure mechanism); a second violation falls back to closing with
+/// the lint report and a loud warning in the close comment.
+fn protocol_gate(
+    cx: &IssueCtx,
+    issue: &Issue,
+    plan: &Plan,
+    ledger: &mut RunLedger,
+) -> Result<ProtocolGate> {
+    let mut plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
+    let mut lint = protocol::lint(&plan_md);
+    // Tokens the one protocol bounce consumes, accounted as their own
+    // phase like verify repairs (ADR-0008).
+    let mut protocol_usage = Usage::default();
+    // Set when the bounce itself hits a usage limit: that is the run's
+    // limit, so stop on the reset instead of judging the lint again.
+    let mut protocol_limit: Option<Option<String>> = None;
+    if !lint.passed() {
+        // consumed by the telegram notifier / presenter — keep stable
+        info!(
+            number = issue.number,
+            failed = %lint.failed_labels().join(", "),
+            "protocol lint failed — handing back to the executor once"
+        );
+        write_protocol_failure(cx.ws, &cx.cfg.stamp, &lint);
+        let Execution {
+            outcome: bounce_outcome,
+            usage,
+        } = cx.agent.execute(plan, cx.ws)?;
+        protocol_usage.add_tokens(&usage);
+        if let Outcome::Limit(reset) = bounce_outcome {
+            protocol_limit = Some(reset);
+        } else {
+            // Re-run the SAME checks over the (possibly) repaired plan;
+            // whatever they say now is final — no second bounce.
+            plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
+            lint = protocol::lint(&plan_md);
+        }
+    }
+    clear_protocol_failure(cx.ws);
+
+    ledger.record_phase_if_used(
+        issue.number,
+        "protocol-repair",
+        if lint.passed() {
+            "done"
+        } else {
+            "protocol-failed"
+        },
+        &protocol_usage,
+    );
+
+    // A usage limit mid-bounce is the run's limit — no tokens are left
+    // to work the rest of the queue, so stop on the reset.
+    if let Some(reset) = protocol_limit {
+        return Ok(ProtocolGate::StopLimit { reset });
+    }
+    if !lint.passed() {
+        warn!(
+            number = issue.number,
+            failed = %lint.failed_labels().join(", "),
+            "protocol lint still failing after the bounce — closing with the report"
+        );
+    }
+    Ok(ProtocolGate::Settled {
+        lint,
+        plan_md,
+        protocol_usage,
+    })
+}
+
+/// What the verify gate decided for a `Done` issue.
+enum VerifyGate {
+    /// Gate passed, was opted out of, or (without `require_verify_gate`) no
+    /// gate resolved — proceed to the close path. Carries the repair usage
+    /// the close folds into the issue total.
+    Green { repair_usage: Usage },
+    /// The gate failed and the repair budget is spent; carries the one-line
+    /// failure summary. The issue is left open and the queue continues.
+    Failed { summary: String },
+    /// A repair attempt itself hit a usage limit — the run's limit, so stop
+    /// on the reset rather than burning the rest of the repair budget on an
+    /// agent that cannot work.
+    StopLimit { reset: Option<String> },
+    /// `require_verify_gate` is set and no gate resolved: label the issue
+    /// `ready-for-human`, leave it open, continue the queue (ADR-0015).
+    NeedsHuman,
+}
+
+/// Runner-enforced verify gate (ADR-0011): before closing on the agent's
+/// self-reported `Done`, re-run the plan's `## Verify` commands over the
+/// committed state. Only a pass proceeds to the close. On a failure the
+/// runner hands the failing commands back to the agent (up to
+/// [`VERIFY_MAX_REPAIRS`] times) and re-runs the SAME gate after each
+/// attempt. The gate stays the authority: a repair earns the close only by
+/// making the runner *see* the commands pass, never by a fresh self-report.
+/// `## Verify: none` opts out; an absent section falls back to settings, then
+/// — depending on `require_verify_gate` — to a loud warn-and-close or to
+/// parking the issue for a human (ADR-0015). Records the `repair` ledger line.
+fn verify_gate(
+    cx: &IssueCtx,
+    issue: &Issue,
+    plan: &Plan,
+    plan_md: &str,
+    ledger: &mut RunLedger,
+) -> Result<VerifyGate> {
+    // Tokens the agent spends on repairs, accounted as their own phase so
+    // the initial execute line stays truthful and the repair cost is never
+    // hidden (ADR-0008). Folded into the run totals either way.
+    let mut repair_usage = Usage::default();
+    // Set when a repair attempt itself hits a usage limit. `None` while the
+    // gate is still being worked.
+    let mut repair_limit: Option<Outcome> = None;
+    let gate: GateDecision = match resolve_verify(plan_md, &cx.cfg.verify_fallback) {
+        VerifyPlan::Run(commands) => {
+            let mut attempt = 0u32;
+            loop {
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(
+                    number = issue.number,
+                    commands = commands.len(),
+                    "verify gate — running"
+                );
+                let report = verify::run(&commands, &cx.cfg.repo_root, cx.cfg.verify_timeout);
+                // Honesty artifact: every command + its exit code (pass or
+                // fail), with the failing tail on a failure. Best-effort — a
+                // comment failure must not crash a run that otherwise passed.
+                if let Err(e) = cx
+                    .tracker
+                    .comment(issue.number, &verify::comment(&cx.cfg.stamp, &report))
+                {
+                    warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+                }
+                if report.passed {
+                    info!(number = issue.number, "verify gate passed");
+                    clear_verify_failure(cx.ws);
+                    break GateDecision::Green;
+                }
+
+                let summary = verify_failure_summary(&report);
+                if attempt >= VERIFY_MAX_REPAIRS {
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(
+                        number = issue.number,
+                        %summary,
+                        attempts = attempt,
+                        "verify gate failed — issue not closed"
+                    );
+                    break GateDecision::Failed(summary);
+                }
+
+                attempt += 1;
+                info!(
+                    number = issue.number,
+                    %summary,
+                    attempt,
+                    max = VERIFY_MAX_REPAIRS,
+                    "verify gate failed — handing back to the agent to repair"
+                );
+                // Hand the failure to the executor through the workspace
+                // (the same vendor-neutral channel as plan.md), then re-run
+                // execute() against the unchanged plan. The repair runs
+                // within the issue's own time budget, like every execute.
+                write_verify_failure(cx.ws, &cx.cfg.stamp, &report);
+                let Execution {
+                    outcome: repair_outcome,
+                    usage,
+                } = cx.agent.execute(plan, cx.ws)?;
+                repair_usage.add_tokens(&usage);
+                // A usage limit mid-repair stops the run on the limit; we do
+                // not re-verify (the agent never got to fix anything) and do
+                // not spend another attempt.
+                if let Outcome::Limit(_) = repair_outcome {
+                    repair_limit = Some(repair_outcome);
+                    break GateDecision::Failed(summary);
+                }
+                // Any other outcome (Done, Blocked, …) loops back to re-run
+                // the gate: the deterministic commands — not the agent's
+                // word — decide whether the repair earned the close.
+            }
+        }
+        VerifyPlan::OptedOut => {
+            info!(
+                number = issue.number,
+                "verify gate skipped — plan declared `## Verify: none`"
+            );
+            GateDecision::Green
+        }
+        VerifyPlan::NoGate if cx.cfg.require_verify_gate => {
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                "no verify gate resolved and require_verify_gate is set — \
+                 parking the issue for a human"
+            );
+            GateDecision::NeedsHuman
+        }
+        VerifyPlan::NoGate => {
+            warn!(
+                number = issue.number,
+                "issue closed without a verify gate — no `## Verify` in the plan \
+                 and no settings.json verify.command resolved"
+            );
+            GateDecision::Green
+        }
+    };
+
+    // Account the repair phase before branching on the gate result, so the
+    // run totals and the per-issue ledger are honest whether the gate went
+    // green or the budget ran out (ADR-0008). One `repair` line per issue,
+    // regardless of how many attempts ran. Best-effort.
+    ledger.record_phase_if_used(
+        issue.number,
+        "repair",
+        if matches!(gate, GateDecision::Failed(_)) {
+            "verify-failed"
+        } else {
+            "done"
+        },
+        &repair_usage,
+    );
+
+    Ok(match gate {
+        GateDecision::Failed(summary) => {
+            // A repair that hit a usage limit is the *run's* limit, not this
+            // issue's fault: there are no tokens left to work the rest of the
+            // queue, so stop on the reset (the same global stance the execute
+            // path already takes on a limit).
+            if let Some(Outcome::Limit(reset)) = repair_limit {
+                VerifyGate::StopLimit { reset }
+            } else {
+                VerifyGate::Failed { summary }
+            }
+        }
+        GateDecision::NeedsHuman => VerifyGate::NeedsHuman,
+        GateDecision::Green => VerifyGate::Green { repair_usage },
+    })
+}
+
+/// Close a green issue and record what it leaves behind: the close comment
+/// (with the lint report), the acceptance evidence, the session handoff, and
+/// the knowledge note + citations. Pushes the closed [`IssueResult`] onto
+/// `worked` *before* the fallible evidence writes, so the result is always
+/// present in the report even if one of them errors out (errors propagate to
+/// the caller without a restore, exactly like the pre-extraction loop).
+#[allow(clippy::too_many_arguments)]
+fn close_and_record(
+    cx: &IssueCtx,
+    issue: &Issue,
+    plan: &Plan,
+    lint: &protocol::ProtocolReport,
+    exec_usage: &Usage,
+    protocol_usage: &Usage,
+    repair_usage: &Usage,
+    worked: &mut Vec<IssueResult>,
+) -> Result<()> {
+    // Close the cycle: a green queue issue is closed so it leaves the
+    // queue; its labels are untouched and the branch is merged by hand.
+    cx.tracker
+        .close(issue.number, &close_comment(&cx.cfg.stamp, cx.branch, lint))?;
+
+    // Record the closed issue before writing evidence so the result is
+    // always present in the report even if write_evidence errors out.
+    // consumed by the telegram notifier / presenter — keep stable. The
+    // `tokens` field carries the issue's total (plan + execute + protocol
+    // bounce + repair) so the live UI can show inline per-issue tokens
+    // (ADR-0008 D11).
+    let issue_total =
+        plan.usage.total() + exec_usage.total() + protocol_usage.total() + repair_usage.total();
+    // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
+    // carry the *execution* phase breakdown so the live UI can combine it
+    // with the planning usage it stashed at `plan written` (ADR-0008 D11).
+    info!(
+        number = issue.number,
+        tokens = issue_total,
+        up = exec_usage.input,
+        cr = exec_usage.cache_read,
+        cw = exec_usage.cache_creation,
+        out = exec_usage.output,
+        model = exec_usage.model.as_deref().unwrap_or(""),
+        "green — issue closed"
+    );
+    worked.push(IssueResult {
+        number: issue.number,
+        outcome: Some(Outcome::Done),
+        closed: true,
+        blocked_by: Vec::new(),
+        human_blockers: Vec::new(),
+    });
+
+    // Write acceptance evidence when the plan carries a ledger, and
+    // publish the session's handoff + plan friction so successors (and
+    // dependent issues' planners) inherit what this session learned. A
+    // missing or empty ledger/handoff is a graceful no-op.
+    if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
+        let verdicts = acceptance::parse_ledger(&plan_md);
+        if !verdicts.is_empty() {
+            cx.tracker
+                .write_evidence(issue.number, &issue.body, &verdicts)?;
+        }
+        if let Some(report) = handoff::close_report(&plan_md) {
+            cx.tracker.comment(issue.number, &report)?;
+        }
+        if let Some(note) = handoff::knowledge_note(&plan_md) {
+            write_knowledge(cx.ws, issue, &cx.cfg.stamp, &note);
+        } else if handoff::has_handoff(&plan_md) {
+            warn!(
+                number = issue.number,
+                "handoff present but no `Environment facts & traps` / \
+                 `Commands that work` blocks — no knowledge note cached"
+            );
+        }
+        match handoff::knowledge_used(&plan_md) {
+            Some(citations) => record_citations(cx.ws, issue, &cx.cfg.stamp, citations),
+            None if handoff::has_handoff(&plan_md) => warn!(
+                number = issue.number,
+                "handoff present but no `Knowledge used` block — \
+                 hit-rate signal lost for this close"
+            ),
+            None => {}
+        }
+    }
+
+    Ok(())
+}
+
 /// Work the whole queue in order: plan → execute each issue, close every green
 /// one, and stop the moment one finishes non-green — handing back the branch as
 /// it stands. The deadline is checked at the top of each iteration so a passed
@@ -750,24 +1510,60 @@ pub fn run_queue(
     tracker: &dyn IssueTracker,
     clock: &dyn RunClock,
 ) -> Result<QueueReport> {
-    let repo = cfg.repo_root.as_path();
-    let ws = Workspace::new(repo);
+    // The production seams: real git over the repo root, the JSONL usage file.
+    // The 5-arg signature is the frozen public commitment (ADR-0006/0009); the
+    // injectable seams live on the private worker below, reached by unit tests.
+    let repo = GitRepo::new(&cfg.repo_root);
+    run_queue_with(cfg, queue, agent, tracker, clock, &repo, &FileLedger)
+}
 
-    let (orig, branch, compare_ref) =
-        prepare_branch(repo, &cfg.base_branch, &cfg.stamp, cfg.branch_mode)?;
+/// [`run_queue`] with every collaborator injectable — the seam the in-crate
+/// unit tests drive with fakes (no on-disk git repo, no usage file).
+fn run_queue_with(
+    cfg: &QueueConfig,
+    queue: &[Issue],
+    agent: &dyn Agent,
+    tracker: &dyn IssueTracker,
+    clock: &dyn RunClock,
+    repo: &dyn Repo,
+    sink: &dyn LedgerSink,
+) -> Result<QueueReport> {
+    let ws = Workspace::new(&cfg.repo_root);
+
+    let (orig, branch, compare_ref) = prepare_branch(
+        repo,
+        &cfg.repo_root,
+        &cfg.base_branch,
+        &cfg.stamp,
+        cfg.branch_mode,
+    )?;
 
     // Identity for every ledger line this run writes (ADR-0008 D6/D7), read once
     // from git: the project slug (remote, or a path-hash fallback) and the actor.
-    let project = git::project_slug(repo);
-    let actor_email = git::user_email(repo).unwrap_or_default();
-    let actor_name = git::user_name(repo).unwrap_or_default();
+    // The accumulators fold every phase's usage into the run totals; the per-model
+    // split feeds the read-time USD footer (D8).
+    let mut ledger = RunLedger {
+        sink,
+        project: repo.project_slug(),
+        actor_email: repo.user_email().unwrap_or_default(),
+        actor_name: repo.user_name().unwrap_or_default(),
+        agent: agent.name(),
+        run_usage: Usage::default(),
+        run_usage_by_model: BTreeMap::new(),
+    };
 
     let mut worked: Vec<IssueResult> = Vec::new();
     let mut stop: Option<StopReason> = None;
-    let mut run_usage = Usage::default();
-    // Per-model token accumulation for the read-time USD footer (D8): keyed by the
-    // phase's resolved model, summed across every phase the run worked.
-    let mut run_usage_by_model: BTreeMap<String, Usage> = BTreeMap::new();
+
+    let cx = IssueCtx {
+        cfg,
+        ws: &ws,
+        repo,
+        agent,
+        tracker,
+        clock,
+        branch: &branch,
+    };
 
     'queue: for issue in queue {
         // Don't start a new issue past the global budget. Work already committed
@@ -797,264 +1593,63 @@ pub fn run_queue(
             break;
         }
 
-        // Blocked-by gate: skip any issue whose declared blockers are still open.
-        // Checked before write_issue_json so a blocked issue never touches the
-        // planner. is_closed errors are fatal (the tracker is authoritative).
-        // Closed blockers are kept: they are the handoff sources below.
-        //
-        // A closed blocker can be a retired bundle whose work was split into
-        // child issues (their `## Parent` references it). Closing the bundle
-        // does not finish its work — the gate follows the split: while any
-        // child is open, the dependent stays blocked on those children.
-        let refs = blocked::parse_blocked_by(&issue.body);
-        let mut open_blockers: Vec<u64> = Vec::new();
-        let mut closed_blockers: Vec<u64> = Vec::new();
-        for n in refs {
-            match tracker.is_closed(n) {
-                Ok(true) => match tracker.open_children(n) {
-                    Ok(children) if children.is_empty() => closed_blockers.push(n),
-                    Ok(children) => {
-                        info!(
-                            number = issue.number,
-                            blocker = n,
-                            children = ?children,
-                            "blocker closed but split into open children — still blocking"
-                        );
-                        open_blockers.extend(children);
-                    }
-                    Err(e) => {
-                        restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                        return Err(e);
-                    }
-                },
-                Ok(false) => open_blockers.push(n),
-                Err(e) => {
-                    restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                    return Err(e);
-                }
-            }
-        }
-        if !open_blockers.is_empty() {
-            // Split the open blockers into human gates (ready-for-human/HITL —
-            // parked until a person acts, ADR-0014) and ordinary agent work the
-            // queue will clear. A label-fetch failure is non-fatal: it degrades
-            // to the generic "blocked" reason rather than aborting the AFK run,
-            // since classification is a visibility concern, not a correctness gate.
-            let mut human_blockers: Vec<u64> = Vec::new();
-            for &n in &open_blockers {
-                match tracker.issue_labels(n) {
-                    Ok(labels) if is_human_gate(&labels) => human_blockers.push(n),
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!(blocker = n, error = %e, "could not fetch blocker labels — treating as agent work");
-                    }
-                }
-            }
-            if human_blockers.is_empty() {
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(
-                    number = issue.number,
-                    blockers = ?open_blockers,
-                    "blocked by open issue(s) — skipping"
-                );
-            } else {
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(
-                    number = issue.number,
-                    blockers = ?open_blockers,
-                    human_blockers = ?human_blockers,
-                    "blocked — waiting on human"
-                );
-            }
-            worked.push(IssueResult {
-                number: issue.number,
-                outcome: None,
-                closed: false,
-                blocked_by: open_blockers,
-                human_blockers,
-            });
-            continue;
-        }
-
-        // consumed by the telegram notifier / presenter — keep stable
-        info!(number = issue.number, title = %issue.title, "issue started");
-
-        // Attach the issue's own comment thread so the planner and executor read
-        // the discussion alongside the body — guidance, clarifications, and prior
-        // attempts a human left in comments rather than in the original body.
-        // Best-effort enrichment: a fetch failure is a warning, never a stop, and
-        // planning proceeds with the body alone. The queue's issue carries no
-        // comments (the list query omits them), so this clone is where they land.
-        let mut issue = issue.clone();
-        match tracker.issue_comments(issue.number) {
-            Ok(comments) => {
-                if !comments.is_empty() {
-                    info!(
-                        number = issue.number,
-                        comments = comments.len(),
-                        "comments attached for planner"
-                    );
-                }
-                issue.comments = comments;
-            }
-            Err(e) => {
-                warn!(number = issue.number, error = %e, "fetching issue comments failed — planning with body only")
-            }
-        }
-        let issue = &issue;
-
-        // Persist the current issue where the planner reads it. The adapter's
-        // prompt reads `.ralphy/issue.json`, so the loop must refresh it before
-        // each plan — `.ralphy/` is gitignored and survives the branch checkout.
-        if let Err(e) = write_issue_json(&ws, issue) {
-            restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-            return Err(e);
-        }
-
-        // Shoulders of giants: collect the handoffs the closed blockers left on
-        // their issues into `.ralphy/handoffs.md`, where the planner reads them
-        // as predecessor context. Best-effort enrichment — a fetch failure is a
-        // warning, never a stop — but the file is always refreshed (or removed)
-        // so a previous issue's handoffs never leak into this one.
-        write_handoffs(&ws, issue.number, &closed_blockers, tracker);
-
-        // Reproduce the source of the issues this one references in its
-        // `## Blocked by` / `## Parent` sections into `.ralphy/references.md`, so
-        // the planner reads the referenced spec at source rather than restating a
-        // `#N` mention as fact in a child issue. Best-effort like the handoffs.
-        write_references(&ws, issue, tracker);
-
-        // Plan, auto-resuming through usage-limit reset windows the same way
-        // execution does. A usage limit during planning surfaces as a typed
-        // `PlanLimit` (not a generic failure): wait for the reset and re-plan,
-        // unless `stop_on_limit_plan`, no reset was parsed, or repeated no-progress
-        // limits hit the cap — any of which stops and reports the limit. A
-        // genuine (non-limit) planning failure still restores and propagates.
-        let mut plan_limit_streak = 0u32;
-        let plan = loop {
-            let e = match agent.plan(issue, &ws) {
-                Ok(p) => break p,
-                Err(e) => e,
-            };
-            let limit = match e.downcast::<PlanLimit>() {
-                Ok(limit) => limit,
-                Err(e) => {
-                    restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                    return Err(e);
-                }
-            };
-
-            plan_limit_streak += 1;
-            let capped = plan_limit_streak > MAX_PLAN_LIMIT_RESUMES;
-            // Stop-and-report when configured, when no reset was parsed (nothing
-            // to wait for), or when the cap is hit — never delete the branch, so
-            // it is handed back exactly like an execute-time limit stop.
-            if cfg.stop_on_limit_plan || limit.reset.is_none() || capped {
-                info!(
-                    number = issue.number,
-                    reset = ?limit.reset,
-                    "usage limit while planning — stopping run"
-                );
+        // Gate and stage the issue (blocked-by, comment enrichment, `.ralphy/`
+        // staging). A preparation error is fatal: restore and propagate.
+        let issue = match prepare_issue(&cx, issue) {
+            Ok(Prepared::Ready(enriched)) => enriched,
+            Ok(Prepared::Blocked { open, human }) => {
                 worked.push(IssueResult {
                     number: issue.number,
-                    outcome: Some(Outcome::Limit(limit.reset.clone())),
+                    outcome: None,
+                    closed: false,
+                    blocked_by: open,
+                    human_blockers: human,
+                });
+                continue;
+            }
+            Err(e) => {
+                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
+                return Err(e);
+            }
+        };
+        let issue = &issue;
+
+        // Plan the issue; a non-limit planning failure restores and propagates.
+        let plan = match plan_phase(&cx, issue, &mut ledger) {
+            Ok(PlanPhase::Planned(plan)) => plan,
+            Ok(PlanPhase::Infeasible) => {
+                worked.push(IssueResult {
+                    number: issue.number,
+                    outcome: None,
+                    closed: false,
+                    blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
+                });
+                continue;
+            }
+            Ok(PlanPhase::StopLimit { reset }) => {
+                worked.push(IssueResult {
+                    number: issue.number,
+                    outcome: Some(Outcome::Limit(reset.clone())),
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
-                    reset: limit.reset,
+                    reset,
                 });
                 break 'queue;
             }
-
-            // Deadline beats resume: a reset past the deadline stops the run.
-            let reset = limit.reset.expect("reset present: checked above");
-            if clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
-                info!(
-                    number = issue.number,
-                    "deadline beats resume while planning — stopping run"
-                );
+            Ok(PlanPhase::StopDeadline) => {
                 stop = Some(StopReason::Deadline);
                 break 'queue;
             }
-            // Otherwise loop: re-plan after the reset window.
-        };
-        // consumed by the telegram notifier / presenter — keep stable
-        info!(
-            number = issue.number,
-            open_steps = plan.open_steps,
-            up = plan.usage.input,
-            cr = plan.usage.cache_read,
-            cw = plan.usage.cache_creation,
-            out = plan.usage.output,
-            model = plan.usage.model.as_deref().unwrap_or(""),
-            "plan written"
-        );
-
-        // Record the plan phase's token usage (ADR-0008 D6). Written before the
-        // feasibility branch so even an infeasible plan's planning cost is on the
-        // ledger. The plan line carries `ok` — the issue's terminal outcome is its
-        // execute line's, joined by `issue` at read-time. Best-effort: a write
-        // failure warns, never stops the run (D9).
-        let plan_rec = LedgerRecord {
-            project: project.clone(),
-            actor_email: actor_email.clone(),
-            actor_name: actor_name.clone(),
-            ralphy_version: env!("CARGO_PKG_VERSION").into(),
-            issue: issue.number,
-            phase: "plan".into(),
-            agent: agent.name().into(),
-            model: plan.usage.model.clone().unwrap_or_else(|| "unknown".into()),
-            outcome: "ok".into(),
-            tokens: plan.usage.clone(),
-            ts: chrono::Utc::now().to_rfc3339(),
-        };
-        if let Err(e) = ledger::append(&plan_rec) {
-            warn!(number = issue.number, error = %e, "writing plan usage ledger line failed");
-        }
-        run_usage.add_tokens(&plan.usage);
-        accumulate_by_model(&mut run_usage_by_model, &plan.usage);
-
-        // An infeasible plan (no actionable steps) is a skip, not a failure, and
-        // not green — the runner neither closes it nor stops the run. The
-        // planner's reasoning is posted on the issue so the verdict is
-        // actionable instead of dying in the gitignored plan.md.
-        if !plan.is_feasible() {
-            if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
-                if let Some(reason) = handoff::infeasible_reason(&plan_md) {
-                    if handoff::is_bundle_reason(&reason) {
-                        // consumed by the telegram notifier / presenter — keep stable
-                        info!(number = issue.number, "bundle plan — needs split");
-                        // Best-effort: a label failure must not stop the run —
-                        // the comment below still carries the verdict.
-                        if let Err(e) = tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
-                            warn!(number = issue.number, error = %e, "applying needs-split label failed");
-                        }
-                        // Best-effort: a failed verdict comment must not abort
-                        // the queue over a non-green skip.
-                        if let Err(e) =
-                            tracker.comment(issue.number, &bundle_comment(&cfg.stamp, &reason))
-                        {
-                            warn!(number = issue.number, error = %e, "posting bundle verdict comment failed");
-                        }
-                    } else if let Err(e) =
-                        tracker.comment(issue.number, &infeasible_comment(&cfg.stamp, &reason))
-                    {
-                        warn!(number = issue.number, error = %e, "posting infeasible verdict comment failed");
-                    }
-                }
+            Err(e) => {
+                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
+                return Err(e);
             }
-            worked.push(IssueResult {
-                number: issue.number,
-                outcome: None,
-                closed: false,
-                blocked_by: Vec::new(),
-                human_blockers: Vec::new(),
-            });
-            continue;
-        }
+        };
 
         // A dry run plans only — it executes nothing and closes nothing.
         if cfg.dry_run {
@@ -1068,168 +1663,48 @@ pub fn run_queue(
             continue;
         }
 
-        // Execute the issue, auto-resuming through usage-limit reset windows by
-        // default. On `Outcome::Limit` with a parsed reset (and not
-        // `stop_on_limit_exec`), wait for the reset and re-run `execute()` only —
-        // never `plan()`, which would delete the on-disk `plan.md` the resume
-        // depends on (ADR-0003). A progress-aware cap abandons the issue after
-        // two consecutive limit outcomes that commit nothing; any commit resets
-        // the streak. The cap is checked *before* the next wait so a stalled
-        // issue is abandoned without first burning another reset window.
-        // Start each issue with no repair brief on disk: the gates only write one
-        // when *this* run's verify or protocol lint fails, so a brief left by a
-        // prior run (stopped on a red gate, then resumed) never silently steers
-        // the first execute.
-        clear_verify_failure(&ws);
-        clear_protocol_failure(&ws);
-
-        let mut no_commit_streak = 0u32;
-        let mut deadline_cut = false;
-        let mut exec_usage = Usage::default();
-        let outcome = loop {
-            let before_sha = git::head_sha(repo).ok();
-            let Execution { outcome, usage } = agent.execute(&plan, &ws)?;
-            // Accumulate across the resume loop so the single execute ledger line
-            // carries the whole issue's execution cost, not just the last attempt.
-            exec_usage.add_tokens(&usage);
-            let after_sha = git::head_sha(repo).ok();
-
-            // Track progress: a commit resets the streak, a no-commit execute
-            // advances it. Done/non-limit outcomes break below before it matters.
-            // If either SHA read failed, progress is unknown — leave the streak
-            // untouched rather than collapse both errors to "" and read it as a
-            // false no-commit.
-            match (&before_sha, &after_sha) {
-                (Some(b), Some(a)) if b != a => no_commit_streak = 0,
-                (Some(_), Some(_)) => no_commit_streak += 1,
-                _ => {}
-            }
-
-            let reset = match &outcome {
-                Outcome::Limit(Some(r)) if !cfg.stop_on_limit_exec => r.clone(),
-                // Done, any non-limit outcome, a bare `Limit(None)`, or
-                // `stop_on_limit_exec` all leave the loop with the outcome as-is.
-                _ => break outcome,
-            };
-
-            // Progress-aware cap: two consecutive no-commit limits abandon the
-            // issue. Checked before waiting so a stuck issue gives up at once.
-            if no_commit_streak >= 2 {
-                info!(
-                    number = issue.number,
-                    "progress-aware cap reached — abandoning issue"
-                );
-                break outcome;
-            }
-
-            // Deadline beats resume: a reset beyond the deadline, or a deadline
-            // already/just passed, stops the run instead of waiting.
-            if clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
-                info!(
-                    number = issue.number,
-                    "deadline beats resume — stopping the run"
-                );
-                deadline_cut = true;
-                break outcome;
-            }
-            // Otherwise loop: re-run execute() against the same on-disk plan.md.
-        };
-
-        // Record the execute phase's accumulated token usage with this issue's
-        // terminal outcome (ADR-0008 D6). One line per issue regardless of how
-        // many resume attempts ran. Best-effort (D9).
-        let exec_rec = LedgerRecord {
-            project: project.clone(),
-            actor_email: actor_email.clone(),
-            actor_name: actor_name.clone(),
-            ralphy_version: env!("CARGO_PKG_VERSION").into(),
-            issue: issue.number,
-            phase: "execute".into(),
-            agent: agent.name().into(),
-            model: exec_usage.model.clone().unwrap_or_else(|| "unknown".into()),
-            outcome: outcome_label(&outcome).into(),
-            tokens: exec_usage.clone(),
-            ts: chrono::Utc::now().to_rfc3339(),
-        };
-        if let Err(e) = ledger::append(&exec_rec) {
-            warn!(number = issue.number, error = %e, "writing execute usage ledger line failed");
-        }
-        run_usage.add_tokens(&exec_usage);
-        accumulate_by_model(&mut run_usage_by_model, &exec_usage);
-
-        if outcome == Outcome::Done {
-            // Deterministic protocol lint (ADR-0015): before anything else,
-            // structurally lint the plan the executor claims is finished —
-            // every step ticked, the charter's closing sections present, no
-            // planner placeholder left in the ledger. Presence and shape only,
-            // never truthfulness. On a violation the session is handed back to
-            // the executor ONCE via `protocol-failure.md` (the verify-failure
-            // mechanism); a second violation falls back to closing with the
-            // lint report and a loud warning in the close comment.
-            let mut plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
-            let mut lint = protocol::lint(&plan_md);
-            // Tokens the one protocol bounce consumes, accounted as their own
-            // phase like verify repairs (ADR-0008).
-            let mut protocol_usage = Usage::default();
-            // Set when the bounce itself hits a usage limit: that is the run's
-            // limit, so stop on the reset instead of judging the lint again.
-            let mut protocol_limit: Option<Option<String>> = None;
-            if !lint.passed() {
+        // Execute the issue; any non-green terminal outcome stops the whole
+        // run — later issues are untouched.
+        let exec_usage = match execute_phase(&cx, issue, &plan, &mut ledger)? {
+            ExecPhase::Done { exec_usage } => exec_usage,
+            ExecPhase::NonGreen {
+                outcome,
+                deadline_cut,
+            } => {
                 // consumed by the telegram notifier / presenter — keep stable
-                info!(
-                    number = issue.number,
-                    failed = %lint.failed_labels().join(", "),
-                    "protocol lint failed — handing back to the executor once"
-                );
-                write_protocol_failure(&ws, &cfg.stamp, &lint);
-                let Execution {
-                    outcome: bounce_outcome,
-                    usage,
-                } = agent.execute(&plan, &ws)?;
-                protocol_usage.add_tokens(&usage);
-                if let Outcome::Limit(reset) = bounce_outcome {
-                    protocol_limit = Some(reset);
+                info!(number = issue.number, ?outcome, "non-green — stopping run");
+                let number = issue.number;
+                worked.push(IssueResult {
+                    number,
+                    outcome: Some(outcome.clone()),
+                    closed: false,
+                    blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
+                });
+                stop = Some(if deadline_cut {
+                    StopReason::Deadline
                 } else {
-                    // Re-run the SAME checks over the (possibly) repaired plan;
-                    // whatever they say now is final — no second bounce.
-                    plan_md = std::fs::read_to_string(ws.plan_path()).unwrap_or_default();
-                    lint = protocol::lint(&plan_md);
-                }
-            }
-            clear_protocol_failure(&ws);
-
-            if protocol_usage.total() > 0 {
-                let protocol_rec = LedgerRecord {
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
-                    actor_name: actor_name.clone(),
-                    ralphy_version: env!("CARGO_PKG_VERSION").into(),
-                    issue: issue.number,
-                    phase: "protocol-repair".into(),
-                    agent: agent.name().into(),
-                    model: protocol_usage
-                        .model
-                        .clone()
-                        .unwrap_or_else(|| "unknown".into()),
-                    outcome: if lint.passed() {
-                        "done"
-                    } else {
-                        "protocol-failed"
+                    match outcome {
+                        Outcome::Limit(reset) => StopReason::Limit { number, reset },
+                        other => StopReason::NonGreen {
+                            number,
+                            outcome: other,
+                        },
                     }
-                    .into(),
-                    tokens: protocol_usage.clone(),
-                    ts: chrono::Utc::now().to_rfc3339(),
-                };
-                if let Err(e) = ledger::append(&protocol_rec) {
-                    warn!(number = issue.number, error = %e, "writing protocol-repair usage ledger line failed");
-                }
-                run_usage.add_tokens(&protocol_usage);
-                accumulate_by_model(&mut run_usage_by_model, &protocol_usage);
+                });
+                break;
             }
+        };
 
-            // A usage limit mid-bounce is the run's limit — no tokens are left
-            // to work the rest of the queue, so stop on the reset.
-            if let Some(reset) = protocol_limit {
+        // Structurally lint the finished plan, with one bounce back to the
+        // executor on a violation (ADR-0015).
+        let (lint, plan_md, protocol_usage) = match protocol_gate(&cx, issue, &plan, &mut ledger)? {
+            ProtocolGate::Settled {
+                lint,
+                plan_md,
+                protocol_usage,
+            } => (lint, plan_md, protocol_usage),
+            ProtocolGate::StopLimit { reset } => {
                 worked.push(IssueResult {
                     number: issue.number,
                     outcome: Some(Outcome::Limit(reset.clone())),
@@ -1243,326 +1718,89 @@ pub fn run_queue(
                 });
                 break;
             }
-            if !lint.passed() {
-                warn!(
-                    number = issue.number,
-                    failed = %lint.failed_labels().join(", "),
-                    "protocol lint still failing after the bounce — closing with the report"
-                );
-            }
+        };
 
-            // Runner-enforced verify gate (ADR-0011): before closing on the
-            // agent's self-reported `Done`, re-run the plan's `## Verify`
-            // commands over the committed state. Only a pass proceeds to the
-            // close path. On a failure the runner no longer stops outright — it
-            // hands the failing commands back to the agent (up to
-            // `VERIFY_MAX_REPAIRS` times) and re-runs the SAME gate after each
-            // attempt. The gate stays the authority: a repair earns the close
-            // only by making the runner *see* the commands pass, never by a
-            // fresh self-report. Only when the repair budget is exhausted does
-            // the run stop with the branch handed back. `## Verify: none` opts
-            // out; an absent section falls back to settings, then — depending
-            // on `require_verify_gate` — to a loud warn-and-close or to parking
-            // the issue for a human (ADR-0015).
-            // Tokens the agent spends on repairs, accounted as their own phase so
-            // the initial execute line stays truthful and the repair cost is never
-            // hidden (ADR-0008). Folded into the run totals below either way.
-            let mut repair_usage = Usage::default();
-            // Set when a repair attempt itself hits a usage limit: that is the
-            // run's limit, not a verify failure, so it stops with the reset rather
-            // than burning the rest of the repair budget on an agent that cannot
-            // work. `None` while the gate is still being worked.
-            let mut repair_limit: Option<Outcome> = None;
-            let gate: GateDecision = match resolve_verify(&plan_md, &cfg.verify_fallback) {
-                VerifyPlan::Run(commands) => {
-                    let mut attempt = 0u32;
-                    loop {
-                        // consumed by the telegram notifier / presenter — keep stable
-                        info!(
-                            number = issue.number,
-                            commands = commands.len(),
-                            "verify gate — running"
-                        );
-                        let report = verify::run(&commands, repo, cfg.verify_timeout);
-                        // Honesty artifact: every command + its exit code (pass or
-                        // fail), with the failing tail on a failure. Best-effort — a
-                        // comment failure must not crash a run that otherwise passed.
-                        if let Err(e) =
-                            tracker.comment(issue.number, &verify::comment(&cfg.stamp, &report))
-                        {
-                            warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
-                        }
-                        if report.passed {
-                            info!(number = issue.number, "verify gate passed");
-                            clear_verify_failure(&ws);
-                            break GateDecision::Green;
-                        }
-
-                        let summary = verify_failure_summary(&report);
-                        if attempt >= VERIFY_MAX_REPAIRS {
-                            // consumed by the telegram notifier / presenter — keep stable
-                            info!(
-                                number = issue.number,
-                                %summary,
-                                attempts = attempt,
-                                "verify gate failed — issue not closed"
-                            );
-                            break GateDecision::Failed(summary);
-                        }
-
-                        attempt += 1;
-                        info!(
-                            number = issue.number,
-                            %summary,
-                            attempt,
-                            max = VERIFY_MAX_REPAIRS,
-                            "verify gate failed — handing back to the agent to repair"
-                        );
-                        // Hand the failure to the executor through the workspace
-                        // (the same vendor-neutral channel as plan.md), then re-run
-                        // execute() against the unchanged plan. The repair runs
-                        // within the issue's own time budget, like every execute.
-                        write_verify_failure(&ws, &cfg.stamp, &report);
-                        let Execution {
-                            outcome: repair_outcome,
-                            usage,
-                        } = agent.execute(&plan, &ws)?;
-                        repair_usage.add_tokens(&usage);
-                        // A usage limit mid-repair stops the run on the limit; we do
-                        // not re-verify (the agent never got to fix anything) and do
-                        // not spend another attempt.
-                        if let Outcome::Limit(_) = repair_outcome {
-                            repair_limit = Some(repair_outcome);
-                            break GateDecision::Failed(summary);
-                        }
-                        // Any other outcome (Done, Blocked, …) loops back to re-run
-                        // the gate: the deterministic commands — not the agent's
-                        // word — decide whether the repair earned the close.
-                    }
-                }
-                VerifyPlan::OptedOut => {
-                    info!(
-                        number = issue.number,
-                        "verify gate skipped — plan declared `## Verify: none`"
-                    );
-                    GateDecision::Green
-                }
-                VerifyPlan::NoGate if cfg.require_verify_gate => {
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(
-                        number = issue.number,
-                        "no verify gate resolved and require_verify_gate is set — \
-                         parking the issue for a human"
-                    );
-                    GateDecision::NeedsHuman
-                }
-                VerifyPlan::NoGate => {
-                    warn!(
-                        number = issue.number,
-                        "issue closed without a verify gate — no `## Verify` in the plan \
-                         and no settings.json verify.command resolved"
-                    );
-                    GateDecision::Green
-                }
-            };
-
-            // Account the repair phase before branching on the gate result, so the
-            // run totals and the per-issue ledger are honest whether the gate went
-            // green or the budget ran out (ADR-0008). One `repair` line per issue,
-            // regardless of how many attempts ran. Best-effort.
-            if repair_usage.total() > 0 {
-                let repair_rec = LedgerRecord {
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
-                    actor_name: actor_name.clone(),
-                    ralphy_version: env!("CARGO_PKG_VERSION").into(),
-                    issue: issue.number,
-                    phase: "repair".into(),
-                    agent: agent.name().into(),
-                    model: repair_usage
-                        .model
-                        .clone()
-                        .unwrap_or_else(|| "unknown".into()),
-                    outcome: if matches!(gate, GateDecision::Failed(_)) {
-                        "verify-failed"
-                    } else {
-                        "done"
-                    }
-                    .into(),
-                    tokens: repair_usage.clone(),
-                    ts: chrono::Utc::now().to_rfc3339(),
-                };
-                if let Err(e) = ledger::append(&repair_rec) {
-                    warn!(number = issue.number, error = %e, "writing repair usage ledger line failed");
-                }
-                run_usage.add_tokens(&repair_usage);
-                accumulate_by_model(&mut run_usage_by_model, &repair_usage);
-            }
-
-            match gate {
-                GateDecision::Failed(summary) => {
-                    let number = issue.number;
-                    // A repair that hit a usage limit is the *run's* limit, not this
-                    // issue's fault: there are no tokens left to work the rest of the
-                    // queue, so stop on the reset (the same global stance the execute
-                    // path already takes on a limit).
-                    if let Some(Outcome::Limit(reset)) = repair_limit {
-                        worked.push(IssueResult {
-                            number,
-                            outcome: Some(Outcome::Limit(reset.clone())),
-                            closed: false,
-                            blocked_by: Vec::new(),
-                            human_blockers: Vec::new(),
-                        });
-                        stop = Some(StopReason::Limit { number, reset });
-                        break;
-                    }
-                    // A verify failure no longer halts the queue: the repair budget is
-                    // spent, so leave THIS issue open (its commits stay on the branch
-                    // for a human to pick up — see the artifact comment) and march on
-                    // to the next issue. The issue is reported skipped-on-verify so the
-                    // miss is visible, never a silent close.
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(number, %summary, "verify gate failed — skipping issue");
-                    worked.push(IssueResult {
-                        number,
-                        outcome: None,
-                        closed: false,
-                        blocked_by: Vec::new(),
-                        human_blockers: Vec::new(),
-                    });
-                    continue;
-                }
-                GateDecision::NeedsHuman => {
-                    let number = issue.number;
-                    // ADR-0015: the one hole where a false self-report closed an
-                    // issue unchecked is now a human gate. Label + comment are
-                    // best-effort — the issue staying OPEN is the guarantee, and
-                    // a failed label must not abort the rest of the queue.
-                    if let Err(e) = tracker.add_label(number, HUMAN_GATE_LABELS[0]) {
-                        warn!(number, error = %e, "applying ready-for-human label failed");
-                    }
-                    if let Err(e) = tracker.comment(number, &no_gate_comment(&cfg.stamp, &branch)) {
-                        warn!(number, error = %e, "posting the no-gate comment failed");
-                    }
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(
-                        number,
-                        "no verify gate — issue left open for a human, run continues"
-                    );
-                    worked.push(IssueResult {
-                        number,
-                        outcome: Some(Outcome::Done),
-                        closed: false,
-                        blocked_by: Vec::new(),
-                        human_blockers: Vec::new(),
-                    });
-                    continue;
-                }
-                GateDecision::Green => {}
-            }
-
-            // Close the cycle: a green queue issue is closed so it leaves the
-            // queue; its labels are untouched and the branch is merged by hand.
-            tracker.close(issue.number, &close_comment(&cfg.stamp, &branch, &lint))?;
-
-            // Record the closed issue before writing evidence so the result is
-            // always present in the report even if write_evidence errors out.
-            // consumed by the telegram notifier / presenter — keep stable. The
-            // `tokens` field carries the issue's total (plan + execute + protocol
-            // bounce + repair) so the live UI can show inline per-issue tokens
-            // (ADR-0008 D11).
-            let issue_total = plan.usage.total()
-                + exec_usage.total()
-                + protocol_usage.total()
-                + repair_usage.total();
-            // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
-            // carry the *execution* phase breakdown so the live UI can combine it
-            // with the planning usage it stashed at `plan written` (ADR-0008 D11).
-            info!(
-                number = issue.number,
-                tokens = issue_total,
-                up = exec_usage.input,
-                cr = exec_usage.cache_read,
-                cw = exec_usage.cache_creation,
-                out = exec_usage.output,
-                model = exec_usage.model.as_deref().unwrap_or(""),
-                "green — issue closed"
-            );
-            worked.push(IssueResult {
-                number: issue.number,
-                outcome: Some(Outcome::Done),
-                closed: true,
-                blocked_by: Vec::new(),
-                human_blockers: Vec::new(),
-            });
-
-            // Write acceptance evidence when the plan carries a ledger, and
-            // publish the session's handoff + plan friction so successors (and
-            // dependent issues' planners) inherit what this session learned. A
-            // missing or empty ledger/handoff is a graceful no-op.
-            if let Ok(plan_md) = std::fs::read_to_string(ws.plan_path()) {
-                let verdicts = acceptance::parse_ledger(&plan_md);
-                if !verdicts.is_empty() {
-                    tracker.write_evidence(issue.number, &issue.body, &verdicts)?;
-                }
-                if let Some(report) = handoff::close_report(&plan_md) {
-                    tracker.comment(issue.number, &report)?;
-                }
-                if let Some(note) = handoff::knowledge_note(&plan_md) {
-                    write_knowledge(&ws, issue, &cfg.stamp, &note);
-                } else if handoff::has_handoff(&plan_md) {
-                    warn!(
-                        number = issue.number,
-                        "handoff present but no `Environment facts & traps` / \
-                         `Commands that work` blocks — no knowledge note cached"
-                    );
-                }
-                match handoff::knowledge_used(&plan_md) {
-                    Some(citations) => record_citations(&ws, issue, &cfg.stamp, citations),
-                    None if handoff::has_handoff(&plan_md) => warn!(
-                        number = issue.number,
-                        "handoff present but no `Knowledge used` block — \
-                         hit-rate signal lost for this close"
-                    ),
-                    None => {}
-                }
-            }
-
-            continue;
-        }
-
-        // Any non-green outcome stops the whole run; later issues are untouched.
-        // consumed by the telegram notifier / presenter — keep stable
-        info!(number = issue.number, ?outcome, "non-green — stopping run");
-        let number = issue.number;
-        worked.push(IssueResult {
-            number,
-            outcome: Some(outcome.clone()),
-            closed: false,
-            blocked_by: Vec::new(),
-            human_blockers: Vec::new(),
-        });
-        stop = Some(if deadline_cut {
-            StopReason::Deadline
-        } else {
-            match outcome {
-                Outcome::Limit(reset) => StopReason::Limit { number, reset },
-                other => StopReason::NonGreen {
+        // Re-run the plan's `## Verify` commands over the committed state
+        // before trusting the self-report (ADR-0011/0015).
+        let repair_usage = match verify_gate(&cx, issue, &plan, &plan_md, &mut ledger)? {
+            VerifyGate::Green { repair_usage } => repair_usage,
+            VerifyGate::StopLimit { reset } => {
+                let number = issue.number;
+                worked.push(IssueResult {
                     number,
-                    outcome: other,
-                },
+                    outcome: Some(Outcome::Limit(reset.clone())),
+                    closed: false,
+                    blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
+                });
+                stop = Some(StopReason::Limit { number, reset });
+                break;
             }
-        });
-        break;
+            VerifyGate::Failed { summary } => {
+                let number = issue.number;
+                // A verify failure no longer halts the queue: the repair budget is
+                // spent, so leave THIS issue open (its commits stay on the branch
+                // for a human to pick up — see the artifact comment) and march on
+                // to the next issue. The issue is reported skipped-on-verify so the
+                // miss is visible, never a silent close.
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(number, %summary, "verify gate failed — skipping issue");
+                worked.push(IssueResult {
+                    number,
+                    outcome: None,
+                    closed: false,
+                    blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
+                });
+                continue;
+            }
+            VerifyGate::NeedsHuman => {
+                let number = issue.number;
+                // ADR-0015: the one hole where a false self-report closed an
+                // issue unchecked is now a human gate. Label + comment are
+                // best-effort — the issue staying OPEN is the guarantee, and
+                // a failed label must not abort the rest of the queue.
+                if let Err(e) = tracker.add_label(number, HUMAN_GATE_LABELS[0]) {
+                    warn!(number, error = %e, "applying ready-for-human label failed");
+                }
+                if let Err(e) = tracker.comment(number, &no_gate_comment(&cfg.stamp, &branch)) {
+                    warn!(number, error = %e, "posting the no-gate comment failed");
+                }
+                // consumed by the telegram notifier / presenter — keep stable
+                info!(
+                    number,
+                    "no verify gate — issue left open for a human, run continues"
+                );
+                worked.push(IssueResult {
+                    number,
+                    outcome: Some(Outcome::Done),
+                    closed: false,
+                    blocked_by: Vec::new(),
+                    human_blockers: Vec::new(),
+                });
+                continue;
+            }
+        };
+
+        // Close the cycle and publish what the session leaves behind.
+        close_and_record(
+            &cx,
+            issue,
+            &plan,
+            &lint,
+            &exec_usage,
+            &protocol_usage,
+            &repair_usage,
+            &mut worked,
+        )?;
     }
 
     // Count what the run added over the compare ref and capture the oneline log,
     // matching the ps1 `finally` block. Failures here are non-fatal reporting
     // concerns (e.g. a dropped branch in cleanup) — default to zero / empty.
     let range = format!("{compare_ref}..{branch}");
-    let commits = git::rev_list_count(repo, &range).unwrap_or(0);
-    let oneline = git::log_oneline(repo, &range).unwrap_or_default();
+    let commits = repo.rev_list_count(&range).unwrap_or(0);
+    let oneline = repo.log_oneline(&range).unwrap_or_default();
 
     // Closing-state matrix, keyed on mode × outcome × dry-run (ps1 `finally`):
     //  - Current: commits already live on the branch — never check out or delete.
@@ -1579,7 +1817,7 @@ pub fn run_queue(
                 // tracked file (e.g. a plan.md committed on the base), and a
                 // non-force checkout would abort and strand the repo on the
                 // run branch after an otherwise green run (ADR-0005, #41).
-                if let Err(e) = git::checkout_force(repo, &orig) {
+                if let Err(e) = repo.checkout_force(&orig) {
                     warn!("could not return to '{orig}': {e}");
                 }
             }
@@ -1593,8 +1831,8 @@ pub fn run_queue(
         stop,
         commits,
         oneline,
-        run_usage,
-        run_usage_by_model,
+        run_usage: ledger.run_usage,
+        run_usage_by_model: ledger.run_usage_by_model,
     })
 }
 
@@ -1606,19 +1844,22 @@ pub fn run_queue(
 /// so checking it out is pointless and the empty-branch delete would target the
 /// checked-out branch. Centralizing the guard here keeps every cleanup path —
 /// including the mid-loop error paths — from ever touching the live branch.
-fn restore(repo: &Path, orig: &str, branch: &str, base: &str, mode: BranchMode) {
+fn restore(repo: &dyn Repo, orig: &str, branch: &str, base: &str, mode: BranchMode) {
     if mode == BranchMode::Current {
         return;
     }
     // Force: the run branch may carry the uncommitted `.gitignore` edit (a dry run
     // never commits it), which must be discarded rather than dragged onto `orig`.
-    if let Err(e) = git::checkout_force(repo, orig) {
+    if let Err(e) = repo.checkout_force(orig) {
         warn!("could not return to '{orig}': {e}");
         return;
     }
-    let empty = git::rev_list_count(repo, &format!("{base}..{branch}")).unwrap_or(1) == 0;
+    let empty = repo
+        .rev_list_count(&format!("{base}..{branch}"))
+        .unwrap_or(1)
+        == 0;
     if empty {
-        if let Err(e) = git::delete_branch(repo, branch) {
+        if let Err(e) = repo.delete_branch(branch) {
             warn!("could not delete empty run branch '{branch}': {e}");
         }
     }
@@ -1783,5 +2024,484 @@ mod tests {
                 .timestamp(),
             expected
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Queue-loop tests through the injectable seams: `run_queue_with` driven
+    // by a FakeRepo and FakeLedger — no on-disk git repository, no usage
+    // file, no RALPHY_USAGE_DIR juggling. The workspace is a plain temp dir
+    // (the `.ralphy/` scratch and the verify commands only need a
+    // filesystem). Complements tests/queue.rs, which proves the same loop
+    // over a real repo.
+    // ------------------------------------------------------------------
+
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Constant answers for the reads, a recorder for the checkouts. The
+    /// constant `head_sha` is fine here: the no-commit streak only matters on
+    /// limit-resumes, which these tests do not script.
+    struct FakeRepo {
+        checkouts: RefCell<Vec<String>>,
+    }
+
+    impl FakeRepo {
+        fn new() -> Self {
+            Self {
+                checkouts: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl Repo for FakeRepo {
+        fn current_branch(&self) -> Result<String> {
+            Ok("main".into())
+        }
+
+        fn head_sha(&self) -> Result<String> {
+            Ok("abc123".into())
+        }
+
+        fn project_slug(&self) -> String {
+            "owner/repo".into()
+        }
+
+        fn checkout_new_branch(&self, branch: &str, base: &str) -> Result<()> {
+            self.checkouts
+                .borrow_mut()
+                .push(format!("new:{branch}:{base}"));
+            Ok(())
+        }
+
+        fn checkout_force(&self, refname: &str) -> Result<()> {
+            self.checkouts.borrow_mut().push(format!("force:{refname}"));
+            Ok(())
+        }
+
+        fn delete_branch(&self, branch: &str) -> Result<()> {
+            self.checkouts.borrow_mut().push(format!("delete:{branch}"));
+            Ok(())
+        }
+
+        fn rev_list_count(&self, _range: &str) -> Result<usize> {
+            Ok(1)
+        }
+
+        fn log_oneline(&self, _range: &str) -> Result<Vec<String>> {
+            Ok(vec!["abc123 work".into()])
+        }
+
+        fn user_email(&self) -> Option<String> {
+            Some("t@example.com".into())
+        }
+
+        fn user_name(&self) -> Option<String> {
+            Some("Test".into())
+        }
+    }
+
+    /// Captures every ledger line in memory.
+    #[derive(Default)]
+    struct FakeLedger {
+        records: RefCell<Vec<LedgerRecord>>,
+    }
+
+    impl LedgerSink for FakeLedger {
+        fn append(&self, rec: &LedgerRecord) -> Result<()> {
+            self.records.borrow_mut().push(rec.clone());
+            Ok(())
+        }
+    }
+
+    /// Plans a one-step, lint-clean plan (optionally carrying a `## Verify`
+    /// section, or a protocol-dirty shape) and pops a scripted outcome per
+    /// `execute` — never touching git.
+    struct MiniAgent {
+        outcomes: RefCell<VecDeque<Outcome>>,
+        planned: RefCell<Vec<u64>>,
+        /// Appended verbatim to the plan (e.g. a `## Verify` section).
+        extra: Option<String>,
+        /// Write a protocol-dirty plan (unticked step, no closing sections).
+        lint_dirty: bool,
+        /// On `execute`, repair the plan when the ADR-0015 bounce brief is on
+        /// disk: tick every step and append the closing sections.
+        fix_protocol: bool,
+    }
+
+    impl MiniAgent {
+        fn new(outcomes: Vec<Outcome>) -> Self {
+            Self {
+                outcomes: RefCell::new(outcomes.into()),
+                planned: RefCell::new(Vec::new()),
+                extra: None,
+                lint_dirty: false,
+                fix_protocol: false,
+            }
+        }
+
+        fn with_extra(mut self, extra: impl Into<String>) -> Self {
+            self.extra = Some(extra.into());
+            self
+        }
+
+        fn lint_dirty_with_fix(mut self) -> Self {
+            self.lint_dirty = true;
+            self.fix_protocol = true;
+            self
+        }
+    }
+
+    impl Agent for MiniAgent {
+        fn name(&self) -> &'static str {
+            "mini"
+        }
+
+        fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
+            self.planned.borrow_mut().push(issue.number);
+            fs::create_dir_all(ws.ralphy_dir())?;
+            let step = if self.lint_dirty {
+                "- [ ] do a thing\n"
+            } else {
+                "- [x] do a thing\n"
+            };
+            let extra = self
+                .extra
+                .as_deref()
+                .map(|e| format!("\n{e}\n"))
+                .unwrap_or_default();
+            let closing = if self.lint_dirty {
+                ""
+            } else {
+                "\n## Handoff\n\n- **Delivered**: scripted work\n\n## Plan friction\n\n- none\n"
+            };
+            let body = format!(
+                "# Plan for #{}\n\n## Steps\n{step}{extra}{closing}",
+                issue.number
+            );
+            let path = ws.plan_path();
+            fs::write(&path, body)?;
+            Ok(Plan {
+                path,
+                open_steps: 1,
+                recommended_model: None,
+                usage: Usage {
+                    output: 3,
+                    model: Some("fake-model".into()),
+                    ..Usage::default()
+                },
+            })
+        }
+
+        fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Execution> {
+            if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
+                let plan_md = fs::read_to_string(ws.plan_path())?;
+                let fixed = plan_md.replace("- [ ]", "- [x]")
+                    + "\n## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
+                fs::write(ws.plan_path(), fixed)?;
+            }
+            let outcome = self
+                .outcomes
+                .borrow_mut()
+                .pop_front()
+                .expect("more execute calls than scripted outcomes");
+            Ok(Execution {
+                outcome,
+                usage: Usage {
+                    output: 5,
+                    model: Some("fake-model".into()),
+                    ..Usage::default()
+                },
+            })
+        }
+    }
+
+    /// Records closes/comments/labels; the trait's defaults cover the rest.
+    #[derive(Default)]
+    struct FakeTracker {
+        closes: RefCell<Vec<u64>>,
+        comments: RefCell<Vec<(u64, String)>>,
+        labels: RefCell<Vec<(u64, String)>>,
+    }
+
+    impl IssueTracker for FakeTracker {
+        fn close(&self, number: u64, _comment: &str) -> Result<()> {
+            self.closes.borrow_mut().push(number);
+            Ok(())
+        }
+
+        fn comment(&self, number: u64, body: &str) -> Result<()> {
+            self.comments.borrow_mut().push((number, body.to_string()));
+            Ok(())
+        }
+
+        fn add_label(&self, number: u64, label: &str) -> Result<()> {
+            self.labels.borrow_mut().push((number, label.to_string()));
+            Ok(())
+        }
+    }
+
+    /// Never expires, never sleeps.
+    struct FakeClock;
+
+    impl RunClock for FakeClock {
+        fn deadline_passed(&self) -> bool {
+            false
+        }
+
+        fn wait_for_reset(&self, _reset: &str) -> WaitOutcome {
+            WaitOutcome::Resumed
+        }
+    }
+
+    /// A fresh plain directory (no git) the workspace and verify commands run
+    /// in; unique per test so parallel tests never collide.
+    fn test_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ralphy-runner-ut-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn test_cfg(root: &std::path::Path, stamp: &str) -> QueueConfig {
+        QueueConfig {
+            repo_root: root.to_path_buf(),
+            base_branch: "main".into(),
+            dry_run: false,
+            stamp: stamp.into(),
+            branch_mode: BranchMode::New,
+            only_issue: None,
+            stop_on_limit_plan: false,
+            stop_on_limit_exec: false,
+            verify_fallback: None,
+            verify_timeout: Duration::from_secs(60),
+            require_verify_gate: false,
+        }
+    }
+
+    fn test_issue(number: u64) -> Issue {
+        Issue {
+            number,
+            title: format!("issue {number}"),
+            body: String::new(),
+            labels: vec![],
+            comments: vec![],
+        }
+    }
+
+    /// A `## Verify` line whose command exits 0 on every platform.
+    fn verify_ok_line() -> &'static str {
+        if cfg!(windows) {
+            "cmd /c \"exit 0\""
+        } else {
+            "sh -c \"exit 0\""
+        }
+    }
+
+    /// A `## Verify` line whose command exits non-zero on every platform.
+    fn verify_fail_line() -> &'static str {
+        if cfg!(windows) {
+            "cmd /c \"exit 3\""
+        } else {
+            "sh -c \"exit 3\""
+        }
+    }
+
+    #[test]
+    fn green_close_runs_through_fakes_only() {
+        let root = test_dir("green");
+        let cfg = test_cfg(&root, "ut-green");
+        let repo = FakeRepo::new();
+        let sink = FakeLedger::default();
+        let agent = MiniAgent::new(vec![Outcome::Done])
+            .with_extra(format!("## Verify\n\n{}\n", verify_ok_line()));
+        let tracker = FakeTracker::default();
+
+        let report = run_queue_with(
+            &cfg,
+            &[test_issue(7)],
+            &agent,
+            &tracker,
+            &FakeClock,
+            &repo,
+            &sink,
+        )
+        .expect("run succeeds");
+
+        assert_eq!(report.worked.len(), 1);
+        assert!(report.worked[0].closed, "green issue is closed");
+        assert!(report.stop.is_none());
+        assert_eq!(report.commits, 1, "commit count read through the fake");
+        assert_eq!(*tracker.closes.borrow(), vec![7]);
+
+        // One plan + one execute ledger line, folded into the run totals.
+        let phases: Vec<String> = sink
+            .records
+            .borrow()
+            .iter()
+            .map(|r| r.phase.clone())
+            .collect();
+        assert_eq!(phases, vec!["plan", "execute"]);
+        assert_eq!(report.run_usage.total(), 8, "3 plan + 5 execute tokens");
+        // The plan usage carries its model straight through; the execute usage
+        // is an `add_tokens` accumulation, which by design never copies
+        // `model`, so its tokens key under `unknown` (pre-refactor behavior).
+        assert_eq!(report.run_usage_by_model["fake-model"].total(), 3);
+        assert_eq!(report.run_usage_by_model["unknown"].total(), 5);
+
+        // Branch lifecycle: the run branch was cut, and the clean run
+        // returned to the original branch.
+        let checkouts = repo.checkouts.borrow();
+        assert_eq!(checkouts[0], "new:afk/run-ut-green:main");
+        assert_eq!(checkouts.last().unwrap(), "force:main");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn non_green_outcome_stops_the_run() {
+        let root = test_dir("nongreen");
+        let cfg = test_cfg(&root, "ut-nongreen");
+        let repo = FakeRepo::new();
+        let sink = FakeLedger::default();
+        let agent = MiniAgent::new(vec![Outcome::Stuck]);
+        let tracker = FakeTracker::default();
+
+        let report = run_queue_with(
+            &cfg,
+            &[test_issue(1), test_issue(2)],
+            &agent,
+            &tracker,
+            &FakeClock,
+            &repo,
+            &sink,
+        )
+        .expect("run succeeds");
+
+        assert!(matches!(
+            report.stop,
+            Some(StopReason::NonGreen {
+                number: 1,
+                outcome: Outcome::Stuck
+            })
+        ));
+        assert_eq!(report.worked.len(), 1, "issue 2 never started");
+        assert_eq!(*agent.planned.borrow(), vec![1], "issue 2 never planned");
+        assert!(tracker.closes.borrow().is_empty());
+
+        // The execute ledger line carries the terminal outcome.
+        let records = sink.records.borrow();
+        let exec = records.iter().find(|r| r.phase == "execute").unwrap();
+        assert_eq!(exec.outcome, "stuck");
+
+        // A stopped run leaves the repo on the run branch for inspection.
+        assert!(
+            !repo.checkouts.borrow().iter().any(|c| c == "force:main"),
+            "no return to the original branch on a stop"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn verify_gate_failure_leaves_issue_open_and_run_continues() {
+        let root = test_dir("verify-fail");
+        let cfg = test_cfg(&root, "ut-vfail");
+        let repo = FakeRepo::new();
+        let sink = FakeLedger::default();
+        // Initial execute + two repair attempts, all `Done`; the gate itself
+        // keeps failing, so the repair budget is spent and the issue is left
+        // open while the run marches on.
+        let agent = MiniAgent::new(vec![Outcome::Done, Outcome::Done, Outcome::Done])
+            .with_extra(format!("## Verify\n\n{}\n", verify_fail_line()));
+        let tracker = FakeTracker::default();
+
+        let report = run_queue_with(
+            &cfg,
+            &[test_issue(3)],
+            &agent,
+            &tracker,
+            &FakeClock,
+            &repo,
+            &sink,
+        )
+        .expect("run succeeds");
+
+        assert!(
+            report.stop.is_none(),
+            "verify failure does not stop the run"
+        );
+        assert_eq!(report.worked.len(), 1);
+        assert!(!report.worked[0].closed);
+        assert!(
+            report.worked[0].outcome.is_none(),
+            "reported skipped-on-verify"
+        );
+        assert!(tracker.closes.borrow().is_empty());
+
+        // The repair phase is on the ledger with the failed-gate outcome.
+        let records = sink.records.borrow();
+        let repair = records.iter().find(|r| r.phase == "repair").unwrap();
+        assert_eq!(repair.outcome, "verify-failed");
+        assert_eq!(repair.tokens.total(), 10, "two repair executes accumulated");
+
+        // The honesty artifact was posted on each gate run.
+        assert!(tracker
+            .comments
+            .borrow()
+            .iter()
+            .any(|(n, b)| *n == 3 && b.contains("## Verify (Ralphy run ut-vfail)")));
+
+        // The run finished cleanly, so the repo returned to the original branch.
+        assert_eq!(repo.checkouts.borrow().last().unwrap(), "force:main");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn protocol_bounce_repairs_then_closes() {
+        let root = test_dir("protocol");
+        let cfg = test_cfg(&root, "ut-protocol");
+        let repo = FakeRepo::new();
+        let sink = FakeLedger::default();
+        // First execute claims Done over a protocol-dirty plan; the lint
+        // bounces the session back once, the executor repairs, the re-lint
+        // passes, and the issue closes (no `## Verify` → warn-and-close).
+        let agent = MiniAgent::new(vec![Outcome::Done, Outcome::Done]).lint_dirty_with_fix();
+        let tracker = FakeTracker::default();
+
+        let report = run_queue_with(
+            &cfg,
+            &[test_issue(4)],
+            &agent,
+            &tracker,
+            &FakeClock,
+            &repo,
+            &sink,
+        )
+        .expect("run succeeds");
+
+        assert_eq!(report.worked.len(), 1);
+        assert!(report.worked[0].closed, "closed after the repaired bounce");
+        assert_eq!(*tracker.closes.borrow(), vec![4]);
+
+        // The bounce is its own ledger phase, settled green.
+        let phases: Vec<String> = sink
+            .records
+            .borrow()
+            .iter()
+            .map(|r| r.phase.clone())
+            .collect();
+        assert_eq!(phases, vec!["plan", "execute", "protocol-repair"]);
+        let records = sink.records.borrow();
+        let bounce = records
+            .iter()
+            .find(|r| r.phase == "protocol-repair")
+            .unwrap();
+        assert_eq!(bounce.outcome, "done");
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

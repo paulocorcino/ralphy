@@ -16,6 +16,7 @@ Read diff hunks first, then the surrounding code needed to understand changed be
 - Concurrency, shutdown, restart, cancellation: shared mutable state across async boundaries, exported functions that read-modify-write module-level state under concurrent callers, fixed-window sleeps used as synchronization, lost cancellation.
 - Security in touched flows (OWASP-grade, with the call path named): auth bypass, injection (SQL / command / prompt / log / header), secret leakage, unsafe deserialization, SSRF, weak crypto, hardcoded secrets, weak randomness for security purposes.
 - Data loss / persistence bugs.
+- Performance regressions on changed code with a concrete mechanism (accidental O(n²) over unbounded input, N+1 queries, sync I/O on a hot path, unbounded memory growth) — only with a named execution path and material impact; never style-level micro-optimization.
 - API/contract mismatch that will break callers.
 - False-confidence in operational paths the change touches (compose, Dockerfile stage, release script, CI workflow): only when the diff actually changes one of these surfaces.
 

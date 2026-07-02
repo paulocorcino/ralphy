@@ -59,6 +59,22 @@ where
     state.end()
 }
 
+/// Where phase records land, behind a trait so the queue loop unit-tests
+/// against an in-memory sink. Callers treat a failure as best-effort — warn,
+/// never stop the run (D9).
+pub trait LedgerSink {
+    fn append(&self, rec: &LedgerRecord) -> Result<()>;
+}
+
+/// The production sink: the project's JSONL file under the usage root.
+pub struct FileLedger;
+
+impl LedgerSink for FileLedger {
+    fn append(&self, rec: &LedgerRecord) -> Result<()> {
+        append(rec)
+    }
+}
+
 /// Serialize one record to a single JSON line (no trailing newline). Pure, so the
 /// field set and the no-`cost`/`usd` invariant unit-test without the filesystem.
 pub fn record_line(rec: &LedgerRecord) -> Result<String> {
