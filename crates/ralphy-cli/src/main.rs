@@ -305,10 +305,15 @@ fn main() -> Result<()> {
 
 /// The shared consolidation step behind both `ralphy consolidate` and the
 /// automatic end-of-run trigger: run the curation session, verify it actually
-/// rewrote `KNOWLEDGE.md`, and only then archive the consumed notes into
-/// `knowledge/raw/`. Returns how many notes were archived. Errors — leaving the
-/// notes loose for a retry — when the session left `KNOWLEDGE.md` missing or
-/// unchanged. `notes` must be non-empty; callers gate on `loose_notes` first.
+/// rewrote `KNOWLEDGE.md` AND that the result passes the structural gate
+/// (`knowledge::validate_knowledge`), then archive ONLY the notes the session
+/// declared folded (its `<!-- folded: ... -->` marker) into `knowledge/raw/` —
+/// unfolded notes stay loose, named in a warning, for the next pass. Returns
+/// how many notes were archived. Errors — leaving every note loose for a retry
+/// and restoring the pre-session `KNOWLEDGE.md` — when the session left the
+/// file missing, unchanged, or structurally malformed (the rejected output is
+/// kept as `KNOWLEDGE.rejected.md` in the run dir for inspection). `notes`
+/// must be non-empty; callers gate on `loose_notes` first.
 ///
 /// Callers are responsible for clearing `ANTHROPIC_API_KEY` (the subscription-quota
 /// sentinel) before this runs — `run` already does so up front, `consolidate` does
@@ -321,7 +326,7 @@ fn run_consolidation(
     max_minutes: u64,
     notes: &[PathBuf],
 ) -> Result<usize> {
-    use anyhow::bail;
+    use anyhow::{bail, Context};
     use ralphy_core::knowledge;
 
     std::fs::create_dir_all(run_dir).ok();
@@ -338,15 +343,47 @@ fn run_consolidation(
     )?;
 
     let after = std::fs::read_to_string(ws.knowledge_file()).ok();
-    match after {
-        Some(ref a) if before.as_deref() != Some(a.as_str()) => {}
+    let after = match after {
+        Some(a) if before.as_deref() != Some(a.as_str()) => a,
         _ => bail!(
             "the session left KNOWLEDGE.md missing or unchanged — notes kept loose (see {})",
             run_dir.join("consolidate.log").display()
         ),
-    }
+    };
 
-    knowledge::archive_notes(ws, notes)
+    // Structural gate: a truncated/mangled file must not count as success. On
+    // rejection restore the pre-session curated file (a mangled one would
+    // poison every reader until the next consolidation) and keep the rejected
+    // output beside the log for inspection.
+    let folded = match knowledge::validate_knowledge(&after) {
+        Ok(folded) => folded,
+        Err(e) => {
+            let _ = std::fs::write(run_dir.join("KNOWLEDGE.rejected.md"), &after);
+            let restore = match &before {
+                Some(b) => std::fs::write(ws.knowledge_file(), b),
+                None => std::fs::remove_file(ws.knowledge_file()),
+            };
+            restore.context("restoring the pre-session KNOWLEDGE.md")?;
+            bail!(
+                "the session produced a malformed KNOWLEDGE.md ({e:#}) — change rejected, \
+                 notes kept loose (rejected file kept at {})",
+                run_dir.join("KNOWLEDGE.rejected.md").display()
+            );
+        }
+    };
+
+    let (to_archive, leftover) = knowledge::partition_folded(notes, &folded);
+    if !leftover.is_empty() {
+        let names: Vec<String> = leftover
+            .iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        warn!(
+            notes = %names.join(", "),
+            "notes not folded by the session — kept loose for the next pass"
+        );
+    }
+    knowledge::archive_notes(ws, &to_archive)
 }
 
 /// `ralphy consolidate`: run a one-shot agent session that curates the loose

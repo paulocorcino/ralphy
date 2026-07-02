@@ -1,13 +1,14 @@
 //! The knowledge cache's consolidation bookkeeping: which per-issue notes are
-//! still loose (not yet folded into `KNOWLEDGE.md`), and archiving them into
+//! still loose (not yet folded into `KNOWLEDGE.md`), the structural gate a
+//! freshly consolidated file must pass, and archiving the folded notes into
 //! `knowledge/raw/` after a consolidation session succeeds. The consolidation
 //! *content* is an agent's judgment (see `prompt.consolidate.md`); this module
-//! owns only the deterministic file moves around it.
+//! owns only the deterministic checks and file moves around it.
 
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::Workspace;
 
@@ -38,6 +39,93 @@ fn note_number(file_name: &str) -> Option<u64> {
         .strip_suffix(".md")?
         .parse()
         .ok()
+}
+
+/// Hard cap on the curated `KNOWLEDGE.md` line count. The consolidation prompt
+/// budgets ~150 lines; the gate allows some slack over that budget but rejects
+/// a file that ignored it wholesale.
+pub const KNOWLEDGE_LINE_CAP: usize = 200;
+
+/// The structural gate on a freshly consolidated `KNOWLEDGE.md`: the session's
+/// output is accepted only when it still has the shape `prompt.consolidate.md`
+/// mandates — title, topic headings, provenance markers, under the line cap.
+/// Returns the issue numbers from the `<!-- folded: ... -->` marker (the notes
+/// the session declared folded in, the runner's archive contract), or an error
+/// naming the first violated invariant so the caller can reject the file and
+/// keep every note loose for a retry.
+pub fn validate_knowledge(knowledge: &str) -> Result<Vec<u64>> {
+    if knowledge.trim().is_empty() {
+        bail!("file is empty");
+    }
+    let lines = knowledge.lines().count();
+    if lines > KNOWLEDGE_LINE_CAP {
+        bail!("file is {lines} lines, over the {KNOWLEDGE_LINE_CAP}-line cap");
+    }
+    let first = knowledge
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or_default();
+    if !first.starts_with("# KNOWLEDGE") {
+        bail!("missing the `# KNOWLEDGE` title heading");
+    }
+    if !knowledge.lines().any(|l| l.starts_with("## ")) {
+        bail!("no `## <topic>` headings");
+    }
+    if !has_provenance(knowledge) {
+        bail!("no `(#<issue> ...)` provenance markers");
+    }
+    let Some(marker) = knowledge
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| l.starts_with(FOLDED_PREFIX))
+    else {
+        bail!("missing the `{FOLDED_PREFIX} ... -->` marker line");
+    };
+    parse_folded_marker(marker).with_context(|| format!("malformed folded marker: `{marker}`"))
+}
+
+/// The line prefix of the folded-list contract between `prompt.consolidate.md`
+/// and the runner: `<!-- folded: #3, #16 -->` (or `<!-- folded: none -->`).
+const FOLDED_PREFIX: &str = "<!-- folded:";
+
+/// The issue numbers of a `<!-- folded: #3, #16 -->` marker line, `Some(vec![])`
+/// for the explicit `none`, and `None` for anything malformed — an unparseable
+/// claim must reject the whole file, not silently archive nothing.
+fn parse_folded_marker(line: &str) -> Option<Vec<u64>> {
+    let body = line
+        .strip_prefix(FOLDED_PREFIX)?
+        .strip_suffix("-->")?
+        .trim();
+    if body.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+    let numbers: Option<Vec<u64>> = body
+        .split(',')
+        .map(|tok| tok.trim().strip_prefix('#')?.parse().ok())
+        .collect();
+    numbers.filter(|n| !n.is_empty())
+}
+
+/// Whether any `(#<digit>` provenance marker appears — every curated bullet
+/// must cite the issues it came from, so a file without a single one is not a
+/// consolidation output.
+fn has_provenance(knowledge: &str) -> bool {
+    knowledge
+        .match_indices("(#")
+        .any(|(i, m)| knowledge[i + m.len()..].starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Split the loose notes into (folded → archive, unfolded → keep loose) using
+/// the issue numbers the session declared folded. Numbers in `folded` without
+/// a matching loose note (already archived by an earlier pass) are ignored.
+pub fn partition_folded(notes: &[PathBuf], folded: &[u64]) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    notes.iter().cloned().partition(|note| {
+        note.file_name()
+            .and_then(|n| n.to_str())
+            .and_then(note_number)
+            .is_some_and(|n| folded.contains(&n))
+    })
 }
 
 /// Move the given notes into `knowledge/raw/`, overwriting same-named archives
@@ -127,6 +215,108 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(ws.repo_root());
+    }
+
+    /// A minimal file with the exact shape `prompt.consolidate.md` mandates,
+    /// parameterized on the folded-marker body.
+    fn sample_knowledge(folded: &str) -> String {
+        format!(
+            "# KNOWLEDGE — curated project knowledge\n\
+             \n\
+             Consolidated through issue #21. Leads, not truths.\n\
+             \n\
+             ## Toolchain & platform\n\
+             - cargo test needs docker up first (#3, #16; 2026-06-11)\n\
+             \n\
+             ## Commands that work\n\
+             ```\n\
+             cargo test\n\
+             ```\n\
+             \n\
+             <!-- folded: {folded} -->\n"
+        )
+    }
+
+    #[test]
+    fn validate_knowledge_accepts_well_formed_and_returns_folded_numbers() {
+        let folded = validate_knowledge(&sample_knowledge("#3, #16, #21")).unwrap();
+        assert_eq!(folded, vec![3, 16, 21]);
+    }
+
+    #[test]
+    fn validate_knowledge_folded_none_is_empty_list() {
+        assert_eq!(
+            validate_knowledge(&sample_knowledge("none")).unwrap(),
+            Vec::<u64>::new()
+        );
+    }
+
+    #[test]
+    fn validate_knowledge_rejects_structural_violations() {
+        // Each case is one invariant of the gate; the substring pins the reason
+        // so a rejection names what actually broke.
+        let over_cap = format!("{}{}", sample_knowledge("#3"), "- filler\n".repeat(250));
+        let cases: Vec<(String, &str)> = vec![
+            (String::new(), "empty"),
+            ("   \n\n".into(), "empty"),
+            (over_cap, "line cap"),
+            (
+                sample_knowledge("#3").replace("# KNOWLEDGE", "# NOTES"),
+                "title",
+            ),
+            (sample_knowledge("#3").replace("## ", "### "), "headings"),
+            (
+                sample_knowledge("#3").replace("(#3, #16; 2026-06-11)", ""),
+                "provenance",
+            ),
+            (
+                sample_knowledge("#3").replace("<!-- folded: #3 -->", ""),
+                "marker line",
+            ),
+            (sample_knowledge(""), "malformed"),
+            (sample_knowledge("#3, oops"), "malformed"),
+            (sample_knowledge("3, 16"), "malformed"),
+        ];
+        for (input, reason) in cases {
+            let err = validate_knowledge(&input).unwrap_err().to_string();
+            assert!(err.contains(reason), "expected `{reason}` in `{err}`");
+        }
+    }
+
+    #[test]
+    fn prompt_and_parser_agree_on_the_folded_list_contract() {
+        // The consolidation prompt shows the exact marker the runner parses;
+        // this pins the two sides of the contract together.
+        let prompt = include_str!("../../../assets/prompts/prompt.consolidate.md");
+        assert!(
+            prompt.contains("<!-- folded: #3, #16, #21 -->"),
+            "prompt.consolidate.md must show the folded marker the parser accepts"
+        );
+        assert_eq!(
+            parse_folded_marker("<!-- folded: #3, #16, #21 -->"),
+            Some(vec![3, 16, 21])
+        );
+        assert!(prompt.contains("<!-- folded: none -->"));
+        assert_eq!(
+            parse_folded_marker("<!-- folded: none -->"),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn partition_folded_splits_archive_from_leftover() {
+        let notes = vec![
+            PathBuf::from("issue-3.md"),
+            PathBuf::from("issue-16.md"),
+            PathBuf::from("issue-21.md"),
+        ];
+        // #99 has no loose note (already archived earlier) and is ignored.
+        let (archive, leftover) = partition_folded(&notes, &[3, 21, 99]);
+        assert_eq!(
+            archive,
+            vec![PathBuf::from("issue-3.md"), PathBuf::from("issue-21.md")]
+        );
+        assert_eq!(leftover, vec![PathBuf::from("issue-16.md")]);
     }
 
     #[test]
