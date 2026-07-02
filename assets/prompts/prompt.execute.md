@@ -88,8 +88,12 @@ report published for the human reviewer.
    delta first — "what changed since the predecessor" is usually the shortest
    path to the fault.
 2. For each step: implement it, run the project's format command and the
-   NARROWEST relevant test command (or a build if not yet testable), as defined
-   in CLAUDE.md/CONTEXT.md. When green, tick the step `- [x]` in `.ralphy/plan.md`
+   NARROWEST relevant test command (or a build if not yet testable). Narrowest
+   means the specific test file(s)/pattern covering the code you just touched —
+   usually the scoped commands the plan names in `## Verify` or "Done when" —
+   NOT the package-wide suite script, even when CLAUDE.md/CONTEXT.md names that
+   script as "the" test command; that convention defines the final gate, not
+   the inner loop. When green, tick the step `- [x]` in `.ralphy/plan.md`
    and make ONE focused commit (Conventional Commits, reference the issue, e.g.
    `feat: ... (#<number>)`).
 3. When EVERY step is `- [x]` and the project's tests are green, print this on
@@ -97,6 +101,26 @@ report published for the human reviewer.
    done, and verifies every step is ticked before accepting it:
 
        RALPHY_DONE_EXIT
+
+## Scale verification cost to the change
+Session wall-clock is the scarcest budget you have, and repeated broad suites
+are its single biggest silent drain — one slow test file in a package script
+can cost minutes per invocation, and each repeat re-buys information you
+already own.
+- Inner loop = scoped commands only. Between steps, run just the test
+  file(s)/pattern that exercise the code you touched. A full suite run in the
+  inner loop is a smell, not diligence: it cannot fail for your change in a
+  place the scoped run doesn't cover without you needing to see the full
+  failure anyway at the final gate.
+- Note what commands cost. When a verification command turns out to be slow
+  (tens of seconds or more), do not run it again until something it covers —
+  and the scoped runs don't — has changed. Prefer narrowing it (a file
+  argument, a filter flag) over repeating it whole.
+- The full suite is paid at most ONCE, at step 3, right before
+  `RALPHY_DONE_EXIT` — that single green run is what "the project's tests are
+  green" means. The runner's verify gate re-runs the plan's `## Verify`
+  commands after you exit anyway, so a second in-session suite run proves
+  nothing the gate won't re-prove for free.
 
 ## Prove behavior, not just compilation
 - A step that changes what the user can see or do is NOT done when it merely

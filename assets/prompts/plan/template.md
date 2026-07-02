@@ -205,8 +205,11 @@ you only produce a plan that a later execution loop will consume.
   it must be a single command (no `&&`, pipes, globs, or env-var expansion); a
   command that truly needs a shell writes `sh -c "…"` explicitly. Scope a
   monorepo inside the command itself (`cargo test -p foo`, `npm --prefix x
-  test`). Write `none` (on its own line) ONLY when nothing is machine-verifiable
-  — an honest opt-out, not a way to dodge a gate you could write.
+  test`). Order the lines cheap-first: the runner stops at the first non-zero
+  exit, so a fast scoped command placed before an expensive full suite makes a
+  red gate cost seconds instead of minutes. Write `none` (on its own line)
+  ONLY when nothing is machine-verifiable — an honest opt-out, not a way to
+  dodge a gate you could write.
 - A `## Verify` made only of static checks (type-check, lint, dependency/boundary
   rules, presence-of-declaration tests) proves the code TYPES and the boundary
   holds — not that the artifact RUNS. When the issue creates or changes something
