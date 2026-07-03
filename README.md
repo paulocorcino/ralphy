@@ -119,6 +119,10 @@ An issue is in the queue if it carries **any** queue label. The defaults are
 | `triage-agent` | evaluated by `ralphy triage`; parks the issue out of the run queue until triaged |
 | `stagedplan` | planned with the `staged-plan` skill (still needs a queue label to be picked up) |
 
+`ralphy triage`'s `escalate` verdict routes accepted-but-human-first issues (a
+maintainer owes a decision) to `ready-for-human`, keeping them out of the queue —
+distinct from `bounce`, which returns reporter-owed gaps to `needs-info`.
+
 **Human-return precedence** (ADR-0016): a label that returns an issue to a human —
 `ready-for-human`/`HITL`, `needs-info`, `needs-triage`, `wontfix`, or `triage-agent`
 — outranks any queue label. A queued issue that also carries one is **skipped with a

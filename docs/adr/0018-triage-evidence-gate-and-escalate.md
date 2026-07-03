@@ -1,7 +1,6 @@
 # Triage evidence gate and the `escalate` verdict
 
-Status: accepted; not yet implemented (code stage: #91 evidence gate, #92
-escalate verdict).
+Status: accepted; implemented (#91 evidence gate, #92 escalate verdict).
 
 ADR-0017's triage charter judges **spec executability**: whether an issue has a
 clear "done" a test or build can verify. It deliberately does not judge whether
