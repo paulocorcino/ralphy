@@ -1362,6 +1362,19 @@ pub(crate) fn resolve_triage_label(repo: &Path) -> String {
         .unwrap_or_else(|| "ready-for-agent".to_string())
 }
 
+/// Resolve the human-return label an `escalate` verdict swaps in (ADR-0018 §3)
+/// from the scaffolded `docs/agents/triage-labels.md` mapping for
+/// `ready-for-human`, falling back to the canonical `ready-for-human` when no
+/// mapping is configured. The `HITL` alias is honored downstream by the runner's
+/// human-gate classification, so no alias handling is needed at swap time.
+pub(crate) fn resolve_human_label(repo: &Path) -> String {
+    let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
+    triage_doc
+        .as_deref()
+        .and_then(|d| github::parse_triage_mapping(d, "ready-for-human"))
+        .unwrap_or_else(|| "ready-for-human".to_string())
+}
+
 /// Publish a confirmed draft, threading the [`InitState`] checkpoint so a crash
 /// mid-publish never recreates an already-published issue or milestone on resume
 /// (ADR-0012 stage 9). The closures inject the external writes (`create_milestone`,

@@ -16,7 +16,7 @@ use ralphy_core::{
     CONSOLIDATED_SPEC_MARKER, TRIAGE_AGENT_LABEL,
 };
 
-use crate::init::{agent_logged_in, resolve_triage_label, Agent};
+use crate::init::{agent_logged_in, resolve_human_label, resolve_triage_label, Agent};
 
 /// The canonical reporter-bounce label a `bounce` verdict swaps in.
 const NEEDS_INFO_LABEL: &str = "needs-info";
@@ -57,6 +57,9 @@ pub struct TriageLabels {
     pub queue_label: String,
     /// The label `triage-agent` is removed in favour of on bounce.
     pub needs_info_label: String,
+    /// The human-return label `triage-agent` is removed in favour of on escalate
+    /// (mapping-resolved `ready-for-human`, ADR-0018 §3).
+    pub human_label: String,
     /// The operational label a triaged issue carries coming in.
     pub triage_agent_label: String,
     /// The consolidated-spec comment marker.
@@ -127,6 +130,10 @@ fn verdict_line(item: &TriageItem, labels: &TriageLabels) -> String {
             "  #{}: bounce — comment, swap {} → {}",
             item.number, labels.triage_agent_label, labels.needs_info_label
         ),
+        TriageVerdict::Escalate => format!(
+            "  #{}: escalate — comment, swap {} → {}",
+            item.number, labels.triage_agent_label, labels.human_label
+        ),
     }
 }
 
@@ -168,6 +175,17 @@ pub fn apply_triage(
                 tracker.remove_label(item.number, &labels.triage_agent_label)?;
                 tracker.add_label(item.number, &labels.needs_info_label)?;
             }
+            TriageVerdict::Escalate => {
+                // Handing a decision to a maintainer is always safe: never gated
+                // on `decide` (ADR-0018 §3). Comment + swap only — any proposed
+                // follow-up issue is created interactively in `run()`, never here,
+                // so the `--yes` path can never author a new issue.
+                if let Some(body) = item.comment.as_deref() {
+                    tracker.comment(item.number, body)?;
+                }
+                tracker.remove_label(item.number, &labels.triage_agent_label)?;
+                tracker.add_label(item.number, &labels.human_label)?;
+            }
         }
     }
     Ok(())
@@ -201,6 +219,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     let labels = TriageLabels {
         queue_label: queue_label.clone(),
         needs_info_label: NEEDS_INFO_LABEL.to_string(),
+        human_label: resolve_human_label(&repo),
         triage_agent_label: TRIAGE_AGENT_LABEL.to_string(),
         marker: CONSOLIDATED_SPEC_MARKER.to_string(),
     };
@@ -249,9 +268,48 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     if confirmed {
         println!("Applied {} verdict(s).", draft.item_count());
     } else {
-        println!("Declined — promote/consolidate skipped; any bounces were applied.");
+        println!("Declined — promote/consolidate skipped; any bounces/escalates were applied.");
+    }
+
+    // Interactive redirect flow (ADR-0018 §4): a drafted follow-up issue is
+    // created ONLY after an explicit per-draft `y`. Never reached under `--yes`
+    // (that branch returns above), so escalate can never author a new issue
+    // non-interactively.
+    for item in &draft.items {
+        if item.verdict != TriageVerdict::Escalate {
+            continue;
+        }
+        let Some(draft_issue) = &item.draft_issue else {
+            continue;
+        };
+        println!(
+            "\nEscalate #{} proposes a follow-up issue:\n  title: {}\n  body:\n{}",
+            item.number,
+            draft_issue.title,
+            indent_body(&draft_issue.body)
+        );
+        print!("  > Create this follow-up issue? [y/N] ");
+        std::io::stdout().flush().ok();
+        let mut answer = String::new();
+        std::io::stdin()
+            .read_line(&mut answer)
+            .context("reading answer from stdin")?;
+        if matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            let number = tracker.create_issue(&draft_issue.title, &draft_issue.body, &[])?;
+            println!("  created follow-up issue #{number}.");
+        } else {
+            println!("  skipped — no issue created.");
+        }
     }
     Ok(())
+}
+
+/// Indent a multi-line issue body for the interactive preview.
+fn indent_body(body: &str) -> String {
+    body.lines()
+        .map(|l| format!("    {l}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -259,12 +317,15 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    use ralphy_core::DraftIssue;
+
     #[derive(Default)]
     struct RecordingTracker {
         added: RefCell<Vec<(u64, String)>>,
         removed: RefCell<Vec<(u64, String)>>,
         comments: RefCell<Vec<(u64, String)>>,
         upserts: RefCell<Vec<(u64, String, String)>>,
+        created: RefCell<Vec<(String, String)>>,
     }
 
     impl IssueTracker for RecordingTracker {
@@ -289,12 +350,19 @@ mod tests {
                 .push((number, marker.to_string(), body.to_string()));
             Ok(())
         }
+        fn create_issue(&self, title: &str, body: &str, _labels: &[String]) -> Result<u64> {
+            self.created
+                .borrow_mut()
+                .push((title.to_string(), body.to_string()));
+            Ok(0)
+        }
     }
 
     fn labels() -> TriageLabels {
         TriageLabels {
             queue_label: "ready-for-agent".into(),
             needs_info_label: NEEDS_INFO_LABEL.into(),
+            human_label: "ready-for-human".into(),
             triage_agent_label: TRIAGE_AGENT_LABEL.into(),
             marker: CONSOLIDATED_SPEC_MARKER.into(),
         }
@@ -307,6 +375,7 @@ mod tests {
                 number: 12,
                 verdict: TriageVerdict::Promote,
                 comment: None,
+                draft_issue: None,
             }],
         };
         let t = RecordingTracker::default();
@@ -325,6 +394,7 @@ mod tests {
                 number: 15,
                 verdict: TriageVerdict::Consolidate,
                 comment: Some(body.clone()),
+                draft_issue: None,
             }],
         };
         let t = RecordingTracker::default();
@@ -347,6 +417,7 @@ mod tests {
                 number: 18,
                 verdict: TriageVerdict::Bounce,
                 comment: Some("Missing acceptance criteria.".into()),
+                draft_issue: None,
             }],
         };
         let t = RecordingTracker::default();
@@ -361,6 +432,68 @@ mod tests {
     }
 
     #[test]
+    fn escalate_posts_comment_and_swaps_to_ready_for_human() {
+        let body = "A maintainer must decide the pricing rule; see ## Evidence.";
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 22,
+                verdict: TriageVerdict::Escalate,
+                comment: Some(body.to_string()),
+                draft_issue: None,
+            }],
+        };
+        let t = RecordingTracker::default();
+        apply_triage(&draft, &t, &labels(), |_| true).unwrap();
+        assert_eq!(*t.comments.borrow(), vec![(22, body.to_string())]);
+        assert_eq!(*t.removed.borrow(), vec![(22, "triage-agent".to_string())]);
+        assert_eq!(*t.added.borrow(), vec![(22, "ready-for-human".to_string())]);
+        assert!(
+            t.created.borrow().is_empty(),
+            "apply_triage never creates an issue"
+        );
+    }
+
+    #[test]
+    fn escalate_never_asks_confirmation() {
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 23,
+                verdict: TriageVerdict::Escalate,
+                comment: Some("A maintainer owes a decision.".into()),
+                draft_issue: None,
+            }],
+        };
+        let t = RecordingTracker::default();
+        // `decide` panics if consulted — escalate must apply without it.
+        apply_triage(&draft, &t, &labels(), |_| panic!("escalate must not ask")).unwrap();
+        assert_eq!(*t.added.borrow(), vec![(23, "ready-for-human".to_string())]);
+    }
+
+    #[test]
+    fn yes_mode_escalate_creates_no_issues() {
+        // The `--yes` invariant: `apply_triage` over an escalate item that
+        // carries a drafted follow-up never creates an issue — creation lives
+        // only in the interactive `run()` path.
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 24,
+                verdict: TriageVerdict::Escalate,
+                comment: Some("A maintainer owes a decision.".into()),
+                draft_issue: Some(DraftIssue {
+                    title: "Restricted follow-up".into(),
+                    body: "Closes #24".into(),
+                }),
+            }],
+        };
+        let t = RecordingTracker::default();
+        apply_triage(&draft, &t, &labels(), |_| true).unwrap();
+        assert!(
+            t.created.borrow().is_empty(),
+            "--yes escalate must never create an issue"
+        );
+    }
+
+    #[test]
     fn declined_confirmation_publishes_nothing() {
         let draft = TriageDraft {
             items: vec![
@@ -368,11 +501,13 @@ mod tests {
                     number: 1,
                     verdict: TriageVerdict::Promote,
                     comment: None,
+                    draft_issue: None,
                 },
                 TriageItem {
                     number: 2,
                     verdict: TriageVerdict::Consolidate,
                     comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nspec")),
+                    draft_issue: None,
                 },
             ],
         };
@@ -396,6 +531,7 @@ mod tests {
                 number: 7,
                 verdict: TriageVerdict::Consolidate,
                 comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nv2 spec")),
+                draft_issue: None,
             }],
         };
         let t = RecordingTracker::default();
