@@ -305,6 +305,98 @@ fn is_human_gate(labels: &[String]) -> bool {
         .any(|l| HUMAN_GATE_LABELS.contains(&l.as_str()))
 }
 
+/// The first queued issue carrying [`STOP_BEFORE_LABEL`] whose number is NOT in
+/// `forced` — the point the run halts before, or `None` when the queue has no
+/// (non-forced) stop-before. An explicit selection (`--only-issue`/`--issues`)
+/// suppresses the label on exactly those numbers, so a forced stop-before runs
+/// normally. Shared by the runner loop, the CLI's `queue built` boundary, and
+/// [`crate::queue_view::resolve_queue_view`] so all three agree on where a run
+/// stops.
+pub fn first_stop_before(queue: &[Issue], forced: &[u64]) -> Option<u64> {
+    queue
+        .iter()
+        .find(|i| !forced.contains(&i.number) && i.labels.iter().any(|l| l == STOP_BEFORE_LABEL))
+        .map(|i| i.number)
+}
+
+/// The human-return label (ADR-0016) on `issue`, if any: the first of its labels
+/// that appears in `human_return_labels`. Such a label outranks the queue label,
+/// so the runner skips the issue with this label as the reason. Shared by the
+/// runner loop and [`crate::queue_view::resolve_queue_view`] so both classify a
+/// parked issue identically. Unlike `stop-before`, a forced selection does NOT
+/// suppress it (the label may record someone else's state).
+pub fn human_return_label<'a>(
+    issue: &'a Issue,
+    human_return_labels: &[String],
+) -> Option<&'a String> {
+    issue
+        .labels
+        .iter()
+        .find(|l| human_return_labels.iter().any(|h| h == *l))
+}
+
+/// The blocked-by classification of one issue against the tracker: the open
+/// blockers (still-open declared blockers, plus the open children of any retired
+/// bundle a closed blocker split into), the closed blockers (handoff sources),
+/// and the human-gate subset of the open blockers (`ready-for-human`/`HITL`,
+/// ADR-0014). Lifted out of [`prepare_issue`] so the read-only
+/// [`crate::queue_view::resolve_queue_view`] gates a candidate through the SAME
+/// resolution the runner uses. Pure data — no orchestration side effects; the
+/// only log line is the diagnostic "closed but split" visibility note. An `Err`
+/// (an `is_closed`/`open_children` failure) is fatal to the caller, exactly as
+/// in the runner loop; a label-fetch failure degrades to "agent work" with a warn.
+pub(crate) struct OpenBlockers {
+    pub open: Vec<u64>,
+    pub closed: Vec<u64>,
+    pub human: Vec<u64>,
+}
+
+pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result<OpenBlockers> {
+    // Refs are the union of the body's `## Blocked by` and the marked
+    // consolidated-spec comment's (ADR-0017).
+    let refs = blocked::parse_blocked_by_all(&issue.body, &issue.comments);
+    let mut open: Vec<u64> = Vec::new();
+    let mut closed: Vec<u64> = Vec::new();
+    for n in refs {
+        match tracker.is_closed(n) {
+            Ok(true) => match tracker.open_children(n) {
+                Ok(children) if children.is_empty() => closed.push(n),
+                Ok(children) => {
+                    info!(
+                        number = issue.number,
+                        blocker = n,
+                        children = ?children,
+                        "blocker closed but split into open children — still blocking"
+                    );
+                    open.extend(children);
+                }
+                Err(e) => return Err(e),
+            },
+            Ok(false) => open.push(n),
+            Err(e) => return Err(e),
+        }
+    }
+    // Split the open blockers into human gates (ready-for-human/HITL — parked
+    // until a person acts, ADR-0014) and ordinary agent work the queue clears.
+    // A label-fetch failure is non-fatal: degrade to "agent work" rather than
+    // abort, since classification is a visibility concern, not a correctness gate.
+    let mut human: Vec<u64> = Vec::new();
+    for &n in &open {
+        match tracker.issue_labels(n) {
+            Ok(labels) if is_human_gate(&labels) => human.push(n),
+            Ok(_) => {}
+            Err(e) => {
+                warn!(blocker = n, error = %e, "could not fetch blocker labels — treating as agent work");
+            }
+        }
+    }
+    Ok(OpenBlockers {
+        open,
+        closed,
+        human,
+    })
+}
+
 /// The label applied to an issue the planner judged a bundle (multiple backlog
 /// tasks under one number): the queue is parked on a human running `/to-issues`
 /// to open the children (`## Parent: #N`) and close the bundle — the
@@ -883,46 +975,14 @@ fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     // does not finish its work — the gate follows the split: while any
     // child is open, the dependent stays blocked on those children.
     //
-    // Refs are the union of the body's `## Blocked by` and the marked
-    // consolidated-spec comment's (ADR-0017).
-    let refs = blocked::parse_blocked_by_all(&issue.body, &issue.comments);
-    let mut open_blockers: Vec<u64> = Vec::new();
-    let mut closed_blockers: Vec<u64> = Vec::new();
-    for n in refs {
-        match cx.tracker.is_closed(n) {
-            Ok(true) => match cx.tracker.open_children(n) {
-                Ok(children) if children.is_empty() => closed_blockers.push(n),
-                Ok(children) => {
-                    info!(
-                        number = issue.number,
-                        blocker = n,
-                        children = ?children,
-                        "blocker closed but split into open children — still blocking"
-                    );
-                    open_blockers.extend(children);
-                }
-                Err(e) => return Err(e),
-            },
-            Ok(false) => open_blockers.push(n),
-            Err(e) => return Err(e),
-        }
-    }
+    // The classification (open/closed/human split) is shared with the
+    // read-only `ralphy issues` surface via [`open_blockers`] so the two agree.
+    let OpenBlockers {
+        open: open_blockers,
+        closed: closed_blockers,
+        human: human_blockers,
+    } = open_blockers(&issue, cx.tracker)?;
     if !open_blockers.is_empty() {
-        // Split the open blockers into human gates (ready-for-human/HITL —
-        // parked until a person acts, ADR-0014) and ordinary agent work the
-        // queue will clear. A label-fetch failure is non-fatal: it degrades
-        // to the generic "blocked" reason rather than aborting the AFK run,
-        // since classification is a visibility concern, not a correctness gate.
-        let mut human_blockers: Vec<u64> = Vec::new();
-        for &n in &open_blockers {
-            match cx.tracker.issue_labels(n) {
-                Ok(labels) if is_human_gate(&labels) => human_blockers.push(n),
-                Ok(_) => {}
-                Err(e) => {
-                    warn!(blocker = n, error = %e, "could not fetch blocker labels — treating as agent work");
-                }
-            }
-        }
         if human_blockers.is_empty() {
             // consumed by the telegram notifier / presenter — keep stable
             info!(
@@ -1652,9 +1712,7 @@ fn run_queue_with(
         // issue. An explicitly named issue (`--only-issue`/`--issues`) overrides it
         // — the queue was pre-filtered to that selection, so the operator clearly
         // wants it to run.
-        if !cfg.forced_issues.contains(&issue.number)
-            && issue.labels.iter().any(|l| l == STOP_BEFORE_LABEL)
-        {
+        if first_stop_before(std::slice::from_ref(issue), &cfg.forced_issues).is_some() {
             // consumed by the telegram notifier / presenter — keep stable
             info!(
                 number = issue.number,
@@ -1671,11 +1729,7 @@ fn run_queue_with(
         // the queue (unlike stop-before, which halts). `forced_issues` does NOT
         // override this: the label may record someone else's state (a reporter
         // owing info, a parked verify gate) that a run flag must not steamroll.
-        if let Some(label) = issue
-            .labels
-            .iter()
-            .find(|l| cfg.human_return_labels.iter().any(|h| h == *l))
-        {
+        if let Some(label) = human_return_label(issue, &cfg.human_return_labels) {
             // consumed by the telegram notifier / presenter — keep stable
             info!(
                 number = issue.number,
@@ -1984,6 +2038,45 @@ mod tests {
     /// Build a fixed `DateTime<Local>` for deterministic `next_reset` tests.
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
         Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
+    }
+
+    fn labeled(number: u64, labels: &[&str]) -> Issue {
+        Issue {
+            number,
+            title: format!("issue {number}"),
+            body: String::new(),
+            labels: labels.iter().map(|s| s.to_string()).collect(),
+            comments: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn first_stop_before_finds_first_and_respects_forced() {
+        let queue = vec![
+            labeled(1, &[]),
+            labeled(2, &[STOP_BEFORE_LABEL]),
+            labeled(3, &[STOP_BEFORE_LABEL]),
+        ];
+        // The first stop-before in order.
+        assert_eq!(first_stop_before(&queue, &[]), Some(2));
+        // Forcing the first stop-before skips to the next one.
+        assert_eq!(first_stop_before(&queue, &[2]), Some(3));
+        // Forcing every stop-before yields none.
+        assert_eq!(first_stop_before(&queue, &[2, 3]), None);
+        // A queue with no stop-before yields none.
+        assert_eq!(first_stop_before(&[labeled(1, &[])], &[]), None);
+    }
+
+    #[test]
+    fn human_return_label_matches_first_configured_label() {
+        let labels = vec!["needs-info".to_string(), "wontfix".to_string()];
+        let parked = labeled(5, &["queue", "wontfix"]);
+        assert_eq!(
+            human_return_label(&parked, &labels).map(String::as_str),
+            Some("wontfix")
+        );
+        let plain = labeled(6, &["queue"]);
+        assert_eq!(human_return_label(&plain, &labels), None);
     }
 
     #[test]
