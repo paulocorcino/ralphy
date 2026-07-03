@@ -139,11 +139,13 @@ you only produce a plan that a later execution loop will consume.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
-   - [ ] Self-review: dispatch the auto-discovered `reviewer` skill
-         (`.agents/skills/reviewer/SKILL.md`) as a Codex subagent scoped to
-         ONLY the commits you made for this issue — not the whole branch.
-         Resolve every HIGH finding before finishing; if one cannot be fixed
-         autonomously, record it under `## Notes & decisions` and block.
+   - [ ] Self-review: spawn one Codex subagent in the background running the
+         auto-discovered `reviewer` skill (`.agents/skills/reviewer/SKILL.md`),
+         scoped to ONLY the commits you made for this issue — not the whole
+         branch; for a small mechanical diff, write this step as a direct
+         adversarial re-read of the diff instead (see the self-review rule
+         below). Resolve every HIGH finding before finishing; if one cannot be
+         fixed autonomously, record it under `## Notes & decisions` and block.
    - [ ] the project's format and test commands pass with no new warnings
    ```
 
@@ -300,16 +302,22 @@ you only produce a plan that a later execution loop will consume.
   green on ONE minimal unit — then fan out the rest. A session can stall at
   any step: easy-first ordering leaves valuable-but-unverifiable residue;
   skeleton-first leaves a spine that stands alone.
-- The penultimate step is a Codex-native self-review: dispatch
-  `.agents/skills/reviewer/` as a Codex subagent scoped to ONLY the commits you
-  made for this issue — include it by DEFAULT. Omit it only when the change
-  carries no domain logic at all (pure data/fixtures/docs), and record that
-  omission as a `## Decisions` bullet with a one-line why. A plan that
-  includes the step buys a real review: the executor must record the
-  reviewer's findings in the plan, so do not include it as ritual for changes
-  where it cannot find anything tests don't. Resolve every HIGH finding
-  before declaring done. Phrase it as a Codex subagent dispatch — not as a
-  Claude Task-tool invocation.
+- The penultimate step is a Codex-native self-review over this issue's
+  commits — include it by DEFAULT, but SCALE it to the expected diff:
+  - changes with real domain logic or a multi-file/multi-crate surface get the
+    full review: spawn one Codex subagent in the background running
+    `.agents/skills/reviewer/`, scoped to ONLY this issue's commits, so the
+    closing paperwork proceeds while it reviews;
+  - small mechanical changes (single crate/package, no new control flow,
+    follow-a-pattern edits) get a lighter step: a direct adversarial re-read
+    of the final diff by the executor itself, hunting for what tests can't
+    catch — still recorded under `## Self-review findings`. A fixed multi-minute
+    subagent review on a 50-line mechanical diff is cost without information.
+  Omit the step entirely only when the change carries no domain logic at all
+  (pure data/fixtures/docs), and record that omission as a `## Decisions`
+  bullet with a one-line why. Either variant buys a real review: the executor
+  must record the findings in the plan, so do not include it as ritual.
+  Resolve every HIGH finding before declaring done.
 - The LAST step is always a green-build/test gate.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
