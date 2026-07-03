@@ -53,6 +53,34 @@ pub fn run_envelope(type_: &str, ctx: &EventCtx, data: Value) -> Value {
     envelope(type_, None, ctx, data)
 }
 
+/// The `data` payload shared by the enriched `queue.built` and the on-demand
+/// `queue.snapshot` (ADR-0020): `{count, order, stop_before, issues}`. Defined
+/// ONCE and used by both triggers so the two payloads can never diverge — `issues`
+/// is the per-issue snapshot array (`Value::Null` for the legacy shape when the
+/// resolver produced none). The reserved `emitter` block is merged in later by
+/// [`envelope`]/[`run_envelope`].
+pub fn queue_snapshot_data(
+    issues: &Value,
+    count: u64,
+    order: &[u64],
+    stop_before: Option<u64>,
+) -> Value {
+    json!({
+        "count": count,
+        "order": order,
+        "stop_before": stop_before,
+        "issues": issues,
+    })
+}
+
+/// Wrap a [`queue_snapshot_data`] payload in the `dev.ralphy.queue.snapshot`
+/// envelope (ADR-0020): the on-demand `ralphy issues --push` emission, byte-for-byte
+/// the same `data` shape the runner's `queue.built` carries, only the envelope
+/// `type` differs. Subject-less, like `queue.built`.
+pub fn queue_snapshot_envelope(data: Value, ctx: &EventCtx) -> Value {
+    run_envelope("dev.ralphy.queue.snapshot", ctx, data)
+}
+
 /// The `usage {up,cr,cw,out,model}` object carried on `plan.written` and
 /// `issue.closed` (docs/events.md); `model` is `null` when the adapter captured none.
 fn usage_json(u: &UsageLite) -> Value {
@@ -102,11 +130,12 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             count,
             order,
             stop_before,
+            issues,
         } => Some(envelope(
             "dev.ralphy.queue.built",
             None,
             ctx,
-            json!({ "count": count, "order": order, "stop_before": stop_before }),
+            queue_snapshot_data(issues, *count, order, *stop_before),
         )),
         RunEvent::IssueStarted { number, title } => Some(envelope(
             "dev.ralphy.issue.started",
@@ -343,6 +372,7 @@ mod tests {
                 count: 3,
                 order: vec![1, 2, 3],
                 stop_before: Some(2),
+                issues: Value::Null,
             },
             &RunState::new("t", 1),
         );
@@ -354,6 +384,57 @@ mod tests {
         assert_eq!(v["data"]["count"], 3);
         assert_eq!(v["data"]["order"], json!([1, 2, 3]));
         assert_eq!(v["data"]["stop_before"], 2);
+    }
+
+    #[test]
+    fn queue_built_carries_the_enriched_issues_array() {
+        // The enriched `queue.built` (ADR-0020) carries the per-issue snapshot
+        // verbatim under `data.issues`.
+        let issues = json!([
+            {"number": 1, "title": "a", "labels": ["q"], "queue_status": "eligible",
+             "skip_reason": null, "blocked_by": [], "position": 1},
+            {"number": 2, "title": "b", "labels": ["q"], "queue_status": "blocked",
+             "skip_reason": null, "blocked_by": [1], "position": null},
+        ]);
+        let v = map(
+            RunEvent::QueueBuilt {
+                count: 2,
+                order: vec![1, 2],
+                stop_before: None,
+                issues: issues.clone(),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["data"]["issues"], issues);
+        assert_eq!(v["data"]["count"], 2);
+        assert_eq!(v["data"]["order"], json!([1, 2]));
+    }
+
+    #[test]
+    fn queue_snapshot_data_matches_queue_built_data() {
+        // `queue.snapshot` (from `ralphy issues --push`) and the enriched
+        // `queue.built` share ONE `data` builder, so their payloads are identical
+        // — only the envelope `type` differs (ADR-0020).
+        let issues = json!([
+            {"number": 1, "queue_status": "eligible", "position": 1},
+        ]);
+        let built = map(
+            RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: issues.clone(),
+            },
+            &RunState::new("t", 1),
+        );
+        let snapshot = queue_snapshot_envelope(queue_snapshot_data(&issues, 1, &[1], None), &ctx());
+        assert_eq!(snapshot["type"], "dev.ralphy.queue.snapshot");
+        assert!(
+            snapshot.get("subject").is_none(),
+            "queue.snapshot has no subject: {snapshot}"
+        );
+        // Byte-identical `data` shape (both merge the same emitter via ctx()).
+        assert_eq!(snapshot["data"], built["data"]);
     }
 
     #[test]

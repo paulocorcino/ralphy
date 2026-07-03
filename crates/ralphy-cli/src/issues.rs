@@ -41,6 +41,12 @@ pub struct IssuesArgs {
     /// `--fields number,queue_status`. Unknown names are ignored.
     #[arg(long)]
     pub fields: Option<String>,
+
+    /// Push the current queue snapshot as a `dev.ralphy.queue.snapshot` CloudEvent
+    /// to the configured `events.url` (ADR-0020) instead of printing. Fails with a
+    /// clear message when no `events.url` is set for this repo.
+    #[arg(long)]
+    pub push: bool,
 }
 
 /// The output format `--format` selects.
@@ -91,6 +97,14 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     let human_return = github::resolve_human_return_labels(&repo_root);
     let fields = parse_fields(args.fields.as_deref());
 
+    // `--push` emits the whole judged queue as a snapshot event rather than
+    // printing it — the on-demand twin of the runner's enriched `queue.built`.
+    if args.push {
+        let queue = build_list_queue(&repo_root)?;
+        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
+        return push_snapshot(&repo_root, &view);
+    }
+
     if let Some(number) = args.show {
         let issue = github::fetch_issue(number, &repo_root)?;
         // Best-effort: a comment-fetch failure degrades to body-only, never a stop
@@ -131,6 +145,58 @@ fn build_list_queue(repo_root: &std::path::Path) -> Result<Vec<ralphy_core::Issu
         }
     } else {
         Ok(blocked::sort_queue(queue))
+    }
+}
+
+/// Emit the judged queue as a `dev.ralphy.queue.snapshot` CloudEvent to the
+/// configured `events.url` (ADR-0020), reusing the ADR-0019 sink transport and the
+/// SAME `data` builder the runner's `queue.built` uses (so the two shapes cannot
+/// diverge). A one-shot synchronous POST — no ring, no worker. Fails clearly when
+/// no `events.url` is configured for this repo, and reports the delivery outcome.
+fn push_snapshot(repo_root: &std::path::Path, view: &QueueView) -> Result<()> {
+    use crate::events::client::{EventSink, PostOutcome, UreqEventTransport};
+    use crate::events::config::{effective_token, EventsStore, TOKEN_ENV};
+    use crate::events::{emitter, envelope};
+
+    let slug = git::project_slug(repo_root);
+    let entry = EventsStore::load()
+        .ok()
+        .unwrap_or_default()
+        .entry(&slug)
+        .cloned();
+    let Some(url) = entry.as_ref().and_then(|e| e.url.clone()) else {
+        anyhow::bail!(
+            "no events.url configured for {slug}; set it with \
+             `ralphy config set events.url <url>` before `ralphy issues --push`"
+        );
+    };
+    // The effective token honours RALPHY_EVENTS_TOKEN over the stored one; strip it
+    // from the env once captured so nothing this process spawns inherits it (ADR-0019).
+    let token = effective_token(entry.as_ref().and_then(|e| e.token.as_deref()));
+    std::env::remove_var(TOKEN_ENV);
+
+    // The per-run identity/context, minted exactly as `ralphy run` does.
+    let ctx = envelope::EventCtx {
+        source: emitter::source(&slug),
+        runid: emitter::new_runid(),
+        emitter: serde_json::to_value(emitter::detect(repo_root)).unwrap_or_default(),
+    };
+    let issues = serde_json::to_value(&view.issues)?;
+    let data = envelope::queue_snapshot_data(&issues, view.count, &view.order, view.stop_before);
+    let env = envelope::queue_snapshot_envelope(data, &ctx);
+
+    let transport = UreqEventTransport::new(url.clone(), token);
+    match transport.post(&env)? {
+        PostOutcome::Delivered => {
+            println!("queue.snapshot delivered to {url} ({} issues)", view.count);
+            Ok(())
+        }
+        PostOutcome::Permanent => anyhow::bail!(
+            "queue.snapshot rejected by {url} (4xx) — check events.url / events.token"
+        ),
+        PostOutcome::Transient => anyhow::bail!(
+            "queue.snapshot delivery to {url} failed (5xx/timeout/network) — try again"
+        ),
     }
 }
 
@@ -559,6 +625,30 @@ mod tests {
         assert_eq!(hist[1]["tokens"], 120);
 
         std::env::remove_var("RALPHY_USAGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn push_without_events_url_errors_naming_events_url() {
+        // Criterion: `--push` with no `events.url` configured fails with a clear
+        // message naming `events.url`. Point the events store at an empty temp dir
+        // and drive `push_snapshot` directly (no `gh` needed).
+        let _g = crate::events::config::ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("ralphy-issues-push-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("RALPHY_EVENTS_DIR", &dir);
+
+        let queue = vec![issue(7, &["queue"], "")];
+        let tr = FakeTracker::default();
+        let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
+
+        let err = push_snapshot(std::path::Path::new("."), &view).unwrap_err();
+        assert!(
+            err.to_string().contains("events.url"),
+            "error must name events.url: {err}"
+        );
+
+        std::env::remove_var("RALPHY_EVENTS_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

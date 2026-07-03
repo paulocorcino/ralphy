@@ -1018,6 +1018,7 @@ impl Presenter {
                 count,
                 order,
                 stop_before,
+                ..
             } => {
                 s.queue = Some(QueueState::built(*count, order.clone(), *stop_before));
                 if self.opts.color {

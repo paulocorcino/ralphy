@@ -684,11 +684,37 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // boundary marker on the pending bar and the runner's own gate can never
     // disagree; `0` is the "no stop-before" sentinel the event decoder expects.
     let stop_before = ralphy_core::first_stop_before(&queue, &forced_issues).unwrap_or(0);
+
+    // The human-return label set (ADR-0016): resolved once here and reused both for
+    // the enriched queue snapshot below and the `gh`-free core (`QueueConfig`).
+    let human_return_labels = github::resolve_human_return_labels(&repo_root);
+
+    // ADR-0020: enrich `queue built` with the per-issue snapshot the runner would
+    // judge, so the CloudEvents sink carries `data.issues[]` on `queue.built` and a
+    // remote consumer sees the backlog for free. Best-effort — a resolver error (a
+    // `gh` blip on a blocked-by probe) warns and emits the legacy shape rather than
+    // aborting a run over its own telemetry.
+    let issues_json = {
+        let tracker = GhTracker::new(&repo_root);
+        match ralphy_core::resolve_queue_view(
+            &queue,
+            &forced_issues,
+            &human_return_labels,
+            &tracker,
+        ) {
+            Ok(view) => serde_json::to_string(&view.issues).unwrap_or_default(),
+            Err(e) => {
+                warn!(error = %e, "resolving the queue snapshot failed — emitting the legacy queue.built shape");
+                String::new()
+            }
+        }
+    };
     // message consumed by the telegram notifier / presenter — keep stable
     info!(
         count = queue.len(),
         order = %order.join(" -> "),
         stop_before,
+        issues_json = %issues_json,
         "queue built"
     );
 
@@ -867,10 +893,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             executor,
         })
     };
-    // The human-return label set (ADR-0016): resolved once here (with the repo's
-    // triage mapping) and handed to the `gh`-free core, which skips any queued
-    // issue carrying one of these and continues the queue.
-    let human_return_labels = github::resolve_human_return_labels(&repo_root);
+    // `human_return_labels` (ADR-0016) was resolved once above (for the enriched
+    // queue snapshot) and is handed here to the `gh`-free core, which skips any
+    // queued issue carrying one of these and continues the queue.
     let cfg = QueueConfig {
         repo_root,
         base_branch,

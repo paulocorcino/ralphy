@@ -87,12 +87,18 @@ impl UsageLite {
 /// in the fold/decoder tests, no `HashSet`/`BTreeSet` of events).
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunEvent {
-    /// The queue was built: its size, the issue numbers in order, and the first
-    /// issue carrying `stop-before` (where the run will halt), if any.
+    /// The queue was built: its size, the issue numbers in order, the first
+    /// issue carrying `stop-before` (where the run will halt), if any, and the
+    /// enriched per-issue snapshot (ADR-0020) — a `serde_json::Value` array of
+    /// `{number, title, labels[], queue_status, skip_reason?, blocked_by[],
+    /// position?}`, or `Value::Null` when the resolver produced none (the legacy
+    /// shape). The Telegram/console fold ignores `issues`; only the CloudEvents
+    /// sink carries it onto `queue.built`.
     QueueBuilt {
         count: u64,
         order: Vec<u64>,
         stop_before: Option<u64>,
+        issues: serde_json::Value,
     },
     /// Work began on an issue (number + title).
     IssueStarted { number: u64, title: String },
@@ -493,6 +499,11 @@ pub struct EventFields {
     pub order: Option<String>,
     /// The first `stop-before` issue number on a `queue built` event (0 = none).
     pub stop_before: Option<u64>,
+    /// The enriched per-issue snapshot on a `queue built` event (ADR-0020): the
+    /// JSON array string the CLI serializes from `resolve_queue_view`. Absent on a
+    /// legacy `queue built` with no snapshot; parsed back into a `Value` by the
+    /// decoder (`Value::Null` when absent or unparseable).
+    pub issues_json: Option<String>,
     pub outcome: Option<String>,
     pub reset: Option<String>,
     pub target_epoch: Option<i64>,
@@ -551,6 +562,7 @@ impl Default for EventFields {
             budget_min: None,
             order: None,
             stop_before: None,
+            issues_json: None,
             outcome: None,
             reset: None,
             target_epoch: None,
@@ -616,6 +628,7 @@ impl Visit for EventFields {
             "message" => self.message = value.to_string(),
             "title" => self.title = Some(value.to_string()),
             "order" => self.order = Some(value.to_string()),
+            "issues_json" => self.issues_json = Some(value.to_string()),
             "outcome" => self.outcome = Some(value.to_string()),
             "reset" => self.reset = Some(value.to_string()),
             "model" => self.model = clean_opt(value),
@@ -637,6 +650,9 @@ impl Visit for EventFields {
             "message" => self.message = rendered,
             "title" => self.title = Some(rendered),
             "order" => self.order = Some(rendered),
+            // The `%`-formatted (Display) enriched snapshot arrives here as the raw
+            // JSON array string (ADR-0020); the decoder parses it into a `Value`.
+            "issues_json" => self.issues_json = Some(rendered),
             "outcome" => self.outcome = Some(rendered),
             "reset" => self.reset = Some(rendered.clone()),
             // The `?`-formatted `Vec<u64>` human-blocker list (`[30]`), kept raw
@@ -716,6 +732,10 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             order: parse_order(fields.order.as_deref()),
             // 0 is the "no stop-before in this queue" sentinel (issue numbers are ≥1).
             stop_before: fields.stop_before.filter(|&n| n != 0),
+            // The enriched per-issue snapshot (ADR-0020): parse the JSON array
+            // string, falling back to `Null` when absent or unparseable so a
+            // legacy emitter (or a snapshot-build failure) still decodes cleanly.
+            issues: parse_issues_snapshot(fields.issues_json.as_deref()),
         }),
         "issue started" => Some(RunEvent::IssueStarted {
             number,
@@ -846,6 +866,16 @@ fn split_labels(raw: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Parse the enriched `queue built` snapshot (ADR-0020): the `issues_json` field
+/// is the JSON array string the CLI serialized from `resolve_queue_view`. Returns
+/// `Value::Null` when absent or unparseable, so a legacy `queue built` (no
+/// snapshot) or a snapshot-build failure never breaks decoding — the sink then
+/// emits the legacy `queue.built` shape.
+fn parse_issues_snapshot(raw: Option<&str>) -> serde_json::Value {
+    raw.and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
 /// Parse the `queue built` `order` field (`#30 -> #31 -> #32`) into issue numbers.
 fn parse_order(order: Option<&str>) -> Vec<u64> {
     let Some(s) = order else {
@@ -898,6 +928,7 @@ mod tests {
                 count: 2,
                 order: vec![1, 2],
                 stop_before: None,
+                issues: serde_json::Value::Null,
             },
             RunEvent::IssueStarted {
                 number: 1,
@@ -1133,12 +1164,29 @@ mod tests {
                 count: Some(3),
                 order: Some("#1 -> #2 -> #3".into()),
                 stop_before: Some(2),
+                issues_json: Some(r#"[{"number":1,"queue_status":"eligible"}]"#.into()),
                 ..Default::default()
             }),
             Some(RunEvent::QueueBuilt {
                 count: 3,
                 order: vec![1, 2, 3],
                 stop_before: Some(2),
+                issues: serde_json::json!([{"number":1,"queue_status":"eligible"}]),
+            })
+        );
+        // A legacy `queue built` with no snapshot decodes with `issues: Null`.
+        assert_eq!(
+            decode(EventFields {
+                message: "queue built".into(),
+                count: Some(1),
+                order: Some("#1".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: serde_json::Value::Null,
             })
         );
         assert_eq!(
