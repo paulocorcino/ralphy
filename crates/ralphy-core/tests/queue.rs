@@ -247,6 +247,8 @@ struct RecordingTracker {
     comments: RefCell<Vec<(u64, String)>>,
     /// Every `add_label` call (the needs-split label on a bundle verdict).
     labels: RefCell<Vec<(u64, String)>>,
+    /// Every `remove_label` call (the label swaps `ralphy triage` performs).
+    removed_labels: RefCell<Vec<(u64, String)>>,
     /// Scripted handoff comments returned by `handoff_comment`, by issue number.
     handoffs: HashMap<u64, String>,
     /// Scripted comment threads returned by `issue_comments`, by issue number —
@@ -284,6 +286,13 @@ impl IssueTracker for RecordingTracker {
 
     fn add_label(&self, number: u64, label: &str) -> anyhow::Result<()> {
         self.labels.borrow_mut().push((number, label.to_string()));
+        Ok(())
+    }
+
+    fn remove_label(&self, number: u64, label: &str) -> anyhow::Result<()> {
+        self.removed_labels
+            .borrow_mut()
+            .push((number, label.to_string()));
         Ok(())
     }
 
@@ -511,6 +520,23 @@ fn issue_with_body(number: u64, body: impl Into<String>) -> Issue {
     }
 }
 
+/// The canonical human-return label set (ADR-0016) the CLI resolves and passes
+/// to the core. Tests use it verbatim; a test needing a custom-mapped name
+/// overrides the field after construction.
+fn default_human_return() -> Vec<String> {
+    [
+        "ready-for-human",
+        "HITL",
+        "needs-info",
+        "needs-triage",
+        "wontfix",
+        "triage-agent",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
 fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
     QueueConfig {
         repo_root: repo.to_path_buf(),
@@ -525,6 +551,7 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
+        human_return_labels: default_human_return(),
     }
 }
 
@@ -542,6 +569,7 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
+        human_return_labels: default_human_return(),
     }
 }
 
@@ -559,6 +587,7 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
+        human_return_labels: default_human_return(),
     }
 }
 
@@ -578,6 +607,7 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
+        human_return_labels: default_human_return(),
     }
 }
 
@@ -599,6 +629,7 @@ fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
+        human_return_labels: default_human_return(),
     }
 }
 
@@ -801,6 +832,129 @@ fn only_issue_ignores_stop_before() {
         report.stop.is_none(),
         "no stop when only_issue overrides stop-before"
     );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+// ── ADR-0016: human-return labels outrank queue labels ───────────────────────
+
+#[test]
+fn human_return_label_skips_issue_and_continues() {
+    let repo = init_repo("human-return-skip");
+    // #1 carries a queue label PLUS a human-return label; #2 is a plain queue
+    // issue. #1 must be skipped (not planned, not executed, not closed) and the
+    // queue must continue to #2.
+    let queue = vec![issue_labeled(1, &["AFK", "needs-info"]), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-hr-skip", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(*agent.planned.borrow(), vec![2], "#1 never planned");
+    assert_eq!(*agent.executed.borrow(), vec![2], "#1 never executed");
+    // #1 recorded as a skip (outcome None, not closed); #2 worked. Run continues.
+    assert_eq!(report.worked.len(), 2, "both issues produce a result row");
+    let skipped = report.worked.iter().find(|r| r.number == 1).unwrap();
+    assert!(skipped.outcome.is_none(), "#1 skipped, no outcome");
+    assert!(!skipped.closed, "#1 not closed");
+    assert!(
+        !tracker.closes.borrow().iter().any(|(n, _)| *n == 1),
+        "#1 never closed on the tracker"
+    );
+    assert!(report.stop.is_none(), "the run continues past the skip");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn reparked_issue_is_not_reworked_on_next_run() {
+    // Regression for the ADR-0015 re-park bug (ADR-0016 amendment): a verify-gate
+    // park leaves the issue labeled `ready-for-human` while its queue label stays.
+    // On the next run that exact label state must NOT re-queue the issue.
+    let repo = init_repo("reparked");
+    let queue = vec![issue_labeled(1, &["AFK", "ready-for-human"])];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-reparked", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(
+        agent.planned.borrow().is_empty(),
+        "parked issue not planned"
+    );
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "parked issue not executed"
+    );
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "parked issue not closed"
+    );
+    let row = report.worked.iter().find(|r| r.number == 1).unwrap();
+    assert!(!row.closed, "parked issue stays open");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn only_issue_does_not_override_human_return() {
+    // Unlike stop-before, `--only-issue` must NOT run a human-return-labelled
+    // issue: the label may record someone else's state (ADR-0016).
+    let repo = init_repo("only-human-return");
+    let queue = vec![issue_labeled(1, &["AFK", "HITL"])];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg_only(&repo, "stamp-only-hr", 1),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(
+        agent.planned.borrow().is_empty(),
+        "only_issue does not override the human-return skip"
+    );
+    assert!(agent.executed.borrow().is_empty());
+    assert!(tracker.closes.borrow().is_empty());
+    assert!(report.stop.is_none(), "a skip continues, it does not stop");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn custom_mapped_human_return_label_skips() {
+    // The core honours whatever resolved set the CLI passes: a repo that renames
+    // `needs-info` to `waiting-reporter` still parks the issue.
+    let repo = init_repo("custom-hr");
+    let queue = vec![issue_labeled(1, &["AFK", "waiting-reporter"]), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let mut config = cfg(&repo, "stamp-custom-hr", false);
+    config.human_return_labels = vec!["waiting-reporter".into()];
+
+    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
+
+    assert_eq!(*agent.executed.borrow(), vec![2], "#1 skipped, #2 worked");
+    assert!(report.stop.is_none());
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -1968,6 +2122,54 @@ fn ordinary_open_blocker_is_not_a_human_gate() {
         r5.human_blockers.is_empty(),
         "an agent-work blocker is not a human gate"
     );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn blocked_by_in_consolidated_comment_gates_issue() {
+    // #5's body has NO `## Blocked by`; its marked consolidated-spec comment does
+    // (ADR-0017). The open blocker #9 named there must gate the issue exactly
+    // like one in the body.
+    let repo = init_repo("blocked-in-comment");
+    let queue = vec![issue_with_body(
+        5,
+        "Just a prose spec, no blocked-by section.",
+    )];
+    let agent = ScriptedAgent::new(vec![]); // #5 never planned
+    let marker = "<!-- ralphy:consolidated-spec -->";
+    let tracker = RecordingTracker {
+        comment_threads: HashMap::from([(
+            5u64,
+            vec![format!(
+                "{marker}\n## Consolidated spec\n\n## Blocked by\n- #9\n"
+            )],
+        )]),
+        // #9 is open (absent from closed_issues).
+        ..Default::default()
+    };
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-blocked-comment", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let r5 = report
+        .worked
+        .iter()
+        .find(|r| r.number == 5)
+        .expect("#5 in worked");
+    assert!(r5.outcome.is_none(), "#5 skipped, never planned");
+    assert_eq!(
+        r5.blocked_by,
+        vec![9],
+        "the marked comment's blocker gates the queue"
+    );
+    assert!(agent.planned.borrow().is_empty(), "#5 never planned");
 
     fs::remove_dir_all(&repo).ok();
 }

@@ -7,6 +7,45 @@ use regex::Regex;
 
 use crate::Issue;
 
+/// The stable machine marker on the single consolidated-spec comment `ralphy
+/// triage` authors (ADR-0017). Its presence makes that comment the authoritative
+/// spec (over the body), and its `## Blocked by` section gates the queue exactly
+/// like one in the body. Re-triage finds this marker to edit its own comment
+/// rather than stacking a second one.
+pub const CONSOLIDATED_SPEC_MARKER: &str = "<!-- ralphy:consolidated-spec -->";
+
+/// The first comment in `comments` carrying [`CONSOLIDATED_SPEC_MARKER`] — the
+/// authoritative consolidated spec `ralphy triage` posted (ADR-0017), or `None`
+/// when no comment is marked. Unmarked comments (the author's body, ordinary
+/// discussion) are never treated as a spec.
+pub fn find_consolidated_spec(comments: &[String]) -> Option<&str> {
+    comments
+        .iter()
+        .find(|c| c.contains(CONSOLIDATED_SPEC_MARKER))
+        .map(String::as_str)
+}
+
+/// The union of `## Blocked by` refs from the body AND from the marked
+/// consolidated-spec comment (ADR-0017): a dependency the triage agent captured
+/// in the consolidation gates the queue exactly like one in the body. Deduped,
+/// body refs first, order preserved. An unmarked comment contributes nothing.
+pub fn parse_blocked_by_all(body: &str, comments: &[String]) -> Vec<u64> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    let mut push = |refs: Vec<u64>| {
+        for n in refs {
+            if seen.insert(n) {
+                out.push(n);
+            }
+        }
+    };
+    push(parse_blocked_by(body));
+    if let Some(spec) = find_consolidated_spec(comments) {
+        push(parse_blocked_by(spec));
+    }
+    out
+}
+
 /// Extract `#N` issue references from the `## Blocked by` section of an issue
 /// body. Returns an empty list when the section is absent or contains no refs
 /// (e.g. "None - can start immediately").
@@ -258,6 +297,36 @@ mod tests {
     fn extracts_multiple_refs() {
         let body = "## Blocked by\n- #3\n- #7\n";
         assert_eq!(parse_blocked_by(body), vec![3, 7]);
+    }
+
+    #[test]
+    fn find_consolidated_spec_returns_marked_comment_only() {
+        let comments = vec![
+            "just a normal comment mentioning ## Blocked by\n- #1\n".to_string(),
+            format!("{CONSOLIDATED_SPEC_MARKER}\n## Consolidated spec\nbody\n"),
+        ];
+        let spec = find_consolidated_spec(&comments).expect("marked comment found");
+        assert!(spec.contains("Consolidated spec"));
+        // An unmarked comment alone yields nothing.
+        assert!(find_consolidated_spec(&comments[..1]).is_none());
+    }
+
+    #[test]
+    fn parse_blocked_by_all_unions_body_and_marked_comment() {
+        let body = "## Blocked by\n- #3\n";
+        let comments = vec![format!(
+            "{CONSOLIDATED_SPEC_MARKER}\n## Blocked by\n- #4\n- #3\n"
+        )];
+        // Body ref #3 leads; the marked comment adds #4; #3 is not duplicated.
+        assert_eq!(parse_blocked_by_all(body, &comments), vec![3, 4]);
+    }
+
+    #[test]
+    fn blocked_by_in_unmarked_comment_is_ignored() {
+        let body = "## Steps\n- [ ] do it\n";
+        let comments = vec!["## Blocked by\n- #9\n".to_string()];
+        // No marker → the comment's `## Blocked by` does not gate.
+        assert!(parse_blocked_by_all(body, &comments).is_empty());
     }
 
     #[test]

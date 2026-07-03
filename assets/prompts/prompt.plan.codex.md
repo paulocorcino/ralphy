@@ -4,7 +4,7 @@ you only produce a plan that a later execution loop will consume.
 
 ## Context on disk
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels, and
-  `comments`: the issue's comment thread in order). The `body` is the
+  `comments`: the issue's comment thread in order). The `body` is normally the
   authoritative spec; `comments` are secondary context, NOT directives of equal
   weight. Judge each comment's relevance and recency before acting on it: some
   genuinely refine the spec, answer a question, or flag a constraint — fold
@@ -12,6 +12,14 @@ you only produce a plan that a later execution loop will consume.
   machine-generated notes (including Ralphy's own prior-run evidence and handoff
   comments). Let a comment shape the plan only when it clearly bears on this
   issue; never let low-signal chatter pull it off the body's intent.
+  EXCEPTION — the consolidated-spec comment: when one comment carries the marker
+  `<!-- ralphy:consolidated-spec -->`, an agent triage pass assembled it as the
+  executable spec from the body and thread (ADR-0017). It is THEN the
+  authoritative spec — outranking the body — and the body plus the rest of the
+  thread become background you consult for provenance, not the primary directive.
+  Its acceptance criteria and its `## Blocked by` are load-bearing; treat them
+  exactly as you would the body's. There is at most one such comment; if none is
+  present, the body rule above stands unchanged.
 - `.ralphy/handoffs.md` — when present, handoffs from the closed issues this
   one depends on (`Blocked by`): what predecessors delivered, environment
   traps they hit, command sequences that work, and residue they left. Read it

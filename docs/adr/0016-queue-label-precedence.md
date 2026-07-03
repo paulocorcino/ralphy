@@ -1,7 +1,6 @@
 # Human-return labels outrank queue labels
 
-Status: accepted. Not yet implemented — see the tracking issue for the code
-stage.
+Status: accepted and implemented (#89).
 
 The queue is built by **positive selection only**: `gh issue list --label
 <queue-label>` per configured queue label, unioned and sorted

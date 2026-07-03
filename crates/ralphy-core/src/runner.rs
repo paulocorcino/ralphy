@@ -282,6 +282,14 @@ fn prepare_branch(
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";
 
+/// The fixed operational label marking an issue awaiting an agent triage pass
+/// (`ralphy triage`, ADR-0017). Like `stop-before`/`AFK`/`HITL` it lives outside
+/// the five canonical triage roles and outside the setup-pocock mapping table,
+/// so it is never resolved through `triage-labels.md`. It is also a human-return
+/// label under ADR-0016: while present the issue is parked out of the run queue,
+/// so triage and run never race.
+pub const TRIAGE_AGENT_LABEL: &str = "triage-agent";
+
 /// Labels that mark an issue as a human gate (ADR-0014): a blocker parked until a
 /// person acts, not agent work the queue will clear. The canonical
 /// `ready-for-human` triage role and its fixed `HITL` alias (ADR-0001). A human
@@ -318,6 +326,13 @@ pub struct QueueConfig {
     /// When set, the `stop-before` label on this specific issue is ignored and
     /// the issue runs normally. Mirrors ps1's `$OnlyIssue -le 0` guard.
     pub only_issue: Option<u64>,
+    /// The human-return label set (ADR-0016): any of these on a queued issue
+    /// outranks its queue label, so the issue is skipped with a recorded reason
+    /// and the queue continues. Resolved by the CLI (via
+    /// [`crate::github::resolve_human_return_labels`]) so the core stays
+    /// `gh`-free. Unlike `stop-before`, `only_issue` does NOT override these — a
+    /// human-return label may record someone else's state (ADR-0016).
+    pub human_return_labels: Vec<String>,
     /// When true, a usage limit during the *plan* phase stops the run and reports
     /// the reset (the old behaviour). The default (`false`) waits for the reset
     /// and auto-resumes the same issue. Derived from the planner agent so a split
@@ -840,6 +855,20 @@ enum Prepared {
 /// writes (`issue.json`, handoffs, references). An `Err` is fatal to the run —
 /// the caller restores the branch and propagates.
 fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
+    // Attach the issue's own comment thread up front, before the blocked-by
+    // gate: a `## Blocked by` inside the marked consolidated-spec comment
+    // (ADR-0017) gates the queue exactly like one in the body, so the gate must
+    // see the comments. Best-effort: a fetch failure degrades to body-only
+    // gating (and body-only planning), never a stop. The queue's issue carries
+    // no comments (the list query omits them), so this clone is where they land.
+    let mut issue = issue.clone();
+    match cx.tracker.issue_comments(issue.number) {
+        Ok(comments) => issue.comments = comments,
+        Err(e) => {
+            warn!(number = issue.number, error = %e, "fetching issue comments failed — gating and planning with body only")
+        }
+    }
+
     // Blocked-by gate: skip any issue whose declared blockers are still open.
     // Checked before write_issue_json so a blocked issue never touches the
     // planner. is_closed errors are fatal (the tracker is authoritative).
@@ -849,7 +878,10 @@ fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     // child issues (their `## Parent` references it). Closing the bundle
     // does not finish its work — the gate follows the split: while any
     // child is open, the dependent stays blocked on those children.
-    let refs = blocked::parse_blocked_by(&issue.body);
+    //
+    // Refs are the union of the body's `## Blocked by` and the marked
+    // consolidated-spec comment's (ADR-0017).
+    let refs = blocked::parse_blocked_by_all(&issue.body, &issue.comments);
     let mut open_blockers: Vec<u64> = Vec::new();
     let mut closed_blockers: Vec<u64> = Vec::new();
     for n in refs {
@@ -912,27 +944,15 @@ fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     // consumed by the telegram notifier / presenter — keep stable
     info!(number = issue.number, title = %issue.title, "issue started");
 
-    // Attach the issue's own comment thread so the planner and executor read
-    // the discussion alongside the body — guidance, clarifications, and prior
-    // attempts a human left in comments rather than in the original body.
-    // Best-effort enrichment: a fetch failure is a warning, never a stop, and
-    // planning proceeds with the body alone. The queue's issue carries no
-    // comments (the list query omits them), so this clone is where they land.
-    let mut issue = issue.clone();
-    match cx.tracker.issue_comments(issue.number) {
-        Ok(comments) => {
-            if !comments.is_empty() {
-                info!(
-                    number = issue.number,
-                    comments = comments.len(),
-                    "comments attached for planner"
-                );
-            }
-            issue.comments = comments;
-        }
-        Err(e) => {
-            warn!(number = issue.number, error = %e, "fetching issue comments failed — planning with body only")
-        }
+    // The comment thread was attached up front (for the blocked-by gate); note
+    // it here so the "comments attached for planner" visibility line still fires
+    // — the planner and executor read the discussion alongside the body.
+    if !issue.comments.is_empty() {
+        info!(
+            number = issue.number,
+            comments = issue.comments.len(),
+            "comments attached for planner"
+        );
     }
 
     // Persist the current issue where the planner reads it. The adapter's
@@ -1639,6 +1659,32 @@ fn run_queue_with(
             break;
         }
 
+        // Human-return precedence (ADR-0016): a label that returns the issue to a
+        // human outranks its queue label. Skip with a recorded reason and CONTINUE
+        // the queue (unlike stop-before, which halts). `only_issue` does NOT
+        // override this: the label may record someone else's state (a reporter
+        // owing info, a parked verify gate) that a run flag must not steamroll.
+        if let Some(label) = issue
+            .labels
+            .iter()
+            .find(|l| cfg.human_return_labels.iter().any(|h| h == *l))
+        {
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                label = %label,
+                "human-return label — skipping issue"
+            );
+            worked.push(IssueResult {
+                number: issue.number,
+                outcome: None,
+                closed: false,
+                blocked_by: Vec::new(),
+                human_blockers: Vec::new(),
+            });
+            continue;
+        }
+
         // Gate and stage the issue (blocked-by, comment enrichment, `.ralphy/`
         // staging). A preparation error is fatal: restore and propagate.
         let issue = match prepare_issue(&cx, issue) {
@@ -2337,6 +2383,14 @@ mod tests {
             verify_timeout: Duration::from_secs(60),
             require_verify_gate: false,
             done_signal: "DONE_TOKEN".into(),
+            human_return_labels: vec![
+                "ready-for-human".into(),
+                "HITL".into(),
+                "needs-info".into(),
+                "needs-triage".into(),
+                "wontfix".into(),
+                "triage-agent".into(),
+            ],
         }
     }
 

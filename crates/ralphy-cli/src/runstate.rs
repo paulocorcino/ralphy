@@ -46,12 +46,14 @@ pub fn ralphy_header(seed: &str) -> String {
     )
 }
 
-/// Why an issue was skipped: a `blocked-by` dependency, a `stop-before` label, or
-/// a verify gate that stayed red after the runner's repair attempts (ADR-0011).
+/// Why an issue was skipped: a `blocked-by` dependency, a `stop-before` label, a
+/// human-return label that outranks its queue label (ADR-0016), or a verify gate
+/// that stayed red after the runner's repair attempts (ADR-0011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipKind {
     BlockedBy,
     StopBefore,
+    HumanReturn,
     VerifyFailed,
 }
 
@@ -125,9 +127,15 @@ pub enum RunEvent {
     /// An issue finished non-green and stopped the run; `outcome` is the core's
     /// `Outcome` debug string (e.g. `Stuck`, `Blocked`, `Timeout`).
     NonGreen { number: u64, outcome: String },
-    /// An issue was skipped (blocked-by an open issue, a `stop-before` label, or a
-    /// verify gate still red after the repair budget).
-    Skipped { number: u64, kind: SkipKind },
+    /// An issue was skipped (blocked-by an open issue, a `stop-before` label, a
+    /// human-return label, or a verify gate still red after the repair budget).
+    /// `label` names the parking label on a [`SkipKind::HumanReturn`] skip (so the
+    /// operator sees exactly which label parked it); `None` for the other kinds.
+    Skipped {
+        number: u64,
+        kind: SkipKind,
+        label: Option<String>,
+    },
     /// An issue is stalled on a human gate (`ready-for-human`/`HITL`) in its
     /// dependency path (ADR-0014): `on` names the human-blocker issue(s) a person
     /// must act on. The run continues — only this chain waits — but the operator
@@ -469,6 +477,9 @@ pub struct EventFields {
     /// The Debug-formatted human-blocker list (`[30]`) on a `blocked — waiting on
     /// human` event (ADR-0014): the issue(s) a person must clear.
     pub human_blockers: Option<String>,
+    /// The parking label on a `human-return label — skipping issue` event
+    /// (ADR-0016): which human-return label outranked the queue label.
+    pub label: Option<String>,
 }
 
 impl Default for EventFields {
@@ -494,6 +505,7 @@ impl Default for EventFields {
             cw: None,
             out: None,
             human_blockers: None,
+            label: None,
         }
     }
 }
@@ -530,6 +542,7 @@ impl Visit for EventFields {
             "reset" => self.reset = Some(value.to_string()),
             "model" => self.model = clean_opt(value),
             "effort" | "variant" => self.effort = clean_opt(value),
+            "label" => self.label = clean_opt(value),
             _ => {}
         }
     }
@@ -545,6 +558,9 @@ impl Visit for EventFields {
             // The `?`-formatted `Vec<u64>` human-blocker list (`[30]`), kept raw
             // for the decoder to read the numbers out of (ADR-0014).
             "human_blockers" => self.human_blockers = Some(rendered),
+            // The `%`-formatted (Display) parking label on a human-return skip
+            // (ADR-0016) arrives here via tracing's Display wrapper.
+            "label" => self.label = clean_opt(&rendered),
             // Debug-formatted `Option<String>` / `&str` adapter fields: strip the
             // `Some("…")` / quote wrapping and treat `None`/empty as absent so the
             // decoder never carries a literal `None` or `""` into a display label.
@@ -649,6 +665,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         "blocked by open issue(s) — skipping" => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::BlockedBy,
+            label: None,
         }),
         // A human gate (`ready-for-human`/`HITL`) sits in the issue's path: the
         // chain is parked until a person acts, but the run continues. `on` names
@@ -660,6 +677,16 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         "stop-before label — halting run before this issue" => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::StopBefore,
+            label: None,
+        }),
+        // A human-return label (`ready-for-human`/`HITL`, `needs-info`,
+        // `needs-triage`, `wontfix`, `triage-agent`) outranks the queue label: the
+        // issue is skipped with the parking label named and the queue continues
+        // (ADR-0016).
+        "human-return label — skipping issue" => Some(RunEvent::Skipped {
+            number,
+            kind: SkipKind::HumanReturn,
+            label: fields.label.clone(),
         }),
         // The verify gate stayed red after the repair budget: the issue is left
         // open and the queue marches on (ADR-0011). Surfaced as a skip so the miss
@@ -667,6 +694,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         "verify gate failed — skipping issue" => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::VerifyFailed,
+            label: None,
         }),
         "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
         // The run entered a usage-limit sleep; the fold carries the reset hint and
@@ -850,6 +878,7 @@ mod tests {
         state.apply(RunEvent::Skipped {
             number: 9,
             kind: SkipKind::BlockedBy,
+            label: None,
         });
         assert_eq!(state.issues[0].status, IssueStatus::Skipped);
     }
@@ -919,6 +948,7 @@ mod tests {
         state.apply(RunEvent::Skipped {
             number: 2,
             kind: SkipKind::BlockedBy,
+            label: None,
         });
         state.apply(RunEvent::IssueStarted {
             number: 3,
@@ -1102,7 +1132,8 @@ mod tests {
             }),
             Some(RunEvent::Skipped {
                 number: 7,
-                kind: SkipKind::BlockedBy
+                kind: SkipKind::BlockedBy,
+                label: None
             })
         );
         assert_eq!(
@@ -1113,7 +1144,21 @@ mod tests {
             }),
             Some(RunEvent::Skipped {
                 number: 8,
-                kind: SkipKind::StopBefore
+                kind: SkipKind::StopBefore,
+                label: None
+            })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "human-return label — skipping issue".into(),
+                number: Some(9),
+                label: Some("needs-info".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::Skipped {
+                number: 9,
+                kind: SkipKind::HumanReturn,
+                label: Some("needs-info".into())
             })
         );
         assert_eq!(
@@ -1252,18 +1297,26 @@ mod tests {
     }
 
     #[test]
-    fn apply_skipped_with_both_kinds_sets_skipped_status() {
-        let mut state = RunState::new("t", 2);
+    fn apply_skipped_with_all_kinds_sets_skipped_status() {
+        let mut state = RunState::new("t", 3);
         state.apply(RunEvent::Skipped {
             number: 1,
             kind: SkipKind::BlockedBy,
+            label: None,
         });
         state.apply(RunEvent::Skipped {
             number: 2,
             kind: SkipKind::StopBefore,
+            label: None,
+        });
+        state.apply(RunEvent::Skipped {
+            number: 3,
+            kind: SkipKind::HumanReturn,
+            label: Some("wontfix".into()),
         });
         assert_eq!(state.issues[0].status, IssueStatus::Skipped);
         assert_eq!(state.issues[1].status, IssueStatus::Skipped);
+        assert_eq!(state.issues[2].status, IssueStatus::Skipped);
     }
 
     #[test]

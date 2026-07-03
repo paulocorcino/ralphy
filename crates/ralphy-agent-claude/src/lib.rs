@@ -21,8 +21,9 @@ use ralphy_adapter_support::{
     list_session_files, run_headless, run_json_session, session_files_appeared, JsonSession,
 };
 use ralphy_core::{
-    build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
-    DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit, Usage, Workspace,
+    build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, git, plan, Agent,
+    DiagnosisReport, DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit,
+    TriageDraft, TriageRequest, Usage, Workspace,
 };
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
@@ -678,6 +679,82 @@ pub fn draft_issues(
             serde_json::from_str(raw).with_context(|| {
                 format!(
                     "issues draft at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
+}
+
+/// Run a one-shot headless `claude -p` agent-triage session (ADR-0017). Like
+/// [`draft_issues`] it runs IN the repo cwd (the triage judgment reads the repo's
+/// glossary/ADRs to decide whether a spec is executable) and reads each
+/// `triage-agent` issue's body + full comment thread via `gh`. The session writes
+/// its [`TriageDraft`] JSON to `out_path`, which this function reads and validates.
+/// It NEVER publishes to GitHub — the cli applies the verdicts after the operator
+/// confirms. Mirrors [`draft_issues`]'s settings/auth/timeout handling.
+pub fn triage_issues(
+    repo: &Path,
+    out_path: &Path,
+    req: &TriageRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<TriageDraft> {
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let settings_path = repo.join(".ralphy").join("ralphy.settings.json");
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+
+    // A stale draft from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(out_path);
+
+    let mut args: Vec<String> = Vec::new();
+    if let Some(m) = model {
+        args.push("--model".into());
+        args.push(m.into());
+    }
+    args.push("-p".into());
+    args.push("--dangerously-skip-permissions".into());
+    args.push("--settings".into());
+    args.push(settings_path.to_string_lossy().into_owned());
+    if let Some(e) = effort {
+        args.push("--effort".into());
+        args.push(e.into());
+    }
+
+    info!(?model, ?effort, "triaging issues with claude -p");
+    let mut cmd = Command::new(resolve_claude_binary());
+    cmd.args(&args)
+        .current_dir(repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
+    let log_path = repo.join(".ralphy").join("triage.log");
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path,
+            spawn_err: "failed to spawn the `claude` CLI (is it installed and on PATH?)",
+            auth_msg: CLAUDE_AUTH_ERROR_MSG,
+            timeout_msg: "triage session hit the wall timeout",
+            missing_msg: "triage session left no draft",
+        },
+        is_claude_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "triage draft at {} did not match the schema",
                     out_path.display()
                 )
             })

@@ -178,7 +178,7 @@ fn agent_present(a: &Agent) -> bool {
     locate_program(a.cli_name()).is_some()
 }
 
-fn agent_logged_in(a: &Agent) -> bool {
+pub(crate) fn agent_logged_in(a: &Agent) -> bool {
     let hello = "hello";
     let bin = resolve_program(a.cli_name());
     let mut cmd = std::process::Command::new(&bin);
@@ -1354,7 +1354,7 @@ fn patch_blocked_by(body: &str, blocked_numbers: &[u64]) -> String {
 /// Resolve the agent-ready triage label from the scaffolded
 /// `docs/agents/triage-labels.md` (the mapping for `ready-for-agent`), falling
 /// back to the canonical `ready-for-agent` when no mapping is configured.
-fn resolve_triage_label(repo: &Path) -> String {
+pub(crate) fn resolve_triage_label(repo: &Path) -> String {
     let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
     triage_doc
         .as_deref()
@@ -3320,7 +3320,7 @@ mod tests {
                 ("docs/agents/triage-labels.md", true),
                 ("docs/agents/domain.md", true),
             ],
-            ralphy_label_count: 8,
+            ralphy_label_count: 9,
             skill_count: 5,
             queue,
             branch: "main".into(),

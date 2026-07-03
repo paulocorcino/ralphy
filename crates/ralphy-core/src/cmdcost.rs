@@ -271,10 +271,7 @@ pnpm run test:harness
 
     fn costs(entries: &[(&str, f64)]) -> CostState {
         CostState {
-            costs: entries
-                .iter()
-                .map(|(k, v)| (k.to_string(), *v))
-                .collect(),
+            costs: entries.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
             pending: BTreeMap::new(),
         }
     }
@@ -321,7 +318,10 @@ pnpm run test:harness
 
     #[test]
     fn cheap_command_never_denied() {
-        let state = costs(&[("node --test harness/p0-matrix/tests/scale-typ.test.mjs", 0.2)]);
+        let state = costs(&[(
+            "node --test harness/p0-matrix/tests/scale-typ.test.mjs",
+            0.2,
+        )]);
         let got = decide(
             "node --test harness/p0-matrix/tests/scale-typ.test.mjs",
             PLAN_OPEN,
@@ -340,7 +340,10 @@ pnpm run test:harness
         );
         match got {
             CostDecision::Deny(msg) => {
-                assert!(msg.contains("pnpm run test:harness"), "names the command: {msg}");
+                assert!(
+                    msg.contains("pnpm run test:harness"),
+                    "names the command: {msg}"
+                );
                 assert!(msg.contains("~167s"), "names the cost: {msg}");
                 assert!(msg.contains("NARROWEST"), "steers to scoped tests: {msg}");
             }
@@ -403,7 +406,11 @@ pnpm run test:harness
     fn record_gate_costs_keys_by_rejoined_argv_and_keeps_max() {
         let dir = std::env::temp_dir().join(format!("ralphy-gatecost-{}", std::process::id()));
         std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
-        let argv = vec!["pnpm".to_string(), "run".to_string(), "test:harness".to_string()];
+        let argv = vec![
+            "pnpm".to_string(),
+            "run".to_string(),
+            "test:harness".to_string(),
+        ];
 
         record_gate_costs(&dir, &[(argv.clone(), 167.4)]);
         assert_eq!(load(&dir).costs["pnpm run test:harness"], 167.4);

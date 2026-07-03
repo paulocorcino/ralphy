@@ -1,7 +1,6 @@
 # Agent triage entry path: `ralphy triage` and the consolidated-spec comment
 
-Status: accepted. Not yet implemented — see the tracking issue for the code
-stage.
+Status: accepted and implemented (#89).
 
 Ralphy's coupling to issue *format* is already minimal: the body goes verbatim
 into `.ralphy/issue.json` and the planning agent interprets free prose,

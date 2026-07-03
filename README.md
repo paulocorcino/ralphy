@@ -105,12 +105,19 @@ An issue is in the queue if it carries **any** queue label. The defaults are
 |---|---|
 | `ready-for-agent` **or** `AFK` | works it, closes it when green |
 | `ready-for-human` / `HITL` | never touched — not in the queue |
+| `triage-agent` | evaluated by `ralphy triage`; parks the issue out of the run queue until triaged |
 | `stagedplan` | planned with the `staged-plan` skill (still needs a queue label to be picked up) |
+
+**Human-return precedence** (ADR-0016): a label that returns an issue to a human —
+`ready-for-human`/`HITL`, `needs-info`, `needs-triage`, `wontfix`, or `triage-agent`
+— outranks any queue label. A queued issue that also carries one is **skipped with a
+visible reason** and the run continues; `--only-issue` does not override it.
 
 Two extra controls:
 
 - **`## Blocked by` in the issue body** — if it names an issue that's still open, Ralphy
-  **skips** the issue (later ones still run) until the blocker is closed.
+  **skips** the issue (later ones still run) until the blocker is closed. A `## Blocked by`
+  inside a `ralphy triage` consolidated-spec comment gates the queue the same way.
 - **`stop-before` label** — put it on a queued issue and the run stops **before** working
   it; every earlier issue still runs. Remove it and re-run to continue. (Create the
   `stop-before` label in your repo first.)

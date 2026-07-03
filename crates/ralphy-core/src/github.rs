@@ -418,6 +418,27 @@ pub fn add_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
     edit(repo_root)
 }
 
+/// Remove a label from an issue via `gh issue edit <n> --remove-label <label>`.
+/// Unlike [`add_label`] there is no create-on-missing retry: removing a label
+/// that is not present is a plain no-op-or-error, never a first-use bootstrap.
+pub fn remove_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
+    gh_output(
+        &format!("gh issue edit {number} --remove-label {label}"),
+        || {
+            let mut cmd = gh(repo_root);
+            cmd.args([
+                "issue",
+                "edit",
+                &number.to_string(),
+                "--remove-label",
+                label,
+            ]);
+            cmd
+        },
+    )?;
+    Ok(())
+}
+
 /// Post a comment on a GitHub issue via `gh issue comment <n> --body <comment>`.
 pub fn comment_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
     gh_output(&format!("gh issue comment {number}"), || {
@@ -453,6 +474,109 @@ pub fn issue_comments(number: u64, repo_root: &Path) -> Result<Vec<String>> {
         cmd
     })?;
     parse_issue_comments(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Parse the REST `GET .../issues/{n}/comments` JSON array into `(id, body)`
+/// pairs in thread order. Unlike [`parse_issue_comments`] this keeps the numeric
+/// comment `id` — the handle a REST `PATCH .../issues/comments/{id}` needs to edit
+/// a specific comment (the `gh issue view --json comments` node ids cannot drive
+/// the REST edit). Comments with a null/absent body default to empty.
+pub fn parse_rest_comments(json: &str) -> Result<Vec<(u64, String)>> {
+    #[derive(serde::Deserialize)]
+    struct RestComment {
+        id: u64,
+        #[serde(default)]
+        body: String,
+    }
+    let comments: Vec<RestComment> =
+        serde_json::from_str(json).context("parsing REST issue comments JSON")?;
+    Ok(comments.into_iter().map(|c| (c.id, c.body)).collect())
+}
+
+/// Fetch an issue's comments WITH their numeric REST ids via
+/// `gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`. The `{owner}` /
+/// `{repo}` placeholders resolve from the `repo_root` cwd. Used to find Ralphy's
+/// own marked consolidated-spec comment for an idempotent edit (ADR-0017).
+pub fn list_comments_with_ids(number: u64, repo_root: &Path) -> Result<Vec<(u64, String)>> {
+    let path = format!("repos/{{owner}}/{{repo}}/issues/{number}/comments");
+    let out = gh_output(&format!("gh api {path}"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["api", &path, "--paginate"]);
+        cmd
+    })?;
+    parse_rest_comments(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// The numeric id of the first comment whose body carries `marker`, or `None`.
+/// The seam that makes `ralphy triage`'s consolidated-spec comment idempotent:
+/// found → edit that id; absent → post a fresh one.
+pub fn find_marked_comment(comments: &[(u64, String)], marker: &str) -> Option<u64> {
+    comments
+        .iter()
+        .find(|(_, body)| body.contains(marker))
+        .map(|(id, _)| *id)
+}
+
+/// Edit an existing issue comment by numeric id via
+/// `gh api repos/{owner}/{repo}/issues/comments/{id} -X PATCH --input -`, sending
+/// `{"body": ...}` on stdin (never argv — bodies carry markdown, newlines, and
+/// quotes that would break Windows quoting). Mirrors [`edit_issue_body`]'s
+/// stdin-pipe + transient-retry shape.
+pub fn edit_comment(id: u64, body: &str, repo_root: &Path) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let path = format!("repos/{{owner}}/{{repo}}/issues/comments/{id}");
+    let payload = serde_json::json!({ "body": body }).to_string();
+
+    let mut backoff = Duration::from_secs(1);
+    for attempt in 1..=GH_MAX_ATTEMPTS {
+        let mut child = gh(repo_root)
+            .args(["api", &path, "-X", "PATCH", "--input", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
+
+        let mut stdin = child.stdin.take().expect("stdin was piped");
+        let write_result = stdin.write_all(payload.as_bytes());
+        drop(stdin);
+
+        let out = child
+            .wait_with_output()
+            .context("waiting for `gh api` comment edit")?;
+
+        write_result.context("writing body to `gh` stdin")?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
+            std::thread::sleep(backoff);
+            backoff *= 2;
+            continue;
+        }
+        bail!("`gh api` comment edit ({id}) failed: {}", stderr.trim());
+    }
+    bail!("`gh api` comment edit ({id}) exhausted {GH_MAX_ATTEMPTS} attempts");
+}
+
+/// Post-or-edit the single comment carrying `marker` on an issue (ADR-0017): find
+/// Ralphy's own marked comment and EDIT it, or post a fresh one when none exists.
+/// Idempotent by construction — re-triage never stacks a second consolidated-spec
+/// comment. The author's body and other people's comments are never touched.
+pub fn upsert_marked_comment(
+    number: u64,
+    marker: &str,
+    body: &str,
+    repo_root: &Path,
+) -> Result<()> {
+    let existing = list_comments_with_ids(number, repo_root)?;
+    match find_marked_comment(&existing, marker) {
+        Some(id) => edit_comment(id, body, repo_root),
+        None => comment_issue(number, body, repo_root),
+    }
 }
 
 /// Parse `gh issue view --json number,title,state,body,url` into a [`Reference`].
@@ -647,6 +771,12 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
             color: "d93f0b".into(),
             description: "Fixed flow-control: agent must stop before acting on this issue".into(),
         },
+        LabelSpec {
+            name: crate::runner::TRIAGE_AGENT_LABEL.into(),
+            color: "fbca04".into(),
+            description:
+                "Awaiting an agent triage pass (`ralphy triage`) before it enters the queue".into(),
+        },
     ];
 
     // Dedup by name, preserving first occurrence.
@@ -828,6 +958,42 @@ pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String
         }
     }
     labels
+}
+
+/// The human-return label set (ADR-0016): labels that return an issue to a human
+/// and therefore outrank any queue label. Triage-role names (`ready-for-human`,
+/// `needs-info`, `needs-triage`, `wontfix`) resolve through `triage_doc` like the
+/// label specs do; the fixed names (`HITL` alias, `triage-agent`) stay literal.
+/// Deduped, first occurrence preserved.
+pub fn human_return_labels(triage_doc: Option<&str>) -> Vec<String> {
+    let doc = triage_doc.unwrap_or("");
+    let resolve = |canonical: &str| -> String {
+        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_string())
+    };
+    let mut labels = vec![
+        resolve("ready-for-human"),
+        "HITL".to_string(),
+        resolve("needs-info"),
+        resolve("needs-triage"),
+        resolve("wontfix"),
+        crate::runner::TRIAGE_AGENT_LABEL.to_string(),
+    ];
+    let mut seen = std::collections::HashSet::new();
+    labels.retain(|l| seen.insert(l.clone()));
+    labels
+}
+
+/// [`human_return_labels`] with the repo's `docs/agents/triage-labels.md` read
+/// from disk (absent is fine — canonical names are then kept). Mirrors
+/// [`resolve_queue_labels`] so the CLI resolves the set once and hands it to the
+/// `gh`-free core through [`crate::runner::QueueConfig`].
+pub fn resolve_human_return_labels(repo_root: &Path) -> Vec<String> {
+    let triage_path = repo_root
+        .join("docs")
+        .join("agents")
+        .join("triage-labels.md");
+    let doc = std::fs::read_to_string(&triage_path).ok();
+    human_return_labels(doc.as_deref())
 }
 
 #[cfg(test)]
@@ -1040,10 +1206,10 @@ mod tests {
     }
 
     #[test]
-    fn ralphy_label_specs_returns_8_names_including_fixed() {
+    fn ralphy_label_specs_returns_9_names_including_triage_agent() {
         let specs = ralphy_label_specs(None);
         let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names.len(), 8, "expected 8 specs, got: {names:?}");
+        assert_eq!(names.len(), 9, "expected 9 specs, got: {names:?}");
         for expected in &[
             "needs-triage",
             "needs-info",
@@ -1053,9 +1219,91 @@ mod tests {
             "AFK",
             "HITL",
             "stop-before",
+            "triage-agent",
         ] {
             assert!(names.contains(expected), "missing {expected} in {names:?}");
         }
+    }
+
+    #[test]
+    fn triage_agent_spec_is_fixed_not_remapped() {
+        // Even with a doc that maps every canonical role, triage-agent stays literal.
+        let doc = "| Canonical | Mapped |\n\
+                   |-----------|--------|\n\
+                   | `ready-for-agent` | `afk-ready` |\n\
+                   | `needs-info` | `waiting` |\n";
+        let specs = ralphy_label_specs(Some(doc));
+        let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"triage-agent"),
+            "triage-agent must stay fixed: {names:?}"
+        );
+    }
+
+    #[test]
+    fn human_return_labels_resolves_roles_and_keeps_fixed_names() {
+        let doc = "| Canonical | Mapped |\n\
+                   |-----------|--------|\n\
+                   | `needs-info` | `waiting-reporter` |\n";
+        let got = human_return_labels(Some(doc));
+        assert_eq!(
+            got,
+            vec![
+                "ready-for-human".to_string(),
+                "HITL".to_string(),
+                "waiting-reporter".to_string(),
+                "needs-triage".to_string(),
+                "wontfix".to_string(),
+                "triage-agent".to_string(),
+            ],
+            "role names resolve through the mapping; HITL and triage-agent stay fixed"
+        );
+    }
+
+    #[test]
+    fn parse_rest_comments_extracts_ids_and_bodies() {
+        let json = r#"[
+            { "id": 111, "body": "first" },
+            { "id": 222, "body": "<!-- ralphy:consolidated-spec -->\nspec" }
+        ]"#;
+        let got = parse_rest_comments(json).expect("parse");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0], (111, "first".to_string()));
+        assert_eq!(got[1].0, 222);
+        assert!(got[1].1.contains("consolidated-spec"));
+    }
+
+    #[test]
+    fn find_marked_comment_matches_marker_only() {
+        let comments = vec![
+            (1u64, "just chatter".to_string()),
+            (
+                2u64,
+                "<!-- ralphy:consolidated-spec -->\nthe spec".to_string(),
+            ),
+            (
+                3u64,
+                "another <!-- ralphy:consolidated-spec --> later".to_string(),
+            ),
+        ];
+        // First marked comment wins; unmarked comments are skipped.
+        assert_eq!(
+            find_marked_comment(&comments, "<!-- ralphy:consolidated-spec -->"),
+            Some(2)
+        );
+        assert_eq!(
+            find_marked_comment(&comments[..1], "<!-- ralphy:consolidated-spec -->"),
+            None
+        );
+    }
+
+    #[test]
+    fn human_return_labels_defaults_to_canonical_without_doc() {
+        let got = human_return_labels(None);
+        assert!(got.contains(&"ready-for-human".to_string()));
+        assert!(got.contains(&"needs-info".to_string()));
+        assert!(got.contains(&"triage-agent".to_string()));
+        assert!(got.contains(&"HITL".to_string()));
     }
 
     #[test]
@@ -1079,7 +1327,7 @@ mod tests {
     fn plan_label_actions_empty_existing_yields_all_create() {
         let desired = ralphy_label_specs(None);
         let actions = plan_label_actions(&desired, &[]);
-        assert_eq!(actions.len(), 8);
+        assert_eq!(actions.len(), 9);
         assert!(
             actions.iter().all(|a| matches!(a, LabelAction::Create(_))),
             "expected all Create, got: {actions:?}"
@@ -1110,13 +1358,13 @@ mod tests {
             .count();
         assert_eq!(n_create, 0, "expected 0 Create");
         assert_eq!(n_update, 0, "expected 0 UpdateColor");
-        assert_eq!(n_skip, 8, "expected 8 Skip");
+        assert_eq!(n_skip, 9, "expected 9 Skip");
     }
 
     #[test]
     fn plan_label_actions_differing_color_yields_update_no_create_for_present() {
         let desired = ralphy_label_specs(None);
-        // Provide all 8 labels as existing, but one with a wrong color.
+        // Provide all 9 labels as existing, but one with a wrong color.
         let mut existing: Vec<(String, String)> = desired
             .iter()
             .map(|s| (s.name.clone(), normalize_color(&s.color)))
@@ -1140,7 +1388,7 @@ mod tests {
             .count();
         assert_eq!(n_create, 0, "no Create expected for any present name");
         assert_eq!(n_update, 1, "expected exactly 1 UpdateColor");
-        assert_eq!(n_skip, 7, "expected 7 Skip");
+        assert_eq!(n_skip, 8, "expected 8 Skip");
         // Verify `to` carries the desired color and `from` the stale one.
         let afk_spec = desired.iter().find(|s| s.name == "AFK").unwrap();
         assert!(

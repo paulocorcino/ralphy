@@ -43,15 +43,19 @@ pub mod protocol;
 pub mod references;
 pub mod repo;
 pub mod settings;
+pub mod triage_draft;
 pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
-pub use blocked::{parse_blocked_by, referenced_issues, structured_refs};
+pub use blocked::{
+    parse_blocked_by, parse_blocked_by_all, referenced_issues, structured_refs,
+    CONSOLIDATED_SPEC_MARKER,
+};
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use init_session::{
-    build_diagnose_prompt, build_init_issues_prompt, DraftRequest, IssuesMode, PROMPT_DIAGNOSE,
-    PROMPT_INIT_ISSUES,
+    build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DraftRequest, IssuesMode,
+    TriageRequest, PROMPT_DIAGNOSE, PROMPT_INIT_ISSUES, PROMPT_TRIAGE,
 };
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
@@ -59,9 +63,10 @@ pub use references::Reference;
 pub use repo::{GitRepo, Repo};
 pub use runner::{
     run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, StopReason,
-    WaitOutcome, WallClock, STOP_BEFORE_LABEL,
+    WaitOutcome, WallClock, STOP_BEFORE_LABEL, TRIAGE_AGENT_LABEL,
 };
 pub use settings::{Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
+pub use triage_draft::{TriageDraft, TriageItem, TriageVerdict};
 pub use types::{Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 pub use verify::{VerifyReport, VerifySpec};
