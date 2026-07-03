@@ -852,7 +852,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         agent = args.agent.cli_name(),
         plan_agent = plan_agent.cli_name(),
         branch_mode = branch_mode_str,
-        branch = %base_branch,
+        base = %base_branch,
         deadline_hours = args.deadline_hours.unwrap_or(0.0),
         "run started"
     );

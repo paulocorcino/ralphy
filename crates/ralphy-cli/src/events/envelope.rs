@@ -366,7 +366,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 "queue_labels": queue_labels,
                 "plan_agent": plan_agent,
                 "branch_mode": branch_mode,
-                "branch": branch,
+                "base": branch,
                 "deadline_hours": deadline_hours,
             }),
         )),
@@ -934,7 +934,12 @@ mod tests {
         assert_eq!(v["data"]["agent"]["name"], "claude");
         assert_eq!(v["data"]["plan_agent"], "codex");
         assert_eq!(v["data"]["branch_mode"], "new");
-        assert_eq!(v["data"]["branch"], "origin/main");
+        // The base branch is now under the `base` key (renamed from `branch`, #96).
+        assert_eq!(v["data"]["base"], "origin/main");
+        assert!(
+            v["data"].get("branch").is_none(),
+            "branch renamed to base: {v}"
+        );
         assert_eq!(v["data"]["deadline_hours"], 6.0);
     }
 

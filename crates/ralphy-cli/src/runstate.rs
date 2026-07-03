@@ -605,8 +605,9 @@ pub struct EventFields {
     pub plan_agent: Option<String>,
     /// The branch policy (`new`/`current`) on a `run started` event.
     pub branch_mode: Option<String>,
-    /// The base/run branch on a `run started` event.
-    pub branch: Option<String>,
+    /// The base branch on a `run started` event (wire key `base`, #96 — renamed from
+    /// `branch`; feeds `RunEvent::RunStarted.branch`).
+    pub base: Option<String>,
     /// The run's deadline in hours on a `run started` event (`0.0` = none).
     pub deadline_hours: Option<f64>,
     /// The green-issue count on a `run finished` event.
@@ -649,7 +650,7 @@ impl Default for EventFields {
             agent: None,
             plan_agent: None,
             branch_mode: None,
-            branch: None,
+            base: None,
             deadline_hours: None,
             issues_done: None,
             issues_skipped: None,
@@ -708,7 +709,7 @@ impl Visit for EventFields {
             "agent" => self.agent = Some(value.to_string()),
             "plan_agent" => self.plan_agent = Some(value.to_string()),
             "branch_mode" => self.branch_mode = Some(value.to_string()),
-            "branch" => self.branch = Some(value.to_string()),
+            "base" => self.base = Some(value.to_string()),
             _ => {}
         }
     }
@@ -743,7 +744,7 @@ impl Visit for EventFields {
             "agent" => self.agent = Some(rendered),
             "plan_agent" => self.plan_agent = Some(rendered),
             "branch_mode" => self.branch_mode = Some(rendered),
-            "branch" => self.branch = Some(rendered),
+            "base" => self.base = Some(rendered),
             _ => {}
         }
     }
@@ -901,7 +902,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             agent: fields.agent.clone().unwrap_or_default(),
             plan_agent: fields.plan_agent.clone().unwrap_or_default(),
             branch_mode: fields.branch_mode.clone().unwrap_or_default(),
-            branch: fields.branch.clone().unwrap_or_default(),
+            branch: fields.base.clone().unwrap_or_default(),
             // `0.0` is the "no deadline" sentinel the emitter uses (an absent
             // `--deadline-hours` becomes `0.0`), so filter it back to `None`.
             deadline_hours: fields.deadline_hours.filter(|&h| h > 0.0),
@@ -1529,7 +1530,7 @@ mod tests {
                 agent: Some("claude".into()),
                 plan_agent: Some("claude".into()),
                 branch_mode: Some("new".into()),
-                branch: Some("origin/main".into()),
+                base: Some("origin/main".into()),
                 deadline_hours: Some(0.0),
                 ..Default::default()
             }),
