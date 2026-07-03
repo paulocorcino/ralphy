@@ -717,12 +717,22 @@ impl tracing::field::Visit for CapturedFields {
     }
 }
 
-/// A minimal thread-local `tracing::Subscriber` that records every event's fields —
-/// enough to assert the runner emits the plan-lifecycle events (#96) without pulling
-/// in `tracing-subscriber` as a dev-dependency.
-struct CaptureSubscriber(std::sync::Arc<std::sync::Mutex<Vec<CapturedFields>>>);
+std::thread_local! {
+    /// The active capture target for THIS thread, if any. A `#[test]` runs on its own
+    /// thread, so a test that sets this captures only its own run's events.
+    static CAPTURE_TARGET: RefCell<Option<std::sync::Arc<std::sync::Mutex<Vec<CapturedFields>>>>> =
+        const { RefCell::new(None) };
+}
 
-impl tracing::Subscriber for CaptureSubscriber {
+/// A process-global `tracing::Subscriber` that routes every event to the current
+/// thread's [`CAPTURE_TARGET`] (a no-op when none is set). Installed ONCE as the
+/// global default so callsite interest caches as enabled and a concurrent
+/// no-subscriber `run_queue` in a sibling test can never poison it (the failure mode
+/// of a bare `with_default`, whose thread-local dispatcher is not consulted when a
+/// callsite is first registered on another thread). No `tracing-subscriber` dep.
+struct GlobalCapture;
+
+impl tracing::Subscriber for GlobalCapture {
     fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
         true
     }
@@ -732,12 +742,26 @@ impl tracing::Subscriber for CaptureSubscriber {
     fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
     fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
     fn event(&self, event: &tracing::Event<'_>) {
-        let mut f = CapturedFields::default();
-        event.record(&mut f);
-        self.0.lock().unwrap().push(f);
+        CAPTURE_TARGET.with(|t| {
+            if let Some(target) = t.borrow().as_ref() {
+                let mut f = CapturedFields::default();
+                event.record(&mut f);
+                target.lock().unwrap().push(f);
+            }
+        });
     }
     fn enter(&self, _: &tracing::span::Id) {}
     fn exit(&self, _: &tracing::span::Id) {}
+}
+
+/// Install [`GlobalCapture`] as the process's global tracing default exactly once;
+/// a subsequent call (or a global default set elsewhere) is a harmless no-op.
+fn install_global_capture() {
+    use std::sync::OnceLock;
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let _ = tracing::subscriber::set_global_default(GlobalCapture);
+    });
 }
 
 #[test]
@@ -750,18 +774,18 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
     let agent = ScriptedAgent::new(vec![Outcome::Done]);
     let tracker = RecordingTracker::default();
 
+    install_global_capture();
     let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let sub = CaptureSubscriber(captured.clone());
-    let report = tracing::subscriber::with_default(sub, || {
-        run_queue(
-            &cfg(&repo, "stamp-plan-events", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-    })
-    .unwrap();
+    CAPTURE_TARGET.with(|t| *t.borrow_mut() = Some(captured.clone()));
+    let report = run_queue(
+        &cfg(&repo, "stamp-plan-events", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    );
+    CAPTURE_TARGET.with(|t| *t.borrow_mut() = None);
+    let report = report.unwrap();
     assert!(report.stop.is_none(), "a single green issue completes");
 
     let events = captured.lock().unwrap();

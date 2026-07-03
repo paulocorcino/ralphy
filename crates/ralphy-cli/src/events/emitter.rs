@@ -67,30 +67,41 @@ const IP_PROBES_RAW: [&str; 3] = [
 /// `ip=<addr>` line — the fallback when every raw-IP probe fails (#96).
 const IP_PROBE_TRACE: &str = "https://www.cloudflare.com/cdn-cgi/trace";
 
+/// The overall wall-clock budget for the whole probe sequence (#96), bounding the
+/// worst case (every endpoint blackholed) so the synchronous run-start ctx build is
+/// never held for more than one in-flight request past this cap.
+const IP_PROBE_BUDGET: Duration = Duration::from_secs(4);
+
 /// Detect the host's **public egress** IP, best-effort (#96): GET each raw-IP
 /// endpoint in order (trim + validate the body), then the Cloudflare trace endpoint
 /// (extract the `ip=` line). `None` when every probe fails or is unreachable — the
-/// caller then falls back to the local IP. Each request is bounded to ~2s so a
-/// wedged endpoint cannot hang run start; the first valid answer wins.
+/// caller then falls back to the local IP. Each request is bounded to ~2s AND the
+/// whole sequence to [`IP_PROBE_BUDGET`], so a wedged endpoint cannot hang run start;
+/// the first valid answer wins.
 fn public_ip() -> Option<String> {
     let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(2))
-        .timeout_read(Duration::from_secs(2))
+        .timeout(Duration::from_secs(2))
         .build();
+    let deadline = std::time::Instant::now() + IP_PROBE_BUDGET;
     for url in IP_PROBES_RAW {
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
         if let Ok(resp) = agent.get(url).call() {
             if let Some(ip) = resp.into_string().ok().and_then(|b| parse_raw_ip(&b)) {
                 return Some(ip);
             }
         }
     }
-    if let Ok(resp) = agent.get(IP_PROBE_TRACE).call() {
-        if let Some(ip) = resp
-            .into_string()
-            .ok()
-            .and_then(|b| parse_cloudflare_trace(&b))
-        {
-            return Some(ip);
+    if std::time::Instant::now() < deadline {
+        if let Ok(resp) = agent.get(IP_PROBE_TRACE).call() {
+            if let Some(ip) = resp
+                .into_string()
+                .ok()
+                .and_then(|b| parse_cloudflare_trace(&b))
+            {
+                return Some(ip);
+            }
         }
     }
     None
