@@ -393,7 +393,12 @@ mod tests {
     impl EventSink for ScriptedSink {
         fn post(&self, _body: &Value) -> anyhow::Result<PostOutcome> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(self.script.lock().unwrap().pop_front().unwrap_or(self.default))
+            Ok(self
+                .script
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(self.default))
         }
     }
 
@@ -415,7 +420,10 @@ mod tests {
         let attempts = deliver(&sink, &json!({}), &warned, NO_BACKOFF);
         assert_eq!(attempts, 4, "1 initial + 3 retries");
         assert_eq!(sink.call_count(), 4);
-        assert!(!warned.load(Ordering::SeqCst), "a delivered event must not warn");
+        assert!(
+            !warned.load(Ordering::SeqCst),
+            "a delivered event must not warn"
+        );
     }
 
     #[test]
@@ -584,8 +592,10 @@ mod tests {
             tx.send(request).expect("send request");
         });
 
-        let transport =
-            super::super::client::UreqEventTransport::new(format!("http://127.0.0.1:{port}/"), Some("tok".to_string()));
+        let transport = super::super::client::UreqEventTransport::new(
+            format!("http://127.0.0.1:{port}/"),
+            Some("tok".to_string()),
+        );
         let queue = new_queue();
         queue.push(RunEvent::IssueClosed {
             number: 7,
@@ -628,7 +638,10 @@ mod tests {
         assert_eq!(v["type"], "dev.ralphy.issue.closed");
         assert_eq!(v["source"], "ralphy/o/r");
         assert_eq!(v["subject"], "issue/7");
-        assert!(v["runid"].as_str().is_some_and(|s| !s.is_empty()), "runid: {v}");
+        assert!(
+            v["runid"].as_str().is_some_and(|s| !s.is_empty()),
+            "runid: {v}"
+        );
         assert_eq!(v["data"]["emitter"]["pid"], 4242);
     }
 }

@@ -713,8 +713,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             runid: events::emitter::new_runid(),
             emitter: serde_json::to_value(events::emitter::detect(&repo_root)).unwrap_or_default(),
         };
-        let transport =
-            events::client::UreqEventTransport::new(url.clone(), events_token.clone());
+        let transport = events::client::UreqEventTransport::new(url.clone(), events_token.clone());
         events_handle = events::sink::try_start_sink(transport, ctx, queue.clone());
     }
 

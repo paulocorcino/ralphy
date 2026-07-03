@@ -231,7 +231,10 @@ pub fn get(ws: &Workspace) -> Result<()> {
     let entry = events.entry(&slug);
     print_str("events.url", entry.and_then(|e| e.url.clone()));
     match entry.and_then(|e| e.token.as_deref()) {
-        Some(t) => println!("events.token = {}", crate::telegram::config::masked_token(t)),
+        Some(t) => println!(
+            "events.token = {}",
+            crate::telegram::config::masked_token(t)
+        ),
         None => println!("events.token: not set"),
     }
     Ok(())

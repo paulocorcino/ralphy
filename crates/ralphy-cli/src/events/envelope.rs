@@ -41,10 +41,7 @@ fn envelope(type_: &str, subject: Option<&str>, ctx: &EventCtx, data: Value) -> 
         json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
     );
     ev.insert("runid".to_string(), json!(ctx.runid));
-    ev.insert(
-        "datacontenttype".to_string(),
-        json!("application/json"),
-    );
+    ev.insert("datacontenttype".to_string(), json!("application/json"));
     ev.insert("data".to_string(), data);
     Value::Object(ev)
 }
@@ -210,12 +207,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             ctx,
             json!({ "reset": reset, "target_epoch": target_epoch }),
         )),
-        RunEvent::SleepEnded => Some(envelope(
-            "dev.ralphy.run.sleep_ended",
-            None,
-            ctx,
-            json!({}),
-        )),
+        RunEvent::SleepEnded => Some(envelope("dev.ralphy.run.sleep_ended", None, ctx, json!({}))),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
             "dev.ralphy.knowledge.consolidating",
             None,
@@ -355,7 +347,10 @@ mod tests {
             &RunState::new("t", 1),
         );
         assert_eq!(v["type"], "dev.ralphy.queue.built");
-        assert!(v.get("subject").is_none(), "queue.built has no subject: {v}");
+        assert!(
+            v.get("subject").is_none(),
+            "queue.built has no subject: {v}"
+        );
         assert_eq!(v["data"]["count"], 3);
         assert_eq!(v["data"]["order"], json!([1, 2, 3]));
         assert_eq!(v["data"]["stop_before"], 2);
@@ -514,13 +509,19 @@ mod tests {
             &RunState::new("t", 1),
         );
         assert_eq!(v["type"], "dev.ralphy.run.sleep_started");
-        assert!(v.get("subject").is_none(), "sleep_started has no subject: {v}");
+        assert!(
+            v.get("subject").is_none(),
+            "sleep_started has no subject: {v}"
+        );
         assert_eq!(v["data"]["reset"], "14:30");
         assert_eq!(v["data"]["target_epoch"], 1_700_000_000i64);
 
         let v = map(RunEvent::SleepEnded, &RunState::new("t", 1));
         assert_eq!(v["type"], "dev.ralphy.run.sleep_ended");
-        assert!(v.get("subject").is_none(), "sleep_ended has no subject: {v}");
+        assert!(
+            v.get("subject").is_none(),
+            "sleep_ended has no subject: {v}"
+        );
     }
 
     #[test]
@@ -555,7 +556,10 @@ mod tests {
             &RunState::new("t", 1),
         );
         assert_eq!(v["type"], "dev.ralphy.run.started");
-        assert!(v.get("subject").is_none(), "run.started has no subject: {v}");
+        assert!(
+            v.get("subject").is_none(),
+            "run.started has no subject: {v}"
+        );
         assert_eq!(v["data"]["repo"], "o/r");
         assert_eq!(v["data"]["queue_labels"], json!(["AFK", "ready"]));
         assert_eq!(v["data"]["agent"], "claude");
@@ -582,7 +586,10 @@ mod tests {
             &RunState::new("t", 1),
         );
         assert_eq!(v["type"], "dev.ralphy.run.finished");
-        assert!(v.get("subject").is_none(), "run.finished has no subject: {v}");
+        assert!(
+            v.get("subject").is_none(),
+            "run.finished has no subject: {v}"
+        );
         assert_eq!(v["data"]["outcome"], "completed");
         assert_eq!(v["data"]["issues_done"], 3);
         assert_eq!(v["data"]["issues_skipped"], 1);
