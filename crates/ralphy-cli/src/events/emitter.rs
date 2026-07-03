@@ -167,8 +167,14 @@ mod tests {
     #[test]
     fn parse_raw_ip_trims_and_validates() {
         // A bare IP with surrounding whitespace/newline is trimmed and accepted.
-        assert_eq!(parse_raw_ip("203.0.113.7\n"), Some("203.0.113.7".to_string()));
-        assert_eq!(parse_raw_ip("  2001:db8::1  "), Some("2001:db8::1".to_string()));
+        assert_eq!(
+            parse_raw_ip("203.0.113.7\n"),
+            Some("203.0.113.7".to_string())
+        );
+        assert_eq!(
+            parse_raw_ip("  2001:db8::1  "),
+            Some("2001:db8::1".to_string())
+        );
         // Non-IP bodies (a captive-portal page, an empty body) yield None so the
         // caller falls through to the next probe / the local-IP fallback.
         assert_eq!(parse_raw_ip("<html>nope</html>"), None);

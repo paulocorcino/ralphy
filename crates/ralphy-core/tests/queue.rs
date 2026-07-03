@@ -778,7 +778,10 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
     // `plan opened` carries the raw plan markdown at the write point.
     let opened = find("plan opened").expect("a plan opened event");
     assert!(
-        opened.plan_md.as_deref().is_some_and(|m| m.contains("## Steps")),
+        opened
+            .plan_md
+            .as_deref()
+            .is_some_and(|m| m.contains("## Steps")),
         "plan opened must carry the raw plan_md: {:?}",
         opened.plan_md
     );
@@ -786,7 +789,10 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
     // `plan closed` carries the raw plan markdown at the close read.
     let closed = find("plan closed").expect("a plan closed event");
     assert!(
-        closed.plan_md.as_deref().is_some_and(|m| m.contains("## Steps")),
+        closed
+            .plan_md
+            .as_deref()
+            .is_some_and(|m| m.contains("## Steps")),
         "plan closed must carry the raw plan_md: {:?}",
         closed.plan_md
     );

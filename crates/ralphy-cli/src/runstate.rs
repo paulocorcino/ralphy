@@ -1379,10 +1379,7 @@ mod tests {
                     output: 3_200,
                     model: Some("claude-opus-4".into()),
                 },
-                steps: vec![
-                    ("a".into(), "open".into()),
-                    ("b".into(), "checked".into()),
-                ],
+                steps: vec![("a".into(), "open".into()), ("b".into(), "checked".into()),],
             })
         );
         // The adapter's planning event seeds the planning spinner's model/effort.

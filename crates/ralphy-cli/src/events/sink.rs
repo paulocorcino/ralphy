@@ -129,7 +129,10 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
 /// `ralphy_core::acceptance::normalize_ac`'s technique, kept crate-local so the poll
 /// does not widen a core API for one caller.
 fn normalize_step(s: &str) -> String {
-    let stripped: String = s.chars().filter(|c| !matches!(c, '*' | '_' | '`')).collect();
+    let stripped: String = s
+        .chars()
+        .filter(|c| !matches!(c, '*' | '_' | '`'))
+        .collect();
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -607,7 +610,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ralphy-step-poll-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let plan_path = dir.join("plan.md");
-        std::fs::write(&plan_path, "## Steps\n- [ ] do a `thing`\n- [ ] do another\n").unwrap();
+        std::fs::write(
+            &plan_path,
+            "## Steps\n- [ ] do a `thing`\n- [ ] do another\n",
+        )
+        .unwrap();
 
         // Issue 7 active so the poll has a subject.
         let mut state = RunState::new("t", 1);
@@ -628,7 +635,11 @@ mod tests {
         );
 
         // Flip the first step to checked and advance the mtime so the poll re-reads.
-        std::fs::write(&plan_path, "## Steps\n- [x] do a `thing`\n- [ ] do another\n").unwrap();
+        std::fs::write(
+            &plan_path,
+            "## Steps\n- [x] do a `thing`\n- [ ] do another\n",
+        )
+        .unwrap();
         filetime_advance(&plan_path);
         poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
 

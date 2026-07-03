@@ -550,7 +550,10 @@ mod tests {
             &run_state(),
         );
         assert_eq!(pre["data"]["agent"]["name"], "claude");
-        assert!(pre["data"]["agent"]["model"].is_null(), "model null pre-phase");
+        assert!(
+            pre["data"]["agent"]["model"].is_null(),
+            "model null pre-phase"
+        );
         assert!(
             pre["data"]["agent"]["effort"].is_null(),
             "effort null pre-phase"
