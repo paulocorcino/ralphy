@@ -71,14 +71,16 @@ Multiple developers running multiple Ralphy processes on multiple OSes send
 similar-looking events. PID alone cannot key anything (recycled by the OS,
 repeated across hosts), so the **primary key is `runid`**: a ULID minted at
 process start, unique without coordination. Everything else is attribution
-and diagnostics, carried as CloudEvents extension attributes on **every**
-event: `ralphyversion` (binary version — which schema vintage is talking),
-`ralphyuser` (`git config user.email` — attribution to a person, zero new
-config), `ralphyhost` (hostname), `ralphyos`, `ralphypid` (find the process
-among concurrent Ralphys on one host), `ralphyip` (primary local IP,
-best-effort diagnostic — never a key), `ralphytz` (local timezone; the
-envelope `time` is always UTC per RFC 3339, and the offset reconstructs local
-time). The exact attribute table lives in [docs/events.md](../events.md).
+and diagnostics. Because CloudEvents restricts extension attributes to simple
+types, `runid` is the envelope's **only** extension (filterable without
+parsing payloads), and the rest groups under a reserved `emitter` object
+inside every event's `data`, keeping the header clean: `version` (binary —
+which schema vintage is talking), `user` (`git config user.email` —
+attribution to a person, zero new config), `host`, `os`, `pid` (find the
+process among concurrent Ralphys on one host), `ip` (primary local IP,
+best-effort diagnostic — never a key), `tz` (local timezone; the envelope
+`time` is always UTC per RFC 3339, and the offset reconstructs local time).
+The exact field table lives in [docs/events.md](../events.md).
 
 ### 4. Three new emissions the bus does not have today
 
@@ -120,7 +122,7 @@ and a secret-hygiene boundary. A finer debug level can grow later as a
 
 - The platform can be built against [docs/events.md](../events.md) alone:
   fold events by `runid` exactly as the Telegram notifier folds `RunEvent`,
-  dedup by `id`, group by `ralphyuser`/`ralphyhost`, detect death by
+  dedup by `id`, group by `emitter.user`/`emitter.host`, detect death by
   heartbeat gap.
 - An HTTP client dependency enters the CLI crate for the first time (choice
   of crate is a code-stage decision; the workspace has none today).

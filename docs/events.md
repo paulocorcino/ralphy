@@ -15,7 +15,7 @@ per-event tests.
 - `POST {events.url}` with `Content-Type: application/cloudevents+json`
   (CloudEvents 1.0, structured mode), one event per request.
 - `Authorization: Bearer $RALPHY_EVENTS_TOKEN` when the env var is set. The
-  token authenticates the **emitter fleet**; `ralphyuser` is self-declared
+  token authenticates the **emitter fleet**; `data.emitter.user` is self-declared
   (`git config`) and is attribution, not authentication — a platform wanting
   per-person trust should issue per-dev tokens and map token→person.
 - **Endpoint contract**: any `2xx` acknowledges the event (body ignored).
@@ -41,15 +41,18 @@ per-event tests.
   "id": "01JZ7Q8R9S…",
   "time": "2026-07-03T17:22:31Z",
   "runid": "01JZ6XK4M2…",
-  "ralphyversion": "0.1.0-rc10",
-  "ralphyuser": "paulo@corcino.com.br",
-  "ralphyhost": "PICHAU",
-  "ralphyos": "windows-11",
-  "ralphypid": 18432,
-  "ralphyip": "192.168.1.42",
-  "ralphytz": "America/Sao_Paulo",
   "datacontenttype": "application/json",
-  "data": { }
+  "data": {
+    "emitter": {
+      "version": "0.1.0-rc10",
+      "user": "paulo@corcino.com.br",
+      "host": "PICHAU",
+      "os": "windows-11",
+      "pid": 18432,
+      "ip": "192.168.1.42",
+      "tz": "America/Sao_Paulo"
+    }
+  }
 }
 ```
 
@@ -63,18 +66,26 @@ finished cleanly, which the runner then closes; **non-green** = any other
 stop (stuck, blocked, timeout). Token counters come in the ledger's four
 fields — `up` input, `cr` cache-read, `cw` cache-write, `out` output.
 
-### Extension attributes (emitter identity, on every event)
+### Emitter identity (on every event)
 
-| Attribute | Meaning | Role |
+CloudEvents extension attributes must be simple types (the spec forbids
+nested values at the envelope level), so the envelope carries exactly **one**
+extension — the correlation key — and the rest of the identity groups under a
+reserved `emitter` object inside `data`, keeping the header clean:
+
+| Field | Meaning | Role |
 | --- | --- | --- |
-| `runid` | ULID minted at process start | **Primary key** — groups a run's events across the fleet |
-| `ralphyversion` | Ralphy binary version | Which contract vintage is emitting |
-| `ralphyuser` | `git config user.email` | Attribution to a person |
-| `ralphyhost` | Hostname | Which machine |
-| `ralphyos` | e.g. `windows-11`, `linux`, `macos` | Per-OS diagnostics |
-| `ralphypid` | Process id | Which process among concurrent Ralphys on one host |
-| `ralphyip` | Primary local IP (best-effort) | Network diagnostic — never a key (multi-NIC, DHCP, VPN) |
-| `ralphytz` | Local timezone: IANA name (`America/Sao_Paulo`) when resolvable, else fixed offset (`-03:00`) — parsers accept both | Reconstruct local time from UTC `time` |
+| `runid` (envelope extension) | ULID minted at process start | **Primary key** — groups a run's events across the fleet; filter/route on it without parsing `data` |
+| `data.emitter.version` | Ralphy binary version | Which contract vintage is emitting |
+| `data.emitter.user` | `git config user.email` | Attribution to a person |
+| `data.emitter.host` | Hostname | Which machine |
+| `data.emitter.os` | e.g. `windows-11`, `linux`, `macos` | Per-OS diagnostics |
+| `data.emitter.pid` | Process id | Which process among concurrent Ralphys on one host |
+| `data.emitter.ip` | Primary local IP (best-effort) | Network diagnostic — never a key (multi-NIC, DHCP, VPN) |
+| `data.emitter.tz` | Local timezone: IANA name (`America/Sao_Paulo`) when resolvable, else fixed offset (`-03:00`) — parsers accept both | Reconstruct local time from UTC `time` |
+
+`emitter` is a reserved key on every event's `data`, alongside the
+event-specific fields listed in the catalog below.
 
 ## Event catalog
 
@@ -132,7 +143,8 @@ consolidating`:
 
 - **Key by `runid`**, fold events into per-run state exactly as the Telegram
   notifier folds `RunEvent` (ADR-0007) — order by `time`, dedup by `id`.
-- **Attribute** by `ralphyuser`; **locate** by `ralphyhost` + `ralphypid`.
+- **Attribute** by `data.emitter.user`; **locate** by `data.emitter.host` +
+  `data.emitter.pid`.
 - **Tolerate absence**: at-most-once delivery means any discrete event can be
   missing; heartbeats and terminal events (`issue.closed`, `run.finished`)
   carry enough totals to converge.
@@ -145,10 +157,10 @@ consolidating`:
    normal path; removing or renaming a field, or changing a field's meaning,
    requires a **new event type** instead.
 2. New event types may appear at any release; consumers skip unknown types.
-3. `ralphyversion` on every event identifies the emitting contract vintage
+3. `data.emitter.version` on every event identifies the emitting contract vintage
    when forensics are needed.
-4. Identity extension attributes are stable; new extensions may be added,
-   never repurposed.
+4. `runid` and the `data.emitter` block are stable; new emitter fields or
+   envelope extensions may be added, never repurposed.
 5. A future finer-grained level (agent tool-calls, ADR-0019 §6) will arrive
    as new `dev.ralphy.agent.*` types behind a settings knob — never as extra
    fields on existing types.

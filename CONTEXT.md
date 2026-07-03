@@ -96,11 +96,11 @@ _Avoid_: exporter, webhook (the sink pushes; it exposes nothing), logger.
 **Emitter identity**:
 The extension attributes every CloudEvent carries so a fleet of Ralphys (many
 devs, many machines, concurrent processes) stays distinguishable: `runid`
-(ULID minted at process start — the correlation **key**; everything else is
-grouping or diagnostics), plus attribution and
-diagnostics (`ralphyuser`, `ralphyhost`, `ralphyos`, `ralphypid`, `ralphyip`,
-`ralphyversion`, `ralphytz`). PID is diagnostic, never a key (recycled,
-collides across hosts).
+(ULID minted at process start — the correlation **key** and the envelope's
+only extension attribute, since CloudEvents extensions must be simple types),
+plus attribution and diagnostics grouped in the reserved `data.emitter`
+object (`version`, `user`, `host`, `os`, `pid`, `ip`, `tz`). PID is
+diagnostic, never a key (recycled, collides across hosts).
 _Avoid_: instance id (implies persistence we don't have), session id.
 
 **Queue snapshot**:
