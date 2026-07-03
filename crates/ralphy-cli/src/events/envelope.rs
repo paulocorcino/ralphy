@@ -390,20 +390,43 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             cw,
             out,
             duration_s,
-        } => Some(envelope(
-            "dev.ralphy.run.finished",
-            None,
-            ctx,
-            state,
-            json!({
-                "outcome": outcome,
-                "issues_done": issues_done,
-                "issues_skipped": issues_skipped,
-                "issues_total": issues_total,
-                "tokens_total": { "up": up, "cr": cr, "cw": cw, "out": out },
-                "duration_s": duration_s,
-            }),
-        )),
+        } => {
+            // The per-issue rollup (#96): every issue that entered the fold and
+            // reached a terminal status, with its granular `status` and (only on a
+            // skip) the skip `kind`. The scalar counts stay for completeness.
+            let issues: Vec<Value> = state
+                .issues
+                .iter()
+                .filter_map(|e| {
+                    let status = e.status.status_wire()?;
+                    let mut obj = serde_json::Map::new();
+                    obj.insert("number".to_string(), json!(e.number));
+                    obj.insert("title".to_string(), json!(issue_title(state, e.number)));
+                    obj.insert("status".to_string(), json!(status));
+                    if status == "skipped" {
+                        if let Some(kind) = e.kind {
+                            obj.insert("kind".to_string(), json!(skip_kind_name(kind)));
+                        }
+                    }
+                    Some(Value::Object(obj))
+                })
+                .collect();
+            Some(envelope(
+                "dev.ralphy.run.finished",
+                None,
+                ctx,
+                state,
+                json!({
+                    "outcome": outcome,
+                    "issues_done": issues_done,
+                    "issues_skipped": issues_skipped,
+                    "issues_total": issues_total,
+                    "issues": issues,
+                    "tokens_total": { "up": up, "cr": cr, "cw": cw, "out": out },
+                    "duration_s": duration_s,
+                }),
+            ))
+        }
     }
 }
 
@@ -973,6 +996,33 @@ mod tests {
 
     #[test]
     fn run_finished_maps_outcome_totals_without_subject() {
+        // Fold a lifecycle: issue 1 closed (done), issue 2 skipped via a
+        // human-return (a titled skip carrying `kind`), and seed a queue so the
+        // rollup title can fall back for the skip (which never got an IssueStarted).
+        let mut state = RunState::new("t", 5);
+        state.apply(RunEvent::QueueBuilt {
+            count: 5,
+            order: vec![1, 2],
+            stop_before: None,
+            issues: json!([
+                {"number": 1, "title": "one"},
+                {"number": 2, "title": "two"},
+            ]),
+        });
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "one".into(),
+        });
+        state.apply(RunEvent::IssueClosed {
+            number: 1,
+            tokens: 0,
+            usage: UsageLite::default(),
+        });
+        state.apply(RunEvent::Skipped {
+            number: 2,
+            kind: SkipKind::HumanReturn,
+            label: Some("needs-info".into()),
+        });
         let v = map(
             RunEvent::RunFinished {
                 outcome: "completed".into(),
@@ -985,7 +1035,7 @@ mod tests {
                 out: 25,
                 duration_s: 412,
             },
-            &RunState::new("t", 1),
+            &state,
         );
         assert_eq!(v["type"], "dev.ralphy.run.finished");
         assert!(
@@ -993,12 +1043,26 @@ mod tests {
             "run.finished has no subject: {v}"
         );
         assert_eq!(v["data"]["outcome"], "completed");
+        // Scalar counts stay intact.
         assert_eq!(v["data"]["issues_done"], 3);
         assert_eq!(v["data"]["issues_skipped"], 1);
         assert_eq!(v["data"]["issues_total"], 5);
         assert_eq!(v["data"]["tokens_total"]["up"], 100);
         assert_eq!(v["data"]["tokens_total"]["out"], 25);
         assert_eq!(v["data"]["duration_s"], 412);
+        // The per-issue rollup: a done entry (no kind) and a skipped entry (kind).
+        assert_eq!(
+            v["data"]["issues"],
+            json!([
+                { "number": 1, "title": "one", "status": "done" },
+                { "number": 2, "title": "two", "status": "skipped", "kind": "human_return" },
+            ])
+        );
+        // `run.finished` carries NO agent block.
+        assert!(
+            v["data"].get("agent").is_none(),
+            "run.finished has no agent block: {v}"
+        );
     }
 
     #[test]

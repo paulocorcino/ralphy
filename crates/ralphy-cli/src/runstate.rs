@@ -233,6 +233,23 @@ impl IssueStatus {
                 | IssueStatus::Hitl
         )
     }
+
+    /// The wire name for the `run.finished.issues` rollup `status` field (#96):
+    /// `Some(name)` for a terminal status (one of `done|skipped|blocked|infeasible|
+    /// needs_split|non_green|hitl`), `None` for the non-terminal `Planning`/
+    /// `Executing` — the rollup includes only terminal entries.
+    pub fn status_wire(&self) -> Option<&'static str> {
+        match self {
+            IssueStatus::Done => Some("done"),
+            IssueStatus::Skipped => Some("skipped"),
+            IssueStatus::Blocked => Some("blocked"),
+            IssueStatus::Infeasible => Some("infeasible"),
+            IssueStatus::NeedsSplit => Some("needs_split"),
+            IssueStatus::NonGreen => Some("non_green"),
+            IssueStatus::Hitl => Some("hitl"),
+            IssueStatus::Planning | IssueStatus::Executing => None,
+        }
+    }
 }
 
 /// An active usage-limit sleep: the reset-time hint shown on the card and the
@@ -249,6 +266,10 @@ pub struct IssueEntry {
     pub number: u64,
     pub title: String,
     pub status: IssueStatus,
+    /// The skip reason, retained ONLY for a [`IssueStatus::Skipped`] entry so the
+    /// `run.finished.issues` rollup can carry `kind` on a skip (#96); `None` for
+    /// every non-skip entry.
+    pub kind: Option<SkipKind>,
 }
 
 /// A light `{number, title}` reference for the `run.started.queue` scope list and
@@ -359,6 +380,7 @@ impl RunState {
                 number,
                 title: String::new(),
                 status: IssueStatus::Planning,
+                kind: None,
             });
             self.issues.last_mut().expect("just pushed")
         }
@@ -448,8 +470,10 @@ impl RunState {
                 self.entry_mut(n).status = status;
                 self.final_summary = Some(format!("stopped on #{n}: {outcome}"));
             }
-            RunEvent::Skipped { number, .. } => {
-                self.entry_mut(number).status = IssueStatus::Skipped;
+            RunEvent::Skipped { number, kind, .. } => {
+                let e = self.entry_mut(number);
+                e.status = IssueStatus::Skipped;
+                e.kind = Some(kind);
             }
             RunEvent::HumanBlocked { number, .. } => {
                 // Its own status so the card and counts surface "waiting on human"
