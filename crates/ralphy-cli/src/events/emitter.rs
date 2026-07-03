@@ -8,6 +8,7 @@
 
 use std::net::UdpSocket;
 use std::path::Path;
+use std::time::Duration;
 
 use chrono::Local;
 use serde::Serialize;
@@ -47,9 +48,67 @@ pub fn detect(repo_root: &Path) -> Emitter {
             .unwrap_or_default(),
         os: std::env::consts::OS.to_string(),
         pid: std::process::id(),
-        ip: local_ip(),
+        // Best-effort public egress IP (#96); falls back to the primary local IP,
+        // then `0.0.0.0` when every probe fails (offline/firewalled host).
+        ip: public_ip().unwrap_or_else(local_ip),
         tz: Local::now().format("%:z").to_string(),
     }
+}
+
+/// The endpoints returning the caller's public IP as a bare line (raw IP → trim),
+/// probed in order (#96): a mix of providers so one outage does not blind the run.
+const IP_PROBES_RAW: [&str; 3] = [
+    "https://checkip.amazonaws.com/",
+    "http://checkip.global.api.aws/",
+    "http://icanhazip.com/",
+];
+
+/// The Cloudflare trace endpoint, whose body is a `key=value` block carrying an
+/// `ip=<addr>` line — the fallback when every raw-IP probe fails (#96).
+const IP_PROBE_TRACE: &str = "https://www.cloudflare.com/cdn-cgi/trace";
+
+/// Detect the host's **public egress** IP, best-effort (#96): GET each raw-IP
+/// endpoint in order (trim + validate the body), then the Cloudflare trace endpoint
+/// (extract the `ip=` line). `None` when every probe fails or is unreachable — the
+/// caller then falls back to the local IP. Each request is bounded to ~2s so a
+/// wedged endpoint cannot hang run start; the first valid answer wins.
+fn public_ip() -> Option<String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(2))
+        .timeout_read(Duration::from_secs(2))
+        .build();
+    for url in IP_PROBES_RAW {
+        if let Ok(resp) = agent.get(url).call() {
+            if let Some(ip) = resp.into_string().ok().and_then(|b| parse_raw_ip(&b)) {
+                return Some(ip);
+            }
+        }
+    }
+    if let Ok(resp) = agent.get(IP_PROBE_TRACE).call() {
+        if let Some(ip) = resp
+            .into_string()
+            .ok()
+            .and_then(|b| parse_cloudflare_trace(&b))
+        {
+            return Some(ip);
+        }
+    }
+    None
+}
+
+/// Parse a raw-IP probe body: trim surrounding whitespace and accept it only when it
+/// is a valid IP address (so a captive-portal HTML page or empty body yields `None`).
+fn parse_raw_ip(body: &str) -> Option<String> {
+    let s = body.trim();
+    s.parse::<std::net::IpAddr>().ok().map(|_| s.to_string())
+}
+
+/// Extract the IP from a Cloudflare `cdn-cgi/trace` body: find the `ip=<addr>` line
+/// and validate the address via [`parse_raw_ip`].
+fn parse_cloudflare_trace(body: &str) -> Option<String> {
+    body.lines()
+        .find_map(|l| l.trim().strip_prefix("ip="))
+        .and_then(parse_raw_ip)
 }
 
 /// The host's primary local IP, discovered with the classic connect-a-UDP-socket
@@ -104,7 +163,43 @@ pub fn source(slug: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+
+    #[test]
+    fn parse_raw_ip_trims_and_validates() {
+        // A bare IP with surrounding whitespace/newline is trimmed and accepted.
+        assert_eq!(parse_raw_ip("203.0.113.7\n"), Some("203.0.113.7".to_string()));
+        assert_eq!(parse_raw_ip("  2001:db8::1  "), Some("2001:db8::1".to_string()));
+        // Non-IP bodies (a captive-portal page, an empty body) yield None so the
+        // caller falls through to the next probe / the local-IP fallback.
+        assert_eq!(parse_raw_ip("<html>nope</html>"), None);
+        assert_eq!(parse_raw_ip(""), None);
+    }
+
+    #[test]
+    fn parse_cloudflare_trace_extracts_ip_line() {
+        let body = "fl=1\nh=www.cloudflare.com\nip=198.51.100.42\nts=1700000000\n";
+        assert_eq!(
+            parse_cloudflare_trace(body),
+            Some("198.51.100.42".to_string())
+        );
+        // No `ip=` line → None (fall back to local IP).
+        assert_eq!(parse_cloudflare_trace("fl=1\nh=x\n"), None);
+        // A garbage `ip=` value is rejected by the IP validation.
+        assert_eq!(parse_cloudflare_trace("ip=not-an-ip\n"), None);
+    }
+
+    #[test]
+    fn public_ip_falls_back_to_local_when_probes_yield_nothing() {
+        // The composed fallback the emitter uses: `public_ip().unwrap_or_else(local_ip)`
+        // always yields a non-empty string (a real IP, or `0.0.0.0` when fully
+        // offline) — never an empty `ip` field on the wire.
+        let ip = public_ip().unwrap_or_else(local_ip);
+        assert!(!ip.is_empty(), "ip must never be empty");
+        assert!(
+            ip.parse::<std::net::IpAddr>().is_ok(),
+            "ip must be a valid address, got {ip}"
+        );
+    }
 
     #[test]
     fn detect_yields_non_empty_core_fields() {
