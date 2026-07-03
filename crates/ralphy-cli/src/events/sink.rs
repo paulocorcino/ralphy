@@ -101,13 +101,20 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
         .iter()
         .filter(|e| e.status.is_terminal())
         .count();
+    // The active issue as `{number, title}` (the normalized `issue` shape, #96) or
+    // `null` when no issue is active — replacing the bare active number.
+    let issue = state
+        .active_issue()
+        .map(|e| json!({ "number": e.number, "title": e.title }))
+        .unwrap_or(Value::Null);
     super::envelope::run_envelope(
         "dev.ralphy.run.heartbeat",
         ctx,
+        state,
         json!({
             "phase": phase(state),
             "interval_s": HEARTBEAT_INTERVAL.as_secs(),
-            "issue": state.active,
+            "issue": issue,
             "elapsed_s": elapsed_s,
             "queue_done": queue_done,
             "queue_total": state.total,
@@ -500,7 +507,7 @@ mod tests {
         assert_eq!(v["type"], "dev.ralphy.run.heartbeat");
         assert_eq!(v["data"]["phase"], "executing");
         assert_eq!(v["data"]["interval_s"], 30);
-        assert_eq!(v["data"]["issue"], 7);
+        assert_eq!(v["data"]["issue"], json!({ "number": 7, "title": "a" }));
         assert_eq!(v["data"]["elapsed_s"], 412);
         assert_eq!(v["data"]["queue_total"], 3);
         assert_eq!(v["data"]["tokens_total"]["up"], 11);

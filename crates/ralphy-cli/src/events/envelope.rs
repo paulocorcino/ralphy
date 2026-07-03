@@ -25,14 +25,75 @@ pub struct EventCtx {
     pub git: Value,
 }
 
+/// The reserved `data.agent` contextual block (ADR-0019 amendment #96): the current
+/// phase's `{name, model, effort}`. `name` is the current phase agent (plan agent
+/// while planning, exec agent while executing), falling back to the run's exec agent
+/// before any phase begins, or `null` when `run.started` has not been folded yet
+/// (e.g. on `queue.built`). `model`/`effort` are `null` before a phase begins.
+fn agent_block(state: &RunState) -> Value {
+    let name = state
+        .cur_agent
+        .clone()
+        .or_else(|| (!state.exec_agent.is_empty()).then(|| state.exec_agent.clone()));
+    json!({ "name": name, "model": state.cur_model, "effort": state.cur_effort })
+}
+
+/// The `issue/<n>` subject's issue number (`None` for a malformed subject).
+fn issue_number_from_subject(subject: &str) -> Option<u64> {
+    subject.strip_prefix("issue/").and_then(|s| s.parse().ok())
+}
+
+/// The title for an issue block: the folded `IssueEntry.title` when non-empty, else
+/// the `RunState.queue` seed (populated by `queue.built`), else an empty string.
+fn issue_title(state: &RunState, number: u64) -> String {
+    state
+        .issues
+        .iter()
+        .find(|e| e.number == number)
+        .map(|e| e.title.clone())
+        .filter(|t| !t.is_empty())
+        .or_else(|| {
+            state
+                .queue
+                .iter()
+                .find(|q| q.number == number)
+                .map(|q| q.title.clone())
+        })
+        .unwrap_or_default()
+}
+
+/// The reserved `data.issue` block (ADR-0019 amendment #96) carried on every
+/// subject-scoped event: `{number, title}` with the title resolved via
+/// [`issue_title`].
+fn issue_block(state: &RunState, number: u64) -> Value {
+    json!({ "number": number, "title": issue_title(state, number) })
+}
+
 /// Assemble a CloudEvents 1.0 structured-mode envelope. `data` is the
-/// event-specific object; the reserved `emitter` identity is merged into it, and
-/// the envelope carries exactly one extension attribute — `runid` (ADR-0019 §3).
-fn envelope(type_: &str, subject: Option<&str>, ctx: &EventCtx, data: Value) -> Value {
+/// event-specific object; the reserved `emitter`/`git` blocks are merged into it,
+/// the contextual `agent` block on every type except `run.finished`, and the `issue`
+/// block on every subject-scoped event — the envelope still carries exactly one
+/// extension attribute, `runid` (ADR-0019 §3).
+fn envelope(
+    type_: &str,
+    subject: Option<&str>,
+    ctx: &EventCtx,
+    state: &RunState,
+    data: Value,
+) -> Value {
     let mut data = data;
     if let Value::Object(ref mut map) = data {
         map.insert("emitter".to_string(), ctx.emitter.clone());
         map.insert("git".to_string(), ctx.git.clone());
+        // The contextual agent block rides every event except `run.finished`.
+        if type_ != "dev.ralphy.run.finished" {
+            map.insert("agent".to_string(), agent_block(state));
+        }
+        // The issue block rides exactly the subject-scoped events (`issue.*`,
+        // `plan.*`); run-scoped events (no subject) carry none.
+        if let Some(number) = subject.and_then(issue_number_from_subject) {
+            map.insert("issue".to_string(), issue_block(state, number));
+        }
     }
     let mut ev = serde_json::Map::new();
     ev.insert("specversion".to_string(), json!("1.0"));
@@ -55,8 +116,8 @@ fn envelope(type_: &str, subject: Option<&str>, ctx: &EventCtx, data: Value) -> 
 /// Build a subject-less envelope for a synthetic `run.*` event that has no
 /// [`RunEvent`] source (the sink's own `run.heartbeat`). Shares the exact envelope
 /// assembly — specversion, id, time, runid, merged emitter — as the mapped events.
-pub fn run_envelope(type_: &str, ctx: &EventCtx, data: Value) -> Value {
-    envelope(type_, None, ctx, data)
+pub fn run_envelope(type_: &str, ctx: &EventCtx, state: &RunState, data: Value) -> Value {
+    envelope(type_, None, ctx, state, data)
 }
 
 /// The `data` payload shared by the enriched `queue.built` and the on-demand
@@ -82,9 +143,11 @@ pub fn queue_snapshot_data(
 /// Wrap a [`queue_snapshot_data`] payload in the `dev.ralphy.queue.snapshot`
 /// envelope (ADR-0020): the on-demand `ralphy issues --push` emission, byte-for-byte
 /// the same `data` shape the runner's `queue.built` carries, only the envelope
-/// `type` differs. Subject-less, like `queue.built`.
-pub fn queue_snapshot_envelope(data: Value, ctx: &EventCtx) -> Value {
-    run_envelope("dev.ralphy.queue.snapshot", ctx, data)
+/// `type` differs. Subject-less, like `queue.built`. The `state` is the caller's
+/// (out-of-run `ralphy issues --push` passes a default, so the `agent` block is
+/// all-`null` — matching `queue.built` before `run.started` folds).
+pub fn queue_snapshot_envelope(data: Value, ctx: &EventCtx, state: &RunState) -> Value {
+    run_envelope("dev.ralphy.queue.snapshot", ctx, state, data)
 }
 
 /// The `usage {up,cr,cw,out,model}` object carried on `plan.written` and
@@ -141,12 +204,14 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.queue.built",
             None,
             ctx,
+            state,
             queue_snapshot_data(issues, *count, order, *stop_before),
         )),
         RunEvent::IssueStarted { number, title } => Some(envelope(
             "dev.ralphy.issue.started",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number, "title": title }),
         )),
         RunEvent::Planning { model, effort } => {
@@ -156,6 +221,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 "dev.ralphy.issue.planning",
                 subject.as_deref(),
                 ctx,
+                state,
                 json!({ "model": model, "effort": effort }),
             ))
         }
@@ -167,6 +233,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.plan.written",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number, "open_steps": open_steps, "usage": usage_json(usage) }),
         )),
         RunEvent::Executing {
@@ -181,6 +248,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 "dev.ralphy.issue.executing",
                 subject.as_deref(),
                 ctx,
+                state,
                 json!({
                     "number": n.unwrap_or(0),
                     "budget_min": budget_min,
@@ -197,18 +265,21 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.issue.closed",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number, "tokens": tokens, "usage": usage_json(usage) }),
         )),
         RunEvent::NonGreen { number, outcome } => Some(envelope(
             "dev.ralphy.issue.non_green",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number, "outcome": outcome }),
         )),
         RunEvent::NeedsSplit { number } => Some(envelope(
             "dev.ralphy.issue.needs_split",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number }),
         )),
         RunEvent::Skipped {
@@ -219,18 +290,21 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.issue.skipped",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number, "kind": skip_kind_name(*kind), "label": label }),
         )),
         RunEvent::HumanBlocked { number, on } => Some(envelope(
             "dev.ralphy.issue.human_blocked",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number, "on": on }),
         )),
         RunEvent::DeadlinePassed { number } => Some(envelope(
             "dev.ralphy.issue.deadline_passed",
             Some(&subject_for(*number)),
             ctx,
+            state,
             json!({ "number": number }),
         )),
         RunEvent::SleepStarted {
@@ -240,31 +314,44 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.run.sleep_started",
             None,
             ctx,
+            state,
             json!({ "reset": reset, "target_epoch": target_epoch }),
         )),
-        RunEvent::SleepEnded => Some(envelope("dev.ralphy.run.sleep_ended", None, ctx, json!({}))),
+        RunEvent::SleepEnded => Some(envelope(
+            "dev.ralphy.run.sleep_ended",
+            None,
+            ctx,
+            state,
+            json!({}),
+        )),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
             "dev.ralphy.knowledge.consolidating",
             None,
             ctx,
+            state,
             json!({ "notes": notes }),
         )),
         RunEvent::KnowledgeConsolidated { archived } => Some(envelope(
             "dev.ralphy.knowledge.consolidated",
             None,
             ctx,
+            state,
             json!({ "archived": archived }),
         )),
         RunEvent::Notice { level, message } => Some(envelope(
             "dev.ralphy.run.notice",
             None,
             ctx,
+            state,
             json!({ "level": level.to_string().to_lowercase(), "message": message }),
         )),
         RunEvent::RunStarted {
             repo,
             queue_labels,
-            agent,
+            // The exec agent is now conveyed uniformly by the `data.agent` block
+            // (`data.agent.name`), so the redundant scalar is dropped here; the
+            // distinct plan agent stays a scalar (the block only carries one name).
+            agent: _,
             plan_agent,
             branch_mode,
             branch,
@@ -273,10 +360,10 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.run.started",
             None,
             ctx,
+            state,
             json!({
                 "repo": repo,
                 "queue_labels": queue_labels,
-                "agent": agent,
                 "plan_agent": plan_agent,
                 "branch_mode": branch_mode,
                 "branch": branch,
@@ -297,6 +384,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.run.finished",
             None,
             ctx,
+            state,
             json!({
                 "outcome": outcome,
                 "issues_done": issues_done,
@@ -338,9 +426,171 @@ mod tests {
         assert_eq!(mapped["data"]["git"]["repository"], "o/r");
         assert_eq!(mapped["data"]["git"]["branch"], "afk/run-t");
 
-        let run_scoped = run_envelope("dev.ralphy.run.heartbeat", &ctx(), json!({}));
+        let run_scoped = run_envelope(
+            "dev.ralphy.run.heartbeat",
+            &ctx(),
+            &RunState::new("t", 1),
+            json!({}),
+        );
         assert_eq!(run_scoped["data"]["git"]["repository"], "o/r");
         assert_eq!(run_scoped["data"]["git"]["branch"], "afk/run-t");
+    }
+
+    /// A state with `run.started` folded (exec `claude`, plan `codex`) and issue 7
+    /// active — so agent/issue blocks resolve.
+    fn run_state() -> RunState {
+        let mut s = RunState::new("t", 1);
+        s.apply(RunEvent::RunStarted {
+            repo: "o/r".into(),
+            queue_labels: vec![],
+            agent: "claude".into(),
+            plan_agent: "codex".into(),
+            branch_mode: "new".into(),
+            branch: "origin/main".into(),
+            deadline_hours: None,
+        });
+        s.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "hello".into(),
+        });
+        s
+    }
+
+    #[test]
+    fn agent_block_reflects_phase_and_is_absent_on_run_finished() {
+        // Before any phase: name falls back to the run's exec agent, model/effort null.
+        let pre = map(
+            RunEvent::IssueStarted {
+                number: 7,
+                title: "hello".into(),
+            },
+            &run_state(),
+        );
+        assert_eq!(pre["data"]["agent"]["name"], "claude");
+        assert!(pre["data"]["agent"]["model"].is_null(), "model null pre-phase");
+        assert!(
+            pre["data"]["agent"]["effort"].is_null(),
+            "effort null pre-phase"
+        );
+
+        // After a Planning fold: name is the plan agent with its model/effort.
+        let mut planning = run_state();
+        planning.apply(RunEvent::Planning {
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+        });
+        let v = map(RunEvent::NeedsSplit { number: 7 }, &planning);
+        assert_eq!(v["data"]["agent"]["name"], "codex");
+        assert_eq!(v["data"]["agent"]["model"], "opus");
+        assert_eq!(v["data"]["agent"]["effort"], "high");
+
+        // After an Executing fold: name is the exec agent.
+        let mut executing = run_state();
+        executing.apply(RunEvent::Executing {
+            number: 0,
+            budget_min: 45,
+            model: "claude-sonnet-4".into(),
+            effort: Some("medium".into()),
+        });
+        let v = map(RunEvent::NeedsSplit { number: 7 }, &executing);
+        assert_eq!(v["data"]["agent"]["name"], "claude");
+        assert_eq!(v["data"]["agent"]["model"], "claude-sonnet-4");
+
+        // `run.finished` carries NO agent block.
+        let fin = map(
+            RunEvent::RunFinished {
+                outcome: "completed".into(),
+                issues_done: 1,
+                issues_skipped: 0,
+                issues_total: 1,
+                up: 0,
+                cr: 0,
+                cw: 0,
+                out: 0,
+                duration_s: 1,
+            },
+            &run_state(),
+        );
+        assert!(
+            fin["data"].get("agent").is_none(),
+            "run.finished has no agent block: {fin}"
+        );
+    }
+
+    #[test]
+    fn agent_name_is_null_before_run_started_folds() {
+        // On `queue.built` (precedes `run.started`), the exec agent is unknown → null.
+        let v = map(
+            RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: Value::Null,
+            },
+            &RunState::new("t", 1),
+        );
+        assert!(
+            v["data"]["agent"]["name"].is_null(),
+            "name null before run.started: {v}"
+        );
+    }
+
+    #[test]
+    fn issue_block_present_on_subject_scoped_absent_on_run_scoped() {
+        // `issue.started` carries `data.issue.{number,title}`.
+        let started = map(
+            RunEvent::IssueStarted {
+                number: 7,
+                title: "hello".into(),
+            },
+            &run_state(),
+        );
+        assert_eq!(started["data"]["issue"]["number"], 7);
+        assert_eq!(started["data"]["issue"]["title"], "hello");
+
+        // `plan.written` (subject-scoped) carries the issue block too, with the title
+        // resolved from the folded state.
+        let plan = map(
+            RunEvent::PlanWritten {
+                number: 7,
+                open_steps: 3,
+                usage: UsageLite::default(),
+            },
+            &run_state(),
+        );
+        assert_eq!(plan["data"]["issue"]["number"], 7);
+        assert_eq!(plan["data"]["issue"]["title"], "hello");
+
+        // Run-scoped events carry NO issue block.
+        let built = map(
+            RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: Value::Null,
+            },
+            &run_state(),
+        );
+        assert!(
+            built["data"].get("issue").is_none(),
+            "queue.built has no issue block: {built}"
+        );
+        let started_run = map(
+            RunEvent::RunStarted {
+                repo: "o/r".into(),
+                queue_labels: vec![],
+                agent: "claude".into(),
+                plan_agent: "codex".into(),
+                branch_mode: "new".into(),
+                branch: "origin/main".into(),
+                deadline_hours: None,
+            },
+            &run_state(),
+        );
+        assert!(
+            started_run["data"].get("issue").is_none(),
+            "run.started has no issue block: {started_run}"
+        );
     }
 
     #[test]
@@ -454,7 +704,11 @@ mod tests {
             },
             &RunState::new("t", 1),
         );
-        let snapshot = queue_snapshot_envelope(queue_snapshot_data(&issues, 1, &[1], None), &ctx());
+        let snapshot = queue_snapshot_envelope(
+            queue_snapshot_data(&issues, 1, &[1], None),
+            &ctx(),
+            &RunState::new("t", 1),
+        );
         assert_eq!(snapshot["type"], "dev.ralphy.queue.snapshot");
         assert!(
             snapshot.get("subject").is_none(),
@@ -651,18 +905,20 @@ mod tests {
 
     #[test]
     fn run_started_maps_cli_params_without_subject() {
-        let v = map(
-            RunEvent::RunStarted {
-                repo: "o/r".into(),
-                queue_labels: vec!["AFK".into(), "ready".into()],
-                agent: "claude".into(),
-                plan_agent: "codex".into(),
-                branch_mode: "new".into(),
-                branch: "origin/main".into(),
-                deadline_hours: Some(6.0),
-            },
-            &RunState::new("t", 1),
-        );
+        let ev = RunEvent::RunStarted {
+            repo: "o/r".into(),
+            queue_labels: vec!["AFK".into(), "ready".into()],
+            agent: "claude".into(),
+            plan_agent: "codex".into(),
+            branch_mode: "new".into(),
+            branch: "origin/main".into(),
+            deadline_hours: Some(6.0),
+        };
+        // The sink folds before mapping, so the `data.agent` block resolves the exec
+        // agent from the folded state — fold first here to mirror that.
+        let mut state = RunState::new("t", 1);
+        state.apply(ev.clone());
+        let v = runevent_to_cloudevent(&ev, &ctx(), &state).expect("mapped");
         assert_eq!(v["type"], "dev.ralphy.run.started");
         assert!(
             v.get("subject").is_none(),
@@ -670,7 +926,12 @@ mod tests {
         );
         assert_eq!(v["data"]["repo"], "o/r");
         assert_eq!(v["data"]["queue_labels"], json!(["AFK", "ready"]));
-        assert_eq!(v["data"]["agent"], "claude");
+        // The exec agent is now the `data.agent` block's `name`, not a scalar.
+        assert!(
+            v["data"]["agent"].get("name").is_some(),
+            "agent is now a block: {v}"
+        );
+        assert_eq!(v["data"]["agent"]["name"], "claude");
         assert_eq!(v["data"]["plan_agent"], "codex");
         assert_eq!(v["data"]["branch_mode"], "new");
         assert_eq!(v["data"]["branch"], "origin/main");

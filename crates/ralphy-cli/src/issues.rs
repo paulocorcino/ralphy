@@ -197,7 +197,9 @@ fn push_snapshot(repo_root: &std::path::Path, view: &QueueView) -> Result<()> {
     };
     let issues = serde_json::to_value(&view.issues)?;
     let data = envelope::queue_snapshot_data(&issues, view.count, &view.order, view.stop_before);
-    let env = envelope::queue_snapshot_envelope(data, &ctx);
+    // Out-of-run: no folded run state, so the `agent` block is all-`null` (matching
+    // a `queue.built` emitted before `run.started` folds).
+    let env = envelope::queue_snapshot_envelope(data, &ctx, &crate::runstate::RunState::default());
 
     let transport = UreqEventTransport::new(url.clone(), token);
     match transport.post(&env)? {

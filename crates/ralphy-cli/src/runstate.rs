@@ -251,6 +251,17 @@ pub struct IssueEntry {
     pub status: IssueStatus,
 }
 
+/// A light `{number, title}` reference for the `run.started.queue` scope list and
+/// the title source for the `run.finished.issues` rollup (ADR-0019 amendment #96).
+/// Seeded from the enriched `queue.built` snapshot into a dedicated
+/// [`RunState::queue`] field — kept OUT of [`RunState::issues`] so the Telegram card
+/// fold (which iterates `issues`) never renders not-yet-started issues.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueRef {
+    pub number: u64,
+    pub title: String,
+}
+
 /// A tally of issues by terminal/active status, for the card's counter line.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Counts {
@@ -309,6 +320,11 @@ pub struct RunState {
     pub cur_model: Option<String>,
     /// The current phase's reasoning effort, `None` before a phase begins.
     pub cur_effort: Option<String>,
+    /// The light queue scope (`[{number, title}]`) seeded from the enriched
+    /// `queue.built` snapshot — the source for `run.started.queue` and the title
+    /// fallback for the `run.finished.issues` rollup. Kept separate from
+    /// [`issues`](Self::issues) so the Telegram card fold is undisturbed (#96).
+    pub queue: Vec<QueueRef>,
 }
 
 impl RunState {
@@ -351,8 +367,25 @@ impl RunState {
     /// Fold one event into the state. Pure over `(self, event)`.
     pub fn apply(&mut self, event: RunEvent) {
         match event {
-            RunEvent::QueueBuilt { count, .. } => {
+            RunEvent::QueueBuilt { count, issues, .. } => {
                 self.total = count as usize;
+                // Seed the light queue scope from the enriched snapshot (tolerating
+                // the legacy `Null` shape and missing titles) — NOT into `issues`,
+                // so the Telegram card fold never renders not-yet-started issues.
+                if let serde_json::Value::Array(arr) = &issues {
+                    self.queue = arr
+                        .iter()
+                        .filter_map(|e| {
+                            let number = e.get("number")?.as_u64()?;
+                            let title = e
+                                .get("title")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            Some(QueueRef { number, title })
+                        })
+                        .collect();
+                }
             }
             RunEvent::IssueStarted { number, title } => {
                 self.active = Some(number);
@@ -1637,6 +1670,46 @@ mod tests {
         assert_eq!(state.issues[0].status, IssueStatus::Skipped);
         assert_eq!(state.issues[1].status, IssueStatus::Skipped);
         assert_eq!(state.issues[2].status, IssueStatus::Skipped);
+    }
+
+    #[test]
+    fn queue_built_seeds_queue_ref_not_issues() {
+        // The enriched snapshot seeds `state.queue` ({number,title}) but leaves
+        // `state.issues` empty — so the Telegram card renders nothing until an issue
+        // actually starts.
+        let mut state = RunState::new("t", 2);
+        state.apply(RunEvent::QueueBuilt {
+            count: 2,
+            order: vec![1, 2],
+            stop_before: None,
+            issues: serde_json::json!([
+                {"number": 1, "title": "one"},
+                {"number": 2, "title": "two"},
+            ]),
+        });
+        assert_eq!(
+            state.queue,
+            vec![
+                QueueRef {
+                    number: 1,
+                    title: "one".into()
+                },
+                QueueRef {
+                    number: 2,
+                    title: "two".into()
+                },
+            ]
+        );
+        assert!(state.issues.is_empty(), "queue.built must not touch issues");
+        // A legacy `Null` snapshot leaves the queue empty rather than panicking.
+        let mut legacy = RunState::new("t", 1);
+        legacy.apply(RunEvent::QueueBuilt {
+            count: 1,
+            order: vec![1],
+            stop_before: None,
+            issues: serde_json::Value::Null,
+        });
+        assert!(legacy.queue.is_empty());
     }
 
     #[test]
