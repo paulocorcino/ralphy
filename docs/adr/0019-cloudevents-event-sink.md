@@ -77,8 +77,9 @@ parsing payloads), and the rest groups under a reserved `emitter` object
 inside every event's `data`, keeping the header clean: `version` (binary —
 which schema vintage is talking), `user` (`git config user.email` —
 attribution to a person, zero new config), `host`, `os`, `pid` (find the
-process among concurrent Ralphys on one host), `ip` (primary local IP,
-best-effort diagnostic — never a key), `tz` (local timezone; the envelope
+process among concurrent Ralphys on one host), `ip` (**public egress IP**,
+best-effort — probed at run start, LAN-IP/`0.0.0.0` fallback; see the #96
+amendment below — never a key), `tz` (local timezone; the envelope
 `time` is always UTC per RFC 3339, and the offset reconstructs local time).
 The exact field table lives in [docs/events.md](../events.md).
 
@@ -126,6 +127,36 @@ payloads carry metadata about the work, never the work itself — both a volume
 and a secret-hygiene boundary. A finer debug level can grow later as a
 `settings.json` knob without breaking the contract (additive evolution,
 [docs/events.md](../events.md)).
+
+### 7. Amendment (#96): normalized `data`, richer boundaries, plan visibility
+
+A follow-up normalization (issue #96) hardens the `data` payloads for the
+early-platform window, keeping `runid` the **only** envelope extension:
+
+- **Reserved `data` blocks.** Alongside `emitter`, every event carries
+  `data.git` (`{repository, branch}` — the slug plus the operating run branch,
+  constant per run, resolved *before* the ctx is built). Subject-scoped events
+  (`issue.*`, `plan.*`) carry `data.issue` (`{number, title}`); every event
+  except `run.finished` carries `data.agent` (`{name, model, effort}` — the
+  current phase's agent, exec-agent default, `null` before a phase). These live
+  in `data`, never as envelope extensions.
+- **`run.started` reshape.** The base branch moves from `data.branch` to
+  `data.base`; the exec agent is now `data.agent.name` (the scalar `agent` is
+  dropped, `plan_agent` kept); a light `data.queue` = `[{number, title}]` scope
+  list is seeded from the preceding `queue.built`.
+- **`run.finished` rollup.** Adds `data.issues` = `[{number, title, status,
+  kind?}]` (granular terminal `status`; `kind` only on a skip) beside the
+  scalar counts. The rollup lists only issues that entered the run.
+- **`run.heartbeat.issue`** becomes `{number, title}` | `null` (was a bare
+  number) — a deliberate breaking normalization (no consumer grandfathered).
+- **Public egress IP.** `emitter.ip` is probed at run start (checkip.* →
+  Cloudflare trace, ~2s each) with a LAN-IP/`0.0.0.0` fallback; best-effort,
+  never blocks the run, only when the sink is constructed.
+- **Plan visibility.** `plan.written` gains `data.steps` = `[{text, status}]`;
+  a new `plan.step` fires once per checkbox transition (`checked`/`noticed`,
+  identity = normalized text) from an mtime poll of the active plan inside the
+  sink worker; `plan.opened`/`plan.closed` carry the raw `plan.md` at the
+  plan-write and issue-close points (issue-scoped).
 
 ## Consequences
 

@@ -96,6 +96,11 @@ report published for the human reviewer.
    the inner loop. When green, tick the step `- [x]` in `.ralphy/plan.md`
    and make ONE focused commit (Conventional Commits, reference the issue, e.g.
    `feat: ... (#<number>)`).
+   - Plan-step marker vocabulary: a step is `- [ ]` open → `- [x]` checked (done
+     and committed) → `- [!]` noticed. Flag a step that needs attention (a
+     surprise, a caveat, a partial that a human should see) with `- [!]` instead
+     of a tick, rather than silently ticking it or leaving it open — `- [!]` is a
+     first-class "done but noticed" marker the run surfaces on the event stream.
 3. When EVERY step is `- [x]` and the project's tests are green, print this on
    its own line and then STOP — the runner reads this token to mark the issue
    done, and verifies every step is ticked before accepting it:

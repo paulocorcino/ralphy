@@ -52,17 +52,21 @@ per-event tests.
       "host": "PICHAU",
       "os": "windows-11",
       "pid": 18432,
-      "ip": "192.168.1.42",
+      "ip": "203.0.113.7",
       "tz": "America/Sao_Paulo"
-    }
+    },
+    "git": { "repository": "o/r", "branch": "afk/run-20260703-172231" },
+    "issue": { "number": 89, "title": "normalize the envelope data" },
+    "agent": { "name": "claude", "model": "claude-sonnet-4", "effort": "medium" }
   }
 }
 ```
 
 Core attributes: `type` is namespaced `dev.ralphy.<noun>.<event>`; `source`
 identifies the repo the run works; `subject` is `issue/<n>` on every
-`dev.ralphy.issue.*` event and on `plan.written`, absent otherwise; `id` is a
-per-event ULID (the dedup key and sort key); `time` is always UTC (RFC 3339).
+`dev.ralphy.issue.*` event and on `plan.written` / `plan.step` / `plan.opened`
+/ `plan.closed`, absent on run-scoped events; `id` is a per-event ULID (the
+dedup key and sort key); `time` is always UTC (RFC 3339).
 
 Vocabulary for external readers: **green** = an issue whose execution
 finished cleanly, which the runner then closes; **non-green** = any other
@@ -84,28 +88,44 @@ reserved `emitter` object inside `data`, keeping the header clean:
 | `data.emitter.host` | Hostname | Which machine |
 | `data.emitter.os` | e.g. `windows-11`, `linux`, `macos` | Per-OS diagnostics |
 | `data.emitter.pid` | Process id | Which process among concurrent Ralphys on one host |
-| `data.emitter.ip` | Primary local IP (best-effort) | Network diagnostic — never a key (multi-NIC, DHCP, VPN) |
+| `data.emitter.ip` | **Public egress IP** (best-effort): probed at run start via `checkip.amazonaws.com` → `checkip.global.api.aws` → `icanhazip.com` → Cloudflare `cdn-cgi/trace`, each ~2s; falls back to the primary LAN IP, then `0.0.0.0`, when every probe fails | Network diagnostic — never a key (multi-NIC, DHCP, VPN) |
 | `data.emitter.tz` | Local timezone: IANA name (`America/Sao_Paulo`) when resolvable, else fixed offset (`-03:00`) — parsers accept both | Reconstruct local time from UTC `time` |
 
 `emitter` is a reserved key on every event's `data`, alongside the
 event-specific fields listed in the catalog below.
 
+### Reserved `data` blocks (git / issue / agent)
+
+Three more reserved objects ride inside `data` (never as envelope extensions,
+so `runid` stays the only one), giving a consumer the run's git, issue, and
+agent context without folding the whole stream:
+
+| Block | Present on | Shape | Notes |
+| --- | --- | --- | --- |
+| `data.git` | **every** event | `{repository, branch}` | `repository` is the `owner/repo` slug (a consumable duplicate of the routing `source`); `branch` is the operating run branch commits land on (`afk/run-<stamp>` in `new` mode, the current branch in `current` mode). Constant per run. |
+| `data.issue` | **subject-scoped** events (`issue.*`, `plan.*`) | `{number, title}` | Absent on run-scoped events (`queue.*`, `run.*`). `title` resolves from run state, falling back to the `queue.built` seed, then empty. |
+| `data.agent` | **every** event **except `run.finished`** | `{name, model, effort}` | `name` is the current phase's agent — the plan agent while planning, the exec agent while executing, falling back to the run's exec agent before a phase begins, or `null` before `run.started` is seen. `model`/`effort` are `null` before a phase begins. A single triplet — the run's `plan_agent` scalar stays on `run.started`. |
+
 ## Event catalog
 
 Types mirror the canonical `RunEvent` decoder
 ([runstate.rs](../crates/ralphy-cli/src/runstate.rs)) plus three emissions
-introduced by ADR-0019 (`run.started`, `run.finished`, `run.heartbeat`) and
-one by ADR-0020 (`queue.snapshot`). Token breakdowns use the ledger's four
-counters: `up` input, `cr` cache-read, `cw` cache-write, `out` output
-(ADR-0008).
+introduced by ADR-0019 (`run.started`, `run.finished`, `run.heartbeat`), one
+by ADR-0020 (`queue.snapshot`), and three raw/step plan events added by the
+#96 normalization (`plan.step`, `plan.opened`, `plan.closed`). Token
+breakdowns use the ledger's four counters: `up` input, `cr` cache-read, `cw`
+cache-write, `out` output (ADR-0008).
 
 | `type` (`dev.ralphy.` prefix) | When | `data` fields |
 | --- | --- | --- |
-| `run.started` | Process begins working a queue | `repo`, `queue_labels[]`, `agent`, `plan_agent`, `branch_mode`, `branch`, `deadline_hours?` |
+| `run.started` | Process begins working a queue | `repo`, `queue_labels[]`, `plan_agent`, `branch_mode`, `base` (the base branch — renamed from `branch`), `deadline_hours?`, `queue[]` — a light `{number, title}` scope list seeded from the preceding `queue.built` (the exec agent is now `data.agent.name`) |
 | `queue.built` | Queue resolved from labels | `count`, `order[]` (issue numbers), `stop_before?`; **enriched (ADR-0020)** with `issues[]` — per-issue `{number, title, labels[], queue_status, skip_reason?, blocked_by[], position?}` (`position` only on `eligible` issues) |
 | `issue.started` | Work begins on an issue | `number`, `title` |
 | `issue.planning` | Planning phase starts | `model?`, `effort?` |
-| `plan.written` | Plan artifact written | `number`, `open_steps` (`0` = infeasible), `usage {up,cr,cw,out,model}` |
+| `plan.written` | Plan artifact written | `number`, `open_steps` (`0` = infeasible), `usage {up,cr,cw,out,model}`, `steps[]` — the full checkbox list as `{text, status}` (`status`: `open` \| `checked` \| `noticed`) |
+| `plan.step` | A plan checkbox transitioned (once per transition) | `text` (the normalized step text — the step identity), `status` (`checked` \| `noticed`) |
+| `plan.opened` | Raw plan snapshot at the plan-write point | `number`, `plan_md` (the complete raw `plan.md`) |
+| `plan.closed` | Raw plan snapshot at the issue close (before the next `plan()` overwrites it) | `number`, `plan_md` (the complete raw `plan.md`) |
 | `issue.executing` | Execution phase starts | `number`, `budget_min`, `model`, `effort?` |
 | `issue.closed` | Green — the cycle closes the issue | `number`, `tokens` (flat total across **plan + execute**), `usage {up,cr,cw,out,model}` (execution phase only) |
 | `issue.non_green` | Non-green stop (stops the run) | `number`, `outcome` — the core's outcome name (e.g. `Stuck`, `Blocked`, `Timeout`); treat as an **opaque display label**, not an enum to switch on |
@@ -119,7 +139,7 @@ counters: `up` input, `cr` cache-read, `cw` cache-write, `out` output
 | `knowledge.consolidated` | Consolidation finished | `archived` |
 | `run.notice` | Any WARN/ERROR on the bus | `level`, `message` |
 | `run.heartbeat` | Every ~30s while the process lives — **including during usage-limit sleeps** (`phase: "sleeping"`), so a long sleep is never mistaken for death | see below |
-| `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `tokens_total {up,cr,cw,out}`, `duration_s` |
+| `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `issues[]` — per-issue rollup `{number, title, status, kind?}` (`status`: `done` \| `skipped` \| `blocked` \| `infeasible` \| `needs_split` \| `non_green` \| `hitl`; `kind` only on a `skipped`); `tokens_total {up,cr,cw,out}`, `duration_s`. Carries **no** `data.agent` block. The `issues[]` rollup lists only issues that **entered the run**; key completeness off the scalar `issues_total`, not the array length |
 | `queue.snapshot` | On demand: `ralphy issues --push` (ADR-0020) | identical `data` shape to the enriched `queue.built` (`count`, `order[]`, `stop_before?`, `issues[]`) |
 
 ### `run.heartbeat`
@@ -128,13 +148,15 @@ A compact `RunState` summary so a consumer renders "now" without a perfect
 fold, and declares a run dead by silence (recommended threshold: ~3 missed
 beats). `interval_s` carries the emitter's own cadence so the consumer never
 hardcodes it. `phase` is one of `starting | planning | executing | sleeping |
-consolidating`:
+consolidating`. `issue` is the active issue as `{number, title}`, or `null`
+when none is active (a normalized shape — it was a bare number in the first
+contract vintage):
 
 ```json
 {
   "phase": "executing",
   "interval_s": 30,
-  "issue": 89,
+  "issue": { "number": 89, "title": "normalize the envelope data" },
   "elapsed_s": 412,
   "queue_done": 2,
   "queue_total": 7,
