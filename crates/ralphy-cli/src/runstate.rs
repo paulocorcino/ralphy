@@ -295,6 +295,20 @@ pub struct RunState {
     /// Terminal: notes folded into `KNOWLEDGE.md` by the end-of-run consolidation,
     /// surfaced as a `📚` segment in the card footer.
     pub consolidated: Option<u64>,
+    /// The run's planning agent name (from `run.started`), the default identity for
+    /// the `data.agent` block on planning-phase events (ADR-0019 amendment #96).
+    pub plan_agent: String,
+    /// The run's executing agent name (from `run.started`), the default identity for
+    /// the `data.agent` block on executing-phase and pre-phase events.
+    pub exec_agent: String,
+    /// The current phase's agent name — set to [`plan_agent`](Self::plan_agent) on a
+    /// `Planning` fold and [`exec_agent`](Self::exec_agent) on an `Executing` fold;
+    /// `None` before any phase begins (the block then falls back to `exec_agent`).
+    pub cur_agent: Option<String>,
+    /// The current phase's model, `None` before a phase begins.
+    pub cur_model: Option<String>,
+    /// The current phase's reasoning effort, `None` before a phase begins.
+    pub cur_effort: Option<String>,
 }
 
 impl RunState {
@@ -346,9 +360,14 @@ impl RunState {
                 e.title = title;
                 e.status = IssueStatus::Planning;
             }
-            // Live-region only in the presenter; the card fold ignores it (the
-            // planner's model/effort never changes an issue's status).
-            RunEvent::Planning { .. } => {}
+            // Live-region only for the card (the planner's model/effort never
+            // changes an issue's status), but it does set the current-phase agent
+            // context the `data.agent` block reads (ADR-0019 amendment #96).
+            RunEvent::Planning { model, effort } => {
+                self.cur_agent = Some(self.plan_agent.clone());
+                self.cur_model = model;
+                self.cur_effort = effort;
+            }
             RunEvent::PlanWritten {
                 number, open_steps, ..
             } => {
@@ -362,7 +381,15 @@ impl RunState {
                     IssueStatus::Planning
                 };
             }
-            RunEvent::Executing { number, .. } => {
+            RunEvent::Executing {
+                number,
+                model,
+                effort,
+                ..
+            } => {
+                self.cur_agent = Some(self.exec_agent.clone());
+                self.cur_model = (!model.is_empty()).then_some(model);
+                self.cur_effort = effort;
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
@@ -425,9 +452,18 @@ impl RunState {
                 self.consolidating = None;
                 self.consolidated = Some(archived);
             }
-            // The run-boundary events carry no per-issue status; the fold infers the
-            // boundaries from the Layer lifecycle, so they are no-ops here.
-            RunEvent::RunStarted { .. } | RunEvent::RunFinished { .. } => {}
+            // `run.started` seeds the plan/exec agent identities the `data.agent`
+            // block defaults to (ADR-0019 amendment #96); it still carries no
+            // per-issue status, so the card fold (issues/counts) is unchanged.
+            RunEvent::RunStarted {
+                agent, plan_agent, ..
+            } => {
+                self.exec_agent = agent;
+                self.plan_agent = plan_agent;
+            }
+            // The run-boundary end carries no per-issue status; the fold infers the
+            // boundary from the Layer lifecycle, so it is a no-op here.
+            RunEvent::RunFinished { .. } => {}
         }
     }
 
@@ -1515,7 +1551,10 @@ mod tests {
     }
 
     #[test]
-    fn apply_run_boundary_events_are_noops() {
+    fn apply_run_boundary_events_leave_the_card_fold_unchanged() {
+        // `run.started` now seeds the agent-context fields (for the `data.agent`
+        // block), but must not perturb the card fold — issues, counts, active, or
+        // any status. `run.finished` stays a full no-op.
         let mut before = RunState::new("t", 1);
         before.apply(RunEvent::IssueStarted {
             number: 1,
@@ -1526,7 +1565,7 @@ mod tests {
             repo: "o/r".into(),
             queue_labels: vec![],
             agent: "claude".into(),
-            plan_agent: "claude".into(),
+            plan_agent: "codex".into(),
             branch_mode: "new".into(),
             branch: "origin/main".into(),
             deadline_hours: None,
@@ -1542,7 +1581,13 @@ mod tests {
             out: 0,
             duration_s: 1,
         });
-        assert_eq!(before, after);
+        // The card-visible fold is byte-unchanged.
+        assert_eq!(before.issues, after.issues);
+        assert_eq!(before.counts(), after.counts());
+        assert_eq!(before.active, after.active);
+        // But the agent identities are now seeded from `run.started`.
+        assert_eq!(after.exec_agent, "claude");
+        assert_eq!(after.plan_agent, "codex");
     }
 
     #[test]
@@ -1592,6 +1637,53 @@ mod tests {
         assert_eq!(state.issues[0].status, IssueStatus::Skipped);
         assert_eq!(state.issues[1].status, IssueStatus::Skipped);
         assert_eq!(state.issues[2].status, IssueStatus::Skipped);
+    }
+
+    #[test]
+    fn apply_threads_phase_agent_context() {
+        // `run.started` seeds the plan/exec identities; a `Planning` fold flips the
+        // current agent to the plan agent (with its model/effort), an `Executing`
+        // fold to the exec agent — the source of the `data.agent` block (#96).
+        let mut state = RunState::new("t", 1);
+        assert_eq!(state.cur_agent, None);
+        assert_eq!(state.cur_model, None);
+        state.apply(RunEvent::RunStarted {
+            repo: "o/r".into(),
+            queue_labels: vec![],
+            agent: "claude".into(),
+            plan_agent: "codex".into(),
+            branch_mode: "new".into(),
+            branch: "origin/main".into(),
+            deadline_hours: None,
+        });
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "a".into(),
+        });
+        state.apply(RunEvent::Planning {
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+        });
+        assert_eq!(state.cur_agent.as_deref(), Some("codex"));
+        assert_eq!(state.cur_model.as_deref(), Some("opus"));
+        assert_eq!(state.cur_effort.as_deref(), Some("high"));
+        state.apply(RunEvent::Executing {
+            number: 0,
+            budget_min: 45,
+            model: "claude-sonnet-4".into(),
+            effort: Some("medium".into()),
+        });
+        assert_eq!(state.cur_agent.as_deref(), Some("claude"));
+        assert_eq!(state.cur_model.as_deref(), Some("claude-sonnet-4"));
+        assert_eq!(state.cur_effort.as_deref(), Some("medium"));
+        // An empty exec model degrades to `None` rather than an empty-string label.
+        state.apply(RunEvent::Executing {
+            number: 0,
+            budget_min: 45,
+            model: String::new(),
+            effort: None,
+        });
+        assert_eq!(state.cur_model, None);
     }
 
     #[test]
