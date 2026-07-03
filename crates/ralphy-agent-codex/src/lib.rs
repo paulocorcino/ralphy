@@ -21,8 +21,9 @@ use ralphy_adapter_support::{
     list_session_files, run_headless, run_json_session, session_files_appeared, JsonSession,
 };
 use ralphy_core::{
-    build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
-    DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit, Usage, Workspace,
+    build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, git, plan, Agent,
+    DiagnosisReport, DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, PlanLimit,
+    TriageDraft, TriageRequest, Usage, Workspace,
 };
 use tracing::info;
 
@@ -501,6 +502,59 @@ pub fn draft_issues(
             serde_json::from_str(raw).with_context(|| {
                 format!(
                     "issues draft at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
+}
+
+/// Run a one-shot headless `codex exec` agent-triage session (ADR-0017). Mirrors
+/// [`draft_issues`] but drives the triage charter over each `triage-agent` issue's
+/// body + full comment thread, writing a [`TriageDraft`] JSON to `out_path` for
+/// the cli to apply after the operator confirms. Never publishes to GitHub.
+pub fn triage_issues(
+    repo: &Path,
+    out_path: &Path,
+    req: &TriageRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<TriageDraft> {
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    // A stale draft from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(out_path);
+
+    let model = resolve_init_model(model);
+    let effort = effort.unwrap_or("medium");
+    let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
+
+    info!(%model, effort, "triaging issues with codex exec");
+    let cmd = build_codex_init_command(&model, effort, repo);
+    let log_path = repo.join(".ralphy").join("triage.log");
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path,
+            spawn_err: "failed to spawn the `codex` CLI (is it installed and on PATH?)",
+            auth_msg: CODEX_AUTH_ERROR_MSG,
+            timeout_msg: "triage session hit the wall timeout",
+            missing_msg: "triage session left no draft",
+        },
+        is_codex_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "triage draft at {} did not match the schema",
                     out_path.display()
                 )
             })

@@ -45,6 +45,22 @@ pub trait IssueTracker {
         Ok(())
     }
 
+    /// Remove a label from an issue — the label swaps `ralphy triage` performs
+    /// (ADR-0017). Default no-op so non-`gh` implementations never touch labels.
+    fn remove_label(&self, number: u64, label: &str) -> Result<()> {
+        let _ = (number, label);
+        Ok(())
+    }
+
+    /// Post-or-edit the single comment carrying `marker` (ADR-0017): the
+    /// consolidated-spec comment `ralphy triage` maintains, idempotent by
+    /// construction so re-triage edits its own comment rather than stacking a
+    /// second one. Default no-op so non-`gh` implementations never comment.
+    fn upsert_marked_comment(&self, number: u64, marker: &str, body: &str) -> Result<()> {
+        let _ = (number, marker, body);
+        Ok(())
+    }
+
     /// Fetch the handoff a closed issue left behind (the last comment carrying
     /// a `## Handoff` heading), or `None` when it left none. Default `None` so
     /// non-`gh` implementations never feed handoffs.
@@ -133,6 +149,14 @@ impl IssueTracker for GhTracker {
 
     fn add_label(&self, number: u64, label: &str) -> Result<()> {
         github::add_label(number, label, &self.repo_root)
+    }
+
+    fn remove_label(&self, number: u64, label: &str) -> Result<()> {
+        github::remove_label(number, label, &self.repo_root)
+    }
+
+    fn upsert_marked_comment(&self, number: u64, marker: &str, body: &str) -> Result<()> {
+        github::upsert_marked_comment(number, marker, body, &self.repo_root)
     }
 
     fn handoff_comment(&self, number: u64) -> Result<Option<String>> {

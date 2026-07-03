@@ -24,6 +24,12 @@ pub const PROMPT_DIAGNOSE: &str = include_str!("../../../assets/prompts/prompt.d
 /// preview, never publishing to GitHub.
 pub const PROMPT_INIT_ISSUES: &str = include_str!("../../../assets/prompts/prompt.init-issues.md");
 
+/// The agent-triage charter (`ralphy triage`, ADR-0017): read each `triage-agent`
+/// issue's body and full comment thread and emit a [`crate::TriageDraft`] JSON
+/// preview (promote / consolidate / bounce per issue), never publishing to
+/// GitHub. The cli applies the verdicts after the operator confirms.
+pub const PROMPT_TRIAGE: &str = include_str!("../../../assets/prompts/prompt.triage.md");
+
 /// Build the diagnosis prompt: the embedded charter followed by a `## Target`
 /// block naming the absolute repo path (read-only data) and the absolute output
 /// path the session writes its JSON report to. The repo is named as a *data
@@ -100,6 +106,48 @@ pub fn build_init_issues_prompt(
     )
 }
 
+/// The judgment inputs for one `ralphy triage` session (ADR-0017): the exact
+/// issue numbers to triage (each carries `triage-agent`) and the queue label a
+/// promote/consolidate verdict swaps in. Grouped so the adapter session entry
+/// points stay under the argument-count lint.
+pub struct TriageRequest<'a> {
+    pub issue_numbers: &'a [u64],
+    pub queue_label: &'a str,
+}
+
+/// Build the triage prompt: the embedded charter followed by an `## Inputs`
+/// block naming the repo root, the exact issue numbers carrying `triage-agent`
+/// (the session triages only these), the queue label a `promote`/`consolidate`
+/// verdict swaps in, and the output path the session writes its
+/// [`crate::TriageDraft`] JSON to.
+pub fn build_triage_prompt(
+    repo: &Path,
+    issue_numbers: &[u64],
+    queue_label: &str,
+    out: &Path,
+) -> String {
+    let numbers = if issue_numbers.is_empty() {
+        "(none)".to_string()
+    } else {
+        issue_numbers
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "{PROMPT_TRIAGE}\n\n## Inputs\n\n\
+         - Repo root: {repo}\n\
+         - Issues to triage (each carries `triage-agent`): {numbers}\n\
+         - Queue label a promote/consolidate verdict swaps in: {queue_label}\n\
+         - The consolidated-spec marker (put it first in a consolidate comment): {marker}\n\
+         - Write the JSON draft to this path: {out}\n",
+        repo = repo.display(),
+        marker = crate::blocked::CONSOLIDATED_SPEC_MARKER,
+        out = out.display(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +199,34 @@ mod tests {
             prompt.contains(".ralphy/issues-draft.json"),
             "out path missing:\n{prompt}"
         );
+    }
+
+    #[test]
+    fn triage_prompt_names_marker_verdicts_and_output_path() {
+        let repo = Path::new("/work/myrepo");
+        let out = Path::new("/work/myrepo/.ralphy/triage-draft.json");
+        let prompt = build_triage_prompt(repo, &[12, 15], "ready-for-agent", out);
+        assert!(prompt.contains(PROMPT_TRIAGE.trim()), "charter present");
+        assert!(
+            prompt.contains("ralphy:consolidated-spec"),
+            "marker named:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("#12, #15"),
+            "issue numbers named:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("ready-for-agent"),
+            "queue label named:\n{prompt}"
+        );
+        assert!(
+            prompt.contains(".ralphy/triage-draft.json"),
+            "out path named:\n{prompt}"
+        );
+        // The charter must teach all three verdicts.
+        for verdict in ["promote", "consolidate", "bounce"] {
+            assert!(prompt.contains(verdict), "{verdict} missing:\n{prompt}");
+        }
     }
 
     #[test]

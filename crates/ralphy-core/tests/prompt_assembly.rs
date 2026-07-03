@@ -140,6 +140,27 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
     }
 }
 
+/// Every plan artifact must carry the consolidated-spec authority rule (ADR-0017,
+/// Part D): when a comment carries the `ralphy:consolidated-spec` marker it is the
+/// authoritative spec over the body. Pins the contract into all four vendor
+/// variants so no adapter's planner ranks the consolidation as secondary chatter.
+#[test]
+fn plan_prompt_names_consolidated_spec_marker() {
+    let dir = prompts_dir();
+    for (_, artifact) in VARIANTS {
+        let text = fs::read_to_string(dir.join(artifact))
+            .unwrap_or_else(|e| panic!("{artifact} must exist: {e}"));
+        assert!(
+            text.contains("ralphy:consolidated-spec"),
+            "{artifact} must name the consolidated-spec marker"
+        );
+        assert!(
+            text.contains("authoritative spec"),
+            "{artifact} must state the marked comment is the authoritative spec"
+        );
+    }
+}
+
 /// The variant-specific surface is ONLY the named slots: every overlay must
 /// define all of them and nothing else, so a new divergence cannot sneak in as
 /// an extra ad-hoc slot without widening this list deliberately.

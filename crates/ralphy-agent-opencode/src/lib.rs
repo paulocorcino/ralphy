@@ -30,8 +30,9 @@ use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::{resolve_program, run_headless, run_json_session, JsonSession};
 use ralphy_core::{
-    build_diagnose_prompt, build_init_issues_prompt, git, plan, Agent, DiagnosisReport,
-    DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, Usage, Workspace,
+    build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, git, plan, Agent,
+    DiagnosisReport, DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, TriageDraft,
+    TriageRequest, Usage, Workspace,
 };
 use tracing::info;
 
@@ -210,6 +211,59 @@ pub fn draft_issues(
             serde_json::from_str(raw).with_context(|| {
                 format!(
                     "issues draft at {} did not match the schema",
+                    out_path.display()
+                )
+            })
+        },
+    )
+}
+
+/// Run a one-shot headless `opencode run` agent-triage session (ADR-0017).
+/// Mirrors [`draft_issues`] but drives the triage charter over each `triage-agent`
+/// issue's body + full comment thread, writing a [`TriageDraft`] JSON to
+/// `out_path` for the cli to apply after the operator confirms. Never publishes.
+pub fn triage_issues(
+    repo: &Path,
+    out_path: &Path,
+    req: &TriageRequest,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<TriageDraft> {
+    // OpenCode has no reasoning-effort knob (ADR-0005 D3); accepted for a uniform
+    // dispatch signature and ignored.
+    let _ = effort;
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    // A stale draft from a prior run must never masquerade as this session's
+    // output, so clear it before the session runs.
+    let _ = fs::remove_file(out_path);
+
+    let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
+    info!(?model, "triaging issues with opencode run");
+    let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
+    let log_path = repo.join(".ralphy").join("triage.log");
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    run_json_session(
+        JsonSession {
+            cmd,
+            prompt: &prompt,
+            timeout,
+            log_path: &log_path,
+            out_path,
+            spawn_err: "failed to spawn the `opencode` CLI (is it installed and on PATH?)",
+            auth_msg: OPENCODE_AUTH_ERROR_MSG,
+            timeout_msg: "triage session hit the wall timeout",
+            missing_msg: "triage session left no draft",
+        },
+        is_opencode_auth_error,
+        |raw| {
+            serde_json::from_str(raw).with_context(|| {
+                format!(
+                    "triage draft at {} did not match the schema",
                     out_path.display()
                 )
             })

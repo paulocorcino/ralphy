@@ -50,6 +50,24 @@ an issue's readiness — it tells a running Ralphy queue to pause before working
 that issue. It sits outside this vocabulary on purpose; see CONTEXT.md and the
 ADR.
 
+`triage-agent` is an **operational** label, not a triage role (ADR-0017). It marks
+"an agent triage pass (`ralphy triage`) will evaluate and normalize this issue
+before it enters the queue". Like `stop-before`, `AFK`, and `HITL` it is fixed and
+non-configurable — it stays out of the `docs/agents/triage-labels.md` mapping — and
+`ralphy init` syncs it automatically. It is also a **human-return** label: while
+present it parks the issue out of the run queue (ADR-0016), so triage and run never
+race. `ralphy triage` consumes it, then swaps it for `ready-for-agent` (promote /
+consolidate) or `needs-info` (bounce).
+
+### Human-return precedence (ADR-0016)
+
+A label that returns an issue to a human outranks any queue label. When a queued
+issue also carries `ready-for-human`/`HITL`, `needs-info`, `needs-triage`,
+`wontfix`, or `triage-agent`, the run **skips it with a visible reason and
+continues** — the human side wins. `--only-issue` does not override a human-return
+label (unlike its `stop-before` override): removing the label is the explicit human
+act that re-opens the door.
+
 ## Per-repo label strings
 
 These canonical names are the defaults. A repo may map a role to a different

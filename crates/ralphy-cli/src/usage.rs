@@ -378,7 +378,10 @@ mod tests {
         // "." — it resolves through git like `--repo` does. The crate dir is inside
         // the ralphy repo, so resolution yields a real slug distinct from ".".
         let slug = resolve_slug(Some("."), Path::new(".")).expect("path resolves");
-        assert_ne!(slug, ".", "`.` must be resolved, not used as a literal slug");
+        assert_ne!(
+            slug, ".",
+            "`.` must be resolved, not used as a literal slug"
+        );
         assert!(!slug.is_empty());
     }
 

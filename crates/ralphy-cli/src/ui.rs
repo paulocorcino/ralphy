@@ -79,11 +79,17 @@ fn parse_outcome(debug: Option<&str>) -> FinishOutcome {
 }
 
 /// Label for a skipped issue: a UI-local string keyed off `runstate::SkipKind`.
-fn skip_label(kind: SkipKind) -> &'static str {
+/// A human-return skip (ADR-0016) names the parking label when known
+/// (`skipped (needs-info)`), falling back to the bare kind otherwise.
+fn skip_label(kind: SkipKind, label: Option<&str>) -> String {
     match kind {
-        SkipKind::BlockedBy => "skipped (blocked)",
-        SkipKind::StopBefore => "skipped (stop-before)",
-        SkipKind::VerifyFailed => "skipped (verify failed)",
+        SkipKind::BlockedBy => "skipped (blocked)".to_string(),
+        SkipKind::StopBefore => "skipped (stop-before)".to_string(),
+        SkipKind::HumanReturn => match label {
+            Some(l) => format!("skipped ({l})"),
+            None => "skipped (human-return)".to_string(),
+        },
+        SkipKind::VerifyFailed => "skipped (verify failed)".to_string(),
     }
 }
 
@@ -384,10 +390,14 @@ fn render_line(
                 format!("#{number} {}{dur}", fo.label()),
             )
         }
-        RunEvent::Skipped { number, kind } => (
+        RunEvent::Skipped {
+            number,
+            kind,
+            label,
+        } => (
             pick("⏭️", "[skip]", opts.emoji),
             Style::new().dim(),
-            format!("#{number} {}{dur}", skip_label(*kind)),
+            format!("#{number} {}{dur}", skip_label(*kind, label.as_deref())),
         ),
         // A human gate gets its own glyph (🙋) and a non-dim style: it asks for a
         // person — and names which issue (`at #30`) — unlike an ordinary
@@ -1607,6 +1617,7 @@ mod tests {
             &RunEvent::Skipped {
                 number: 7,
                 kind: SkipKind::BlockedBy,
+                label: None,
             },
             &ts,
             None,
@@ -1618,6 +1629,7 @@ mod tests {
             &RunEvent::Skipped {
                 number: 8,
                 kind: SkipKind::StopBefore,
+                label: None,
             },
             &ts,
             None,
@@ -1626,6 +1638,21 @@ mod tests {
         assert!(
             stop_before.contains("skipped (stop-before)"),
             "{stop_before}"
+        );
+
+        let human_return = render_plain_line(
+            &RunEvent::Skipped {
+                number: 9,
+                kind: SkipKind::HumanReturn,
+                label: Some("needs-info".to_string()),
+            },
+            &ts,
+            None,
+        )
+        .expect("HumanReturn renders a line");
+        assert!(
+            human_return.contains("skipped (needs-info)"),
+            "{human_return}"
         );
     }
 

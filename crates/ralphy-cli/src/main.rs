@@ -27,6 +27,7 @@ mod runlock;
 mod runstate;
 mod split_agent;
 mod telegram;
+mod triage;
 mod ui;
 mod usage;
 
@@ -81,6 +82,9 @@ enum Command {
     /// Validate the environment prerequisites for a repo: Python, `gh` auth, a
     /// GitHub remote, and at least one logged-in agent CLI (ADR-0012 stage 1).
     Init(init::InitArgs),
+    /// Agent-triage the `triage-agent` issues (ADR-0017): promote, consolidate,
+    /// or bounce each, previewed before publishing (`--yes` for schedulers).
+    Triage(triage::TriageArgs),
 }
 
 #[derive(Subcommand)]
@@ -311,6 +315,7 @@ fn main() -> Result<()> {
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
         Command::Init(args) => init::run(&args),
+        Command::Triage(args) => triage::run(&args),
     }
 }
 
@@ -742,6 +747,10 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             executor,
         })
     };
+    // The human-return label set (ADR-0016): resolved once here (with the repo's
+    // triage mapping) and handed to the `gh`-free core, which skips any queued
+    // issue carrying one of these and continues the queue.
+    let human_return_labels = github::resolve_human_return_labels(&repo_root);
     let cfg = QueueConfig {
         repo_root,
         base_branch,
@@ -749,6 +758,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         stamp,
         branch_mode,
         only_issue: args.only_issue,
+        human_return_labels,
         // Per-phase limit stance, each derived from the agent serving that phase;
         // an explicit `--stop-on-limit` forces both (docs/adr/0009).
         stop_on_limit_plan: effective_stop_on_limit(args.stop_on_limit, plan_agent),
@@ -1103,6 +1113,17 @@ mod tests {
                 .get_subcommands()
                 .any(|s| s.get_name() == "init"),
             "the `init` subcommand must be registered in the CLI"
+        );
+    }
+
+    #[test]
+    fn triage_subcommand_is_registered() {
+        use clap::CommandFactory;
+        assert!(
+            Cli::command()
+                .get_subcommands()
+                .any(|s| s.get_name() == "triage"),
+            "the `triage` subcommand must be registered in the CLI"
         );
     }
 

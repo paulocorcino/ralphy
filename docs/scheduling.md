@@ -203,6 +203,29 @@ possible on a reused self-hosted workspace) logs
 
 ---
 
+## Triage-first: two phases in one window (ADR-0017)
+
+When you use the agent-triage ramp (`triage-agent` → `ralphy triage`), run triage
+*before* the run so tonight's promotions join tonight's queue. Chain the two with
+the **external** scheduler, deliberately with `;` (not `&&`):
+
+```sh
+ralphy triage --repo <path> --yes ; ralphy run --repo <path> --deadline-hours 8
+```
+
+`ralphy triage --yes` publishes and promotes directly — the trust act already
+happened when the operator applied `triage-agent`, so unattended promotion is a
+mechanical continuation of a human decision, not the agent expanding its own
+authority. The bounce arm never needs confirmation in either mode.
+
+The `;` (not `&&`) is intentional: a broken triage costs only the triage, never
+the night's execution of issues already `ready-for-agent`. Ralphy stays "the run,
+not the cron" — non-users pay nothing, and each phase is a plain, independently
+schedulable command. Drop the `ralphy triage` line from any recipe above that you
+do not use the triage ramp for.
+
+---
+
 ## Follow-up
 
 A `ralphy schedule install|status|remove` subcommand that registers the timer
