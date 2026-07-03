@@ -17,6 +17,7 @@ use ralphy_core::{
 use tracing::{info, warn};
 
 mod config;
+mod events;
 mod guard;
 mod hook;
 mod init;
