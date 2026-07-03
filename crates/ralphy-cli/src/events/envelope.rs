@@ -356,20 +356,30 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             branch_mode,
             branch,
             deadline_hours,
-        } => Some(envelope(
-            "dev.ralphy.run.started",
-            None,
-            ctx,
-            state,
-            json!({
-                "repo": repo,
-                "queue_labels": queue_labels,
-                "plan_agent": plan_agent,
-                "branch_mode": branch_mode,
-                "base": branch,
-                "deadline_hours": deadline_hours,
-            }),
-        )),
+        } => {
+            // The light scope list seeded by the preceding `queue.built` (#96) —
+            // `[{number,title}]`; the rich ADR-0020 snapshot stays on `queue.built`.
+            let queue: Vec<Value> = state
+                .queue
+                .iter()
+                .map(|q| json!({ "number": q.number, "title": q.title }))
+                .collect();
+            Some(envelope(
+                "dev.ralphy.run.started",
+                None,
+                ctx,
+                state,
+                json!({
+                    "repo": repo,
+                    "queue_labels": queue_labels,
+                    "plan_agent": plan_agent,
+                    "branch_mode": branch_mode,
+                    "base": branch,
+                    "deadline_hours": deadline_hours,
+                    "queue": queue,
+                }),
+            ))
+        }
         RunEvent::RunFinished {
             outcome,
             issues_done,
@@ -915,8 +925,18 @@ mod tests {
             deadline_hours: Some(6.0),
         };
         // The sink folds before mapping, so the `data.agent` block resolves the exec
-        // agent from the folded state — fold first here to mirror that.
+        // agent from the folded state — fold first here to mirror that. Fold a
+        // preceding enriched `queue.built` too, so `data.queue` is seeded.
         let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::QueueBuilt {
+            count: 2,
+            order: vec![1, 2],
+            stop_before: None,
+            issues: json!([
+                {"number": 1, "title": "one"},
+                {"number": 2, "title": "two"},
+            ]),
+        });
         state.apply(ev.clone());
         let v = runevent_to_cloudevent(&ev, &ctx(), &state).expect("mapped");
         assert_eq!(v["type"], "dev.ralphy.run.started");
@@ -941,6 +961,14 @@ mod tests {
             "branch renamed to base: {v}"
         );
         assert_eq!(v["data"]["deadline_hours"], 6.0);
+        // The light queue scope seeded from `queue.built` (#96).
+        assert_eq!(
+            v["data"]["queue"],
+            json!([
+                { "number": 1, "title": "one" },
+                { "number": 2, "title": "two" },
+            ])
+        );
     }
 
     #[test]
