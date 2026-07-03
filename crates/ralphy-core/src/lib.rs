@@ -52,6 +52,7 @@ pub mod knowledge;
 pub mod ledger;
 pub mod plan;
 pub mod protocol;
+pub mod queue_view;
 pub mod references;
 pub mod repo;
 pub mod settings;
@@ -71,11 +72,13 @@ pub use init_session::{
 };
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
+pub use queue_view::{resolve_queue_view, IssueView, QueueStatus, QueueView};
 pub use references::Reference;
 pub use repo::{GitRepo, Repo};
 pub use runner::{
-    run_queue, BranchMode, IssueResult, QueueConfig, QueueReport, RunClock, StopReason,
-    WaitOutcome, WallClock, STOP_BEFORE_LABEL, TRIAGE_AGENT_LABEL,
+    first_stop_before, human_return_label, run_queue, BranchMode, IssueResult, QueueConfig,
+    QueueReport, RunClock, StopReason, WaitOutcome, WallClock, STOP_BEFORE_LABEL,
+    TRIAGE_AGENT_LABEL,
 };
 pub use settings::{Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
