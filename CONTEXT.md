@@ -85,6 +85,32 @@ unknown keys so future knobs grow in the same file. Distinct from the Telegram
 config, which stays its own global TOML for now.
 _Avoid_: config (the subcommand), preferences, dotfile.
 
+**Event sink**:
+A `tracing_subscriber::Layer` consuming the run's structured event bus. Four
+exist or are decided: the console presenter, `ralphy.log`, the Telegram
+notifier, and the CloudEvents HTTP sink (ADR-0019) that POSTs each event as
+CloudEvents 1.0 JSON to a configured `events.url` — additive, best-effort,
+never blocking the run. The event catalog is [docs/events.md](./docs/events.md).
+_Avoid_: exporter, webhook (the sink pushes; it exposes nothing), logger.
+
+**Emitter identity**:
+The extension attributes every CloudEvent carries so a fleet of Ralphys (many
+devs, many machines, concurrent processes) stays distinguishable: `runid`
+(ULID minted at process start — the correlation **key**; everything else is
+grouping or diagnostics), plus attribution and
+diagnostics (`ralphyuser`, `ralphyhost`, `ralphyos`, `ralphypid`, `ralphyip`,
+`ralphyversion`, `ralphytz`). PID is diagnostic, never a key (recycled,
+collides across hosts).
+_Avoid_: instance id (implies persistence we don't have), session id.
+
+**Queue snapshot**:
+The per-issue backlog view as the runner judges it — number, title, labels,
+`queue_status` (eligible/skipped/blocked/stop_before), skip reason, blockers,
+position. One shape, three surfaces: the `ralphy issues` listing, the
+enriched `queue.built` event, and the on-demand `queue.snapshot` event from
+`ralphy issues --push` (ADR-0020).
+_Avoid_: backlog dump, issue list (the GitHub-side raw list, without judgment).
+
 **OpenCode model resolution**:
 The precedence Ralphy uses to pick the OpenCode execution model:
 `--exec-model` (per-run) **>** `settings.json` `opencode.model` (persistent
