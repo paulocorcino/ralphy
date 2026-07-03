@@ -73,6 +73,8 @@ struct HistoryRow {
 /// The `ralphy issues show <n>` detail view: enough to decide without opening
 /// GitHub. Body, labels, the ADR-0017 consolidated-spec (when present), the queue
 /// judgment (flattened from the single-issue [`IssueView`]), and the run history.
+/// Carries no `position`: that is a list-relative rank with no meaning for one
+/// issue viewed in isolation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct ShowView {
     number: u64,
@@ -85,7 +87,6 @@ struct ShowView {
     queue_status: QueueStatus,
     skip_reason: Option<String>,
     blocked_by: Vec<u64>,
-    position: Option<u64>,
     history: Vec<HistoryRow>,
 }
 
@@ -99,7 +100,13 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
 
     // `--push` emits the whole judged queue as a snapshot event rather than
     // printing it — the on-demand twin of the runner's enriched `queue.built`.
+    // It is a queue-level operation, so it cannot be combined with `show <n>`.
     if args.push {
+        if args.show.is_some() {
+            anyhow::bail!(
+                "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
+            );
+        }
         let queue = build_list_queue(&repo_root)?;
         let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
         return push_snapshot(&repo_root, &view);
@@ -246,7 +253,6 @@ fn show_view(
         queue_status: iv.queue_status,
         skip_reason: iv.skip_reason,
         blocked_by: iv.blocked_by,
-        position: iv.position,
         history,
     })
 }
@@ -263,9 +269,10 @@ fn parse_fields(raw: Option<&str>) -> Option<Vec<String>> {
     })
 }
 
-/// Keep only `fields` keys of a JSON object (order = the requested order), or the
-/// whole value when `fields` is `None`. A requested key absent from the object is
-/// silently skipped.
+/// Keep only `fields` keys of a JSON object, or the whole value when `fields` is
+/// `None`. A requested key absent from the object is silently skipped. Key order
+/// in the result is not preserved — `serde_json::Map` sorts keys — but JSON object
+/// key order is not semantically meaningful.
 fn select_fields(full: Value, fields: Option<&[String]>) -> Value {
     match fields {
         None => full,
@@ -381,10 +388,9 @@ fn render_show_text(view: &ShowView) -> String {
     out.push_str(&format!("#{}  {}\n", view.number, view.title));
     out.push_str(&format!("labels: {}\n", labels_cell(&view.labels)));
     let judgment = match view.queue_status {
-        QueueStatus::Eligible => view
-            .position
-            .map(|p| format!("eligible (pos {p})"))
-            .unwrap_or_else(|| "eligible".to_string()),
+        // A detail view has no list to rank against, so `eligible` carries no
+        // position (position is a list-relative concept — see `IssueView`).
+        QueueStatus::Eligible => "eligible".to_string(),
         QueueStatus::Skipped => format!(
             "skipped ({})",
             view.skip_reason.as_deref().unwrap_or("human-return")
@@ -610,6 +616,11 @@ mod tests {
         assert_eq!(val["body"], "the issue body");
         assert_eq!(val["labels"], serde_json::json!(["queue"]));
         assert_eq!(val["queue_status"], "eligible");
+        // The detail view carries no list-relative `position`.
+        assert!(
+            val.get("position").is_none(),
+            "show detail must not carry a position: {val}"
+        );
         assert!(
             val["consolidated_spec"]
                 .as_str()
