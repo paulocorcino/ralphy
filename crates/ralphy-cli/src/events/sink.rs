@@ -9,11 +9,12 @@
 //! injectable [`EventSink`]. The Layer ignores the sink's own `tracing` target so a
 //! runtime `warn!` on a delivery drop can never feed back into the ring and loop.
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{json, Value};
 use tracing::{warn, Event, Subscriber};
@@ -123,6 +124,110 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
     )
 }
 
+/// Normalize a checkbox step's text to its identity key (#96): drop markdown
+/// emphasis/code markers and collapse runs of whitespace — mirroring
+/// `ralphy_core::acceptance::normalize_ac`'s technique, kept crate-local so the poll
+/// does not widen a core API for one caller.
+fn normalize_step(s: &str) -> String {
+    let stripped: String = s.chars().filter(|c| !matches!(c, '*' | '_' | '`')).collect();
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Parse a plan's checkbox lines into `(normalized_text, status)` pairs (#96): a
+/// `- [ ]` line is `open`, `- [x]`/`- [X]` is `checked`, `- [!]` is `noticed`. Used
+/// by the plan-step poller to diff file states; the text is normalized so a
+/// whitespace/emphasis edit that leaves a step's meaning unchanged is not a new step.
+fn parse_checkbox_steps(md: &str) -> Vec<(String, &'static str)> {
+    md.lines()
+        .filter_map(|line| {
+            let t = line.trim_start();
+            let (status, rest) = if let Some(r) = t.strip_prefix("- [ ]") {
+                ("open", r)
+            } else if let Some(r) = t.strip_prefix("- [x]").or_else(|| t.strip_prefix("- [X]")) {
+                ("checked", r)
+            } else if let Some(r) = t.strip_prefix("- [!]") {
+                ("noticed", r)
+            } else {
+                return None;
+            };
+            Some((normalize_step(rest), status))
+        })
+        .collect()
+}
+
+/// Map a `PlanWritten.steps` status string to the poller's `&'static str` status, so
+/// the snapshot seeded from a fold is comparable to a parsed one.
+fn static_status(s: &str) -> &'static str {
+    match s {
+        "checked" => "checked",
+        "noticed" => "noticed",
+        _ => "open",
+    }
+}
+
+/// The plan-step poller state (#96): the last-seen `plan.md` mtime and the last
+/// checkbox snapshot (`(normalized_text, status)`), diffed on each tick.
+#[derive(Default)]
+struct StepPoller {
+    last_mtime: Option<SystemTime>,
+    snapshot: Vec<(String, &'static str)>,
+}
+
+impl StepPoller {
+    /// Seed the snapshot from a just-folded `PlanWritten` (#96) so the initial plan
+    /// state is the baseline — only later transitions emit. Called from the drain
+    /// loop; leaves `last_mtime` so the next `poll` still re-reads and reconciles.
+    fn reset_from_written(&mut self, steps: &[(String, String)]) {
+        self.snapshot = steps
+            .iter()
+            .map(|(text, status)| (normalize_step(text), static_status(status)))
+            .collect();
+    }
+
+    /// Poll `plan_path`: if its mtime advanced, re-parse the checkboxes, and for each
+    /// step whose status moved TO `checked`/`noticed` (relative to the last snapshot)
+    /// deliver a `dev.ralphy.plan.step` for the active issue. Best-effort — a stat or
+    /// read failure is a silent no-op (the plan may not exist yet between issues).
+    fn poll<T: EventSink>(
+        &mut self,
+        transport: &T,
+        ctx: &EventCtx,
+        state: &RunState,
+        plan_path: &Path,
+        warned: &AtomicBool,
+    ) {
+        let Ok(mtime) = std::fs::metadata(plan_path).and_then(|m| m.modified()) else {
+            return;
+        };
+        if self.last_mtime == Some(mtime) {
+            return; // unchanged since the last poll
+        }
+        self.last_mtime = Some(mtime);
+        let Ok(md) = std::fs::read_to_string(plan_path) else {
+            return;
+        };
+        let current = parse_checkbox_steps(&md);
+        if let Some(number) = state.active {
+            for (text, status) in &current {
+                if *status != "checked" && *status != "noticed" {
+                    continue;
+                }
+                let prev = self
+                    .snapshot
+                    .iter()
+                    .find(|(t, _)| t == text)
+                    .map(|(_, s)| *s);
+                if prev == Some(*status) {
+                    continue; // no transition
+                }
+                let ev = super::envelope::plan_step_envelope(ctx, state, number, text, status);
+                deliver(transport, &ev, warned, RETRY_BASE_BACKOFF);
+            }
+        }
+        self.snapshot = current;
+    }
+}
+
 /// A sink ring with the ADR-0019 ~1000-event bound.
 pub fn new_queue() -> Arc<EventQueue> {
     Arc::new(EventQueue::with_capacity(QUEUE_CAPACITY))
@@ -168,11 +273,14 @@ pub fn run_sender<T: EventSink>(
     ctx: EventCtx,
     queue: Arc<EventQueue>,
     shutdown: Arc<AtomicBool>,
+    plan_path: PathBuf,
 ) {
     let mut state = RunState::default();
     let mut tokens = Totals::default();
     let start = Instant::now();
     let mut last_beat = Instant::now();
+    // The plan-step poller diffs the active issue's `plan.md` mtime each tick (#96).
+    let mut poller = StepPoller::default();
     // One warn per run on the first delivery drop; later drops stay silent.
     let warned = AtomicBool::new(false);
     loop {
@@ -191,6 +299,11 @@ pub fn run_sender<T: EventSink>(
                 }
                 _ => {}
             }
+            // A freshly written plan reseeds the poller baseline so its initial state
+            // is not mistaken for a burst of transitions (#96).
+            if let RunEvent::PlanWritten { steps, .. } = &event {
+                poller.reset_from_written(steps);
+            }
             // Fold first so the adapter events that carry issue `0` resolve to the
             // active issue when mapped.
             state.apply(event.clone());
@@ -198,6 +311,9 @@ pub fn run_sender<T: EventSink>(
                 deliver(&transport, &cloudevent, &warned, RETRY_BASE_BACKOFF);
             }
         }
+        // The plan-step poll rides the same tick as the heartbeat: cheap when the
+        // plan is unchanged (an mtime stat), emitting only on a checkbox transition.
+        poller.poll(&transport, &ctx, &state, &plan_path, &warned);
         // The heartbeat fires on its own 30s timer, independent of event arrival —
         // so it keeps beating through a silent usage-limit sleep (`phase: sleeping`)
         // and a consumer never mistakes a long pause for a dead run.
@@ -311,13 +427,14 @@ pub fn try_start_sink<T: EventSink + Send + 'static>(
     transport: T,
     ctx: EventCtx,
     queue: Arc<EventQueue>,
+    plan_path: PathBuf,
 ) -> Option<EventsHandle> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let worker_queue = queue.clone();
     let worker_shutdown = shutdown.clone();
     let join = std::thread::Builder::new()
         .name("ralphy-events".into())
-        .spawn(move || run_sender(transport, ctx, worker_queue, worker_shutdown))
+        .spawn(move || run_sender(transport, ctx, worker_queue, worker_shutdown, plan_path))
         .ok()?;
     Some(EventsHandle {
         queue,
@@ -473,6 +590,98 @@ mod tests {
         assert_eq!(sink.call_count(), 8, "two full 4-attempt runs");
     }
 
+    /// A fake sink that records every delivered envelope for assertion.
+    struct RecordingSink(std::sync::Mutex<Vec<Value>>);
+    impl EventSink for RecordingSink {
+        fn post(&self, body: &Value) -> anyhow::Result<PostOutcome> {
+            self.0.lock().unwrap().push(body.clone());
+            Ok(PostOutcome::Delivered)
+        }
+    }
+
+    #[test]
+    fn poller_emits_plan_step_on_checkbox_transition_and_reset_seeds_baseline() {
+        // A temp plan.md (no `tempfile` dev-dep, per KNOWLEDGE): write it, seed the
+        // poller, flip one step to `[x]`, bump the mtime, and assert exactly one
+        // `plan.step` with the normalized text of the flipped step.
+        let dir = std::env::temp_dir().join(format!("ralphy-step-poll-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        std::fs::write(&plan_path, "## Steps\n- [ ] do a `thing`\n- [ ] do another\n").unwrap();
+
+        // Issue 7 active so the poll has a subject.
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "a".into(),
+        });
+
+        let sink = RecordingSink(std::sync::Mutex::new(Vec::new()));
+        let warned = AtomicBool::new(false);
+        let mut poller = StepPoller::default();
+
+        // First poll seeds the snapshot (both steps open → nothing emitted).
+        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        assert!(
+            sink.0.lock().unwrap().is_empty(),
+            "no transitions on the seeding poll"
+        );
+
+        // Flip the first step to checked and advance the mtime so the poll re-reads.
+        std::fs::write(&plan_path, "## Steps\n- [x] do a `thing`\n- [ ] do another\n").unwrap();
+        filetime_advance(&plan_path);
+        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+
+        let delivered = sink.0.lock().unwrap();
+        assert_eq!(delivered.len(), 1, "exactly one plan.step: {delivered:?}");
+        let ev = &delivered[0];
+        assert_eq!(ev["type"], "dev.ralphy.plan.step");
+        assert_eq!(ev["subject"], "issue/7");
+        assert_eq!(ev["data"]["status"], "checked");
+        // The text is normalized (the backticks stripped).
+        assert_eq!(ev["data"]["text"], "do a thing");
+        // The subject-scoped issue block rides along.
+        assert_eq!(ev["data"]["issue"]["number"], 7);
+        drop(delivered);
+
+        // `reset_from_written` re-baselines from a fold: a subsequent poll of the
+        // same (already-checked) file emits nothing.
+        poller.reset_from_written(&[
+            ("do a `thing`".to_string(), "checked".to_string()),
+            ("do another".to_string(), "open".to_string()),
+        ]);
+        filetime_advance(&plan_path);
+        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        assert_eq!(
+            sink.0.lock().unwrap().len(),
+            1,
+            "reset baseline suppresses the already-checked step"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Bump a file's mtime forward so the poller's `mtime` guard sees a change even
+    /// when the two writes land in the same clock tick (coarse FS timestamps).
+    fn filetime_advance(path: &Path) {
+        let now = SystemTime::now() + Duration::from_secs(2);
+        // Re-write with an explicit later mtime via a set_modified where available;
+        // fall back to a spin until the OS mtime actually advances.
+        if std::fs::File::open(path)
+            .and_then(|f| f.set_modified(now))
+            .is_err()
+        {
+            let start = Instant::now();
+            let initial = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+            while std::fs::metadata(path).and_then(|m| m.modified()).ok() == initial {
+                if start.elapsed() > Duration::from_secs(3) {
+                    break;
+                }
+                std::fs::write(path, std::fs::read(path).unwrap()).ok();
+            }
+        }
+    }
+
     #[test]
     fn heartbeat_carries_phase_interval_and_token_totals() {
         // A folded state: issue 7 executing, one plan + one close of token usage.
@@ -618,7 +827,14 @@ mod tests {
         });
         // shutdown already set: the worker drains once, POSTs, and returns inline.
         let shutdown = Arc::new(AtomicBool::new(true));
-        run_sender(transport, test_ctx(), queue, shutdown);
+        // No plan file → the plan-step poll is a silent no-op for this test.
+        run_sender(
+            transport,
+            test_ctx(),
+            queue,
+            shutdown,
+            std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
+        );
 
         let raw = rx.recv().expect("recorded request");
         server.join().ok();

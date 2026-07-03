@@ -801,7 +801,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             }),
         };
         let transport = events::client::UreqEventTransport::new(url.clone(), events_token.clone());
-        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone());
+        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
     }
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription

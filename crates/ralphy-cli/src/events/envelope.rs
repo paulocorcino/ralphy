@@ -120,6 +120,26 @@ pub fn run_envelope(type_: &str, ctx: &EventCtx, state: &RunState, data: Value) 
     envelope(type_, None, ctx, state, data)
 }
 
+/// Build a `dev.ralphy.plan.step` envelope (#96): a single checkbox transition to
+/// `checked`/`noticed`, subject-scoped to `issue/<number>` (so the reserved `issue`
+/// block rides along), carrying `data = {text, status}` (the normalized step text).
+/// Emitted by the sink's plan-step poller, which owns the file-state diff.
+pub fn plan_step_envelope(
+    ctx: &EventCtx,
+    state: &RunState,
+    number: u64,
+    text: &str,
+    status: &str,
+) -> Value {
+    envelope(
+        "dev.ralphy.plan.step",
+        Some(&subject_for(number)),
+        ctx,
+        state,
+        json!({ "text": text, "status": status }),
+    )
+}
+
 /// The `data` payload shared by the enriched `queue.built` and the on-demand
 /// `queue.snapshot` (ADR-0020): `{count, order, stop_before, issues}`. Defined
 /// ONCE and used by both triggers so the two payloads can never diverge — `issues`
