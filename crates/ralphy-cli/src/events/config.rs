@@ -21,6 +21,12 @@ pub const TOKEN_ENV: &str = "RALPHY_EVENTS_TOKEN";
 /// `RALPHY_USAGE_DIR` (ADR-0008). When set, `events.toml` lives directly under it.
 const DIR_ENV: &str = "RALPHY_EVENTS_DIR";
 
+/// Serializes every test that mutates the process-global `RALPHY_EVENTS_DIR` /
+/// `RALPHY_EVENTS_TOKEN` env vars — shared across this module's tests and the
+/// `config` command's tests so the two never race on the same store.
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// One repo's sink configuration: the endpoint URL and (optionally) the bearer
 /// token. Either may be absent — a URL with no token posts without an
 /// `Authorization` header.
@@ -151,11 +157,7 @@ fn set_owner_only(_path: &std::path::Path) -> Result<()> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::sync::Mutex;
 
-    /// Serializes the env-touching tests: `RALPHY_EVENTS_DIR` and
-    /// `RALPHY_EVENTS_TOKEN` are process-global.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
     static N: AtomicU32 = AtomicU32::new(0);
 
     fn temp_dir() -> PathBuf {

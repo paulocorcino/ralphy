@@ -66,9 +66,12 @@ pub fn run(args: ConfigArgs) -> Result<()> {
 pub const SUPPORTED_KEYS_HELP: &str = "supported keys: \
 opencode.model, base_branch, branch_mode, verify.command, \
 verify.require_verify_gate, \
+events.url, events.token, \
 claude.plan_model, claude.plan_effort, claude.default_exec_model, \
 claude.exec_effort, claude.max_minutes_per_issue \
-(verify.command is the per-repo fallback verify gate, ADR-0011; \
+(events.url/events.token configure the CloudEvents sink and are stored per repo \
+in the global ~/.ralphy/events.toml, never in settings.json, ADR-0019; \
+verify.command is the per-repo fallback verify gate, ADR-0011; \
 verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
@@ -81,6 +84,8 @@ fn require_known_key(key: &str) -> Result<()> {
         | "branch_mode"
         | "verify.command"
         | "verify.require_verify_gate"
+        | "events.url"
+        | "events.token"
         | "claude.plan_model"
         | "claude.plan_effort"
         | "claude.default_exec_model"
@@ -110,6 +115,26 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     require_known_key(key)?;
     if value.trim().is_empty() {
         bail!("value for '{key}' must not be empty — use `config unset {key}` to clear it");
+    }
+    // The CloudEvents sink knobs live in the global per-repo store
+    // (`~/.ralphy/events.toml`), keyed by slug — never in `.ralphy/settings.json`
+    // (ADR-0019). Route them there and return before the settings path.
+    if key == "events.url" || key == "events.token" {
+        let slug = git::project_slug(ws.repo_root());
+        let mut store = crate::events::config::EventsStore::load()?;
+        match key {
+            "events.url" => store.set_url(&slug, value),
+            "events.token" => store.set_token(&slug, value),
+            _ => unreachable!(),
+        }
+        store.save()?;
+        // Never echo the secret token back to stdout — mask it like `config get`.
+        if key == "events.token" {
+            println!("{key} = {}", crate::telegram::config::masked_token(value));
+        } else {
+            println!("{key} = {value}");
+        }
+        return Ok(());
     }
     let mut s = Settings::load(ws)?;
     match key {
@@ -150,6 +175,16 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
 
 pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     require_known_key(key)?;
+    // The events sink knobs are cleared in the global store, not settings.json.
+    if key == "events.url" || key == "events.token" {
+        let slug = git::project_slug(ws.repo_root());
+        let mut store = crate::events::config::EventsStore::load()?;
+        // The field name is the key's suffix (`url` / `token`).
+        store.clear(&slug, &key["events.".len()..]);
+        store.save()?;
+        println!("{key}: unset");
+        return Ok(());
+    }
     let mut s = Settings::load(ws)?;
     match key {
         "opencode.model" => with_opencode(&mut s, |o| o.model = None)?,
@@ -188,6 +223,16 @@ pub fn get(ws: &Workspace) -> Result<()> {
     match claude.max_minutes_per_issue {
         Some(n) => println!("claude.max_minutes_per_issue = {n}"),
         None => println!("claude.max_minutes_per_issue: not set"),
+    }
+    // The CloudEvents sink knobs come from the global per-repo store, printed for
+    // the current repo's slug (the token masked).
+    let slug = git::project_slug(ws.repo_root());
+    let events = crate::events::config::EventsStore::load().unwrap_or_default();
+    let entry = events.entry(&slug);
+    print_str("events.url", entry.and_then(|e| e.url.clone()));
+    match entry.and_then(|e| e.token.as_deref()) {
+        Some(t) => println!("events.token = {}", crate::telegram::config::masked_token(t)),
+        None => println!("events.token: not set"),
     }
     Ok(())
 }
@@ -503,5 +548,48 @@ mod tests {
     #[test]
     fn help_lists_verify_command() {
         assert!(SUPPORTED_KEYS_HELP.contains("verify.command"));
+    }
+
+    #[test]
+    fn help_lists_events_keys() {
+        assert!(SUPPORTED_KEYS_HELP.contains("events.url"));
+        assert!(SUPPORTED_KEYS_HELP.contains("events.token"));
+    }
+
+    #[test]
+    fn events_keys_write_global_store_not_settings_json() {
+        // Serialize with the events-store tests: `RALPHY_EVENTS_DIR` is global.
+        let _g = crate::events::config::ENV_LOCK.lock().unwrap();
+        let (ws, dir) = tmp_ws("events-routing");
+        let store_dir = dir.join("store");
+        std::env::set_var("RALPHY_EVENTS_DIR", &store_dir);
+
+        // `set events.url` writes the global store and never `.ralphy/settings.json`.
+        set(&ws, "events.url", "http://x/hook").unwrap();
+        set(&ws, "events.token", "sekret").unwrap();
+        assert!(
+            !ws.settings_path().exists(),
+            "events keys must not create settings.json"
+        );
+        assert!(
+            store_dir.join("events.toml").exists(),
+            "events.toml must be written to the global store"
+        );
+
+        // The value round-trips for this repo's slug.
+        let slug = git::project_slug(ws.repo_root());
+        let store = crate::events::config::EventsStore::load().unwrap();
+        let entry = store.entry(&slug).expect("entry present");
+        assert_eq!(entry.url.as_deref(), Some("http://x/hook"));
+        assert_eq!(entry.token.as_deref(), Some("sekret"));
+
+        // `unset` clears the field in the store; settings.json still never appears.
+        unset(&ws, "events.token").unwrap();
+        let store = crate::events::config::EventsStore::load().unwrap();
+        assert!(store.entry(&slug).unwrap().token.is_none());
+        assert!(!ws.settings_path().exists());
+
+        std::env::remove_var("RALPHY_EVENTS_DIR");
+        fs::remove_dir_all(&dir).ok();
     }
 }
