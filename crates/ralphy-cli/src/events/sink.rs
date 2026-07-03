@@ -1,1 +1,172 @@
 //! The run-time CloudEvents sink Layer + worker (ADR-0019).
+//!
+//! [`EventsLayer`] mirrors the Telegram [`NotifierLayer`](crate::telegram::notifier)
+//! exactly: it decodes each `tracing` event into a [`RunEvent`] and pushes it onto
+//! a bounded, drop-oldest ring on the logging thread — never touching the network.
+//! One background worker ([`run_sender`]) drains the ring, folds each event into a
+//! local [`RunState`] (so the adapter events that carry issue `0` resolve to the
+//! active issue), maps it to a CloudEvents envelope, and POSTs it through the
+//! injectable [`EventSink`]. The Layer ignores the sink's own `tracing` target so a
+//! runtime `warn!` on a delivery drop can never feed back into the ring and loop.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+use tracing::{warn, Event, Subscriber};
+use tracing_subscriber::layer::{Context, Layer};
+
+use super::client::EventSink;
+use super::envelope::{runevent_to_cloudevent, EventCtx};
+use crate::runstate::{event_to_runevent, EventFields, RunState};
+use crate::telegram::notifier::EventQueue;
+
+/// The sink ring's capacity (ADR-0019: bounded ~1000, drop-oldest).
+const QUEUE_CAPACITY: usize = 1000;
+
+/// How often the worker re-polls the ring so it notices shutdown promptly even if
+/// a notify is lost.
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// How long [`EventsHandle::shutdown`] waits for the worker before detaching, so a
+/// wedged endpoint never holds the process open.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The substring identifying the sink's own `tracing` target, so a drop `warn!`
+/// from the worker never feeds back into the Layer and loops (ADR-0019).
+const SELF_TARGET_MARKER: &str = "events::sink";
+
+/// A sink ring with the ADR-0019 ~1000-event bound.
+pub fn new_queue() -> Arc<EventQueue> {
+    Arc::new(EventQueue::with_capacity(QUEUE_CAPACITY))
+}
+
+/// A `tracing` Layer that enqueues each consumed event as a [`RunEvent`] onto the
+/// sink's own ring. Does no I/O on the logging thread — only `event_to_runevent` +
+/// a ring push, so an unreachable endpoint never touches the run's wall-clock.
+pub struct EventsLayer {
+    queue: Arc<EventQueue>,
+}
+
+impl EventsLayer {
+    /// Wrap the shared sink ring the worker drains.
+    pub fn new(queue: Arc<EventQueue>) -> Self {
+        EventsLayer { queue }
+    }
+}
+
+impl<S: Subscriber> Layer<S> for EventsLayer {
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+        let target = event.metadata().target();
+        // Ignore the sink's own events so a runtime warn! cannot loop back in.
+        if target.contains(SELF_TARGET_MARKER) {
+            return;
+        }
+        let mut fields = EventFields {
+            level: *event.metadata().level(),
+            ..Default::default()
+        };
+        event.record(&mut fields);
+        if let Some(run_event) = event_to_runevent(target, &fields.message, &fields) {
+            self.queue.push(run_event);
+        }
+    }
+}
+
+/// Drain the sink ring, folding each event into a local [`RunState`] and POSTing
+/// its CloudEvents envelope once. Retry/drop and the heartbeat land in later
+/// slices; this base worker delivers each mapped event a single time.
+pub fn run_sender<T: EventSink>(
+    transport: T,
+    ctx: EventCtx,
+    queue: Arc<EventQueue>,
+    shutdown: Arc<AtomicBool>,
+) {
+    let mut state = RunState::default();
+    loop {
+        let stopping = shutdown.load(Ordering::SeqCst);
+        let events = if stopping {
+            queue.drain_blocking(Duration::from_millis(0))
+        } else {
+            queue.drain_blocking(POLL_INTERVAL)
+        };
+        for event in events {
+            // Fold first so the adapter events that carry issue `0` resolve to the
+            // active issue when mapped.
+            state.apply(event.clone());
+            if let Some(cloudevent) = runevent_to_cloudevent(&event, &ctx, &state) {
+                deliver(&transport, &cloudevent);
+            }
+        }
+        if stopping {
+            break;
+        }
+    }
+}
+
+/// Deliver one envelope through the transport, swallowing the outcome. The
+/// retry/drop policy lands in a later slice; a transport error here is logged
+/// under the sink's own target so it never re-enters the ring.
+fn deliver<T: EventSink>(transport: &T, cloudevent: &serde_json::Value) {
+    if let Err(e) = transport.post(cloudevent) {
+        warn!(target: "ralphy_cli::events::sink", "event delivery failed: {e}");
+    }
+}
+
+/// A handle to the running sink: the shared ring, its shutdown flag, and the
+/// worker thread. [`shutdown`](Self::shutdown) drains-and-joins under a bounded
+/// timeout so a wedged endpoint never holds the process open.
+pub struct EventsHandle {
+    queue: Arc<EventQueue>,
+    shutdown: Arc<AtomicBool>,
+    join: Option<JoinHandle<()>>,
+}
+
+impl EventsHandle {
+    /// Signal shutdown, wake the worker, and join it under the default timeout.
+    pub fn shutdown(self) {
+        self.shutdown_within(SHUTDOWN_TIMEOUT);
+    }
+
+    /// Like [`shutdown`](Self::shutdown) but with an explicit timeout (tests use a
+    /// short one). If the worker does not finish in time it is detached.
+    pub fn shutdown_within(mut self, timeout: Duration) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        self.queue.wake();
+        if let Some(join) = self.join.take() {
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = join.join();
+                let _ = tx.send(());
+            });
+            if rx.recv_timeout(timeout).is_err() {
+                warn!(target: "ralphy_cli::events::sink", "sink worker did not finish in time — detaching");
+            }
+        }
+    }
+}
+
+/// Spawn the `"ralphy-events"` worker draining `queue` through `transport`. The
+/// returned [`EventsHandle`] holds the shutdown signal and the worker's join
+/// handle; a spawn failure leaves the installed Layer inert (the ring just fills
+/// and drops) rather than aborting the run.
+pub fn try_start_sink<T: EventSink + Send + 'static>(
+    transport: T,
+    ctx: EventCtx,
+    queue: Arc<EventQueue>,
+) -> Option<EventsHandle> {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let worker_queue = queue.clone();
+    let worker_shutdown = shutdown.clone();
+    let join = std::thread::Builder::new()
+        .name("ralphy-events".into())
+        .spawn(move || run_sender(transport, ctx, worker_queue, worker_shutdown))
+        .ok()?;
+    Some(EventsHandle {
+        queue,
+        shutdown,
+        join: Some(join),
+    })
+}
