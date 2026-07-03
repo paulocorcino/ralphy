@@ -187,6 +187,13 @@ fn push_snapshot(repo_root: &std::path::Path, view: &QueueView) -> Result<()> {
         source: emitter::source(&slug),
         runid: emitter::new_runid(),
         emitter: serde_json::to_value(emitter::detect(repo_root)).unwrap_or_default(),
+        // Out-of-run snapshot: `branch` is the repo's current branch (no operating
+        // run branch is cut), `repository` the slug — the same `data.git` shape a
+        // real run carries (ADR-0019 amendment #96).
+        git: serde_json::json!({
+            "repository": slug,
+            "branch": git::current_branch(repo_root).unwrap_or_default(),
+        }),
     };
     let issues = serde_json::to_value(&view.issues)?;
     let data = envelope::queue_snapshot_data(&issues, view.count, &view.order, view.stop_before);

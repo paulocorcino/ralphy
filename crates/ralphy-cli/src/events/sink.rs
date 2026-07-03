@@ -333,6 +333,7 @@ mod tests {
             source: "ralphy/o/r".to_string(),
             runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
             emitter: json!({ "version": "0.0.0", "pid": 4242 }),
+            git: json!({ "repository": "o/r", "branch": "afk/run-t" }),
         }
     }
 

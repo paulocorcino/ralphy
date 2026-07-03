@@ -737,56 +737,12 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         }
     }
 
-    // Start the CloudEvents sink worker now that the run context is known. The
-    // process `runid` and the emitter identity are minted once here; the worker
-    // drains the ring (already buffering `queue built`) and POSTs each event as a
-    // CloudEvents envelope. A spawn failure leaves the installed Layer inert.
-    let mut events_handle: Option<events::sink::EventsHandle> = None;
-    if let (Some(queue), Some(url)) = (event_sink_queue.as_ref(), events_url.as_ref()) {
-        let ctx = events::envelope::EventCtx {
-            source: events::emitter::source(&events_slug),
-            runid: events::emitter::new_runid(),
-            emitter: serde_json::to_value(events::emitter::detect(&repo_root)).unwrap_or_default(),
-        };
-        let transport = events::client::UreqEventTransport::new(url.clone(), events_token.clone());
-        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone());
-    }
-
-    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
-    // quota (matching the ps1 oracle behaviour).
-    //
-    // Why `""` and not `remove_var`: setting to the empty string deliberately
-    // mirrors the PowerShell oracle, which assigns `""` rather than unsetting.
-    // Claude's handling of an absent key vs. an empty key is not verified, so we
-    // keep the same sentinel value to stay on the tested path.
-    //
-    // Single-threaded safety: `set_var` is safe to call here because this point
-    // in `main` is reached before any threads are spawned; no concurrent reader
-    // can observe a torn environment state.
-    //
-    // Edition-2024 migration note: in Rust edition 2024, `std::env::set_var` (and
-    // `remove_var`) become `unsafe` functions. When the crate migrates to edition
-    // 2024, this call must be wrapped in an `unsafe` block with a comment
-    // reiterating the single-threaded safety argument above.
-    std::env::set_var("ANTHROPIC_API_KEY", "");
-
-    // The run's global wall-clock deadline (if any), shared by the agent — which
-    // clamps each issue's budget to it — and the queue's between-issue clock.
-    let run_deadline = args
-        .deadline_hours
-        .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0));
-
-    // Select the adapter(s) per run and box as `&dyn Agent`; the core takes a
-    // single `&dyn Agent` and never learns which vendor it holds (docs/adr/0004).
-    // `--plan-agent` defaults to `--agent`: when they match, the executor box is
-    // handed to the core directly so the single-agent path carries no wrapper
-    // (byte-for-byte unchanged); otherwise a `SplitAgent` routes plan→planner,
-    // execute→executor (docs/adr/0009).
-    //
-    // Load the persisted settings once here so every run knob resolves against
-    // the same snapshot (ADR-0010). A load failure warns and falls back to
-    // defaults so a malformed settings file never aborts a run. Precedence for
-    // each knob: per-run flag > settings.json > hardcoded default.
+    // Load the persisted settings once here (ADR-0010) BEFORE the events ctx so the
+    // operating run branch (which the `data.git` block carries, ADR-0019 amendment
+    // #96) is resolved before the ctx is built and thus constant from the first
+    // event. A load failure warns and falls back to defaults so a malformed settings
+    // file never aborts a run. Precedence for each knob: per-run flag > settings.json
+    // > hardcoded default.
     let settings = match ralphy_core::Settings::load(&ws) {
         Ok(s) => s,
         Err(e) => {
@@ -825,6 +781,63 @@ fn run_cmd(args: RunArgs) -> Result<()> {
                 .and_then(|m| config::parse_branch_mode(m).ok())
         })
         .unwrap_or(BranchMode::New);
+    // The branch commits land on: a fresh `afk/run-<stamp>` in `new` mode (matching
+    // the format literal in `runner.rs`), the current branch in `current` mode.
+    let operating_branch = operating_branch(branch_mode, &stamp, start_branch.as_deref());
+
+    // Start the CloudEvents sink worker now that the run context is known. The
+    // process `runid` and the emitter identity are minted once here; the worker
+    // drains the ring (already buffering `queue built`) and POSTs each event as a
+    // CloudEvents envelope. A spawn failure leaves the installed Layer inert.
+    let mut events_handle: Option<events::sink::EventsHandle> = None;
+    if let (Some(queue), Some(url)) = (event_sink_queue.as_ref(), events_url.as_ref()) {
+        let ctx = events::envelope::EventCtx {
+            source: events::emitter::source(&events_slug),
+            runid: events::emitter::new_runid(),
+            emitter: serde_json::to_value(events::emitter::detect(&repo_root)).unwrap_or_default(),
+            git: serde_json::json!({
+                "repository": events_slug,
+                "branch": operating_branch,
+            }),
+        };
+        let transport = events::client::UreqEventTransport::new(url.clone(), events_token.clone());
+        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone());
+    }
+
+    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
+    // quota (matching the ps1 oracle behaviour).
+    //
+    // Why `""` and not `remove_var`: setting to the empty string deliberately
+    // mirrors the PowerShell oracle, which assigns `""` rather than unsetting.
+    // Claude's handling of an absent key vs. an empty key is not verified, so we
+    // keep the same sentinel value to stay on the tested path.
+    //
+    // Single-threaded safety: `set_var` is safe to call here because this point
+    // in `main` is reached before any threads are spawned; no concurrent reader
+    // can observe a torn environment state.
+    //
+    // Edition-2024 migration note: in Rust edition 2024, `std::env::set_var` (and
+    // `remove_var`) become `unsafe` functions. When the crate migrates to edition
+    // 2024, this call must be wrapped in an `unsafe` block with a comment
+    // reiterating the single-threaded safety argument above.
+    std::env::set_var("ANTHROPIC_API_KEY", "");
+
+    // The run's global wall-clock deadline (if any), shared by the agent — which
+    // clamps each issue's budget to it — and the queue's between-issue clock.
+    let run_deadline = args
+        .deadline_hours
+        .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0));
+
+    // Select the adapter(s) per run and box as `&dyn Agent`; the core takes a
+    // single `&dyn Agent` and never learns which vendor it holds (docs/adr/0004).
+    // `--plan-agent` defaults to `--agent`: when they match, the executor box is
+    // handed to the core directly so the single-agent path carries no wrapper
+    // (byte-for-byte unchanged); otherwise a `SplitAgent` routes plan→planner,
+    // execute→executor (docs/adr/0009).
+    //
+    // The persisted settings snapshot + `base_branch`/`branch_mode` were resolved
+    // above (before the events ctx, so the operating branch is constant from the
+    // first event); every run knob below resolves against that same snapshot.
     // ADR-0019 run-boundary event: emitted here, after branch-mode/base-branch
     // resolution, so it carries the CLI-only run parameters the core never sees.
     // The stream order is `queue.built` (above) then `run.started`; consumers order
@@ -1208,6 +1221,18 @@ fn outcome_of(stop: &Option<StopReason>) -> &'static str {
     }
 }
 
+/// The operating run branch commits land on, for the `data.git.branch` block
+/// (ADR-0019 amendment #96): a fresh `afk/run-<stamp>` in `new` mode (matching the
+/// `afk/run-{stamp}` format the runner cuts), or the current branch in `current`
+/// mode (empty when the current branch could not be resolved). Resolved before the
+/// events ctx so `data.git` is constant from the first event.
+fn operating_branch(mode: BranchMode, stamp: &str, start_branch: Option<&str>) -> String {
+    match mode {
+        BranchMode::New => format!("afk/run-{stamp}"),
+        BranchMode::Current => start_branch.unwrap_or_default().to_string(),
+    }
+}
+
 /// Pure predicate layer: returns `Err(message)` for the first agent whose
 /// `cli_name()` the `locate` closure reports absent, else `Ok(())`. The
 /// `locate` indirection lets unit tests inject a fake resolver with no PATH
@@ -1324,6 +1349,25 @@ mod tests {
         assert!(
             std::env::var(events::config::TOKEN_ENV).is_err(),
             "token must be absent after strip"
+        );
+    }
+
+    #[test]
+    fn operating_branch_derives_per_mode() {
+        // `new` mode cuts a fresh `afk/run-<stamp>` regardless of the current branch.
+        assert_eq!(
+            operating_branch(BranchMode::New, "20260703-120000", Some("feature")),
+            "afk/run-20260703-120000"
+        );
+        // `current` mode reports the current branch verbatim.
+        assert_eq!(
+            operating_branch(BranchMode::Current, "20260703-120000", Some("feature")),
+            "feature"
+        );
+        // `current` mode with no resolvable current branch degrades to empty.
+        assert_eq!(
+            operating_branch(BranchMode::Current, "20260703-120000", None),
+            ""
         );
     }
 

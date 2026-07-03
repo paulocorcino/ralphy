@@ -11,13 +11,18 @@ use serde_json::{json, Value};
 use crate::runstate::{RunEvent, RunState, SkipKind, UsageLite};
 
 /// The per-run context every envelope shares: the `source` (`ralphy/<owner>/<repo>`),
-/// the `runid` correlation ULID minted at process start, and the pre-serialized
-/// `data.emitter` identity object.
+/// the `runid` correlation ULID minted at process start, the pre-serialized
+/// `data.emitter` identity object, and the constant-per-run `data.git` block
+/// (`{repository, branch}`) resolved before the ctx is built.
 #[derive(Debug, Clone)]
 pub struct EventCtx {
     pub source: String,
     pub runid: String,
     pub emitter: Value,
+    /// The reserved `data.git` block merged into every envelope: `{repository,
+    /// branch}` — the owner/repo slug and the operating run branch commits land on.
+    /// Constant per run (ADR-0019 amendment #96).
+    pub git: Value,
 }
 
 /// Assemble a CloudEvents 1.0 structured-mode envelope. `data` is the
@@ -27,6 +32,7 @@ fn envelope(type_: &str, subject: Option<&str>, ctx: &EventCtx, data: Value) -> 
     let mut data = data;
     if let Value::Object(ref mut map) = data {
         map.insert("emitter".to_string(), ctx.emitter.clone());
+        map.insert("git".to_string(), ctx.git.clone());
     }
     let mut ev = serde_json::Map::new();
     ev.insert("specversion".to_string(), json!("1.0"));
@@ -313,7 +319,28 @@ mod tests {
             source: "ralphy/o/r".to_string(),
             runid: "01RUNIDRUNIDRUNIDRUNID".to_string(),
             emitter: json!({ "version": "0.0.0", "pid": 4242 }),
+            git: json!({ "repository": "o/r", "branch": "afk/run-t" }),
         }
+    }
+
+    #[test]
+    fn git_block_is_merged_on_mapped_and_run_envelopes() {
+        // The constant-per-run `data.git` block rides every envelope, merged like
+        // `emitter` — on a subject-carrying mapped event and on a subject-less
+        // run-scoped one (via `run_envelope`).
+        let mapped = map(
+            RunEvent::IssueStarted {
+                number: 7,
+                title: "hello".into(),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(mapped["data"]["git"]["repository"], "o/r");
+        assert_eq!(mapped["data"]["git"]["branch"], "afk/run-t");
+
+        let run_scoped = run_envelope("dev.ralphy.run.heartbeat", &ctx(), json!({}));
+        assert_eq!(run_scoped["data"]["git"]["repository"], "o/r");
+        assert_eq!(run_scoped["data"]["git"]["branch"], "afk/run-t");
     }
 
     #[test]
