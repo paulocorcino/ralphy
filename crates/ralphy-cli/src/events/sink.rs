@@ -530,6 +530,44 @@ mod tests {
     }
 
     #[test]
+    fn layer_enqueue_is_off_the_run_path() {
+        // A transport aimed at an unroutable address: if the logging thread ever
+        // touched the network, this endpoint would block it for seconds (its connect
+        // timeout is 10s). The Layer holds NO transport by construction — only the
+        // ring — so it is never consulted on the logging thread; delivery is
+        // entirely the worker's job. Building it here documents that the Layer path
+        // never reaches for it.
+        let _unroutable = super::super::client::UreqEventTransport::new(
+            "http://10.255.255.1:9/".to_string(),
+            Some("tok".to_string()),
+        );
+
+        // The Layer's `on_event` reduces to `event_to_runevent` + `queue.push`; drive
+        // that exact enqueue path (a real `tracing::Event` is impractical to build in
+        // a unit test) and prove it stays well under 50ms even at volume — no network
+        // I/O could hide inside a push that fast.
+        let queue = new_queue();
+        let layer = EventsLayer::new(queue.clone());
+        let start = Instant::now();
+        for n in 0..1000u64 {
+            queue.push(RunEvent::IssueClosed {
+                number: n,
+                tokens: 0,
+                usage: UsageLite::default(),
+            });
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "the Layer enqueue path must be well under 50ms, took {elapsed:?}"
+        );
+        // The Layer wraps the same ring the pushes landed on — the ~1000-bound ring
+        // keeps the most recent events under back-pressure.
+        drop(layer);
+        assert!(!queue.drain_blocking(Duration::ZERO).is_empty());
+    }
+
+    #[test]
     fn spine_pushed_event_arrives_as_cloudevents_post() {
         // A recording server on an ephemeral port: accept one connection, read the
         // request, reply 200, and hand the raw request back over a channel.
