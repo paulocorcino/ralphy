@@ -18,3 +18,18 @@ A green queue issue is closed by the runner to complete the cycle — the label 
 left untouched and the branch is still merged by hand. We accept that this closes
 an issue whose code is not yet merged: closing signals "the agent finished its
 part", and the run branch is the artifact the human reviews and merges.
+
+## Amendment (2026-07-03)
+
+Two later ADRs refine this vocabulary without changing its shape:
+
+- **`triage-agent`** (ADR-0017) joins `stop-before`, `AFK` and `HITL` as a
+  fixed, non-configurable **operational** label outside the five canonical
+  roles — it marks "an agent triage pass will evaluate and normalize this
+  issue", and the `ralphy triage` command consumes it. The setup-pocock
+  mapping table remains the five roles only.
+- The mutual exclusivity this ADR assumed ("`ready-for-agent` *or*
+  `ready-for-human`, not both") is now **enforced** rather than assumed:
+  ADR-0016 makes human-return labels (`ready-for-human`/`HITL`, `needs-info`,
+  `needs-triage`, `wontfix`, `triage-agent`) outrank queue labels at run time,
+  so a contradictory pair parks the issue instead of executing it.
