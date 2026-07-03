@@ -14,8 +14,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use ralphy_core::{
-    run_queue, Agent, BranchMode, Execution, Issue, IssueTracker, Outcome, Plan, PlanLimit,
-    QueueConfig, RunClock, StopReason, Usage, Verdict, WaitOutcome, Workspace,
+    resolve_queue_view, run_queue, Agent, BranchMode, Execution, Issue, IssueTracker, Outcome,
+    Plan, PlanLimit, QueueConfig, QueueStatus, RunClock, StopReason, Usage, Verdict, WaitOutcome,
+    Workspace,
 };
 
 /// A scripted planning result. `Limit(reset)` makes `plan()` return a
@@ -823,6 +824,70 @@ fn stop_before_halts_before_labeled_issue() {
 
     // Branch has work (from #1), so it is handed back on the run branch.
     assert_eq!(current_branch(&repo), report.branch);
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn view_and_run_agree_issue_for_issue() {
+    // ADR-0020 criterion #7: the read-only queue view (`resolve_queue_view`) and a
+    // real `run_queue` over the SAME fixture + tracker must classify every issue
+    // identically — stop-before, blocked, human-return, eligible — so the CLI
+    // listing can never disagree with what the run does. FAILS if either the view
+    // or the runner drifts from the shared precedence.
+    let repo = init_repo("view-run-agree");
+    let queue = vec![
+        issue_with_body(5, "## Blocked by\n- #2\n"), // #2 open → Blocked
+        issue_labeled(3, &["needs-info"]),           // human-return → Skipped
+        issue(7),                                    // clean → Eligible
+        issue_labeled(9, &["stop-before"]),          // first stop-before → halts
+    ];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #7 executes
+    let tracker = RecordingTracker::default(); // #2 open; no children/labels
+
+    // Resolve the view over the SAME fixture + tracker the run consumes.
+    let view = resolve_queue_view(&queue, &[], &default_human_return(), &tracker).unwrap();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-view-run-agree", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let vs = |n: u64| view.issues.iter().find(|i| i.number == n).unwrap();
+    let worked = |n: u64| report.worked.iter().find(|r| r.number == n);
+
+    // Stop-before: the view marks #9 and the run halts there, producing no row.
+    assert_eq!(vs(9).queue_status, QueueStatus::StopBefore);
+    assert_eq!(view.stop_before, Some(9));
+    match &report.stop {
+        Some(StopReason::StopBefore { number }) => assert_eq!(*number, 9),
+        other => panic!("expected StopBefore, got {other:?}"),
+    }
+    assert!(worked(9).is_none(), "the stop-before issue is never worked");
+
+    // Blocked: the view's blocked_by equals the run's IssueResult.blocked_by.
+    assert_eq!(vs(5).queue_status, QueueStatus::Blocked);
+    let r5 = worked(5).expect("#5 produces a skip row");
+    assert!(r5.outcome.is_none() && !r5.closed);
+    assert_eq!(vs(5).blocked_by, r5.blocked_by);
+    assert_eq!(vs(5).blocked_by, vec![2]);
+
+    // Human-return: view Skipped ⇔ the run skips it (no outcome, empty blocked_by).
+    assert_eq!(vs(3).queue_status, QueueStatus::Skipped);
+    let r3 = worked(3).expect("#3 produces a skip row");
+    assert!(r3.outcome.is_none() && !r3.closed && r3.blocked_by.is_empty());
+    assert_eq!(vs(3).skip_reason.as_deref(), Some("needs-info"));
+
+    // Eligible: view Eligible ⇔ the run actually worked it (an outcome present).
+    assert_eq!(vs(7).queue_status, QueueStatus::Eligible);
+    assert_eq!(vs(7).position, Some(1));
+    let r7 = worked(7).expect("#7 is worked");
+    assert!(r7.outcome.is_some(), "eligible issue was executed");
+    assert!(agent.executed.borrow().contains(&7));
 
     fs::remove_dir_all(&repo).ok();
 }
