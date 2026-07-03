@@ -1159,6 +1159,56 @@ mod tests {
     }
 
     #[test]
+    fn only_extension_attribute_is_runid_git_issue_agent_live_in_data() {
+        // A fully-populated, subject-scoped envelope (git + issue + agent + emitter
+        // blocks all present) must still carry exactly ONE extension attribute at the
+        // top level — `runid` (ADR-0019 §3). The reserved blocks live inside `data`.
+        let mut state = run_state();
+        state.apply(RunEvent::Planning {
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+        });
+        let v = map(
+            RunEvent::PlanWritten {
+                number: 7,
+                open_steps: 3,
+                usage: UsageLite::default(),
+                steps: vec![("a".into(), "open".into())],
+            },
+            &state,
+        );
+        // The reserved blocks are inside `data`, not top-level.
+        assert!(v["data"].get("git").is_some(), "git in data: {v}");
+        assert!(v["data"].get("issue").is_some(), "issue in data: {v}");
+        assert!(v["data"].get("agent").is_some(), "agent in data: {v}");
+        assert!(v["data"].get("emitter").is_some(), "emitter in data: {v}");
+
+        // Top-level keys minus the CloudEvents core set must be exactly {runid}.
+        let core = [
+            "specversion",
+            "type",
+            "source",
+            "subject",
+            "id",
+            "time",
+            "datacontenttype",
+            "data",
+        ];
+        let extensions: Vec<String> = v
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|k| !core.contains(&k.as_str()))
+            .cloned()
+            .collect();
+        assert_eq!(
+            extensions,
+            vec!["runid".to_string()],
+            "the only extension attribute must be runid: {extensions:?}"
+        );
+    }
+
+    #[test]
     fn notice_maps_level_and_message_without_subject() {
         let v = map(
             RunEvent::Notice {
