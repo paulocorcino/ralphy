@@ -22,6 +22,7 @@ mod guard;
 mod hook;
 mod init;
 mod install;
+mod issues;
 mod models;
 mod pricing;
 mod runlock;
@@ -86,6 +87,10 @@ enum Command {
     /// Agent-triage the `triage-agent` issues (ADR-0017): promote, consolidate,
     /// or bounce each, previewed before publishing (`--yes` for schedulers).
     Triage(triage::TriageArgs),
+    /// Read-only backlog query: list open issues as the runner judges them, or
+    /// `issues show <n>` for one issue's detail (ADR-0020). `--format json` /
+    /// `--fields` for machine output.
+    Issues(issues::IssuesArgs),
 }
 
 #[derive(Subcommand)]
@@ -327,6 +332,7 @@ fn main() -> Result<()> {
         Command::Install(args) => install::run(&args),
         Command::Init(args) => init::run(&args),
         Command::Triage(args) => triage::run(&args),
+        Command::Issues(args) => issues::issues_cmd(args),
     }
 }
 
