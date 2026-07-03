@@ -918,7 +918,7 @@ mod tests {
     fn codex_honours_max_minutes_per_issue() {
         assert_eq!(
             CodexAgent::new(None, PathBuf::from("/run")).max_minutes_per_issue,
-            90
+            ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
         );
         let a = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
         assert_eq!(a.max_minutes_per_issue, 120);

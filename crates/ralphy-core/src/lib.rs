@@ -9,9 +9,21 @@ use std::time::Duration;
 
 /// Default per-issue wall-clock budget in minutes, used when neither the
 /// `--max-minutes-per-issue` flag nor a persisted per-agent settings default
-/// is set. The single source of truth for every adapter's default — keep
-/// adapter `Default` impls pointing here rather than re-spelling a literal.
-pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 90;
+/// is set. `0` means **no per-issue cap** — the default is unbounded, and an
+/// issue is bounded only by the run-level deadline (`--deadline-hours`) if one
+/// is set. Set a positive value in settings.json (`claude.max_minutes_per_issue`)
+/// or via the flag to opt into a cap. The single source of truth for every
+/// adapter's default — keep adapter `Default` impls pointing here rather than
+/// re-spelling a literal.
+pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 0;
+
+/// The finite window the runner-enforced verify gate (ADR-0011) borrows when the
+/// per-issue budget is disabled (`max_minutes_per_issue == 0`). The gate normally
+/// inherits the issue's remaining time budget, but a disabled cap must not collapse
+/// it to a 0s timeout — so verify falls back to this bounded window instead. Large
+/// enough that a real verify command has room to run, finite so the timeout stays
+/// well-defined.
+pub const VERIFY_GATE_FALLBACK_MINUTES: u64 = 90;
 
 /// The horizon an adapter substitutes for the per-issue deadline when the budget
 /// is disabled (`max_minutes_per_issue == 0`): far enough out to never fire in a

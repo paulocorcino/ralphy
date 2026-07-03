@@ -65,9 +65,30 @@ fn local_ip() -> String {
         .unwrap_or_else(|_| "0.0.0.0".to_string())
 }
 
-/// Mint a fresh per-event ULID (the envelope `id`: the dedup + sort key).
+std::thread_local! {
+    /// A per-thread monotonic ULID generator for the envelope `id`. The contract
+    /// (docs/events.md) tells consumers to "order by `id`" because `time` is only
+    /// second-resolution — but plain `Ulid::new()` draws fresh random bits each call,
+    /// so two ids minted in the same millisecond would sort by randomness, shuffling
+    /// a same-ms lifecycle burst (`issue.started` → `planning` → `executing`). A
+    /// monotonic generator increments the random component within a millisecond, so
+    /// ids stay emission-ordered. All `id` minting happens on the single sender
+    /// thread, so a thread-local generator is exactly the right sequence.
+    static ID_GEN: std::cell::RefCell<ulid::Generator> =
+        std::cell::RefCell::new(ulid::Generator::new());
+}
+
+/// Mint a fresh per-event ULID (the envelope `id`: the dedup + sort key), monotonic
+/// within a millisecond so same-ms events sort by emission order. Falls back to a
+/// plain ULID on the (practically impossible) same-ms overflow.
 pub fn new_id() -> String {
-    ulid::Ulid::new().to_string()
+    ID_GEN
+        .with(|g| {
+            g.borrow_mut()
+                .generate()
+                .unwrap_or_else(|_| ulid::Ulid::new())
+        })
+        .to_string()
 }
 
 /// Mint the process `runid` ULID (the run-correlation key), once at process start.
@@ -117,12 +138,25 @@ mod tests {
     }
 
     #[test]
-    fn ids_differ_and_sort_by_time() {
+    fn ids_are_monotonic_even_within_a_millisecond() {
+        // No sleep: a burst of ids minted back-to-back (very likely within one
+        // millisecond) must still differ and sort by emission order — the property
+        // the "order by id" contract depends on. A plain `Ulid::new()` burst would
+        // fail this (random bits, not monotonic).
+        let ids: Vec<String> = (0..50).map(|_| new_id()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort();
+        assert_eq!(
+            ids, sorted,
+            "ids must already be in ascending (emission) order"
+        );
+        // All distinct.
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "ids must be unique");
+        // And still sort across a millisecond boundary.
         let a = new_id();
-        // A short gap guarantees a later millisecond so the ULIDs sort by time.
         std::thread::sleep(Duration::from_millis(2));
         let b = new_id();
-        assert_ne!(a, b, "two ids must differ");
         assert!(a < b, "later id must sort after earlier: {a} !< {b}");
     }
 }

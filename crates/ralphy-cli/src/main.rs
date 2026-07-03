@@ -195,8 +195,9 @@ struct RunArgs {
     default_exec_model: Option<String>,
 
     /// Per-issue wall-clock budget (minutes) before the session is reclaimed
-    /// (default: 90, or `claude.max_minutes_per_issue` in settings.json). `0`
-    /// disables the cap — the issue is then bounded only by `--deadline-hours`.
+    /// (default: unbounded, or `claude.max_minutes_per_issue` in settings.json).
+    /// `0` (the default) disables the cap — the issue is then bounded only by
+    /// `--deadline-hours`. Set a positive value to opt into a per-issue cap.
     #[arg(long)]
     max_minutes_per_issue: Option<u64>,
 
@@ -501,6 +502,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     let events_url = events_entry.as_ref().and_then(|e| e.url.clone());
     let events_token =
         events::config::effective_token(events_entry.as_ref().and_then(|e| e.token.as_deref()));
+    // Strip RALPHY_EVENTS_TOKEN from the process env now that the effective token is
+    // captured in `events_token` (an owned String the sink transport keeps using):
+    // every child spawned later inherits this environment and none must see the
+    // sink's bearer token (ADR-0019). Done HERE — before init_tracing installs the
+    // layers and before any worker thread is spawned — so the `remove_var` runs
+    // single-threaded, with no concurrent `getenv` to race (edition 2021).
+    strip_events_token_from_env();
     let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
     let events_layer = event_sink_queue
         .as_ref()
@@ -735,14 +743,6 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // reiterating the single-threaded safety argument above.
     std::env::set_var("ANTHROPIC_API_KEY", "");
 
-    // Strip RALPHY_EVENTS_TOKEN from the process env now that the sink transport has
-    // captured the effective token (above): every child spawned from here on
-    // (adapters/agents) inherits this environment, and none must see the sink's
-    // bearer token (ADR-0019). One process-wide scrub covers every current and
-    // future spawn site — there is no central `Command` choke point. Edition 2021,
-    // so `remove_var` is safe (single-threaded at this point; see the note above).
-    strip_events_token_from_env();
-
     // The run's global wall-clock deadline (if any), shared by the agent — which
     // clamps each issue's budget to it — and the queue's between-issue clock.
     let run_deadline = args
@@ -897,7 +897,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         // fall back to the default window so verify still has room to run.
         verify_timeout: std::time::Duration::from_secs(
             match resolved_claude.max_minutes_per_issue {
-                0 => ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
+                0 => ralphy_core::VERIFY_GATE_FALLBACK_MINUTES,
                 n => n,
             }
             .saturating_mul(60),

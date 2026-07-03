@@ -235,13 +235,15 @@ fn render_active_line(
             seg
         });
     }
+    // A `0` budget means the per-issue cap is disabled (unbounded, the default):
+    // show only the elapsed clock, never a misleading `/ 0:00` ceiling.
     let clock = match budget_min {
-        Some(b) => format!(
+        Some(b) if b > 0 => format!(
             "{} / {}",
             fmt_clock(elapsed),
             fmt_clock(Duration::from_secs(b * 60))
         ),
-        None => fmt_clock(elapsed),
+        _ => fmt_clock(elapsed),
     };
     parts.push(if opts.color {
         Style::new().dim().apply_to(clock).to_string()
@@ -1964,6 +1966,33 @@ mod tests {
         assert!(line.contains("sonnet / medium"), "model / effort: {line}");
         assert!(line.contains("12:43 / 45:00"), "elapsed / budget: {line}");
         assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
+    }
+
+    #[test]
+    fn render_active_line_executing_zero_budget_shows_elapsed_only() {
+        // A disabled per-issue cap (`0` = unbounded, the default) renders just the
+        // elapsed clock — never a misleading `/ 0:00` ceiling.
+        let opts = RenderOpts {
+            color: false,
+            emoji: true,
+        };
+        // No model/effort segment (its own ` / ` separator would mask the clock's).
+        let line = render_active_line(
+            Phase::Executing,
+            31,
+            "Console UI",
+            None,
+            None,
+            Duration::from_secs(12 * 60 + 43),
+            Some(0),
+            opts,
+        );
+        assert!(line.contains("12:43"), "elapsed clock: {line}");
+        assert!(
+            !line.contains('/'),
+            "no budget slash when the cap is disabled: {line}"
+        );
+        assert!(!line.contains("0:00"), "no zero ceiling: {line}");
     }
 
     #[test]
