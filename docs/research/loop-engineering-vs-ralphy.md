@@ -63,7 +63,7 @@ on the agent's self-report — but emits a loud warning, never a silent hole.
 | **Verification debt** | Independent evaluator | Deterministic verify gate (ADR-0011). |
 | **Comprehension rot** | Read a sample, explain it | Structural: **never pushes, never opens a PR** — you merge by hand, reading the per-issue verify artifacts and the morning diff. |
 | **Cognitive surrender** | Keep one door open | The whole design *is* one door — the human is the merge gate. Plus `--dry-run`, `stop-before`, stop-at-first-failure. |
-| **Token blowout** | Hard caps before shipping | **Time** caps, not token caps (no API spend to cap): `--max-minutes-per-issue` (default 90), `--deadline-hours`, stop-at-first-failure, bounded repair. Spend is *measured* (`usage.jsonl`), not budgeted. |
+| **Token blowout** | Hard caps before shipping | **Time** caps, not token caps (no API spend to cap): `--max-minutes-per-issue` (default unbounded; opt in per issue), `--deadline-hours`, stop-at-first-failure, bounded repair. Spend is *measured* (`usage.jsonl`), not budgeted. |
 
 ## The five anti-patterns
 
