@@ -674,15 +674,10 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // the label, so the cut never applies there. Emitted so the pending bar can mark
     // the boundary up front (the run won't touch that issue or anything after it).
     // Mirrors the runner's gate in runner.rs.
-    let stop_before = if !forced_issues.is_empty() {
-        0
-    } else {
-        queue
-            .iter()
-            .find(|i| i.labels.iter().any(|l| l == ralphy_core::STOP_BEFORE_LABEL))
-            .map(|i| i.number)
-            .unwrap_or(0)
-    };
+    // The CLI shares the runner's exact predicate (`first_stop_before`) so the
+    // boundary marker on the pending bar and the runner's own gate can never
+    // disagree; `0` is the "no stop-before" sentinel the event decoder expects.
+    let stop_before = ralphy_core::first_stop_before(&queue, &forced_issues).unwrap_or(0);
     // message consumed by the telegram notifier / presenter — keep stable
     info!(
         count = queue.len(),
