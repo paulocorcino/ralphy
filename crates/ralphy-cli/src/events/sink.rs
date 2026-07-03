@@ -170,3 +170,119 @@ pub fn try_start_sink<T: EventSink + Send + 'static>(
         join: Some(join),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runstate::{RunEvent, UsageLite};
+    use serde_json::{json, Value};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// A test [`EventCtx`] with a stub emitter carrying a known `pid`.
+    fn test_ctx() -> EventCtx {
+        EventCtx {
+            source: "ralphy/o/r".to_string(),
+            runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
+            emitter: json!({ "version": "0.0.0", "pid": 4242 }),
+        }
+    }
+
+    /// Read one HTTP request (request line + headers + Content-Length body) off a
+    /// stream, returning the raw bytes. Loops until the declared body is fully read
+    /// so a fragmented POST is still captured whole.
+    fn read_http_request(stream: &mut std::net::TcpStream) -> Vec<u8> {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            // Once the headers are complete, stop as soon as the declared body is in.
+            if let Some(headers_end) = find_subslice(&buf, b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&buf[..headers_end]).to_lowercase();
+                let content_len = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                let body_start = headers_end + 4;
+                if buf.len() >= body_start + content_len {
+                    break;
+                }
+            }
+            let n = stream.read(&mut chunk).expect("read request");
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+        }
+        buf
+    }
+
+    fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack.windows(needle.len()).position(|w| w == needle)
+    }
+
+    #[test]
+    fn spine_pushed_event_arrives_as_cloudevents_post() {
+        // A recording server on an ephemeral port: accept one connection, read the
+        // request, reply 200, and hand the raw request back over a channel.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let request = read_http_request(&mut stream);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .expect("reply");
+            stream.flush().ok();
+            tx.send(request).expect("send request");
+        });
+
+        let transport =
+            super::super::client::UreqEventTransport::new(format!("http://127.0.0.1:{port}/"), Some("tok".to_string()));
+        let queue = new_queue();
+        queue.push(RunEvent::IssueClosed {
+            number: 7,
+            tokens: 42,
+            usage: UsageLite {
+                input: 1,
+                cache_read: 2,
+                cache_creation: 3,
+                output: 4,
+                model: Some("claude-sonnet-4".into()),
+            },
+        });
+        // shutdown already set: the worker drains once, POSTs, and returns inline.
+        let shutdown = Arc::new(AtomicBool::new(true));
+        run_sender(transport, test_ctx(), queue, shutdown);
+
+        let raw = rx.recv().expect("recorded request");
+        server.join().ok();
+
+        // Split head from body.
+        let headers_end = find_subslice(&raw, b"\r\n\r\n").expect("headers end");
+        let head = String::from_utf8_lossy(&raw[..headers_end]).to_string();
+        let head_lc = head.to_lowercase();
+        let body = &raw[headers_end + 4..];
+
+        // Request line + headers.
+        assert!(head.starts_with("POST "), "not a POST: {head}");
+        assert!(
+            head_lc.contains("content-type: application/cloudevents+json"),
+            "missing/other content-type: {head}"
+        );
+        assert!(
+            head_lc.contains("authorization: bearer tok"),
+            "missing bearer auth: {head}"
+        );
+
+        // The JSON envelope body.
+        let v: Value = serde_json::from_slice(body).expect("json body");
+        assert_eq!(v["specversion"], "1.0");
+        assert_eq!(v["type"], "dev.ralphy.issue.closed");
+        assert_eq!(v["source"], "ralphy/o/r");
+        assert_eq!(v["subject"], "issue/7");
+        assert!(v["runid"].as_str().is_some_and(|s| !s.is_empty()), "runid: {v}");
+        assert_eq!(v["data"]["emitter"]["pid"], 4242);
+    }
+}
