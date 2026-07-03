@@ -828,6 +828,7 @@ mod tests {
             number: 3,
             open_steps: 0,
             usage: UsageLite::default(),
+            steps: vec![],
         });
         state.apply(RunEvent::NeedsSplit { number: 3 });
         let card = render_card(&state, 0);

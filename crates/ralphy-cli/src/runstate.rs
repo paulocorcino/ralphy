@@ -112,10 +112,13 @@ pub enum RunEvent {
     },
     /// A plan was written; `open_steps == 0` means the plan is infeasible. The
     /// `usage` is the planning phase's token consumption for the inline meter.
+    /// `steps` is the full `(text, status)` checkbox list parsed off the runner's
+    /// `steps_json` field, carried onto `plan.written.data.steps` (#96).
     PlanWritten {
         number: u64,
         open_steps: u64,
         usage: UsageLite,
+        steps: Vec<(String, String)>,
     },
     /// Execution started for the active issue. The adapter never learns the issue
     /// number, so `number` is `0` here and resolves to the active issue.
@@ -197,6 +200,13 @@ pub enum RunEvent {
         out: u64,
         duration_s: u64,
     },
+    /// The raw `plan.md` snapshot at the plan-write point (#96), mapped to
+    /// `dev.ralphy.plan.opened`. Issue-scoped; carries only the number + raw
+    /// markdown, so it keeps `RunEvent` `PartialEq` (no new `Eq`/hash requirement).
+    PlanOpened { number: u64, plan_md: String },
+    /// The raw `plan.md` snapshot captured at the issue close, before the next
+    /// issue's `plan()` overwrites it (#96), mapped to `dev.ralphy.plan.closed`.
+    PlanClosed { number: u64, plan_md: String },
 }
 
 /// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
@@ -521,6 +531,9 @@ impl RunState {
             // The run-boundary end carries no per-issue status; the fold infers the
             // boundary from the Layer lifecycle, so it is a no-op here.
             RunEvent::RunFinished { .. } => {}
+            // The raw plan snapshots carry no per-issue status change (the sink
+            // resets its plan-step poll snapshot on `PlanWritten`, not these).
+            RunEvent::PlanOpened { .. } | RunEvent::PlanClosed { .. } => {}
         }
     }
 
@@ -642,6 +655,11 @@ pub struct EventFields {
     pub issues_total: Option<u64>,
     /// The run's wall-clock seconds on a `run finished` event.
     pub duration_s: Option<u64>,
+    /// The serialized `[{text,status}]` steps on a `plan written` event (#96): the
+    /// JSON array string the runner emits; parsed back into `PlanWritten.steps`.
+    pub steps_json: Option<String>,
+    /// The raw `plan.md` markdown on a `plan opened`/`plan closed` event (#96).
+    pub plan_md: Option<String>,
 }
 
 impl Default for EventFields {
@@ -680,6 +698,8 @@ impl Default for EventFields {
             issues_skipped: None,
             issues_total: None,
             duration_s: None,
+            steps_json: None,
+            plan_md: None,
         }
     }
 }
@@ -734,6 +754,8 @@ impl Visit for EventFields {
             "plan_agent" => self.plan_agent = Some(value.to_string()),
             "branch_mode" => self.branch_mode = Some(value.to_string()),
             "base" => self.base = Some(value.to_string()),
+            "steps_json" => self.steps_json = Some(value.to_string()),
+            "plan_md" => self.plan_md = Some(value.to_string()),
             _ => {}
         }
     }
@@ -769,6 +791,10 @@ impl Visit for EventFields {
             "plan_agent" => self.plan_agent = Some(rendered),
             "branch_mode" => self.branch_mode = Some(rendered),
             "base" => self.base = Some(rendered),
+            // The `%`-formatted (Display) steps JSON / raw plan markdown arrive here
+            // as the raw string (no quote stripping — plain strings, not Debug forms).
+            "steps_json" => self.steps_json = Some(rendered),
+            "plan_md" => self.plan_md = Some(rendered),
             _ => {}
         }
     }
@@ -847,6 +873,16 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             open_steps: fields.open_steps.unwrap_or(0),
             usage: usage_from(fields),
+            steps: parse_steps_json(fields.steps_json.as_deref()),
+        }),
+        // The raw plan snapshots (#96): issue-scoped, carrying the complete `plan.md`.
+        "plan opened" => Some(RunEvent::PlanOpened {
+            number,
+            plan_md: fields.plan_md.clone().unwrap_or_default(),
+        }),
+        "plan closed" => Some(RunEvent::PlanClosed {
+            number,
+            plan_md: fields.plan_md.clone().unwrap_or_default(),
         }),
         // The adapter's execution events carry no issue number; the fold applies
         // this to the active issue.
@@ -970,6 +1006,25 @@ fn parse_issues_snapshot(raw: Option<&str>) -> serde_json::Value {
         .unwrap_or(serde_json::Value::Null)
 }
 
+/// Parse the runner's `steps_json` field (`[{text,status}]`) into the typed
+/// `(text, status)` list on `PlanWritten` (#96). Empty (an absent field or a parse
+/// failure) so a legacy `plan written` with no steps still decodes cleanly.
+fn parse_steps_json(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(s) = raw else {
+        return Vec::new();
+    };
+    let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(s) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|e| {
+            let text = e.get("text")?.as_str()?.to_string();
+            let status = e.get("status")?.as_str()?.to_string();
+            Some((text, status))
+        })
+        .collect()
+}
+
 /// Parse the `queue built` `order` field (`#30 -> #31 -> #32`) into issue numbers.
 fn parse_order(order: Option<&str>) -> Vec<u64> {
     let Some(s) = order else {
@@ -1032,6 +1087,7 @@ mod tests {
                 number: 1,
                 open_steps: 3,
                 usage: UsageLite::default(),
+                steps: vec![],
             },
             // The execution event carries no number; it must land on the active issue.
             RunEvent::Executing {
@@ -1053,6 +1109,7 @@ mod tests {
                 number: 2,
                 open_steps: 2,
                 usage: UsageLite::default(),
+                steps: vec![],
             },
             RunEvent::Executing {
                 number: 0,
@@ -1087,6 +1144,7 @@ mod tests {
             number: 5,
             open_steps: 0,
             usage: UsageLite::default(),
+            steps: vec![],
         });
         assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
     }
@@ -1104,6 +1162,7 @@ mod tests {
             number: 3,
             open_steps: 0,
             usage: UsageLite::default(),
+            steps: vec![],
         });
         assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
         state.apply(RunEvent::NeedsSplit { number: 3 });
@@ -1305,6 +1364,9 @@ mod tests {
                 cw: Some(8_100),
                 out: Some(3_200),
                 model: Some("claude-opus-4".into()),
+                steps_json: Some(
+                    r#"[{"text":"a","status":"open"},{"text":"b","status":"checked"}]"#.into(),
+                ),
                 ..Default::default()
             }),
             Some(RunEvent::PlanWritten {
@@ -1317,6 +1379,10 @@ mod tests {
                     output: 3_200,
                     model: Some("claude-opus-4".into()),
                 },
+                steps: vec![
+                    ("a".into(), "open".into()),
+                    ("b".into(), "checked".into()),
+                ],
             })
         );
         // The adapter's planning event seeds the planning spinner's model/effort.
@@ -1606,6 +1672,64 @@ mod tests {
                 duration_s: 412,
             })
         );
+    }
+
+    #[test]
+    fn decoder_maps_plan_snapshot_events_and_apply_is_noop() {
+        // `plan opened`/`plan closed` decode into the raw-snapshot variants carrying
+        // the plan_md field (arriving via record_str here).
+        assert_eq!(
+            decode(EventFields {
+                message: "plan opened".into(),
+                number: Some(7),
+                plan_md: Some("# Plan\n## Steps\n- [ ] a\n".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::PlanOpened {
+                number: 7,
+                plan_md: "# Plan\n## Steps\n- [ ] a\n".into(),
+            })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "plan closed".into(),
+                number: Some(7),
+                plan_md: Some("# Plan\n- [x] a\n".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::PlanClosed {
+                number: 7,
+                plan_md: "# Plan\n- [x] a\n".into(),
+            })
+        );
+        // Folding either snapshot is a no-op on the card model.
+        let mut before = RunState::new("t", 1);
+        before.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "a".into(),
+        });
+        let mut after = before.clone();
+        after.apply(RunEvent::PlanOpened {
+            number: 7,
+            plan_md: "x".into(),
+        });
+        after.apply(RunEvent::PlanClosed {
+            number: 7,
+            plan_md: "y".into(),
+        });
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn parse_steps_json_maps_array_and_tolerates_absence() {
+        assert_eq!(
+            parse_steps_json(Some(
+                r#"[{"text":"a","status":"open"},{"text":"b","status":"checked"}]"#
+            )),
+            vec![("a".into(), "open".into()), ("b".into(), "checked".into())]
+        );
+        assert!(parse_steps_json(None).is_empty());
+        assert!(parse_steps_json(Some("not json")).is_empty());
     }
 
     #[test]

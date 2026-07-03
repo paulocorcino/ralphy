@@ -229,13 +229,27 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             number,
             open_steps,
             usage,
-        } => Some(envelope(
-            "dev.ralphy.plan.written",
-            Some(&subject_for(*number)),
-            ctx,
-            state,
-            json!({ "number": number, "open_steps": open_steps, "usage": usage_json(usage) }),
-        )),
+            steps,
+        } => {
+            // The parsed checkbox steps as `[{text,status}]` (#96) — sourced from the
+            // runner's `steps_json`, so the mapper stays pure (no file I/O).
+            let steps: Vec<Value> = steps
+                .iter()
+                .map(|(text, status)| json!({ "text": text, "status": status }))
+                .collect();
+            Some(envelope(
+                "dev.ralphy.plan.written",
+                Some(&subject_for(*number)),
+                ctx,
+                state,
+                json!({
+                    "number": number,
+                    "open_steps": open_steps,
+                    "usage": usage_json(usage),
+                    "steps": steps,
+                }),
+            ))
+        }
         RunEvent::Executing {
             number,
             budget_min,
@@ -427,6 +441,22 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 }),
             ))
         }
+        // The raw plan snapshots (#96): issue-scoped, carrying the complete `plan.md`
+        // under `data.plan_md`. The reserved `issue` block rides via the subject.
+        RunEvent::PlanOpened { number, plan_md } => Some(envelope(
+            "dev.ralphy.plan.opened",
+            Some(&subject_for(*number)),
+            ctx,
+            state,
+            json!({ "number": number, "plan_md": plan_md }),
+        )),
+        RunEvent::PlanClosed { number, plan_md } => Some(envelope(
+            "dev.ralphy.plan.closed",
+            Some(&subject_for(*number)),
+            ctx,
+            state,
+            json!({ "number": number, "plan_md": plan_md }),
+        )),
     }
 }
 
@@ -588,6 +618,7 @@ mod tests {
                 number: 7,
                 open_steps: 3,
                 usage: UsageLite::default(),
+                steps: vec![],
             },
             &run_state(),
         );
@@ -791,13 +822,55 @@ mod tests {
                     input: 10,
                     ..Default::default()
                 },
+                steps: vec![
+                    ("do a thing".into(), "open".into()),
+                    ("do another".into(), "checked".into()),
+                ],
             },
             &RunState::new("t", 1),
         );
         assert_eq!(v["type"], "dev.ralphy.plan.written");
         assert_eq!(v["subject"], "issue/7");
         assert_eq!(v["data"]["open_steps"], 4);
+        // The parsed checkbox steps ride `data.steps` (#96).
+        assert_eq!(
+            v["data"]["steps"],
+            json!([
+                { "text": "do a thing", "status": "open" },
+                { "text": "do another", "status": "checked" },
+            ])
+        );
         assert_eq!(v["data"]["usage"]["up"], 10);
+    }
+
+    #[test]
+    fn plan_opened_and_closed_carry_raw_plan_md_subject_and_issue_block() {
+        let raw = "# Plan for #7\n\n## Steps\n- [ ] do a thing\n";
+        let opened = map(
+            RunEvent::PlanOpened {
+                number: 7,
+                plan_md: raw.into(),
+            },
+            &run_state(),
+        );
+        assert_eq!(opened["type"], "dev.ralphy.plan.opened");
+        assert_eq!(opened["subject"], "issue/7");
+        assert_eq!(opened["data"]["plan_md"], raw);
+        // The subject-scoped issue block rides along.
+        assert_eq!(opened["data"]["issue"]["number"], 7);
+        assert_eq!(opened["data"]["issue"]["title"], "hello");
+
+        let closed = map(
+            RunEvent::PlanClosed {
+                number: 7,
+                plan_md: raw.into(),
+            },
+            &run_state(),
+        );
+        assert_eq!(closed["type"], "dev.ralphy.plan.closed");
+        assert_eq!(closed["subject"], "issue/7");
+        assert_eq!(closed["data"]["plan_md"], raw);
+        assert_eq!(closed["data"]["issue"]["number"], 7);
     }
 
     #[test]
