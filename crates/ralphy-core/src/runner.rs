@@ -682,6 +682,39 @@ fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyP
     }
 }
 
+/// Parse a plan's checkbox lines into `(text, status)` pairs (#96): a `- [ ]` line
+/// is `open`, `- [x]`/`- [X]` is `checked`, `- [!]` is `noticed`. `text` is the raw
+/// step text after the marker, trimmed. Non-checkbox lines are ignored. Used to
+/// build the `steps_json` field carried on `plan written` (the CloudEvents sink maps
+/// it to `plan.written.data.steps`), keeping the envelope mapper free of file I/O.
+pub(crate) fn parse_plan_steps(md: &str) -> Vec<(String, &'static str)> {
+    md.lines()
+        .filter_map(|line| {
+            let t = line.trim_start();
+            let (status, rest) = if let Some(r) = t.strip_prefix("- [ ]") {
+                ("open", r)
+            } else if let Some(r) = t.strip_prefix("- [x]").or_else(|| t.strip_prefix("- [X]")) {
+                ("checked", r)
+            } else if let Some(r) = t.strip_prefix("- [!]") {
+                ("noticed", r)
+            } else {
+                return None;
+            };
+            Some((rest.trim().to_string(), status))
+        })
+        .collect()
+}
+
+/// Serialize the plan's checkbox steps to the `steps_json` wire string (`[{text,
+/// status}]`) carried on `plan written` (#96); empty string on a serialize failure.
+fn plan_steps_json(plan_md: &str) -> String {
+    let steps: Vec<serde_json::Value> = parse_plan_steps(plan_md)
+        .into_iter()
+        .map(|(text, status)| serde_json::json!({ "text": text, "status": status }))
+        .collect();
+    serde_json::to_string(&steps).unwrap_or_default()
+}
+
 /// What the verify gate decided for a `Done` issue: proceed to the close,
 /// leave it open after a spent repair budget, or — with `require_verify_gate`
 /// and no gate resolved — park it for a human (ADR-0015).
@@ -1095,6 +1128,12 @@ fn plan_phase(cx: &IssueCtx, issue: &Issue, ledger: &mut RunLedger) -> Result<Pl
         }
         // Otherwise loop: re-plan after the reset window.
     };
+    // Read the on-disk plan once so the CloudEvents sink can carry the plan's steps
+    // and the raw snapshot without any file I/O in the envelope mapper (#96):
+    // `steps_json` rides `plan written` (→ `plan.written.data.steps`), and the raw
+    // markdown rides a stable `plan opened` event (→ `dev.ralphy.plan.opened`).
+    let plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
+    let steps_json = plan_steps_json(&plan_md);
     // consumed by the telegram notifier / presenter — keep stable
     info!(
         number = issue.number,
@@ -1104,8 +1143,12 @@ fn plan_phase(cx: &IssueCtx, issue: &Issue, ledger: &mut RunLedger) -> Result<Pl
         cw = plan.usage.cache_creation,
         out = plan.usage.output,
         model = plan.usage.model.as_deref().unwrap_or(""),
+        steps_json = %steps_json,
         "plan written"
     );
+    // The raw plan snapshot at the write point (issue-scoped); the sink maps it to
+    // `dev.ralphy.plan.opened`. Keep the message stable.
+    info!(number = issue.number, plan_md = %plan_md, "plan opened");
 
     // Record the plan phase's token usage (ADR-0008 D6). Written before the
     // feasibility branch so even an infeasible plan's planning cost is on the
@@ -1585,6 +1628,9 @@ fn close_and_record(
     // dependent issues' planners) inherit what this session learned. A
     // missing or empty ledger/handoff is a graceful no-op.
     if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
+        // Capture the raw plan at close (before the next issue's `plan()` overwrites
+        // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
+        info!(number = issue.number, plan_md = %plan_md, "plan closed");
         let verdicts = acceptance::parse_ledger(&plan_md);
         if !verdicts.is_empty() {
             cx.tracker
@@ -2065,6 +2111,31 @@ mod tests {
         assert_eq!(first_stop_before(&queue, &[2, 3]), None);
         // A queue with no stop-before yields none.
         assert_eq!(first_stop_before(&[labeled(1, &[])], &[]), None);
+    }
+
+    #[test]
+    fn parse_plan_steps_maps_the_three_markers() {
+        let md = "# Plan\n\n## Steps\n- [ ] open one\n- [x] done two\n- [!] noticed three\n\
+                  - not a step\nprose line\n  - [X] indented checked\n";
+        assert_eq!(
+            parse_plan_steps(md),
+            vec![
+                ("open one".to_string(), "open"),
+                ("done two".to_string(), "checked"),
+                ("noticed three".to_string(), "noticed"),
+                ("indented checked".to_string(), "checked"),
+            ]
+        );
+        // The serialized wire form parses back to a JSON array of {text,status}.
+        let json = plan_steps_json("- [ ] a\n- [x] b\n");
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed,
+            serde_json::json!([
+                {"text": "a", "status": "open"},
+                {"text": "b", "status": "checked"},
+            ])
+        );
     }
 
     #[test]

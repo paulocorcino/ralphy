@@ -695,6 +695,105 @@ fn works_issues_in_order_and_closes_each_green() {
     fs::remove_dir_all(&repo).ok();
 }
 
+/// The event fields a capture cares about (#96): the message plus the two raw plan
+/// snapshots and the serialized steps carried on the plan-lifecycle emissions.
+#[derive(Default)]
+struct CapturedFields {
+    message: String,
+    plan_md: Option<String>,
+    steps_json: Option<String>,
+}
+
+impl tracing::field::Visit for CapturedFields {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        // `%plan_md`/`%steps_json` (Display) and the event message all arrive here.
+        let rendered = format!("{value:?}");
+        match field.name() {
+            "message" => self.message = rendered,
+            "plan_md" => self.plan_md = Some(rendered),
+            "steps_json" => self.steps_json = Some(rendered),
+            _ => {}
+        }
+    }
+}
+
+/// A minimal thread-local `tracing::Subscriber` that records every event's fields —
+/// enough to assert the runner emits the plan-lifecycle events (#96) without pulling
+/// in `tracing-subscriber` as a dev-dependency.
+struct CaptureSubscriber(std::sync::Arc<std::sync::Mutex<Vec<CapturedFields>>>);
+
+impl tracing::Subscriber for CaptureSubscriber {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut f = CapturedFields::default();
+        event.record(&mut f);
+        self.0.lock().unwrap().push(f);
+    }
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+#[test]
+fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
+    // A single green issue exercises the plan-write point (plan written + plan
+    // opened) and the close read (plan closed). Capture the run's tracing stream and
+    // assert the three plan-lifecycle emissions carry their #96 fields.
+    let repo = init_repo("plan-events");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sub = CaptureSubscriber(captured.clone());
+    let report = tracing::subscriber::with_default(sub, || {
+        run_queue(
+            &cfg(&repo, "stamp-plan-events", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    })
+    .unwrap();
+    assert!(report.stop.is_none(), "a single green issue completes");
+
+    let events = captured.lock().unwrap();
+    let find = |msg: &str| events.iter().find(|f| f.message == msg);
+
+    // `plan written` now carries the serialized steps ([{text,status}]).
+    let written = find("plan written").expect("a plan written event");
+    let steps = written.steps_json.as_deref().expect("steps_json present");
+    assert!(
+        steps.contains("do a thing") && steps.contains("checked"),
+        "steps_json must carry the checked step: {steps}"
+    );
+
+    // `plan opened` carries the raw plan markdown at the write point.
+    let opened = find("plan opened").expect("a plan opened event");
+    assert!(
+        opened.plan_md.as_deref().is_some_and(|m| m.contains("## Steps")),
+        "plan opened must carry the raw plan_md: {:?}",
+        opened.plan_md
+    );
+
+    // `plan closed` carries the raw plan markdown at the close read.
+    let closed = find("plan closed").expect("a plan closed event");
+    assert!(
+        closed.plan_md.as_deref().is_some_and(|m| m.contains("## Steps")),
+        "plan closed must carry the raw plan_md: {:?}",
+        closed.plan_md
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
 #[test]
 fn first_non_green_stops_run_and_leaves_later_issues_untouched() {
     let repo = init_repo("stop");
