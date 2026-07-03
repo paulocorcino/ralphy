@@ -323,15 +323,19 @@ pub struct QueueConfig {
     /// Where commits land: a fresh `afk/run-*` branch (`New`) or the branch the
     /// repo is already on (`Current`, which ignores `base_branch`).
     pub branch_mode: BranchMode,
-    /// When set, the `stop-before` label on this specific issue is ignored and
-    /// the issue runs normally. Mirrors ps1's `$OnlyIssue -le 0` guard.
-    pub only_issue: Option<u64>,
+    /// Issues the operator named explicitly (`--only-issue N` → one entry;
+    /// `--issues 5,3,9` → the whole list, in order). The `stop-before` label on
+    /// any listed issue is ignored and it runs normally — the queue was already
+    /// filtered to this selection, so the operator clearly wants it. Empty means
+    /// no explicit selection (the ordinary label-built queue). Mirrors ps1's
+    /// `$OnlyIssue -le 0` guard, generalized to a set.
+    pub forced_issues: Vec<u64>,
     /// The human-return label set (ADR-0016): any of these on a queued issue
     /// outranks its queue label, so the issue is skipped with a recorded reason
     /// and the queue continues. Resolved by the CLI (via
     /// [`crate::github::resolve_human_return_labels`]) so the core stays
-    /// `gh`-free. Unlike `stop-before`, `only_issue` does NOT override these — a
-    /// human-return label may record someone else's state (ADR-0016).
+    /// `gh`-free. Unlike `stop-before`, `forced_issues` does NOT override these —
+    /// a human-return label may record someone else's state (ADR-0016).
     pub human_return_labels: Vec<String>,
     /// When true, a usage limit during the *plan* phase stops the run and reports
     /// the reset (the old behaviour). The default (`false`) waits for the reset
@@ -1645,9 +1649,12 @@ fn run_queue_with(
         }
 
         // Stop-before: a flow-control label that pauses the run before the tagged
-        // issue. `only_issue` overrides it (the queue was pre-filtered to that
-        // issue, so the operator explicitly wants it to run).
-        if cfg.only_issue.is_none() && issue.labels.iter().any(|l| l == STOP_BEFORE_LABEL) {
+        // issue. An explicitly named issue (`--only-issue`/`--issues`) overrides it
+        // — the queue was pre-filtered to that selection, so the operator clearly
+        // wants it to run.
+        if !cfg.forced_issues.contains(&issue.number)
+            && issue.labels.iter().any(|l| l == STOP_BEFORE_LABEL)
+        {
             // consumed by the telegram notifier / presenter — keep stable
             info!(
                 number = issue.number,
@@ -1661,7 +1668,7 @@ fn run_queue_with(
 
         // Human-return precedence (ADR-0016): a label that returns the issue to a
         // human outranks its queue label. Skip with a recorded reason and CONTINUE
-        // the queue (unlike stop-before, which halts). `only_issue` does NOT
+        // the queue (unlike stop-before, which halts). `forced_issues` does NOT
         // override this: the label may record someone else's state (a reporter
         // owing info, a parked verify gate) that a run flag must not steamroll.
         if let Some(label) = issue
@@ -2376,7 +2383,7 @@ mod tests {
             dry_run: false,
             stamp: stamp.into(),
             branch_mode: BranchMode::New,
-            only_issue: None,
+            forced_issues: Vec::new(),
             stop_on_limit_plan: false,
             stop_on_limit_exec: false,
             verify_fallback: None,

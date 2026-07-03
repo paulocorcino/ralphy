@@ -123,6 +123,15 @@ struct RunArgs {
     #[arg(long)]
     only_issue: Option<u64>,
 
+    /// Work exactly these issues, in the order given, ignoring queue labels:
+    /// `--issues 5,3,9`. Each number is fetched directly (no label filter, no
+    /// dependency re-ordering), so the run drains the list as a sequence. Like
+    /// `--only-issue`, a `stop-before` label on a listed issue is ignored;
+    /// unlike it, human-return labels (ADR-0016) are still respected. Mutually
+    /// exclusive with `--only-issue`.
+    #[arg(long, value_delimiter = ',', conflicts_with = "only_issue")]
+    issues: Vec<u64>,
+
     /// Queue label(s): an open issue carrying ANY of these is worked. Repeatable.
     /// When omitted, defaults to ["ready-for-agent", "AFK"] plus any label
     /// mapped from "ready-for-agent" in docs/agents/triage-labels.md.
@@ -525,44 +534,80 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // Held for the rest of run_cmd; Drop removes the file on every exit path.
     let _run_lock = runlock::acquire(&ws.run_lock_path())?;
 
-    // Build the queue: the whole queue by default, or just `--only-issue` when set
-    // (applied as a post-build filter, parity with the ps1 `$OnlyIssue`).
-    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
-    let mut queue = github::list_queue(&effective_labels, &repo_root)?;
-    if let Some(only) = args.only_issue {
-        queue.retain(|i| i.number == only);
-    }
-    // Order by dependency (Blocked-by edges + split-bundle children), ascending
-    // number as tie-break — the pending list shown to the user IS the sequence
-    // run_queue will work, and a dependency-consistent order lets one run drain
-    // a graph whose numbering disagrees with its edges.
-    //
-    // Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
-    // itself open (a partially-labelled chain) still orders the queue: edges are
-    // walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
-    // failure fall back to in-queue-only ordering rather than abort the run. Skip
-    // the extra call when ordering can't matter (0 or 1 issue).
-    let queue = if queue.len() > 1 {
-        match github::list_open_issues(&repo_root) {
-            Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
-            Err(e) => {
-                warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
-                ralphy_core::blocked::sort_queue(queue)
-            }
-        }
+    // The issues the operator named explicitly: `--issues 5,3,9` verbatim, or the
+    // single `--only-issue N` folded into a one-element list. Empty = the ordinary
+    // label-built queue. Handed to the core so `stop-before` is ignored on exactly
+    // these issues (parity with the ps1 `$OnlyIssue` guard, generalized to a set).
+    let forced_issues: Vec<u64> = if !args.issues.is_empty() {
+        args.issues.clone()
     } else {
-        ralphy_core::blocked::sort_queue(queue)
+        args.only_issue.into_iter().collect()
+    };
+
+    // Build the queue. Two paths:
+    //   `--issues`: an explicit, ordered selection — fetch each number directly
+    //     (label-agnostic, no dependency re-ordering) and run the list AS GIVEN, so
+    //     the run drains it as a sequence. This bypasses the label question entirely.
+    //   default: the label-built queue, optionally narrowed by `--only-issue`, then
+    //     ordered by dependency.
+    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
+    let queue = if !args.issues.is_empty() {
+        let mut selected = Vec::with_capacity(args.issues.len());
+        for number in &args.issues {
+            selected.push(github::fetch_issue(*number, &repo_root)?);
+        }
+        selected
+    } else {
+        let mut queue = github::list_queue(&effective_labels, &repo_root)?;
+        if let Some(only) = args.only_issue {
+            queue.retain(|i| i.number == only);
+        }
+        // Order by dependency (Blocked-by edges + split-bundle children), ascending
+        // number as tie-break — the pending list shown to the user IS the sequence
+        // run_queue will work, and a dependency-consistent order lets one run drain
+        // a graph whose numbering disagrees with its edges.
+        //
+        // Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
+        // itself open (a partially-labelled chain) still orders the queue: edges are
+        // walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
+        // failure fall back to in-queue-only ordering rather than abort the run. Skip
+        // the extra call when ordering can't matter (0 or 1 issue).
+        if queue.len() > 1 {
+            match github::list_open_issues(&repo_root) {
+                Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
+                Err(e) => {
+                    warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
+                    ralphy_core::blocked::sort_queue(queue)
+                }
+            }
+        } else {
+            ralphy_core::blocked::sort_queue(queue)
+        }
     };
 
     // Derive the run title once, before any on-screen line, so it can seed both the
     // console branding header and the Telegram card — the face then matches across
     // both surfaces and varies per run (a different queue → a different face).
-    let only_issue_title = args.only_issue.and(queue.first()).map(|i| i.title.clone());
+    // A single named issue (`--only-issue N`, or `--issues N` with one entry)
+    // titles the card with that issue's own title; a multi-issue list falls back
+    // to the "N issues" form.
+    let single_title = if forced_issues.len() == 1 {
+        queue.first().map(|i| i.title.clone())
+    } else {
+        None
+    };
+    // An explicit `--issues` selection isn't label-scoped, so don't tag the card
+    // with the (unused) default labels.
+    let title_labels: &[String] = if args.issues.is_empty() {
+        &effective_labels
+    } else {
+        &[]
+    };
     let title = telegram::notifier::derive_title(
         repo_name,
         queue.len(),
-        &effective_labels,
-        only_issue_title.as_deref(),
+        title_labels,
+        single_title.as_deref(),
         args.title.as_deref(),
     );
 
@@ -574,9 +619,19 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
 
     if queue.is_empty() {
-        let scope = match args.only_issue {
-            Some(n) => format!("issue #{n}"),
-            None => format!("labels [{}]", effective_labels.join(", ")),
+        let scope = if !args.issues.is_empty() {
+            let list = args
+                .issues
+                .iter()
+                .map(|n| format!("#{n}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("issues [{list}]")
+        } else {
+            match args.only_issue {
+                Some(n) => format!("issue #{n}"),
+                None => format!("labels [{}]", effective_labels.join(", ")),
+            }
         };
         // finalize before printing so the live region is cleared first (ADR-0006).
         presenter.finalize();
@@ -585,10 +640,11 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     }
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
     // Where the run will halt: the first issue carrying `stop-before` in the sorted
-    // order (0 = none). `--only-issue` overrides the label, so the cut never applies
-    // there. Emitted so the pending bar can mark the boundary up front (the run won't
-    // touch that issue or anything after it). Mirrors the runner's gate in runner.rs.
-    let stop_before = if args.only_issue.is_some() {
+    // order (0 = none). An explicit selection (`--only-issue`/`--issues`) overrides
+    // the label, so the cut never applies there. Emitted so the pending bar can mark
+    // the boundary up front (the run won't touch that issue or anything after it).
+    // Mirrors the runner's gate in runner.rs.
+    let stop_before = if !forced_issues.is_empty() {
         0
     } else {
         queue
@@ -757,7 +813,7 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         dry_run: args.dry_run,
         stamp,
         branch_mode,
-        only_issue: args.only_issue,
+        forced_issues,
         human_return_labels,
         // Per-phase limit stance, each derived from the agent serving that phase;
         // an explicit `--stop-on-limit` forces both (docs/adr/0009).

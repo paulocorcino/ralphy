@@ -678,6 +678,30 @@ pub fn issue_labels(number: u64, repo_root: &Path) -> Result<Vec<String>> {
     parse_issue_labels(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// Fetch a single issue by number with its labels, via
+/// `gh issue view <n> --json number,title,body,labels`. Label-agnostic on
+/// purpose: the caller (`--issues`) names an explicit, already-ordered selection
+/// and must not require the issue to carry a queue label. Reuses [`parse_issue`];
+/// comments are filled later per-issue by the runner, exactly as for a
+/// label-built queue.
+pub fn fetch_issue(number: u64, repo_root: &Path) -> Result<Issue> {
+    let out = gh_output(
+        &format!("gh issue view {number} --json number,title,body,labels"),
+        || {
+            let mut cmd = gh(repo_root);
+            cmd.args([
+                "issue",
+                "view",
+                &number.to_string(),
+                "--json",
+                "number,title,body,labels",
+            ]);
+            cmd
+        },
+    )?;
+    parse_issue(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Parse a `docs/agents/triage-labels.md` table row. Scans `doc` for
 /// `|`-delimited rows, strips backticks, trims each cell, and returns cell[2]
 /// when cell[1] == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.

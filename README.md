@@ -40,6 +40,10 @@ ralphy run --repo C:\Dev\foo --only-issue 13
 
 # 3) The overnight run: the whole queue, ascending order, with an 8-hour budget.
 ralphy run --repo C:\Dev\foo --deadline-hours 8
+
+# 4) Run an explicit set of issues, in the exact order given, ignoring queue
+#    labels and dependency ordering. Drains the list as a sequence.
+ralphy run --repo C:\Dev\foo --issues 5,3,9
 ```
 
 ```bash
@@ -47,11 +51,18 @@ ralphy run --repo C:\Dev\foo --deadline-hours 8
 ralphy run --repo ~/dev/foo --only-issue 13 --dry-run
 ralphy run --repo ~/dev/foo --only-issue 13
 ralphy run --repo ~/dev/foo --deadline-hours 8
+ralphy run --repo ~/dev/foo --issues 5,3,9
 ```
 
 `--repo` defaults to the current directory, so from inside the repo you can just run
 `ralphy run --only-issue 13`. Work the same setup up incrementally: `--dry-run` one
 issue, then one issue for real, and only then trust the unattended overnight queue.
+
+`--issues 5,3,9` is the manual override: it works exactly those issues, in the order
+listed, fetching each by number regardless of its labels and skipping the dependency
+sort — the run drains the list as a sequence. Like `--only-issue`, a `stop-before`
+label on a listed issue is ignored; unlike it, human-return labels (ADR-0016) are
+still respected. It is mutually exclusive with `--only-issue`.
 
 ## Prerequisites
 
@@ -111,7 +122,8 @@ An issue is in the queue if it carries **any** queue label. The defaults are
 **Human-return precedence** (ADR-0016): a label that returns an issue to a human —
 `ready-for-human`/`HITL`, `needs-info`, `needs-triage`, `wontfix`, or `triage-agent`
 — outranks any queue label. A queued issue that also carries one is **skipped with a
-visible reason** and the run continues; `--only-issue` does not override it.
+visible reason** and the run continues; neither `--only-issue` nor `--issues`
+overrides it.
 
 Two extra controls:
 

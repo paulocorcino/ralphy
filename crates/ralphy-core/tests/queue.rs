@@ -544,7 +544,7 @@ fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         dry_run,
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
-        only_issue: None,
+        forced_issues: Vec::new(),
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
         verify_fallback: None,
@@ -562,7 +562,25 @@ fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         dry_run: false,
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
-        only_issue: Some(only),
+        forced_issues: vec![only],
+        stop_on_limit_plan: false,
+        stop_on_limit_exec: false,
+        verify_fallback: None,
+        verify_timeout: Duration::from_secs(60),
+        require_verify_gate: false,
+        done_signal: "DONE_TOKEN".into(),
+        human_return_labels: default_human_return(),
+    }
+}
+
+fn cfg_forced(repo: &Path, stamp: &str, forced: Vec<u64>) -> QueueConfig {
+    QueueConfig {
+        repo_root: repo.to_path_buf(),
+        base_branch: "main".into(),
+        dry_run: false,
+        stamp: stamp.into(),
+        branch_mode: BranchMode::New,
+        forced_issues: forced,
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
         verify_fallback: None,
@@ -580,7 +598,7 @@ fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         dry_run: false,
         stamp: stamp.into(),
         branch_mode: BranchMode::Current,
-        only_issue: None,
+        forced_issues: Vec::new(),
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
         verify_fallback: None,
@@ -600,7 +618,7 @@ fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         dry_run: false,
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
-        only_issue: None,
+        forced_issues: Vec::new(),
         stop_on_limit_plan: true,
         stop_on_limit_exec: true,
         verify_fallback: None,
@@ -622,7 +640,7 @@ fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
         dry_run: false,
         stamp: stamp.into(),
         branch_mode: BranchMode::New,
-        only_issue: None,
+        forced_issues: Vec::new(),
         stop_on_limit_plan: false,
         stop_on_limit_exec: true,
         verify_fallback: None,
@@ -831,6 +849,38 @@ fn only_issue_ignores_stop_before() {
     assert!(
         report.stop.is_none(),
         "no stop when only_issue overrides stop-before"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn forced_issues_list_ignores_stop_before_across_the_list() {
+    let repo = init_repo("forced-list-stop-before");
+    // `--issues 1,2`: an explicit, ordered list. #2 carries `stop-before`, but both
+    // are named, so the run works the whole list in order without halting — the
+    // generalization of `--only-issue` to a set.
+    let queue = vec![issue(1), issue_labeled(2, &["stop-before"])];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg_forced(&repo, "stamp-forced-list", vec![1, 2]),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![1, 2],
+        "both listed issues run, in order, despite stop-before on #2"
+    );
+    assert!(
+        report.stop.is_none(),
+        "a listed issue's stop-before never halts a forced run"
     );
 
     fs::remove_dir_all(&repo).ok();
