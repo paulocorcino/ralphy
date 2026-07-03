@@ -13,9 +13,12 @@ per-event tests.
 ## Transport
 
 - `POST {events.url}` with `Content-Type: application/cloudevents+json`
-  (CloudEvents 1.0, structured mode), one event per request.
-- `Authorization: Bearer $RALPHY_EVENTS_TOKEN` when the env var is set. The
-  token authenticates the **emitter fleet**; `data.emitter.user` is self-declared
+  (CloudEvents 1.0, structured mode), one event per request. URL and token
+  are configured per repo in the global store (`~/.ralphy/events.toml`, via
+  `ralphy config set events.url` / `events.token`); the
+  `RALPHY_EVENTS_TOKEN` env var overrides the stored token for a run.
+- `Authorization: Bearer <token>` when a token is configured. The token
+  authenticates the **emitter**; `data.emitter.user` is self-declared
   (`git config`) and is attribution, not authentication — a platform wanting
   per-person trust should issue per-dev tokens and map token→person.
 - **Endpoint contract**: any `2xx` acknowledges the event (body ignored).

@@ -96,15 +96,24 @@ usage-limit sleeps (phase `sleeping`), so an hours-long ADR-0003 sleep is
 never mistaken for a dead run; `run.finished` is emitted only on clean
 termination — a crash or kill is *detected* by silence, never reported.
 
-### 5. Configuration: URL in settings, secret in the environment
+### 5. Configuration: global store, keyed per repo
 
-`events.url` joins `.ralphy/settings.json` (per-repo, gitignored, managed by
-`ralphy config set events.url …` — ADR-0010's schema tolerates the new key).
-The bearer token comes **only** from the `RALPHY_EVENTS_TOKEN` environment
-variable — never from a file, following the Telegram precedent of keeping
-credentials out of `settings.json`. Absent env sends unauthenticated (useful
-against a local dev endpoint); absent URL disables the sink entirely, and
-non-users pay nothing.
+`events.url` and `events.token` live together in a **global** store
+(`~/.ralphy/events.toml`), holding one entry per repo — the same
+global-but-repo-keyed shape the usage ledger already uses
+(`~/.ralphy/usage/<project-id>.jsonl`, ADR-0008) and the Telegram precedent
+of credentials in a global TOML. Nothing lands in `.ralphy/settings.json`:
+the scratch dir is where the **unattended coding agent works**, and a secret
+readable there is a secret one prompt-injected issue away from exfiltration.
+Two reinforcements follow: the sink reads the token at boot and Ralphy
+**strips** `RALPHY_EVENTS_TOKEN` from the environment of every child it
+spawns (adapters never see it), and the env var remains as a per-run override
+(CI, rotation) with precedence env > global entry > unauthenticated.
+
+The operator UX is unchanged: `ralphy config set events.url …` /
+`events.token …`, run inside a repo, write that repo's entry in the global
+store. An absent entry disables the sink entirely, and non-users pay
+nothing.
 
 ### 6. Depth: lifecycle, not firehose
 
