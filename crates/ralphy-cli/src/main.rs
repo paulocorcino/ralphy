@@ -736,6 +736,14 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // reiterating the single-threaded safety argument above.
     std::env::set_var("ANTHROPIC_API_KEY", "");
 
+    // Strip RALPHY_EVENTS_TOKEN from the process env now that the sink transport has
+    // captured the effective token (above): every child spawned from here on
+    // (adapters/agents) inherits this environment, and none must see the sink's
+    // bearer token (ADR-0019). One process-wide scrub covers every current and
+    // future spawn site — there is no central `Command` choke point. Edition 2021,
+    // so `remove_var` is safe (single-threaded at this point; see the note above).
+    strip_events_token_from_env();
+
     // The run's global wall-clock deadline (if any), shared by the agent — which
     // clamps each issue's budget to it — and the queue's between-issue clock.
     let run_deadline = args
@@ -1153,6 +1161,14 @@ fn resolve_plan_agent(plan_agent: Option<CliAgent>, agent: CliAgent) -> CliAgent
     plan_agent.unwrap_or(agent)
 }
 
+/// Remove `RALPHY_EVENTS_TOKEN` from the process environment so no spawned child
+/// (adapter/agent) inherits the sink's bearer token (ADR-0019). Called once at boot
+/// after the effective token is resolved and captured by the sink transport — the
+/// run keeps using it, children never see it. Mirrors the `ANTHROPIC_API_KEY` scrub.
+fn strip_events_token_from_env() {
+    std::env::remove_var(events::config::TOKEN_ENV);
+}
+
 /// Map a queue's [`StopReason`] to the `run.finished` `outcome` label (ADR-0019).
 /// `None` (the whole queue was worked) is `completed`; a usage-limit stop has no
 /// `outcome` value in the contract enum, so it collapses to `non_green` — a
@@ -1272,6 +1288,19 @@ fn init_tracing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strip_events_token_removes_env_var() {
+        // Guard the process-global env var against the other events-store tests.
+        let _g = events::config::ENV_LOCK.lock().unwrap();
+        std::env::set_var(events::config::TOKEN_ENV, "sekret");
+        assert!(std::env::var(events::config::TOKEN_ENV).is_ok());
+        strip_events_token_from_env();
+        assert!(
+            std::env::var(events::config::TOKEN_ENV).is_err(),
+            "token must be absent after strip"
+        );
+    }
 
     #[test]
     fn outcome_of_maps_every_stop_reason() {
