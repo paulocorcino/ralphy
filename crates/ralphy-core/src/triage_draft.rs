@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// One issue's triage verdict (ADR-0017 §2).
+/// One issue's triage verdict (ADR-0017 §2, ADR-0018 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriageVerdict {
@@ -21,6 +21,24 @@ pub enum TriageVerdict {
     /// Under-specified even with the thread: comment what is missing and swap
     /// `triage-agent` for the reporter-bounce label (`needs-info`).
     Bounce,
+    /// Accepted, but a *maintainer* owes a decision before any agent works it
+    /// (a business-rule or flow change, an ADR-shaped call, or a scope too
+    /// large for one executable spec). Post the decision-delivering comment and
+    /// swap `triage-agent` for `ready-for-human` (ADR-0018 §3). Human-first, not
+    /// reporter-owes-info: it never enters the queue on its own.
+    Escalate,
+}
+
+/// A follow-up issue an `escalate` verdict may propose (ADR-0018 §4). Machine-
+/// readable so the interactive create step can call the tracker directly rather
+/// than parsing title/body out of the comment prose. The drafted `body` carries
+/// any `Closes #<original>` line itself; issue creation is always human-confirmed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftIssue {
+    /// The proposed follow-up issue title.
+    pub title: String,
+    /// The proposed follow-up issue body (may carry a `Closes #<original>` line).
+    pub body: String,
 }
 
 /// One triaged issue: its number, the verdict, and the comment body the verdict
@@ -33,16 +51,23 @@ pub struct TriageItem {
     pub number: u64,
     /// The triage verdict.
     pub verdict: TriageVerdict,
-    /// The comment body: the consolidated spec (`consolidate`) or the
-    /// what-is-missing note (`bounce`). Absent/empty for `promote`.
+    /// The comment body: the consolidated spec (`consolidate`), the
+    /// what-is-missing note (`bounce`), or the decision-delivering diagnostic
+    /// (`escalate`). Absent/empty for `promote`.
     #[serde(default)]
     pub comment: Option<String>,
+    /// An optional follow-up issue an `escalate` verdict proposes (ADR-0018 §4).
+    /// `#[serde(default)]` keeps drafts without it backward-compatible; the
+    /// interactive create step (never `--yes`) previews and creates it.
+    #[serde(default)]
+    pub draft_issue: Option<DraftIssue>,
 }
 
 impl TriageItem {
     /// A verdict is well-formed when the arms that must speak carry a non-empty
-    /// comment: `consolidate` (the spec) and `bounce` (the missing-info note).
-    /// `promote` must NOT carry one. Returns the offending reason, or `None`.
+    /// comment: `consolidate` (the spec), `bounce` (the missing-info note), and
+    /// `escalate` (the decision-delivering diagnostic). `promote` must NOT carry
+    /// one. Returns the offending reason, or `None`.
     fn invalid_reason(&self) -> Option<String> {
         let has_comment = self
             .comment
@@ -58,6 +83,9 @@ impl TriageItem {
                 "#{}: bounce needs a what-is-missing comment",
                 self.number
             )),
+            TriageVerdict::Escalate if !has_comment => {
+                Some(format!("#{}: escalate needs a comment body", self.number))
+            }
             _ => None,
         }
     }
@@ -125,11 +153,13 @@ mod tests {
                     number: 1,
                     verdict: TriageVerdict::Promote,
                     comment: None,
+                    draft_issue: None,
                 },
                 TriageItem {
                     number: 2,
                     verdict: TriageVerdict::Bounce,
                     comment: Some("needs a repro".into()),
+                    draft_issue: None,
                 },
             ],
         };
@@ -140,8 +170,35 @@ mod tests {
 
     #[test]
     fn unknown_verdict_is_rejected() {
-        let json = r#"{ "items": [ { "number": 1, "verdict": "escalate" } ] }"#;
+        // `escalate` is now a real verdict (ADR-0018 §3); use a genuinely-unknown
+        // string so this still proves unknown verdicts error.
+        let json = r#"{ "items": [ { "number": 1, "verdict": "banish" } ] }"#;
         assert!(serde_json::from_str::<TriageDraft>(json).is_err());
+    }
+
+    #[test]
+    fn escalate_parses_validates_and_requires_comment() {
+        // A genuine escalate item parses, and validates once it carries a comment.
+        let json = r#"{ "number": 21, "verdict": "escalate", "comment": "A maintainer must decide the pricing-rule change; see ## Evidence." }"#;
+        let item: TriageItem = serde_json::from_str(json).expect("parse escalate");
+        assert_eq!(item.verdict, TriageVerdict::Escalate);
+        TriageDraft {
+            items: vec![item],
+        }
+        .validate()
+        .expect("escalate with a comment is valid");
+
+        // An escalate without a comment is rejected, and the reason names the issue.
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 21,
+                verdict: TriageVerdict::Escalate,
+                comment: None,
+                draft_issue: None,
+            }],
+        };
+        let err = draft.validate().expect_err("escalate needs a comment");
+        assert!(err.contains("#21"), "reason names the issue: {err}");
     }
 
     #[test]
@@ -151,6 +208,7 @@ mod tests {
                 number: 7,
                 verdict: TriageVerdict::Consolidate,
                 comment: None,
+                draft_issue: None,
             }],
         };
         let err = draft.validate().expect_err("consolidate needs a comment");
@@ -164,6 +222,7 @@ mod tests {
                 number: 9,
                 verdict: TriageVerdict::Bounce,
                 comment: Some("  ".into()),
+                draft_issue: None,
             }],
         };
         assert!(draft.validate().is_err(), "whitespace comment is empty");
@@ -178,6 +237,7 @@ mod tests {
                 number: 3,
                 verdict: TriageVerdict::Promote,
                 comment: Some("looks good".into()),
+                draft_issue: None,
             }],
         };
         assert!(draft.validate().is_ok());

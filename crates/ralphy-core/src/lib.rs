@@ -67,6 +67,6 @@ pub use runner::{
 };
 pub use settings::{Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
-pub use triage_draft::{TriageDraft, TriageItem, TriageVerdict};
+pub use triage_draft::{DraftIssue, TriageDraft, TriageItem, TriageVerdict};
 pub use types::{Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 pub use verify::{VerifyReport, VerifySpec};

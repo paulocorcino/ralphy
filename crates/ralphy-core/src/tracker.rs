@@ -52,6 +52,14 @@ pub trait IssueTracker {
         Ok(())
     }
 
+    /// Create a new issue and return its number (ADR-0018 §4): the
+    /// human-confirmed follow-up an `escalate` verdict proposes. Default no-op
+    /// returning `0` so non-`gh` implementations never create anything.
+    fn create_issue(&self, title: &str, body: &str, labels: &[String]) -> Result<u64> {
+        let _ = (title, body, labels);
+        Ok(0)
+    }
+
     /// Post-or-edit the single comment carrying `marker` (ADR-0017): the
     /// consolidated-spec comment `ralphy triage` maintains, idempotent by
     /// construction so re-triage edits its own comment rather than stacking a
@@ -153,6 +161,10 @@ impl IssueTracker for GhTracker {
 
     fn remove_label(&self, number: u64, label: &str) -> Result<()> {
         github::remove_label(number, label, &self.repo_root)
+    }
+
+    fn create_issue(&self, title: &str, body: &str, labels: &[String]) -> Result<u64> {
+        github::create_issue(&self.repo_root, title, body, labels, None)
     }
 
     fn upsert_marked_comment(&self, number: u64, marker: &str, body: &str) -> Result<()> {
