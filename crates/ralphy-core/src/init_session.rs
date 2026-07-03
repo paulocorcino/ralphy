@@ -223,10 +223,24 @@ mod tests {
             prompt.contains(".ralphy/triage-draft.json"),
             "out path named:\n{prompt}"
         );
-        // The charter must teach all three verdicts.
-        for verdict in ["promote", "consolidate", "bounce"] {
+        // The charter must teach all four verdicts (ADR-0018 §3 adds escalate).
+        for verdict in ["promote", "consolidate", "bounce", "escalate"] {
             assert!(prompt.contains(verdict), "{verdict} missing:\n{prompt}");
         }
+        // ADR-0018 §3–§4 escalate contract: the human-return label, the
+        // deliver-work stance, and the mechanical-close redirect rule must pin.
+        assert!(
+            prompt.contains("ready-for-human"),
+            "escalate human-return label missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("deliver work, not defer it"),
+            "escalate deliver-work contract phrase missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("Closes #<original>"),
+            "escalate Closes #<original> redirect rule missing:\n{prompt}"
+        );
         // ADR-0018 evidence gate: the three criteria, doubt-by-default stance,
         // the `## Evidence` section, the red-test requirement, and the
         // "problem not found at source" bounce guidance must all be pinned.
