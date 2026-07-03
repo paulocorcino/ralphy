@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use tracing::{warn, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use super::client::EventSink;
+use super::client::{EventSink, PostOutcome};
 use super::envelope::{runevent_to_cloudevent, EventCtx};
 use crate::runstate::{event_to_runevent, EventFields, IssueStatus, RunEvent, RunState, UsageLite};
 use crate::telegram::notifier::EventQueue;
@@ -38,6 +38,13 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 /// The heartbeat cadence (ADR-0019: ~30s, carried on the wire as `interval_s` so a
 /// consumer never hardcodes it).
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Total delivery attempts per event: one initial POST plus three retries
+/// (ADR-0019 / docs/events.md transport contract).
+const MAX_ATTEMPTS: u32 = 4;
+
+/// The first retry backoff; each subsequent retry doubles it (1s, 2s, 4s).
+const RETRY_BASE_BACKOFF: Duration = Duration::from_secs(1);
 
 /// The substring identifying the sink's own `tracing` target, so a drop `warn!`
 /// from the worker never feeds back into the Layer and loops (ADR-0019).
@@ -159,6 +166,8 @@ pub fn run_sender<T: EventSink>(
     let mut tokens = Totals::default();
     let start = Instant::now();
     let mut last_beat = Instant::now();
+    // One warn per run on the first delivery drop; later drops stay silent.
+    let warned = AtomicBool::new(false);
     loop {
         let stopping = shutdown.load(Ordering::SeqCst);
         let events = if stopping {
@@ -179,7 +188,7 @@ pub fn run_sender<T: EventSink>(
             // active issue when mapped.
             state.apply(event.clone());
             if let Some(cloudevent) = runevent_to_cloudevent(&event, &ctx, &state) {
-                deliver(&transport, &cloudevent);
+                deliver(&transport, &cloudevent, &warned, RETRY_BASE_BACKOFF);
             }
         }
         // The heartbeat fires on its own 30s timer, independent of event arrival —
@@ -187,7 +196,7 @@ pub fn run_sender<T: EventSink>(
         // and a consumer never mistakes a long pause for a dead run.
         if last_beat.elapsed() >= HEARTBEAT_INTERVAL {
             let beat = heartbeat(&ctx, &state, tokens, start.elapsed().as_secs());
-            deliver(&transport, &beat);
+            deliver(&transport, &beat, &warned, RETRY_BASE_BACKOFF);
             last_beat = Instant::now();
         }
         if stopping {
@@ -196,13 +205,62 @@ pub fn run_sender<T: EventSink>(
     }
 }
 
-/// Deliver one envelope through the transport, swallowing the outcome. The
-/// retry/drop policy lands in a later slice; a transport error here is logged
-/// under the sink's own target so it never re-enters the ring.
-fn deliver<T: EventSink>(transport: &T, cloudevent: &serde_json::Value) {
-    if let Err(e) = transport.post(cloudevent) {
-        warn!(target: "ralphy_cli::events::sink", "event delivery failed: {e}");
+/// Deliver one envelope through the transport with the at-most-once retry policy
+/// (docs/events.md): retry a [`PostOutcome::Transient`] up to [`MAX_ATTEMPTS`]
+/// times with exponential backoff, drop a [`PostOutcome::Permanent`] (a `4xx`
+/// config error) immediately, and drop after exhaustion. Any drop emits at most one
+/// `warn!` per run via `warned`. Returns the number of attempts made (a test seam).
+///
+/// The `warn!` target embeds the sink's own module so the [`EventsLayer`] filters
+/// it out of the ring — the drop notice reaches `ralphy.log` without feeding back
+/// into the sink and looping.
+fn deliver<T: EventSink>(
+    transport: &T,
+    cloudevent: &Value,
+    warned: &AtomicBool,
+    base_backoff: Duration,
+) -> u32 {
+    let mut backoff = base_backoff;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match transport.post(cloudevent) {
+            Ok(PostOutcome::Delivered) => return attempt,
+            // A 4xx is a configuration error: drop without retry.
+            Ok(PostOutcome::Permanent) => {
+                warn_dropped(warned);
+                return attempt;
+            }
+            Ok(PostOutcome::Transient) => {
+                if attempt == MAX_ATTEMPTS {
+                    warn_dropped(warned);
+                    return attempt;
+                }
+                std::thread::sleep(backoff);
+                backoff = backoff.saturating_mul(2);
+            }
+            // A transport-level error (e.g. a body that failed to serialize) will
+            // not fix on retry: drop it once, like a permanent failure.
+            Err(_) => {
+                warn_dropped(warned);
+                return attempt;
+            }
+        }
     }
+    MAX_ATTEMPTS
+}
+
+/// Emit the single non-spamming drop warning for the run: the first drop warns,
+/// every later drop is silent. Returns whether this call emitted the warning (a
+/// test seam proving "exactly one warn per run"). The `swap` makes the flip atomic
+/// so two concurrent drops still warn only once.
+fn warn_dropped(warned: &AtomicBool) -> bool {
+    if warned.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    warn!(
+        target: "ralphy_cli::events::sink",
+        "dropping CloudEvents delivery after retries — endpoint unreachable or rejecting (further drops silenced this run)"
+    );
+    true
 }
 
 /// A handle to the running sink: the shared ring, its shutdown flag, and the
@@ -309,6 +367,94 @@ mod tests {
 
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
+    }
+
+    /// A fake sink that returns a scripted sequence of outcomes, then a default
+    /// once the script is exhausted, counting every call.
+    struct ScriptedSink {
+        script: std::sync::Mutex<std::collections::VecDeque<PostOutcome>>,
+        default: PostOutcome,
+        calls: std::sync::atomic::AtomicU32,
+    }
+
+    impl ScriptedSink {
+        fn new(script: Vec<PostOutcome>, default: PostOutcome) -> Self {
+            ScriptedSink {
+                script: std::sync::Mutex::new(script.into()),
+                default,
+                calls: std::sync::atomic::AtomicU32::new(0),
+            }
+        }
+        fn call_count(&self) -> u32 {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    impl EventSink for ScriptedSink {
+        fn post(&self, _body: &Value) -> anyhow::Result<PostOutcome> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.script.lock().unwrap().pop_front().unwrap_or(self.default))
+        }
+    }
+
+    // Zero backoff so the retry tests never sleep on the real clock.
+    const NO_BACKOFF: Duration = Duration::ZERO;
+
+    #[test]
+    fn retry_delivers_on_fourth_attempt_after_three_transients() {
+        // Three transients then a success: exactly 4 attempts, no drop warning.
+        let sink = ScriptedSink::new(
+            vec![
+                PostOutcome::Transient,
+                PostOutcome::Transient,
+                PostOutcome::Transient,
+            ],
+            PostOutcome::Delivered,
+        );
+        let warned = AtomicBool::new(false);
+        let attempts = deliver(&sink, &json!({}), &warned, NO_BACKOFF);
+        assert_eq!(attempts, 4, "1 initial + 3 retries");
+        assert_eq!(sink.call_count(), 4);
+        assert!(!warned.load(Ordering::SeqCst), "a delivered event must not warn");
+    }
+
+    #[test]
+    fn retry_exhausts_and_drops_on_repeated_transient() {
+        // Always transient: 4 attempts then drop with a warn.
+        let sink = ScriptedSink::new(vec![], PostOutcome::Transient);
+        let warned = AtomicBool::new(false);
+        let attempts = deliver(&sink, &json!({}), &warned, NO_BACKOFF);
+        assert_eq!(attempts, 4);
+        assert!(warned.load(Ordering::SeqCst), "exhaustion must warn");
+    }
+
+    #[test]
+    fn permanent_drops_after_one_attempt() {
+        // A 4xx is a config error: one attempt, dropped without retry.
+        let sink = ScriptedSink::new(vec![], PostOutcome::Permanent);
+        let warned = AtomicBool::new(false);
+        let attempts = deliver(&sink, &json!({}), &warned, NO_BACKOFF);
+        assert_eq!(attempts, 1, "a 4xx is not retried");
+        assert!(warned.load(Ordering::SeqCst), "a permanent drop warns");
+    }
+
+    #[test]
+    fn two_drops_produce_exactly_one_warn() {
+        // The AtomicBool guard emits the warn only on the first drop of the run.
+        let warned = AtomicBool::new(false);
+        assert!(warn_dropped(&warned), "first drop warns");
+        assert!(!warn_dropped(&warned), "second drop is silent");
+        assert!(!warn_dropped(&warned), "and every later drop too");
+
+        // End-to-end: two exhausting deliveries sharing one guard warn once.
+        let sink = ScriptedSink::new(vec![], PostOutcome::Transient);
+        let guard = AtomicBool::new(false);
+        assert!(!guard.load(Ordering::SeqCst));
+        deliver(&sink, &json!({}), &guard, NO_BACKOFF);
+        let after_first = guard.load(Ordering::SeqCst);
+        deliver(&sink, &json!({}), &guard, NO_BACKOFF);
+        assert!(after_first, "first delivery flipped the guard");
+        assert_eq!(sink.call_count(), 8, "two full 4-attempt runs");
     }
 
     #[test]
