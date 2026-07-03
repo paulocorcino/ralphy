@@ -227,6 +227,37 @@ mod tests {
         for verdict in ["promote", "consolidate", "bounce"] {
             assert!(prompt.contains(verdict), "{verdict} missing:\n{prompt}");
         }
+        // ADR-0018 evidence gate: the three criteria, doubt-by-default stance,
+        // the `## Evidence` section, the red-test requirement, and the
+        // "problem not found at source" bounce guidance must all be pinned.
+        assert!(
+            prompt.contains("Confirmable at source"),
+            "evidence gate criterion 'Confirmable at source' missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("Localizable"),
+            "evidence gate criterion 'Localizable' missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("Contract-preserving"),
+            "evidence gate criterion 'Contract-preserving' missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("## Evidence"),
+            "'## Evidence' section heading missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("not agent-ready until the evidence gate proves it is"),
+            "doubt-by-default stance sentence missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("fails today and passes after"),
+            "red-test requirement sentence missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("problem not found at source"),
+            "'problem not found at source' bounce guidance missing:\n{prompt}"
+        );
     }
 
     #[test]
