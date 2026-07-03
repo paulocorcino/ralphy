@@ -485,7 +485,26 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         .as_ref()
         .map(|q| telegram::notifier::NotifierLayer::new(q.clone()));
 
-    let presenter = init_tracing(log_file, args.verbose, notifier_layer);
+    // The CloudEvents sink (ADR-0019): active only when this repo has an
+    // `events.url` in the global store (`~/.ralphy/events.toml`) — an absent entry
+    // means non-users pay nothing. Build the ring + Layer here so the sink sees the
+    // lifecycle from `queue built` onward; the worker starts once the run context
+    // is known (below). The token honours `RALPHY_EVENTS_TOKEN` over the stored one.
+    let events_slug = git::project_slug(&repo_root);
+    let events_entry = events::config::EventsStore::load()
+        .ok()
+        .unwrap_or_default()
+        .entry(&events_slug)
+        .cloned();
+    let events_url = events_entry.as_ref().and_then(|e| e.url.clone());
+    let events_token =
+        events::config::effective_token(events_entry.as_ref().and_then(|e| e.token.as_deref()));
+    let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
+    let events_layer = event_sink_queue
+        .as_ref()
+        .map(|q| events::sink::EventsLayer::new(q.clone()));
+
+    let presenter = init_tracing(log_file, args.verbose, notifier_layer, events_layer);
 
     // The repo name feeds the run title (below); the branding header is printed once
     // that title is known, so the console face is seeded by the same title as the
@@ -679,6 +698,22 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             notifier =
                 telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
         }
+    }
+
+    // Start the CloudEvents sink worker now that the run context is known. The
+    // process `runid` and the emitter identity are minted once here; the worker
+    // drains the ring (already buffering `queue built`) and POSTs each event as a
+    // CloudEvents envelope. A spawn failure leaves the installed Layer inert.
+    let mut events_handle: Option<events::sink::EventsHandle> = None;
+    if let (Some(queue), Some(url)) = (event_sink_queue.as_ref(), events_url.as_ref()) {
+        let ctx = events::envelope::EventCtx {
+            source: events::emitter::source(&events_slug),
+            runid: events::emitter::new_runid(),
+            emitter: serde_json::to_value(events::emitter::detect(&repo_root)).unwrap_or_default(),
+        };
+        let transport =
+            events::client::UreqEventTransport::new(url.clone(), events_token.clone());
+        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone());
     }
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
@@ -897,6 +932,13 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // `?` so a non-green result still triggers the final push.
     if let Some(notifier) = notifier.take() {
         notifier.shutdown();
+    }
+    // Tear down the CloudEvents sink alongside the notifier: the worker drains any
+    // buffered events (including a final `run finished`) and POSTs them before the
+    // process exits, joined under a bounded timeout so a wedged endpoint can't hold
+    // the process open (ADR-0019).
+    if let Some(events_handle) = events_handle.take() {
+        events_handle.shutdown();
     }
 
     let report = result?;
@@ -1117,6 +1159,7 @@ fn init_tracing(
     log_file: Option<std::fs::File>,
     verbose: bool,
     notifier: Option<telegram::notifier::NotifierLayer>,
+    events: Option<events::sink::EventsLayer>,
 ) -> ui::PresenterHandle {
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -1144,7 +1187,8 @@ fn init_tracing(
     let registry = tracing_subscriber::registry()
         .with(filter)
         .with(file_layer)
-        .with(notifier);
+        .with(notifier)
+        .with(events);
 
     if raw_stderr {
         let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);
