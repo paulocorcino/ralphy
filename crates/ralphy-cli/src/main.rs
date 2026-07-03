@@ -459,6 +459,8 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
 }
 
 fn run_cmd(args: RunArgs) -> Result<()> {
+    // Anchors the `run.finished` `duration_s` (ADR-0019) — the run's wall-clock.
+    let run_start = std::time::Instant::now();
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     preflight_agents(args.agent, plan_agent)?;
@@ -789,6 +791,24 @@ fn run_cmd(args: RunArgs) -> Result<()> {
                 .and_then(|m| config::parse_branch_mode(m).ok())
         })
         .unwrap_or(BranchMode::New);
+    // ADR-0019 run-boundary event: emitted here, after branch-mode/base-branch
+    // resolution, so it carries the CLI-only run parameters the core never sees.
+    // The stream order is `queue.built` (above) then `run.started`; consumers order
+    // by `id`/`time` and tolerate it (docs/events.md).
+    let branch_mode_str = match branch_mode {
+        BranchMode::New => "new",
+        BranchMode::Current => "current",
+    };
+    info!(
+        repo = %events_slug,
+        queue_labels = %effective_labels.join(","),
+        agent = args.agent.cli_name(),
+        plan_agent = plan_agent.cli_name(),
+        branch_mode = branch_mode_str,
+        branch = %base_branch,
+        deadline_hours = args.deadline_hours.unwrap_or(0.0),
+        "run started"
+    );
     let resolved_claude = ResolvedClaude {
         plan_model: config::resolve_str(
             args.plan_model.clone(),
@@ -930,6 +950,39 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     // terminal state, send the final push, and flush, joined under a bounded
     // timeout so a wedged network never holds the process open. Done before the
     // `?` so a non-green result still triggers the final push.
+    // ADR-0019 run-boundary event: emitted only on a CLEAN termination (`run_queue`
+    // returned `Ok`) — a crash/kill is detected by heartbeat silence, never a
+    // `run.finished`. Emitted BEFORE the sink shutdown so the worker drains and
+    // POSTs it as the run's last event.
+    if let Ok(report) = result.as_ref() {
+        let issues_done = report
+            .worked
+            .iter()
+            .filter(|r| r.outcome == Some(Outcome::Done))
+            .count() as u64;
+        // The generic skip bucket (a dependency/stop-before/human-return/verify
+        // skip), kept distinct from a non-green stop and a human-gate park, mirrors
+        // the console panel's `skipped` tally.
+        let issues_skipped = report
+            .worked
+            .iter()
+            .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
+            .count() as u64;
+        let u = &report.run_usage;
+        info!(
+            outcome = outcome_of(&report.stop),
+            issues_done,
+            issues_skipped,
+            issues_total = queue.len() as u64,
+            up = u.input,
+            cr = u.cache_read,
+            cw = u.cache_creation,
+            out = u.output,
+            duration_s = run_start.elapsed().as_secs(),
+            "run finished"
+        );
+    }
+
     if let Some(notifier) = notifier.take() {
         notifier.shutdown();
     }
@@ -1100,6 +1153,20 @@ fn resolve_plan_agent(plan_agent: Option<CliAgent>, agent: CliAgent) -> CliAgent
     plan_agent.unwrap_or(agent)
 }
 
+/// Map a queue's [`StopReason`] to the `run.finished` `outcome` label (ADR-0019).
+/// `None` (the whole queue was worked) is `completed`; a usage-limit stop has no
+/// `outcome` value in the contract enum, so it collapses to `non_green` — a
+/// usage-limit stop is a non-clean completion (docs/events.md `run.finished`).
+fn outcome_of(stop: &Option<StopReason>) -> &'static str {
+    match stop {
+        None => "completed",
+        Some(StopReason::NonGreen { .. }) => "non_green",
+        Some(StopReason::Deadline) => "deadline",
+        Some(StopReason::StopBefore { .. }) => "stop_before",
+        Some(StopReason::Limit { .. }) => "non_green",
+    }
+}
+
 /// Pure predicate layer: returns `Err(message)` for the first agent whose
 /// `cli_name()` the `locate` closure reports absent, else `Ok(())`. The
 /// `locate` indirection lets unit tests inject a fake resolver with no PATH
@@ -1205,6 +1272,32 @@ fn init_tracing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outcome_of_maps_every_stop_reason() {
+        assert_eq!(outcome_of(&None), "completed");
+        assert_eq!(
+            outcome_of(&Some(StopReason::NonGreen {
+                number: 1,
+                outcome: Outcome::Stuck,
+            })),
+            "non_green"
+        );
+        assert_eq!(outcome_of(&Some(StopReason::Deadline)), "deadline");
+        assert_eq!(
+            outcome_of(&Some(StopReason::StopBefore { number: 2 })),
+            "stop_before"
+        );
+        // A usage-limit stop has no `outcome` value in the contract enum, so it
+        // collapses to non_green (a non-clean completion).
+        assert_eq!(
+            outcome_of(&Some(StopReason::Limit {
+                number: 3,
+                reset: Some("14:30".into()),
+            })),
+            "non_green"
+        );
+    }
 
     #[test]
     fn init_subcommand_is_registered() {
