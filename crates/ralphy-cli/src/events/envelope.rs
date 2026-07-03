@@ -227,8 +227,51 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             ctx,
             json!({ "level": level.to_string().to_lowercase(), "message": message }),
         )),
-        // The run-boundary events are mapped in the next slice; not forwarded yet.
-        RunEvent::RunStarted { .. } | RunEvent::RunFinished { .. } => None,
+        RunEvent::RunStarted {
+            repo,
+            queue_labels,
+            agent,
+            plan_agent,
+            branch_mode,
+            branch,
+            deadline_hours,
+        } => Some(envelope(
+            "dev.ralphy.run.started",
+            None,
+            ctx,
+            json!({
+                "repo": repo,
+                "queue_labels": queue_labels,
+                "agent": agent,
+                "plan_agent": plan_agent,
+                "branch_mode": branch_mode,
+                "branch": branch,
+                "deadline_hours": deadline_hours,
+            }),
+        )),
+        RunEvent::RunFinished {
+            outcome,
+            issues_done,
+            issues_skipped,
+            issues_total,
+            up,
+            cr,
+            cw,
+            out,
+            duration_s,
+        } => Some(envelope(
+            "dev.ralphy.run.finished",
+            None,
+            ctx,
+            json!({
+                "outcome": outcome,
+                "issues_done": issues_done,
+                "issues_skipped": issues_skipped,
+                "issues_total": issues_total,
+                "tokens_total": { "up": up, "cr": cr, "cw": cw, "out": out },
+                "duration_s": duration_s,
+            }),
+        )),
     }
 }
 
@@ -488,6 +531,58 @@ mod tests {
         );
         assert_eq!(v["type"], "dev.ralphy.knowledge.consolidated");
         assert_eq!(v["data"]["archived"], 3);
+    }
+
+    #[test]
+    fn run_started_maps_cli_params_without_subject() {
+        let v = map(
+            RunEvent::RunStarted {
+                repo: "o/r".into(),
+                queue_labels: vec!["AFK".into(), "ready".into()],
+                agent: "claude".into(),
+                plan_agent: "codex".into(),
+                branch_mode: "new".into(),
+                branch: "origin/main".into(),
+                deadline_hours: Some(6.0),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.run.started");
+        assert!(v.get("subject").is_none(), "run.started has no subject: {v}");
+        assert_eq!(v["data"]["repo"], "o/r");
+        assert_eq!(v["data"]["queue_labels"], json!(["AFK", "ready"]));
+        assert_eq!(v["data"]["agent"], "claude");
+        assert_eq!(v["data"]["plan_agent"], "codex");
+        assert_eq!(v["data"]["branch_mode"], "new");
+        assert_eq!(v["data"]["branch"], "origin/main");
+        assert_eq!(v["data"]["deadline_hours"], 6.0);
+    }
+
+    #[test]
+    fn run_finished_maps_outcome_totals_without_subject() {
+        let v = map(
+            RunEvent::RunFinished {
+                outcome: "completed".into(),
+                issues_done: 3,
+                issues_skipped: 1,
+                issues_total: 5,
+                up: 100,
+                cr: 200,
+                cw: 50,
+                out: 25,
+                duration_s: 412,
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.run.finished");
+        assert!(v.get("subject").is_none(), "run.finished has no subject: {v}");
+        assert_eq!(v["data"]["outcome"], "completed");
+        assert_eq!(v["data"]["issues_done"], 3);
+        assert_eq!(v["data"]["issues_skipped"], 1);
+        assert_eq!(v["data"]["issues_total"], 5);
+        assert_eq!(v["data"]["tokens_total"]["up"], 100);
+        assert_eq!(v["data"]["tokens_total"]["out"], 25);
+        assert_eq!(v["data"]["duration_s"], 412);
     }
 
     #[test]
