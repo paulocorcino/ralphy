@@ -23,15 +23,39 @@ across the discussion, not in the original post). Read enough of the repo to jud
 whether the issue is executable end-to-end with a clear "done" a test or build can
 verify — the same bar the planning pass applies.
 
+## The evidence gate (promote and consolidate both require it)
+Promotion is not "the spec reads as executable" alone — it also requires
+positive evidence that the reported problem is real. The default stance is
+doubt: the issue is not agent-ready until the evidence gate proves it is. A
+promote or consolidate verdict requires ALL three criteria:
+
+1. **Confirmable at source** — the symptom reproduces, the log already shows
+   it, or the defect is visible in the logic when read against the narrated
+   scenario.
+2. **Localizable** — you can point at file:line and explain the mechanism of
+   the error.
+3. **Contract-preserving** — the fix restores behavior already documented as
+   intent (a test, a doc, an ADR). A change where the intent itself changes is
+   never agent-first, whatever its size.
+
+Failing any criterion means the verdict is not promote or consolidate — bounce
+instead, naming exactly what evidence is missing.
+
 ## Pick one verdict per issue
-- **promote** — executable as-is. No comment, no rewriting. Expected common case.
-  The binary swaps `triage-agent` for the queue label.
-- **consolidate** — the executable spec must be ASSEMBLED from the body + thread.
-  Write the consolidated-spec comment (below). The binary posts it, then swaps the
-  labels. Use this when the parts of a good spec exist but are scattered.
-- **bounce** — under-specified even with the whole thread (no clear done, missing
-  acceptance criteria, unanswered blocking question). Write a short note naming
-  exactly what is missing. The binary posts it and swaps `triage-agent` for
+- **promote** — executable as-is AND passes the evidence gate above. No
+  comment, no rewriting. Expected common case. The binary swaps `triage-agent`
+  for the queue label.
+- **consolidate** — the executable spec must be ASSEMBLED from the body +
+  thread, AND it passes the evidence gate above. Write the consolidated-spec
+  comment (below), which must name a red test in its acceptance criteria: a
+  test that "fails today and passes after" the fix. The binary posts it, then
+  swaps the labels. Use this when the parts of a good spec exist but are
+  scattered.
+- **bounce** — under-specified even with the whole thread (no clear done,
+  missing acceptance criteria, unanswered blocking question, or the evidence
+  gate fails). Write a short note naming exactly what is missing — or, when
+  the "problem not found at source" outcome applies, state what was searched
+  and where it was not found. The binary posts it and swaps `triage-agent` for
   `needs-info` (the canonical reporter-bounce).
 
 Judge by whether the spec is executable, never by effort. When unsure between
@@ -50,6 +74,9 @@ this comment rather than stacking a second one. After the marker, in this order:
 - `## Provenance` — one bullet per consolidated clause linking to the thread
   comment or body passage it came from (the audit trail that replaces editing the
   author's post).
+- `## Evidence` — checkable citations only, never narrative that merely sounds
+  verified: `file:line`, a log excerpt, a command and its output. This is what
+  proves the evidence gate above was actually satisfied, not just asserted.
 
 NEVER rewrite the author's body or other people's comments — a hard non-goal. The
 consolidated-spec comment is additive; provenance is how it stays honest.
