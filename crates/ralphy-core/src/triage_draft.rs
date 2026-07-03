@@ -182,11 +182,9 @@ mod tests {
         let json = r#"{ "number": 21, "verdict": "escalate", "comment": "A maintainer must decide the pricing-rule change; see ## Evidence." }"#;
         let item: TriageItem = serde_json::from_str(json).expect("parse escalate");
         assert_eq!(item.verdict, TriageVerdict::Escalate);
-        TriageDraft {
-            items: vec![item],
-        }
-        .validate()
-        .expect("escalate with a comment is valid");
+        TriageDraft { items: vec![item] }
+            .validate()
+            .expect("escalate with a comment is valid");
 
         // An escalate without a comment is rejected, and the reason names the issue.
         let draft = TriageDraft {
