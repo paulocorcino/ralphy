@@ -57,7 +57,10 @@ non-configurable — it stays out of the `docs/agents/triage-labels.md` mapping 
 `ralphy init` syncs it automatically. It is also a **human-return** label: while
 present it parks the issue out of the run queue (ADR-0016), so triage and run never
 race. `ralphy triage` consumes it, then swaps it for `ready-for-agent` (promote /
-consolidate) or `needs-info` (bounce).
+consolidate) or `needs-info` (bounce). The promotion bar for promote/consolidate is
+the ADR-0018 evidence gate — confirmable at source, localizable, contract-preserving
+— not spec executability alone; see
+[adr/0018-triage-evidence-gate-and-escalate.md](adr/0018-triage-evidence-gate-and-escalate.md).
 
 ### Human-return precedence (ADR-0016)
 
