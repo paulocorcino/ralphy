@@ -87,6 +87,12 @@ report published for the human reviewer.
    probe returns a different status than the handoff documents), investigate the
    delta first — "what changed since the predecessor" is usually the shortest
    path to the fault.
+   Beyond these artifacts, read LAZILY: open the plan's named files only at the
+   regions the steps touch, and pull anything else on demand when an edit
+   actually requires it. For wide mapping (call sites, how a value flows),
+   spawn an Explore subagent and keep your own reads for code you will edit —
+   preloading whole large files you will use 30% of is the most common
+   self-inflicted time sink.
 2. For each step: implement it, run the project's format command and the
    NARROWEST relevant test command (or a build if not yet testable). Narrowest
    means the specific test file(s)/pattern covering the code you just touched —
@@ -101,6 +107,18 @@ report published for the human reviewer.
      surprise, a caveat, a partial that a human should see) with `- [!]` instead
      of a tick, rather than silently ticking it or leaving it open — `- [!]` is a
      first-class "done but noticed" marker the run surfaces on the event stream.
+   - BATCH tightly-coupled steps: when 2–3 consecutive steps change the same
+     functions, or one produces exactly what the next consumes (add variant →
+     map it → wire it), implement the group and pay ONE format+test cycle and
+     ONE commit for it, ticking every step in the batch. This matters most in
+     compile-dominated toolchains (Rust, C++), where each verification cycle
+     re-buys a rebuild that dwarfs the tests it runs. Never batch across an
+     unrelated boundary, or past a step whose failure would change how you
+     write the next one — the commit must stay one reviewable, revertable unit.
+   - Tick checkboxes by editing the EXACT line text you just read (a literal
+     edit of `.ralphy/plan.md`), at the moment you commit — never a guessed
+     string-replace from a script. A silently-failed replace leaves the step
+     open, which blocks the completion lint AND keeps the cost gate locked.
 3. When EVERY step is `- [x]` and the project's tests are green, print this on
    its own line and then STOP — the runner reads this token to mark the issue
    done, and verifies every step is ticked before accepting it:
@@ -108,29 +126,23 @@ report published for the human reviewer.
        RALPHY_DONE_EXIT
 
 ## Scale verification cost to the change
-Session wall-clock is the scarcest budget you have, and repeated broad suites
-are its single biggest silent drain — one slow test file in a package script
-can cost minutes per invocation, and each repeat re-buys information you
-already own.
-- Inner loop = scoped commands only. Between steps, run just the test
-  file(s)/pattern that exercise the code you touched. A full suite run in the
-  inner loop is a smell, not diligence: it cannot fail for your change in a
-  place the scoped run doesn't cover without you needing to see the full
-  failure anyway at the final gate.
-- Note what commands cost. When a verification command turns out to be slow
-  (tens of seconds or more), do not run it again until something it covers —
-  and the scoped runs don't — has changed. Prefer narrowing it (a file
-  argument, a filter flag) over repeating it whole.
-- The full suite is paid at most ONCE, at step 3, right before
-  `RALPHY_DONE_EXIT` — that single green run is what "the project's tests are
-  green" means. The runner's verify gate re-runs the plan's `## Verify`
-  commands after you exit anyway, so a second in-session suite run proves
-  nothing the gate won't re-prove for free.
-- This discipline is mechanically enforced: a hook DENIES re-running a
-  `## Verify` command already measured as expensive while more than one plan
-  step is still open. A denial is not an error to work around — run the scoped
-  test it names, keep working the steps, and the command unlocks on the final
-  open step. Never dodge it by retyping the suite under a different name.
+Session wall-clock is the scarcest budget you have; repeated broad suites are
+its single biggest silent drain.
+- Inner loop = scoped commands only: run just the test file(s)/pattern covering
+  the code you touched. The full suite is paid at most ONCE, at step 3, right
+  before `RALPHY_DONE_EXIT` — the runner's verify gate re-runs the plan's
+  `## Verify` commands after you exit anyway, so extra in-session suite runs
+  prove nothing the gate won't re-prove for free.
+- Know the stack's cost model: when compilation dominates (Rust, C++), the
+  rebuild is the cost, not the test — batching coupled steps per compile (see
+  above) saves more than narrowing the test filter ever will.
+- When a command measures slow (tens of seconds or more), do not re-run it
+  until something it covers — and the scoped runs don't — has changed.
+- This is mechanically enforced: a hook DENIES re-running a `## Verify` command
+  already measured as expensive while more than one plan step is still open. A
+  denial is steering, not an error — run the scoped test it names; the command
+  unlocks on the final open step. Never dodge it by retyping the suite under a
+  different name.
 
 ## Prove behavior, not just compilation
 - A step that changes what the user can see or do is NOT done when it merely
@@ -154,6 +166,11 @@ already own.
   (write `0 HIGH, 0 MEDIUM, 0 LOW` if clean) and how each HIGH was resolved.
   "No HIGH findings expected" is a prediction, not a review — and the runner
   verifies the section exists before accepting `RALPHY_DONE_EXIT`.
+  Run the reviewer subagent IN BACKGROUND (`run_in_background` or the
+  equivalent) and spend its wall-clock on the closing work that does not
+  depend on its verdict — the `## Handoff`, `## Plan friction`, ledger
+  evidence — folding the findings in when it returns. A long review you sit
+  blocked on is that many minutes of parallel work thrown away.
 - Only the machine-verifiable part of the plan's "Done when" gates the DONE
   token. Machine-verifiable means a test, a build, OR a command sequence you
   can run whose output proves the behavior (e.g. `docker compose up -d` plus
@@ -203,6 +220,9 @@ planner). As you complete each step, update the matching ledger line:
 1. Replace the `evidence:` text with the real commit hash, test name, or other
    concrete backing for that criterion — the runner verifies no planner
    placeholder `evidence:` text remains before accepting `RALPHY_DONE_EXIT`.
+   A planner-written evidence line that already names the real test/command
+   and still holds needs no rewrite — replace placeholders and stale text
+   only; do not re-prose lines the commits already back.
 2. Keep `[verified]` only when a **passing test or an executed command whose
    output you captured** backs the criterion. Before downgrading, ATTEMPT the
    verification: probe the environment first (e.g. `docker info`, network
@@ -230,7 +250,8 @@ the runner verifies it exists before accepting the done token.
 The runner posts it on the GitHub issue at close, and future sessions working
 dependent issues receive it as starting context — it is how your hard-won
 discoveries reach your successors instead of dying with this session. Keep it
-under ~30 lines, telegraphic, with these exact sub-headings:
+under ~30 lines, telegraphic, with these exact sub-headings — a sub-heading
+with nothing to report gets a single `none`, never padding:
 
 - **Delivered**: what now exists and where — files, scripts, fixtures, with
   commit hashes.
