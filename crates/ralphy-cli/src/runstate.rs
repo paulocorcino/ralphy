@@ -81,7 +81,11 @@ impl UsageLite {
 /// One semantic run event, already lifted out of the raw `(target, message,
 /// fields)` triple by [`event_to_runevent`]. One variant per consumed lifecycle
 /// event.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: [`RunEvent::RunStarted`] carries `deadline_hours: Option<f64>`, and
+/// `f64` has no total equality. `PartialEq` is all any consumer needs (`assert_eq!`
+/// in the fold/decoder tests, no `HashSet`/`BTreeSet` of events).
+#[derive(Debug, Clone, PartialEq)]
 pub enum RunEvent {
     /// The queue was built: its size, the issue numbers in order, and the first
     /// issue carrying `stop-before` (where the run will halt), if any.
@@ -161,6 +165,32 @@ pub enum RunEvent {
     /// Knowledge consolidation finished, archiving `archived` notes into
     /// `knowledge/raw/` after curating `KNOWLEDGE.md`.
     KnowledgeConsolidated { archived: u64 },
+    /// The run began working a queue (ADR-0019 boundary event, emitted by the CLI
+    /// after branch-mode/base-branch resolution). Carries the CLI-only run
+    /// parameters (labels, agents, branch policy, deadline) the core never sees.
+    RunStarted {
+        repo: String,
+        queue_labels: Vec<String>,
+        agent: String,
+        plan_agent: String,
+        branch_mode: String,
+        branch: String,
+        deadline_hours: Option<f64>,
+    },
+    /// The run ended cleanly (ADR-0019 boundary event, emitted by the CLI only when
+    /// `run_queue` returns `Ok`). `outcome` is the mapped queue-stop label; the
+    /// totals summarize the whole run.
+    RunFinished {
+        outcome: String,
+        issues_done: u64,
+        issues_skipped: u64,
+        issues_total: u64,
+        up: u64,
+        cr: u64,
+        cw: u64,
+        out: u64,
+        duration_s: u64,
+    },
 }
 
 /// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
@@ -389,6 +419,9 @@ impl RunState {
                 self.consolidating = None;
                 self.consolidated = Some(archived);
             }
+            // The run-boundary events carry no per-issue status; the fold infers the
+            // boundaries from the Layer lifecycle, so they are no-ops here.
+            RunEvent::RunStarted { .. } | RunEvent::RunFinished { .. } => {}
         }
     }
 
@@ -480,6 +513,30 @@ pub struct EventFields {
     /// The parking label on a `human-return label — skipping issue` event
     /// (ADR-0016): which human-return label outranked the queue label.
     pub label: Option<String>,
+    // --- ADR-0019 run-boundary fields (`run started` / `run finished`) ---
+    /// The repo slug on a `run started` event.
+    pub repo: Option<String>,
+    /// The comma-joined queue labels on a `run started` event (raw; the decoder
+    /// splits it into the typed `Vec<String>`).
+    pub queue_labels: Option<String>,
+    /// The execution agent name on a `run started` event.
+    pub agent: Option<String>,
+    /// The plan agent name on a `run started` event.
+    pub plan_agent: Option<String>,
+    /// The branch policy (`new`/`current`) on a `run started` event.
+    pub branch_mode: Option<String>,
+    /// The base/run branch on a `run started` event.
+    pub branch: Option<String>,
+    /// The run's deadline in hours on a `run started` event (`0.0` = none).
+    pub deadline_hours: Option<f64>,
+    /// The green-issue count on a `run finished` event.
+    pub issues_done: Option<u64>,
+    /// The skipped-issue count on a `run finished` event.
+    pub issues_skipped: Option<u64>,
+    /// The queue size on a `run finished` event.
+    pub issues_total: Option<u64>,
+    /// The run's wall-clock seconds on a `run finished` event.
+    pub duration_s: Option<u64>,
 }
 
 impl Default for EventFields {
@@ -506,6 +563,17 @@ impl Default for EventFields {
             out: None,
             human_blockers: None,
             label: None,
+            repo: None,
+            queue_labels: None,
+            agent: None,
+            plan_agent: None,
+            branch_mode: None,
+            branch: None,
+            deadline_hours: None,
+            issues_done: None,
+            issues_skipped: None,
+            issues_total: None,
+            duration_s: None,
         }
     }
 }
@@ -523,6 +591,10 @@ impl Visit for EventFields {
             "cr" => self.cr = Some(value),
             "cw" => self.cw = Some(value),
             "out" => self.out = Some(value),
+            "issues_done" => self.issues_done = Some(value),
+            "issues_skipped" => self.issues_skipped = Some(value),
+            "issues_total" => self.issues_total = Some(value),
+            "duration_s" => self.duration_s = Some(value),
             _ => {}
         }
     }
@@ -530,6 +602,12 @@ impl Visit for EventFields {
     fn record_i64(&mut self, field: &Field, value: i64) {
         if field.name() == "target_epoch" {
             self.target_epoch = Some(value);
+        }
+    }
+
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        if field.name() == "deadline_hours" {
+            self.deadline_hours = Some(value);
         }
     }
 
@@ -543,6 +621,12 @@ impl Visit for EventFields {
             "model" => self.model = clean_opt(value),
             "effort" | "variant" => self.effort = clean_opt(value),
             "label" => self.label = clean_opt(value),
+            "repo" => self.repo = Some(value.to_string()),
+            "queue_labels" => self.queue_labels = Some(value.to_string()),
+            "agent" => self.agent = Some(value.to_string()),
+            "plan_agent" => self.plan_agent = Some(value.to_string()),
+            "branch_mode" => self.branch_mode = Some(value.to_string()),
+            "branch" => self.branch = Some(value.to_string()),
             _ => {}
         }
     }
@@ -566,6 +650,15 @@ impl Visit for EventFields {
             // decoder never carries a literal `None` or `""` into a display label.
             "model" => self.model = clean_opt(&rendered),
             "effort" | "variant" => self.effort = clean_opt(&rendered),
+            // The `%`-formatted (Display) run-boundary fields arrive here via
+            // tracing's Display wrapper; store them raw (no quote stripping — these
+            // are plain strings, not `Option`/`&str` Debug forms).
+            "repo" => self.repo = Some(rendered),
+            "queue_labels" => self.queue_labels = Some(rendered),
+            "agent" => self.agent = Some(rendered),
+            "plan_agent" => self.plan_agent = Some(rendered),
+            "branch_mode" => self.branch_mode = Some(rendered),
+            "branch" => self.branch = Some(rendered),
             _ => {}
         }
     }
@@ -712,7 +805,44 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         "knowledge consolidated" => Some(RunEvent::KnowledgeConsolidated {
             archived: fields.count.unwrap_or(0),
         }),
+        // The two ADR-0019 run-boundary emissions (from the CLI, not the core).
+        "run started" => Some(RunEvent::RunStarted {
+            repo: fields.repo.clone().unwrap_or_default(),
+            queue_labels: split_labels(fields.queue_labels.as_deref()),
+            agent: fields.agent.clone().unwrap_or_default(),
+            plan_agent: fields.plan_agent.clone().unwrap_or_default(),
+            branch_mode: fields.branch_mode.clone().unwrap_or_default(),
+            branch: fields.branch.clone().unwrap_or_default(),
+            // `0.0` is the "no deadline" sentinel the emitter uses (an absent
+            // `--deadline-hours` becomes `0.0`), so filter it back to `None`.
+            deadline_hours: fields.deadline_hours.filter(|&h| h > 0.0),
+        }),
+        "run finished" => Some(RunEvent::RunFinished {
+            outcome: fields.outcome.clone().unwrap_or_default(),
+            issues_done: fields.issues_done.unwrap_or(0),
+            issues_skipped: fields.issues_skipped.unwrap_or(0),
+            issues_total: fields.issues_total.unwrap_or(0),
+            up: fields.up.unwrap_or(0),
+            cr: fields.cr.unwrap_or(0),
+            cw: fields.cw.unwrap_or(0),
+            out: fields.out.unwrap_or(0),
+            duration_s: fields.duration_s.unwrap_or(0),
+        }),
         _ => None,
+    }
+}
+
+/// Split the comma-joined `queue_labels` field into the typed list, dropping empty
+/// tokens (an empty joined string yields an empty list, not a `[""]`).
+fn split_labels(raw: Option<&str>) -> Vec<String> {
+    match raw {
+        None => Vec::new(),
+        Some(s) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+            .collect(),
     }
 }
 
@@ -1268,6 +1398,103 @@ mod tests {
         state.apply(RunEvent::KnowledgeConsolidated { archived: 4 });
         assert_eq!(state.consolidating, None);
         assert_eq!(state.consolidated, Some(4));
+    }
+
+    #[test]
+    fn decoder_maps_run_boundary_events() {
+        // `run started`: the CLI-only parameters decode into the typed variant, and
+        // a `0.0` deadline sentinel folds back to `None`.
+        assert_eq!(
+            decode(EventFields {
+                message: "run started".into(),
+                repo: Some("o/r".into()),
+                queue_labels: Some("AFK, ready".into()),
+                agent: Some("claude".into()),
+                plan_agent: Some("claude".into()),
+                branch_mode: Some("new".into()),
+                branch: Some("origin/main".into()),
+                deadline_hours: Some(0.0),
+                ..Default::default()
+            }),
+            Some(RunEvent::RunStarted {
+                repo: "o/r".into(),
+                queue_labels: vec!["AFK".into(), "ready".into()],
+                agent: "claude".into(),
+                plan_agent: "claude".into(),
+                branch_mode: "new".into(),
+                branch: "origin/main".into(),
+                deadline_hours: None,
+            })
+        );
+        // A non-zero deadline survives.
+        let decoded = decode(EventFields {
+            message: "run started".into(),
+            deadline_hours: Some(6.0),
+            ..Default::default()
+        });
+        assert!(matches!(
+            decoded,
+            Some(RunEvent::RunStarted { deadline_hours: Some(h), .. }) if (h - 6.0).abs() < 1e-9
+        ));
+
+        // `run finished`: outcome + totals decode into the typed variant.
+        assert_eq!(
+            decode(EventFields {
+                message: "run finished".into(),
+                outcome: Some("completed".into()),
+                issues_done: Some(3),
+                issues_skipped: Some(1),
+                issues_total: Some(5),
+                up: Some(100),
+                cr: Some(200),
+                cw: Some(50),
+                out: Some(25),
+                duration_s: Some(412),
+                ..Default::default()
+            }),
+            Some(RunEvent::RunFinished {
+                outcome: "completed".into(),
+                issues_done: 3,
+                issues_skipped: 1,
+                issues_total: 5,
+                up: 100,
+                cr: 200,
+                cw: 50,
+                out: 25,
+                duration_s: 412,
+            })
+        );
+    }
+
+    #[test]
+    fn apply_run_boundary_events_are_noops() {
+        let mut before = RunState::new("t", 1);
+        before.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "a".into(),
+        });
+        let mut after = before.clone();
+        after.apply(RunEvent::RunStarted {
+            repo: "o/r".into(),
+            queue_labels: vec![],
+            agent: "claude".into(),
+            plan_agent: "claude".into(),
+            branch_mode: "new".into(),
+            branch: "origin/main".into(),
+            deadline_hours: None,
+        });
+        after.apply(RunEvent::RunFinished {
+            outcome: "completed".into(),
+            issues_done: 1,
+            issues_skipped: 0,
+            issues_total: 1,
+            up: 0,
+            cr: 0,
+            cw: 0,
+            out: 0,
+            duration_s: 1,
+        });
+        assert_eq!(before, after);
     }
 
     #[test]

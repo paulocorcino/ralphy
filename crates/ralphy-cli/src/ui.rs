@@ -355,6 +355,9 @@ fn render_line(
         // Live-region only: the active line carries the planning/execution phase
         // and its model/effort; no permanent scroll-up line is drawn for them.
         RunEvent::Executing { .. } | RunEvent::Planning { .. } => return None,
+        // The ADR-0019 run-boundary events are for the CloudEvents sink only; the
+        // console already draws its own header/panel, so no scroll-up line here.
+        RunEvent::RunStarted { .. } | RunEvent::RunFinished { .. } => return None,
         RunEvent::IssueStarted { number, title } => (
             pick("🧠", "[plan]", opts.emoji),
             Style::new().cyan(),

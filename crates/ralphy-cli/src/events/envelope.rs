@@ -227,6 +227,8 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             ctx,
             json!({ "level": level.to_string().to_lowercase(), "message": message }),
         )),
+        // The run-boundary events are mapped in the next slice; not forwarded yet.
+        RunEvent::RunStarted { .. } | RunEvent::RunFinished { .. } => None,
     }
 }
 
