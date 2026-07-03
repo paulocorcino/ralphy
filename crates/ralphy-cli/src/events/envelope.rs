@@ -49,6 +49,13 @@ fn envelope(type_: &str, subject: Option<&str>, ctx: &EventCtx, data: Value) -> 
     Value::Object(ev)
 }
 
+/// Build a subject-less envelope for a synthetic `run.*` event that has no
+/// [`RunEvent`] source (the sink's own `run.heartbeat`). Shares the exact envelope
+/// assembly — specversion, id, time, runid, merged emitter — as the mapped events.
+pub fn run_envelope(type_: &str, ctx: &EventCtx, data: Value) -> Value {
+    envelope(type_, None, ctx, data)
+}
+
 /// The `usage {up,cr,cw,out,model}` object carried on `plan.written` and
 /// `issue.closed` (docs/events.md); `model` is `null` when the adapter captured none.
 fn usage_json(u: &UsageLite) -> Value {

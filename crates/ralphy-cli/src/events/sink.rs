@@ -13,14 +13,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use serde_json::{json, Value};
 use tracing::{warn, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 use super::client::EventSink;
 use super::envelope::{runevent_to_cloudevent, EventCtx};
-use crate::runstate::{event_to_runevent, EventFields, RunState};
+use crate::runstate::{event_to_runevent, EventFields, IssueStatus, RunEvent, RunState, UsageLite};
 use crate::telegram::notifier::EventQueue;
 
 /// The sink ring's capacity (ADR-0019: bounded ~1000, drop-oldest).
@@ -34,9 +35,79 @@ const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// wedged endpoint never holds the process open.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The heartbeat cadence (ADR-0019: ~30s, carried on the wire as `interval_s` so a
+/// consumer never hardcodes it).
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
 /// The substring identifying the sink's own `tracing` target, so a drop `warn!`
 /// from the worker never feeds back into the Layer and loops (ADR-0019).
 const SELF_TARGET_MARKER: &str = "events::sink";
+
+/// A running four-field token total (`up`/`cr`/`cw`/`out`) the worker accumulates
+/// across the run for the heartbeat and never resets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Totals {
+    up: u64,
+    cr: u64,
+    cw: u64,
+    out: u64,
+}
+
+impl Totals {
+    /// Fold one phase's usage breakdown into the running total.
+    fn add(&mut self, u: &UsageLite) {
+        self.up += u.input;
+        self.cr += u.cache_read;
+        self.cw += u.cache_creation;
+        self.out += u.output;
+    }
+
+    fn to_json(self) -> Value {
+        json!({ "up": self.up, "cr": self.cr, "cw": self.cw, "out": self.out })
+    }
+}
+
+/// The run's current phase for the heartbeat (ADR-0019): a usage-limit sleep wins,
+/// then an in-progress consolidation, then the active issue's phase, else the
+/// initial `starting`. A sleep reports `sleeping` even with an executing issue so a
+/// long usage-limit pause is never mistaken for progress or for death.
+fn phase(state: &RunState) -> &'static str {
+    if state.sleep.is_some() {
+        return "sleeping";
+    }
+    if state.consolidating.is_some() {
+        return "consolidating";
+    }
+    match state.active_issue().map(|e| &e.status) {
+        Some(IssueStatus::Executing) => "executing",
+        Some(IssueStatus::Planning) => "planning",
+        _ => "starting",
+    }
+}
+
+/// Build a `run.heartbeat` envelope from the folded state and running totals: the
+/// [`phase`], the emitter's own `interval_s` cadence, the active issue, elapsed
+/// seconds, queue progress, and the token totals (docs/events.md `run.heartbeat`).
+fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -> Value {
+    let queue_done = state
+        .issues
+        .iter()
+        .filter(|e| e.status.is_terminal())
+        .count();
+    super::envelope::run_envelope(
+        "dev.ralphy.run.heartbeat",
+        ctx,
+        json!({
+            "phase": phase(state),
+            "interval_s": HEARTBEAT_INTERVAL.as_secs(),
+            "issue": state.active,
+            "elapsed_s": elapsed_s,
+            "queue_done": queue_done,
+            "queue_total": state.total,
+            "tokens_total": tokens.to_json(),
+        }),
+    )
+}
 
 /// A sink ring with the ADR-0019 ~1000-event bound.
 pub fn new_queue() -> Arc<EventQueue> {
@@ -85,6 +156,9 @@ pub fn run_sender<T: EventSink>(
     shutdown: Arc<AtomicBool>,
 ) {
     let mut state = RunState::default();
+    let mut tokens = Totals::default();
+    let start = Instant::now();
+    let mut last_beat = Instant::now();
     loop {
         let stopping = shutdown.load(Ordering::SeqCst);
         let events = if stopping {
@@ -93,12 +167,28 @@ pub fn run_sender<T: EventSink>(
             queue.drain_blocking(POLL_INTERVAL)
         };
         for event in events {
+            // Accumulate the run's token totals off the two phases that report a
+            // usage breakdown, for the heartbeat's `tokens_total`.
+            match &event {
+                RunEvent::PlanWritten { usage, .. } | RunEvent::IssueClosed { usage, .. } => {
+                    tokens.add(usage)
+                }
+                _ => {}
+            }
             // Fold first so the adapter events that carry issue `0` resolve to the
             // active issue when mapped.
             state.apply(event.clone());
             if let Some(cloudevent) = runevent_to_cloudevent(&event, &ctx, &state) {
                 deliver(&transport, &cloudevent);
             }
+        }
+        // The heartbeat fires on its own 30s timer, independent of event arrival —
+        // so it keeps beating through a silent usage-limit sleep (`phase: sleeping`)
+        // and a consumer never mistakes a long pause for a dead run.
+        if last_beat.elapsed() >= HEARTBEAT_INTERVAL {
+            let beat = heartbeat(&ctx, &state, tokens, start.elapsed().as_secs());
+            deliver(&transport, &beat);
+            last_beat = Instant::now();
         }
         if stopping {
             break;
@@ -219,6 +309,78 @@ mod tests {
 
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
+    }
+
+    #[test]
+    fn heartbeat_carries_phase_interval_and_token_totals() {
+        // A folded state: issue 7 executing, one plan + one close of token usage.
+        let mut state = RunState::new("t", 3);
+        state.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "a".into(),
+        });
+        state.apply(RunEvent::Executing {
+            number: 7,
+            budget_min: 45,
+            model: "sonnet".into(),
+            effort: None,
+        });
+        let mut tokens = Totals::default();
+        tokens.add(&UsageLite {
+            input: 10,
+            cache_read: 20,
+            cache_creation: 5,
+            output: 3,
+            model: None,
+        });
+        tokens.add(&UsageLite {
+            input: 1,
+            cache_read: 2,
+            cache_creation: 0,
+            output: 4,
+            model: None,
+        });
+
+        let v = heartbeat(&test_ctx(), &state, tokens, 412);
+        assert_eq!(v["type"], "dev.ralphy.run.heartbeat");
+        assert_eq!(v["data"]["phase"], "executing");
+        assert_eq!(v["data"]["interval_s"], 30);
+        assert_eq!(v["data"]["issue"], 7);
+        assert_eq!(v["data"]["elapsed_s"], 412);
+        assert_eq!(v["data"]["queue_total"], 3);
+        assert_eq!(v["data"]["tokens_total"]["up"], 11);
+        assert_eq!(v["data"]["tokens_total"]["cr"], 22);
+        assert_eq!(v["data"]["tokens_total"]["cw"], 5);
+        assert_eq!(v["data"]["tokens_total"]["out"], 7);
+    }
+
+    #[test]
+    fn phase_sleeping_wins_over_executing_issue() {
+        // Even with an executing issue, an active usage-limit sleep reports sleeping.
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "a".into(),
+        });
+        state.apply(RunEvent::Executing {
+            number: 1,
+            budget_min: 45,
+            model: "sonnet".into(),
+            effort: None,
+        });
+        assert_eq!(phase(&state), "executing");
+        state.apply(RunEvent::SleepStarted {
+            reset: "14:30".into(),
+            target_epoch: 1_700_000_000,
+        });
+        assert_eq!(phase(&state), "sleeping");
+        state.apply(RunEvent::SleepEnded);
+        assert_eq!(phase(&state), "executing");
+    }
+
+    #[test]
+    fn phase_starting_before_any_issue() {
+        assert_eq!(phase(&RunState::new("t", 2)), "starting");
     }
 
     #[test]
