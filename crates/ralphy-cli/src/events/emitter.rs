@@ -75,7 +75,7 @@ std::thread_local! {
     /// ids stay emission-ordered. All `id` minting happens on the single sender
     /// thread, so a thread-local generator is exactly the right sequence.
     static ID_GEN: std::cell::RefCell<ulid::Generator> =
-        std::cell::RefCell::new(ulid::Generator::new());
+        const { std::cell::RefCell::new(ulid::Generator::new()) };
 }
 
 /// Mint a fresh per-event ULID (the envelope `id`: the dedup + sort key), monotonic
