@@ -76,6 +76,16 @@ fn skip_kind_name(kind: SkipKind) -> &'static str {
     }
 }
 
+/// Resolve a possibly-zero issue number (the adapter's planning/execution events
+/// carry no number) to the active issue, mirroring `RunState::resolve`.
+fn resolve(state: &RunState, number: u64) -> Option<u64> {
+    if number == 0 {
+        state.active
+    } else {
+        Some(number)
+    }
+}
+
 /// Map one folded [`RunEvent`] to a CloudEvents envelope, or `None` for an event
 /// the sink does not forward. `state` resolves the active issue number for the
 /// adapter events that carry `0` (planning/executing), mirroring the notifier fold.
@@ -84,6 +94,62 @@ fn skip_kind_name(kind: SkipKind) -> &'static str {
 /// the envelope stamps — those are asserted for presence/shape, not equality.
 pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -> Option<Value> {
     match ev {
+        RunEvent::QueueBuilt {
+            count,
+            order,
+            stop_before,
+        } => Some(envelope(
+            "dev.ralphy.queue.built",
+            None,
+            ctx,
+            json!({ "count": count, "order": order, "stop_before": stop_before }),
+        )),
+        RunEvent::IssueStarted { number, title } => Some(envelope(
+            "dev.ralphy.issue.started",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number, "title": title }),
+        )),
+        RunEvent::Planning { model, effort } => {
+            // The adapter event carries no number; the subject is the active issue.
+            let subject = state.active.map(subject_for);
+            Some(envelope(
+                "dev.ralphy.issue.planning",
+                subject.as_deref(),
+                ctx,
+                json!({ "model": model, "effort": effort }),
+            ))
+        }
+        RunEvent::PlanWritten {
+            number,
+            open_steps,
+            usage,
+        } => Some(envelope(
+            "dev.ralphy.plan.written",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number, "open_steps": open_steps, "usage": usage_json(usage) }),
+        )),
+        RunEvent::Executing {
+            number,
+            budget_min,
+            model,
+            effort,
+        } => {
+            let n = resolve(state, *number);
+            let subject = n.map(subject_for);
+            Some(envelope(
+                "dev.ralphy.issue.executing",
+                subject.as_deref(),
+                ctx,
+                json!({
+                    "number": n.unwrap_or(0),
+                    "budget_min": budget_min,
+                    "model": model,
+                    "effort": effort,
+                }),
+            ))
+        }
         RunEvent::IssueClosed {
             number,
             tokens,
@@ -92,16 +158,75 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             "dev.ralphy.issue.closed",
             Some(&subject_for(*number)),
             ctx,
-            json!({
-                "number": number,
-                "tokens": tokens,
-                "usage": usage_json(usage),
-            }),
+            json!({ "number": number, "tokens": tokens, "usage": usage_json(usage) }),
         )),
-        _ => {
-            let _ = (state, skip_kind_name);
-            None
-        }
+        RunEvent::NonGreen { number, outcome } => Some(envelope(
+            "dev.ralphy.issue.non_green",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number, "outcome": outcome }),
+        )),
+        RunEvent::NeedsSplit { number } => Some(envelope(
+            "dev.ralphy.issue.needs_split",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number }),
+        )),
+        RunEvent::Skipped {
+            number,
+            kind,
+            label,
+        } => Some(envelope(
+            "dev.ralphy.issue.skipped",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number, "kind": skip_kind_name(*kind), "label": label }),
+        )),
+        RunEvent::HumanBlocked { number, on } => Some(envelope(
+            "dev.ralphy.issue.human_blocked",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number, "on": on }),
+        )),
+        RunEvent::DeadlinePassed { number } => Some(envelope(
+            "dev.ralphy.issue.deadline_passed",
+            Some(&subject_for(*number)),
+            ctx,
+            json!({ "number": number }),
+        )),
+        RunEvent::SleepStarted {
+            reset,
+            target_epoch,
+        } => Some(envelope(
+            "dev.ralphy.run.sleep_started",
+            None,
+            ctx,
+            json!({ "reset": reset, "target_epoch": target_epoch }),
+        )),
+        RunEvent::SleepEnded => Some(envelope(
+            "dev.ralphy.run.sleep_ended",
+            None,
+            ctx,
+            json!({}),
+        )),
+        RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
+            "dev.ralphy.knowledge.consolidating",
+            None,
+            ctx,
+            json!({ "notes": notes }),
+        )),
+        RunEvent::KnowledgeConsolidated { archived } => Some(envelope(
+            "dev.ralphy.knowledge.consolidated",
+            None,
+            ctx,
+            json!({ "archived": archived }),
+        )),
+        RunEvent::Notice { level, message } => Some(envelope(
+            "dev.ralphy.run.notice",
+            None,
+            ctx,
+            json!({ "level": level.to_string().to_lowercase(), "message": message }),
+        )),
     }
 }
 
@@ -151,5 +276,230 @@ mod tests {
         assert_eq!(v["data"]["usage"]["out"], 4);
         assert_eq!(v["data"]["usage"]["model"], "claude-sonnet-4");
         assert_eq!(v["data"]["emitter"]["pid"], 4242);
+    }
+
+    /// A folded state with issue 7 active (so the number-0 adapter events resolve).
+    fn active_state() -> RunState {
+        let mut s = RunState::new("t", 1);
+        s.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "hello".into(),
+        });
+        s
+    }
+
+    fn map(ev: RunEvent, state: &RunState) -> Value {
+        runevent_to_cloudevent(&ev, &ctx(), state).expect("mapped")
+    }
+
+    #[test]
+    fn queue_built_has_no_subject_and_lists_order() {
+        let v = map(
+            RunEvent::QueueBuilt {
+                count: 3,
+                order: vec![1, 2, 3],
+                stop_before: Some(2),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.queue.built");
+        assert!(v.get("subject").is_none(), "queue.built has no subject: {v}");
+        assert_eq!(v["data"]["count"], 3);
+        assert_eq!(v["data"]["order"], json!([1, 2, 3]));
+        assert_eq!(v["data"]["stop_before"], 2);
+    }
+
+    #[test]
+    fn issue_started_carries_number_title_and_subject() {
+        let v = map(
+            RunEvent::IssueStarted {
+                number: 7,
+                title: "hello".into(),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.started");
+        assert_eq!(v["subject"], "issue/7");
+        assert_eq!(v["data"]["number"], 7);
+        assert_eq!(v["data"]["title"], "hello");
+    }
+
+    #[test]
+    fn planning_resolves_subject_from_active() {
+        let v = map(
+            RunEvent::Planning {
+                model: Some("opus".into()),
+                effort: Some("high".into()),
+            },
+            &active_state(),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.planning");
+        assert_eq!(v["subject"], "issue/7");
+        assert_eq!(v["data"]["model"], "opus");
+        assert_eq!(v["data"]["effort"], "high");
+    }
+
+    #[test]
+    fn plan_written_carries_open_steps_usage_and_subject() {
+        let v = map(
+            RunEvent::PlanWritten {
+                number: 7,
+                open_steps: 4,
+                usage: UsageLite {
+                    input: 10,
+                    ..Default::default()
+                },
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.plan.written");
+        assert_eq!(v["subject"], "issue/7");
+        assert_eq!(v["data"]["open_steps"], 4);
+        assert_eq!(v["data"]["usage"]["up"], 10);
+    }
+
+    #[test]
+    fn executing_resolves_active_number_and_subject() {
+        let v = map(
+            RunEvent::Executing {
+                number: 0,
+                budget_min: 45,
+                model: "claude-sonnet-4".into(),
+                effort: Some("medium".into()),
+            },
+            &active_state(),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.executing");
+        assert_eq!(v["subject"], "issue/7");
+        assert_eq!(v["data"]["number"], 7);
+        assert_eq!(v["data"]["budget_min"], 45);
+        assert_eq!(v["data"]["model"], "claude-sonnet-4");
+        assert_eq!(v["data"]["effort"], "medium");
+    }
+
+    #[test]
+    fn non_green_carries_outcome_and_subject() {
+        let v = map(
+            RunEvent::NonGreen {
+                number: 7,
+                outcome: "Stuck".into(),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.non_green");
+        assert_eq!(v["subject"], "issue/7");
+        assert_eq!(v["data"]["outcome"], "Stuck");
+    }
+
+    #[test]
+    fn needs_split_carries_number_and_subject() {
+        let v = map(RunEvent::NeedsSplit { number: 7 }, &RunState::new("t", 1));
+        assert_eq!(v["type"], "dev.ralphy.issue.needs_split");
+        assert_eq!(v["subject"], "issue/7");
+        assert_eq!(v["data"]["number"], 7);
+    }
+
+    #[test]
+    fn skipped_maps_kind_and_parking_label() {
+        // A human-return skip names the parking label.
+        let v = map(
+            RunEvent::Skipped {
+                number: 9,
+                kind: SkipKind::HumanReturn,
+                label: Some("needs-info".into()),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.skipped");
+        assert_eq!(v["subject"], "issue/9");
+        assert_eq!(v["data"]["kind"], "human_return");
+        assert_eq!(v["data"]["label"], "needs-info");
+
+        // A blocked-by skip has no parking label and the `blocked_by` kind.
+        let v = map(
+            RunEvent::Skipped {
+                number: 4,
+                kind: SkipKind::BlockedBy,
+                label: None,
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["data"]["kind"], "blocked_by");
+        assert!(v["data"]["label"].is_null(), "no parking label: {v}");
+    }
+
+    #[test]
+    fn human_blocked_lists_blockers() {
+        let v = map(
+            RunEvent::HumanBlocked {
+                number: 16,
+                on: vec![30, 18],
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.human_blocked");
+        assert_eq!(v["subject"], "issue/16");
+        assert_eq!(v["data"]["on"], json!([30, 18]));
+    }
+
+    #[test]
+    fn deadline_passed_carries_number_and_subject() {
+        let v = map(
+            RunEvent::DeadlinePassed { number: 7 },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.issue.deadline_passed");
+        assert_eq!(v["subject"], "issue/7");
+    }
+
+    #[test]
+    fn sleep_events_map_without_subject() {
+        let v = map(
+            RunEvent::SleepStarted {
+                reset: "14:30".into(),
+                target_epoch: 1_700_000_000,
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.run.sleep_started");
+        assert!(v.get("subject").is_none(), "sleep_started has no subject: {v}");
+        assert_eq!(v["data"]["reset"], "14:30");
+        assert_eq!(v["data"]["target_epoch"], 1_700_000_000i64);
+
+        let v = map(RunEvent::SleepEnded, &RunState::new("t", 1));
+        assert_eq!(v["type"], "dev.ralphy.run.sleep_ended");
+        assert!(v.get("subject").is_none(), "sleep_ended has no subject: {v}");
+    }
+
+    #[test]
+    fn knowledge_events_map_counts() {
+        let v = map(
+            RunEvent::KnowledgeConsolidating { notes: 4 },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.knowledge.consolidating");
+        assert_eq!(v["data"]["notes"], 4);
+
+        let v = map(
+            RunEvent::KnowledgeConsolidated { archived: 3 },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.knowledge.consolidated");
+        assert_eq!(v["data"]["archived"], 3);
+    }
+
+    #[test]
+    fn notice_maps_level_and_message_without_subject() {
+        let v = map(
+            RunEvent::Notice {
+                level: tracing::Level::WARN,
+                message: "heads up".into(),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(v["type"], "dev.ralphy.run.notice");
+        assert!(v.get("subject").is_none(), "notice carries no subject: {v}");
+        assert_eq!(v["data"]["level"], "warn");
+        assert_eq!(v["data"]["message"], "heads up");
     }
 }
