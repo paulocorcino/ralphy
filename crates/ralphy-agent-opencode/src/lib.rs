@@ -28,7 +28,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
-use ralphy_adapter_support::{resolve_program, run_headless, run_json_session, JsonSession};
+use ralphy_adapter_support::{
+    resolve_program, run_headless_logged, run_json_session, JsonSession, PROMPT_EXECUTE,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, git, plan, Agent,
     DiagnosisReport, DraftRequest, Execution, Issue, IssuesDraft, Outcome, Plan, TriageDraft,
@@ -93,11 +95,6 @@ const OPENCODE_AUTH_ERROR_MSG: &str =
 fn is_opencode_auth_error(text: &str) -> bool {
     ralphy_adapter_support::auth_error(text, &[&["providerautherror"]])
 }
-
-/// The vendor-neutral execution charter, piped to `opencode run` on stdin. Shared
-/// verbatim with the Claude and Codex paths — it already names the
-/// `RALPHY_DONE_EXIT` / `RALPHY_BLOCKED_EXIT` sentinels and is not Claude-specific.
-const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
 
 // ── init one-shot sessions (ADR-0012 stages 2 & 8) ──────────────────────────
 
@@ -340,16 +337,12 @@ impl OpenCodeAgent {
     /// per-issue cap — the issue is then bounded only by the run deadline (or the
     /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
     fn issue_deadline(&self) -> Instant {
-        let budget = if self.max_minutes_per_issue == 0 {
-            ralphy_core::UNBOUNDED_ISSUE_HORIZON
-        } else {
-            Duration::from_secs(self.max_minutes_per_issue * 60)
-        };
-        let per_issue = Instant::now() + budget;
-        match self.run_deadline {
-            Some(rd) => per_issue.min(rd),
-            None => per_issue,
-        }
+        ralphy_adapter_support::issue_deadline(
+            Instant::now(),
+            self.max_minutes_per_issue,
+            self.run_deadline,
+            ralphy_core::UNBOUNDED_ISSUE_HORIZON,
+        )
     }
 }
 
@@ -616,18 +609,11 @@ impl OpenCodeAgent {
         // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
         // shared headless runner; `exited_cleanly` is a *successful* exit (the
         // status is `None` exactly when the child was killed on the wall timeout).
-        let r = run_headless(cmd, prompt, timeout)
-            .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
-
-        let stdout_text = r.stdout;
         // The combined log keeps stderr too — the JSON stream lives on stdout, but
         // a crash or auth failure often only prints to stderr.
-        let mut log = stdout_text.clone();
-        log.push_str(&r.stderr);
-        let _ = fs::write(self.run_dir.join("opencode.log"), &log);
-
-        let exited_cleanly = r.exit.map(|s| s.success()).unwrap_or(false);
-        Ok((exited_cleanly, r.timed_out, stdout_text, log))
+        let r = run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
+            .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
+        Ok((r.exited_cleanly, r.timed_out, r.stdout, r.log))
     }
 }
 
@@ -685,12 +671,10 @@ fn session_id_from_stream(stdout: &str) -> Option<String> {
 /// message records into (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when
 /// no home is known.
 fn opencode_db_path() -> Option<PathBuf> {
-    let home = ralphy_adapter_support::home_dir()?;
-    Some(
-        home.join(".local")
-            .join("share")
-            .join("opencode")
-            .join("opencode.db"),
+    ralphy_adapter_support::home_scoped_path(
+        None,
+        Path::new(".local/share/opencode"),
+        Path::new("opencode.db"),
     )
 }
 
