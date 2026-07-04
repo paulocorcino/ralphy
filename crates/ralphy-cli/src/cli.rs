@@ -436,10 +436,7 @@ mod tests {
         // The rendered long help must also carry the flags verbatim.
         let help = run.clone().render_long_help().to_string();
         for flag in ["--plan-agent", "--no-assignee", "--if-idle"] {
-            assert!(
-                help.contains(flag),
-                "run --help text must mention {flag}"
-            );
+            assert!(help.contains(flag), "run --help text must mention {flag}");
         }
 
         // The `opencode` agent value resolves under both its canonical spelling and
