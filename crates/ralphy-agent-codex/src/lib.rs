@@ -25,9 +25,11 @@ mod outcome;
 mod skills;
 mod tasks;
 mod usage;
-use auth::{is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG};
+use auth::{
+    is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
+};
 use command::{
-    build_codex_command, codex_config_model, tier_to_effort, recommended_tier, DEFAULT_CODEX_MODEL,
+    build_codex_command, codex_config_model, recommended_tier, tier_to_effort, DEFAULT_CODEX_MODEL,
 };
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
