@@ -206,6 +206,31 @@ pub fn list_queue(
     Ok(build_queue(batches))
 }
 
+/// Resolve an assignee filter value to the concrete GitHub login it scopes the
+/// queue to (ADR-0021 §5's `assignee_filter` resolver). A non-`@me` string is
+/// already the wire login, so it is returned verbatim with NO `gh` call; only the
+/// literal `@me` is resolved via `gh api user --jq .login` through the shared
+/// [`gh_output`] transient-retry wrapper.
+///
+/// Contract: at most ONE `gh` invocation per call, and only on the `@me` path.
+/// `bail!`s when the resolved login is empty (a `gh api user` that returned no
+/// `.login`).
+pub fn resolve_login(assignee: &str, repo_root: &Path) -> Result<String> {
+    if assignee != "@me" {
+        return Ok(assignee.to_string());
+    }
+    let out = gh_output("gh api user", || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["api", "user", "--jq", ".login"]);
+        cmd
+    })?;
+    let login = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if login.is_empty() {
+        bail!("`gh api user --jq .login` returned an empty login for @me");
+    }
+    Ok(login)
+}
+
 /// Close a green queue issue with a comment pointing at the run branch. The
 /// issue's labels are left untouched — closing alone removes it from the queue
 /// (the cycle); the human still merges the branch by hand.
@@ -1113,6 +1138,27 @@ mod tests {
         // The source URL travels with each reference (the handle for comments).
         assert!(file.contains("/bioledger-platform/issues/13"));
         assert!(file.contains("/bioledger-platform/issues/15"));
+    }
+
+    /// The non-`@me` arm returns the value verbatim and spawns NO process — so it
+    /// resolves against a nonexistent `repo_root` without error (proof of no `gh`).
+    #[test]
+    fn resolve_login_passes_through_concrete_login() {
+        assert_eq!(
+            resolve_login("ralphy-bot", Path::new("/nonexistent")).unwrap(),
+            "ralphy-bot"
+        );
+    }
+
+    /// The `@me` arm hits the live `gh api user`. Ignored by default (needs network
+    /// + `gh` auth); mirrors the `e2e_references_for_bioledger_29` ignore pattern.
+    ///   cargo test -p ralphy-core resolve_login_at_me_hits_gh_api_user -- --ignored --nocapture
+    #[test]
+    #[ignore = "live network: gh api user"]
+    fn resolve_login_at_me_hits_gh_api_user() {
+        let login = resolve_login("@me", Path::new(".")).expect("gh api user");
+        println!("resolve_login(@me) = {login:?}");
+        assert!(!login.is_empty(), "@me must resolve to a non-empty login");
     }
 
     #[test]
