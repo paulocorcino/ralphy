@@ -109,7 +109,8 @@ impl StepPoller {
                 if prev == Some(*status) {
                     continue; // no transition
                 }
-                let ev = crate::events::envelope::plan_step_envelope(ctx, state, number, text, status);
+                let ev =
+                    crate::events::envelope::plan_step_envelope(ctx, state, number, text, status);
                 deliver(transport, &ev, warned, RETRY_BASE_BACKOFF);
             }
         }
