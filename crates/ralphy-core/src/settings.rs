@@ -38,6 +38,15 @@ pub struct VerifySettings {
     pub require_verify_gate: Option<bool>,
 }
 
+/// Agent-agnostic queue defaults. Currently just the persisted `--assignee`
+/// filter (`queue.assignee`): when set, bare `run`/`issues` build the queue only
+/// from issues the login is among the assignees of. `None` → no default filter.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QueueSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<String>,
+}
+
 /// The full settings store. Fields are additive across releases; unknown keys
 /// are preserved by the `extra` flatten so an older binary's `save` does not
 /// silently drop a future peer's keys. Per-agent sections (e.g. a vendor's
@@ -55,6 +64,9 @@ pub struct Settings {
     /// The runner-enforced verify gate's per-repo fallback (ADR-0011).
     #[serde(default)]
     pub verify: VerifySettings,
+    /// Agent-agnostic queue defaults (`queue.assignee`).
+    #[serde(default)]
+    pub queue: QueueSettings,
     #[serde(flatten)]
     pub extra: Map<String, serde_json::Value>,
 }
@@ -214,6 +226,23 @@ mod tests {
         s.save(&ws).unwrap();
         let reloaded = Settings::load(&ws).unwrap();
         assert_eq!(reloaded.verify.require_verify_gate, Some(true));
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn queue_assignee_round_trips_and_defaults_unset() {
+        let (ws, dir) = tmp_ws("queue-assignee");
+
+        // Out of the box: unset.
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.queue.assignee, None);
+
+        let mut s = s;
+        s.queue.assignee = Some("@me".to_string());
+        s.save(&ws).unwrap();
+        let reloaded = Settings::load(&ws).unwrap();
+        assert_eq!(reloaded.queue.assignee, Some("@me".to_string()));
 
         fs::remove_dir_all(&dir).ok();
     }

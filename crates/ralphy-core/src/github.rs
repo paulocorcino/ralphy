@@ -159,26 +159,42 @@ fn gh_output(op: &str, mut build: impl FnMut() -> Command) -> Result<Output> {
     bail!("`{op}` exhausted {GH_MAX_ATTEMPTS} attempts");
 }
 
+/// Build the full `gh issue list` argv for one queue label. When `assignee` is
+/// `Some`, appends `--assignee <value>` so gh restricts the batch to issues the
+/// login is among the assignees of; `None` leaves the query unfiltered. Kept pure
+/// (no `Command`, no network) so the `--assignee` append is unit-testable,
+/// mirroring the `parse_issue_list` seam.
+pub fn queue_list_args(label: &str, assignee: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "issue".to_string(),
+        "list".to_string(),
+        "--label".to_string(),
+        label.to_string(),
+        "--state".to_string(),
+        "open".to_string(),
+        "--json".to_string(),
+        "number,title,body,labels".to_string(),
+        "--limit".to_string(),
+        "100".to_string(),
+    ];
+    if let Some(a) = assignee {
+        args.push("--assignee".to_string());
+        args.push(a.to_string());
+    }
+    args
+}
+
 /// Build the run queue from GitHub. `gh --label` is an AND filter, so query each
 /// label separately and union the batches — an issue carrying ANY queue label
-/// qualifies. Returns the deduped, ascending queue.
-pub fn list_queue(labels: &[String], repo_root: &Path) -> Result<Vec<Issue>> {
+/// qualifies. When `assignee` is `Some`, each batch is additionally scoped to
+/// issues the login is among the assignees of. Returns the deduped, ascending
+/// queue.
+pub fn list_queue(labels: &[String], assignee: Option<&str>, repo_root: &Path) -> Result<Vec<Issue>> {
     let mut batches = Vec::with_capacity(labels.len());
     for label in labels {
         let out = gh_output(&format!("gh issue list --label {label}"), || {
             let mut cmd = gh(repo_root);
-            cmd.args([
-                "issue",
-                "list",
-                "--label",
-                label,
-                "--state",
-                "open",
-                "--json",
-                "number,title,body,labels",
-                "--limit",
-                "100",
-            ]);
+            cmd.args(queue_list_args(label, assignee));
             cmd
         })?;
         batches.push(parse_issue_list(&String::from_utf8_lossy(&out.stdout))?);
@@ -1626,5 +1642,21 @@ mod tests {
         assert_eq!(list[0].number, 2);
         assert_eq!(list[0].labels, vec!["AFK"]);
         assert_eq!(list[1].number, 1);
+    }
+
+    #[test]
+    fn queue_list_args_appends_assignee_only_when_present() {
+        let with = queue_list_args("ready-for-agent", Some("@me"));
+        let idx = with
+            .iter()
+            .position(|a| a == "--assignee")
+            .expect("--assignee must be present when assignee is Some");
+        assert_eq!(with.get(idx + 1).map(String::as_str), Some("@me"));
+
+        let without = queue_list_args("ready-for-agent", None);
+        assert!(
+            !without.iter().any(|a| a == "--assignee"),
+            "no --assignee token when assignee is None"
+        );
     }
 }
