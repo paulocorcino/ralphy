@@ -18,7 +18,8 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::{
-    list_session_files, run_headless, run_json_session, session_files_appeared, JsonSession,
+    list_session_files, run_headless_logged, run_json_session, session_files_appeared, JsonSession,
+    PROMPT_EXECUTE,
 };
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, git, plan, Agent,
@@ -197,11 +198,6 @@ const DEFAULT_CODEX_MODEL: &str = "gpt-5-codex";
 /// lives at `assets/prompts/`.
 const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.plan.codex.md");
 
-/// The vendor-neutral execution charter, piped to `codex exec` on stdin. Shared
-/// verbatim with the Claude path — it already names the `RALPHY_DONE_EXIT` /
-/// `RALPHY_BLOCKED_EXIT` sentinels and is not Claude-specific.
-const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
-
 /// Drives the `codex` CLI. `model` is the operator override (else
 /// [`DEFAULT_CODEX_MODEL`]); `run_dir` is where the captured logs live;
 /// `max_minutes_per_issue` is the per-issue wall budget, clamped to `run_deadline`
@@ -243,16 +239,12 @@ impl CodexAgent {
     /// per-issue cap — the issue is then bounded only by the run deadline (or the
     /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
     fn issue_deadline(&self) -> Instant {
-        let budget = if self.max_minutes_per_issue == 0 {
-            ralphy_core::UNBOUNDED_ISSUE_HORIZON
-        } else {
-            Duration::from_secs(self.max_minutes_per_issue * 60)
-        };
-        let per_issue = Instant::now() + budget;
-        match self.run_deadline {
-            Some(rd) => per_issue.min(rd),
-            None => per_issue,
-        }
+        ralphy_adapter_support::issue_deadline(
+            Instant::now(),
+            self.max_minutes_per_issue,
+            self.run_deadline,
+            ralphy_core::UNBOUNDED_ISSUE_HORIZON,
+        )
     }
 
     /// The single model decision point, in precedence order: the explicit
@@ -273,11 +265,11 @@ impl CodexAgent {
 /// set (matching Codex's own resolution), else `<home>/.codex/config.toml`
 /// (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when no home is known.
 fn codex_config_path() -> Option<PathBuf> {
-    if let Some(codex_home) = std::env::var_os("CODEX_HOME") {
-        return Some(PathBuf::from(codex_home).join("config.toml"));
-    }
-    let home = ralphy_adapter_support::home_dir()?;
-    Some(home.join(".codex").join("config.toml"))
+    ralphy_adapter_support::home_scoped_path(
+        std::env::var_os("CODEX_HOME"),
+        Path::new(".codex"),
+        Path::new("config.toml"),
+    )
 }
 
 /// The top-level `model = "..."` from the user's Codex config, if present and
@@ -671,15 +663,9 @@ impl CodexAgent {
         // shared headless runner; Codex's `exited_cleanly` (a *successful* exit,
         // not merely "not timed out") is recovered from the returned exit status,
         // which is `None` exactly when the child was killed on the wall timeout.
-        let r = run_headless(cmd, prompt, timeout)
+        let r = run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
             .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
-
-        let mut text = r.stdout;
-        text.push_str(&r.stderr);
-        let _ = fs::write(self.run_dir.join("codex.log"), &text);
-
-        let exited_cleanly = r.exit.map(|s| s.success()).unwrap_or(false);
-        Ok((exited_cleanly, r.timed_out, text))
+        Ok((r.exited_cleanly, r.timed_out, r.log))
     }
 }
 
@@ -746,11 +732,11 @@ fn parse_codex_rollout_usage(jsonl: &str, model: Option<String>) -> Usage {
 /// elsewhere) — the tree Codex writes `rollout-*.jsonl` session logs into.
 /// `None` when no home is known. Mirrors the home logic in [`codex_config_path`].
 fn codex_sessions_dir() -> Option<PathBuf> {
-    if let Some(codex_home) = std::env::var_os("CODEX_HOME") {
-        return Some(PathBuf::from(codex_home).join("sessions"));
-    }
-    let home = ralphy_adapter_support::home_dir()?;
-    Some(home.join(".codex").join("sessions"))
+    ralphy_adapter_support::home_scoped_path(
+        std::env::var_os("CODEX_HOME"),
+        Path::new(".codex"),
+        Path::new("sessions"),
+    )
 }
 
 /// Snapshot-diff token capture: for each rollout that APPEARED between `before`
