@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// A test context with a stub emitter object.
