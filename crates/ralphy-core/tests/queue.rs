@@ -1059,7 +1059,11 @@ fn view_and_run_agree_under_assignee_filter() {
     let r7 = worked(7).expect("#7 produces a skip row");
     assert!(r7.outcome.is_none() && !r7.closed);
     assert_eq!(vs(7).blocked_by, r7.blocked_by);
-    assert_eq!(vs(7).blocked_by, vec![4], "blocked by the out-of-subset open #4");
+    assert_eq!(
+        vs(7).blocked_by,
+        vec![4],
+        "blocked by the out-of-subset open #4"
+    );
 
     // Eligible: view Eligible ⇔ the run actually worked #9.
     assert_eq!(vs(9).queue_status, QueueStatus::Eligible);

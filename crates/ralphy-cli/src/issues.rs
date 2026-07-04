@@ -112,8 +112,8 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     // Resolve the assignee filter identically to `ralphy run` (ADR-0021): flag >
     // `--no-assignee` > persisted `queue.assignee` > none, so the listing agrees
     // issue-for-issue with what the runner would build under the same filter.
-    let settings = ralphy_core::Settings::load(&ralphy_core::Workspace::new(&repo_root))
-        .unwrap_or_default();
+    let settings =
+        ralphy_core::Settings::load(&ralphy_core::Workspace::new(&repo_root)).unwrap_or_default();
     let assignee = crate::config::resolve_assignee(
         args.assignee.as_deref(),
         args.no_assignee,

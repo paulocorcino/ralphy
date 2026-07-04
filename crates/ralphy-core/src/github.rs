@@ -189,7 +189,11 @@ pub fn queue_list_args(label: &str, assignee: Option<&str>) -> Vec<String> {
 /// qualifies. When `assignee` is `Some`, each batch is additionally scoped to
 /// issues the login is among the assignees of. Returns the deduped, ascending
 /// queue.
-pub fn list_queue(labels: &[String], assignee: Option<&str>, repo_root: &Path) -> Result<Vec<Issue>> {
+pub fn list_queue(
+    labels: &[String],
+    assignee: Option<&str>,
+    repo_root: &Path,
+) -> Result<Vec<Issue>> {
     let mut batches = Vec::with_capacity(labels.len());
     for label in labels {
         let out = gh_output(&format!("gh issue list --label {label}"), || {
