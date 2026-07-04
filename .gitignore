@@ -11,3 +11,5 @@ worktrees/
 state/
 # Ralphy run artifacts (scratch, logs, per-run plans)
 .ralphy/
+docs/old/exec.md
+docs/old/plan-charter.md
