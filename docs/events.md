@@ -119,7 +119,7 @@ cache-write, `out` output (ADR-0008).
 | `type` (`dev.ralphy.` prefix) | When | `data` fields |
 | --- | --- | --- |
 | `run.started` | Process begins working a queue | `repo`, `queue_labels[]`, `plan_agent`, `branch_mode`, `base` (the base branch — renamed from `branch`), `deadline_hours?`, `queue[]` — a light `{number, title}` scope list seeded from the preceding `queue.built` (the exec agent is now `data.agent.name`) |
-| `queue.built` | Queue resolved from labels | `count`, `order[]` (issue numbers), `stop_before?`; **enriched (ADR-0020)** with `issues[]` — per-issue `{number, title, labels[], queue_status, skip_reason?, blocked_by[], position?}` (`position` only on `eligible` issues) |
+| `queue.built` | Queue resolved from labels | `count`, `order[]` (issue numbers), `stop_before?`; `assignee_filter?` (ADR-0021 §5 — the resolved concrete login the queue was scoped to, `@me` already resolved; `null` = whole queue); **enriched (ADR-0020)** with `issues[]` — per-issue `{number, title, labels[], queue_status, skip_reason?, blocked_by[], position?}` (`position` only on `eligible` issues) |
 | `issue.started` | Work begins on an issue | `number`, `title` |
 | `issue.planning` | Planning phase starts | `model?`, `effort?` |
 | `plan.written` | Plan artifact written | `number`, `open_steps` (`0` = infeasible), `usage {up,cr,cw,out,model}`, `steps[]` — the full checkbox list as `{text, status}` (`status`: `open` \| `checked` \| `noticed`) |
@@ -140,7 +140,7 @@ cache-write, `out` output (ADR-0008).
 | `run.notice` | Any WARN/ERROR on the bus | `level`, `message` |
 | `run.heartbeat` | Every ~30s while the process lives — **including during usage-limit sleeps** (`phase: "sleeping"`), so a long sleep is never mistaken for death | see below |
 | `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `issues[]` — per-issue rollup `{number, title, status, kind?}` (`status`: `done` \| `skipped` \| `blocked` \| `infeasible` \| `needs_split` \| `non_green` \| `hitl`; `kind` only on a `skipped`); `tokens_total {up,cr,cw,out}`, `duration_s`. Carries **no** `data.agent` block. The `issues[]` rollup lists only issues that **entered the run**; key completeness off the scalar `issues_total`, not the array length |
-| `queue.snapshot` | On demand: `ralphy issues --push` (ADR-0020) | identical `data` shape to the enriched `queue.built` (`count`, `order[]`, `stop_before?`, `issues[]`) |
+| `queue.snapshot` | On demand: `ralphy issues --push` (ADR-0020) | identical `data` shape to the enriched `queue.built` (`count`, `order[]`, `stop_before?`, `issues[]`, `assignee_filter?`) |
 
 ### `run.heartbeat`
 
@@ -179,7 +179,8 @@ contract vintage):
 ## Evolution rules
 
 1. `data` payloads evolve **additively only** — new optional fields are the
-   normal path; removing or renaming a field, or changing a field's meaning,
+   normal path (e.g. `queue.built`/`queue.snapshot` gained `assignee_filter` in
+   ADR-0021 §5); removing or renaming a field, or changing a field's meaning,
    requires a **new event type** instead.
 2. New event types may appear at any release; consumers skip unknown types.
 3. `data.emitter.version` on every event identifies the emitting contract vintage

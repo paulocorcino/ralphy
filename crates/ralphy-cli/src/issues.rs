@@ -131,7 +131,14 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         }
         let queue = build_list_queue(&repo_root, assignee.as_deref())?;
         let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        return push_snapshot(&repo_root, &view);
+        // Resolve the assignee scope mark for the snapshot (ADR-0021 §5). Unlike
+        // `ralphy run` (best-effort telemetry), this one-shot explicit command fails
+        // loud on a resolve error — propagate via `?`.
+        let assignee_filter = match assignee.as_deref() {
+            Some(a) => Some(github::resolve_login(a, &repo_root)?),
+            None => None,
+        };
+        return push_snapshot(&repo_root, &view, assignee_filter.as_deref());
     }
 
     if let Some(number) = args.show {
@@ -185,7 +192,11 @@ fn build_list_queue(
 /// SAME `data` builder the runner's `queue.built` uses (so the two shapes cannot
 /// diverge). A one-shot synchronous POST — no ring, no worker. Fails clearly when
 /// no `events.url` is configured for this repo, and reports the delivery outcome.
-fn push_snapshot(repo_root: &std::path::Path, view: &QueueView) -> Result<()> {
+fn push_snapshot(
+    repo_root: &std::path::Path,
+    view: &QueueView,
+    assignee_filter: Option<&str>,
+) -> Result<()> {
     use crate::events::client::{EventSink, PostOutcome, UreqEventTransport};
     use crate::events::config::{effective_token, EventsStore, TOKEN_ENV};
     use crate::events::{emitter, envelope};
@@ -221,7 +232,13 @@ fn push_snapshot(repo_root: &std::path::Path, view: &QueueView) -> Result<()> {
         }),
     };
     let issues = serde_json::to_value(&view.issues)?;
-    let data = envelope::queue_snapshot_data(&issues, view.count, &view.order, view.stop_before);
+    let data = envelope::queue_snapshot_data(
+        &issues,
+        view.count,
+        &view.order,
+        view.stop_before,
+        assignee_filter,
+    );
     // Out-of-run: no folded run state, so the `agent` block is all-`null` (matching
     // a `queue.built` emitted before `run.started` folds).
     let env = envelope::queue_snapshot_envelope(data, &ctx, &crate::runstate::RunState::default());
@@ -706,7 +723,7 @@ mod tests {
         let tr = FakeTracker::default();
         let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
 
-        let err = push_snapshot(std::path::Path::new("."), &view).unwrap_err();
+        let err = push_snapshot(std::path::Path::new("."), &view, None).unwrap_err();
         assert!(
             err.to_string().contains("events.url"),
             "error must name events.url: {err}"

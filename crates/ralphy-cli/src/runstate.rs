@@ -99,6 +99,10 @@ pub enum RunEvent {
         order: Vec<u64>,
         stop_before: Option<u64>,
         issues: serde_json::Value,
+        /// The resolved concrete login the queue was scoped to (ADR-0021 §5);
+        /// `None` = whole queue (unfiltered, or an explicit `--issues`/`--only-issue`
+        /// selection). Only the CloudEvents sink carries it onto `queue.built`.
+        assignee_filter: Option<String>,
     },
     /// Work began on an issue (number + title).
     IssueStarted { number: u64, title: String },
@@ -660,6 +664,9 @@ pub struct EventFields {
     pub steps_json: Option<String>,
     /// The raw `plan.md` markdown on a `plan opened`/`plan closed` event (#96).
     pub plan_md: Option<String>,
+    /// The resolved concrete login the queue was scoped to on a `queue built`
+    /// event (ADR-0021 §5); absent / empty = whole queue.
+    pub assignee_filter: Option<String>,
 }
 
 impl Default for EventFields {
@@ -700,6 +707,7 @@ impl Default for EventFields {
             duration_s: None,
             steps_json: None,
             plan_md: None,
+            assignee_filter: None,
         }
     }
 }
@@ -756,6 +764,8 @@ impl Visit for EventFields {
             "base" => self.base = Some(value.to_string()),
             "steps_json" => self.steps_json = Some(value.to_string()),
             "plan_md" => self.plan_md = Some(value.to_string()),
+            // The resolved queue assignee scope (ADR-0021 §5); empty → None.
+            "assignee_filter" => self.assignee_filter = clean_opt(value),
             _ => {}
         }
     }
@@ -795,6 +805,9 @@ impl Visit for EventFields {
             // as the raw string (no quote stripping — plain strings, not Debug forms).
             "steps_json" => self.steps_json = Some(rendered),
             "plan_md" => self.plan_md = Some(rendered),
+            // The `%`-formatted (Display) resolved queue assignee scope (ADR-0021
+            // §5) arrives here; an empty-string emission maps to `None`.
+            "assignee_filter" => self.assignee_filter = clean_opt(&rendered),
             _ => {}
         }
     }
@@ -856,6 +869,9 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             // string, falling back to `Null` when absent or unparseable so a
             // legacy emitter (or a snapshot-build failure) still decodes cleanly.
             issues: parse_issues_snapshot(fields.issues_json.as_deref()),
+            // The resolved concrete login the queue was scoped to (ADR-0021 §5);
+            // `None` when the queue was fetched unfiltered.
+            assignee_filter: fields.assignee_filter.clone(),
         }),
         "issue started" => Some(RunEvent::IssueStarted {
             number,
@@ -1078,6 +1094,7 @@ mod tests {
                 order: vec![1, 2],
                 stop_before: None,
                 issues: serde_json::Value::Null,
+                assignee_filter: None,
             },
             RunEvent::IssueStarted {
                 number: 1,
@@ -1310,6 +1327,43 @@ mod tests {
     }
 
     #[test]
+    fn decoder_maps_queue_built_assignee_filter() {
+        // ADR-0021 §5: a `queue built` carrying the resolved login decodes it onto
+        // `QueueBuilt.assignee_filter`; a field-absent `queue built` decodes to `None`.
+        assert_eq!(
+            decode(EventFields {
+                message: "queue built".into(),
+                count: Some(1),
+                order: Some("#1".into()),
+                assignee_filter: Some("octocat".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: serde_json::Value::Null,
+                assignee_filter: Some("octocat".into()),
+            })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "queue built".into(),
+                count: Some(1),
+                order: Some("#1".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: serde_json::Value::Null,
+                assignee_filter: None,
+            })
+        );
+    }
+
+    #[test]
     fn decoder_maps_each_consumed_info_shape() {
         assert_eq!(
             decode(EventFields {
@@ -1325,6 +1379,7 @@ mod tests {
                 order: vec![1, 2, 3],
                 stop_before: Some(2),
                 issues: serde_json::json!([{"number":1,"queue_status":"eligible"}]),
+                assignee_filter: None,
             })
         );
         // A legacy `queue built` with no snapshot decodes with `issues: Null`.
@@ -1340,6 +1395,7 @@ mod tests {
                 order: vec![1],
                 stop_before: None,
                 issues: serde_json::Value::Null,
+                assignee_filter: None,
             })
         );
         assert_eq!(
@@ -1832,6 +1888,7 @@ mod tests {
                 {"number": 1, "title": "one"},
                 {"number": 2, "title": "two"},
             ]),
+            assignee_filter: None,
         });
         assert_eq!(
             state.queue,
@@ -1854,6 +1911,7 @@ mod tests {
             order: vec![1],
             stop_before: None,
             issues: serde_json::Value::Null,
+            assignee_filter: None,
         });
         assert!(legacy.queue.is_empty());
     }

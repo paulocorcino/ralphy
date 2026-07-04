@@ -740,12 +740,35 @@ fn run_cmd(args: RunArgs) -> Result<()> {
             }
         }
     };
+    // ADR-0021 §5: mark the queue's assignee scope on `queue.built`. The filter is
+    // the *applied* one — `None` on an explicit `--issues`/`--only-issue` selection
+    // (which bypasses the assignee filter above), matching how those paths fetch
+    // unfiltered. Resolution is best-effort telemetry: a post-retry `gh api user`
+    // failure warns and drops the scope mark to `null` rather than aborting the run
+    // (the same rule that governs `issues_json`), and the concrete login is emitted,
+    // never the literal `@me`.
+    let applied_assignee = if !args.issues.is_empty() || args.only_issue.is_some() {
+        None
+    } else {
+        assignee.clone()
+    };
+    let assignee_filter: Option<String> = match applied_assignee.as_deref() {
+        Some(a) => match github::resolve_login(a, &repo_root) {
+            Ok(l) => Some(l),
+            Err(e) => {
+                warn!(error = %e, "resolving @me for the assignee_filter mark failed — emitting queue.built without the scope mark");
+                None
+            }
+        },
+        None => None,
+    };
     // message consumed by the telegram notifier / presenter — keep stable
     info!(
         count = queue.len(),
         order = %order.join(" -> "),
         stop_before,
         issues_json = %issues_json,
+        assignee_filter = %assignee_filter.as_deref().unwrap_or(""),
         "queue built"
     );
 

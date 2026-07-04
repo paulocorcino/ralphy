@@ -141,22 +141,26 @@ pub fn plan_step_envelope(
 }
 
 /// The `data` payload shared by the enriched `queue.built` and the on-demand
-/// `queue.snapshot` (ADR-0020): `{count, order, stop_before, issues}`. Defined
-/// ONCE and used by both triggers so the two payloads can never diverge — `issues`
-/// is the per-issue snapshot array (`Value::Null` for the legacy shape when the
-/// resolver produced none). The reserved `emitter` block is merged in later by
+/// `queue.snapshot` (ADR-0020): `{count, order, stop_before, issues,
+/// assignee_filter}`. Defined ONCE and used by both triggers so the two payloads
+/// can never diverge — `issues` is the per-issue snapshot array (`Value::Null` for
+/// the legacy shape when the resolver produced none). `assignee_filter` is the
+/// resolved concrete login the queue was scoped to (ADR-0021 §5), `null` = whole
+/// queue. The reserved `emitter` block is merged in later by
 /// [`envelope`]/[`run_envelope`].
 pub fn queue_snapshot_data(
     issues: &Value,
     count: u64,
     order: &[u64],
     stop_before: Option<u64>,
+    assignee_filter: Option<&str>,
 ) -> Value {
     json!({
         "count": count,
         "order": order,
         "stop_before": stop_before,
         "issues": issues,
+        "assignee_filter": assignee_filter,
     })
 }
 
@@ -220,12 +224,19 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             order,
             stop_before,
             issues,
+            assignee_filter,
         } => Some(envelope(
             "dev.ralphy.queue.built",
             None,
             ctx,
             state,
-            queue_snapshot_data(issues, *count, order, *stop_before),
+            queue_snapshot_data(
+                issues,
+                *count,
+                order,
+                *stop_before,
+                assignee_filter.as_deref(),
+            ),
         )),
         RunEvent::IssueStarted { number, title } => Some(envelope(
             "dev.ralphy.issue.started",
@@ -612,6 +623,7 @@ mod tests {
                 order: vec![1],
                 stop_before: None,
                 issues: Value::Null,
+                assignee_filter: None,
             },
             &RunState::new("t", 1),
         );
@@ -655,6 +667,7 @@ mod tests {
                 order: vec![1],
                 stop_before: None,
                 issues: Value::Null,
+                assignee_filter: None,
             },
             &run_state(),
         );
@@ -737,6 +750,7 @@ mod tests {
                 order: vec![1, 2, 3],
                 stop_before: Some(2),
                 issues: Value::Null,
+                assignee_filter: None,
             },
             &RunState::new("t", 1),
         );
@@ -766,6 +780,7 @@ mod tests {
                 order: vec![1, 2],
                 stop_before: None,
                 issues: issues.clone(),
+                assignee_filter: None,
             },
             &RunState::new("t", 1),
         );
@@ -788,11 +803,12 @@ mod tests {
                 order: vec![1],
                 stop_before: None,
                 issues: issues.clone(),
+                assignee_filter: None,
             },
             &RunState::new("t", 1),
         );
         let snapshot = queue_snapshot_envelope(
-            queue_snapshot_data(&issues, 1, &[1], None),
+            queue_snapshot_data(&issues, 1, &[1], None, None),
             &ctx(),
             &RunState::new("t", 1),
         );
@@ -803,6 +819,59 @@ mod tests {
         );
         // Byte-identical `data` shape (both merge the same emitter via ctx()).
         assert_eq!(snapshot["data"], built["data"]);
+    }
+
+    #[test]
+    fn queue_built_and_snapshot_carry_assignee_filter() {
+        // ADR-0021 §5: the resolved concrete login rides `data.assignee_filter` on a
+        // filtered `queue.built`, JSON `null` on an unfiltered one; and the on-demand
+        // `queue.snapshot` carries the identical field with the same semantics.
+        let filtered = map(
+            RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: Value::Null,
+                assignee_filter: Some("octocat".into()),
+            },
+            &RunState::new("t", 1),
+        );
+        assert_eq!(filtered["data"]["assignee_filter"], "octocat");
+
+        let unfiltered = map(
+            RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: Value::Null,
+                assignee_filter: None,
+            },
+            &RunState::new("t", 1),
+        );
+        assert!(
+            unfiltered["data"]["assignee_filter"].is_null(),
+            "unfiltered queue.built has null assignee_filter: {unfiltered}"
+        );
+
+        // The `queue.snapshot` twin shares the field and the whole `data` shape.
+        let snapshot = queue_snapshot_envelope(
+            queue_snapshot_data(&Value::Null, 1, &[1], None, Some("octocat")),
+            &ctx(),
+            &RunState::new("t", 1),
+        );
+        assert_eq!(snapshot["data"]["assignee_filter"], "octocat");
+        assert_eq!(snapshot["data"], filtered["data"]);
+    }
+
+    #[test]
+    fn events_doc_documents_assignee_filter() {
+        // The doc catalog must name the new field, so a doc regression fails a test.
+        // Path: crates/ralphy-cli/src/events/ -> ../../../../ = repo root.
+        let doc = include_str!("../../../../docs/events.md");
+        assert!(
+            doc.contains("assignee_filter"),
+            "docs/events.md must document assignee_filter"
+        );
     }
 
     #[test]
@@ -1055,6 +1124,7 @@ mod tests {
                 {"number": 1, "title": "one"},
                 {"number": 2, "title": "two"},
             ]),
+            assignee_filter: None,
         });
         state.apply(ev.clone());
         let v = runevent_to_cloudevent(&ev, &ctx(), &state).expect("mapped");
@@ -1104,6 +1174,7 @@ mod tests {
                 {"number": 1, "title": "one"},
                 {"number": 2, "title": "two"},
             ]),
+            assignee_filter: None,
         });
         state.apply(RunEvent::IssueStarted {
             number: 1,
