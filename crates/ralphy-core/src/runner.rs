@@ -3,281 +3,41 @@
 //! run branch. Execution is a later slice; this slice stops after planning.
 
 use std::collections::BTreeMap;
-use std::path::Path;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
+use anyhow::Result;
 use tracing::{info, warn};
 
 use crate::{
-    acceptance, blocked, gitignore, handoff, knowledge,
+    acceptance, blocked, handoff,
     ledger::{FileLedger, LedgerRecord, LedgerSink},
-    protocol, references,
+    protocol,
     repo::{GitRepo, Repo},
     verify::{self, VerifySpec},
     Agent, Execution, Issue, IssueTracker, Outcome, Plan, PlanLimit, Usage, Workspace,
 };
 
+mod artifacts;
+mod branch;
+mod clock;
+mod comments;
+
+pub(crate) use artifacts::{
+    clear_protocol_failure, clear_verify_failure, record_citations, verify_failure_summary,
+    write_handoffs, write_issue_json, write_knowledge, write_protocol_failure, write_references,
+    write_verify_failure,
+};
+#[allow(unused_imports)]
+pub use branch::BranchMode;
+pub(crate) use branch::{is_human_gate, prepare_branch};
+#[allow(unused_imports)]
+pub use clock::{RunClock, WaitOutcome, WallClock};
+pub(crate) use comments::{bundle_comment, close_comment, infeasible_comment, no_gate_comment};
+
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
 /// spinning the resume loop, mirroring the execute-path no-commit cap.
 const MAX_PLAN_LIMIT_RESUMES: u32 = 2;
-
-/// Upper bound on a single usage-limit wait. A reset hint that resolves farther
-/// out than this is treated as a stop (`DeadlinePassed`) rather than parked on —
-/// guards against a malformed/hostile hint parking the run for the unbounded
-/// issue horizon (~365 days) when no run-level deadline is set.
-const MAX_RESET_WAIT: Duration = Duration::from_secs(12 * 60 * 60);
-
-/// How a [`RunClock::wait_for_reset`] wait ended: the reset time arrived and the
-/// run may resume, or the global deadline cut the wait short (deadline beats
-/// resume).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WaitOutcome {
-    Resumed,
-    DeadlinePassed,
-}
-
-/// The run's global deadline, behind a trait so "don't start a new issue past
-/// the budget" is deterministically testable — an [`Instant`] can't be
-/// fast-forwarded in a unit test, but a scripted clock can. The same indirection
-/// lets [`wait_for_reset`](RunClock::wait_for_reset) return instantly under a
-/// scripted clock instead of sleeping until a real reset time.
-pub trait RunClock {
-    fn deadline_passed(&self) -> bool;
-
-    /// Block until the parsed `reset` time (plus a wait-policy buffer), polling so
-    /// the wait stays interruptible and emits a heartbeat. Returns
-    /// [`WaitOutcome::Resumed`] once the reset arrives, or
-    /// [`WaitOutcome::DeadlinePassed`] if the global deadline is already past or
-    /// passes during the wait (deadline beats resume).
-    fn wait_for_reset(&self, reset: &str) -> WaitOutcome;
-}
-
-/// The production clock: a wall-clock deadline. `None` never expires.
-pub struct WallClock {
-    pub deadline: Option<Instant>,
-}
-
-impl RunClock for WallClock {
-    fn deadline_passed(&self) -> bool {
-        match self.deadline {
-            Some(d) => Instant::now() >= d,
-            None => false,
-        }
-    }
-
-    fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
-        // The 5-minute buffer is a wait policy (wake a little after the reset to
-        // avoid re-limiting), applied here rather than baked into `next_reset`.
-        let buffer = chrono::Duration::minutes(5);
-        let target = match next_reset(reset, Local::now()) {
-            Some(t) => t + buffer,
-            // An unparseable reset should never reach here (the loop only calls
-            // wait_for_reset when a reset was parsed); resume immediately rather
-            // than sleep on a guess.
-            None => return WaitOutcome::Resumed,
-        };
-
-        if self.deadline_passed() {
-            return WaitOutcome::DeadlinePassed;
-        }
-        // A reset farther out than the max wait is a stop, regardless of whether a
-        // run deadline is set — without this, a hint resolving to the unbounded
-        // issue horizon would park the run for ~365 days.
-        if target - Local::now()
-            > chrono::Duration::from_std(MAX_RESET_WAIT)
-                .unwrap_or_else(|_| chrono::Duration::hours(12))
-        {
-            info!(%reset, "reset lands beyond the max wait — not waiting");
-            return WaitOutcome::DeadlinePassed;
-        }
-        // A reset beyond the global deadline never sleeps — the deadline wins the
-        // moment it would pass.
-        if let Some(d) = self.deadline {
-            let until_target = (target - Local::now()).num_milliseconds().max(0) as u64;
-            if Instant::now() + Duration::from_millis(until_target) >= d {
-                info!(%reset, "reset lands beyond the run deadline — not waiting");
-                return WaitOutcome::DeadlinePassed;
-            }
-        }
-
-        info!(%reset, target = %target.format("%Y-%m-%d %H:%M"), target_epoch = target.timestamp(), "usage limit — waiting for reset");
-        let mut last_heartbeat = Instant::now();
-        loop {
-            if self.deadline_passed() {
-                return WaitOutcome::DeadlinePassed;
-            }
-            if Local::now() >= target {
-                info!("reset reached — resuming");
-                return WaitOutcome::Resumed;
-            }
-            if last_heartbeat.elapsed() >= Duration::from_secs(60) {
-                let remaining = (target - Local::now()).num_minutes().max(0);
-                info!(remaining_min = remaining, "waiting for usage-limit reset");
-                last_heartbeat = Instant::now();
-            }
-            thread::sleep(Duration::from_secs(1));
-        }
-    }
-}
-
-/// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
-/// one of: an absolute RFC3339 instant (`"2026-06-09T18:00:00Z"`, as some adapters
-/// emit), a bare `"HH:mm"`, or a weekday-qualified `"Wkd HH:mm"` (the relative
-/// forms others emit). An absolute instant is unambiguous and used as-is — `now` is ignored. A
-/// bare time resolves to today, rolled to tomorrow when already past `now`; a
-/// weekday-qualified time resolves to the next date carrying that weekday (today
-/// only when the time is still ahead, else next week). Pure over its inputs so the
-/// rollover edge cases unit-test without sleeping. Returns `None` on an
-/// unparseable hint.
-fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
-    // Strip trailing sentence punctuation an adapter may leave on the hint (e.g.
-    // "… Try again at 2026-06-09T18:00:00Z.").
-    let trimmed = reset.trim().trim_end_matches('.').trim();
-
-    // An absolute RFC3339 instant is unambiguous (carries its own date and zone):
-    // use it directly, converted to local time. No next-occurrence guess is needed,
-    // unlike the relative forms handled below. Try the whole hint, then its leading
-    // token — the datetime may be trailed by prose ("…Z (in 3 hours)"). The relative
-    // forms never parse as RFC3339 ("Fri"/"15:00" both fail), so this stays additive.
-    let leading = trimmed.split_whitespace().next().unwrap_or(trimmed);
-    for cand in [trimmed, leading.trim_end_matches('.')] {
-        if let Ok(dt) = DateTime::parse_from_rfc3339(cand) {
-            return Some(dt.with_timezone(&Local));
-        }
-    }
-
-    let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
-        Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
-        // Use `trimmed` (trailing punctuation already stripped), not the raw
-        // `reset`, so a bare hint like "15:00." parses instead of failing.
-        None => (None, trimmed),
-    };
-    let (h, m) = hhmm.split_once(':')?;
-    let hour: u32 = h.parse().ok()?;
-    let min: u32 = m.parse().ok()?;
-    let time = NaiveTime::from_hms_opt(hour, min, 0)?;
-
-    let today = now.date_naive();
-    let target_date = match weekday {
-        None => {
-            if now.time() < time {
-                today
-            } else {
-                today + chrono::Duration::days(1)
-            }
-        }
-        Some(wd) => {
-            let cur = today.weekday().num_days_from_monday() as i64;
-            let tgt = wd.num_days_from_monday() as i64;
-            let mut days = (tgt - cur).rem_euclid(7);
-            // Same weekday today: keep today only if the time is still ahead.
-            if days == 0 && now.time() >= time {
-                days = 7;
-            }
-            today + chrono::Duration::days(days)
-        }
-    };
-    target_date
-        .and_time(time)
-        .and_local_timezone(Local)
-        .single()
-}
-
-/// Parse a three-letter weekday abbreviation (case-insensitive) into a chrono
-/// [`Weekday`]. Returns `None` for anything else.
-fn parse_weekday(s: &str) -> Option<Weekday> {
-    match s.to_lowercase().as_str() {
-        "mon" => Some(Weekday::Mon),
-        "tue" => Some(Weekday::Tue),
-        "wed" => Some(Weekday::Wed),
-        "thu" => Some(Weekday::Thu),
-        "fri" => Some(Weekday::Fri),
-        "sat" => Some(Weekday::Sat),
-        "sun" => Some(Weekday::Sun),
-        _ => None,
-    }
-}
-
-/// How the run places its commits. `New` cuts a fresh `afk/run-*` branch off the
-/// base; `Current` commits straight onto the branch the repo is already on (no
-/// new branch, `base_branch` ignored). A plain enum so `ralphy-core` stays free
-/// of any `clap` dependency — the CLI keeps its own value-enum and converts in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BranchMode {
-    New,
-    Current,
-}
-
-/// Verify preconditions and prepare the branch commits will land on, returning
-/// `(orig_branch, branch, compare_ref)`. The single entry point for [`run_queue`]
-/// to the clean-tree check, the `.gitignore` ensure, and the detached-HEAD guard.
-///
-/// In `New` mode a fresh `afk/run-<stamp>` branch is cut off `base_branch` (which
-/// must exist) and `compare_ref == base_branch`. In `Current` mode no branch is
-/// created and no checkout happens: `branch == orig` and `compare_ref` is the
-/// HEAD SHA captured before any work, so the commit count means "work this run
-/// added" in both modes.
-fn prepare_branch(
-    repo: &dyn Repo,
-    repo_root: &Path,
-    base_branch: &str,
-    stamp: &str,
-    mode: BranchMode,
-) -> Result<(String, String, String)> {
-    // Best-effort: make sure the base ref is up to date. A missing remote (e.g.
-    // a local-only repo) is not fatal here — base existence is checked below.
-    let _ = repo.fetch_origin();
-
-    // Precondition: a clean tree, checked before any mutation (our own `.gitignore`
-    // edit included) so a first run can never trip this.
-    if !repo.is_clean_ignoring_ralphy()? {
-        bail!(
-            "working tree at {} is not clean — commit or stash first",
-            repo_root.display()
-        );
-    }
-
-    let orig = repo.current_branch()?;
-    if orig == "HEAD" {
-        bail!(
-            "repo at {} is in detached HEAD — checkout a branch first",
-            repo_root.display()
-        );
-    }
-
-    let prepared = match mode {
-        BranchMode::Current => {
-            // Commit straight onto the current branch — no new branch, base
-            // ignored. Compare against where this branch stood before the run.
-            let compare_ref = repo.head_sha()?;
-            info!(branch = %orig, "running in place on current branch");
-            (orig.clone(), orig, compare_ref)
-        }
-        BranchMode::New => {
-            if !repo.commitish_exists(base_branch) {
-                bail!("base branch '{base_branch}' not found");
-            }
-            let branch = format!("afk/run-{stamp}");
-            repo.checkout_new_branch(&branch, base_branch)?;
-            info!(%branch, base = %base_branch, was = %orig, "run branch created");
-            (orig, branch, base_branch.to_string())
-        }
-    };
-
-    // Ignore `.ralphy/` *after* the run branch is checked out, so the edit lands on
-    // the working tree the agent commits from. Doing it before the checkout would
-    // inspect the original branch's `.gitignore` — which may already ignore
-    // `.ralphy/` from a prior run — and no-op; the run branch, cut from a base that
-    // does NOT ignore it, would then let the agent's `git add` sweep scratch
-    // (`plan.md`, logs) into the deliverable.
-    gitignore::ensure_ralphy_ignored(repo_root)?;
-
-    Ok(prepared)
-}
 
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";
@@ -296,14 +56,6 @@ pub const TRIAGE_AGENT_LABEL: &str = "triage-agent";
 /// gate is never a queue member (it is never queried), so it only ever surfaces
 /// as a *blocker* in another issue's `## Blocked by`.
 pub const HUMAN_GATE_LABELS: [&str; 2] = ["ready-for-human", "HITL"];
-
-/// Whether a label set marks a human gate — used to split an open blocker into
-/// "waiting on a human" (parked) versus ordinary agent work the queue resolves.
-fn is_human_gate(labels: &[String]) -> bool {
-    labels
-        .iter()
-        .any(|l| HUMAN_GATE_LABELS.contains(&l.as_str()))
-}
 
 /// The first queued issue carrying [`STOP_BEFORE_LABEL`] whose number is NOT in
 /// `forced` — the point the run halts before, or `None` when the queue has no
@@ -601,58 +353,6 @@ impl RunLedger<'_> {
     }
 }
 
-/// The close comment the runner leaves on a green queue issue: the ps1-oracle
-/// close line plus the protocol-lint result (ADR-0015) — ✓/✗ per structural
-/// check, with a loud warning when the issue closed carrying violations.
-fn close_comment(stamp: &str, branch: &str, lint: &protocol::ProtocolReport) -> String {
-    format!(
-        "Closed by Ralphy run {stamp} (green on branch '{branch}'; merge by hand).\n\n{}",
-        protocol::comment_block(lint)
-    )
-}
-
-/// The comment posted when `require_verify_gate` parks a gateless issue for a
-/// human (ADR-0015): why the runner did not close on the self-report, and what
-/// the human does next.
-fn no_gate_comment(stamp: &str, branch: &str) -> String {
-    format!(
-        "Ralphy run {stamp} did NOT close this issue: the executor reported done, \
-         but no verify gate resolved — the plan carries no `## Verify` commands and \
-         no `verify.command` fallback is configured — and `verify.require_verify_gate` \
-         is set (ADR-0015).\n\n\
-         The work is committed on branch '{branch}'. Next step (human): review the \
-         branch, run whatever verification applies, then close this issue by hand. \
-         The `ready-for-human` label marks this gate; the run continued past it."
-    )
-}
-
-/// The comment posted when the planner judges an issue infeasible: the verdict
-/// plus the planner's reasoning, so the skip is actionable from the issue
-/// itself (split it, respecify it) instead of silent.
-fn infeasible_comment(stamp: &str, reason: &str) -> String {
-    format!(
-        "Ralphy run {stamp} skipped this issue — the planner judged it not \
-         autonomously implementable as written.\n\n## Planner reasoning\n\n{reason}\n\n\
-         The issue stays open; act on the reasoning above (split, respecify, or \
-         label) and the next run will pick it up again."
-    )
-}
-
-/// The comment posted on a bundle verdict: unlike a generic infeasible skip,
-/// the issue is well-specified but covers several backlog tasks, so the next
-/// step is a human split — spelled out so the parked queue has an owner.
-fn bundle_comment(stamp: &str, reason: &str) -> String {
-    format!(
-        "Ralphy run {stamp} skipped this issue — the planner judged it a \
-         **bundle**: several backlog tasks under one issue number. The queue is \
-         parked on this until it is split.\n\n## Planner reasoning\n\n{reason}\n\n\
-         Next step (human): run `/to-issues` against the source PRD using the \
-         split recommended above as a draft, open one child issue per task with \
-         a `## Parent` reference to this issue, then close this issue — \
-         dependents follow the open children automatically."
-    )
-}
-
 /// What the runner-enforced verify gate resolves to for one issue (ADR-0011),
 /// folding the plan's `## Verify` section with the per-repo settings fallback.
 enum VerifyPlan {
@@ -736,224 +436,6 @@ enum GateDecision {
 /// making the runner *see* the same commands pass; the budget just bounds how
 /// long the agent gets to react before the branch is handed back for a human.
 const VERIFY_MAX_REPAIRS: u32 = 2;
-
-/// The scratch file the runner drops in the workspace to hand a failed gate back
-/// to the executor (read by the exec charter's repair clause). Vendor-neutral —
-/// the runner writes it, any adapter's prompt reads it. Cleared once the gate
-/// goes green so it never bleeds into a later run on the same worktree.
-const VERIFY_FAILURE_FILE: &str = "verify-failure.md";
-
-/// Write the repair brief for a failed gate so the next `execute()` can read why
-/// it failed and fix the root cause. Best-effort: a write failure just means the
-/// agent retries blind, which is strictly no worse than not repairing at all.
-fn write_verify_failure(
-    ws: &Workspace,
-    stamp: &str,
-    report: &verify::VerifyReport,
-    done_signal: &str,
-) {
-    let path = ws.ralphy_dir().join(VERIFY_FAILURE_FILE);
-    if let Err(e) = std::fs::write(&path, verify::repair_brief(stamp, report, done_signal)) {
-        warn!(error = %e, "writing the verify-failure repair brief failed");
-    }
-}
-
-/// Remove the repair brief. Called when the gate passes and at each issue's start
-/// so the file only ever reflects the current run's gate state. Absent file is a
-/// no-op.
-fn clear_verify_failure(ws: &Workspace) {
-    let path = ws.ralphy_dir().join(VERIFY_FAILURE_FILE);
-    if path.exists() {
-        if let Err(e) = std::fs::remove_file(&path) {
-            warn!(error = %e, "removing the stale verify-failure brief failed");
-        }
-    }
-}
-
-/// The scratch file the runner drops in the workspace to hand a protocol-lint
-/// violation back to the executor (ADR-0015) — the same vendor-neutral channel
-/// as [`VERIFY_FAILURE_FILE`]. Written on the first violation only (one bounce);
-/// cleared at each issue's start and once the lint is settled.
-const PROTOCOL_FAILURE_FILE: &str = "protocol-failure.md";
-
-/// Write the protocol repair brief so the next `execute()` can read which
-/// structural checks failed and complete the charter's protocol. Best-effort:
-/// a write failure means the agent retries blind, no worse than not bouncing.
-fn write_protocol_failure(
-    ws: &Workspace,
-    stamp: &str,
-    report: &protocol::ProtocolReport,
-    done_signal: &str,
-) {
-    let path = ws.ralphy_dir().join(PROTOCOL_FAILURE_FILE);
-    if let Err(e) = std::fs::write(&path, protocol::failure_brief(stamp, report, done_signal)) {
-        warn!(error = %e, "writing the protocol-failure repair brief failed");
-    }
-}
-
-/// Remove the protocol repair brief. Called at each issue's start and once the
-/// lint is settled, so a stale brief never steers a later session.
-fn clear_protocol_failure(ws: &Workspace) {
-    let path = ws.ralphy_dir().join(PROTOCOL_FAILURE_FILE);
-    if path.exists() {
-        if let Err(e) = std::fs::remove_file(&path) {
-            warn!(error = %e, "removing the stale protocol-failure brief failed");
-        }
-    }
-}
-
-/// A one-line digest of a failed gate for the skip log/artifact: the failing
-/// command and why it failed (exit code or timeout).
-fn verify_failure_summary(report: &verify::VerifyReport) -> String {
-    match report.commands.iter().find(|c| !c.passed()) {
-        Some(c) if c.timed_out => format!("`{}` timed out", c.argv.join(" ")),
-        Some(c) => format!(
-            "`{}` exited {}",
-            c.argv.join(" "),
-            c.exit_code
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "non-zero".into())
-        ),
-        None => "verify gate failed".into(),
-    }
-}
-
-/// Refresh `.ralphy/handoffs.md` for the issue about to be planned: collect the
-/// handoff comments its closed blockers left, render them, and write the file —
-/// or remove a stale one when there is nothing to feed. Best-effort: a fetch
-/// failure logs a warning and skips that blocker, never stopping the run.
-fn write_handoffs(
-    ws: &Workspace,
-    number: u64,
-    closed_blockers: &[u64],
-    tracker: &dyn IssueTracker,
-) {
-    let mut entries: Vec<(u64, String)> = Vec::new();
-    for &n in closed_blockers {
-        match tracker.handoff_comment(n) {
-            Ok(Some(h)) => entries.push((n, h)),
-            Ok(None) => {}
-            Err(e) => warn!(number, blocker = n, error = %e, "fetching handoff failed — skipping"),
-        }
-    }
-    let path = ws.handoffs_path();
-    match handoff::render_handoffs_file(&entries) {
-        Some(content) => {
-            if let Err(e) = std::fs::write(&path, content) {
-                warn!(number, error = %e, "writing .ralphy/handoffs.md failed");
-            } else {
-                info!(
-                    number,
-                    handoffs = entries.len(),
-                    "handoffs collected for planner"
-                );
-            }
-        }
-        None => {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
-}
-
-/// Refresh `.ralphy/references.md` for the issue about to be planned: fetch the
-/// source (title, state, body) of every issue the body references — its
-/// `## Blocked by` and `## Parent` sections plus any inline `#N` mention — and
-/// render them, or remove a stale file when the issue names none. The planner
-/// reads this so a `#N` reference reaches it as the referenced issue's actual
-/// spec, not a paraphrase it might restate as fact in a child issue. Best-effort
-/// and depth-1: a fetch failure (a cross-repo or deleted ref, say) logs a warning
-/// and skips that ref, and the fetched bodies' own references are not followed
-/// transitively.
-fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn IssueTracker) {
-    let refs = blocked::referenced_issues(&issue.body, issue.number);
-    let mut entries: Vec<references::Reference> = Vec::new();
-    for n in refs {
-        match tracker.reference(n) {
-            Ok(Some(r)) => entries.push(r),
-            Ok(None) => {}
-            Err(e) => {
-                warn!(number = issue.number, reference = n, error = %e, "fetching referenced issue failed — skipping")
-            }
-        }
-    }
-    let path = ws.references_path();
-    match references::render_references_file(&entries) {
-        Some(content) => {
-            if let Err(e) = std::fs::write(&path, content) {
-                warn!(number = issue.number, error = %e, "writing .ralphy/references.md failed");
-            } else {
-                info!(
-                    number = issue.number,
-                    references = entries.len(),
-                    "references collected for planner"
-                );
-            }
-        }
-        None => {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
-}
-
-/// Persist the durable knowledge a green close leaves behind: the environment
-/// facts and working commands extracted from the plan's `## Handoff`, written
-/// to `.ralphy/knowledge/issue-<N>.md`. The folder accumulates across issues
-/// and runs (never cleared), so any future session — sibling or dependent —
-/// can grep it instead of re-deriving an environment procedure. Best-effort:
-/// a write failure logs a warning, never stopping the run.
-fn write_knowledge(ws: &Workspace, issue: &Issue, stamp: &str, note: &str) {
-    let dir = ws.knowledge_dir();
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        warn!(number = issue.number, error = %e, "creating .ralphy/knowledge failed");
-        return;
-    }
-    let content = format!(
-        "# Knowledge from #{}: {}\n\nExtracted {} (run {}) from the session's \
-         handoff at close. Leads, not truths — verify before relying on one.\n\n{}\n",
-        issue.number,
-        issue.title,
-        chrono::Local::now().format("%Y-%m-%d"),
-        stamp,
-        note.trim_end(),
-    );
-    let path = ws.knowledge_path(issue.number);
-    if let Err(e) = std::fs::write(&path, content) {
-        warn!(number = issue.number, error = %e, "writing knowledge note failed");
-    } else {
-        info!(number = issue.number, path = %path.display(), "knowledge note written");
-    }
-}
-
-/// Append the close's `**Knowledge used**` citations to the hit-rate log at
-/// `.ralphy/knowledge/citations.jsonl` — the input the consolidation curator
-/// prunes never-cited `KNOWLEDGE.md` bullets against. An empty list (an honest
-/// `none`) is recorded too: it is the denominator of the pruning window.
-/// Best-effort like `write_knowledge`: a failure warns, never stops the run.
-fn record_citations(ws: &Workspace, issue: &Issue, stamp: &str, citations: Vec<String>) {
-    let entry = knowledge::CitationEntry {
-        issue: issue.number,
-        stamp: stamp.to_string(),
-        date: chrono::Local::now().format("%Y-%m-%d").to_string(),
-        citations,
-    };
-    if let Err(e) = knowledge::append_citation(ws, &entry) {
-        warn!(number = issue.number, error = %e, "appending citation entry failed");
-    } else {
-        info!(
-            number = issue.number,
-            citations = entry.citations.len(),
-            "knowledge citations recorded"
-        );
-    }
-}
-
-/// Write the issue the planner reads to `.ralphy/issue.json`.
-fn write_issue_json(ws: &Workspace, issue: &Issue) -> Result<()> {
-    std::fs::create_dir_all(ws.ralphy_dir())?;
-    let json = serde_json::to_string_pretty(issue).context("serializing issue to JSON")?;
-    std::fs::write(ws.issue_json_path(), json).context("writing .ralphy/issue.json")?;
-    Ok(())
-}
 
 /// Everything one issue's phase functions share, built once per run after
 /// [`prepare_branch`]. All borrows are shared — the mutable [`RunLedger`]
@@ -2079,12 +1561,6 @@ fn restore(repo: &dyn Repo, orig: &str, branch: &str, base: &str, mode: BranchMo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
-
-    /// Build a fixed `DateTime<Local>` for deterministic `next_reset` tests.
-    fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
-        Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
-    }
 
     fn labeled(number: u64, labels: &[&str]) -> Issue {
         Issue {
@@ -2178,127 +1654,6 @@ mod tests {
             "model-less rows fall to unknown"
         );
         assert_eq!(by_model.len(), 2);
-    }
-
-    #[test]
-    fn next_reset_same_day_past_rolls_to_tomorrow() {
-        // 2026-06-09 is a Tuesday. Now 16:00, bare reset 15:00 already past today.
-        let now = at(2026, 6, 9, 16, 0);
-        let got = next_reset("15:00", now).unwrap();
-        assert_eq!(
-            got,
-            at(2026, 6, 10, 15, 0),
-            "bare past time rolls to tomorrow"
-        );
-    }
-
-    #[test]
-    fn next_reset_future_same_day_stays_today() {
-        let now = at(2026, 6, 9, 10, 0);
-        let got = next_reset("15:00", now).unwrap();
-        assert_eq!(got, at(2026, 6, 9, 15, 0), "bare future time stays today");
-    }
-
-    #[test]
-    fn next_reset_bare_time_tolerates_trailing_period() {
-        // A bare hint with trailing sentence punctuation must parse like the
-        // absolute form does, not fall through to None.
-        let now = at(2026, 6, 9, 10, 0);
-        let got = next_reset("15:00.", now).unwrap();
-        assert_eq!(
-            got,
-            at(2026, 6, 9, 15, 0),
-            "bare time strips trailing period"
-        );
-    }
-
-    #[test]
-    fn next_reset_weekday_picks_next_matching_date() {
-        // Now is Tuesday 2026-06-09; the next Friday is 2026-06-12.
-        let now = at(2026, 6, 9, 10, 0);
-        let got = next_reset("Fri 09:00", now).unwrap();
-        assert_eq!(
-            got,
-            at(2026, 6, 12, 9, 0),
-            "weekday picks the next matching date"
-        );
-    }
-
-    #[test]
-    fn next_reset_same_weekday_past_rolls_a_week() {
-        // Today is Tuesday; a Tuesday reset already past today lands next Tuesday.
-        let now = at(2026, 6, 9, 16, 0);
-        let got = next_reset("Tue 15:00", now).unwrap();
-        assert_eq!(
-            got,
-            at(2026, 6, 16, 15, 0),
-            "same weekday past rolls a week"
-        );
-    }
-
-    #[test]
-    fn next_reset_unparseable_is_none() {
-        let now = at(2026, 6, 9, 10, 0);
-        assert_eq!(next_reset("not a time", now), None);
-    }
-
-    #[test]
-    fn next_reset_absolute_rfc3339_used_directly() {
-        // An absolute instant ignores `now` and resolves to the
-        // exact instant it names. Compare epochs so the assertion is timezone-
-        // independent (the result is the same instant regardless of local zone).
-        let now = at(2026, 6, 9, 10, 0);
-        let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
-            .unwrap()
-            .timestamp();
-        assert_eq!(
-            next_reset("2026-06-09T18:00:00Z", now).unwrap().timestamp(),
-            expected
-        );
-    }
-
-    #[test]
-    fn next_reset_absolute_tolerates_trailing_period() {
-        // Some adapters emit a sentence: "… Try again at 2026-06-09T18:00:00Z."
-        let now = at(2026, 6, 9, 10, 0);
-        let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
-            .unwrap()
-            .timestamp();
-        assert_eq!(
-            next_reset("2026-06-09T18:00:00Z.", now)
-                .unwrap()
-                .timestamp(),
-            expected
-        );
-    }
-
-    #[test]
-    fn next_reset_absolute_ignores_trailing_prose() {
-        // The datetime may be trailed with prose: "…Z (in 3 hours)".
-        let now = at(2026, 6, 9, 10, 0);
-        let expected = DateTime::parse_from_rfc3339("2026-06-09T18:00:00Z")
-            .unwrap()
-            .timestamp();
-        assert_eq!(
-            next_reset("2026-06-09T18:00:00Z (in 3 hours)", now)
-                .unwrap()
-                .timestamp(),
-            expected
-        );
-    }
-
-    #[test]
-    fn next_reset_absolute_honours_offset() {
-        let now = at(2026, 6, 9, 10, 0);
-        let expected = DateTime::parse_from_rfc3339("2026-06-09T15:00:00-03:00")
-            .unwrap()
-            .timestamp();
-        assert_eq!(
-            next_reset("2026-06-09T15:00:00-03:00", now)
-                .unwrap()
-                .timestamp(),
-            expected
-        );
     }
 
     // ------------------------------------------------------------------
