@@ -20,14 +20,25 @@ mod skills;
 mod verify;
 mod wizard;
 
-pub use gate::*;
-pub use run::*;
 #[allow(unused_imports)]
-pub use skills::*;
+pub use gate::{evaluate_gate, format_report, Agent, EnvFindings, HardFail};
 #[allow(unused_imports)]
-pub use verify::*;
+pub use run::{
+    create_repo_decision, labels_decision, private_visibility_decision, repo_name_from_path, run,
+    InitArgs,
+};
 #[allow(unused_imports)]
-pub use wizard::*;
+pub use skills::{
+    download_decision, install_skills_from, install_skills_step, skill_names, skills_target,
+    sparse_fetch_commands, Outcome,
+};
+#[allow(unused_imports)]
+pub use verify::{
+    format_final_report, required_artifacts_missing, smoke_test_decision, suggested_issue,
+    VerifyReport,
+};
+#[allow(unused_imports)]
+pub use wizard::{InitConfig, InitState, Question, Stage};
 
 pub(crate) use gate::agent_logged_in;
 pub(crate) use issues::{resolve_human_label, resolve_triage_label};
