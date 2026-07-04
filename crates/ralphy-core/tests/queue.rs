@@ -1022,6 +1022,56 @@ fn view_and_run_agree_issue_for_issue() {
 }
 
 #[test]
+fn view_and_run_agree_under_assignee_filter() {
+    // ADR-0021 criterion #8: the `--assignee` filter is FETCH-ONLY — it narrows
+    // which issues `list_queue` returns, and never touches judgment. So the runner
+    // and the view both see only the surviving (filtered) subset, and blocked-by
+    // must STILL consult the tracker (`is_closed`), so an issue blocked by an OPEN
+    // issue OUTSIDE the filtered subset stays `Blocked`. This models the filtered
+    // queue as the already-narrowed subset and asserts view/run parity over it.
+    let repo = init_repo("view-run-agree-assignee");
+    // The filtered subset the runner receives (say `@me` is assigned #7 and #9).
+    // #4 is a colleague's OPEN issue — outside the subset, but #7 is blocked by it.
+    let queue = vec![
+        issue_with_body(7, "## Blocked by\n- #4\n"), // #4 open & out-of-subset → Blocked
+        issue(9),                                    // clean → Eligible
+    ];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #9 executes
+    let tracker = RecordingTracker::default(); // #4 absent from closed_issues → open
+
+    let view = resolve_queue_view(&queue, &[], &default_human_return(), &tracker).unwrap();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-view-run-assignee", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let vs = |n: u64| view.issues.iter().find(|i| i.number == n).unwrap();
+    let worked = |n: u64| report.worked.iter().find(|r| r.number == n);
+
+    // Blocked-by still consults the tracker even though #4 is not in the subset:
+    // the view marks #7 Blocked and the run records the same blocker.
+    assert_eq!(vs(7).queue_status, QueueStatus::Blocked);
+    let r7 = worked(7).expect("#7 produces a skip row");
+    assert!(r7.outcome.is_none() && !r7.closed);
+    assert_eq!(vs(7).blocked_by, r7.blocked_by);
+    assert_eq!(vs(7).blocked_by, vec![4], "blocked by the out-of-subset open #4");
+
+    // Eligible: view Eligible ⇔ the run actually worked #9.
+    assert_eq!(vs(9).queue_status, QueueStatus::Eligible);
+    let r9 = worked(9).expect("#9 is worked");
+    assert!(r9.outcome.is_some(), "eligible issue was executed");
+    assert!(agent.executed.borrow().contains(&9));
+    assert!(!agent.executed.borrow().contains(&7), "#7 stayed blocked");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
 fn only_issue_ignores_stop_before() {
     let repo = init_repo("only-stop-before");
     // The queue is just the labeled issue; only_issue overrides the stop-before guard.
