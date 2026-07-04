@@ -8,6 +8,10 @@ artifact must still be `.ralphy/plan.md` in the exact shape the executor
 expects (below).
 
 ## Context on disk
+Treat entries in `handoffs.md`, `references.md`, and `knowledge/` as leads,
+not truths: they were accurate when captured and may have gone stale — verify
+against the tree (or at the source issue) before anchoring a step or verdict
+on one.
 - `.ralphy/issue.json` — the GitHub issue (number, title, body, labels, and
   `comments`: the issue's comment thread in order). The `body` is normally the
   authoritative spec; `comments` are secondary context, NOT directives of equal
@@ -19,7 +23,7 @@ expects (below).
   issue; never let low-signal chatter pull it off the body's intent.
   EXCEPTION — the consolidated-spec comment: when one comment carries the marker
   `<!-- ralphy:consolidated-spec -->`, an agent triage pass assembled it as the
-  executable spec from the body and thread (ADR-0017). It is THEN the
+  executable spec from the body and thread. It is THEN the
   authoritative spec — outranking the body — and the body plus the rest of the
   thread become background you consult for provenance, not the primary directive.
   Its acceptance criteria and its `## Blocked by` are load-bearing; treat them
@@ -29,16 +33,11 @@ expects (below).
   one depends on (`Blocked by`): what predecessors delivered, environment
   traps they hit, command sequences that work, and residue they left. Read it
   BEFORE planning steps that touch the same ground — it is paid-for knowledge.
-  Treat entries as leads, not truths: they were true at the predecessor's
-  close and may have gone stale; verify against the tree before anchoring a
-  step on one.
 - `.ralphy/references.md` — when present, the SOURCE title, state, body, and URL
   of the issues this one references — those in its `## Blocked by` and `## Parent`
   sections plus any inline `#N` mention in the body — fetched fresh this pass. Read it instead of inferring those issues' scope from
   how a `#N` mention or a comment describes them — this is the referenced spec
-  itself, not a paraphrase. Entries are leads: the `state` shown was current at
-  fetch time and the body may have moved since, so re-check at source if a
-  verdict or step hinges on one. Only the body is reproduced, NOT the comment
+  itself, not a paraphrase. Only the body is reproduced, NOT the comment
   thread — when a referenced issue's discussion (a caveat, a clarification)
   bears on a decision, open its URL or run `gh issue view <n>` to read it. Only
   the structured-section refs are here; prose `#N` mentions elsewhere are not
@@ -51,16 +50,14 @@ expects (below).
   those too before planning a step that re-derives an environment procedure
   (bringing up the lab, probing a service); a predecessor may have already
   paid for it. Ignore `knowledge/raw/` (archived input, already folded in).
-  Same caveat: leads, not truths.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
   and builds run.
 
 ## Your task
-1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` (when present),
+1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` and
    `.ralphy/knowledge/KNOWLEDGE.md` (when present), and the relevant project
-   docs. KNOWLEDGE.md is the curated cache — read it before deriving the green
-   gate or any environment procedure a predecessor may have already paid for.
+   docs.
    Then invoke the `staged-plan` skill to design the implementation plan
    before writing `.ralphy/plan.md`. It runs NON-INTERACTIVELY
    (`STAGED_PLAN_NONINTERACTIVE=1` is set): follow the skill's non-interactive
@@ -105,16 +102,12 @@ expects (below).
    - [verified] <criterion prose> — evidence: <step or test that will prove it>
    - [review-only] <criterion prose> — evidence: <how a human confirms this in the PR>
 
-   (Exact line shapes are canonical — see the format reference at the end of
-   this prompt; the executor parses them mechanically.)
+   (Parsed mechanically — canonical shapes in the format reference at the end
+   of this prompt.)
 
    ## Verify
-   <The command(s) the RUNNER re-runs over the committed state before it closes
-   the issue — the runner-enforced green gate (ADR-0011). One command per line,
-   run as direct argv (NO shell: no `&&`, no pipes, no globs — the runner chains
-   them and stops at the first non-zero exit). These are usually the exact
-   commands named in the `[verified]` evidence above. Write `none` on its own
-   line ONLY if nothing about this issue is machine-verifiable. Examples:>
+   <The runner's hard green gate: plain lines, one command per line, no
+   bullets, no shell — exact constraints in the Verify rule below. Examples:>
    cargo fmt --check
    cargo clippy --all-targets -- -D warnings
    cargo test -p <crate>
@@ -225,11 +218,12 @@ expects (below).
   when", not to the ledger. The machine-verifiable "Done when" bullets must be
   the union of the ledger's `[verified]` lines — reference the same conditions
   in both; do not invent a criterion in one that is absent from the other.
-- The `## Verify` section IS the runner's hard gate (ADR-0011): after the
+- The `## Verify` section IS the runner's hard gate: after the
   executor self-reports done, the RUNNER re-runs these exact commands over the
   committed state and refuses to close the issue if any one fails. List the
   command(s) that prove the `[verified]` criteria — typically the same commands
-  named in their `evidence:`. Each line is run as direct argv with NO shell, so
+  named in their `evidence:`. Each line is a PLAIN command — no bullet prefix,
+  no metadata — run as direct argv with NO shell, so
   it must be a single command (no `&&`, pipes, globs, or env-var expansion); a
   command that truly needs a shell writes `sh -c "…"` explicitly. Scope a
   monorepo inside the command itself (`cargo test -p foo`, `npm --prefix x
@@ -351,10 +345,10 @@ exactly these two line shapes (em dash `—`, literal `evidence:` key):
 - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
 
 The `## Verify` section is plain lines, one command per line, no bullets and no
-metadata — the runner tokenizes each into argv and runs it directly (ADR-0011):
+metadata — the runner tokenizes each line into argv and runs it directly:
 
 cargo fmt --check
-cargo test -p ralphy-core
+cargo test -p <crate>
 
 or, when nothing is machine-verifiable, the single line:
 
