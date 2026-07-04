@@ -138,22 +138,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Held for the rest of run_cmd; Drop removes the file on every exit path.
     let _run_lock = runlock::acquire(&ws.run_lock_path())?;
 
-    // The issues the operator named explicitly: `--issues 5,3,9` verbatim, or the
-    // single `--only-issue N` folded into a one-element list. Empty = the ordinary
-    // label-built queue. Handed to the core so `stop-before` is ignored on exactly
-    // these issues (parity with the ps1 `$OnlyIssue` guard, generalized to a set).
-    let forced_issues: Vec<u64> = if !args.issues.is_empty() {
-        args.issues.clone()
-    } else {
-        args.only_issue.into_iter().collect()
-    };
-
-    // Build the queue. Two paths:
-    //   `--issues`: an explicit, ordered selection — fetch each number directly
-    //     (label-agnostic, no dependency re-ordering) and run the list AS GIVEN, so
-    //     the run drains it as a sequence. This bypasses the label question entirely.
-    //   default: the label-built queue, optionally narrowed by `--only-issue`, then
-    //     ordered by dependency.
     // Load the persisted settings once here (ADR-0010) BEFORE the queue build so the
     // `queue.assignee` default is available to the label-queue path (and, further
     // down, the events ctx). A load failure warns and falls back to defaults so a
@@ -175,47 +159,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         settings.queue.assignee.as_deref(),
     );
 
+    // Build the queue and the explicitly-named ("forced") issue set. Pure of the
+    // lifecycle ordering (no env/thread side effects), so it lives outside the
+    // orchestrator; see `build_run_queue` for the two-path selection + dependency sort.
     let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
-    let queue = if !args.issues.is_empty() {
-        let mut selected = Vec::with_capacity(args.issues.len());
-        for number in &args.issues {
-            selected.push(github::fetch_issue(*number, &repo_root)?);
-        }
-        selected
-    } else {
-        // `--only-issue` fetches its single target unfiltered (criterion 5), so drop
-        // the assignee filter on that path; a bare label queue applies it.
-        let queue_assignee = if args.only_issue.is_some() {
-            None
-        } else {
-            assignee.as_deref()
-        };
-        let mut queue = github::list_queue(&effective_labels, queue_assignee, &repo_root)?;
-        if let Some(only) = args.only_issue {
-            queue.retain(|i| i.number == only);
-        }
-        // Order by dependency (Blocked-by edges + split-bundle children), ascending
-        // number as tie-break — the pending list shown to the user IS the sequence
-        // run_queue will work, and a dependency-consistent order lets one run drain
-        // a graph whose numbering disagrees with its edges.
-        //
-        // Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
-        // itself open (a partially-labelled chain) still orders the queue: edges are
-        // walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
-        // failure fall back to in-queue-only ordering rather than abort the run. Skip
-        // the extra call when ordering can't matter (0 or 1 issue).
-        if queue.len() > 1 {
-            match github::list_open_issues(&repo_root) {
-                Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
-                Err(e) => {
-                    warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
-                    ralphy_core::blocked::sort_queue(queue)
-                }
-            }
-        } else {
-            ralphy_core::blocked::sort_queue(queue)
-        }
-    };
+    let (queue, forced_issues) =
+        build_run_queue(&args, assignee.as_deref(), &effective_labels, &repo_root)?;
 
     // Derive the run title once, before any on-screen line, so it can seed both the
     // console branding header and the Telegram card — the face then matches across
@@ -566,33 +515,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // (ADR-0006: the presenter owns teardown).
     presenter.finalize();
 
-    // Knowledge consolidation trigger: a non-dry run that finished (produced a
-    // report) and left loose per-issue notes folds them into KNOWLEDGE.md, so the
-    // curated cache the next run reads (prompt.execute.md reads KNOWLEDGE.md first)
-    // stays current without a manual `consolidate` step. Everything lives under the
-    // gitignored `.ralphy/`, so there is nothing to commit and the panel's "clean
-    // run" report stays accurate. Run BEFORE the notifier shutdown and AFTER the
-    // presenter finalize so it surfaces as a first-class lifecycle event in both
-    // surfaces: the `info!`/`warn!` below decode to RunEvents the console presenter
-    // renders (timestamp + 📚) and the live Telegram card folds (a 📚 line during,
-    // a footer segment after). A failed session is a warning, never a run failure —
-    // the run already succeeded and the notes stay loose for a later retry.
-    // `ANTHROPIC_API_KEY` was already cleared up front; defaults mirror the
-    // `consolidate` command (opus / medium / 30 min).
-    if result.is_ok() && !args.dry_run {
-        let notes = ralphy_core::knowledge::loose_notes(&ws);
-        if !notes.is_empty() {
-            info!(count = notes.len() as u64, "consolidating knowledge");
-            let run_dir = ws.run_dir(&cfg.stamp);
-            match crate::run_consolidation(&ws, &run_dir, Some("opus"), Some("medium"), 30, &notes)
-            {
-                Ok(archived) => info!(count = archived as u64, "knowledge consolidated"),
-                Err(e) => {
-                    warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry")
-                }
-            }
-        }
-    }
+    // Consolidate any loose knowledge notes into KNOWLEDGE.md. Runs BEFORE the
+    // notifier/sink shutdown and AFTER the presenter finalize so it surfaces as a
+    // first-class lifecycle event in both surfaces (see `maybe_consolidate_knowledge`).
+    maybe_consolidate_knowledge(result.is_ok(), args.dry_run, &ws, &cfg.stamp);
 
     // Tear down the notifier (ADR-0007 D4): signal the worker to render the
     // terminal state, send the final push, and flush, joined under a bounded
@@ -603,32 +529,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // `run.finished`. Emitted BEFORE the sink shutdown so the worker drains and
     // POSTs it as the run's last event.
     if let Ok(report) = result.as_ref() {
-        let issues_done = report
-            .worked
-            .iter()
-            .filter(|r| r.outcome == Some(Outcome::Done))
-            .count() as u64;
-        // The generic skip bucket (a dependency/stop-before/human-return/verify
-        // skip), kept distinct from a non-green stop and a human-gate park, mirrors
-        // the console panel's `skipped` tally.
-        let issues_skipped = report
-            .worked
-            .iter()
-            .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
-            .count() as u64;
-        let u = &report.run_usage;
-        info!(
-            outcome = outcome_of(&report.stop),
-            issues_done,
-            issues_skipped,
-            issues_total = queue.len() as u64,
-            up = u.input,
-            cr = u.cache_read,
-            cw = u.cache_creation,
-            out = u.output,
-            duration_s = run_start.elapsed().as_secs(),
-            "run finished"
-        );
+        emit_run_finished(report, queue.len(), run_start);
     }
 
     if let Some(notifier) = notifier.take() {
@@ -644,6 +545,94 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let report = result?;
 
+    render_final_panel(
+        &presenter,
+        report,
+        branch_mode,
+        args.dry_run,
+        &cfg.repo_root,
+    );
+    Ok(())
+}
+
+/// Knowledge consolidation trigger: a non-dry run that finished (`run_ok`) and left
+/// loose per-issue notes folds them into KNOWLEDGE.md, so the curated cache the next
+/// run reads (prompt.execute.md reads KNOWLEDGE.md first) stays current without a
+/// manual `consolidate` step. Everything lives under the gitignored `.ralphy/`, so
+/// there is nothing to commit and the panel's "clean run" report stays accurate. The
+/// caller runs this AFTER the presenter finalize and BEFORE the notifier/sink
+/// shutdown so it surfaces as a first-class lifecycle event in both surfaces: the
+/// `info!`/`warn!` here decode to RunEvents the console presenter renders
+/// (timestamp + 📚) and the live Telegram card folds (a 📚 line during, a footer
+/// segment after). A failed session is a warning, never a run failure — the run
+/// already succeeded and the notes stay loose for a later retry. `ANTHROPIC_API_KEY`
+/// was already cleared up front; defaults mirror the `consolidate` command
+/// (opus / medium / 30 min).
+fn maybe_consolidate_knowledge(run_ok: bool, dry_run: bool, ws: &Workspace, stamp: &str) {
+    if run_ok && !dry_run {
+        let notes = ralphy_core::knowledge::loose_notes(ws);
+        if !notes.is_empty() {
+            info!(count = notes.len() as u64, "consolidating knowledge");
+            let run_dir = ws.run_dir(stamp);
+            match crate::run_consolidation(ws, &run_dir, Some("opus"), Some("medium"), 30, &notes) {
+                Ok(archived) => info!(count = archived as u64, "knowledge consolidated"),
+                Err(e) => {
+                    warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry")
+                }
+            }
+        }
+    }
+}
+
+/// Emit the ADR-0019 `run finished` boundary event off a clean `QueueReport`: the
+/// done/skipped tallies (the generic skip bucket kept distinct from a non-green stop
+/// and a human-gate park, mirroring the console panel), the run-usage token split,
+/// and the run's wall-clock `duration_s` anchored on `run_start`.
+fn emit_run_finished(
+    report: &ralphy_core::QueueReport,
+    queue_len: usize,
+    run_start: std::time::Instant,
+) {
+    let issues_done = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome == Some(Outcome::Done))
+        .count() as u64;
+    // The generic skip bucket (a dependency/stop-before/human-return/verify
+    // skip), kept distinct from a non-green stop and a human-gate park, mirrors
+    // the console panel's `skipped` tally.
+    let issues_skipped = report
+        .worked
+        .iter()
+        .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
+        .count() as u64;
+    let u = &report.run_usage;
+    info!(
+        outcome = outcome_of(&report.stop),
+        issues_done,
+        issues_skipped,
+        issues_total = queue_len as u64,
+        up = u.input,
+        cr = u.cache_read,
+        cw = u.cache_creation,
+        out = u.output,
+        duration_s = run_start.elapsed().as_secs(),
+        "run finished"
+    );
+}
+
+/// Assemble and print the final run panel (ADR-0006/-0008): bucket the worked issues
+/// into the done/blocked/skipped/hitl triad, map the stop reason and branch mode into
+/// their panel shapes, compute the run + project token totals and their read-time USD
+/// (ADR-0008 D8/D11, priced per model), and hand the assembled `PanelData` to the
+/// presenter. Consumes `report` (its branch/commits/undo fields move into the panel).
+fn render_final_panel(
+    presenter: &ui::PresenterHandle,
+    report: ralphy_core::QueueReport,
+    branch_mode: BranchMode,
+    dry_run: bool,
+    repo_root: &std::path::Path,
+) {
     // Bucket the worked issues into the three-way triad defined in the plan.
     let done = report
         .worked
@@ -685,9 +674,8 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     };
 
     // Token-usage footer figures (ADR-0008 D11): the run total off this run's
-    // accumulated usage, and the project's cumulative balance read from the
-    // ledger. `cfg.repo_root` is still in scope (cfg owns it).
-    let slug = git::project_slug(&cfg.repo_root);
+    // accumulated usage, and the project's cumulative balance read from the ledger.
+    let slug = git::project_slug(repo_root);
     let run_usage = &report.run_usage;
     let project_usage = ralphy_core::ledger::project_total(&slug);
     let to_lite = |u: &ralphy_core::Usage| ui::UsageLite {
@@ -724,7 +712,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         commits: report.commits,
         stop: panel_stop,
         branch_mode: panel_mode,
-        dry_run: args.dry_run,
+        dry_run,
         undo_tag: report.undo_tag,
         run_breakdown: to_lite(run_usage),
         project_breakdown: to_lite(&project_usage),
@@ -735,7 +723,74 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         project_usd_partial: project_partial,
     };
     presenter.print_panel(&data);
-    Ok(())
+}
+
+/// Build the run's issue queue and the explicitly-named ("forced") issue set. Two
+/// paths:
+///   `--issues`: an explicit, ordered selection — fetch each number directly
+///     (label-agnostic, no dependency re-ordering) and run the list AS GIVEN, so
+///     the run drains it as a sequence. This bypasses the label question entirely.
+///   default: the label-built queue, optionally narrowed by `--only-issue`, then
+///     ordered by dependency.
+/// The forced set is `--issues 5,3,9` verbatim, or the single `--only-issue N`
+/// folded into a one-element list, or empty for the ordinary label queue — handed
+/// to the core so `stop-before` is ignored on exactly these issues (parity with the
+/// ps1 `$OnlyIssue` guard, generalized to a set). No lifecycle side effects
+/// (env/threads), so it lives outside the orchestrator's ordering.
+fn build_run_queue(
+    args: &RunArgs,
+    assignee: Option<&str>,
+    effective_labels: &[String],
+    repo_root: &std::path::Path,
+) -> Result<(Vec<ralphy_core::Issue>, Vec<u64>)> {
+    let forced_issues: Vec<u64> = if !args.issues.is_empty() {
+        args.issues.clone()
+    } else {
+        args.only_issue.into_iter().collect()
+    };
+
+    let queue = if !args.issues.is_empty() {
+        let mut selected = Vec::with_capacity(args.issues.len());
+        for number in &args.issues {
+            selected.push(github::fetch_issue(*number, repo_root)?);
+        }
+        selected
+    } else {
+        // `--only-issue` fetches its single target unfiltered (criterion 5), so drop
+        // the assignee filter on that path; a bare label queue applies it.
+        let queue_assignee = if args.only_issue.is_some() {
+            None
+        } else {
+            assignee
+        };
+        let mut queue = github::list_queue(effective_labels, queue_assignee, repo_root)?;
+        if let Some(only) = args.only_issue {
+            queue.retain(|i| i.number == only);
+        }
+        // Order by dependency (Blocked-by edges + split-bundle children), ascending
+        // number as tie-break — the pending list shown to the user IS the sequence
+        // run_queue will work, and a dependency-consistent order lets one run drain
+        // a graph whose numbering disagrees with its edges.
+        //
+        // Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
+        // itself open (a partially-labelled chain) still orders the queue: edges are
+        // walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
+        // failure fall back to in-queue-only ordering rather than abort the run. Skip
+        // the extra call when ordering can't matter (0 or 1 issue).
+        if queue.len() > 1 {
+            match github::list_open_issues(repo_root) {
+                Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
+                Err(e) => {
+                    warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
+                    ralphy_core::blocked::sort_queue(queue)
+                }
+            }
+        } else {
+            ralphy_core::blocked::sort_queue(queue)
+        }
+    };
+
+    Ok((queue, forced_issues))
 }
 
 /// Force `stop_on_limit` for OpenCode runs only: OpenCode already self-waits short
