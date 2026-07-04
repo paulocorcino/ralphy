@@ -2217,7 +2217,8 @@ fn finalize(repo: &Path, cfg: &InitConfig, logged_in: &[Agent]) -> Result<()> {
         .unwrap_or(0);
 
     let queue_labels = github::resolve_queue_labels(&[], repo);
-    let queue_issues = github::list_queue(&queue_labels, repo)?;
+    // Whole-repo housekeeping — never assignee-scoped (ADR-0021).
+    let queue_issues = github::list_queue(&queue_labels, None, repo)?;
     let mut queue: Vec<u64> = queue_issues.iter().map(|i| i.number).collect();
     queue.sort_unstable();
 

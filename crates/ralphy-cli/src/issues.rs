@@ -47,6 +47,17 @@ pub struct IssuesArgs {
     /// clear message when no `events.url` is set for this repo.
     #[arg(long)]
     pub push: bool,
+
+    /// List only issues this login is among the assignees of (`gh --assignee`
+    /// semantics; `@me` = the authenticated user), matching what `ralphy run
+    /// --assignee` would work. Overrides a persisted `queue.assignee`.
+    #[arg(long)]
+    pub assignee: Option<String>,
+
+    /// Disable a persisted `queue.assignee` filter for this one invocation.
+    /// Mutually exclusive with `--assignee`.
+    #[arg(long = "no-assignee", conflicts_with = "assignee")]
+    pub no_assignee: bool,
 }
 
 /// The output format `--format` selects.
@@ -98,6 +109,17 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     let human_return = github::resolve_human_return_labels(&repo_root);
     let fields = parse_fields(args.fields.as_deref());
 
+    // Resolve the assignee filter identically to `ralphy run` (ADR-0021): flag >
+    // `--no-assignee` > persisted `queue.assignee` > none, so the listing agrees
+    // issue-for-issue with what the runner would build under the same filter.
+    let settings = ralphy_core::Settings::load(&ralphy_core::Workspace::new(&repo_root))
+        .unwrap_or_default();
+    let assignee = crate::config::resolve_assignee(
+        args.assignee.as_deref(),
+        args.no_assignee,
+        settings.queue.assignee.as_deref(),
+    );
+
     // `--push` emits the whole judged queue as a snapshot event rather than
     // printing it — the on-demand twin of the runner's enriched `queue.built`.
     // It is a queue-level operation, so it cannot be combined with `show <n>`.
@@ -107,7 +129,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
                 "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
             );
         }
-        let queue = build_list_queue(&repo_root)?;
+        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
         let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
         return push_snapshot(&repo_root, &view);
     }
@@ -126,12 +148,12 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         };
         println!("{out}");
     } else {
-        let queue = build_list_queue(&repo_root)?;
+        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
         // The list is never a forced selection, so `stop-before` is honoured.
         let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
         let out = match args.format {
             Format::Json => render_json(&view, fields.as_deref())?,
-            Format::Text => render_text(&view),
+            Format::Text => render_text(&view, assignee.as_deref()),
         };
         println!("{out}");
     }
@@ -142,9 +164,12 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
 /// labels, then dependency-ordered), so the listing reflects the sequence a run
 /// would work. Best-effort ordering: a `gh` failure fetching the open set falls
 /// back to in-queue edges rather than aborting.
-fn build_list_queue(repo_root: &std::path::Path) -> Result<Vec<ralphy_core::Issue>> {
+fn build_list_queue(
+    repo_root: &std::path::Path,
+    assignee: Option<&str>,
+) -> Result<Vec<ralphy_core::Issue>> {
     let labels = github::resolve_queue_labels(&[], repo_root);
-    let queue = github::list_queue(&labels, repo_root)?;
+    let queue = github::list_queue(&labels, assignee, repo_root)?;
     if queue.len() > 1 {
         match github::list_open_issues(repo_root) {
             Ok(open) => Ok(blocked::sort_queue_in_graph(queue, &open)),
@@ -361,9 +386,12 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 /// Render the judged queue as an aligned text table matching the ADR-0020 sample.
-fn render_text(view: &QueueView) -> String {
+fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
     if view.issues.is_empty() {
-        return "No open issues in the queue.".to_string();
+        return match assignee {
+            Some(a) => format!("No open issues in the queue assigned to {a}."),
+            None => "No open issues in the queue.".to_string(),
+        };
     }
     const TITLE_MAX: usize = 40;
     let rows: Vec<(String, String, String, &'static str, String)> = view
@@ -556,7 +584,7 @@ mod tests {
         let mut tr = FakeTracker::default();
         tr.open.insert(99);
         let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
-        let text = render_text(&view);
+        let text = render_text(&view, None);
         // One line per issue, each carrying its status word and reason cell.
         assert!(
             text.contains("#1") && text.contains("stop_before"),
@@ -575,6 +603,22 @@ mod tests {
             "{text}"
         );
         assert_eq!(text.lines().count(), 4, "one row per issue: {text}");
+    }
+
+    #[test]
+    fn render_text_empty_queue_names_active_filter() {
+        let empty = QueueView {
+            count: 0,
+            order: vec![],
+            stop_before: None,
+            issues: vec![],
+        };
+        // Unfiltered: the plain notice.
+        assert_eq!(render_text(&empty, None), "No open issues in the queue.");
+        // Filtered: the notice names the assignee.
+        let filtered = render_text(&empty, Some("@me"));
+        assert!(filtered.contains("@me"), "got: {filtered}");
+        assert!(filtered.contains("assigned to"), "got: {filtered}");
     }
 
     #[test]

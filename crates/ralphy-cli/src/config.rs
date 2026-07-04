@@ -64,7 +64,7 @@ pub fn run(args: ConfigArgs) -> Result<()> {
 /// `--help`-style docs and in the unknown-key error so the two never drift. The
 /// model/effort/budget knobs are Claude-only in the current wiring (ADR-0010).
 pub const SUPPORTED_KEYS_HELP: &str = "supported keys: \
-opencode.model, base_branch, branch_mode, verify.command, \
+opencode.model, base_branch, branch_mode, queue.assignee, verify.command, \
 verify.require_verify_gate, \
 events.url, events.token, \
 claude.plan_model, claude.plan_effort, claude.default_exec_model, \
@@ -82,6 +82,7 @@ fn require_known_key(key: &str) -> Result<()> {
         "opencode.model"
         | "base_branch"
         | "branch_mode"
+        | "queue.assignee"
         | "verify.command"
         | "verify.require_verify_gate"
         | "events.url"
@@ -147,6 +148,7 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             s.verify.require_verify_gate = Some(b);
         }
         "base_branch" => s.base_branch = Some(value.to_owned()),
+        "queue.assignee" => s.queue.assignee = Some(value.to_owned()),
         "branch_mode" => {
             // Validate through the shared parser; store the canonical lowercase
             // string so resolution and `config get` see one form.
@@ -191,6 +193,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "verify.command" => s.verify.command = None,
         "verify.require_verify_gate" => s.verify.require_verify_gate = None,
         "base_branch" => s.base_branch = None,
+        "queue.assignee" => s.queue.assignee = None,
         "branch_mode" => s.branch_mode = None,
         "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = None)?,
         "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = None)?,
@@ -216,6 +219,7 @@ pub fn get(ws: &Workspace) -> Result<()> {
     }
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
+    print_str("queue.assignee", s.queue.assignee);
     print_str("claude.plan_model", claude.plan_model);
     print_str("claude.plan_effort", claude.plan_effort);
     print_str("claude.default_exec_model", claude.default_exec_model);
@@ -269,6 +273,24 @@ pub fn resolve_str(flag: Option<String>, persisted: Option<String>, default: &st
     flag.filter(|s| !s.is_empty())
         .or_else(|| persisted.filter(|s| !s.is_empty()))
         .unwrap_or_else(|| default.to_owned())
+}
+
+/// Resolve the effective queue assignee filter. Precedence:
+/// `--assignee X` (non-empty) > `--no-assignee` (forces `None`) >
+/// persisted `queue.assignee` (non-empty) > `None` (no filter). Empty strings on
+/// either source are treated as unset, matching [`resolve_str`].
+pub fn resolve_assignee(
+    flag: Option<&str>,
+    no_assignee: bool,
+    persisted: Option<&str>,
+) -> Option<String> {
+    if let Some(a) = flag.filter(|s| !s.is_empty()) {
+        return Some(a.to_owned());
+    }
+    if no_assignee {
+        return None;
+    }
+    persisted.filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
 /// Resolve a `u64`-valued run knob (ADR-0010). Precedence: per-run `flag` >
@@ -378,6 +400,33 @@ mod tests {
         assert_eq!(resolve_u64(None, None, 90), 90);
     }
 
+    // --- resolve_assignee precedence ---
+
+    #[test]
+    fn resolve_assignee_precedence() {
+        // --assignee X wins over config.
+        assert_eq!(
+            resolve_assignee(Some("X"), false, Some("cfg")),
+            Some("X".to_string())
+        );
+        // --no-assignee forces None even over a set config.
+        assert_eq!(resolve_assignee(None, true, Some("cfg")), None);
+        // Neither flag: persisted config is used.
+        assert_eq!(
+            resolve_assignee(None, false, Some("cfg")),
+            Some("cfg".to_string())
+        );
+        // Nothing anywhere: no filter.
+        assert_eq!(resolve_assignee(None, false, None), None);
+        // Empty strings are treated as unset: an empty flag falls through to the
+        // persisted value, and an empty persisted value falls through to None.
+        assert_eq!(
+            resolve_assignee(Some(""), false, Some("cfg")),
+            Some("cfg".to_string())
+        );
+        assert_eq!(resolve_assignee(None, false, Some("")), None);
+    }
+
     // --- parse_branch_mode ---
 
     #[test]
@@ -461,6 +510,21 @@ mod tests {
             .agent_settings(ClaudeSettings::SECTION)
             .unwrap();
         assert_eq!(c.max_minutes_per_issue, Some(0));
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn queue_assignee_config_round_trip() {
+        let (ws, dir) = tmp_ws("queue-assignee-config");
+
+        set(&ws, "queue.assignee", "@me").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.queue.assignee.as_deref(), Some("@me"));
+
+        unset(&ws, "queue.assignee").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.queue.assignee, None);
 
         fs::remove_dir_all(&dir).ok();
     }

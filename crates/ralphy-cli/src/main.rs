@@ -244,6 +244,17 @@ struct RunArgs {
     /// piles a run onto a live one. Without it a live run only warns.
     #[arg(long)]
     if_idle: bool,
+
+    /// Build the label queue only from issues this login is among the assignees
+    /// of (`gh --assignee` semantics; `@me` = the authenticated user). Overrides a
+    /// persisted `queue.assignee`. `--only-issue`/`--issues` ignore this filter.
+    #[arg(long)]
+    assignee: Option<String>,
+
+    /// Disable a persisted `queue.assignee` filter for this one invocation, so the
+    /// queue is built unfiltered. Mutually exclusive with `--assignee`.
+    #[arg(long = "no-assignee", conflicts_with = "assignee")]
+    no_assignee: bool,
 }
 
 #[derive(Args)]
@@ -586,6 +597,27 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     //     the run drains it as a sequence. This bypasses the label question entirely.
     //   default: the label-built queue, optionally narrowed by `--only-issue`, then
     //     ordered by dependency.
+    // Load the persisted settings once here (ADR-0010) BEFORE the queue build so the
+    // `queue.assignee` default is available to the label-queue path (and, further
+    // down, the events ctx). A load failure warns and falls back to defaults so a
+    // malformed settings file never aborts a run. Precedence for each knob: per-run
+    // flag > settings.json > hardcoded default.
+    let settings = match ralphy_core::Settings::load(&ws) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(error = %e, "could not load .ralphy/settings.json — persisted defaults ignored");
+            ralphy_core::Settings::default()
+        }
+    };
+    // The effective assignee filter for the label-built queue (ADR-0021): flag >
+    // `--no-assignee` > persisted `queue.assignee` > none. `--only-issue`/`--issues`
+    // bypass it below so an explicit selection always fetches unfiltered.
+    let assignee = config::resolve_assignee(
+        args.assignee.as_deref(),
+        args.no_assignee,
+        settings.queue.assignee.as_deref(),
+    );
+
     let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
     let queue = if !args.issues.is_empty() {
         let mut selected = Vec::with_capacity(args.issues.len());
@@ -594,7 +626,14 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         }
         selected
     } else {
-        let mut queue = github::list_queue(&effective_labels, &repo_root)?;
+        // `--only-issue` fetches its single target unfiltered (criterion 5), so drop
+        // the assignee filter on that path; a bare label queue applies it.
+        let queue_assignee = if args.only_issue.is_some() {
+            None
+        } else {
+            assignee.as_deref()
+        };
+        let mut queue = github::list_queue(&effective_labels, queue_assignee, &repo_root)?;
         if let Some(only) = args.only_issue {
             queue.retain(|i| i.number == only);
         }
@@ -655,20 +694,12 @@ fn run_cmd(args: RunArgs) -> Result<()> {
     presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
 
     if queue.is_empty() {
-        let scope = if !args.issues.is_empty() {
-            let list = args
-                .issues
-                .iter()
-                .map(|n| format!("#{n}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("issues [{list}]")
-        } else {
-            match args.only_issue {
-                Some(n) => format!("issue #{n}"),
-                None => format!("labels [{}]", effective_labels.join(", ")),
-            }
-        };
+        let scope = empty_queue_scope(
+            &args.issues,
+            args.only_issue,
+            &effective_labels,
+            assignee.as_deref(),
+        );
         // finalize before printing so the live region is cleared first (ADR-0006).
         presenter.finalize();
         presenter.print_notice(&format!("No open issues for {scope} to process. Done."));
@@ -737,19 +768,9 @@ fn run_cmd(args: RunArgs) -> Result<()> {
         }
     }
 
-    // Load the persisted settings once here (ADR-0010) BEFORE the events ctx so the
-    // operating run branch (which the `data.git` block carries, ADR-0019 amendment
-    // #96) is resolved before the ctx is built and thus constant from the first
-    // event. A load failure warns and falls back to defaults so a malformed settings
-    // file never aborts a run. Precedence for each knob: per-run flag > settings.json
-    // > hardcoded default.
-    let settings = match ralphy_core::Settings::load(&ws) {
-        Ok(s) => s,
-        Err(e) => {
-            warn!(error = %e, "could not load .ralphy/settings.json — persisted defaults ignored");
-            ralphy_core::Settings::default()
-        }
-    };
+    // Settings were loaded above (before the queue build) so `queue.assignee` could
+    // filter the label queue; the operating run branch resolved from them still feeds
+    // the events ctx below (ADR-0019 amendment #96), constant from the first event.
     // Each adapter's settings section is opaque JSON to the core; deserialize
     // the typed slices here with the same warn-and-default tolerance as the
     // file load, so a malformed section never aborts a run (ADR-0002 amendment).
@@ -1233,6 +1254,38 @@ fn operating_branch(mode: BranchMode, stamp: &str, start_branch: Option<&str>) -
     }
 }
 
+/// Build the human-readable scope phrase for the "No open issues for …" notice.
+/// An explicit `--issues` selection or `--only-issue` names the numbers; a label
+/// queue names the labels and, when an assignee filter is active, appends
+/// `assigned to <login>` so the empty notice reveals the filter (ADR-0021,
+/// criterion 7). `--only-issue`/`--issues` bypass the filter, so `assignee` is
+/// only ever appended on the labels path.
+fn empty_queue_scope(
+    issues: &[u64],
+    only_issue: Option<u64>,
+    labels: &[String],
+    assignee: Option<&str>,
+) -> String {
+    if !issues.is_empty() {
+        let list = issues
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("issues [{list}]");
+    }
+    match only_issue {
+        Some(n) => format!("issue #{n}"),
+        None => {
+            let base = format!("labels [{}]", labels.join(", "));
+            match assignee {
+                Some(a) => format!("{base} assigned to {a}"),
+                None => base,
+            }
+        }
+    }
+}
+
 /// Pure predicate layer: returns `Err(message)` for the first agent whose
 /// `cli_name()` the `locate` closure reports absent, else `Ok(())`. The
 /// `locate` indirection lets unit tests inject a fake resolver with no PATH
@@ -1463,6 +1516,54 @@ mod tests {
             panic!("expected the `run` subcommand");
         };
         assert!(!args.if_idle, "--if-idle must default to off");
+    }
+
+    #[test]
+    fn assignee_flags_parse_and_conflict() {
+        // `--assignee` captures the login.
+        let cli = Cli::try_parse_from(["ralphy", "run", "--assignee", "@me"])
+            .expect("run with --assignee must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected the `run` subcommand");
+        };
+        assert_eq!(args.assignee.as_deref(), Some("@me"));
+        assert!(!args.no_assignee);
+
+        // `--no-assignee` alone parses and defaults `assignee` to None.
+        let cli = Cli::try_parse_from(["ralphy", "run", "--no-assignee"])
+            .expect("run with --no-assignee must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected the `run` subcommand");
+        };
+        assert!(args.no_assignee);
+        assert_eq!(args.assignee, None);
+
+        // The two are mutually exclusive — clap rejects both together.
+        assert!(
+            Cli::try_parse_from(["ralphy", "run", "--assignee", "@me", "--no-assignee"]).is_err(),
+            "--assignee and --no-assignee must conflict"
+        );
+    }
+
+    #[test]
+    fn empty_queue_scope_names_the_filter() {
+        // Active filter on a label queue names the assignee.
+        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_string()], Some("@me"));
+        assert!(scope.contains("@me"), "scope must name the filter: {scope}");
+        assert!(scope.contains("assigned to"), "got: {scope}");
+
+        // No filter omits the "assigned to" phrase.
+        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_string()], None);
+        assert!(
+            !scope.contains("assigned to"),
+            "unfiltered scope must not mention an assignee: {scope}"
+        );
+
+        // Explicit selections never carry the filter phrase.
+        let scope = empty_queue_scope(&[5, 3], None, &[], None);
+        assert_eq!(scope, "issues [#5, #3]");
+        let scope = empty_queue_scope(&[], Some(7), &["ready-for-agent".to_string()], None);
+        assert_eq!(scope, "issue #7");
     }
 
     #[test]

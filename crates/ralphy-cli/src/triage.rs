@@ -198,7 +198,8 @@ pub fn run(args: &TriageArgs) -> Result<()> {
 
     // The labelled subset — tens, not hundreds. `triage-agent` is a fixed
     // operational label, never remapped.
-    let issues = github::list_queue(&[TRIAGE_AGENT_LABEL.to_string()], &repo)?;
+    // Triage sweeps the whole repo's queue label — never assignee-scoped (ADR-0021).
+    let issues = github::list_queue(&[TRIAGE_AGENT_LABEL.to_string()], None, &repo)?;
     if issues.is_empty() {
         println!("No open issue carries `triage-agent` — nothing to triage.");
         return Ok(());
