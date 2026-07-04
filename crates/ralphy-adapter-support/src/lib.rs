@@ -35,11 +35,14 @@ use std::fs;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
+mod budget;
+pub use budget::issue_deadline;
+
 mod detect;
 pub use detect::{auth_error, detect_limit, scan_json_lines};
 
 mod json_session;
-pub use json_session::{run_json_session, JsonSession};
+pub use json_session::{run_json_session, run_text_session, JsonSession, TextSession};
 
 mod session_files;
 pub use session_files::{list_session_files, session_files_appeared};
@@ -58,6 +61,34 @@ pub const DONE_SENTINEL: &str = "RALPHY_DONE_EXIT";
 /// by `.ralphy/plan.md` appearing on disk — so unlike the exec charter this
 /// names no sentinel.
 pub const PLAN_CHARTER: &str = "Read .ralphy/plan-charter.md and follow it exactly to plan the issue described by .ralphy/issue.json. Write the plan to .ralphy/plan.md.";
+
+/// The vendor-neutral execution charter, embedded once here (like [`PLAN_CHARTER`])
+/// and referenced by every adapter, instead of each `include_str!`-ing its own
+/// byte-identical copy. It already names the `RALPHY_DONE_EXIT` /
+/// `RALPHY_BLOCKED_EXIT` sentinels and is not vendor-specific. The `../../../`
+/// depth reaches the workspace root from this crate's `src/`, the same depth the
+/// adapters used.
+pub const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
+
+/// Resolve a home-scoped store/config path: when `override_base` is `Some` (a
+/// vendor `$XXX_HOME` env var), the path is `override_base.join(tail)` — the
+/// override replaces the whole `home_dir()/home_rel` base, so `home_rel` is
+/// ignored. When `None`, it is `home_dir()?/home_rel/tail`. Returns `None` only
+/// when no override is given and no home is known.
+///
+/// The three-part shape (base + `home_rel` + `tail`) is what lets Codex's
+/// `$CODEX_HOME/config.toml` and `<home>/.codex/config.toml` share one helper: the
+/// `config.toml` tail joins onto whichever base wins.
+pub fn home_scoped_path(
+    override_base: Option<std::ffi::OsString>,
+    home_rel: &Path,
+    tail: &Path,
+) -> Option<PathBuf> {
+    match override_base {
+        Some(base) => Some(PathBuf::from(base).join(tail)),
+        None => Some(home_dir()?.join(home_rel).join(tail)),
+    }
+}
 
 /// Returns `true` when `text` contains the [`DONE_SENTINEL`] token, as
 /// defined by `assets/prompts/prompt.execute.md`.
@@ -99,6 +130,37 @@ mod tests {
             "planning has no completion sentinel"
         );
         assert!(PLAN_CHARTER.len() < 512, "must stay a one-line pointer");
+    }
+
+    /// Anti-drift: the shared execution charter must name the completion
+    /// sentinel (migrated from each adapter's local pin). `DONE_SENTINEL` is the
+    /// single source of truth.
+    #[test]
+    fn prompt_execute_names_the_done_sentinel() {
+        assert!(PROMPT_EXECUTE.contains(DONE_SENTINEL));
+    }
+
+    #[test]
+    fn home_scoped_path_override_replaces_the_home_base() {
+        // The override branch: `base.join(tail)`, with `home_rel` ignored.
+        assert_eq!(
+            home_scoped_path(
+                Some("X".into()),
+                Path::new(".codex"),
+                Path::new("config.toml")
+            ),
+            Some(PathBuf::from("X").join("config.toml"))
+        );
+    }
+
+    #[test]
+    fn home_scoped_path_home_branch_joins_home_rel_and_tail() {
+        // The home branch: `home_dir()/home_rel/tail`. Deterministic against the
+        // same `home_dir()` the helper uses — no env mutation.
+        assert_eq!(
+            home_scoped_path(None, Path::new(".codex"), Path::new("config.toml")),
+            home_dir().map(|h| h.join(".codex").join("config.toml"))
+        );
     }
 
     /// Mark a freshly-written fixture executable so `find_program`'s Unix
@@ -647,6 +709,52 @@ pub fn run_headless(mut cmd: Command, prompt: &str, timeout: Duration) -> Result
         stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
         timed_out,
         exit,
+    })
+}
+
+/// The post-processed result of [`run_headless_logged`]: the raw stdout kept
+/// apart (OpenCode parses its JSON event stream from stdout alone), the combined
+/// `log` exactly as persisted, and the two recovered flags every headless adapter
+/// derives from a [`HeadlessOutput`].
+///
+/// `exited_cleanly` is a **successful** exit (`exit.map(|s| s.success())`), `false`
+/// when the child was killed on the wall timeout — distinct from Claude's `exited`
+/// flag (`!timed_out`), which the Claude adapter still recovers itself from
+/// `timed_out`.
+#[derive(Debug)]
+pub struct HeadlessRun {
+    /// Everything the child wrote to stdout, captured complete (no truncation).
+    pub stdout: String,
+    /// stdout + stderr concatenated, exactly as written to `log_path`.
+    pub log: String,
+    /// `true` when the child exited with a success status (not killed, not failed).
+    pub exited_cleanly: bool,
+    /// `true` when the child outlived the timeout and was killed.
+    pub timed_out: bool,
+}
+
+/// [`run_headless`] plus the post-run shell every headless adapter repeats: combine
+/// stdout+stderr into one log, persist it at `log_path`, and recover
+/// `exited_cleanly` from the exit status. Returns a [`HeadlessRun`]; the adapter
+/// keeps its own `classify_*` and (for Claude) its own `exited = !timed_out`
+/// recovery from `timed_out`.
+pub fn run_headless_logged(
+    cmd: Command,
+    prompt: &str,
+    timeout: Duration,
+    log_path: &Path,
+) -> Result<HeadlessRun> {
+    let r = run_headless(cmd, prompt, timeout)?;
+    let stdout = r.stdout;
+    let mut log = stdout.clone();
+    log.push_str(&r.stderr);
+    let _ = fs::write(log_path, &log);
+    let exited_cleanly = r.exit.map(|s| s.success()).unwrap_or(false);
+    Ok(HeadlessRun {
+        stdout,
+        log,
+        exited_cleanly,
+        timed_out: r.timed_out,
     })
 }
 
