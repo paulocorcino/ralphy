@@ -129,11 +129,14 @@ you only produce a plan that a later execution loop will consume.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
-   - [ ] Self-review: run the **inline `reviewer` skill** (auto-discovered via
-         `skills.paths`), invoked by name over ONLY the commits you made for
-         this issue — **not** a subagent, and not the whole branch. Resolve
-         every HIGH finding before finishing; if one cannot be fixed
-         autonomously, record it under `## Notes & decisions` and block.
+   - [ ] Self-review: run the **inline `reviewer` skill** (auto-discovered from
+         `.agents/skills/reviewer/`, loaded on demand via the native `skill`
+         tool), invoked by name over ONLY the commits you made for this issue
+         — **not** a subagent, and not the whole branch; for a small mechanical
+         diff, write this step as a direct adversarial re-read of the diff
+         instead (see the self-review rule below). Resolve every HIGH finding
+         before finishing; if one cannot be fixed autonomously, record it under
+         `## Notes & decisions` and block.
    - [ ] the project's format and test commands pass with no new warnings
    ```
 
@@ -290,15 +293,22 @@ you only produce a plan that a later execution loop will consume.
   green on ONE minimal unit — then fan out the rest. A session can stall at
   any step: easy-first ordering leaves valuable-but-unverifiable residue;
   skeleton-first leaves a spine that stands alone.
-- The penultimate step is a self-review: run the **inline `reviewer`
-  skill** (auto-discovered via `skills.paths`) over ONLY the commits you made
-  for this issue — **not** a subagent, and not the whole branch. Include it
-  by DEFAULT; omit it only when the change carries no domain logic at all
+- The penultimate step is a self-review over ONLY the commits you made for
+  this issue — include it by DEFAULT, but SCALE it to the expected diff:
+  - changes with real domain logic or a multi-file/multi-crate surface get the
+    full review: run the **inline `reviewer` skill** (auto-discovered from
+    `.agents/skills/reviewer/`, loaded on demand via the native `skill` tool),
+    invoked by name — **not** a subagent, and not the whole branch;
+  - small mechanical changes (single crate/package, no new control flow,
+    follow-a-pattern edits) get a lighter step: a direct adversarial re-read
+    of the final diff by the executor itself, hunting for what tests can't
+    catch — still recorded under `## Self-review findings`. A fixed multi-minute
+    reviewer pass on a 50-line mechanical diff is cost without information.
+  Omit the step entirely only when the change carries no domain logic at all
   (pure data/fixtures/docs), and record that omission as a `## Decisions`
-  bullet with a one-line why. A plan that includes the step buys a real
-  review: the executor must record the reviewer's findings in the plan, so
-  do not include it as ritual for changes where it cannot find anything
-  tests don't. Resolve every HIGH finding before declaring done.
+  bullet with a one-line why. Either variant buys a real review: the executor
+  must record the findings in the plan, so do not include it as ritual.
+  Resolve every HIGH finding before declaring done.
 - The LAST step is always a green-build/test gate.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
