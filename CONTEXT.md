@@ -217,6 +217,15 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   and shell-script children are not portable to Windows CI; plans that test
   child-process behavior should follow this pattern.
 
+## Refactoring conventions
+
+- **Splitting files over 500 lines** follows the guardrails in
+  [docs/adr/0022](./docs/adr/0022-file-split-conventions.md): `foo.rs` + `foo/`
+  layout (never `mod.rs`), public API unchanged (re-export from the parent),
+  tests migrate with the code they exercise, and every split PR is gated on
+  `/rust-skills` + `cargo test` + `cargo clippy` green. Split by existing
+  responsibility only — no new abstractions to justify a file boundary.
+
 ## Flagged ambiguities
 
 - "AFK" and "ready-for-agent" are treated as synonyms (same for "HITL" /
