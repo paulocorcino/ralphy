@@ -123,7 +123,7 @@ fn model_usage_total(entry: &serde_json::Value) -> u64 {
 /// to `-`, drive-letter case preserved. So `c:\Dev\ralphy` → `c--Dev-ralphy` and
 /// `C:\Dev\.ralph-worktrees\issue-10` → `C--Dev--ralph-worktrees-issue-10` (the
 /// dot becomes a second `-`). Pure over the byte-exact cwd string.
-pub(crate) fn dashed_cwd(cwd: &str) -> String {
+fn dashed_cwd(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()
