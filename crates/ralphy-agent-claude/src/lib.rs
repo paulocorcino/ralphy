@@ -18,7 +18,8 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{bail, Context, Result};
 use include_dir::{include_dir, Dir};
 use ralphy_adapter_support::{
-    list_session_files, run_headless, run_json_session, session_files_appeared, JsonSession,
+    list_session_files, run_headless_logged, run_json_session, run_text_session,
+    session_files_appeared, JsonSession, TextSession, PROMPT_EXECUTE,
 };
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, git, plan, Agent,
@@ -37,10 +38,6 @@ const PROMPT_PLAN: &str = include_str!("../../../assets/prompts/prompt.plan.md")
 /// The staged-plan planning prompt, used when the issue carries the
 /// `stagedplan` label.
 const PROMPT_PLAN_STAGED: &str = include_str!("../../../assets/prompts/prompt.plan.staged.md");
-
-/// The execution charter, embedded for the same reason and copied to
-/// `.ralphy/exec.md` for the live session to read.
-const PROMPT_EXECUTE: &str = include_str!("../../../assets/prompts/prompt.execute.md");
 
 /// The knowledge-consolidation charter (`ralphy consolidate`): curate the loose
 /// `.ralphy/knowledge/issue-<N>.md` notes into one `KNOWLEDGE.md`.
@@ -247,16 +244,12 @@ impl ClaudeAgent {
     /// per-issue cap — the issue is then bounded only by the run deadline (or the
     /// far-future [`UNBOUNDED_ISSUE_HORIZON`] when no run deadline is set).
     fn issue_deadline(&self) -> Instant {
-        let budget = if self.exec.max_minutes_per_issue == 0 {
-            ralphy_core::UNBOUNDED_ISSUE_HORIZON
-        } else {
-            Duration::from_secs(self.exec.max_minutes_per_issue * 60)
-        };
-        let per_issue = Instant::now() + budget;
-        match self.exec.run_deadline {
-            Some(rd) => per_issue.min(rd),
-            None => per_issue,
-        }
+        ralphy_adapter_support::issue_deadline(
+            Instant::now(),
+            self.exec.max_minutes_per_issue,
+            self.exec.run_deadline,
+            ralphy_core::UNBOUNDED_ISSUE_HORIZON,
+        )
     }
 
     /// The single tier→model decision point: explicit override > the plan's
@@ -373,27 +366,20 @@ impl ClaudeAgent {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
-        // shared headless runner; `exited` (here "the child exited rather than
-        // being killed on the wall timeout") is recovered from `timed_out`.
-        let r = run_headless(cmd, PROMPT_EXECUTE, timeout)
+        // Delegate the OS-level spawn/drain/poll/kill/collect and log-persist
+        // plumbing to the shared runner. Claude's `exited` ("the child exited
+        // rather than being killed on the wall timeout") is `!timed_out` — NOT the
+        // runner's `exited_cleanly` (a *successful* exit); the D10 auth bail stays
+        // inline here.
+        let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
+        let r = run_headless_logged(cmd, PROMPT_EXECUTE, timeout, &log_path)
             .context("failed to spawn the `claude` CLI for headless exec")?;
-        let exited = !r.timed_out;
-        let mut text = r.stdout;
-        text.push_str(&r.stderr);
-        let _ = fs::write(self.run_dir.join(format!("exec-{}.out", call_index)), &text);
 
-        if is_claude_auth_error(&text) {
-            bail!(
-                "{} (see {})",
-                CLAUDE_AUTH_ERROR_MSG,
-                self.run_dir
-                    .join(format!("exec-{}.out", call_index))
-                    .display()
-            );
+        if is_claude_auth_error(&r.log) {
+            bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
         }
 
-        Ok((exited, text))
+        Ok((!r.timed_out, r.log))
     }
 
     /// Drive the issue with a `claude -p` loop (headless mode). Mirrors the
@@ -513,25 +499,22 @@ pub fn consolidate_knowledge(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let r = run_headless(cmd, PROMPT_CONSOLIDATE, timeout)
-        .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
-    let mut log = r.stdout;
-    log.push_str(&r.stderr);
-    let _ = fs::write(run_dir.join("consolidate.log"), &log);
-
-    if is_claude_auth_error(&log) {
-        bail!(
-            "{} (see {})",
-            CLAUDE_AUTH_ERROR_MSG,
-            run_dir.join("consolidate.log").display()
-        );
-    }
-    if r.timed_out {
-        bail!(
-            "consolidation session hit the wall timeout (see {})",
-            run_dir.join("consolidate.log").display()
-        );
-    }
+    // A non-JSON one-shot: spawn, persist the log, bail on auth then timeout — the
+    // shared `run_text_session` owns that exact tail (same messages, same order).
+    // The consolidated log is the only deliverable, so its returned value is
+    // dropped; the caller verifies `KNOWLEDGE.md` separately.
+    run_text_session(
+        TextSession {
+            cmd,
+            prompt: PROMPT_CONSOLIDATE,
+            timeout,
+            log_path: &run_dir.join("consolidate.log"),
+            spawn_err: "failed to spawn the `claude` CLI (is it installed and on PATH?)",
+            auth_msg: CLAUDE_AUTH_ERROR_MSG,
+            timeout_msg: "consolidation session hit the wall timeout",
+        },
+        is_claude_auth_error,
+    )?;
     Ok(())
 }
 
@@ -908,11 +891,10 @@ impl ClaudeAgent {
     /// Derived from the byte-exact cwd passed to `claude` (the repo root).
     fn transcript_dir(&self, ws: &Workspace) -> Option<PathBuf> {
         let cwd = ws.repo_root().to_string_lossy();
-        Some(
-            dirs_home()?
-                .join(".claude")
-                .join("projects")
-                .join(dashed_cwd(&cwd)),
+        ralphy_adapter_support::home_scoped_path(
+            None,
+            Path::new(".claude/projects"),
+            &PathBuf::from(dashed_cwd(&cwd)),
         )
     }
 
