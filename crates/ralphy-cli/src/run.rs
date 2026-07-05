@@ -554,6 +554,7 @@ fn install_observability(
 /// and emits the legacy/unmarked shape rather than aborting the run. The caller
 /// positions this after the header/info-line prints and before the notifier worker
 /// start, so the buffered-ring drain order is unchanged.
+#[allow(clippy::too_many_arguments)]
 fn emit_queue_built(
     queue: &[ralphy_core::Issue],
     forced_issues: &[u64],
