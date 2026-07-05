@@ -58,6 +58,10 @@ ralphy run --repo ~/dev/foo --issues 5,3,9
 `ralphy run --only-issue 13`. Work the same setup up incrementally: `--dry-run` one
 issue, then one issue for real, and only then trust the unattended overnight queue.
 
+New to a repo? [docs/getting-started.md](docs/getting-started.md) walks the whole
+onboarding — the guided `ralphy init` command and the manual path — from a fresh
+clone to a draining queue.
+
 `--issues 5,3,9` is the manual override: it works exactly those issues, in the order
 listed, fetching each by number regardless of its labels and skipping the dependency
 sort — the run drains the list as a sequence. Like `--only-issue`, a `stop-before`
@@ -222,10 +226,13 @@ ralphy config set branch_mode current                   # default branch mode
 ralphy config set verify.command "cargo test"           # per-repo fallback verify gate
 ralphy config set claude.default_exec_model opus        # Claude run defaults (claude.*):
 ralphy config set claude.max_minutes_per_issue 120      #   plan_model, plan_effort,
-ralphy config set claude.max_minutes_per_issue 0        #   0 = no per-issue cap (default 90)
+ralphy config set claude.max_minutes_per_issue 0        #   0 = no per-issue cap (the default)
 ralphy config get                                        #   exec_effort, … — see config --help
 ralphy config unset opencode.model                      # clear a key
 ```
+
+Every key, its default, and where each store lives is in the
+[configuration reference](docs/configuration.md).
 
 List the models an agent offers (OpenCode only — Codex/Claude have no listing command):
 
@@ -277,8 +284,9 @@ Ralphy is built to run while you sleep, so it ships its own guardrails:
   clobbers uncommitted work, and the agent is kept on the run branch.
 - **Never pushes, never opens a PR** — the agent only commits locally. The single run
   branch is the delivery; you review and merge it by hand.
-- **Time budgets** — a per-issue limit (`--max-minutes-per-issue`, default 90) and a
-  global `--deadline-hours` keep a hung issue from running forever.
+- **Time budgets** — a per-issue limit (`--max-minutes-per-issue`, unbounded by
+  default; `0` disables the cap) and a global `--deadline-hours` keep a hung issue
+  from running forever.
 - **Stop at first failure** — one stalled issue stops the run instead of burning the rest
   of the budget.
 - **Runner-enforced verify gate** — Ralphy re-runs the plan's `## Verify` commands itself
@@ -378,6 +386,22 @@ ralphy telegram test     # send a ping to confirm it works
 ralphy telegram status   # show the configured chat and a masked token
 ralphy telegram disable  # remove the stored config
 ```
+
+## Streaming run events (optional)
+
+Beyond the console, `ralphy.log`, and the Telegram card, Ralphy can POST every run
+event as **CloudEvents 1.0 JSON** to an HTTP endpoint — a dashboard, or the web
+platform that consumes the stream. It's additive and best-effort: it never blocks
+or fails a run, and it's off until you set an endpoint.
+
+```powershell
+ralphy config set events.url https://example.com/hook   # turn the sink on
+ralphy config set events.token s3cret                   # optional bearer token
+```
+
+The full payload — the envelope, the emitter identity on every event, the reserved
+`git`/`issue`/`agent` blocks, and the event catalog — is documented field by field
+in the [event contract](docs/events.md).
 
 ## Credits
 

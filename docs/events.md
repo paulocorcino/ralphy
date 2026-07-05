@@ -10,6 +10,30 @@ Status: contract for the first implementation — field lists here are the
 target; the source of truth once implemented is the sink code plus its
 per-event tests.
 
+## Enabling the sink
+
+The sink is **off** until you configure an endpoint. Point Ralphy at one and
+every run POSTs its events there — additively, best-effort, never blocking the
+run:
+
+```powershell
+ralphy config set events.url https://example.com/hook   # turn the sink on
+ralphy config set events.token s3cret                   # optional bearer token
+ralphy config get                                        # confirm (token masked)
+ralphy config unset events.url                           # turn it back off
+```
+
+These two keys live in the **global** `~/.ralphy/events.toml`, keyed by the
+repo's `owner/repo` slug — not in `.ralphy/settings.json` — so the endpoint
+travels with you across repos while still letting different repos post to
+different endpoints. The `RALPHY_EVENTS_TOKEN` env var overrides the stored
+token for a single run (carry a token without persisting it). See the
+[configuration reference](./configuration.md#events-sink-keys-events) for how
+these keys sit alongside the rest.
+
+With no `events.url` set, no events are emitted and the run behaves exactly as
+before — the sink is purely additive.
+
 ## Transport
 
 - `POST {events.url}` with `Content-Type: application/cloudevents+json`
