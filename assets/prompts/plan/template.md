@@ -285,6 +285,13 @@ on one.
   any step: easy-first ordering leaves valuable-but-unverifiable residue;
   skeleton-first leaves a spine that stands alone.
 {{self-review-guidance}}
+- Write the plan telegraphically: its readers are the executor session and
+  the runner, not a human browsing for pleasure. Compress connective prose —
+  articles, hedges, narrative lead-ins — but NEVER referents: exact file
+  paths, function names, literal assertion values, and command lines stay
+  verbatim; ambiguity costs a resume session more than the tokens save.
+  Machine-parsed shapes (ledger lines, `## Verify` lines, checkbox markers)
+  keep their fixed format exactly.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
 - Write the plan in the project's working language (English unless
