@@ -3,15 +3,18 @@
 //! driven.
 
 mod client;
+mod comments;
 mod issues;
 mod labels;
 
+pub use comments::{
+    comment_issue, edit_comment, find_marked_comment, issue_comments, list_comments_with_ids,
+    parse_issue_comments, parse_rest_comments, upsert_marked_comment,
+};
 pub use issues::{
-    add_label, build_queue, close_issue, comment_issue, create_issue, create_milestone,
-    create_repo, edit_comment, edit_issue_body, fetch_issue, fetch_reference, find_marked_comment,
-    issue_comments, issue_is_closed, issue_labels, list_comments_with_ids, list_open_issues,
-    list_queue, parse_issue, parse_issue_comments, parse_rest_comments, queue_list_args,
-    remove_label, resolve_login, upsert_marked_comment,
+    add_label, build_queue, close_issue, create_issue, create_milestone, create_repo,
+    edit_issue_body, fetch_issue, fetch_reference, issue_is_closed, issue_labels,
+    list_open_issues, list_queue, parse_issue, queue_list_args, remove_label, resolve_login,
 };
 pub use labels::{
     apply_label_actions, format_label_plan, human_return_labels, list_repo_labels,
