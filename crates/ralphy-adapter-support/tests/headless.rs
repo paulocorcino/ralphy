@@ -6,7 +6,7 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use ralphy_adapter_support::run_headless;
+use ralphy_adapter_support::{run_headless, run_headless_logged, run_text_session, TextSession};
 
 // These mirror the constants in `src/bin/headless_test_child.rs`. Kept in sync by
 // hand — a drift would fail the assertions below immediately.
@@ -83,6 +83,138 @@ fn timeout_with_surviving_grandchild_still_returns_promptly() {
         elapsed < Duration::from_secs(30),
         "tree-kill closes the inherited pipe so the reader doesn't hang (took {elapsed:?})"
     );
+}
+
+/// A unique temp path for a per-test log file (no `tempfile` dev-dep in this
+/// crate — mirror the manual temp-dir pattern used elsewhere).
+fn temp_log(tag: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "ralphy-headless-log-{tag}-{}.log",
+        std::process::id()
+    ))
+}
+
+#[test]
+fn run_headless_logged_captures_flags_and_persists_the_log() {
+    let log_path = temp_log("clean");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = run_headless_logged(
+        child_cmd("clean"),
+        "ignored prompt",
+        Duration::from_secs(30),
+        &log_path,
+    )
+    .expect("run_headless_logged should not error on a clean child");
+
+    // stdout is kept apart; the log carries BOTH streams.
+    assert!(r.stdout.contains(CLEAN_STDOUT), "stdout carries the marker");
+    assert!(
+        !r.stdout.contains(CLEAN_STDERR),
+        "stdout must not carry the stderr marker"
+    );
+    assert!(r.log.contains(CLEAN_STDOUT), "log carries stdout");
+    assert!(r.log.contains(CLEAN_STDERR), "log carries stderr");
+    assert!(r.exited_cleanly, "a clean child exited cleanly");
+    assert!(!r.timed_out, "a clean child did not time out");
+
+    // The persisted file equals the in-memory log.
+    let on_disk = std::fs::read_to_string(&log_path).expect("log file was written");
+    assert_eq!(on_disk, r.log, "the persisted log equals the returned log");
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_headless_logged_reports_timeout_and_not_clean() {
+    let log_path = temp_log("sleep");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = run_headless_logged(
+        child_cmd("sleep"),
+        "ignored prompt",
+        Duration::from_millis(300),
+        &log_path,
+    )
+    .expect("run_headless_logged should not error when killing on timeout");
+
+    assert!(r.timed_out, "a child outliving the timeout sets timed_out");
+    assert!(
+        !r.exited_cleanly,
+        "a killed child did not exit cleanly (exit == None)"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
+    // Clean child: no auth match, no timeout → returns the combined log.
+    let log_path = temp_log("text-clean");
+    let _ = std::fs::remove_file(&log_path);
+    let log = run_text_session(
+        TextSession {
+            cmd: child_cmd("clean"),
+            prompt: "ignored prompt",
+            timeout: Duration::from_secs(30),
+            log_path: &log_path,
+            spawn_err: "failed to spawn the test child",
+            auth_msg: "AUTH FAILED",
+            timeout_msg: "TIMED OUT",
+        },
+        |_log| false,
+    )
+    .expect("a clean child with no auth match returns the log");
+    assert!(log.contains(CLEAN_STDOUT) && log.contains(CLEAN_STDERR));
+    assert!(log_path.is_file(), "the log file was written");
+    let _ = std::fs::remove_file(&log_path);
+
+    // Auth detector fires on the stdout marker → Err carries auth_msg + log path.
+    let log_path = temp_log("text-auth");
+    let _ = std::fs::remove_file(&log_path);
+    let err = run_text_session(
+        TextSession {
+            cmd: child_cmd("clean"),
+            prompt: "ignored prompt",
+            timeout: Duration::from_secs(30),
+            log_path: &log_path,
+            spawn_err: "failed to spawn the test child",
+            auth_msg: "AUTH FAILED",
+            timeout_msg: "TIMED OUT",
+        },
+        |log| log.contains(CLEAN_STDOUT),
+    )
+    .expect_err("an auth match must bail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("AUTH FAILED"),
+        "err names the auth message: {msg}"
+    );
+    assert!(
+        msg.contains(&log_path.display().to_string()),
+        "err names the log path: {msg}"
+    );
+    let _ = std::fs::remove_file(&log_path);
+
+    // Sleep child (no auth match) → timeout bail with timeout_msg.
+    let log_path = temp_log("text-timeout");
+    let _ = std::fs::remove_file(&log_path);
+    let err = run_text_session(
+        TextSession {
+            cmd: child_cmd("sleep"),
+            prompt: "ignored prompt",
+            timeout: Duration::from_millis(300),
+            log_path: &log_path,
+            spawn_err: "failed to spawn the test child",
+            auth_msg: "AUTH FAILED",
+            timeout_msg: "TIMED OUT",
+        },
+        |_log| false,
+    )
+    .expect_err("a timed-out session must bail");
+    assert!(
+        format!("{err}").contains("TIMED OUT"),
+        "err names the timeout message: {err}"
+    );
+    let _ = std::fs::remove_file(&log_path);
 }
 
 #[test]
