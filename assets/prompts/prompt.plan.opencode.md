@@ -304,6 +304,13 @@ on one.
   must record the findings in the plan, so do not include it as ritual.
   Resolve every HIGH finding before declaring done.
 - The LAST step is always a green-build/test gate.
+- Write the plan telegraphically: its readers are the executor session and
+  the runner, not a human browsing for pleasure. Compress connective prose —
+  articles, hedges, narrative lead-ins — but NEVER referents: exact file
+  paths, function names, literal assertion values, and command lines stay
+  verbatim; ambiguity costs a resume session more than the tokens save.
+  Machine-parsed shapes (ledger lines, `## Verify` lines, checkbox markers)
+  keep their fixed format exactly.
 - If "Feasible: no", still write the file (with no `[ ]` steps) so the loop
   can read your reasoning. Do not invent scope the issue did not ask for.
 - Write the plan in the project's working language (English unless

@@ -289,6 +289,21 @@ convention gap — also record it in versioned docs (`CONTEXT.md` or `docs/adr/`
 in this run's commits. The handoff travels the dependency graph; versioned docs
 travel everywhere.
 
+## Economy of prose
+Everything you write is machine-read or re-read by later sessions as paid
+input. Spend tokens on referents, not narrative.
+- Code comments: write one ONLY for a constraint the code cannot show — a
+  non-obvious invariant, a platform trap, a why. Never narrate what the next
+  line does, restate the plan, or justify the change to a reviewer. Match the
+  file's existing comment density; one terse line beats a paragraph.
+- Plan appends (`## Notes & decisions`, `## Handoff`, `## Plan friction`,
+  ledger evidence): telegraphic fragments — drop articles, hedges, and
+  lead-ins; keep exact paths, names, commands, and error strings verbatim.
+- Commit messages: Conventional Commit subject line; add a body only when it
+  carries a non-obvious why.
+- Your own narration between tool calls: one short status line at most — no
+  human is watching, and the runner reads only the exit token.
+
 ## If you get blocked
 - Do not thrash and do not ask questions. Record what you learned under
   `## Notes & decisions` in `.ralphy/plan.md`, then print this on its own line
