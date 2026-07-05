@@ -40,49 +40,19 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
 
-    // Decide up front whether this run notifies (ADR-0007 D1/D7): only when
-    // Telegram is configured (a token AND a captured chat) and the run is neither
-    // `--no-telegram` nor a `--dry-run`. When it does, create the shared event ring
-    // and install the notifier Layer alongside the file/presenter layers so it sees
-    // the lifecycle from `queue built` onward. The worker is started later, once the
-    // queue (and thus the title) is known.
-    let tg_cfg = telegram::config::TelegramConfig::load().ok().flatten();
-    let configured = tg_cfg.as_ref().is_some_and(|c| {
-        c.chat_id.is_some() && telegram::config::effective_token(Some(&c.token)).is_some()
-    });
-    let notify = telegram::notifier::should_notify(configured, args.no_telegram, args.dry_run);
-    let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
-    let notifier_layer = event_queue
-        .as_ref()
-        .map(|q| telegram::notifier::NotifierLayer::new(q.clone()));
-
-    // The CloudEvents sink (ADR-0019): active only when this repo has an
-    // `events.url` in the global store (`~/.ralphy/events.toml`) — an absent entry
-    // means non-users pay nothing. Build the ring + Layer here so the sink sees the
-    // lifecycle from `queue built` onward; the worker starts once the run context
-    // is known (below). The token honours `RALPHY_EVENTS_TOKEN` over the stored one.
-    let events_slug = git::project_slug(&repo_root);
-    let events_entry = events::config::EventsStore::load()
-        .ok()
-        .unwrap_or_default()
-        .entry(&events_slug)
-        .cloned();
-    let events_url = events_entry.as_ref().and_then(|e| e.url.clone());
-    let events_token =
-        events::config::effective_token(events_entry.as_ref().and_then(|e| e.token.as_deref()));
-    // Strip RALPHY_EVENTS_TOKEN from the process env now that the effective token is
-    // captured in `events_token` (an owned String the sink transport keeps using):
-    // every child spawned later inherits this environment and none must see the
-    // sink's bearer token (ADR-0019). Done HERE — before init_tracing installs the
-    // layers and before any worker thread is spawned — so the `remove_var` runs
-    // single-threaded, with no concurrent `getenv` to race (edition 2021).
-    strip_events_token_from_env();
-    let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
-    let events_layer = event_sink_queue
-        .as_ref()
-        .map(|q| events::sink::EventsLayer::new(q.clone()));
-
-    let presenter = init_tracing(log_file, args.verbose, notifier_layer, events_layer);
+    // Wire the run's observability stack — notifier ring/Layer, CloudEvents sink
+    // ring/Layer, the events-token env scrub, and the tracing subscriber — in one
+    // place, returning the handles the later worker starts consume. The scrub runs
+    // there BEFORE any worker thread, so the block stays ordering-safe.
+    let Observability {
+        presenter,
+        event_queue,
+        tg_cfg,
+        event_sink_queue,
+        events_url,
+        events_token,
+        events_slug,
+    } = install_observability(log_file, &args, &repo_root);
 
     // The repo name feeds the run title (below); the branding header is printed once
     // that title is known, so the console face is seeded by the same title as the
@@ -220,56 +190,20 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // the enriched queue snapshot below and the `gh`-free core (`QueueConfig`).
     let human_return_labels = github::resolve_human_return_labels(&repo_root);
 
-    // ADR-0020: enrich `queue built` with the per-issue snapshot the runner would
-    // judge, so the CloudEvents sink carries `data.issues[]` on `queue.built` and a
-    // remote consumer sees the backlog for free. Best-effort — a resolver error (a
-    // `gh` blip on a blocked-by probe) warns and emits the legacy shape rather than
-    // aborting a run over its own telemetry.
-    let issues_json = {
-        let tracker = GhTracker::new(&repo_root);
-        match ralphy_core::resolve_queue_view(
-            &queue,
-            &forced_issues,
-            &human_return_labels,
-            &tracker,
-        ) {
-            Ok(view) => serde_json::to_string(&view.issues).unwrap_or_default(),
-            Err(e) => {
-                warn!(error = %e, "resolving the queue snapshot failed — emitting the legacy queue.built shape");
-                String::new()
-            }
-        }
-    };
-    // ADR-0021 §5: mark the queue's assignee scope on `queue.built`. The filter is
-    // the *applied* one — `None` on an explicit `--issues`/`--only-issue` selection
-    // (which bypasses the assignee filter above), matching how those paths fetch
-    // unfiltered. Resolution is best-effort telemetry: a post-retry `gh api user`
-    // failure warns and drops the scope mark to `null` rather than aborting the run
-    // (the same rule that governs `issues_json`), and the concrete login is emitted,
-    // never the literal `@me`.
-    let applied_assignee = if !args.issues.is_empty() || args.only_issue.is_some() {
-        None
-    } else {
-        assignee.clone()
-    };
-    let assignee_filter: Option<String> = match applied_assignee.as_deref() {
-        Some(a) => match github::resolve_login(a, &repo_root) {
-            Ok(l) => Some(l),
-            Err(e) => {
-                warn!(error = %e, "resolving @me for the assignee_filter mark failed — emitting queue.built without the scope mark");
-                None
-            }
-        },
-        None => None,
-    };
-    // message consumed by the telegram notifier / presenter — keep stable
-    info!(
-        count = queue.len(),
-        order = %order.join(" -> "),
+    // Emit the `queue built` telemetry (ADR-0020/-0021): the enriched per-issue
+    // snapshot and the applied assignee scope, terminating in the single stable
+    // `info!("queue built")` the notifier/presenter consume. Positioned after the
+    // header/info-line prints and before the notifier worker start, so the
+    // buffered-ring drain order is unchanged.
+    emit_queue_built(
+        &queue,
+        &forced_issues,
+        &human_return_labels,
+        &repo_root,
+        &args,
+        assignee.as_deref(),
+        &order,
         stop_before,
-        issues_json = %issues_json,
-        assignee_filter = %assignee_filter.as_deref().unwrap_or(""),
-        "queue built"
     );
 
     // Start the Telegram notifier worker now that the queue (and thus the title)
@@ -503,39 +437,21 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 
-    // Flush the queue bar to N/N and clear the live region before anything else
-    // prints — whether that is the panel below or `anyhow`'s error on the `?`
-    // propagation. Finalizing first keeps a `bail!` from being torn by a live bar
-    // (ADR-0006: the presenter owns teardown).
-    presenter.finalize();
-
-    // Consolidate any loose knowledge notes into KNOWLEDGE.md. Runs BEFORE the
-    // notifier/sink shutdown and AFTER the presenter finalize so it surfaces as a
-    // first-class lifecycle event in both surfaces (see `maybe_consolidate_knowledge`).
-    maybe_consolidate_knowledge(result.is_ok(), args.dry_run, &ws, &cfg.stamp);
-
-    // Tear down the notifier (ADR-0007 D4): signal the worker to render the
-    // terminal state, send the final push, and flush, joined under a bounded
-    // timeout so a wedged network never holds the process open. Done before the
-    // `?` so a non-green result still triggers the final push.
-    // ADR-0019 run-boundary event: emitted only on a CLEAN termination (`run_queue`
-    // returned `Ok`) — a crash/kill is detected by heartbeat silence, never a
-    // `run.finished`. Emitted BEFORE the sink shutdown so the worker drains and
-    // POSTs it as the run's last event.
-    if let Ok(report) = result.as_ref() {
-        emit_run_finished(report, queue.len(), run_start);
-    }
-
-    if let Some(notifier) = notifier.take() {
-        notifier.shutdown();
-    }
-    // Tear down the CloudEvents sink alongside the notifier: the worker drains any
-    // buffered events (including a final `run finished`) and POSTs them before the
-    // process exits, joined under a bounded timeout so a wedged endpoint can't hold
-    // the process open (ADR-0019).
-    if let Some(events_handle) = events_handle.take() {
-        events_handle.shutdown();
-    }
+    // Finalize the presenter, consolidate knowledge, emit `run finished`, and tear
+    // down the notifier then the sink — in that exact order (ADR-0006/-0007/-0019).
+    // Kept before the `?` propagation so a non-green result still finalizes and
+    // pushes; `render_final_panel` runs after, only on the green path.
+    finalize_run(
+        &presenter,
+        &result,
+        args.dry_run,
+        &ws,
+        &cfg.stamp,
+        queue.len(),
+        run_start,
+        notifier,
+        events_handle,
+    );
 
     let report = result?;
 
@@ -547,6 +463,188 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         &cfg.repo_root,
     );
     Ok(())
+}
+
+/// The observability bundle installed once at run boot: the presenter handle plus
+/// the notifier/sink rings and the resolved events identity — every field the later
+/// worker starts (`try_start_notifier`, `try_start_sink`) and the `run started` /
+/// `queue built` emits consume. Built in [`install_observability`].
+struct Observability {
+    presenter: ui::PresenterHandle,
+    event_queue: Option<Arc<telegram::notifier::EventQueue>>,
+    tg_cfg: Option<telegram::config::TelegramConfig>,
+    event_sink_queue: Option<Arc<telegram::notifier::EventQueue>>,
+    events_url: Option<String>,
+    events_token: Option<String>,
+    events_slug: String,
+}
+
+/// Wire the run's observability stack — the Telegram notifier ring/Layer, the
+/// CloudEvents sink ring/Layer, the events-token env scrub, and the tracing
+/// subscriber — and return the handles the later worker starts consume.
+///
+/// ORDERING (load-bearing, ADR-0019): `strip_events_token_from_env` runs HERE, before
+/// `init_tracing` installs the layers and before any worker thread is spawned, so the
+/// `remove_var` stays single-threaded with no concurrent `getenv` to race. The caller
+/// invokes this at one fixed position in `run_cmd`, so no side effect is reordered.
+fn install_observability(
+    log_file: Option<std::fs::File>,
+    args: &RunArgs,
+    repo_root: &std::path::Path,
+) -> Observability {
+    // Decide up front whether this run notifies (ADR-0007 D1/D7): only when
+    // Telegram is configured (a token AND a captured chat) and the run is neither
+    // `--no-telegram` nor a `--dry-run`. When it does, create the shared event ring
+    // and install the notifier Layer alongside the file/presenter layers so it sees
+    // the lifecycle from `queue built` onward. The worker is started later, once the
+    // queue (and thus the title) is known.
+    let tg_cfg = telegram::config::TelegramConfig::load().ok().flatten();
+    let configured = tg_cfg.as_ref().is_some_and(|c| {
+        c.chat_id.is_some() && telegram::config::effective_token(Some(&c.token)).is_some()
+    });
+    let notify = telegram::notifier::should_notify(configured, args.no_telegram, args.dry_run);
+    let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
+    let notifier_layer = event_queue
+        .as_ref()
+        .map(|q| telegram::notifier::NotifierLayer::new(q.clone()));
+
+    // The CloudEvents sink (ADR-0019): active only when this repo has an
+    // `events.url` in the global store (`~/.ralphy/events.toml`) — an absent entry
+    // means non-users pay nothing. Build the ring + Layer here so the sink sees the
+    // lifecycle from `queue built` onward; the worker starts once the run context
+    // is known (below). The token honours `RALPHY_EVENTS_TOKEN` over the stored one.
+    let events_slug = git::project_slug(repo_root);
+    let events_entry = events::config::EventsStore::load()
+        .ok()
+        .unwrap_or_default()
+        .entry(&events_slug)
+        .cloned();
+    let events_url = events_entry.as_ref().and_then(|e| e.url.clone());
+    let events_token =
+        events::config::effective_token(events_entry.as_ref().and_then(|e| e.token.as_deref()));
+    // Strip RALPHY_EVENTS_TOKEN from the process env now that the effective token is
+    // captured in `events_token` (an owned String the sink transport keeps using):
+    // every child spawned later inherits this environment and none must see the
+    // sink's bearer token (ADR-0019). Done HERE — before init_tracing installs the
+    // layers and before any worker thread is spawned — so the `remove_var` runs
+    // single-threaded, with no concurrent `getenv` to race (edition 2021).
+    strip_events_token_from_env();
+    let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
+    let events_layer = event_sink_queue
+        .as_ref()
+        .map(|q| events::sink::EventsLayer::new(q.clone()));
+
+    let presenter = init_tracing(log_file, args.verbose, notifier_layer, events_layer);
+
+    Observability {
+        presenter,
+        event_queue,
+        tg_cfg,
+        event_sink_queue,
+        events_url,
+        events_token,
+        events_slug,
+    }
+}
+
+/// Emit the ADR-0020/-0021 `queue built` telemetry: enrich it with the per-issue
+/// snapshot the runner would judge (`data.issues[]`) and mark the applied assignee
+/// scope, terminating in the single stable `info!("queue built")` the notifier /
+/// presenter consume. Both resolutions are best-effort telemetry — a `gh` blip warns
+/// and emits the legacy/unmarked shape rather than aborting the run. The caller
+/// positions this after the header/info-line prints and before the notifier worker
+/// start, so the buffered-ring drain order is unchanged.
+fn emit_queue_built(
+    queue: &[ralphy_core::Issue],
+    forced_issues: &[u64],
+    human_return_labels: &[String],
+    repo_root: &std::path::Path,
+    args: &RunArgs,
+    assignee: Option<&str>,
+    order: &[String],
+    stop_before: u64,
+) {
+    let issues_json = {
+        let tracker = GhTracker::new(repo_root);
+        match ralphy_core::resolve_queue_view(queue, forced_issues, human_return_labels, &tracker) {
+            Ok(view) => serde_json::to_string(&view.issues).unwrap_or_default(),
+            Err(e) => {
+                warn!(error = %e, "resolving the queue snapshot failed — emitting the legacy queue.built shape");
+                String::new()
+            }
+        }
+    };
+    // The filter is the *applied* one — `None` on an explicit `--issues`/`--only-issue`
+    // selection (which bypasses the assignee filter), matching how those paths fetch
+    // unfiltered; the concrete login is emitted, never the literal `@me`.
+    let applied_assignee = if !args.issues.is_empty() || args.only_issue.is_some() {
+        None
+    } else {
+        assignee.map(str::to_string)
+    };
+    let assignee_filter: Option<String> = match applied_assignee.as_deref() {
+        Some(a) => match github::resolve_login(a, repo_root) {
+            Ok(l) => Some(l),
+            Err(e) => {
+                warn!(error = %e, "resolving @me for the assignee_filter mark failed — emitting queue.built without the scope mark");
+                None
+            }
+        },
+        None => None,
+    };
+    // message consumed by the telegram notifier / presenter — keep stable
+    info!(
+        count = queue.len(),
+        order = %order.join(" -> "),
+        stop_before,
+        issues_json = %issues_json,
+        assignee_filter = %assignee_filter.as_deref().unwrap_or(""),
+        "queue built"
+    );
+}
+
+/// Close out the run in the exact ADR-0006/-0007/-0019 order: finalize the presenter
+/// FIRST (clears the live region before any print), THEN consolidate loose knowledge
+/// notes, THEN emit `run finished` (only on a clean `Ok` — a crash is detected by
+/// heartbeat silence), THEN tear down the notifier, THEN the CloudEvents sink. Each
+/// teardown joins under a bounded timeout so a wedged network can't hold the process
+/// open. Borrows `result` so the caller can still `?`-propagate it afterwards.
+#[allow(clippy::too_many_arguments)]
+fn finalize_run(
+    presenter: &ui::PresenterHandle,
+    result: &Result<ralphy_core::QueueReport>,
+    dry_run: bool,
+    ws: &Workspace,
+    stamp: &str,
+    queue_len: usize,
+    run_start: std::time::Instant,
+    notifier: Option<telegram::notifier::NotifierHandle>,
+    events_handle: Option<events::sink::EventsHandle>,
+) {
+    // Flush the queue bar to N/N and clear the live region before anything else
+    // prints — whether that is the panel or `anyhow`'s error on the `?` propagation.
+    presenter.finalize();
+
+    // Consolidate any loose knowledge notes into KNOWLEDGE.md. Runs BEFORE the
+    // notifier/sink shutdown and AFTER the presenter finalize so it surfaces as a
+    // first-class lifecycle event in both surfaces (see `maybe_consolidate_knowledge`).
+    maybe_consolidate_knowledge(result.is_ok(), dry_run, ws, stamp);
+
+    // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
+    // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the
+    // sink shutdown so the worker drains and POSTs it as the run's last event.
+    if let Ok(report) = result.as_ref() {
+        emit_run_finished(report, queue_len, run_start);
+    }
+
+    // Tear down the notifier (ADR-0007 D4), then the CloudEvents sink: each worker
+    // renders/drains its terminal state and flushes, joined under a bounded timeout.
+    if let Some(notifier) = notifier {
+        notifier.shutdown();
+    }
+    if let Some(events_handle) = events_handle {
+        events_handle.shutdown();
+    }
 }
 
 #[cfg(test)]
