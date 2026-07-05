@@ -234,64 +234,11 @@ fn parse_issue_url(stdout: &str) -> Result<u64> {
     bail!("could not parse an issue number from `gh issue create` output: {stdout:?}");
 }
 
-/// Parse the milestone number from `gh api .../milestones` JSON (the created
-/// milestone object carries a `number`).
-fn parse_milestone_number(json: &str) -> Result<u64> {
-    #[derive(serde::Deserialize)]
-    struct MilestoneJson {
-        number: u64,
-    }
-    let m: MilestoneJson =
-        serde_json::from_str(json).context("parsing `gh api .../milestones` JSON")?;
-    Ok(m.number)
-}
-
-/// Create a GitHub repository from the local repo at `repo_root` via
-/// `gh repo create`, wiring `origin` to the new remote and pushing the current
-/// branch. `name` is the new repo's name (the bootstrap derives it from the
-/// directory); `private` selects visibility. Used by `ralphy init`'s bootstrap to
-/// give a freshly `git init`-ed directory the GitHub remote the environment gate
-/// requires. The local repo must already have a commit (see
-/// [`crate::git::initial_commit`]) so `--push` has something to send.
-pub fn create_repo(repo_root: &Path, name: &str, private: bool) -> Result<()> {
-    let visibility = if private { "--private" } else { "--public" };
-    gh_output(&format!("gh repo create {name}"), || {
-        let mut cmd = gh(repo_root);
-        cmd.args([
-            "repo", "create", name, "--source", ".", "--remote", "origin", "--push", visibility,
-        ]);
-        cmd
-    })?;
-    Ok(())
-}
-
-/// Create a GitHub Milestone via `gh api repos/{owner}/{repo}/milestones` (the
-/// `{owner}`/`{repo}` placeholders are resolved by `gh` from the repo dir). Returns
-/// the created milestone's number, which [`create_issue`] links issues to. ADR-0012
-/// stage 8 (milestone path).
-pub fn create_milestone(repo_root: &Path, title: &str, description: &str) -> Result<u64> {
-    let out = gh_output(&format!("gh api milestones (create {title})"), || {
-        let mut cmd = gh(repo_root);
-        cmd.args([
-            "api",
-            "--method",
-            "POST",
-            "repos/{owner}/{repo}/milestones",
-            "-f",
-            &format!("title={title}"),
-            "-f",
-            &format!("description={description}"),
-        ]);
-        cmd
-    })?;
-    parse_milestone_number(&String::from_utf8_lossy(&out.stdout))
-}
-
 /// Create a GitHub issue via `gh issue create`, piping the body on stdin
 /// (`--body-file -`) like [`edit_issue_body`] so multi-line bodies survive. Each
 /// label is passed with a repeated `--label`; `milestone` (a milestone *name*,
 /// which `gh issue create --milestone` resolves) links the issue when `Some` — the
-/// milestone must already exist (see [`create_milestone`]). Returns the created
+/// milestone must already exist (see [`crate::github::create_milestone`]). Returns the created
 /// issue's number, parsed from the printed URL. ADR-0012 stage 8.
 ///
 /// Mirrors [`edit_issue_body`]'s spawn/stdin/transient-retry shape. A retried
@@ -413,56 +360,6 @@ pub fn remove_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Parse `gh issue view --json number,title,state,body,url` into a [`Reference`].
-fn parse_reference(json: &str) -> Result<crate::references::Reference> {
-    #[derive(serde::Deserialize)]
-    struct RefJson {
-        number: u64,
-        #[serde(default)]
-        title: String,
-        #[serde(default)]
-        state: String,
-        #[serde(default)]
-        body: String,
-        #[serde(default)]
-        url: String,
-    }
-    let r: RefJson =
-        serde_json::from_str(json).context("parsing `gh issue view` reference JSON")?;
-    Ok(crate::references::Reference {
-        number: r.number,
-        state: r.state,
-        title: r.title,
-        body: r.body,
-        url: r.url,
-    })
-}
-
-/// Fetch a single issue's number, title, state, body, and URL via
-/// `gh issue view <n> --json number,title,state,body,url` — the source a
-/// structured reference (`## Blocked by` / `## Parent`) points at, reproduced for
-/// the planner. The `url` is the handle the planner follows to pull the comment
-/// thread on demand (this call omits comments by design). One call carries
-/// everything `references.md` renders, distinct from the state-only
-/// [`issue_is_closed`] and the comments-only [`issue_comments`].
-pub fn fetch_reference(number: u64, repo_root: &Path) -> Result<crate::references::Reference> {
-    let out = gh_output(
-        &format!("gh issue view {number} --json number,title,state,body,url"),
-        || {
-            let mut cmd = gh(repo_root);
-            cmd.args([
-                "issue",
-                "view",
-                &number.to_string(),
-                "--json",
-                "number,title,state,body,url",
-            ]);
-            cmd
-        },
-    )?;
-    parse_reference(&String::from_utf8_lossy(&out.stdout))
-}
-
 /// Parse `{"state":"CLOSED"}` / `{"state":"OPEN"}` JSON from `gh issue view --json state`.
 fn parse_issue_state(json: &str) -> Result<bool> {
     #[derive(serde::Deserialize)]
@@ -539,78 +436,6 @@ pub fn fetch_issue(number: u64, repo_root: &Path) -> Result<Issue> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
-
-    /// End-to-end evidence against the live issue
-    /// `paulocorcino/bioledger-platform#29`: drive the real ralphy chain
-    /// (`structured_refs` → `parse_reference` → `render_references_file`) over
-    /// real GitHub data and print the `.ralphy/references.md` it produces.
-    ///
-    /// Ignored by default (needs network + `gh` auth + that specific repo). Run:
-    ///   cargo test -p ralphy-core e2e_references_for_bioledger_29 -- --ignored --nocapture
-    ///
-    /// The only departure from production is the `--repo` flag here vs.
-    /// `fetch_reference`'s cwd-pinned `gh`: the parser and renderer exercised are
-    /// the exact ones the runner uses.
-    #[test]
-    #[ignore = "live network: paulocorcino/bioledger-platform"]
-    fn e2e_references_for_bioledger_29() {
-        const REPO: &str = "paulocorcino/bioledger-platform";
-
-        // #29's real body, verbatim (the two structured sections are what matter).
-        let body_29 = "## Parent\n\n\
-            Part of PRD-0009. Split from #15 (Spike S2c — OCR + Redaction, bundle `needs-split`).\n\n\
-            ## What to build\n\n\
-            A metade Redaction do S2c, medida no harness sobre o corpus.\n\n\
-            ## Blocked by\n\n\
-            - #13 (S2a — corpus real + ground truth)\n";
-
-        // 1. Our pure extractor over the real body: structured refs only.
-        let refs = crate::blocked::structured_refs(body_29, 29);
-        println!("\nstructured_refs(#29) = {refs:?}");
-        assert_eq!(
-            refs,
-            vec![13, 15],
-            "blocked-by (#13) leads, then parent (#15)"
-        );
-
-        // 2. Fetch each ref from the live repo and run OUR parser on the output.
-        let mut fetched = Vec::new();
-        for n in refs {
-            let out = Command::new("gh")
-                .args([
-                    "issue",
-                    "view",
-                    &n.to_string(),
-                    "--repo",
-                    REPO,
-                    "--json",
-                    "number,title,state,body,url",
-                ])
-                .output()
-                .expect("spawn gh");
-            assert!(out.status.success(), "gh failed for #{n}");
-            let r = parse_reference(&String::from_utf8_lossy(&out.stdout))
-                .unwrap_or_else(|e| panic!("parse_reference(#{n}): {e}"));
-            println!("  fetched #{} [{}] {}", r.number, r.state, r.title);
-            fetched.push(r);
-        }
-
-        // 3. Our renderer produces the file the planner reads.
-        let file =
-            crate::references::render_references_file(&fetched).expect("non-empty references file");
-        println!("\n----- .ralphy/references.md -----\n{file}\n---------------------------------");
-
-        // Evidence assertions: both refs present with their real state, source
-        // bodies reproduced — not paraphrased.
-        assert!(file.contains("## #13 (CLOSED)"));
-        assert!(file.contains("## #15 (CLOSED)"));
-        assert!(file.contains("ground truth") || file.to_lowercase().contains("corpus"));
-        assert!(file.contains("treat it as a lead"));
-        // The source URL travels with each reference (the handle for comments).
-        assert!(file.contains("/bioledger-platform/issues/13"));
-        assert!(file.contains("/bioledger-platform/issues/15"));
-    }
 
     /// The non-`@me` arm returns the value verbatim and spawns NO process — so it
     /// resolves against a nonexistent `repo_root` without error (proof of no `gh`).
@@ -652,12 +477,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_milestone_number_reads_number_field() {
-        let json = r#"{"number": 3, "title": "v1", "state": "open"}"#;
-        assert_eq!(parse_milestone_number(json).unwrap(), 3);
-    }
-
-    #[test]
     fn parse_issue_labels_reads_names_and_tolerates_empty() {
         // `gh issue view --json labels` shape: a `labels` array of `{name,...}`.
         let json = r#"{"labels": [{"name": "ready-for-human"}, {"name": "needs-triage"}]}"#;
@@ -667,27 +486,6 @@ mod tests {
         );
         // No labels → empty, not an error.
         assert!(parse_issue_labels(r#"{"labels": []}"#).unwrap().is_empty());
-    }
-
-    #[test]
-    fn parse_reference_reads_number_state_title_body() {
-        let json = r#"{"number":13,"title":"S2a corpus","state":"OPEN","body":"ground truth corpus","url":"https://github.com/o/r/issues/13"}"#;
-        let r = parse_reference(json).unwrap();
-        assert_eq!(r.number, 13);
-        assert_eq!(r.state, "OPEN");
-        assert_eq!(r.title, "S2a corpus");
-        assert!(r.body.contains("ground truth"));
-        assert_eq!(r.url, "https://github.com/o/r/issues/13");
-    }
-
-    #[test]
-    fn parse_reference_tolerates_missing_optional_fields() {
-        let r = parse_reference(r#"{"number":7,"state":"CLOSED"}"#).unwrap();
-        assert_eq!(r.number, 7);
-        assert_eq!(r.state, "CLOSED");
-        assert!(r.title.is_empty());
-        assert!(r.body.is_empty());
-        assert!(r.url.is_empty());
     }
 
     #[test]
