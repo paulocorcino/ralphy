@@ -61,7 +61,6 @@ pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
-pub use ralphy_proc_util::find_program;
 pub use blocked::{
     parse_blocked_by, parse_blocked_by_all, referenced_issues, structured_refs,
     CONSOLIDATED_SPEC_MARKER,
@@ -74,6 +73,7 @@ pub use init_session::{
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
 pub use queue_view::{resolve_queue_view, IssueView, QueueStatus, QueueView};
+pub use ralphy_proc_util::find_program;
 pub use references::Reference;
 pub use repo::{GitRepo, Repo};
 pub use runner::{
