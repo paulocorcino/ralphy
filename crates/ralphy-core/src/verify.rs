@@ -281,8 +281,36 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
 /// pass through unchanged.
 #[cfg(windows)]
 fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    // A path-qualified name is used as-is (it resolves against the spawn's
+    // current_dir); only a bare name is searched on PATH/PATHEXT. The
+    // `.COM;.EXE;.BAT;.CMD` fallback preserves prior behavior when PATHEXT is
+    // unset (the shared primitive defaults to `.EXE` only).
+    let resolved = if program.contains('/') || program.contains('\\') {
+        Some(std::path::PathBuf::from(program))
+    } else {
+        ralphy_proc_util::find_program(
+            program,
+            std::env::var_os("PATH"),
+            std::env::var_os("PATHEXT")
+                .or_else(|| Some(std::ffi::OsString::from(".COM;.EXE;.BAT;.CMD"))),
+        )
+    };
+    spawn_argv(resolved, program, rest)
+}
+
+/// Decide the argv for a resolved program: a `.cmd`/`.bat` script routes through
+/// `cmd /C` (a batch file is not an executable image), a resolved `.exe` runs
+/// directly, and an unresolved name passes through so the spawn surfaces the same
+/// "program not found" failure as before. Pure over its inputs so it unit-tests
+/// without touching PATH.
+#[cfg(windows)]
+fn spawn_argv(
+    resolved: Option<std::path::PathBuf>,
+    program: &str,
+    rest: &[String],
+) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
     use std::ffi::OsString;
-    match resolve_program(program) {
+    match resolved {
         Some(path) => {
             let is_batch = path
                 .extension()
@@ -300,8 +328,6 @@ fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std
                 )
             }
         }
-        // Unresolved: keep the original name so the spawn surfaces the same
-        // "program not found" failure as before, naming the real command.
         None => (
             OsString::from(program),
             rest.iter().map(OsString::from).collect(),
@@ -316,54 +342,6 @@ fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std
         OsString::from(program),
         rest.iter().map(OsString::from).collect(),
     )
-}
-
-/// Resolve `program` against the live `PATH`/`PATHEXT`. Windows-only; Unix needs no
-/// such resolution. Split from [`resolve_in`] so the resolution logic unit-tests
-/// without mutating the process environment.
-#[cfg(windows)]
-fn resolve_program(program: &str) -> Option<std::path::PathBuf> {
-    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-    let exts: Vec<&str> = pathext.split(';').filter(|s| !s.is_empty()).collect();
-    let search: Vec<std::path::PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
-    resolve_in(program, &search, &exts)
-}
-
-/// Find `program` in `search`, honoring `exts` (the `PATHEXT` list, each entry
-/// carrying its leading dot) so a bare `pnpm` resolves to `pnpm.cmd`. A name that
-/// already carries a path separator is used as-is (a relative name resolves against
-/// the spawn's `current_dir`). A name without an extension matches ONLY via the
-/// `PATHEXT` candidates — never a bare, extensionless file, which on Windows is the
-/// non-executable bash shim that ships beside the `.cmd`.
-#[cfg(windows)]
-fn resolve_in(
-    program: &str,
-    search: &[std::path::PathBuf],
-    exts: &[&str],
-) -> Option<std::path::PathBuf> {
-    use std::path::{Path, PathBuf};
-    if program.contains('/') || program.contains('\\') {
-        return Some(PathBuf::from(program));
-    }
-    let has_ext = Path::new(program).extension().is_some();
-    for dir in search {
-        if has_ext {
-            let cand = dir.join(program);
-            if cand.is_file() {
-                return Some(cand);
-            }
-        } else {
-            for ext in exts {
-                let cand = dir.join(format!("{program}{ext}"));
-                if cand.is_file() {
-                    return Some(cand);
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Keep the last [`TAIL_BYTES`] of `s`, trimmed to a whole-line boundary so the

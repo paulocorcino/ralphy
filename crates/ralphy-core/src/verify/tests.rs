@@ -167,36 +167,47 @@ fn comment_marks_pass_and_fail() {
     assert!(c.contains("panicked at assertion"), "failing tail shown");
 }
 
-/// On Windows `pnpm` ships as a bare bash shim AND a `pnpm.cmd`; only the
-/// `.cmd` is executable, and PATHEXT resolution must return it — not the
-/// extensionless file a bare `CreateProcess` would choke on. This is the exact
-/// failure that left a Node monorepo's gate red with "program not found".
+/// The Windows batch-routing decision, isolated from PATH resolution: a resolved
+/// `.cmd` routes through `cmd /C` (a batch file is not an executable image), a
+/// resolved `.exe` runs directly, and an unresolved name passes through so the
+/// spawn surfaces the same "program not found" failure. Resolution itself (the
+/// PATHEXT/`.cmd`-shim search) is unit-tested in the `ralphy-proc-util` leaf crate.
 #[cfg(windows)]
 #[test]
-fn resolve_in_finds_cmd_shim_not_the_bare_shell_file() {
-    let dir = std::env::temp_dir().join(format!("ralphy-verify-resolve-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("pnpm"), "#!/bin/sh\n").unwrap(); // bash shim
-    std::fs::write(dir.join("pnpm.cmd"), "@echo off\n").unwrap(); // cmd shim
-    let exts = [".COM", ".EXE", ".BAT", ".CMD"];
+fn spawn_argv_routes_cmd_shim_through_cmd_c() {
+    use std::ffi::OsString;
+    use std::path::PathBuf;
 
-    let got =
-        resolve_in("pnpm", std::slice::from_ref(&dir), &exts).expect("pnpm resolves via PATHEXT");
-    // Filesystem is case-insensitive; compare on name (lowercased) + parent so
-    // a `.CMD`-vs-`.cmd` PathBuf mismatch doesn't fail a correct resolution.
     assert_eq!(
-        got.file_name().unwrap().to_string_lossy().to_lowercase(),
-        "pnpm.cmd",
-        "resolves to the .cmd shim, not the bare bash file"
+        spawn_argv(
+            Some(PathBuf::from("C:\\bin\\pnpm.cmd")),
+            "pnpm",
+            &["install".into()]
+        ),
+        (
+            OsString::from("cmd"),
+            vec![
+                OsString::from("/C"),
+                OsString::from("C:\\bin\\pnpm.cmd"),
+                OsString::from("install"),
+            ]
+        )
     );
-    assert_eq!(got.parent().unwrap(), dir);
-
-    assert!(
-        resolve_in("definitely-absent-xyz", std::slice::from_ref(&dir), &exts).is_none(),
-        "a missing program stays unresolved"
+    assert_eq!(
+        spawn_argv(
+            Some(PathBuf::from("C:\\bin\\cargo.exe")),
+            "cargo",
+            &["test".into()]
+        ),
+        (
+            OsString::from("C:\\bin\\cargo.exe"),
+            vec![OsString::from("test")]
+        )
     );
-
-    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(
+        spawn_argv(None, "pnpm", &["install".into()]),
+        (OsString::from("pnpm"), vec![OsString::from("install")])
+    );
 }
 
 #[test]

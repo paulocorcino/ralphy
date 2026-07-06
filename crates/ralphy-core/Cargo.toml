@@ -9,6 +9,7 @@ description = "Execution-mode-agnostic core for Ralphy: domain types, the Agent 
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+ralphy-proc-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true

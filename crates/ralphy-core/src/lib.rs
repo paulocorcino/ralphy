@@ -61,6 +61,7 @@ pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
+pub use ralphy_proc_util::find_program;
 pub use blocked::{
     parse_blocked_by, parse_blocked_by_all, referenced_issues, structured_refs,
     CONSOLIDATED_SPEC_MARKER,
