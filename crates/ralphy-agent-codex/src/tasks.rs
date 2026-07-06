@@ -3,14 +3,13 @@
 //! drafting, and agent-triage drafting. None of these publish to GitHub; the
 //! cli applies the drafted artifact after the operator confirms.
 
-use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tracing::info;
 
-use ralphy_adapter_support::{run_json_session, JsonSession};
+use ralphy_adapter_support::{run_init_session, JsonSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest,
@@ -33,12 +32,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    fs::create_dir_all(neutral_cwd).ok();
     let out_path = neutral_cwd.join("diagnosis.json");
-    // A stale report from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = fs::remove_file(&out_path);
-
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
     let prompt = build_diagnose_prompt(repo, &out_path);
@@ -46,7 +40,7 @@ pub fn diagnose_repo(
     info!(%model, effort, "diagnosing repo with codex exec");
     let cmd = build_codex_init_command(&model, effort, neutral_cwd);
     let log_path = neutral_cwd.join("diagnose.log");
-    run_json_session(
+    run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -84,13 +78,6 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    // A stale draft from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = fs::remove_file(out_path);
-
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
     let prompt =
@@ -99,10 +86,7 @@ pub fn draft_issues(
     info!(%model, effort, mode = req.mode.as_str(), "drafting issues with codex exec");
     let cmd = build_codex_init_command(&model, effort, repo);
     let log_path = repo.join(".ralphy").join("init-issues.log");
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    run_json_session(
+    run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -138,13 +122,6 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    // A stale draft from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = fs::remove_file(out_path);
-
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
     let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
@@ -152,10 +129,7 @@ pub fn triage_issues(
     info!(%model, effort, "triaging issues with codex exec");
     let cmd = build_codex_init_command(&model, effort, repo);
     let log_path = repo.join(".ralphy").join("triage.log");
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    run_json_session(
+    run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,

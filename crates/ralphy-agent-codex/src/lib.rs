@@ -14,8 +14,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{list_session_files, PROMPT_EXECUTE};
+use anyhow::{Context, Result};
+use ralphy_adapter_support::{
+    list_session_files, run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg,
+    PROMPT_EXECUTE,
+};
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Workspace};
 use tracing::info;
 
@@ -51,8 +54,7 @@ const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.pla
 pub struct CodexAgent {
     model: Option<String>,
     run_dir: PathBuf,
-    max_minutes_per_issue: u64,
-    run_deadline: Option<Instant>,
+    budget: IssueBudget,
 }
 
 impl CodexAgent {
@@ -60,14 +62,13 @@ impl CodexAgent {
         Self {
             model,
             run_dir,
-            max_minutes_per_issue: ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
-            run_deadline: None,
+            budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
     }
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
-        self.max_minutes_per_issue = minutes;
+        self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
     }
 
@@ -76,7 +77,7 @@ impl CodexAgent {
     /// global limit can't overrun by a whole per-issue window (mirrors
     /// `ClaudeAgent::with_run_deadline`).
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
-        self.run_deadline = run_deadline;
+        self.budget = self.budget.with_run_deadline(run_deadline);
         self
     }
 
@@ -84,13 +85,11 @@ impl CodexAgent {
     /// run's global deadline when one is set. A budget of `0` disables the
     /// per-issue cap — the issue is then bounded only by the run deadline (or the
     /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
+    /// The plan/execute paths read the budget directly (`self.budget.timeout`);
+    /// this stays as the deadline oracle the budget tests assert against.
+    #[cfg(test)]
     fn issue_deadline(&self) -> Instant {
-        ralphy_adapter_support::issue_deadline(
-            Instant::now(),
-            self.max_minutes_per_issue,
-            self.run_deadline,
-            ralphy_core::UNBOUNDED_ISSUE_HORIZON,
-        )
+        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
     }
 
     /// The single model decision point, in precedence order: the explicit
@@ -113,70 +112,59 @@ impl Agent for CodexAgent {
     }
 
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
-        fs::create_dir_all(ws.ralphy_dir()).ok();
-        fs::create_dir_all(&self.run_dir).ok();
-        materialize_codex_skills(ws)?;
-
         let plan_path = ws.plan_path();
-        // Plan fresh every run; never reuse a stale artifact.
-        let _ = fs::remove_file(&plan_path);
-
-        // Full charter on disk (mirrors .ralphy/exec.md); rewritten each plan
-        // call so a resumed session still finds it.
-        fs::write(ws.plan_charter_path(), PROMPT_PLAN_CODEX)
-            .context("writing .ralphy/plan-charter.md")?;
-
         let model = self.resolve_model();
         let out_path = ws.ralphy_dir().join("codex-last.txt");
-        let _ = fs::remove_file(&out_path);
-
-        // Snapshot the rollout tree around the call: a file that APPEARED is this
-        // run's session, while one that merely grew is a concurrent pre-existing
-        // session and is excluded (ADR-0008 D10, appeared-over-grew).
+        let log_path = self.run_dir.join("codex.log");
+        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
+        // Snapshotting the rollout tree around the call is Codex-specific (ADR-0008
+        // D10, appeared-over-grew): a file that APPEARED is this run's session, one
+        // that merely grew is a concurrent pre-existing session and is excluded.
         let sessions_dir = codex_sessions_dir();
-        let before = sessions_dir
-            .as_deref()
-            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-            .unwrap_or_default();
+        let snapshot = || {
+            sessions_dir
+                .as_deref()
+                .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
+                .unwrap_or_default()
+        };
 
-        // Planning always runs at `high` effort (ADR-0004 D3).
-        let cmd = build_codex_command(&model, "high", ws.repo_root(), &out_path);
-        let timeout = self
-            .issue_deadline()
-            .saturating_duration_since(Instant::now());
-        info!(model = %model, effort = "high", "planning with codex exec");
-        let (_, _, log) = self.run_codex(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
-        let after = sessions_dir
-            .as_deref()
-            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-            .unwrap_or_default();
+        let run = || {
+            materialize_codex_skills(ws)?;
+            let _ = fs::remove_file(&out_path);
+            let before = snapshot();
+            // Planning always runs at `high` effort (ADR-0004 D3).
+            let cmd = build_codex_command(&model, "high", ws.repo_root(), &out_path);
+            info!(model = %model, effort = "high", "planning with codex exec");
+            let r = self.run_codex(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
+            let after = snapshot();
+            Ok((r, (before, after)))
+        };
 
-        if !plan_path.exists() {
-            // A usage limit during planning is not a generic failure: surface it
-            // as a typed `PlanLimit` (with the parsed reset hint) so the runner
-            // routes it through the same stop-and-report / auto-resume path as an
+        let ralphy_dir = ws.ralphy_dir();
+        let charter_path = ws.plan_charter_path();
+        let (_, (before, after)) = run_plan_session(
+            PlanCfg {
+                ralphy_dir: &ralphy_dir,
+                run_dir: &self.run_dir,
+                plan_path: &plan_path,
+                plan_charter_path: &charter_path,
+                charter_body: PROMPT_PLAN_CODEX,
+                log_path: &log_path,
+                auth_msg: CODEX_AUTH_ERROR_MSG,
+                no_plan_msg: "codex produced no plan",
+            },
+            run,
+            is_codex_auth_error,
+            // A usage limit during planning is not a generic failure: surface it as
+            // a typed `PlanLimit` (with the parsed reset hint) so the runner routes
+            // it through the same stop-and-report / auto-resume path as an
             // execute-time `Outcome::Limit`, rather than aborting the whole run.
-            if let Some(reset) = ralphy_adapter_support::detect_limit(
-                &log,
-                is_codex_limit_text,
-                parse_codex_reset_hint,
-            ) {
-                return Err(PlanLimit { reset }.into());
-            }
-            // An auth failure won't self-heal (unlike a usage limit), so stop the
-            // run with an actionable message instead of a generic "no plan".
-            if is_codex_auth_error(&log) {
-                bail!(
-                    "{CODEX_AUTH_ERROR_MSG} (see {})",
-                    self.run_dir.join("codex.log").display()
-                );
-            }
-            bail!(
-                "codex produced no plan at {} (see {})",
-                plan_path.display(),
-                self.run_dir.join("codex.log").display()
-            );
-        }
+            |log| {
+                ralphy_adapter_support::detect_limit(log, is_codex_limit_text, parse_codex_reset_hint)
+                    .map(|reset| PlanLimit { reset }.into())
+            },
+        )?;
+
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
@@ -187,53 +175,58 @@ impl Agent for CodexAgent {
     }
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
-        fs::create_dir_all(&self.run_dir).ok();
-        fs::create_dir_all(ws.ralphy_dir()).ok();
-        materialize_codex_skills(ws)?;
-
         let model = self.resolve_model();
         // Execution takes the plan's neutral complexity tier as reasoning effort.
         let effort = tier_to_effort(plan.recommended_model.as_deref());
         let out_path = ws.ralphy_dir().join("codex-last.txt");
-        let _ = fs::remove_file(&out_path);
-
+        let log_path = self.run_dir.join("codex.log");
+        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         // Snapshot the rollout tree around the call for appeared-over-grew token
         // capture (ADR-0008 D10), the same rule the Claude adapter uses.
         let sessions_dir = codex_sessions_dir();
-        let before = sessions_dir
-            .as_deref()
-            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-            .unwrap_or_default();
-        let timeout = self
-            .issue_deadline()
-            .saturating_duration_since(Instant::now());
-        let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
-        info!(model = %model, effort, "executing with codex exec");
-        let (exited_cleanly, timed_out, log) = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
-        let after = sessions_dir
-            .as_deref()
-            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-            .unwrap_or_default();
+        let snapshot = || {
+            sessions_dir
+                .as_deref()
+                .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
+                .unwrap_or_default()
+        };
 
-        // A signed-out account never makes progress: stop the run with an
-        // actionable message rather than letting it fall through to `Stuck`.
-        if is_codex_auth_error(&log) {
-            bail!(
-                "{CODEX_AUTH_ERROR_MSG} (see {})",
-                self.run_dir.join("codex.log").display()
-            );
-        }
+        let run = || {
+            materialize_codex_skills(ws)?;
+            let _ = fs::remove_file(&out_path);
+            let before = snapshot();
+            let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
+            info!(model = %model, effort, "executing with codex exec");
+            let r = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
+            let after = snapshot();
+            Ok((r, (before, after)))
+        };
+
+        let ralphy_dir = ws.ralphy_dir();
+        let (r, (before, after)) = run_exec_session(
+            ExecCfg {
+                ralphy_dir: &ralphy_dir,
+                run_dir: &self.run_dir,
+                log_path: &log_path,
+                auth_msg: CODEX_AUTH_ERROR_MSG,
+            },
+            run,
+            is_codex_auth_error,
+        )?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let out = fs::read_to_string(&out_path).unwrap_or_default();
 
-        let outcome = classify_codex_outcome(exited_cleanly, timed_out, committed, &out, &log);
+        let outcome = classify_codex_outcome(r.exited_cleanly, r.timed_out, committed, &out, &r.log);
         info!(
             ?outcome,
-            exited_cleanly, timed_out, committed, "codex execution ended"
+            exited_cleanly = r.exited_cleanly,
+            timed_out = r.timed_out,
+            committed,
+            "codex execution ended"
         );
         Ok(Execution {
             outcome,
@@ -253,11 +246,11 @@ mod tests {
     #[test]
     fn codex_honours_max_minutes_per_issue() {
         assert_eq!(
-            CodexAgent::new(None, PathBuf::from("/run")).max_minutes_per_issue,
+            CodexAgent::new(None, PathBuf::from("/run")).budget.max_minutes_per_issue,
             ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
         );
         let a = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-        assert_eq!(a.max_minutes_per_issue, 120);
+        assert_eq!(a.budget.max_minutes_per_issue, 120);
         let short = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
         let long = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
         assert!(long.issue_deadline() > short.issue_deadline());

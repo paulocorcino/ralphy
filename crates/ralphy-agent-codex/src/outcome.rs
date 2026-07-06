@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::run_headless_logged;
+use ralphy_adapter_support::{run_headless_logged, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::auth::{is_codex_limit_text, parse_codex_reset_hint};
@@ -54,22 +54,21 @@ impl CodexAgent {
     /// Spawn a single `codex exec` call, piping `prompt` on stdin and draining
     /// stdout/stderr via reader threads to avoid pipe-buffer deadlock (mirrors
     /// `ClaudeAgent::run_headless_call`). Polls `try_wait` until `timeout`; kills
-    /// the child on expiry. Returns `(exited_cleanly, timed_out, combined_log)` —
-    /// the combined log is also written to `run_dir/codex.log`; the agent's final
-    /// message is read from the `-o` file by the caller.
+    /// the child on expiry. Returns the [`HeadlessRun`] (its `exited_cleanly` /
+    /// `timed_out` / `log`) — the combined log is also written to `run_dir/codex.log`;
+    /// the agent's final message is read from the `-o` file by the caller.
     pub(crate) fn run_codex(
         &self,
         cmd: Command,
         prompt: &str,
         timeout: Duration,
-    ) -> Result<(bool, bool, String)> {
+    ) -> Result<HeadlessRun> {
         // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
         // shared headless runner; Codex's `exited_cleanly` (a *successful* exit,
         // not merely "not timed out") is recovered from the returned exit status,
         // which is `None` exactly when the child was killed on the wall timeout.
-        let r = run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
-            .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")?;
-        Ok((r.exited_cleanly, r.timed_out, r.log))
+        run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
+            .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")
     }
 }
 
