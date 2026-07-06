@@ -4,7 +4,6 @@
 //! None of these publish to GitHub; the cli applies the drafted artifact after
 //! the operator confirms.
 
-use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -12,7 +11,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use tracing::info;
 
-use ralphy_adapter_support::{resolve_program, run_json_session, JsonSession};
+use ralphy_adapter_support::{resolve_program, run_init_session, JsonSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest,
@@ -44,17 +43,12 @@ pub fn diagnose_repo(
     // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
     // accepted for a uniform init dispatch signature and ignored.
     let _ = effort;
-    fs::create_dir_all(neutral_cwd).ok();
     let out_path = neutral_cwd.join("diagnosis.json");
-    // A stale report from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = fs::remove_file(&out_path);
-
     let prompt = build_diagnose_prompt(repo, &out_path);
     info!(?model, "diagnosing repo with opencode run");
     let cmd = build_opencode_command(model, None, neutral_cwd, INIT_OPENCODE_CONFIG);
     let log_path = neutral_cwd.join("diagnose.log");
-    run_json_session(
+    run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -95,13 +89,6 @@ pub fn draft_issues(
     // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
     // accepted for a uniform init dispatch signature and ignored.
     let _ = effort;
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    // A stale draft from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = fs::remove_file(out_path);
-
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     info!(
@@ -111,10 +98,7 @@ pub fn draft_issues(
     );
     let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
     let log_path = repo.join(".ralphy").join("init-issues.log");
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    run_json_session(
+    run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -153,21 +137,11 @@ pub fn triage_issues(
     // OpenCode has no reasoning-effort knob (ADR-0005 D3); accepted for a uniform
     // dispatch signature and ignored.
     let _ = effort;
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    // A stale draft from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = fs::remove_file(out_path);
-
     let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
     info!(?model, "triaging issues with opencode run");
     let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
     let log_path = repo.join(".ralphy").join("triage.log");
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    run_json_session(
+    run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,

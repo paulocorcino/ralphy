@@ -25,7 +25,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
+use ralphy_adapter_support::{
+    run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg,
+};
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Workspace};
 use tracing::info;
 
@@ -83,8 +86,7 @@ pub struct OpenCodeAgent {
     model: Option<String>,
     variant: Option<String>,
     run_dir: PathBuf,
-    max_minutes_per_issue: u64,
-    run_deadline: Option<Instant>,
+    budget: IssueBudget,
 }
 
 impl OpenCodeAgent {
@@ -93,8 +95,7 @@ impl OpenCodeAgent {
             model,
             variant: None,
             run_dir,
-            max_minutes_per_issue: ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
-            run_deadline: None,
+            budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
     }
 
@@ -108,7 +109,7 @@ impl OpenCodeAgent {
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
-        self.max_minutes_per_issue = minutes;
+        self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
     }
 
@@ -117,7 +118,7 @@ impl OpenCodeAgent {
     /// global limit can't overrun by a whole per-issue window (mirrors
     /// `CodexAgent::with_run_deadline`).
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
-        self.run_deadline = run_deadline;
+        self.budget = self.budget.with_run_deadline(run_deadline);
         self
     }
 
@@ -125,13 +126,11 @@ impl OpenCodeAgent {
     /// run's global deadline when one is set. A budget of `0` disables the
     /// per-issue cap — the issue is then bounded only by the run deadline (or the
     /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
+    /// The plan/execute paths read the budget directly (`self.budget.timeout`);
+    /// this stays as the deadline oracle the budget tests assert against.
+    #[cfg(test)]
     fn issue_deadline(&self) -> Instant {
-        ralphy_adapter_support::issue_deadline(
-            Instant::now(),
-            self.max_minutes_per_issue,
-            self.run_deadline,
-            ralphy_core::UNBOUNDED_ISSUE_HORIZON,
-        )
+        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
     }
 }
 
@@ -141,46 +140,45 @@ impl Agent for OpenCodeAgent {
     }
 
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
-        fs::create_dir_all(ws.ralphy_dir()).ok();
-        fs::create_dir_all(&self.run_dir).ok();
-        let skills_dir = materialize_opencode_skills(ws)?;
-        let skills_config = opencode_skills_config(&skills_dir);
-
         let plan_path = ws.plan_path();
-        // Plan fresh every run; never reuse a stale artifact.
-        let _ = fs::remove_file(&plan_path);
+        let log_path = self.run_dir.join("opencode.log");
+        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
 
-        // Full charter on disk (mirrors .ralphy/exec.md); rewritten each plan
-        // call so a resumed session still finds it.
-        fs::write(ws.plan_charter_path(), PROMPT_PLAN_OPENCODE)
-            .context("writing .ralphy/plan-charter.md")?;
-
-        let cmd = build_opencode_command(
-            self.model.as_deref(),
-            self.variant.as_deref(),
-            ws.repo_root(),
-            &skills_config,
-        );
-        let timeout = self
-            .issue_deadline()
-            .saturating_duration_since(Instant::now());
-        info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
-        let (_, _, stdout_text, log) =
-            self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
-
-        if !plan_path.exists() {
-            if is_opencode_auth_error(&log) {
-                bail!(
-                    "{OPENCODE_AUTH_ERROR_MSG} (see {})",
-                    self.run_dir.join("opencode.log").display()
-                );
-            }
-            bail!(
-                "opencode produced no plan at {} (see {})",
-                plan_path.display(),
-                self.run_dir.join("opencode.log").display()
+        let run = || {
+            let skills_dir = materialize_opencode_skills(ws)?;
+            let skills_config = opencode_skills_config(&skills_dir);
+            let cmd = build_opencode_command(
+                self.model.as_deref(),
+                self.variant.as_deref(),
+                ws.repo_root(),
+                &skills_config,
             );
-        }
+            info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
+            let r = self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
+            let stdout = r.stdout.clone();
+            Ok((r, stdout))
+        };
+
+        let ralphy_dir = ws.ralphy_dir();
+        let charter_path = ws.plan_charter_path();
+        let (_, stdout_text) = run_plan_session(
+            PlanCfg {
+                ralphy_dir: &ralphy_dir,
+                run_dir: &self.run_dir,
+                plan_path: &plan_path,
+                plan_charter_path: &charter_path,
+                charter_body: PROMPT_PLAN_OPENCODE,
+                log_path: &log_path,
+                auth_msg: OPENCODE_AUTH_ERROR_MSG,
+                no_plan_msg: "opencode produced no plan",
+            },
+            run,
+            is_opencode_auth_error,
+            // No plan-time usage limit is surfaced for OpenCode today (the current
+            // ladder is auth-then-generic); the limit path lives in execute (D9).
+            |_log| None,
+        )?;
+
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         let usage = opencode_usage(&stdout_text);
         info!(
@@ -197,34 +195,37 @@ impl Agent for OpenCodeAgent {
     }
 
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Execution> {
-        fs::create_dir_all(&self.run_dir).ok();
-        fs::create_dir_all(ws.ralphy_dir()).ok();
-        let skills_dir = materialize_opencode_skills(ws)?;
-        let skills_config = opencode_skills_config(&skills_dir);
-
+        let log_path = self.run_dir.join("opencode.log");
+        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
-        let timeout = self
-            .issue_deadline()
-            .saturating_duration_since(Instant::now());
-        let cmd = build_opencode_command(
-            self.model.as_deref(),
-            self.variant.as_deref(),
-            ws.repo_root(),
-            &skills_config,
-        );
-        info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
-        let (exited_cleanly, timed_out, stdout_text, log) =
-            self.run_opencode(cmd, ralphy_adapter_support::PROMPT_EXECUTE, timeout)?;
 
-        // A signed-out account never makes progress: stop the run with an
-        // actionable message rather than letting it fall through to Stuck/Timeout.
-        if is_opencode_auth_error(&log) {
-            bail!(
-                "{OPENCODE_AUTH_ERROR_MSG} (see {})",
-                self.run_dir.join("opencode.log").display()
+        let run = || {
+            let skills_dir = materialize_opencode_skills(ws)?;
+            let skills_config = opencode_skills_config(&skills_dir);
+            let cmd = build_opencode_command(
+                self.model.as_deref(),
+                self.variant.as_deref(),
+                ws.repo_root(),
+                &skills_config,
             );
-        }
+            info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
+            let r = self.run_opencode(cmd, ralphy_adapter_support::PROMPT_EXECUTE, timeout)?;
+            let stdout = r.stdout.clone();
+            Ok((r, stdout))
+        };
+
+        let ralphy_dir = ws.ralphy_dir();
+        let (r, stdout_text) = run_exec_session(
+            ExecCfg {
+                ralphy_dir: &ralphy_dir,
+                run_dir: &self.run_dir,
+                log_path: &log_path,
+                auth_msg: OPENCODE_AUTH_ERROR_MSG,
+            },
+            run,
+            is_opencode_auth_error,
+        )?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
@@ -232,8 +233,8 @@ impl Agent for OpenCodeAgent {
         let limit = parse_opencode_limit(&stdout_text);
 
         let outcome = classify_opencode_outcome(
-            exited_cleanly,
-            timed_out,
+            r.exited_cleanly,
+            r.timed_out,
             committed,
             &text,
             saw_error,
@@ -243,8 +244,8 @@ impl Agent for OpenCodeAgent {
         info!(
             ?outcome,
             model = resolved_model_label(&usage),
-            exited_cleanly,
-            timed_out,
+            exited_cleanly = r.exited_cleanly,
+            timed_out = r.timed_out,
             committed,
             saw_error,
             "opencode execution ended"
@@ -264,11 +265,13 @@ mod tests {
     #[test]
     fn opencode_honours_max_minutes_per_issue() {
         assert_eq!(
-            OpenCodeAgent::new(None, PathBuf::from("/run")).max_minutes_per_issue,
+            OpenCodeAgent::new(None, PathBuf::from("/run"))
+                .budget
+                .max_minutes_per_issue,
             ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
         );
         let a = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-        assert_eq!(a.max_minutes_per_issue, 120);
+        assert_eq!(a.budget.max_minutes_per_issue, 120);
         let short = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
         let long = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
         assert!(long.issue_deadline() > short.issue_deadline());

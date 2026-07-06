@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::run_headless_logged;
+use ralphy_adapter_support::{run_headless_logged, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::OpenCodeAgent;
@@ -47,24 +47,23 @@ impl OpenCodeAgent {
     /// Spawn a single `opencode run` call, piping `prompt` on stdin and draining
     /// stdout/stderr via reader threads to avoid pipe-buffer deadlock (mirrors
     /// `CodexAgent::run_codex`). Polls `try_wait` until `timeout`; kills the child
-    /// on expiry. Returns `(exited_cleanly, timed_out, stdout_text, log)` — stdout
-    /// is the JSON event stream the caller parses; `log` is the combined
-    /// stdout+stderr written to `run_dir/opencode.log` and used by the auth
-    /// detector (auth failures often print only to stderr).
+    /// on expiry. Returns the [`HeadlessRun`] — its `stdout` is the JSON event
+    /// stream the caller parses; its `log` is the combined stdout+stderr written to
+    /// `run_dir/opencode.log` and used by the auth detector (auth failures often
+    /// print only to stderr).
     pub(crate) fn run_opencode(
         &self,
         cmd: Command,
         prompt: &str,
         timeout: Duration,
-    ) -> Result<(bool, bool, String, String)> {
+    ) -> Result<HeadlessRun> {
         // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
         // shared headless runner; `exited_cleanly` is a *successful* exit (the
         // status is `None` exactly when the child was killed on the wall timeout).
         // The combined log keeps stderr too — the JSON stream lives on stdout, but
         // a crash or auth failure often only prints to stderr.
-        let r = run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
-            .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")?;
-        Ok((r.exited_cleanly, r.timed_out, r.stdout, r.log))
+        run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
+            .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")
     }
 }
 
