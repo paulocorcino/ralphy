@@ -227,6 +227,10 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
 - The **core** is execution-mode-agnostic: it asks an **adapter** to work an issue
   and receives an outcome. PTY, interactive sessions, and completion sentinels
   live inside the **adapter**, never in the core.
+- **Triage evidence** = the issue body, its full comment thread, and the
+  guardrailed attachments the CLI fetches for the triage agent (ADR-0025); an
+  attachment listed `not fetched (<reason>)` is evidence the agent does **not**
+  have, never treated as absent.
 
 ## Testing conventions
 
