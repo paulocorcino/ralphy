@@ -121,7 +121,13 @@ struct CloudEventsEngine<T: EventSink> {
 }
 
 impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
-    fn on_start(&mut self) {}
+    fn on_start(&mut self) {
+        // Clock the run + heartbeat baselines at worker entry (not at construction),
+        // matching the old `run_sender` so `elapsed_s` and the first heartbeat are not
+        // skewed by thread-spawn latency.
+        self.start = Instant::now();
+        self.last_beat = Instant::now();
+    }
 
     fn on_event(&mut self, event: RunEvent) {
         // Accumulate the run's token totals off the two phases that report a
