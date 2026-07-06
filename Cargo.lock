@@ -826,6 +826,7 @@ version = "0.1.0-rc10"
 dependencies = [
  "anyhow",
  "include_dir",
+ "ralphy-core",
  "ralphy-proc-util",
  "serde_json",
  "tracing",
