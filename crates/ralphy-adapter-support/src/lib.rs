@@ -32,13 +32,18 @@
 //! returned [`HeadlessOutput`] into the adapter's own local return shape.
 
 mod budget;
-pub use budget::issue_deadline;
+pub use budget::{issue_deadline, IssueBudget};
 
 mod detect;
 pub use detect::{auth_error, detect_limit, scan_json_lines};
 
 mod json_session;
-pub use json_session::{run_json_session, run_text_session, JsonSession, TextSession};
+pub use json_session::{
+    run_init_session, run_json_session, run_text_session, JsonSession, TextSession,
+};
+
+mod scaffold;
+pub use scaffold::{run_exec_session, run_plan_session, ExecCfg, PlanCfg};
 
 mod session_files;
 pub use session_files::{list_session_files, session_files_appeared};

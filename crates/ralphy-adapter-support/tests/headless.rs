@@ -6,7 +6,9 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use ralphy_adapter_support::{run_headless, run_headless_logged, run_text_session, TextSession};
+use ralphy_adapter_support::{
+    run_headless, run_headless_logged, run_init_session, run_text_session, JsonSession, TextSession,
+};
 
 // These mirror the constants in `src/bin/headless_test_child.rs`. Kept in sync by
 // hand — a drift would fail the assertions below immediately.
@@ -213,6 +215,44 @@ fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
     assert!(
         format!("{err}").contains("TIMED OUT"),
         "err names the timeout message: {err}"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_init_session_clears_a_stale_artifact_before_the_run() {
+    // A stale artifact from a prior run must never survive into this session. Drive
+    // a child that writes NO artifact, seed a stale `out_path`, and assert the run
+    // bails with `missing_msg` (proving the file was cleared, not read back).
+    let log_path = temp_log("init-log");
+    let out_path = temp_log("init-out");
+    let _ = std::fs::remove_file(&log_path);
+    std::fs::write(&out_path, "stale contents from a prior run").unwrap();
+
+    let err = run_init_session(
+        JsonSession {
+            cmd: child_cmd("clean"),
+            prompt: "ignored prompt",
+            timeout: Duration::from_secs(30),
+            log_path: &log_path,
+            out_path: &out_path,
+            spawn_err: "failed to spawn the test child",
+            auth_msg: "AUTH FAILED",
+            timeout_msg: "TIMED OUT",
+            missing_msg: "NO ARTIFACT",
+        },
+        |_log| false,
+        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+    )
+    .expect_err("the stale artifact was cleared, so the read must fail with missing_msg");
+
+    assert!(
+        format!("{err}").contains("NO ARTIFACT"),
+        "err names the missing-artifact message: {err}"
+    );
+    assert!(
+        !out_path.exists(),
+        "the stale artifact was removed before the run"
     );
     let _ = std::fs::remove_file(&log_path);
 }

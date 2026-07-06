@@ -120,6 +120,26 @@ pub fn run_json_session<T>(
     validate(&raw)
 }
 
+/// [`run_json_session`] with the per-session **init preamble** the six init/triage
+/// wrappers each hand-rolled: ensure the `out_path` and `log_path` parent dirs
+/// exist, then remove any stale `out_path` so a prior run's artifact can never
+/// masquerade as this session's output. Folds that boilerplate into one place;
+/// the adapter passes the same `JsonSession`/`is_auth_error`/`validate` as before.
+pub fn run_init_session<T>(
+    session: JsonSession<'_>,
+    is_auth_error: impl Fn(&str) -> bool,
+    validate: impl Fn(&str) -> Result<T>,
+) -> Result<T> {
+    if let Some(parent) = session.out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    if let Some(parent) = session.log_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let _ = fs::remove_file(session.out_path);
+    run_json_session(session, is_auth_error, validate)
+}
+
 /// Sibling of [`run_json_session`] for one-shots that produce **no JSON artifact**
 /// (Claude's `consolidate_knowledge`): spawn via [`run_headless`], combine
 /// stdout+stderr into the log and persist it at `log_path`, `bail!` on an auth
