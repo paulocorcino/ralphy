@@ -6,20 +6,19 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged, HeadlessRun};
+use ralphy_adapter_support::{run_headless_logged, CompletionSignals, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::OpenCodeAgent;
 
-/// Map an execution call's end state onto a core [`Outcome`] (ADR-0005 D2): the
-/// wall timeout wins, but a `limit` event (D9) upgrades `Timeout` to
-/// `Outcome::Limit(reset)` and the `Stuck` fallthrough to `Outcome::Limit` when
-/// present; a `RALPHY_BLOCKED_EXIT <reason>` sentinel is `Blocked(reason)`; a
-/// clean exit that committed, saw no `error` event, and emitted `RALPHY_DONE_EXIT`
-/// is `Done`; anything else is `Stuck`. The HEAD-diff `committed` check is the
-/// progress guard the Claude headless loop and the Codex adapter already use:
-/// OpenCode makes internal snapshots, not git commits, so a `Done` claim with no
-/// commit is distrusted and downgraded.
+/// Extract OpenCode's [`CompletionSignals`] from a call's raw end state and delegate
+/// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
+/// ladder (ADR-0023 D1/D2). This function owns only the vendor-specific extraction:
+/// the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinel parse and the JSON `error`
+/// event. OpenCode's `limit` is a structural JSON event (`parse_opencode_limit`, D5)
+/// trustworthy regardless of exit — unlike Codex, no exit-code gating is needed here.
+/// Ordering — including that a trustworthy limit outranks both done and timeout, and
+/// that `Done` needs no commit — lives in the shared ladder, not here.
 pub(crate) fn classify_opencode_outcome(
     exited_cleanly: bool,
     timed_out: bool,
@@ -28,19 +27,15 @@ pub(crate) fn classify_opencode_outcome(
     saw_error: bool,
     limit: Option<Option<String>>,
 ) -> Outcome {
-    if timed_out {
-        return limit.map(Outcome::Limit).unwrap_or(Outcome::Timeout);
-    }
-    if let Some(reason) = ralphy_adapter_support::blocked_reason(text) {
-        return Outcome::Blocked(reason);
-    }
-    if exited_cleanly && committed && !saw_error && ralphy_adapter_support::done_sentinel(text) {
-        return Outcome::Done;
-    }
-    if let Some(reset) = limit {
-        return Outcome::Limit(reset);
-    }
-    Outcome::Stuck
+    ralphy_adapter_support::classify(CompletionSignals {
+        done: ralphy_adapter_support::done_sentinel(text),
+        blocked: ralphy_adapter_support::blocked_reason(text),
+        limit,
+        committed,
+        timed_out,
+        exited_ok: exited_cleanly,
+        errored: saw_error,
+    })
 }
 
 impl OpenCodeAgent {
@@ -83,12 +78,31 @@ mod tests {
     }
 
     #[test]
-    fn classify_stuck_on_no_commit() {
-        // A DONE claim with no new commit is distrusted (HEAD-diff progress guard).
+    fn classify_done_on_no_commit() {
+        // ADR-0023 D3: a commit is a progress signal, not a Done gate. A clean exit
+        // with the DONE sentinel is Done even with no new commit.
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
             classify_opencode_outcome(true, false, false, text, false, None),
-            Outcome::Stuck
+            Outcome::Done
+        );
+    }
+
+    #[test]
+    fn classify_done_run_with_limit_event_resumes() {
+        // ADR-0023 D2: a trustworthy limit outranks a done claim, even on a clean,
+        // committed exit — the run resumes instead of closing.
+        let text = "all steps green\nRALPHY_DONE_EXIT\n";
+        assert_eq!(
+            classify_opencode_outcome(
+                true,
+                false,
+                true,
+                text,
+                false,
+                Some(Some("2026-06-10T18:00:00Z".into()))
+            ),
+            Outcome::Limit(Some("2026-06-10T18:00:00Z".into()))
         );
     }
 
