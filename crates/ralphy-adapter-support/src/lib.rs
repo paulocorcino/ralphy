@@ -34,6 +34,9 @@
 mod budget;
 pub use budget::{issue_deadline, IssueBudget};
 
+mod classify;
+pub use classify::{classify, CompletionSignals};
+
 mod detect;
 pub use detect::{auth_error, detect_limit, scan_json_lines};
 
