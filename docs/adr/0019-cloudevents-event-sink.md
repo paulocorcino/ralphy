@@ -2,6 +2,11 @@
 
 Status: proposed (design interview 2026-07-03; not yet implemented).
 
+_Amended by ADR-0024 (2026-07-06): the ring/worker/Layer/handle this ADR describes
+as mirroring the Telegram notifier (ADR-0007) is now a single shared
+`crate::delivery` spine, with the sink expressed as a `DeliveryEngine` fold over it.
+The wire shape and delivery semantics below are unchanged; only the code shared._
+
 Ralphy's observability already has a load-bearing shape: the core and the
 adapters emit structured `tracing` events with stable messages and typed
 fields, and every consumer is a `tracing_subscriber::Layer` folding that same
