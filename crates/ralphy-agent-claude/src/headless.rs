@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{run_headless_logged, PROMPT_EXECUTE};
+use ralphy_adapter_support::{classify, run_headless_logged, CompletionSignals, PROMPT_EXECUTE};
 use ralphy_core::{git, plan, Outcome, Plan, Workspace};
 use tracing::info;
 
@@ -150,37 +150,33 @@ impl ClaudeAgent {
     }
 }
 
-/// Map the session's end state to an [`Outcome`]. The flag the Stop hook wrote is
-/// authoritative; otherwise usage-limit text in the transcript is
-/// [`Outcome::Limit`] (with a parsed reset hint) — it wins over a wall-timeout so
-/// the run can resume after the reset — a timeout is [`Outcome::Timeout`], and a
-/// quiet exit is [`Outcome::Stuck`].
+/// Map the session's end state to an [`Outcome`]. Extracts the Stop-hook flag and
+/// transcript usage-limit text into [`CompletionSignals`] and delegates the
+/// precedence ordering to the shared [`classify`] ladder (ADR-0023 D1/D2).
 pub(crate) fn classify_outcome(
     flag: Option<&str>,
     timed_out: bool,
     transcript: Option<&str>,
 ) -> Outcome {
+    let mut done = false;
+    let mut blocked = None;
     if let Some(f) = flag {
         let f = f.trim();
         if f == "DONE" {
-            return Outcome::Done;
+            done = true;
+        } else if let Some(reason) = f.strip_prefix("BLOCKED") {
+            blocked = Some(reason.trim().to_string());
         }
-        if let Some(reason) = f.strip_prefix("BLOCKED") {
-            return Outcome::Blocked(reason.trim().to_string());
-        }
     }
-    // A usage limit wins over a wall-timeout: the oracle reclassifies a
-    // timed-out/exited session to `limit` when the transcript shows one
-    // (ralphy.ps1:395-397), preserving the reset hint so the run can resume.
-    // Detection is structural (`transcript_limit`), not a substring scan, so the
-    // agent reading source that *mentions* a limit cannot fabricate one.
-    if let Some(reset) = transcript.and_then(transcript_limit) {
-        return Outcome::Limit(reset);
-    }
-    if timed_out {
-        return Outcome::Timeout;
-    }
-    Outcome::Stuck
+    classify(CompletionSignals {
+        done,
+        blocked,
+        limit: transcript.and_then(transcript_limit),
+        committed: false,
+        timed_out,
+        exited_ok: !timed_out,
+        errored: false,
+    })
 }
 
 /// Terminal reason for one headless `-p` call, mirroring `Invoke-ExecLoop`'s
@@ -198,30 +194,26 @@ pub(crate) enum HeadlessReason {
 /// Classify the result of a single headless `-p` call. Returns the terminal
 /// reason if this call ends the loop, or `None` to continue to the next call.
 ///
-/// Priority order mirrors `Invoke-ExecLoop` (ralphy.ps1:283), which checks
-/// `Test-LimitText` *first* — a usage limit wins over everything, including a
-/// `RALPHY_DONE_EXIT` emitted in the same output, so the run resumes after reset
-/// rather than closing the issue:
-/// 1. Limit text anywhere → `Limit`.
-/// 2. Process did not exit (timed out) → `Timeout`.
-/// 3. `RALPHY_BLOCKED_EXIT` in output → `Blocked`.
-/// 4. `RALPHY_DONE_EXIT` or zero open steps → `Done`.
-/// 5. Otherwise → `None` (continue).
+/// Extracts the done sentinel, blocked sentinel, and limit text into
+/// [`CompletionSignals`] and delegates the precedence ordering to the shared
+/// [`classify`] ladder (ADR-0023 D1/D2).
 fn classify_exec_call(out: &str, exited: bool, open_steps: usize) -> Option<HeadlessReason> {
-    if let Some(reset) = ralphy_adapter_support::detect_limit(out, is_limit_text, parse_reset_hhmm)
-    {
-        return Some(HeadlessReason::Limit(reset));
+    let signals = CompletionSignals {
+        done: ralphy_adapter_support::done_sentinel(out) || open_steps == 0,
+        blocked: ralphy_adapter_support::blocked_reason(out),
+        limit: ralphy_adapter_support::detect_limit(out, is_limit_text, parse_reset_hhmm),
+        committed: false,
+        timed_out: !exited,
+        exited_ok: exited,
+        errored: false,
+    };
+    match classify(signals) {
+        Outcome::Limit(t) => Some(HeadlessReason::Limit(t)),
+        Outcome::Done => Some(HeadlessReason::Done),
+        Outcome::Timeout => Some(HeadlessReason::Timeout),
+        Outcome::Blocked(s) => Some(HeadlessReason::Blocked(s)),
+        Outcome::Stuck => None,
     }
-    if !exited {
-        return Some(HeadlessReason::Timeout);
-    }
-    if let Some(reason) = ralphy_adapter_support::blocked_reason(out) {
-        return Some(HeadlessReason::Blocked(reason));
-    }
-    if ralphy_adapter_support::done_sentinel(out) || open_steps == 0 {
-        return Some(HeadlessReason::Done);
-    }
-    None
 }
 
 /// One transition of the headless loop's decision logic, factored out of
