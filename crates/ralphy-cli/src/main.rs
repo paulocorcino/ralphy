@@ -11,6 +11,7 @@ use tracing::warn;
 
 mod cli;
 mod config;
+mod delivery;
 mod events;
 mod guard;
 mod hook;

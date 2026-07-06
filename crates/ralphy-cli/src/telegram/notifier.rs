@@ -13,10 +13,9 @@
 //! worker swallows per-call transport errors (a stalled network must never abort or
 //! block the run), and the queue drops the oldest event under back-pressure.
 
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -27,6 +26,7 @@ use tracing_subscriber::layer::{Context, Layer};
 use chrono::Local;
 
 use super::client::{BotClient, Transport};
+pub use crate::delivery::EventQueue;
 use crate::runstate::{
     event_to_runevent, EventFields, IssueEntry, IssueStatus, RunEvent, RunState, SleepState,
 };
@@ -37,9 +37,6 @@ const TELEGRAM_LIMIT: usize = 4096;
 /// Above this many issues the card collapses to counters + active + last-finished
 /// rather than one line per issue (ADR-0007 D6).
 const FULL_LIST_MAX: usize = 30;
-
-/// The bounded ring's capacity (ADR-0007 D4/D7).
-const QUEUE_CAPACITY: usize = 256;
 
 /// How often the worker re-polls the queue (so it notices shutdown promptly even
 /// if a notify is lost), distinct from the card refresh cadence below.
@@ -288,71 +285,6 @@ pub fn derive_title(
         format!(" [{}]", labels.join(", "))
     };
     format!("{repo_name} · {issue_count} issues{label_part}")
-}
-
-// ---------------------------------------------------------------------------
-// Bounded, drop-oldest event ring (ADR-0007 D4/D7)
-// ---------------------------------------------------------------------------
-
-/// A bounded ring buffer of [`RunEvent`]s shared between the Layer (producer) and
-/// the worker (consumer). On overflow it drops the **oldest** element, not the
-/// newest, so a stalled network never slows the logging thread while the card
-/// still converges on the most-current state.
-pub struct EventQueue {
-    inner: Mutex<VecDeque<RunEvent>>,
-    cv: Condvar,
-    cap: usize,
-}
-
-impl EventQueue {
-    /// A queue with the default capacity.
-    pub fn new() -> Self {
-        Self::with_capacity(QUEUE_CAPACITY)
-    }
-
-    /// A queue with an explicit capacity (used by tests).
-    pub fn with_capacity(cap: usize) -> Self {
-        EventQueue {
-            inner: Mutex::new(VecDeque::with_capacity(cap)),
-            cv: Condvar::new(),
-            cap,
-        }
-    }
-
-    /// Enqueue an event, dropping the oldest if at capacity. Never blocks.
-    pub fn push(&self, event: RunEvent) {
-        let mut q = self.inner.lock().expect("event queue poisoned");
-        if q.len() >= self.cap {
-            q.pop_front();
-        }
-        q.push_back(event);
-        self.cv.notify_one();
-    }
-
-    /// Wait up to `timeout` for at least one event, then drain everything pending.
-    /// Returns an empty vec on timeout.
-    pub fn drain_blocking(&self, timeout: Duration) -> Vec<RunEvent> {
-        let mut q = self.inner.lock().expect("event queue poisoned");
-        if q.is_empty() {
-            let (guard, _) = self
-                .cv
-                .wait_timeout(q, timeout)
-                .expect("event queue poisoned");
-            q = guard;
-        }
-        q.drain(..).collect()
-    }
-
-    /// Wake any waiter (used at shutdown so the worker re-checks its flag).
-    pub fn wake(&self) {
-        self.cv.notify_all();
-    }
-}
-
-impl Default for EventQueue {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ use crate::runstate::UsageLite;
 use anyhow::{bail, Result};
 use serde_json::json;
 use std::sync::atomic::AtomicI64;
+use std::sync::Mutex;
 
 /// Live, opt-in demo that the notifier updates ONE message in place: it sends a
 /// card then edits it repeatedly with visibly-changing content (issues
@@ -445,42 +446,6 @@ fn derive_title_covers_all_three_branches() {
     assert_eq!(
         derive_title("myrepo", 1, &[], None, Some("  ")),
         "myrepo · 1 issues"
-    );
-}
-
-#[test]
-fn event_queue_drops_oldest_at_capacity() {
-    let q = EventQueue::with_capacity(2);
-    q.push(RunEvent::IssueClosed {
-        number: 1,
-        tokens: 0,
-        usage: UsageLite::default(),
-    });
-    q.push(RunEvent::IssueClosed {
-        number: 2,
-        tokens: 0,
-        usage: UsageLite::default(),
-    });
-    q.push(RunEvent::IssueClosed {
-        number: 3,
-        tokens: 0,
-        usage: UsageLite::default(),
-    });
-    let drained = q.drain_blocking(Duration::from_millis(0));
-    assert_eq!(
-        drained,
-        vec![
-            RunEvent::IssueClosed {
-                number: 2,
-                tokens: 0,
-                usage: UsageLite::default(),
-            },
-            RunEvent::IssueClosed {
-                number: 3,
-                tokens: 0,
-                usage: UsageLite::default(),
-            },
-        ]
     );
 }
 
