@@ -80,23 +80,11 @@ pub(crate) fn parse_plan_usage(stdout: &str) -> Usage {
 }
 
 /// Sum a session's per-transcript usages and attribute the phase to one model.
-/// `add_tokens` drops `model` by design (it sums across records), so a plain fold
-/// would leave the phase unattributed → the `unknown` pricing bucket even though
-/// each transcript already resolved its own dominant model. Carry the model of the
-/// heaviest transcript, falling back to `fallback_model` (the model we requested)
-/// so a real, priceable id is always recorded rather than `unknown` (ADR-0008 D8).
+/// Delegates to [`Usage::fold_usage`] — the single place accumulated-usage model
+/// derivation lives (ADR-0008 D8) — so the heaviest transcript's model is carried,
+/// falling back to `fallback_model` (the model we requested) rather than `unknown`.
 pub(crate) fn fold_exec_usage(per_transcript: &[Usage], fallback_model: &str) -> Usage {
-    let mut usage = per_transcript.iter().fold(Usage::default(), |mut acc, u| {
-        acc.add_tokens(u);
-        acc
-    });
-    usage.model = per_transcript
-        .iter()
-        .filter(|u| u.model.is_some())
-        .max_by_key(|u| u.total())
-        .and_then(|u| u.model.clone())
-        .or_else(|| Some(fallback_model.to_string()));
-    usage
+    Usage::fold_usage(per_transcript, Some(fallback_model))
 }
 
 /// The key of the `modelUsage` entry with the most tokens — the run's *main*

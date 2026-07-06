@@ -56,6 +56,28 @@ impl Usage {
     pub fn total(&self) -> u64 {
         self.input + self.output + self.cache_read + self.cache_creation
     }
+
+    /// Fold a slice of per-record usages into one, attributing the accumulated
+    /// total to a single model — the ONE place accumulated-usage model derivation
+    /// lives (ADR-0008 D8). Sums the four token fields via [`Usage::add_tokens`]
+    /// (which drops `model` by design, since it sums across records of differing
+    /// models), then attributes the fold to the model of the heaviest record that
+    /// carries one, falling back to `fallback` when none is attributed — so a real,
+    /// priceable id is recorded rather than the `unknown` bucket. `add_tokens`
+    /// still drops model on purpose; folding callers MUST route through here.
+    pub fn fold_usage(items: &[Usage], fallback: Option<&str>) -> Usage {
+        let mut folded = items.iter().fold(Usage::default(), |mut acc, u| {
+            acc.add_tokens(u);
+            acc
+        });
+        folded.model = items
+            .iter()
+            .filter(|u| u.model.is_some())
+            .max_by_key(|u| u.total())
+            .and_then(|u| u.model.clone())
+            .or_else(|| fallback.map(str::to_string));
+        folded
+    }
 }
 
 /// The pairing an [`crate::Agent::execute`] hands back: the domain [`Outcome`]
@@ -296,6 +318,28 @@ mod tests {
         // `model` is untouched by summing — it stays the receiver's value.
         assert_eq!(a.model.as_deref(), Some("model-a"));
         assert_eq!(a.total(), 345);
+    }
+
+    #[test]
+    fn usage_fold_usage_carries_heaviest_model_and_falls_back() {
+        let heavy = Usage {
+            output: 100,
+            model: Some("opus".into()),
+            ..Usage::default()
+        };
+        let light = Usage {
+            output: 10,
+            model: Some("haiku".into()),
+            ..Usage::default()
+        };
+        let f = Usage::fold_usage(&[heavy, light], Some("sonnet"));
+        assert_eq!(f.output, 110);
+        // The heaviest record carrying a model wins, not `unknown`.
+        assert_eq!(f.model.as_deref(), Some("opus"));
+
+        // No record carries a model → fall back to the requested id.
+        let f = Usage::fold_usage(&[Usage::default()], Some("sonnet"));
+        assert_eq!(f.model.as_deref(), Some("sonnet"));
     }
 
     #[test]

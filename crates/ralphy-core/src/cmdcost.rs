@@ -135,6 +135,16 @@ pub fn match_verify_line<'a>(command: &str, lines: &'a [String]) -> Option<&'a s
         .map(String::as_str)
 }
 
+/// The canonical cost-lookup key for a `## Verify` line: the same quote-aware
+/// argv tokenization the verify gate runs ([`crate::verify::tokenize`]), rejoined
+/// with spaces. Both writers (this reader path and [`record_gate_costs`], which
+/// keys by the gate's `argv.join(" ")`) must derive the key from this one
+/// tokenization, else a quoted line (`sh -c "cargo test"`) stores dequoted but
+/// looks up raw and the measured cost is never found.
+fn cost_key(line: &str) -> String {
+    crate::verify::tokenize(line).join(" ")
+}
+
 /// What [`decide`] concluded about one Bash command.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CostDecision {
@@ -155,7 +165,7 @@ pub fn decide(command: &str, plan_md: &str, state: &CostState) -> CostDecision {
     let Some(line) = match_verify_line(command, &lines) else {
         return CostDecision::Allow;
     };
-    let Some(&cost) = state.costs.get(line) else {
+    let Some(&cost) = state.costs.get(&cost_key(line)) else {
         return CostDecision::Allow; // first run measures
     };
     if cost < EXPENSIVE_SECS {
@@ -191,7 +201,7 @@ pub fn note_start(project_root: &Path, command: &str, plan_md: &str) {
         return;
     };
     let mut state = load(project_root);
-    state.pending.insert(line.to_string(), now_epoch());
+    state.pending.insert(cost_key(line), now_epoch());
     save(project_root, &state);
 }
 
@@ -204,11 +214,12 @@ pub fn note_finish(project_root: &Path, command: &str, plan_md: &str) {
         return;
     };
     let mut state = load(project_root);
-    let Some(t0) = state.pending.remove(line) else {
+    let key = cost_key(line);
+    let Some(t0) = state.pending.remove(&key) else {
         return;
     };
     let elapsed = (now_epoch() - t0).max(0.0);
-    let entry = state.costs.entry(line.to_string()).or_insert(0.0);
+    let entry = state.costs.entry(key).or_insert(0.0);
     if elapsed > *entry {
         *entry = elapsed;
     }
@@ -417,6 +428,35 @@ pnpm run test:harness
         // A faster later gate never shrinks the record.
         record_gate_costs(&dir, &[(argv, 90.0)]);
         assert_eq!(load(&dir).costs["pnpm run test:harness"], 167.4);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn quoted_verify_command_cost_is_found_by_the_gate() {
+        // A quoted `## Verify` line: the gate tokenizes it to argv (dequoted),
+        // while the raw line the guard sees still carries the quotes. Both writer
+        // (record_gate_costs) and reader (decide) must key through the same
+        // tokenization, else the recorded cost is never found → wrongly Allow.
+        const PLAN: &str = "\
+## Verify
+sh -c \"cargo test -p ralphy-core\"
+
+## Steps
+- [ ] first step
+- [ ] second step
+- [ ] third step
+";
+        let quoted = "sh -c \"cargo test -p ralphy-core\"";
+        let dir = std::env::temp_dir().join(format!("ralphy-quoted-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
+
+        record_gate_costs(&dir, &[(crate::verify::tokenize(quoted), 167.0)]);
+        let state = load(&dir);
+        assert!(
+            matches!(decide(quoted, PLAN, &state), CostDecision::Deny(_)),
+            "gate-recorded cost for a quoted verify line must be found by decide"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

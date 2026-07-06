@@ -84,18 +84,15 @@ pub(crate) fn fold_rollout_usage(
     after: &[PathBuf],
     model: Option<String>,
 ) -> Usage {
-    let seed = Usage {
-        model: model.clone(),
-        ..Usage::default()
-    };
-    session_files_appeared(before, after)
+    let parsed: Vec<Usage> = session_files_appeared(before, after)
         .iter()
         .filter_map(|p| std::fs::read_to_string(p).ok())
         .map(|t| parse_codex_rollout_usage(&t, model.clone()))
-        .fold(seed, |mut acc, u| {
-            acc.add_tokens(&u);
-            acc
-        })
+        .collect();
+    // Every parsed record carries the same invocation `model`, so heaviest-with-
+    // model and the fallback both resolve to it — including the zero-appeared case
+    // (empty items → fallback model, zero tokens), matching the old seed result.
+    Usage::fold_usage(&parsed, model.as_deref())
 }
 
 #[cfg(test)]
