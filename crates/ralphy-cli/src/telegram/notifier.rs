@@ -23,8 +23,8 @@ use tracing::warn;
 use chrono::Local;
 
 use super::client::{BotClient, Transport};
-pub use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
 use crate::delivery::{spawn_worker, DeliveryEngine, DeliveryLayer, WorkerHandle};
+pub use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
 use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState, SleepState};
 
 /// Telegram's hard per-message character limit.

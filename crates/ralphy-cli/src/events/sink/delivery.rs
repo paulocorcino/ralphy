@@ -141,15 +141,25 @@ impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
         // active issue when mapped.
         self.state.apply(event.clone());
         if let Some(cloudevent) = runevent_to_cloudevent(&event, &self.ctx, &self.state) {
-            deliver(&self.transport, &cloudevent, &self.warned, RETRY_BASE_BACKOFF);
+            deliver(
+                &self.transport,
+                &cloudevent,
+                &self.warned,
+                RETRY_BASE_BACKOFF,
+            );
         }
     }
 
     fn on_tick(&mut self, _changed: bool) {
         // The plan-step poll rides the same tick as the heartbeat: cheap when the
         // plan is unchanged (an mtime stat), emitting only on a checkbox transition.
-        self.poller
-            .poll(&self.transport, &self.ctx, &self.state, &self.plan_path, &self.warned);
+        self.poller.poll(
+            &self.transport,
+            &self.ctx,
+            &self.state,
+            &self.plan_path,
+            &self.warned,
+        );
         // The heartbeat fires on its own 30s timer, independent of event arrival —
         // so it keeps beating through a silent usage-limit sleep (`phase: sleeping`)
         // and a consumer never mistakes a long pause for a dead run.
