@@ -1,30 +1,21 @@
-//! The sink's delivery worker (ADR-0019): drains the ring, folds each event into a
-//! [`RunState`], maps it to a CloudEvents envelope, and POSTs it with retry — plus
-//! the heartbeat and the [`EventsHandle`] lifecycle.
+//! The sink's delivery engine (ADR-0019, ADR-0024): a [`DeliveryEngine`] fold that
+//! maps each drained event into a CloudEvents envelope and POSTs it with retry, plus
+//! the ~30s heartbeat and the plan-step poll on each tick. The ring, worker loop, and
+//! bounded-shutdown handle are the shared [`crate::delivery`] spine.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tracing::warn;
 
 use super::poller::StepPoller;
+use crate::delivery::{spawn_worker, DeliveryEngine, EventQueue, WorkerHandle};
 use crate::events::client::{EventSink, PostOutcome};
 use crate::events::envelope::{runevent_to_cloudevent, EventCtx};
 use crate::runstate::{IssueStatus, RunEvent, RunState, UsageLite};
-use crate::telegram::notifier::EventQueue;
-
-/// How often the worker re-polls the ring so it notices shutdown promptly even if
-/// a notify is lost.
-const POLL_INTERVAL: Duration = Duration::from_millis(250);
-
-/// How long [`EventsHandle::shutdown`] waits for the worker before detaching, so a
-/// wedged endpoint never holds the process open.
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The heartbeat cadence (ADR-0019: ~30s, carried on the wire as `interval_s` so a
 /// consumer never hardcodes it).
@@ -110,67 +101,71 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
     )
 }
 
-/// Drain the sink ring, folding each event into a local [`RunState`] and POSTing
-/// its CloudEvents envelope once. Retry/drop and the heartbeat land in later
-/// slices; this base worker delivers each mapped event a single time.
-pub fn run_sender<T: EventSink>(
+/// The CloudEvents sink fold (ADR-0019, ADR-0024): folds each drained event into a
+/// local [`RunState`] (so adapter events carrying issue `0` resolve to the active
+/// issue), maps it to a CloudEvents envelope, and POSTs it with retry; each tick
+/// runs the plan-step poll and the ~30s heartbeat timer. Owns its own
+/// [`EventSink`] transport and the run's drop-guard `warned` flag.
+struct CloudEventsEngine<T: EventSink> {
     transport: T,
     ctx: EventCtx,
-    queue: Arc<EventQueue>,
-    shutdown: Arc<AtomicBool>,
+    state: RunState,
+    tokens: Totals,
+    start: Instant,
+    last_beat: Instant,
+    /// The plan-step poller diffs the active issue's `plan.md` mtime each tick (#96).
+    poller: StepPoller,
+    /// One warn per run on the first delivery drop; later drops stay silent.
+    warned: AtomicBool,
     plan_path: PathBuf,
-) {
-    let mut state = RunState::default();
-    let mut tokens = Totals::default();
-    let start = Instant::now();
-    let mut last_beat = Instant::now();
-    // The plan-step poller diffs the active issue's `plan.md` mtime each tick (#96).
-    let mut poller = StepPoller::default();
-    // One warn per run on the first delivery drop; later drops stay silent.
-    let warned = AtomicBool::new(false);
-    loop {
-        let stopping = shutdown.load(Ordering::SeqCst);
-        let events = if stopping {
-            queue.drain_blocking(Duration::from_millis(0))
-        } else {
-            queue.drain_blocking(POLL_INTERVAL)
-        };
-        for event in events {
-            // Accumulate the run's token totals off the two phases that report a
-            // usage breakdown, for the heartbeat's `tokens_total`.
-            match &event {
-                RunEvent::PlanWritten { usage, .. } | RunEvent::IssueClosed { usage, .. } => {
-                    tokens.add(usage)
-                }
-                _ => {}
+}
+
+impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
+    fn on_start(&mut self) {}
+
+    fn on_event(&mut self, event: RunEvent) {
+        // Accumulate the run's token totals off the two phases that report a
+        // usage breakdown, for the heartbeat's `tokens_total`.
+        match &event {
+            RunEvent::PlanWritten { usage, .. } | RunEvent::IssueClosed { usage, .. } => {
+                self.tokens.add(usage)
             }
-            // A freshly written plan reseeds the poller baseline so its initial state
-            // is not mistaken for a burst of transitions (#96).
-            if let RunEvent::PlanWritten { steps, .. } = &event {
-                poller.reset_from_written(steps);
-            }
-            // Fold first so the adapter events that carry issue `0` resolve to the
-            // active issue when mapped.
-            state.apply(event.clone());
-            if let Some(cloudevent) = runevent_to_cloudevent(&event, &ctx, &state) {
-                deliver(&transport, &cloudevent, &warned, RETRY_BASE_BACKOFF);
-            }
+            _ => {}
         }
+        // A freshly written plan reseeds the poller baseline so its initial state
+        // is not mistaken for a burst of transitions (#96).
+        if let RunEvent::PlanWritten { steps, .. } = &event {
+            self.poller.reset_from_written(steps);
+        }
+        // Fold first so the adapter events that carry issue `0` resolve to the
+        // active issue when mapped.
+        self.state.apply(event.clone());
+        if let Some(cloudevent) = runevent_to_cloudevent(&event, &self.ctx, &self.state) {
+            deliver(&self.transport, &cloudevent, &self.warned, RETRY_BASE_BACKOFF);
+        }
+    }
+
+    fn on_tick(&mut self, _changed: bool) {
         // The plan-step poll rides the same tick as the heartbeat: cheap when the
         // plan is unchanged (an mtime stat), emitting only on a checkbox transition.
-        poller.poll(&transport, &ctx, &state, &plan_path, &warned);
+        self.poller
+            .poll(&self.transport, &self.ctx, &self.state, &self.plan_path, &self.warned);
         // The heartbeat fires on its own 30s timer, independent of event arrival —
         // so it keeps beating through a silent usage-limit sleep (`phase: sleeping`)
         // and a consumer never mistakes a long pause for a dead run.
-        if last_beat.elapsed() >= HEARTBEAT_INTERVAL {
-            let beat = heartbeat(&ctx, &state, tokens, start.elapsed().as_secs());
-            deliver(&transport, &beat, &warned, RETRY_BASE_BACKOFF);
-            last_beat = Instant::now();
-        }
-        if stopping {
-            break;
+        if self.last_beat.elapsed() >= HEARTBEAT_INTERVAL {
+            let beat = heartbeat(
+                &self.ctx,
+                &self.state,
+                self.tokens,
+                self.start.elapsed().as_secs(),
+            );
+            deliver(&self.transport, &beat, &self.warned, RETRY_BASE_BACKOFF);
+            self.last_beat = Instant::now();
         }
     }
+
+    fn on_finish(&mut self) {}
 }
 
 /// Deliver one envelope through the transport with the at-most-once retry policy
@@ -231,61 +226,37 @@ fn warn_dropped(warned: &AtomicBool) -> bool {
     true
 }
 
-/// A handle to the running sink: the shared ring, its shutdown flag, and the
-/// worker thread. [`shutdown`](Self::shutdown) drains-and-joins under a bounded
-/// timeout so a wedged endpoint never holds the process open.
-pub struct EventsHandle {
-    queue: Arc<EventQueue>,
-    shutdown: Arc<AtomicBool>,
-    join: Option<JoinHandle<()>>,
+/// The sink's detach-warn hook (ADR-0024): emits the "worker did not finish"
+/// `warn!` under the sink's OWN `tracing` target so [`crate::delivery::DeliveryLayer`]'s
+/// self-target filter drops it instead of folding it into a `RunEvent::Notice` and
+/// looping it back into the ring.
+fn detach_warn() {
+    warn!(target: "ralphy_cli::events::sink", "sink worker did not finish in time — detaching");
 }
 
-impl EventsHandle {
-    /// Signal shutdown, wake the worker, and join it under the default timeout.
-    pub fn shutdown(self) {
-        self.shutdown_within(SHUTDOWN_TIMEOUT);
-    }
-
-    /// Like [`shutdown`](Self::shutdown) but with an explicit timeout (tests use a
-    /// short one). If the worker does not finish in time it is detached.
-    pub fn shutdown_within(mut self, timeout: Duration) {
-        self.shutdown.store(true, Ordering::SeqCst);
-        self.queue.wake();
-        if let Some(join) = self.join.take() {
-            let (tx, rx) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = join.join();
-                let _ = tx.send(());
-            });
-            if rx.recv_timeout(timeout).is_err() {
-                warn!(target: "ralphy_cli::events::sink", "sink worker did not finish in time — detaching");
-            }
-        }
-    }
-}
-
-/// Spawn the `"ralphy-events"` worker draining `queue` through `transport`. The
-/// returned [`EventsHandle`] holds the shutdown signal and the worker's join
-/// handle; a spawn failure leaves the installed Layer inert (the ring just fills
-/// and drops) rather than aborting the run.
+/// Spawn the `"ralphy-events"` worker draining `queue` through a
+/// [`CloudEventsEngine`] over `transport`. The returned [`WorkerHandle`] holds the
+/// shutdown signal and the worker's join handle; a spawn failure leaves the
+/// installed Layer inert (the ring just fills and drops) rather than aborting the
+/// run.
 pub fn try_start_sink<T: EventSink + Send + 'static>(
     transport: T,
     ctx: EventCtx,
     queue: Arc<EventQueue>,
     plan_path: PathBuf,
-) -> Option<EventsHandle> {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
-    let join = std::thread::Builder::new()
-        .name("ralphy-events".into())
-        .spawn(move || run_sender(transport, ctx, worker_queue, worker_shutdown, plan_path))
-        .ok()?;
-    Some(EventsHandle {
-        queue,
-        shutdown,
-        join: Some(join),
-    })
+) -> Option<WorkerHandle> {
+    let engine = CloudEventsEngine {
+        transport,
+        ctx,
+        state: RunState::default(),
+        tokens: Totals::default(),
+        start: Instant::now(),
+        last_beat: Instant::now(),
+        poller: StepPoller::default(),
+        warned: AtomicBool::new(false),
+        plan_path,
+    };
+    spawn_worker("ralphy-events", engine, queue, detach_warn)
 }
 
 #[cfg(test)]
@@ -544,13 +515,18 @@ mod tests {
         // shutdown already set: the worker drains once, POSTs, and returns inline.
         let shutdown = Arc::new(AtomicBool::new(true));
         // No plan file → the plan-step poll is a silent no-op for this test.
-        run_sender(
+        let engine = CloudEventsEngine {
             transport,
-            test_ctx(),
-            queue,
-            shutdown,
-            std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
-        );
+            ctx: test_ctx(),
+            state: RunState::default(),
+            tokens: Totals::default(),
+            start: Instant::now(),
+            last_beat: Instant::now(),
+            poller: StepPoller::default(),
+            warned: AtomicBool::new(false),
+            plan_path: std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
+        };
+        crate::delivery::run_delivery_worker(engine, queue, shutdown);
 
         let raw = rx.recv().expect("recorded request");
         server.join().ok();

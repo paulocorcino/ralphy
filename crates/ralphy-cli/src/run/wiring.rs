@@ -16,7 +16,7 @@ use tracing::warn;
 
 use crate::cli::{CliAgent, RunArgs};
 use crate::non_empty;
-use crate::{config, events, telegram, ui};
+use crate::{config, delivery, events, telegram, ui};
 
 /// The five Claude-only run knobs resolved once (flag > settings.json >
 /// hardcoded default, ADR-0010) so the executor and an optional split planner
@@ -235,7 +235,7 @@ pub(crate) fn init_tracing(
     log_file: Option<std::fs::File>,
     verbose: bool,
     notifier: Option<telegram::notifier::NotifierLayer>,
-    events: Option<events::sink::EventsLayer>,
+    events: Option<delivery::DeliveryLayer>,
 ) -> ui::PresenterHandle {
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};

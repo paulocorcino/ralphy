@@ -532,7 +532,7 @@ fn install_observability(
     let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
     let events_layer = event_sink_queue
         .as_ref()
-        .map(|q| events::sink::EventsLayer::new(q.clone()));
+        .map(|q| events::sink::new_events_layer(q.clone()));
 
     let presenter = init_tracing(log_file, args.verbose, notifier_layer, events_layer);
 
