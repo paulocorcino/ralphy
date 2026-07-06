@@ -49,8 +49,7 @@ pub use sentinel::{blocked_reason, done_sentinel, DONE_SENTINEL, PLAN_CHARTER, P
 mod assets;
 pub use assets::materialize_assets;
 
-mod program;
-pub use program::{
+pub use ralphy_proc_util::{
     find_program, home_dir, home_scoped_path, locate_program, locate_program_with, resolve_program,
 };
 
