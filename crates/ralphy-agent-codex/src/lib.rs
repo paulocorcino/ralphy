@@ -116,7 +116,6 @@ impl Agent for CodexAgent {
         let model = self.resolve_model();
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
-        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
         // Snapshotting the rollout tree around the call is Codex-specific (ADR-0008
         // D10, appeared-over-grew): a file that APPEARED is this run's session, one
         // that merely grew is a concurrent pre-existing session and is excluded.
@@ -135,6 +134,9 @@ impl Agent for CodexAgent {
             // Planning always runs at `high` effort (ADR-0004 D3).
             let cmd = build_codex_command(&model, "high", ws.repo_root(), &out_path);
             info!(model = %model, effort = "high", "planning with codex exec");
+            // Clock the budget at the spawn, not method entry, so the run_deadline
+            // clamp isn't eroded by the preceding dir/snapshot setup.
+            let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_codex(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
             let after = snapshot();
             Ok((r, (before, after)))
@@ -160,8 +162,12 @@ impl Agent for CodexAgent {
             // it through the same stop-and-report / auto-resume path as an
             // execute-time `Outcome::Limit`, rather than aborting the whole run.
             |log| {
-                ralphy_adapter_support::detect_limit(log, is_codex_limit_text, parse_codex_reset_hint)
-                    .map(|reset| PlanLimit { reset }.into())
+                ralphy_adapter_support::detect_limit(
+                    log,
+                    is_codex_limit_text,
+                    parse_codex_reset_hint,
+                )
+                .map(|reset| PlanLimit { reset }.into())
             },
         )?;
 
@@ -180,7 +186,6 @@ impl Agent for CodexAgent {
         let effort = tier_to_effort(plan.recommended_model.as_deref());
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
-        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         // Snapshot the rollout tree around the call for appeared-over-grew token
@@ -199,6 +204,9 @@ impl Agent for CodexAgent {
             let before = snapshot();
             let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
             info!(model = %model, effort, "executing with codex exec");
+            // Clock the budget at the spawn, not method entry, so the run_deadline
+            // clamp isn't eroded by the preceding dir/snapshot setup.
+            let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
             let after = snapshot();
             Ok((r, (before, after)))
@@ -220,7 +228,8 @@ impl Agent for CodexAgent {
         let committed = before_sha != after_sha;
         let out = fs::read_to_string(&out_path).unwrap_or_default();
 
-        let outcome = classify_codex_outcome(r.exited_cleanly, r.timed_out, committed, &out, &r.log);
+        let outcome =
+            classify_codex_outcome(r.exited_cleanly, r.timed_out, committed, &out, &r.log);
         info!(
             ?outcome,
             exited_cleanly = r.exited_cleanly,
@@ -246,7 +255,9 @@ mod tests {
     #[test]
     fn codex_honours_max_minutes_per_issue() {
         assert_eq!(
-            CodexAgent::new(None, PathBuf::from("/run")).budget.max_minutes_per_issue,
+            CodexAgent::new(None, PathBuf::from("/run"))
+                .budget
+                .max_minutes_per_issue,
             ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
         );
         let a = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);

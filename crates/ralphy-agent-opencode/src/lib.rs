@@ -26,9 +26,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{
-    run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg,
-};
+use ralphy_adapter_support::{run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg};
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Workspace};
 use tracing::info;
 
@@ -142,7 +140,6 @@ impl Agent for OpenCodeAgent {
     fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let log_path = self.run_dir.join("opencode.log");
-        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
 
         let run = || {
             let skills_dir = materialize_opencode_skills(ws)?;
@@ -154,6 +151,9 @@ impl Agent for OpenCodeAgent {
                 &skills_config,
             );
             info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
+            // Clock the budget at the spawn, not method entry, so the run_deadline
+            // clamp isn't eroded by the preceding dir/skills setup.
+            let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
             let stdout = r.stdout.clone();
             Ok((r, stdout))
@@ -196,7 +196,6 @@ impl Agent for OpenCodeAgent {
 
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Execution> {
         let log_path = self.run_dir.join("opencode.log");
-        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
 
@@ -210,6 +209,9 @@ impl Agent for OpenCodeAgent {
                 &skills_config,
             );
             info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
+            // Clock the budget at the spawn, not method entry, so the run_deadline
+            // clamp isn't eroded by the preceding dir/skills setup.
+            let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_opencode(cmd, ralphy_adapter_support::PROMPT_EXECUTE, timeout)?;
             let stdout = r.stdout.clone();
             Ok((r, stdout))
