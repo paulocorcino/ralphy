@@ -134,6 +134,26 @@ core.
 _Avoid_: shared runner, headless runner (ADR-0004 forbids a shared *Outcome*
 runner — this is only the plumbing), utils, helpers.
 
+**Completion signals / Outcome classifier**:
+The seam between an **adapter**'s vendor-specific end-state extraction and the one
+shared rule that maps it to a core `Outcome`. Each adapter reduces its raw session
+end-state to **completion signals** — `done`, `blocked`, `limit` (set only when the
+vendor judges it *trustworthy*), `committed`, `timed_out`, `exited_ok` (a
+vendor-normalized "ended in a state where a DONE claim is trustworthy"), `errored`
+— and the vendor-neutral **outcome classifier** applies one fixed precedence ladder
+to produce the `Outcome`: a trustworthy `limit` outranks a `done` (resume-after-reset
+beats closing a throttled session) and a `timeout`; a `done` needs only
+`done && exited_ok && !errored` — **never** a fresh `committed`, because
+protocol-completion and flake-repair hand-backs legitimately finish with no commit
+(the plan lives in gitignored `.ralphy/plan.md`). `committed` is a *progress* signal
+feeding the Claude headless no-commit **streak**, not a gate on **green**. This
+*narrows* — does not reopen — ADR-0004: raw→signal extraction (including limit
+trustworthiness and exit normalization) stays per-adapter; only the signal→`Outcome`
+ordering is shared (ADR-0023). Claude is the reference implementation; the behavior
+change lands on the Codex and OpenCode adapters.
+_Avoid_: completion protocol (that is the sentinel parser in **adapter support**),
+classify (the bare function name), outcome mapping.
+
 **Execution mode** (interactive vs headless):
 How an adapter drives its CLI — an adapter/billing concern, **never** the core's.
 For Claude Code, interactive (over a PTY) bills against the subscription, while
