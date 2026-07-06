@@ -6,19 +6,22 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged, HeadlessRun};
+use ralphy_adapter_support::{run_headless_logged, CompletionSignals, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::auth::{is_codex_limit_text, parse_codex_reset_hint};
 use crate::CodexAgent;
 
-/// Map an execution call's end state onto a core [`Outcome`] (ADR-0004 D2):
-/// the wall timeout wins (`Timeout`); a `RALPHY_BLOCKED_EXIT <reason>` sentinel is
-/// `Blocked(reason)`; a clean exit that both committed and emitted
-/// `RALPHY_DONE_EXIT` is `Done`; anything else — a non-zero exit, no new commit, or
-/// no sentinel — is `Stuck`. The HEAD-diff `committed` check is the same progress
-/// guard the Claude headless loop uses, so a `Done` claim with no commit is
-/// distrusted and downgraded to `Stuck`.
+/// Extract Codex's [`CompletionSignals`] from a call's raw end state and delegate
+/// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
+/// ladder (ADR-0023 D1/D2). This function owns only the vendor-specific extraction:
+/// the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinel parse, `exited_ok` = a
+/// clean exit, and — crucially — that a usage `limit` is only trustworthy on a
+/// non-clean exit (a genuine limit fails the process, so a clean exit *is* the
+/// "not a limit" proof; this avoids the false positive where the task merely echoed
+/// "usage limit" text from a source it read). Ordering — including that a
+/// trustworthy limit outranks both done and timeout, and that `Done` needs no
+/// commit — lives in the shared ladder, not here.
 pub(crate) fn classify_codex_outcome(
     exited_cleanly: bool,
     timed_out: bool,
@@ -26,28 +29,20 @@ pub(crate) fn classify_codex_outcome(
     out: &str,
     log: &str,
 ) -> Outcome {
-    if timed_out {
-        return Outcome::Timeout;
-    }
-    if let Some(reason) = ralphy_adapter_support::blocked_reason(out) {
-        return Outcome::Blocked(reason);
-    }
-    if exited_cleanly && committed && ralphy_adapter_support::done_sentinel(out) {
-        return Outcome::Done;
-    }
-    // A genuine usage limit makes Codex fail (non-zero or killed exit), so only a
-    // non-clean exit can be a limit. Gating on the exit avoids the false positive
-    // where the executed task merely echoed "usage limit" text from the source it
-    // read — mirrors the Claude adapter's structural (not whole-log-substring)
-    // limit detection.
-    if !exited_cleanly {
-        if let Some(reset) =
-            ralphy_adapter_support::detect_limit(log, is_codex_limit_text, parse_codex_reset_hint)
-        {
-            return Outcome::Limit(reset);
-        }
-    }
-    Outcome::Stuck
+    let limit = if !exited_cleanly {
+        ralphy_adapter_support::detect_limit(log, is_codex_limit_text, parse_codex_reset_hint)
+    } else {
+        None
+    };
+    ralphy_adapter_support::classify(CompletionSignals {
+        done: ralphy_adapter_support::done_sentinel(out),
+        blocked: ralphy_adapter_support::blocked_reason(out),
+        limit,
+        committed,
+        timed_out,
+        exited_ok: exited_cleanly,
+        errored: false,
+    })
 }
 
 impl CodexAgent {
@@ -105,12 +100,13 @@ mod tests {
     }
 
     #[test]
-    fn classify_stuck_on_no_commit() {
-        // A DONE claim with no new commit is distrusted (HEAD-diff progress guard).
+    fn classify_done_on_no_commit() {
+        // ADR-0023 D3: a commit is a progress signal, not a Done gate. A clean exit
+        // with the DONE sentinel is Done even with no new commit.
         let out = "RALPHY_DONE_EXIT\n";
         assert_eq!(
             classify_codex_outcome(true, false, false, out, ""),
-            Outcome::Stuck
+            Outcome::Done
         );
     }
 
@@ -149,6 +145,22 @@ mod tests {
         assert_eq!(
             classify_codex_outcome(false, false, false, "", log),
             Outcome::Limit(None)
+        );
+    }
+
+    #[test]
+    fn classify_limit_upgrades_timeout() {
+        // ADR-0023 D4 P3: a trustworthy limit on a timed-out run yields Limit, not
+        // Timeout — resume-after-reset is the conservative error.
+        assert_eq!(
+            classify_codex_outcome(
+                false,
+                true,
+                false,
+                "",
+                "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
+            ),
+            Outcome::Limit(Some("2026-06-09T18:00:00Z".into()))
         );
     }
 }
