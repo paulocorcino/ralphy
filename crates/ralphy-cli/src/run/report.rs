@@ -138,13 +138,6 @@ pub(crate) fn render_final_panel(
     let slug = git::project_slug(repo_root);
     let run_usage = &report.run_usage;
     let project_usage = ralphy_core::ledger::project_total(&slug);
-    let to_lite = |u: &ralphy_core::Usage| ui::UsageLite {
-        input: u.input,
-        cache_read: u.cache_read,
-        cache_creation: u.cache_creation,
-        output: u.output,
-        model: None,
-    };
 
     // Read-time USD (ADR-0008 D8), priced per model and summed. The run total
     // prices `report.run_usage_by_model` (the runner's per-model split); the
@@ -174,8 +167,16 @@ pub(crate) fn render_final_panel(
         branch_mode: panel_mode,
         dry_run,
         undo_tag: report.undo_tag,
-        run_breakdown: to_lite(run_usage),
-        project_breakdown: to_lite(&project_usage),
+        // The footer meter reads only the four numeric fields; clear `model`
+        // (USD is priced separately per model above) to keep display identical.
+        run_breakdown: ralphy_core::Usage {
+            model: None,
+            ..run_usage.clone()
+        },
+        project_breakdown: ralphy_core::Usage {
+            model: None,
+            ..project_usage.clone()
+        },
         project_id: slug,
         run_usd,
         project_usd,

@@ -74,23 +74,8 @@ pub enum SkipKind {
     VerifyFailed,
 }
 
-/// A normalized token-usage breakdown carried on a [`RunEvent`] for the live UI:
-/// the four numeric fields the compact meter renders (`↑ input · ⚡ cache-read ·
-/// ❄ cache-write · ↓ output`) plus the `model` the read-time USD prices on (D8).
-/// Mirrors `ralphy_core::Usage` but lives in the CLI so the decoder owns it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct UsageLite {
-    pub input: u64,
-    pub cache_read: u64,
-    pub cache_creation: u64,
-    pub output: u64,
-    pub model: Option<String>,
-}
-
-impl UsageLite {
-    /// The flat token total across the four numeric fields — drives the
-    /// "omit the meter when zero" guard, mirroring `Usage::total`.
-    pub fn total(&self) -> u64 {
-        self.input + self.cache_read + self.cache_creation + self.output
-    }
-}
+/// A normalized token-usage breakdown carried on a [`RunEvent`] for the live UI.
+/// Single source of truth is [`ralphy_core::Usage`] (same four numeric fields +
+/// priced `model`, ADR-0008 D4); the alias keeps the CLI-local import path so the
+/// decoder and UI keep referring to it as `UsageLite`.
+pub type UsageLite = ralphy_core::Usage;

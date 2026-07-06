@@ -982,3 +982,12 @@ fn render_totals_panel_plain_no_ansi_and_stop_reason_present() {
     assert!(all.contains("1 blocked"), "blocked count preserved: {all}");
     assert!(all.contains("2 skipped"), "skipped count preserved: {all}");
 }
+
+/// `UsageLite` is a bare alias of `ralphy_core::Usage`, not a mirror struct: a
+/// `core::Usage` binds into a `UsageLite` slot with no conversion. Fails to
+/// compile (type mismatch) if the mirror struct is ever reintroduced.
+#[test]
+fn usage_lite_is_alias_of_core_usage() {
+    let u: UsageLite = ralphy_core::Usage::default();
+    assert_eq!(u.total(), 0);
+}

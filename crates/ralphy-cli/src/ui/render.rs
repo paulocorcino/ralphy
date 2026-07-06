@@ -545,17 +545,10 @@ pub(crate) struct LineExtra {
 }
 
 /// Price one phase's [`UsageLite`] at read time, or `None` when its model is absent
-/// or unpriced. Bridges to the core `Usage` the [`PriceTable`] prices on.
+/// or unpriced. `UsageLite` aliases the core `Usage` the [`PriceTable`] prices on.
 fn price_lite(pt: &PriceTable, u: &UsageLite) -> Option<f64> {
     let model = u.model.as_deref().filter(|m| !m.is_empty())?;
-    let usage = ralphy_core::Usage {
-        input: u.input,
-        output: u.output,
-        cache_read: u.cache_read,
-        cache_creation: u.cache_creation,
-        model: u.model.clone(),
-    };
-    pt.cost_usd(model, &usage)
+    pt.cost_usd(model, u)
 }
 
 /// Build a [`Meter`] for an issue line from its planning usage (stashed, may be
