@@ -1,9 +1,32 @@
 use super::*;
+use crate::delivery::run_delivery_worker;
 use crate::runstate::UsageLite;
 use anyhow::{bail, Result};
 use serde_json::json;
-use std::sync::atomic::AtomicI64;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Mutex;
+
+/// Drive a [`TelegramEngine`] over the shared worker loop inline (or on a spawned
+/// thread), the test seam replacing the old free `run_worker`: build the engine
+/// from the same inputs and hand it to [`run_delivery_worker`].
+fn drive_worker<T: Transport>(
+    client: BotClient<T>,
+    chat_id: i64,
+    state: RunState,
+    queue: Arc<EventQueue>,
+    shutdown: Arc<AtomicBool>,
+) {
+    let engine = TelegramEngine {
+        client,
+        chat_id,
+        state,
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        prev_sleeping: false,
+    };
+    run_delivery_worker(engine, queue, shutdown);
+}
 
 /// Live, opt-in demo that the notifier updates ONE message in place: it sends a
 /// card then edits it repeatedly with visibly-changing content (issues
@@ -485,7 +508,7 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || run_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
 
     shutdown.store(true, Ordering::SeqCst);
     queue.wake();
@@ -545,7 +568,7 @@ fn worker_pushes_on_sleep_enter_and_resume() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || run_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
 
     // Enter a sleep, then wait for the worker to fold it and buzz the phone.
     queue.push(RunEvent::SleepStarted {
@@ -610,7 +633,7 @@ fn worker_fires_both_pushes_when_sleep_events_co_batch() {
     });
     queue.push(RunEvent::SleepEnded);
 
-    run_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+    drive_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
 
     let calls = calls.lock().unwrap();
     let texts = send_texts(&calls);
@@ -643,7 +666,7 @@ fn worker_swallows_edit_error_and_finishes_cleanly() {
         outcome: "Stuck".into(),
     });
 
-    run_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+    drive_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
 
     let calls = calls.lock().unwrap();
     let m = methods(&calls);
@@ -666,7 +689,7 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(true));
 
-    run_worker(client, 7, RunState::new("idle", 1), queue, shutdown);
+    drive_worker(client, 7, RunState::new("idle", 1), queue, shutdown);
 
     let calls = calls.lock().unwrap();
     let m = methods(&calls);
@@ -701,45 +724,4 @@ fn try_start_notifier_returns_none_on_get_me_error() {
     let queue = Arc::new(EventQueue::new());
     let handle = try_start_notifier(client, 1, RunState::new("t", 0), queue);
     assert!(handle.is_none());
-}
-
-#[test]
-fn shutdown_returns_promptly_when_transport_blocks() {
-    struct BlockingTransport;
-    impl Transport for BlockingTransport {
-        fn get(&self, _method: &str) -> Result<Value> {
-            Ok(json!({ "ok": true, "result": {} }))
-        }
-        fn post(&self, _method: &str, _body: Value) -> Result<Value> {
-            // Wedge the worker in its first network call.
-            std::thread::sleep(Duration::from_secs(30));
-            Ok(json!({ "ok": true, "result": {} }))
-        }
-    }
-    let client = BotClient::new(BlockingTransport);
-    let queue = Arc::new(EventQueue::new());
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
-    let join = std::thread::spawn(move || {
-        run_worker(
-            client,
-            1,
-            RunState::new("t", 0),
-            worker_queue,
-            worker_shutdown,
-        )
-    });
-    let handle = NotifierHandle {
-        queue,
-        shutdown,
-        join: Some(join),
-    };
-    let start = Instant::now();
-    handle.shutdown_within(Duration::from_millis(300));
-    assert!(
-        start.elapsed() < Duration::from_secs(5),
-        "shutdown did not return promptly: {:?}",
-        start.elapsed()
-    );
 }

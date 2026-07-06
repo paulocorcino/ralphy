@@ -506,7 +506,7 @@ fn install_observability(
     let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
     let notifier_layer = event_queue
         .as_ref()
-        .map(|q| telegram::notifier::NotifierLayer::new(q.clone()));
+        .map(|q| telegram::notifier::new_notifier_layer(q.clone()));
 
     // The CloudEvents sink (ADR-0019): active only when this repo has an
     // `events.url` in the global store (`~/.ralphy/events.toml`) — an absent entry

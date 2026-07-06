@@ -1,35 +1,31 @@
-//! The run-time Telegram notifier (ADR-0007 D1, D3, D4, D6, D7).
+//! The run-time Telegram notifier (ADR-0007 D1, D3, D4, D6, D7; ADR-0024).
 //!
-//! A [`NotifierLayer`] installed in `main.rs` translates each `tracing` event into
-//! a [`RunEvent`] and pushes it onto a bounded, drop-oldest [`EventQueue`]. A
-//! single background worker ([`run_worker`]) owns the card's `message_id`, folds
-//! the drained events into a [`RunState`], and edits the one card in place through
-//! the lifecycle — sending a push at run start and at the final outcome. All HTTP
-//! goes through the injectable [`BotClient`]/[`Transport`] of `client.rs`, so every
-//! mechanical claim here is unit-testable behind a fake transport; only the live
-//! network round-trip is review-only.
+//! [`new_notifier_layer`] installs a [`DeliveryLayer`] that translates each `tracing`
+//! event into a [`RunEvent`] and pushes it onto the shared bounded, drop-oldest
+//! [`EventQueue`]. The notifier is a [`TelegramEngine`] fold over the shared
+//! [`crate::delivery`] worker: it owns the card's `message_id`, folds the drained
+//! events into a [`RunState`], and edits the one card in place through the lifecycle
+//! — buzzing only on a usage-limit sleep/resume. All HTTP goes through the injectable
+//! [`BotClient`]/[`Transport`] of `client.rs`, so every mechanical claim here is
+//! unit-testable behind a fake transport; only the live network round-trip is
+//! review-only.
 //!
 //! The Layer never blocks the logging thread on the network: it only enqueues. The
-//! worker swallows per-call transport errors (a stalled network must never abort or
+//! engine swallows per-call transport errors (a stalled network must never abort or
 //! block the run), and the queue drops the oldest event under back-pressure.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tracing::{warn, Event, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
+use tracing::warn;
 
 use chrono::Local;
 
 use super::client::{BotClient, Transport};
-pub use crate::delivery::EventQueue;
-use crate::runstate::{
-    event_to_runevent, EventFields, IssueEntry, IssueStatus, RunEvent, RunState, SleepState,
-};
+pub use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
+use crate::delivery::{spawn_worker, DeliveryEngine, DeliveryLayer, WorkerHandle};
+use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState, SleepState};
 
 /// Telegram's hard per-message character limit.
 const TELEGRAM_LIMIT: usize = 4096;
@@ -38,16 +34,8 @@ const TELEGRAM_LIMIT: usize = 4096;
 /// rather than one line per issue (ADR-0007 D6).
 const FULL_LIST_MAX: usize = 30;
 
-/// How often the worker re-polls the queue (so it notices shutdown promptly even
-/// if a notify is lost), distinct from the card refresh cadence below.
-const POLL_INTERVAL: Duration = Duration::from_millis(250);
-
 /// The throttled card-refresh cadence during long silent phases (ADR-0007 D4).
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
-
-/// How long [`NotifierHandle::shutdown`] waits for the worker before detaching, so
-/// a wedged network never holds the process open (ADR-0007 D4).
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 // ---------------------------------------------------------------------------
 // Rendering (pure over &RunState)
@@ -295,87 +283,60 @@ pub fn derive_title(
 /// runtime `warn!`s never feed back into the Layer and loop (ADR-0007 decision).
 const SELF_TARGET_MARKER: &str = "telegram::notifier";
 
-/// A `tracing` Layer that enqueues each consumed event as a [`RunEvent`]. It does
-/// no I/O on the logging thread — only `event_to_runevent` + a ring push.
-pub struct NotifierLayer {
-    queue: Arc<EventQueue>,
-}
-
-impl NotifierLayer {
-    /// Wrap the shared event queue the worker drains.
-    pub fn new(queue: Arc<EventQueue>) -> Self {
-        NotifierLayer { queue }
-    }
-}
-
-impl<S: Subscriber> Layer<S> for NotifierLayer {
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        let target = event.metadata().target();
-        // Ignore the notifier's own events so a runtime warn! cannot loop back in.
-        if target.contains(SELF_TARGET_MARKER) {
-            return;
-        }
-        let mut fields = EventFields {
-            level: *event.metadata().level(),
-            ..Default::default()
-        };
-        event.record(&mut fields);
-        if let Some(run_event) = event_to_runevent(target, &fields.message, &fields) {
-            self.queue.push(run_event);
-        }
-    }
+/// The notifier's `tracing` Layer: a [`DeliveryLayer`] over the shared ring, tagged
+/// with the notifier's own target so a runtime `warn!` never feeds back into the ring.
+pub fn new_notifier_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
+    DeliveryLayer::new(queue, SELF_TARGET_MARKER)
 }
 
 // ---------------------------------------------------------------------------
-// The worker
+// The engine (ADR-0007 D4, ADR-0024)
 // ---------------------------------------------------------------------------
 
-/// The background worker (ADR-0007 D4): send the card once, fold each drained event,
-/// edit the one owned `message_id` on change (with a throttled ~60s refresh), and on
-/// shutdown render the terminal card with its footer. The card is a single
-/// consolidated component edited in place — no start/final pushes — though a
-/// usage-limit sleep/resume still buzzes via its own push. Every per-call transport
+/// The Telegram sink fold (ADR-0007 D4, ADR-0024): send the card once (`on_start`),
+/// fold each drained event and buzz on a usage-limit sleep/resume edge (`on_event`),
+/// edit the one owned `message_id` on change with a throttled ~60s refresh
+/// (`on_tick`), and grow the terminal `🏁` footer on the way out (`on_finish`). The
+/// card is a single consolidated component edited in place — no start/final pushes —
+/// though a sleep/resume still buzzes via its own push. Every per-call transport
 /// error is swallowed (`warn!`ed) so a stalled network never aborts or blocks the run.
-pub fn run_worker<T: Transport>(
+struct TelegramEngine<T: Transport> {
     client: BotClient<T>,
     chat_id: i64,
-    mut state: RunState,
-    queue: Arc<EventQueue>,
-    shutdown: Arc<AtomicBool>,
-) {
-    // Initial card: capture its message_id so every later edit targets it, and
-    // remember its rendered text so the idle refresh can skip a no-op edit.
-    let initial_card = render_card(&state, now_epoch());
-    let message_id = match client.send_message(chat_id, &initial_card) {
-        Ok(v) => v.get("message_id").and_then(Value::as_i64),
-        Err(e) => {
-            warn!("telegram: initial card failed: {e}");
-            None
-        }
-    };
-    // The last card text actually pushed to Telegram. The idle ~60s refresh re-runs
-    // `should_edit` on the time floor even when nothing changed; editing with an
-    // identical body makes the Bot API reject it ("message is not modified"), so we
-    // compare against this and only edit when the render genuinely differs.
-    let mut last_card = initial_card;
-    // No separate start/final pushes: the card is one consolidated component edited
-    // in place (the operator opted to drop the buzzes). The initial `sendMessage`
-    // above already surfaces the card once; every later change is a silent edit, and
-    // the terminal `🏁` footer is the final edit below. The sleep/resume pushes are
-    // kept — a usage-limit pause is an exceptional event worth a buzz.
+    state: RunState,
+    /// The owned card's message id, captured from the initial `sendMessage`; every
+    /// later edit targets it. `None` if the initial send failed.
+    message_id: Option<i64>,
+    /// The last card text actually pushed to Telegram. The idle ~60s refresh re-runs
+    /// `should_edit` on the time floor even when nothing changed; editing with an
+    /// identical body makes the Bot API reject it ("message is not modified"), so we
+    /// compare against this and only edit when the render genuinely differs.
+    last_card: String,
+    last_edit: Instant,
+    prev_sleeping: bool,
+}
 
-    let mut last_edit = Instant::now();
-    let mut prev_sleeping = state.sleep.is_some();
-    loop {
-        let stopping = shutdown.load(Ordering::SeqCst);
-        // On shutdown, drain everything still pending (non-blocking) for a final
-        // fold; otherwise wait up to a poll interval for the next batch.
-        let events = if stopping {
-            queue.drain_blocking(Duration::from_millis(0))
-        } else {
-            queue.drain_blocking(POLL_INTERVAL)
+impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
+    fn on_start(&mut self) {
+        // Initial card: capture its message_id so every later edit targets it, and
+        // remember its rendered text so the idle refresh can skip a no-op edit.
+        let initial_card = render_card(&self.state, now_epoch());
+        self.message_id = match self.client.send_message(self.chat_id, &initial_card) {
+            Ok(v) => v.get("message_id").and_then(Value::as_i64),
+            Err(e) => {
+                warn!("telegram: initial card failed: {e}");
+                None
+            }
         };
-        let changed = !events.is_empty();
+        self.last_card = initial_card;
+        // No separate start/final pushes: the card is one consolidated component
+        // edited in place. The sleep/resume pushes are kept — a usage-limit pause is
+        // an exceptional event worth a buzz.
+        self.last_edit = Instant::now();
+        self.prev_sleeping = self.state.sleep.is_some();
+    }
+
+    fn on_event(&mut self, event: RunEvent) {
         // Detect the sleep edge per applied event, not once per drained batch: a
         // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain
         // would net to `sleep = None` and silently swallow both pushes if compared
@@ -383,53 +344,57 @@ pub fn run_worker<T: Transport>(
         // sleep and a true→false edge buzzes on resuming; comparing against the
         // folded state keeps it idempotent, so a drop under back-pressure cannot
         // double-fire.
-        for event in events {
-            state.apply(event);
-            let now_sleeping = state.sleep.is_some();
-            if now_sleeping && !prev_sleeping {
-                if let Err(e) = client.send_message(chat_id, &render_sleep_push(&state)) {
-                    warn!("telegram: sleep push failed: {e}");
-                }
-            } else if !now_sleeping && prev_sleeping {
-                if let Err(e) = client.send_message(chat_id, &render_resume_push(&state)) {
-                    warn!("telegram: resume push failed: {e}");
-                }
+        self.state.apply(event);
+        let now_sleeping = self.state.sleep.is_some();
+        if now_sleeping && !self.prev_sleeping {
+            if let Err(e) = self
+                .client
+                .send_message(self.chat_id, &render_sleep_push(&self.state))
+            {
+                warn!("telegram: sleep push failed: {e}");
             }
-            prev_sleeping = now_sleeping;
+        } else if !now_sleeping && self.prev_sleeping {
+            if let Err(e) = self
+                .client
+                .send_message(self.chat_id, &render_resume_push(&self.state))
+            {
+                warn!("telegram: resume push failed: {e}");
+            }
         }
+        self.prev_sleeping = now_sleeping;
+    }
 
-        if let Some(mid) = message_id {
-            if should_edit(changed, last_edit.elapsed(), REFRESH_INTERVAL) {
-                let card = render_card(&state, now_epoch());
+    fn on_tick(&mut self, changed: bool) {
+        if let Some(mid) = self.message_id {
+            if should_edit(changed, self.last_edit.elapsed(), REFRESH_INTERVAL) {
+                let card = render_card(&self.state, now_epoch());
                 // Skip the round-trip when the body is unchanged: Telegram rejects an
                 // identical edit, which would otherwise warn! once per idle refresh.
-                if card != last_card {
-                    match client.edit_message_text(chat_id, mid, &card) {
+                if card != self.last_card {
+                    match self.client.edit_message_text(self.chat_id, mid, &card) {
                         // Only record the card as shown on success, so a transient
                         // failure is retried on the next refresh rather than masked.
-                        Ok(_) => last_card = card,
+                        Ok(_) => self.last_card = card,
                         Err(e) => warn!("telegram: edit failed: {e}"),
                     }
                 }
-                last_edit = Instant::now();
+                self.last_edit = Instant::now();
             }
-        }
-
-        if stopping {
-            break;
         }
     }
 
-    // Terminal state: mark the run finished so the card grows its `🏁` footer, then a
-    // final in-place edit. No final push — the footer lands silently on the card.
-    // Skip the edit when the terminal render matches what's already shown, for the
-    // same "message is not modified" reason as the idle refresh above.
-    state.finished = true;
-    if let Some(mid) = message_id {
-        let card = render_card(&state, now_epoch());
-        if card != last_card {
-            if let Err(e) = client.edit_message_text(chat_id, mid, &card) {
-                warn!("telegram: final edit failed: {e}");
+    fn on_finish(&mut self) {
+        // Terminal state: mark the run finished so the card grows its `🏁` footer,
+        // then a final in-place edit. No final push — the footer lands silently on the
+        // card. Skip the edit when the terminal render matches what's already shown,
+        // for the same "message is not modified" reason as the idle refresh above.
+        self.state.finished = true;
+        if let Some(mid) = self.message_id {
+            let card = render_card(&self.state, now_epoch());
+            if card != self.last_card {
+                if let Err(e) = self.client.edit_message_text(self.chat_id, mid, &card) {
+                    warn!("telegram: final edit failed: {e}");
+                }
             }
         }
     }
@@ -457,69 +422,39 @@ pub fn should_notify(configured: bool, no_telegram: bool, dry_run: bool) -> bool
     configured && !no_telegram && !dry_run
 }
 
+/// The notifier's detach-warn hook (ADR-0024): emits the "worker did not finish"
+/// `warn!` under the notifier's OWN `tracing` module target (default target =
+/// `ralphy_cli::telegram::notifier`, which contains [`SELF_TARGET_MARKER`]) so
+/// [`DeliveryLayer`]'s self-target filter drops it instead of folding it into a
+/// `RunEvent::Notice` and looping it back into the ring.
+fn detach_warn() {
+    warn!("telegram: notifier worker did not finish in time — detaching");
+}
+
 /// Confirm the bot with `getMe` and, on success, spawn the worker; on failure emit
 /// a single `warn!` and return `None` (the run proceeds without notifications —
-/// ADR-0007 D7). The returned [`NotifierHandle`] holds the shutdown signal and the
+/// ADR-0007 D7). The returned [`WorkerHandle`] holds the shutdown signal and the
 /// worker's join handle.
 pub fn try_start_notifier<T: Transport + Send + 'static>(
     client: BotClient<T>,
     chat_id: i64,
     state: RunState,
     queue: Arc<EventQueue>,
-) -> Option<NotifierHandle> {
+) -> Option<WorkerHandle> {
     if let Err(e) = client.get_me() {
         warn!("Telegram on but getMe failed — continuing without notifications: {e}");
         return None;
     }
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
-    let join = std::thread::Builder::new()
-        .name("ralphy-telegram".into())
-        .spawn(move || run_worker(client, chat_id, state, worker_queue, worker_shutdown))
-        .ok()?;
-    Some(NotifierHandle {
-        queue,
-        shutdown,
-        join: Some(join),
-    })
-}
-
-/// A handle to the running notifier: the shared event queue, its shutdown flag,
-/// and the worker thread.
-pub struct NotifierHandle {
-    queue: Arc<EventQueue>,
-    shutdown: Arc<AtomicBool>,
-    join: Option<JoinHandle<()>>,
-}
-
-impl NotifierHandle {
-    /// Signal shutdown, wake the worker, and join it under the default bounded
-    /// timeout so a wedged network never holds the process open.
-    pub fn shutdown(self) {
-        self.shutdown_within(SHUTDOWN_TIMEOUT);
-    }
-
-    /// Like [`shutdown`](Self::shutdown) but with an explicit timeout (tests use a
-    /// short one). If the worker does not finish in time it is detached.
-    pub fn shutdown_within(mut self, timeout: Duration) {
-        self.shutdown.store(true, Ordering::SeqCst);
-        // Wake the worker if it is parked waiting for events, so it observes the
-        // shutdown flag at once rather than after the next poll.
-        self.queue.wake();
-        if let Some(join) = self.join.take() {
-            // Join on a helper thread and bound the wait, so a worker wedged in a
-            // blocking network call can never hold the process open.
-            let (tx, rx) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = join.join();
-                let _ = tx.send(());
-            });
-            if rx.recv_timeout(timeout).is_err() {
-                warn!("telegram: notifier worker did not finish in time — detaching");
-            }
-        }
-    }
+    let engine = TelegramEngine {
+        client,
+        chat_id,
+        state,
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        prev_sleeping: false,
+    };
+    spawn_worker("ralphy-telegram", engine, queue, detach_warn)
 }
 
 #[cfg(test)]

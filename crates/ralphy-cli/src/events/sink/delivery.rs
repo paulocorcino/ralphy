@@ -174,9 +174,9 @@ impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
 /// config error) immediately, and drop after exhaustion. Any drop emits at most one
 /// `warn!` per run via `warned`. Returns the number of attempts made (a test seam).
 ///
-/// The `warn!` target embeds the sink's own module so the [`super::EventsLayer`]
-/// filters it out of the ring — the drop notice reaches `ralphy.log` without
-/// feeding back into the sink and looping.
+/// The `warn!` target embeds the sink's own module so the sink's
+/// [`crate::delivery::DeliveryLayer`] filters it out of the ring — the drop notice
+/// reaches `ralphy.log` without feeding back into the sink and looping.
 pub(super) fn deliver<T: EventSink>(
     transport: &T,
     cloudevent: &Value,
