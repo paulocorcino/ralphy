@@ -60,15 +60,32 @@ pub fn run(args: ConfigArgs) -> Result<()> {
     }
 }
 
-/// Human-readable list of every supported `config` key, reused both in
-/// `--help`-style docs and in the unknown-key error so the two never drift. The
-/// model/effort/budget knobs are Claude-only in the current wiring (ADR-0010).
-pub const SUPPORTED_KEYS_HELP: &str = "supported keys: \
-opencode.model, base_branch, branch_mode, queue.assignee, verify.command, \
-verify.require_verify_gate, \
-events.url, events.token, \
-claude.plan_model, claude.plan_effort, claude.default_exec_model, \
-claude.exec_effort, claude.max_minutes_per_issue \
+/// The single source of truth for every supported `config` key. `help`,
+/// validation (`require_known_key`), and the `set`/`unset`/`get` handlers all
+/// derive their key set from this registry so they never drift (a registry key
+/// lacking a handler arm hits `unreachable!()`, caught by the coverage test).
+/// Order matches the `supported_keys_help()` rendering and every `set`/`unset`/
+/// `get` arm.
+const SUPPORTED_KEYS: &[&str] = &[
+    "opencode.model",
+    "base_branch",
+    "branch_mode",
+    "queue.assignee",
+    "verify.command",
+    "verify.require_verify_gate",
+    "events.url",
+    "events.token",
+    "claude.plan_model",
+    "claude.plan_effort",
+    "claude.default_exec_model",
+    "claude.exec_effort",
+    "claude.max_minutes_per_issue",
+];
+
+/// The trailing parenthetical the key list carries in `--help`-style docs and the
+/// unknown-key error. Kept beside the registry so `supported_keys_help()` is the
+/// one place the two are joined.
+const SUPPORTED_KEYS_NOTE: &str = "\
 (events.url/events.token configure the CloudEvents sink and are stored per repo \
 in the global ~/.ralphy/events.toml, never in settings.json, ADR-0019; \
 verify.command is the per-repo fallback verify gate, ADR-0011; \
@@ -77,22 +94,21 @@ instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47))";
 
+/// Human-readable list of every supported `config` key, derived from
+/// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
+/// unknown-key error and the help notes.
+fn supported_keys_help() -> String {
+    format!(
+        "supported keys: {} {SUPPORTED_KEYS_NOTE}",
+        SUPPORTED_KEYS.join(", ")
+    )
+}
+
 fn require_known_key(key: &str) -> Result<()> {
-    match key {
-        "opencode.model"
-        | "base_branch"
-        | "branch_mode"
-        | "queue.assignee"
-        | "verify.command"
-        | "verify.require_verify_gate"
-        | "events.url"
-        | "events.token"
-        | "claude.plan_model"
-        | "claude.plan_effort"
-        | "claude.default_exec_model"
-        | "claude.exec_effort"
-        | "claude.max_minutes_per_issue" => Ok(()),
-        other => bail!("unknown config key '{other}'; {SUPPORTED_KEYS_HELP}"),
+    if SUPPORTED_KEYS.contains(&key) {
+        Ok(())
+    } else {
+        bail!("unknown config key '{key}'; {}", supported_keys_help())
     }
 }
 
@@ -594,7 +610,7 @@ mod tests {
 
     #[test]
     fn help_notes_claude_only() {
-        assert!(SUPPORTED_KEYS_HELP.contains("Claude-only today"));
+        assert!(supported_keys_help().contains("Claude-only today"));
     }
 
     #[test]
@@ -614,13 +630,52 @@ mod tests {
 
     #[test]
     fn help_lists_verify_command() {
-        assert!(SUPPORTED_KEYS_HELP.contains("verify.command"));
+        assert!(supported_keys_help().contains("verify.command"));
     }
 
     #[test]
     fn help_lists_events_keys() {
-        assert!(SUPPORTED_KEYS_HELP.contains("events.url"));
-        assert!(SUPPORTED_KEYS_HELP.contains("events.token"));
+        assert!(supported_keys_help().contains("events.url"));
+        assert!(supported_keys_help().contains("events.token"));
+    }
+
+    /// Every registry key is covered by validation, help, and all three
+    /// `set`/`unset`/`get` handlers. A key added to `SUPPORTED_KEYS` without its
+    /// typed handler arm hits `unreachable!()` on `set`/`unset` → panics here.
+    #[test]
+    fn every_registry_key_is_handled_by_all_subcommands() {
+        // `events.*` keys write the process-global store — serialize with the
+        // events-store tests and point it at a temp dir.
+        let _g = crate::events::config::ENV_LOCK.lock().unwrap();
+        let (ws, dir) = tmp_ws("registry-coverage");
+        let store_dir = dir.join("store");
+        std::env::set_var("RALPHY_EVENTS_DIR", &store_dir);
+
+        // A type-valid sample value per key (defaults to "x").
+        let sample = |key: &str| -> &str {
+            match key {
+                "branch_mode" => "current",
+                "verify.require_verify_gate" => "true",
+                "claude.max_minutes_per_issue" => "45",
+                _ => "x",
+            }
+        };
+
+        for k in SUPPORTED_KEYS {
+            assert!(require_known_key(k).is_ok(), "{k} not accepted by validation");
+            assert!(
+                supported_keys_help().contains(k),
+                "{k} missing from help listing"
+            );
+            set(&ws, k, sample(k)).unwrap_or_else(|e| panic!("set {k}: {e}"));
+        }
+        get(&ws).unwrap();
+        for k in SUPPORTED_KEYS {
+            unset(&ws, k).unwrap_or_else(|e| panic!("unset {k}: {e}"));
+        }
+
+        std::env::remove_var("RALPHY_EVENTS_DIR");
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
