@@ -1,0 +1,7 @@
+[package]
+name = "ralphy-proc-util"
+version = "0.1.0-rc10"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Leaf crate for Ralphy process/path resolution: PATH/PATHEXT program search and ~/.local/bin fallback, shared below core and the adapters."
