@@ -216,27 +216,31 @@ pub fn create_issue(
     labels: &[String],
     milestone: Option<&str>,
 ) -> Result<u64> {
-    let out = gh_stdin(&format!("gh issue create ({title})"), body.as_bytes(), || {
-        let mut args: Vec<String> = vec![
-            "issue".into(),
-            "create".into(),
-            "--title".into(),
-            title.into(),
-            "--body-file".into(),
-            "-".into(),
-        ];
-        for label in labels {
-            args.push("--label".into());
-            args.push(label.clone());
-        }
-        if let Some(ms) = milestone {
-            args.push("--milestone".into());
-            args.push(ms.to_string());
-        }
-        let mut c = gh(repo_root);
-        c.args(&args);
-        c
-    })?;
+    let out = gh_stdin(
+        &format!("gh issue create ({title})"),
+        body.as_bytes(),
+        || {
+            let mut args: Vec<String> = vec![
+                "issue".into(),
+                "create".into(),
+                "--title".into(),
+                title.into(),
+                "--body-file".into(),
+                "-".into(),
+            ];
+            for label in labels {
+                args.push("--label".into());
+                args.push(label.clone());
+            }
+            if let Some(ms) = milestone {
+                args.push("--milestone".into());
+                args.push(ms.to_string());
+            }
+            let mut c = gh(repo_root);
+            c.args(&args);
+            c
+        },
+    )?;
     parse_issue_url(&String::from_utf8_lossy(&out.stdout))
 }
 

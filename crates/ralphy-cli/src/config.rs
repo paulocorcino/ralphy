@@ -662,7 +662,10 @@ mod tests {
         };
 
         for k in SUPPORTED_KEYS {
-            assert!(require_known_key(k).is_ok(), "{k} not accepted by validation");
+            assert!(
+                require_known_key(k).is_ok(),
+                "{k} not accepted by validation"
+            );
             assert!(
                 supported_keys_help().contains(k),
                 "{k} missing from help listing"
