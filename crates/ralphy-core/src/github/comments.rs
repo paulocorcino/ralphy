@@ -2,11 +2,10 @@
 //! comments on GitHub issues via the `gh` CLI.
 
 use std::path::Path;
-use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
-use crate::github::client::{gh, gh_output, is_transient_gh_failure, GH_MAX_ATTEMPTS};
+use crate::github::client::{gh, gh_output, gh_stdin};
 
 /// Post a comment on a GitHub issue via `gh issue comment <n> --body <comment>`.
 pub fn comment_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
@@ -92,43 +91,18 @@ pub fn find_marked_comment(comments: &[(u64, String)], marker: &str) -> Option<u
 /// quotes that would break Windows quoting). Mirrors [`crate::github::edit_issue_body`]'s
 /// stdin-pipe + transient-retry shape.
 pub fn edit_comment(id: u64, body: &str, repo_root: &Path) -> Result<()> {
-    use std::io::Write;
-    use std::process::Stdio;
-
     let path = format!("repos/{{owner}}/{{repo}}/issues/comments/{id}");
     let payload = serde_json::json!({ "body": body }).to_string();
-
-    let mut backoff = Duration::from_secs(1);
-    for attempt in 1..=GH_MAX_ATTEMPTS {
-        let mut child = gh(repo_root)
-            .args(["api", &path, "-X", "PATCH", "--input", "-"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let write_result = stdin.write_all(payload.as_bytes());
-        drop(stdin);
-
-        let out = child
-            .wait_with_output()
-            .context("waiting for `gh api` comment edit")?;
-
-        write_result.context("writing body to `gh` stdin")?;
-        if out.status.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
-            std::thread::sleep(backoff);
-            backoff *= 2;
-            continue;
-        }
-        bail!("`gh api` comment edit ({id}) failed: {}", stderr.trim());
-    }
-    bail!("`gh api` comment edit ({id}) exhausted {GH_MAX_ATTEMPTS} attempts");
+    gh_stdin(
+        &format!("gh api comment edit ({id})"),
+        payload.as_bytes(),
+        || {
+            let mut c = gh(repo_root);
+            c.args(["api", &path, "-X", "PATCH", "--input", "-"]);
+            c
+        },
+    )?;
+    Ok(())
 }
 
 /// Post-or-edit the single comment carrying `marker` on an issue (ADR-0017): find

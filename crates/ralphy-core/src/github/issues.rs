@@ -3,12 +3,11 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use crate::github::client::{gh, gh_output, is_transient_gh_failure, GH_MAX_ATTEMPTS};
+use crate::github::client::{gh, gh_output, gh_stdin};
 use crate::Issue;
 
 #[derive(Deserialize)]
@@ -175,47 +174,12 @@ pub fn close_issue(number: u64, comment: &str, repo_root: &Path) -> Result<()> {
 /// Edit a GitHub issue's body by sending the new content via stdin to
 /// `gh issue edit <n> --body-file -`. Mirrors `close_issue`'s spawn/error pattern.
 pub fn edit_issue_body(number: u64, body: &str, repo_root: &Path) -> Result<()> {
-    use std::io::Write;
-    use std::process::Stdio;
-
-    // Re-setting the same body is idempotent, so mirror `gh_output`'s transient
-    // retry here; the stdin pipe is why this can't route through that helper.
-    let mut backoff = Duration::from_secs(1);
-    for attempt in 1..=GH_MAX_ATTEMPTS {
-        let mut child = gh(repo_root)
-            .args(["issue", "edit", &number.to_string(), "--body-file", "-"])
-            .stdin(Stdio::piped())
-            // Capture stdout/stderr rather than inheriting them: `gh issue edit` prints
-            // the issue URL to stdout on success, which would otherwise leak a loose
-            // line into the console UI (and `out.stderr` below would be empty on error).
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-
-        // Store the write result rather than short-circuiting with `?`: dropping
-        // `child` without calling `wait` would leave a zombie process on write failure.
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let write_result = stdin.write_all(body.as_bytes());
-        drop(stdin); // close stdin (EOF) before waiting
-
-        let out = child
-            .wait_with_output()
-            .context("waiting for `gh issue edit`")?;
-
-        write_result.context("writing body to `gh` stdin")?;
-        if out.status.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
-            std::thread::sleep(backoff);
-            backoff *= 2;
-            continue;
-        }
-        bail!("`gh issue edit {number}` failed: {}", stderr.trim());
-    }
-    bail!("`gh issue edit {number}` exhausted {GH_MAX_ATTEMPTS} attempts");
+    gh_stdin(&format!("gh issue edit {number}"), body.as_bytes(), || {
+        let mut c = gh(repo_root);
+        c.args(["issue", "edit", &number.to_string(), "--body-file", "-"]);
+        c
+    })?;
+    Ok(())
 }
 
 /// Parse the issue number from a `gh issue create` success line. `gh` prints the
@@ -252,11 +216,7 @@ pub fn create_issue(
     labels: &[String],
     milestone: Option<&str>,
 ) -> Result<u64> {
-    use std::io::Write;
-    use std::process::Stdio;
-
-    let mut backoff = Duration::from_secs(1);
-    for attempt in 1..=GH_MAX_ATTEMPTS {
+    let out = gh_stdin(&format!("gh issue create ({title})"), body.as_bytes(), || {
         let mut args: Vec<String> = vec![
             "issue".into(),
             "create".into(),
@@ -273,36 +233,11 @@ pub fn create_issue(
             args.push("--milestone".into());
             args.push(ms.to_string());
         }
-
-        let mut child = gh(repo_root)
-            .args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("failed to spawn `gh` (is the GitHub CLI installed and on PATH?)")?;
-
-        let mut stdin = child.stdin.take().expect("stdin was piped");
-        let write_result = stdin.write_all(body.as_bytes());
-        drop(stdin); // close stdin (EOF) before waiting
-
-        let out = child
-            .wait_with_output()
-            .context("waiting for `gh issue create`")?;
-
-        write_result.context("writing body to `gh` stdin")?;
-        if out.status.success() {
-            return parse_issue_url(&String::from_utf8_lossy(&out.stdout));
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if attempt < GH_MAX_ATTEMPTS && is_transient_gh_failure(&stderr) {
-            std::thread::sleep(backoff);
-            backoff *= 2;
-            continue;
-        }
-        bail!("`gh issue create` ({title}) failed: {}", stderr.trim());
-    }
-    bail!("`gh issue create` ({title}) exhausted {GH_MAX_ATTEMPTS} attempts");
+        let mut c = gh(repo_root);
+        c.args(&args);
+        c
+    })?;
+    parse_issue_url(&String::from_utf8_lossy(&out.stdout))
 }
 
 /// Add a label to an issue via `gh issue edit <n> --add-label <label>`. When the
