@@ -350,6 +350,31 @@ mod tests {
     }
 
     #[test]
+    fn schedule_install_triage_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "triage", "--every", "8h"])
+            .expect("schedule install triage must parse");
+        let Command::Schedule(schedule::ScheduleCommand::Install { target, every, .. }) =
+            cli.command
+        else {
+            panic!("expected the `schedule install` subcommand");
+        };
+        assert_eq!(every, "8h");
+        assert!(matches!(target, schedule::ScheduleTarget::Triage));
+    }
+
+    #[test]
+    fn schedule_remove_all_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "schedule", "remove", "--all"])
+            .expect("schedule remove --all must parse");
+        let Command::Schedule(schedule::ScheduleCommand::Remove { target, all, .. }) = cli.command
+        else {
+            panic!("expected the `schedule remove` subcommand");
+        };
+        assert!(all);
+        assert!(target.is_none());
+    }
+
+    #[test]
     fn queue_label_is_repeatable_and_preserves_order() {
         // The resolver (`resolve_queue_labels`) treats a non-empty explicit set as
         // a full replacement; this guards the CLI seam that feeds it — multiple
