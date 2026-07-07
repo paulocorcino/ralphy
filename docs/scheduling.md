@@ -230,4 +230,7 @@ do not use the triage ramp for.
 
 A `ralphy schedule install|status|remove` subcommand that registers the timer
 natively is the planned next step; these recipes double as its per-platform
-specification.
+specification. Its command surface, correct-by-construction defaults, the
+`--with-triage` chained timer, and the repo-scoped-lock safety prerequisite are
+decided in [ADR-0026](./adr/0026-native-scheduling-command.md); GitHub Actions
+stays a recipe here, not a native `install` target.
