@@ -188,6 +188,31 @@ struct CommentBody {
     body: String,
 }
 
+/// Apply the by-category size policy to already-downloaded, non-login bytes
+/// (ADR-0025 §3.3): free-text is truncated head+tail; structured over cap is
+/// rejected as `too large` (never half a JSON); `Denied` never reaches here.
+/// Pure so the deny/truncate decision is unit-tested without network.
+fn classify_payload(class: FormatClass, bytes: Vec<u8>) -> Result<Vec<u8>, &'static str> {
+    match class {
+        FormatClass::FreeText => Ok(truncate_free_text(&bytes, TEXT_CAP)),
+        FormatClass::Structured if bytes.len() > STRUCTURED_CAP => Err("too large"),
+        FormatClass::Structured => Ok(bytes),
+        FormatClass::Denied => Err("denied format"),
+    }
+}
+
+/// Split deduped links into `(url, within_cap)` preserving order: the first
+/// [`COUNT_CAP`] are within cap, the rest are dropped as `attachment cap reached`
+/// (ADR-0025 §3.4, §5 — the cap drops the *last* in deterministic order). Pure so
+/// the cap boundary is unit-tested without network.
+fn count_capped(links: &[String]) -> Vec<(String, bool)> {
+    links
+        .iter()
+        .enumerate()
+        .map(|(i, u)| (u.clone(), i < COUNT_CAP))
+        .collect()
+}
+
 /// Download one already-host-vetted attachment through the authenticated `gh`
 /// credential (`gh api <url>`), apply the login-HTML guard and by-category
 /// truncation, and write it under `dir`. Returns the visible outcome; a `gh`
@@ -220,17 +245,13 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str) -> AttachmentOutcome {
             reason: "auth".to_string(),
         };
     }
-    let payload = match class {
-        FormatClass::FreeText => truncate_free_text(&bytes, TEXT_CAP),
-        FormatClass::Structured => {
-            if bytes.len() > STRUCTURED_CAP {
-                return AttachmentOutcome::NotFetched {
-                    reason: "too large".to_string(),
-                };
-            }
-            bytes
+    let payload = match classify_payload(class, bytes) {
+        Ok(p) => p,
+        Err(reason) => {
+            return AttachmentOutcome::NotFetched {
+                reason: reason.to_string(),
+            };
         }
-        FormatClass::Denied => unreachable!("denied handled above"),
     };
     let path = dir.join(&name);
     match std::fs::write(&path, &payload) {
@@ -280,14 +301,14 @@ pub fn fetch_triage_attachments(repo: &Path, issue_numbers: &[u64]) -> Result<Tr
             continue;
         }
         let mut entries: Vec<(String, AttachmentOutcome)> = Vec::new();
-        for (i, url) in links.iter().enumerate() {
-            let name = filename_from_url(url);
-            let outcome = if i >= COUNT_CAP {
+        for (url, within_cap) in count_capped(&links) {
+            let name = filename_from_url(&url);
+            let outcome = if within_cap {
+                fetch_one(repo, &issue_dir, &url)
+            } else {
                 AttachmentOutcome::NotFetched {
                     reason: "attachment cap reached".to_string(),
                 }
-            } else {
-                fetch_one(repo, &issue_dir, url)
             };
             entries.push((name, outcome));
         }
@@ -393,6 +414,40 @@ mod tests {
     #[test]
     fn render_manifest_empty_is_blank() {
         assert_eq!(render_manifest(1, &[]), "");
+    }
+
+    #[test]
+    fn classify_payload_structured_over_cap_is_too_large() {
+        let big = vec![b'{'; STRUCTURED_CAP + 1];
+        assert_eq!(
+            classify_payload(FormatClass::Structured, big),
+            Err("too large")
+        );
+        // Under-cap structured passes through untouched.
+        assert_eq!(
+            classify_payload(FormatClass::Structured, b"{\"ok\":true}".to_vec()),
+            Ok(b"{\"ok\":true}".to_vec())
+        );
+    }
+
+    #[test]
+    fn classify_payload_free_text_over_cap_truncates() {
+        let big = vec![b'x'; TEXT_CAP + 100];
+        let out = classify_payload(FormatClass::FreeText, big.clone()).unwrap();
+        assert!(out.len() < big.len(), "free-text over cap is truncated");
+        assert!(String::from_utf8_lossy(&out).contains("bytes elided ...]"));
+    }
+
+    #[test]
+    fn count_cap_drops_the_last_after_ten() {
+        let links: Vec<String> = (0..12).map(|i| format!("https://x/{i}")).collect();
+        let capped = count_capped(&links);
+        assert_eq!(capped.len(), 12);
+        assert!(capped[..COUNT_CAP].iter().all(|(_, w)| *w), "first 10 kept");
+        assert!(
+            capped[COUNT_CAP..].iter().all(|(_, w)| !*w),
+            "last two over cap"
+        );
     }
 
     #[test]
