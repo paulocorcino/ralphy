@@ -276,6 +276,16 @@ mod tests {
             prompt.contains("problem not found at source"),
             "'problem not found at source' bounce guidance missing:\n{prompt}"
         );
+        // ADR-0025 §6: the charter teaches the attachment manifest — fetched
+        // attachments read as first-class evidence, a needed `not fetched` bounces.
+        assert!(
+            prompt.contains("its content is FIRST-CLASS evidence"),
+            "attachment first-class-evidence phrase missing:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("A NEEDED attachment shown as `not fetched` is a BOUNCE, not a promote"),
+            "attachment not-fetched bounce phrase missing:\n{prompt}"
+        );
     }
 
     #[test]
