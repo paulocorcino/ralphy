@@ -89,7 +89,12 @@ pub fn looks_like_login_html(content_type: Option<&str>, body: &[u8]) -> bool {
     }
     let head = &body[..body.len().min(512)];
     let head = String::from_utf8_lossy(head);
-    let head = head.trim_start().to_ascii_lowercase();
+    // Strip a leading UTF-8 BOM (not whitespace, so `trim_start` misses it)
+    // before sniffing, so a BOM-prefixed login page cannot slip past.
+    let head = head
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .to_ascii_lowercase();
     head.starts_with("<!doctype html") || head.starts_with("<html")
 }
 
@@ -156,11 +161,19 @@ pub struct TriageAttachments {
 }
 
 /// The filename an attachment URL's last path segment names (query/fragment
-/// stripped), or `attachment` as a fallback.
+/// stripped), sanitized to a single safe path component. The name is
+/// attacker-controlled (it comes from a link a reporter pasted), and it reaches
+/// `fs::write(dir.join(name))` — so anything that could escape the temp dir
+/// (`..`, a `/` or `\` separator, a `C:` drive prefix) is rejected to the
+/// `attachment` fallback. This is a deny-by-default belt on the write path: even
+/// `\`-separated traversal on Windows can never escape `<tmp>/<n>/`.
 fn filename_from_url(url: &str) -> String {
     let last = url.rsplit('/').next().unwrap_or("attachment");
     let name = last.split(['?', '#']).next().unwrap_or(last);
-    if name.is_empty() {
+    // Take the final component across BOTH separators, then reject anything that
+    // is not a plain single component (`.`/`..`/empty/drive-qualified).
+    let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    if name.is_empty() || name == "." || name == ".." || name.contains(':') {
         "attachment".to_string()
     } else {
         name.to_string()
@@ -457,5 +470,33 @@ mod tests {
             "diagnose.log"
         );
         assert_eq!(filename_from_url("https://x/y/a.json?sig=abc"), "a.json");
+    }
+
+    #[test]
+    fn filename_from_url_rejects_path_traversal() {
+        // `\`-separated traversal (Windows) and drive prefixes must never yield a
+        // name that could escape the per-issue temp dir on `dir.join(name)`.
+        for url in [
+            "https://github.com/user-attachments/files/1/..\\..\\evil.log",
+            "https://github.com/user-attachments/files/1/C:\\x.log",
+        ] {
+            let name = filename_from_url(url);
+            assert!(
+                !name.contains('\\') && !name.contains('/') && !name.contains(':') && name != "..",
+                "unsafe name survived: {name}"
+            );
+        }
+        // Forward-slash traversal collapses to the final component (`evil.log`),
+        // which cannot escape the dir; `..` alone falls back.
+        assert_eq!(filename_from_url("https://x/y/../../evil.log"), "evil.log");
+        assert_eq!(filename_from_url("https://x/y/.."), "attachment");
+    }
+
+    #[test]
+    fn login_html_guard_catches_bom_prefixed_page() {
+        assert!(looks_like_login_html(
+            None,
+            "\u{feff}<!DOCTYPE html><html>".as_bytes()
+        ));
     }
 }
