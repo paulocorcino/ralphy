@@ -115,10 +115,14 @@ pub fn truncate_free_text(bytes: &[u8], cap: usize) -> Vec<u8> {
 /// manifest with its reason (ADR-0025 §6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttachmentOutcome {
-    Fetched { path: PathBuf },
+    Fetched {
+        path: PathBuf,
+    },
     /// Reasons: `denied format`, `too large`, `auth`, `download failed: <code>`,
     /// `attachment cap reached`.
-    NotFetched { reason: String },
+    NotFetched {
+        reason: String,
+    },
 }
 
 /// Render the inline `## Attachments (issue #N)` manifest block: one line per
@@ -275,13 +279,7 @@ pub fn fetch_triage_attachments(repo: &Path, issue_numbers: &[u64]) -> Result<Tr
         // attachment block rather than aborting the whole triage run.
         let Ok(out) = gh_output(&format!("gh issue view {n} --json body,comments"), || {
             let mut c = gh(repo);
-            c.args([
-                "issue",
-                "view",
-                &n.to_string(),
-                "--json",
-                "body,comments",
-            ]);
+            c.args(["issue", "view", &n.to_string(), "--json", "body,comments"]);
             c
         }) else {
             continue;
@@ -329,9 +327,8 @@ mod tests {
     fn extract_keeps_only_user_attachments_deduped_body_first() {
         let body = "See [diagnose.log](https://github.com/user-attachments/files/1/diagnose.log) \
                     and https://evil.example/x.log for details.";
-        let comments = vec![
-            "re-pasting https://github.com/user-attachments/files/1/diagnose.log".to_string(),
-        ];
+        let comments =
+            vec!["re-pasting https://github.com/user-attachments/files/1/diagnose.log".to_string()];
         let links = extract_user_attachment_links(body, &comments);
         assert_eq!(
             links,
@@ -405,7 +402,10 @@ mod tests {
         ];
         let m = render_manifest(133, &entries);
         assert!(m.contains("## Attachments (issue #133)"));
-        assert!(m.contains("report.exe → not fetched (denied format)"), "{m}");
+        assert!(
+            m.contains("report.exe → not fetched (denied format)"),
+            "{m}"
+        );
         assert!(m.contains("big.json → not fetched (too large)"), "{m}");
         assert!(m.contains("diagnose.log → "));
         assert!(m.contains("(fetched)"));

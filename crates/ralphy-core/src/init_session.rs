@@ -283,7 +283,8 @@ mod tests {
             "attachment first-class-evidence phrase missing:\n{prompt}"
         );
         assert!(
-            prompt.contains("A NEEDED attachment shown as `not fetched` is a BOUNCE, not a promote"),
+            prompt
+                .contains("A NEEDED attachment shown as `not fetched` is a BOUNCE, not a promote"),
             "attachment not-fetched bounce phrase missing:\n{prompt}"
         );
     }
