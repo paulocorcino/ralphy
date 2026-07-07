@@ -13,10 +13,11 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 use ralphy_core::{
     git, github, GhTracker, IssueTracker, TriageDraft, TriageItem, TriageRequest, TriageVerdict,
-    CONSOLIDATED_SPEC_MARKER, TRIAGE_AGENT_LABEL,
+    Workspace, CONSOLIDATED_SPEC_MARKER, TRIAGE_AGENT_LABEL,
 };
 
 use crate::init::{agent_logged_in, resolve_human_label, resolve_triage_label, Agent};
+use crate::runlock::{self, LockState};
 
 /// The canonical reporter-bounce label a `bounce` verdict swaps in.
 const NEEDS_INFO_LABEL: &str = "needs-info";
@@ -48,6 +49,59 @@ pub struct TriageArgs {
     /// schedulers). The trust act already happened at labelling time.
     #[arg(long)]
     yes: bool,
+
+    /// Skip this invocation (exit 0) when another Ralphy process (run or
+    /// triage) is already active in the repo — the anti-overlap flag scheduled
+    /// invocations pass. Without it a live lock only warns.
+    #[arg(long)]
+    if_idle: bool,
+}
+
+/// What the repo-scoped presence lock (`.ralphy/run.lock`) means for this
+/// invocation of `triage`, given `--if-idle` and the lock's inspected state.
+#[derive(Debug)]
+enum PresenceGate {
+    /// Proceed, optionally warning first.
+    Proceed { warn: Option<String> },
+    /// Exit 0 with this message instead of proceeding.
+    Defer(String),
+}
+
+/// Format an RFC 3339 timestamp as `%Y-%m-%d %H:%M:%S`, falling back to the raw
+/// string on parse failure (mirrors `run_cmd`'s formatting, run.rs L76-78).
+fn format_since(started_at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(started_at)
+        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|_| started_at.to_string())
+}
+
+/// Classify the repo-scoped presence lock into what `triage::run` should do.
+/// Pure over an injected liveness predicate so it unit-tests without a real
+/// second process (mirrors `runlock::inspect`'s own test pattern).
+fn presence_gate(path: &Path, if_idle: bool, is_alive: impl Fn(u32) -> bool) -> PresenceGate {
+    match runlock::inspect(path, is_alive) {
+        LockState::HeldAlive(info) if if_idle => PresenceGate::Defer(format!(
+            "skipped: run in progress since {}, pid {}",
+            format_since(&info.started_at),
+            info.pid
+        )),
+        LockState::HeldAlive(info) => PresenceGate::Proceed {
+            warn: Some(format!(
+                "a run is already active in this repo — proceeding anyway (pid {})",
+                info.pid
+            )),
+        },
+        LockState::Stale(info) => PresenceGate::Proceed {
+            warn: Some(format!(
+                "ignoring stale run.lock (pid {} not running)",
+                info.pid
+            )),
+        },
+        LockState::Corrupt => PresenceGate::Proceed {
+            warn: Some("ignoring unreadable run.lock".into()),
+        },
+        LockState::Free => PresenceGate::Proceed { warn: None },
+    }
 }
 
 /// The resolved label strings a triage apply swaps between, named once so the
@@ -196,6 +250,22 @@ pub fn apply_triage(
 pub fn run(args: &TriageArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
 
+    let ws = Workspace::new(&repo);
+    std::fs::create_dir_all(ws.ralphy_dir()).ok();
+    let lock_path = ws.run_lock_path();
+    match presence_gate(&lock_path, args.if_idle, runlock::pid_is_alive) {
+        PresenceGate::Defer(msg) => {
+            println!("{msg}");
+            return Ok(());
+        }
+        PresenceGate::Proceed { warn } => {
+            if let Some(w) = warn {
+                eprintln!("{w}");
+            }
+        }
+    }
+    let _lock = runlock::acquire(&lock_path)?;
+
     // The labelled subset — tens, not hundreds. `triage-agent` is a fixed
     // operational label, never remapped.
     // Triage sweeps the whole repo's queue label — never assignee-scoped (ADR-0021).
@@ -331,8 +401,82 @@ fn indent_body(body: &str) -> String {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use ralphy_core::DraftIssue;
+
+    use crate::runlock::LockInfo;
+
+    /// Hand-rolled unique temp dir (same idiom as `tmp_lock` in runlock.rs).
+    fn tmp_lock(name: &str) -> PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "ralphy-triage-lock-{}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed),
+            name
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join("run.lock")
+    }
+
+    #[test]
+    fn presence_gate_defers_when_held_alive_and_if_idle() {
+        let path = tmp_lock("defer");
+        let info = LockInfo {
+            pid: 4_000_000,
+            started_at: "2026-07-02T10:00:00-03:00".into(),
+        };
+        fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
+        match presence_gate(&path, true, |pid| pid == 4_000_000) {
+            PresenceGate::Defer(msg) => {
+                assert_eq!(
+                    msg,
+                    "skipped: run in progress since 2026-07-02 10:00:00, pid 4000000"
+                );
+            }
+            PresenceGate::Proceed { .. } => panic!("expected Defer"),
+        }
+    }
+
+    #[test]
+    fn presence_gate_warns_and_proceeds_when_held_alive() {
+        let path = tmp_lock("warn");
+        let info = LockInfo {
+            pid: 4_000_000,
+            started_at: "2026-07-02T10:00:00-03:00".into(),
+        };
+        fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
+        match presence_gate(&path, false, |_| true) {
+            PresenceGate::Proceed { warn: Some(_) } => {}
+            other => panic!("expected Proceed with a warning, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn presence_gate_takes_over_stale_lock() {
+        let path = tmp_lock("stale");
+        let info = LockInfo {
+            pid: 4_000_001,
+            started_at: "2026-07-02T10:00:00-03:00".into(),
+        };
+        fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
+        match presence_gate(&path, false, |_| false) {
+            PresenceGate::Proceed { warn: Some(_) } => {}
+            other => panic!("expected Proceed with a warning, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn presence_gate_proceeds_when_free() {
+        let path = tmp_lock("free");
+        match presence_gate(&path, false, |_| true) {
+            PresenceGate::Proceed { warn: None } => {}
+            other => panic!("expected Proceed with no warning, got {other:?}"),
+        }
+    }
 
     #[derive(Default)]
     struct RecordingTracker {
