@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::BranchMode;
 
-use crate::{config, init, install, issues, models, telegram, triage, usage};
+use crate::{config, init, install, issues, models, schedule, telegram, triage, usage};
 
 #[derive(Parser)]
 #[command(
@@ -69,6 +69,10 @@ pub(crate) enum Command {
     /// `issues show <n>` for one issue's detail (ADR-0020). `--format json` /
     /// `--fields` for machine output.
     Issues(issues::IssuesArgs),
+    /// Register / inspect / remove a native OS timer that re-invokes `ralphy
+    /// run` on a cadence (Windows Task Scheduler or cron) — ADR-0026.
+    #[command(subcommand)]
+    Schedule(schedule::ScheduleCommand),
 }
 
 #[derive(Subcommand)]
@@ -319,6 +323,30 @@ mod tests {
                 .any(|s| s.get_name() == "triage"),
             "the `triage` subcommand must be registered in the CLI"
         );
+    }
+
+    #[test]
+    fn schedule_subcommand_is_registered() {
+        use clap::CommandFactory;
+        assert!(
+            Cli::command()
+                .get_subcommands()
+                .any(|s| s.get_name() == "schedule"),
+            "the `schedule` subcommand must be registered in the CLI"
+        );
+    }
+
+    #[test]
+    fn schedule_install_run_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "run", "--every", "30m"])
+            .expect("schedule install run must parse");
+        let Command::Schedule(schedule::ScheduleCommand::Install { target, every, .. }) =
+            cli.command
+        else {
+            panic!("expected the `schedule install` subcommand");
+        };
+        assert_eq!(every, "30m");
+        assert!(matches!(target, schedule::ScheduleTarget::Run));
     }
 
     #[test]

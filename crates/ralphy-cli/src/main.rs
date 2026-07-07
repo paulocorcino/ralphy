@@ -23,6 +23,7 @@ mod pricing;
 mod run;
 mod runlock;
 mod runstate;
+mod schedule;
 mod split_agent;
 mod telegram;
 mod triage;
@@ -51,6 +52,7 @@ fn main() -> Result<()> {
         Command::Init(args) => init::run(&args),
         Command::Triage(args) => triage::run(&args),
         Command::Issues(args) => issues::issues_cmd(args),
+        Command::Schedule(cmd) => schedule::run(cmd),
     }
 }
 
