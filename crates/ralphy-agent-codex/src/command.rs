@@ -246,7 +246,10 @@ mod tests {
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        assert!(!args.iter().any(|a| a == "-i"), "no -i for empty slice: {args:?}");
+        assert!(
+            !args.iter().any(|a| a == "-i"),
+            "no -i for empty slice: {args:?}"
+        );
     }
 
     // ── recommended_tier ────────────────────────────────────────────────────

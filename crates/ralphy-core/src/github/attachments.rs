@@ -509,10 +509,7 @@ mod tests {
         assert_eq!(classify_payload(FormatClass::Image, big), Err("too large"));
         // A tiny PNG stub passes through byte-for-byte (never truncated).
         let stub = vec![0x89u8, b'P', b'N'];
-        assert_eq!(
-            classify_payload(FormatClass::Image, stub.clone()),
-            Ok(stub)
-        );
+        assert_eq!(classify_payload(FormatClass::Image, stub.clone()), Ok(stub));
     }
 
     #[test]
