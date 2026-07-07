@@ -225,15 +225,21 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         marker: CONSOLIDATED_SPEC_MARKER.to_string(),
     };
 
-    // Mechanically pre-fetch text attachments as guardrailed evidence (ADR-0025).
-    // Best-effort: only a temp-dir creation failure errors; downloads never abort.
-    let attachments = github::fetch_triage_attachments(&repo, &numbers)?;
+    // Mechanically pre-fetch text + (capability-gated) image attachments as
+    // guardrailed evidence (ADR-0025). Best-effort: only a temp-dir creation
+    // failure errors; downloads never abort.
+    let images = github::ImageCapability {
+        accepts: agent.accepts_images(),
+        adapter_name: agent.cli_name(),
+    };
+    let attachments = github::fetch_triage_attachments(&repo, &numbers, images)?;
 
     let out_path = repo.join(".ralphy").join("triage-draft.json");
     let req = TriageRequest {
         issue_numbers: &numbers,
         queue_label: &queue_label,
         attachments_manifest: &attachments.manifest,
+        image_paths: &attachments.image_paths,
     };
     let draft = triage_with_agent(
         agent,

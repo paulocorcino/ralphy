@@ -99,11 +99,19 @@ blocks. `init` accepts `--agent` like `run`, defaulting to the first logged-in C
   repo during a read-only phase and can leave it broken if the process dies. A
   neutral cwd with the repo as data is read-only-true.
 - **Embed `agents_template/skills` in the binary** (like `assets/plugin`).
-  Considered, but **download from the URL** was chosen: the dev already has an
-  authenticated `gh`, so a `git` sparse checkout (pinned to the binary's release
-  tag, `RALPHY_VERSION`) is low-friction and keeps the skills decoupled from the
-  binary. Download failure is **warn-and-continue** — these skills are for the
-  dev's own use and are not required by `ralphy run`.
+  Considered, but **download from a public repo** was chosen: a `git` sparse
+  checkout is low-friction and keeps the skills decoupled from the binary — and
+  because the source repo is public, no `gh`/token is required. The skills live in
+  a **separate public repo** (`github.com/paulocorcino/skills`, path
+  `agents_template/skills`), not in the Ralphy tree, and the fetch **follows that
+  repo's `main`** rather than pinning to a Ralphy tag: that repo has no Ralphy
+  tags/SHAs to pin to, and tracking `main` means every dev gets the latest skills.
+  The trade-off is that `init` is **not reproducible across runs** — it takes the
+  tip of `main` at fetch time (revisit with a pinned tag if reproducibility is ever
+  needed). The list shown before consent is a **static in-binary list**
+  (`INSTALLABLE_SKILLS`), so no network hit precedes the dev's `y`; it may drift
+  from the repo's actual contents. Download failure is **warn-and-continue** —
+  these skills are for the dev's own use and are not required by `ralphy run`.
 - **Publish issues directly from the agent.** Rejected in favor of
   preview-then-confirm: a misread of a legacy backlog otherwise leaves dozens of
   wrong issues on GitHub to clean up by hand.
@@ -112,7 +120,9 @@ blocks. `init` accepts `--agent` like `run`, defaulting to the first logged-in C
 
 - One new subcommand and a new `.ralphy/init-state.json` checkpoint file; no change
   to the `Agent` trait or `run`'s flow.
-- `agents_template/skills` gains a runtime consumer (the sparse-checkout download),
-  so its layout becomes a compatibility surface for `init`.
+- The skills source is an **external public repo** (`paulocorcino/skills`, path
+  `agents_template/skills`, branch `main`), not the Ralphy tree. Its top-level
+  layout is a compatibility surface for `init`'s sparse-checkout, and the static
+  `INSTALLABLE_SKILLS` list must be kept in sync with it on each release.
 - `setup-pocock` keeps working standalone (conversational); `init` is a second,
   non-interactive caller of the same templates/rules.

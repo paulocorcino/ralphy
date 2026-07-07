@@ -28,6 +28,10 @@ mod outcome;
 mod skills;
 mod tasks;
 mod usage;
+/// `codex exec -i <FILE>` attaches images to the initial prompt, so the triage
+/// session delivers fetched screenshots by argv path (ADR-0025 §4).
+pub const ACCEPTS_IMAGES: bool = true;
+
 use auth::{
     is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
 };

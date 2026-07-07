@@ -34,6 +34,10 @@ mod settings;
 mod tasks;
 mod usage;
 
+/// Claude Code reads image files at a local path via its Read tool, so the
+/// triage session reasons over a fetched screenshot directly (ADR-0025 §4).
+pub const ACCEPTS_IMAGES: bool = true;
+
 use auth::{is_claude_auth_error, is_limit_text, parse_reset_hhmm, CLAUDE_AUTH_ERROR_MSG};
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};

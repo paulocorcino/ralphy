@@ -11,9 +11,10 @@ mod references;
 mod repo;
 
 pub use attachments::{
-    classify_format, extract_user_attachment_links, fetch_triage_attachments,
+    classify_format, extract_user_attachment_links, fetch_triage_attachments, gated_image_outcome,
     looks_like_login_html, render_manifest, truncate_free_text, AttachmentOutcome, FormatClass,
-    TriageAttachments, ATTACHMENT_HOST_PREFIX, COUNT_CAP, STRUCTURED_CAP, TEXT_CAP,
+    ImageCapability, TriageAttachments, ATTACHMENT_HOST_PREFIX, COUNT_CAP, IMAGE_CAP, STRUCTURED_CAP,
+    TEXT_CAP,
 };
 pub use comments::{
     comment_issue, edit_comment, find_marked_comment, issue_comments, list_comments_with_ids,

@@ -117,6 +117,9 @@ pub struct TriageRequest<'a> {
     /// the built prompt (ADR-0025 §6); empty string when no attachments. Kept as
     /// an additive field so `build_triage_prompt`'s signature stays stable.
     pub attachments_manifest: &'a str,
+    /// Local paths of fetched image attachments, for adapters that deliver images
+    /// by argv (codex `-i`) rather than by the manifest path alone (ADR-0025 §4).
+    pub image_paths: &'a [std::path::PathBuf],
 }
 
 /// Build the triage prompt: the embedded charter followed by an `## Inputs`
@@ -286,6 +289,12 @@ mod tests {
             prompt
                 .contains("A NEEDED attachment shown as `not fetched` is a BOUNCE, not a promote"),
             "attachment not-fetched bounce phrase missing:\n{prompt}"
+        );
+        // ADR-0025 §4: the charter teaches a fetched image is first-class visual
+        // evidence to inspect and reason over.
+        assert!(
+            prompt.contains("inspect it visually and reason over what it shows"),
+            "image-evidence phrase missing:\n{prompt}"
         );
     }
 

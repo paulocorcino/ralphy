@@ -19,8 +19,8 @@ use super::render::{
 };
 use super::scaffold::write_scaffold;
 use super::skills::{
-    download_decision, install_skills_step, resolve_fetch_ref, skill_names, skills_target,
-    sparse_fetch_commands, Outcome, SKILLS_SUBTREE,
+    download_decision, install_skills_step, skill_names, skills_target, sparse_fetch_commands,
+    Outcome, SKILLS_REF, SKILLS_SUBTREE,
 };
 use super::verify::finalize;
 use super::wizard::{persist_report, InitState, Stage};
@@ -484,8 +484,8 @@ pub fn run(args: &InitArgs) -> Result<()> {
     } else {
         let names = skill_names();
         let skills_dst = repo.join(skills_target(cfg.skills_dir.as_deref()));
-        // NOTE: displayed list is from the build-time tree; downloaded set is from
-        // the pinned commit (see resolve_fetch_ref) and may differ across builds.
+        // NOTE: displayed list is the static INSTALLABLE_SKILLS; the downloaded set
+        // is whatever `main` of the skills repo holds (see SKILLS_REF) and may drift.
         print_section(
             "Agent skills",
             Some(&format!(
@@ -501,8 +501,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
         if !download_decision(&answer) {
             print_note("Skipped — no skills installed.");
         } else {
-            let version = env!("RALPHY_VERSION").to_string();
-            let fetch_ref = resolve_fetch_ref(option_env!("RALPHY_GIT_SHA"), &version);
+            let fetch_ref = SKILLS_REF.to_string();
             let subtree = SKILLS_SUBTREE.to_string();
             let fetch = |scratch: &Path| -> Result<PathBuf> {
                 for argv in sparse_fetch_commands(&fetch_ref, &subtree) {

@@ -38,7 +38,7 @@ pub fn diagnose_repo(
     let prompt = build_diagnose_prompt(repo, &out_path);
 
     info!(%model, effort, "diagnosing repo with codex exec");
-    let cmd = build_codex_init_command(&model, effort, neutral_cwd);
+    let cmd = build_codex_init_command(&model, effort, neutral_cwd, &[]);
     let log_path = neutral_cwd.join("diagnose.log");
     run_init_session(
         JsonSession {
@@ -84,7 +84,7 @@ pub fn draft_issues(
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
 
     info!(%model, effort, mode = req.mode.as_str(), "drafting issues with codex exec");
-    let cmd = build_codex_init_command(&model, effort, repo);
+    let cmd = build_codex_init_command(&model, effort, repo, &[]);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     run_init_session(
         JsonSession {
@@ -131,7 +131,7 @@ pub fn triage_issues(
     );
 
     info!(%model, effort, "triaging issues with codex exec");
-    let cmd = build_codex_init_command(&model, effort, repo);
+    let cmd = build_codex_init_command(&model, effort, repo, req.image_paths);
     let log_path = repo.join(".ralphy").join("triage.log");
     run_init_session(
         JsonSession {

@@ -26,6 +26,7 @@ verify — the same bar the planning pass applies.
 ## Attachments as evidence (when an `## Attachments (issue #N)` block is present)
 The CLI mechanically pre-fetched this issue's safe text attachments before your session started — you never fetch anything yourself. When a `## Attachments (issue #N)` block appears below `## Inputs`, it lists each attachment as `name → path (fetched)` or `name → not fetched (<reason>)`.
 - Read every `(fetched)` attachment at the local path given — its content is FIRST-CLASS evidence, exactly as if it had been pasted inline, and you must weigh it in the evidence gate below and cite it in your verdict.
+- A `(fetched)` image (a screenshot) is first-class evidence too — inspect it visually and reason over what it shows, then cite what you saw in your verdict.
 - A NEEDED attachment shown as `not fetched` is a BOUNCE, not a promote — name exactly which file the reporter must paste inline; "saw no evidence" is not "saw all the evidence".
 
 ## The evidence gate (promote and consolidate both require it)

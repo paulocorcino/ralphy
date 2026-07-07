@@ -22,6 +22,17 @@ impl Agent {
             Agent::Opencode => "opencode",
         }
     }
+
+    /// Whether this agent's adapter can consume image input. The VALUE lives as
+    /// `ACCEPTS_IMAGES` in each adapter crate (ADR-0025 §4); this match only
+    /// routes enum → crate, never hardcoding a capability here.
+    pub fn accepts_images(&self) -> bool {
+        match self {
+            Agent::Claude => ralphy_agent_claude::ACCEPTS_IMAGES,
+            Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
+            Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
+        }
+    }
 }
 
 pub struct EnvFindings {
@@ -186,6 +197,14 @@ mod tests {
             agents_present: vec![Agent::Claude, Agent::Codex],
             agents_logged_in: vec![Agent::Claude],
         }
+    }
+
+    // Capability values are authored in each adapter crate; the CLI only routes.
+    #[test]
+    fn accepts_images_reflects_crate_consts() {
+        assert!(Agent::Claude.accepts_images());
+        assert!(Agent::Codex.accepts_images());
+        assert!(!Agent::Opencode.accepts_images());
     }
 
     // (a) All-green: evaluate_gate returns empty vec when ≥1 agent is logged in.

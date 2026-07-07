@@ -4,7 +4,8 @@
 //! deterministic order, and reject-visibility — is pure over the extracted link
 //! list and unit-tested with NO network. Only the orchestrator
 //! [`fetch_triage_attachments`] touches `gh`; it is best-effort and never aborts
-//! triage. Images (§4) are deliberately out of scope for this pass.
+//! triage. Images (§4) are fetched only for a vision-capable adapter — gated by
+//! [`gated_image_outcome`] before any download.
 
 use std::path::{Path, PathBuf};
 
@@ -28,18 +29,24 @@ pub const STRUCTURED_CAP: usize = 1 << 20;
 const FREE_TEXT_EXTS: &[&str] = &["log", "txt", "md", "diff", "patch"];
 /// Structured text; never truncated (over-cap → dropped).
 const STRUCTURED_EXTS: &[&str] = &["json", "yaml", "yml", "toml", "csv"];
+/// Image formats delivered as pixels to a vision-capable adapter (ADR-0025 §4).
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+/// Image bytes over this cap are dropped as `too large` — never truncated, since
+/// half an image is not evidence (ADR-0025 §3.3, §4). Default 5 MB.
+pub const IMAGE_CAP: usize = 5 << 20;
 
 /// Which fetch/truncation policy an attachment's extension selects. `Denied` is
-/// deny-by-default: any extension not on either allowlist lands here.
+/// deny-by-default: any extension not on any allowlist lands here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatClass {
     FreeText,
     Structured,
+    Image,
     Denied,
 }
 
 /// Classify an attachment filename by its extension (case-insensitive). Anything
-/// not on the free-text or structured allowlist is `Denied` (ADR-0025 §3.2).
+/// not on the free-text, structured, or image allowlist is `Denied` (ADR-0025 §3.2).
 pub fn classify_format(filename: &str) -> FormatClass {
     let ext = filename
         .rsplit('.')
@@ -49,6 +56,7 @@ pub fn classify_format(filename: &str) -> FormatClass {
     match ext.as_deref() {
         Some(e) if FREE_TEXT_EXTS.contains(&e) => FormatClass::FreeText,
         Some(e) if STRUCTURED_EXTS.contains(&e) => FormatClass::Structured,
+        Some(e) if IMAGE_EXTS.contains(&e) => FormatClass::Image,
         _ => FormatClass::Denied,
     }
 }
@@ -158,6 +166,9 @@ pub struct TriageAttachments {
     #[allow(dead_code)] // owned solely so Drop deletes the dir at end of triage.
     dir: tempfile::TempDir,
     pub manifest: String,
+    /// Local paths of every `(fetched)` image, for adapters (e.g. codex `-i`)
+    /// that deliver images by argv path rather than by the manifest alone.
+    pub image_paths: Vec<PathBuf>,
 }
 
 /// The filename an attachment URL's last path segment names (query/fragment
@@ -214,7 +225,35 @@ fn classify_payload(class: FormatClass, bytes: Vec<u8>) -> Result<Vec<u8>, &'sta
         FormatClass::FreeText => Ok(truncate_free_text(&bytes, TEXT_CAP)),
         FormatClass::Structured if bytes.len() > STRUCTURED_CAP => Err("too large"),
         FormatClass::Structured => Ok(bytes),
+        FormatClass::Image if bytes.len() > IMAGE_CAP => Err("too large"),
+        FormatClass::Image => Ok(bytes),
         FormatClass::Denied => Err("denied format"),
+    }
+}
+
+/// Whether the selected adapter can consume image input, named for its manifest
+/// line. A `false` adapter never fetches images — the pixels would have nowhere
+/// to go (ADR-0025 §4).
+pub struct ImageCapability<'a> {
+    pub accepts: bool,
+    pub adapter_name: &'a str,
+}
+
+/// Gate an image attachment on the selected adapter's capability, BEFORE any
+/// download: an image bound for a no-vision adapter is `not fetched (<adapter>
+/// has no image input)` — never a wasted fetch. Returns `None` (proceed) for a
+/// non-image class or a vision-capable adapter. Pure so the gate is unit-tested
+/// without network.
+pub fn gated_image_outcome(
+    class: FormatClass,
+    images: &ImageCapability,
+) -> Option<AttachmentOutcome> {
+    if class == FormatClass::Image && !images.accepts {
+        Some(AttachmentOutcome::NotFetched {
+            reason: format!("{} has no image input", images.adapter_name),
+        })
+    } else {
+        None
     }
 }
 
@@ -234,13 +273,17 @@ fn count_capped(links: &[String]) -> Vec<(String, bool)> {
 /// credential (`gh api <url>`), apply the login-HTML guard and by-category
 /// truncation, and write it under `dir`. Returns the visible outcome; a `gh`
 /// failure maps to `download failed: <code>` and never propagates (best-effort).
-fn fetch_one(repo: &Path, dir: &Path, url: &str) -> AttachmentOutcome {
+fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> AttachmentOutcome {
     let name = filename_from_url(url);
     let class = classify_format(&name);
     if class == FormatClass::Denied {
         return AttachmentOutcome::NotFetched {
             reason: "denied format".to_string(),
         };
+    }
+    // Gate images on adapter capability before spending a download (ADR-0025 §4).
+    if let Some(outcome) = gated_image_outcome(class, images) {
+        return outcome;
     }
     // `gh api <url>` carries `gh`'s own credential — never anonymous (ADR-0025 §2).
     // The exact argv is indicative; the network path is unverified this pass.
@@ -283,10 +326,15 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str) -> AttachmentOutcome {
 /// combined inline manifest (ADR-0025). Best-effort and never blocking: only a
 /// `TempDir` creation failure returns `Err`; a per-issue `gh` failure or a
 /// download error becomes a visible `not fetched` manifest line, never an abort.
-pub fn fetch_triage_attachments(repo: &Path, issue_numbers: &[u64]) -> Result<TriageAttachments> {
+pub fn fetch_triage_attachments(
+    repo: &Path,
+    issue_numbers: &[u64],
+    images: ImageCapability,
+) -> Result<TriageAttachments> {
     let dir = tempfile::TempDir::with_prefix("ralphy-triage-")
         .context("creating triage attachment temp dir")?;
     let mut manifest = String::new();
+    let mut image_paths: Vec<PathBuf> = Vec::new();
     for &n in issue_numbers {
         // Best-effort: a `gh issue view` failure leaves this issue without an
         // attachment block rather than aborting the whole triage run.
@@ -315,12 +363,17 @@ pub fn fetch_triage_attachments(repo: &Path, issue_numbers: &[u64]) -> Result<Tr
         for (url, within_cap) in count_capped(&links) {
             let name = filename_from_url(&url);
             let outcome = if within_cap {
-                fetch_one(repo, &issue_dir, &url)
+                fetch_one(repo, &issue_dir, &url, &images)
             } else {
                 AttachmentOutcome::NotFetched {
                     reason: "attachment cap reached".to_string(),
                 }
             };
+            if let AttachmentOutcome::Fetched { path } = &outcome {
+                if classify_format(&name) == FormatClass::Image {
+                    image_paths.push(path.clone());
+                }
+            }
             entries.push((name, outcome));
         }
         let block = render_manifest(n, &entries);
@@ -329,7 +382,11 @@ pub fn fetch_triage_attachments(repo: &Path, issue_numbers: &[u64]) -> Result<Tr
             manifest.push_str(&block);
         }
     }
-    Ok(TriageAttachments { dir, manifest })
+    Ok(TriageAttachments {
+        dir,
+        manifest,
+        image_paths,
+    })
 }
 
 #[cfg(test)]
@@ -358,7 +415,10 @@ mod tests {
         for f in ["a.json", "a.yaml", "a.yml", "a.toml", "a.csv"] {
             assert_eq!(classify_format(f), FormatClass::Structured, "{f}");
         }
-        for f in ["a.exe", "a.zip", "a.png", "foo"] {
+        for f in ["a.png", "a.jpg", "a.jpeg", "a.webp", "a.gif"] {
+            assert_eq!(classify_format(f), FormatClass::Image, "{f}");
+        }
+        for f in ["a.exe", "a.zip", "foo"] {
             assert_eq!(classify_format(f), FormatClass::Denied, "{f}");
         }
     }
@@ -441,6 +501,39 @@ mod tests {
             classify_payload(FormatClass::Structured, b"{\"ok\":true}".to_vec()),
             Ok(b"{\"ok\":true}".to_vec())
         );
+    }
+
+    #[test]
+    fn classify_payload_image_over_cap_is_too_large() {
+        let big = vec![0u8; IMAGE_CAP + 1];
+        assert_eq!(classify_payload(FormatClass::Image, big), Err("too large"));
+        // A tiny PNG stub passes through byte-for-byte (never truncated).
+        let stub = vec![0x89u8, b'P', b'N'];
+        assert_eq!(
+            classify_payload(FormatClass::Image, stub.clone()),
+            Ok(stub)
+        );
+    }
+
+    #[test]
+    fn gated_image_outcome_blocks_only_no_vision_images() {
+        let no_vision = ImageCapability {
+            accepts: false,
+            adapter_name: "opencode",
+        };
+        assert_eq!(
+            gated_image_outcome(FormatClass::Image, &no_vision),
+            Some(AttachmentOutcome::NotFetched {
+                reason: "opencode has no image input".to_string(),
+            })
+        );
+        let vision = ImageCapability {
+            accepts: true,
+            adapter_name: "claude",
+        };
+        assert_eq!(gated_image_outcome(FormatClass::Image, &vision), None);
+        // A non-image class is never gated, even for a no-vision adapter.
+        assert_eq!(gated_image_outcome(FormatClass::FreeText, &no_vision), None);
     }
 
     #[test]

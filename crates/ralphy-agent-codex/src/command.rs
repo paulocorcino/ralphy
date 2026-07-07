@@ -130,7 +130,16 @@ pub(crate) fn resolve_init_model(model: Option<&str>) -> String {
 /// auto-loading the target's `AGENTS.md`); without the flag `codex exec` refuses
 /// to start there. It is a harmless no-op on the draft path, whose cwd is the
 /// repo itself.
-pub(crate) fn build_codex_init_command(model: &str, effort: &str, cwd: &Path) -> Command {
+///
+/// Each `images` path is attached with `-i <path>`, inserted BEFORE the trailing
+/// `-` stdin marker (`-i`/`--image` is an option that must precede the `-`
+/// positional prompt, per `codex exec --help`, ADR-0025 §4).
+pub(crate) fn build_codex_init_command(
+    model: &str,
+    effort: &str,
+    cwd: &Path,
+    images: &[PathBuf],
+) -> Command {
     let mut cmd = Command::new("codex");
     cmd.arg("exec")
         .arg("-C")
@@ -141,8 +150,11 @@ pub(crate) fn build_codex_init_command(model: &str, effort: &str, cwd: &Path) ->
         .arg("-c")
         .arg(format!("model_reasoning_effort=\"{effort}\""))
         .arg("-s")
-        .arg("danger-full-access")
-        .arg("-")
+        .arg("danger-full-access");
+    for p in images {
+        cmd.arg("-i").arg(p);
+    }
+    cmd.arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -205,6 +217,36 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert!(args.iter().any(|a| a == "model_reasoning_effort=\"low\""));
+    }
+
+    // ── build_codex_init_command ────────────────────────────────────────────
+
+    #[test]
+    fn build_init_command_attaches_images() {
+        let cmd = build_codex_init_command(
+            "gpt-5-codex",
+            "medium",
+            Path::new("/repo"),
+            &[PathBuf::from("/t/a.png")],
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let i = args.iter().position(|a| a == "-i").expect("`-i` present");
+        assert_eq!(args[i + 1], "/t/a.png", "path follows -i: {args:?}");
+        let dash = args.iter().position(|a| a == "-").expect("`-` present");
+        assert!(i < dash, "-i must precede the stdin marker: {args:?}");
+    }
+
+    #[test]
+    fn build_init_command_no_images_emits_no_i_flag() {
+        let cmd = build_codex_init_command("gpt-5-codex", "medium", Path::new("/repo"), &[]);
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(!args.iter().any(|a| a == "-i"), "no -i for empty slice: {args:?}");
     }
 
     // ── recommended_tier ────────────────────────────────────────────────────

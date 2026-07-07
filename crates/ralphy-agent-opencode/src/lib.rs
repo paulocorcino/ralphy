@@ -37,6 +37,11 @@ mod skills;
 mod tasks;
 mod usage;
 
+/// OpenCode's headless `run` has no image-input channel, so images are never
+/// fetched for it — the manifest shows `not fetched (opencode has no image
+/// input)` (ADR-0025 §4). A future vision OpenCode flips this in its own crate.
+pub const ACCEPTS_IMAGES: bool = false;
+
 use command::build_opencode_command;
 use events::{
     is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, OPENCODE_AUTH_ERROR_MSG,
