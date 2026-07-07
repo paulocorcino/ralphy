@@ -1,9 +1,11 @@
-//! Presence lockfile for `ralphy run` (`.ralphy/run.lock`).
+//! Repo-scoped presence lockfile (`.ralphy/run.lock`), honored by both
+//! `ralphy run` and `ralphy triage`.
 //!
 //! The concurrency policy lives in the *invocation*, not the repo: every run
-//! writes this lock for its lifetime as a signal, never a mutex — manual runs
-//! never block each other. `--if-idle` (a scheduler's invocation) defers to a
-//! live lock and exits 0; without the flag a live lock only produces a warning.
+//! or triage writes this lock for its lifetime as a signal, never a mutex —
+//! manual invocations never block each other. `--if-idle` (a scheduler's
+//! invocation) defers to a live lock and exits 0; without the flag a live lock
+//! only produces a warning.
 //!
 //! Release is RAII ([`RunLockGuard`]'s `Drop`), which covers every normal and
 //! `?`-propagated exit of `run_cmd`. There is deliberately no Ctrl-C/signal

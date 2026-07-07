@@ -282,9 +282,10 @@ impl Workspace {
         self.ralphy_dir().join("settings.json")
     }
 
-    /// `<repo>/.ralphy/run.lock` — the presence lock a live run holds (PID +
-    /// start time) so scheduled invocations (`ralphy run --if-idle`) can defer
-    /// instead of piling onto it. A signal, not a mutex.
+    /// `<repo>/.ralphy/run.lock` — the presence lock a live run or triage holds
+    /// (PID + start time) so scheduled invocations (`ralphy run --if-idle` /
+    /// `ralphy triage --if-idle`) can defer instead of piling onto it. A
+    /// signal, not a mutex.
     pub fn run_lock_path(&self) -> PathBuf {
         self.ralphy_dir().join("run.lock")
     }
