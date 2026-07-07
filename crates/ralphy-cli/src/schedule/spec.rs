@@ -59,13 +59,46 @@ pub struct TimerSpec {
     pub working_dir: PathBuf,
     pub log_path: PathBuf,
     pub schedule: Schedule,
+    pub cron_tag: String,
 }
 
-/// Build the `run` target's timer spec: `ralphy run --if-idle`, anchored at the
+/// The `install`/`remove` target noun: which command the registered timer
+/// re-invokes. `slug` keys the task name and the cron tag so `run` and
+/// `triage` timers never collide or strip each other's crontab line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Run,
+    Triage,
+}
+
+impl Target {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Target::Run => "run",
+            Target::Triage => "triage",
+        }
+    }
+
+    fn args(self) -> Vec<String> {
+        match self {
+            Target::Run => vec!["run".into(), "--if-idle".into()],
+            Target::Triage => vec!["triage".into(), "--if-idle".into(), "--yes".into()],
+        }
+    }
+}
+
+/// Build `target`'s timer spec: the target's own invocation, anchored at the
 /// repo root, logging to `<repo>/.ralphy/schedule.log` unless `log` overrides.
-/// The task name is keyed by the repo directory so two repos never collide on a
-/// machine-global Task Scheduler name or a user-global crontab.
-pub fn run_spec(ws: &Workspace, exe: &Path, schedule: Schedule, log: Option<PathBuf>) -> TimerSpec {
+/// The task name and cron tag are keyed by the repo directory AND the target's
+/// slug so two repos, or `run` vs `triage` on the same repo, never collide on a
+/// machine-global Task Scheduler name or a user-global crontab line.
+pub fn timer_spec(
+    ws: &Workspace,
+    exe: &Path,
+    target: Target,
+    schedule: Schedule,
+    log: Option<PathBuf>,
+) -> TimerSpec {
     let repo_root = ws.repo_root();
     let repo_name = repo_root
         .file_name()
@@ -73,12 +106,13 @@ pub fn run_spec(ws: &Workspace, exe: &Path, schedule: Schedule, log: Option<Path
         .unwrap_or_else(|| "repo".to_string());
     let log_path = log.unwrap_or_else(|| ws.ralphy_dir().join("schedule.log"));
     TimerSpec {
-        task_name: format!("ralphy-run-{repo_name}"),
+        task_name: format!("ralphy-{}-{repo_name}", target.slug()),
         program: exe.to_path_buf(),
-        args: vec!["run".into(), "--if-idle".into()],
+        args: target.args(),
         working_dir: repo_root.to_path_buf(),
         log_path,
         schedule,
+        cron_tag: super::platform::cron_tag(target.slug(), repo_root),
     }
 }
 
@@ -118,11 +152,12 @@ mod tests {
     }
 
     #[test]
-    fn run_spec_keys_task_by_repo_and_defaults_log() {
+    fn timer_spec_run_names_task_and_args() {
         let ws = Workspace::new("/home/me/myrepo");
-        let spec = run_spec(
+        let spec = timer_spec(
             &ws,
             Path::new("/usr/local/bin/ralphy"),
+            Target::Run,
             Schedule::Minutes(30),
             None,
         );
@@ -130,5 +165,27 @@ mod tests {
         assert_eq!(spec.args, vec!["run".to_string(), "--if-idle".to_string()]);
         assert_eq!(spec.working_dir, Path::new("/home/me/myrepo"));
         assert!(spec.log_path.ends_with("schedule.log"));
+    }
+
+    #[test]
+    fn timer_spec_triage_names_task_and_args() {
+        let ws = Workspace::new("/home/me/myrepo");
+        let spec = timer_spec(
+            &ws,
+            Path::new("/usr/local/bin/ralphy"),
+            Target::Triage,
+            Schedule::Minutes(30),
+            None,
+        );
+        assert_eq!(spec.task_name, "ralphy-triage-myrepo");
+        assert_eq!(
+            spec.args,
+            vec![
+                "triage".to_string(),
+                "--if-idle".to_string(),
+                "--yes".to_string()
+            ]
+        );
+        assert!(spec.cron_tag.starts_with("# ralphy-schedule:triage:"));
     }
 }

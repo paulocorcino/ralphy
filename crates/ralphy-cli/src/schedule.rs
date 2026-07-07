@@ -19,7 +19,7 @@ use clap::{Subcommand, ValueEnum};
 use ralphy_core::{git, Workspace};
 
 use platform::Platform;
-use spec::{parse_interval, Schedule, TimerSpec};
+use spec::{parse_interval, Schedule, Target, TimerSpec};
 
 /// The `ralphy schedule` command group. `status`/`remove` need a noun `run`
 /// could never host (ADR-0026 §1).
@@ -27,7 +27,8 @@ use spec::{parse_interval, Schedule, TimerSpec};
 pub(crate) enum ScheduleCommand {
     /// Register a native OS timer for the given target that fires on a cadence.
     Install {
-        /// What to schedule. Only `run` today (registers `ralphy run --if-idle`).
+        /// What to schedule: `run` registers `ralphy run --if-idle`, `triage`
+        /// registers `ralphy triage --if-idle --yes`.
         #[arg(value_enum)]
         target: ScheduleTarget,
         /// Firing cadence: `<N>m` (minutes) or `<N>h` (hours).
@@ -41,41 +42,64 @@ pub(crate) enum ScheduleCommand {
         #[arg(long, default_value = ".")]
         repo: PathBuf,
     },
-    /// Show the Ralphy timer registered for this repo and its firing history.
+    /// Show every Ralphy timer registered for this repo and its firing history.
     Status {
         #[arg(long, default_value = ".")]
         repo: PathBuf,
     },
-    /// Unregister the timer for the given target.
+    /// Unregister the timer for the given target, or every timer with `--all`.
     Remove {
         #[arg(value_enum)]
-        target: ScheduleTarget,
+        target: Option<ScheduleTarget>,
+        /// Remove every Ralphy timer registered for this repo.
+        #[arg(long, conflicts_with = "target")]
+        all: bool,
         #[arg(long, default_value = ".")]
         repo: PathBuf,
     },
 }
 
-/// The `install`/`remove` target noun. Scoped to `run` for the tracer bullet;
-/// `triage` / `--all` land in later slices (ADR-0026 §3–4).
+/// The `install`/`remove` target noun (ADR-0026 §3). Maps 1:1 onto
+/// [`spec::Target`]; kept as a distinct clap-facing enum so the CLI surface
+/// doesn't need `clap::ValueEnum` on the host-neutral spec type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ScheduleTarget {
     Run,
+    Triage,
+}
+
+impl From<ScheduleTarget> for Target {
+    fn from(t: ScheduleTarget) -> Self {
+        match t {
+            ScheduleTarget::Run => Target::Run,
+            ScheduleTarget::Triage => Target::Triage,
+        }
+    }
 }
 
 /// Dispatch a `schedule` subcommand.
 pub(crate) fn run(cmd: ScheduleCommand) -> Result<()> {
     match cmd {
         ScheduleCommand::Install {
-            target: ScheduleTarget::Run,
+            target,
             every,
             log,
             repo,
-        } => install(&repo, &every, log),
+        } => install(&repo, target.into(), &every, log),
         ScheduleCommand::Status { repo } => status(&repo),
         ScheduleCommand::Remove {
-            target: ScheduleTarget::Run,
+            target: Some(target),
+            all: false,
             repo,
-        } => remove(&repo),
+        } => remove(&repo, target.into()),
+        ScheduleCommand::Remove {
+            target: None,
+            all: true,
+            repo,
+        } => remove_all(&repo),
+        ScheduleCommand::Remove { .. } => {
+            anyhow::bail!("specify a target (run|triage) or --all")
+        }
     }
 }
 
@@ -99,11 +123,21 @@ fn describe(s: Schedule) -> String {
     }
 }
 
-fn install(repo: &Path, every: &str, log: Option<PathBuf>) -> Result<()> {
+/// Build every target's timer spec for `ws`/`exe`. Schedule/log are irrelevant
+/// outside `install` (only `task_name`/`working_dir`/`cron_tag` matter for
+/// `status`/`remove`), so both are fixed placeholders here.
+fn all_specs(ws: &Workspace, exe: &Path) -> Vec<TimerSpec> {
+    vec![
+        spec::timer_spec(ws, exe, Target::Run, Schedule::Minutes(30), None),
+        spec::timer_spec(ws, exe, Target::Triage, Schedule::Minutes(30), None),
+    ]
+}
+
+fn install(repo: &Path, target: Target, every: &str, log: Option<PathBuf>) -> Result<()> {
     let ws = workspace(repo)?;
     let exe = current_exe()?;
     let schedule = parse_interval(every)?;
-    let spec = spec::run_spec(&ws, &exe, schedule, log);
+    let spec = spec::timer_spec(&ws, &exe, target, schedule, log);
     host_install(&spec)?;
     println!(
         "Registered timer {} ({}), logging to {}.",
@@ -114,21 +148,32 @@ fn install(repo: &Path, every: &str, log: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn remove(repo: &Path) -> Result<()> {
+fn remove(repo: &Path, target: Target) -> Result<()> {
     let ws = workspace(repo)?;
     let exe = current_exe()?;
-    // schedule/log are irrelevant to removal — only task_name/working_dir are used.
-    let spec = spec::run_spec(&ws, &exe, Schedule::Minutes(30), None);
+    let spec = spec::timer_spec(&ws, &exe, target, Schedule::Minutes(30), None);
     host_remove(&spec)?;
     println!("Removed timer {}.", spec.task_name);
+    Ok(())
+}
+
+fn remove_all(repo: &Path) -> Result<()> {
+    let ws = workspace(repo)?;
+    let exe = current_exe()?;
+    for spec in all_specs(&ws, &exe) {
+        host_remove(&spec)?;
+        println!("Removed timer {}.", spec.task_name);
+    }
     Ok(())
 }
 
 fn status(repo: &Path) -> Result<()> {
     let ws = workspace(repo)?;
     let exe = current_exe()?;
-    let spec = spec::run_spec(&ws, &exe, Schedule::Minutes(30), None);
-    host_status(&spec)
+    for spec in all_specs(&ws, &exe) {
+        host_status(&spec)?;
+    }
+    Ok(())
 }
 
 // --- host executor (the only `#[cfg]`-gated seam) --------------------------
@@ -141,8 +186,8 @@ fn host_install(spec: &TimerSpec) -> Result<()> {
 #[cfg(not(windows))]
 fn host_install(spec: &TimerSpec) -> Result<()> {
     let line = platform::render_install(Platform::Cron, spec).remove(0);
-    // Idempotent: drop any prior tagged line for this repo, then append fresh.
-    let mut base = platform::strip_cron_line(&read_crontab()?, &spec.working_dir);
+    // Idempotent: drop any prior tagged line for this target, then append fresh.
+    let mut base = platform::strip_cron_line(&read_crontab()?, &spec.cron_tag);
     if !base.is_empty() && !base.ends_with('\n') {
         base.push('\n');
     }
@@ -158,7 +203,7 @@ fn host_remove(spec: &TimerSpec) -> Result<()> {
 
 #[cfg(not(windows))]
 fn host_remove(spec: &TimerSpec) -> Result<()> {
-    let stripped = platform::strip_cron_line(&read_crontab()?, &spec.working_dir);
+    let stripped = platform::strip_cron_line(&read_crontab()?, &spec.cron_tag);
     write_crontab(&stripped)
 }
 
@@ -192,12 +237,10 @@ fn host_status(spec: &TimerSpec) -> Result<()> {
 #[cfg(not(windows))]
 fn host_status(spec: &TimerSpec) -> Result<()> {
     let existing = read_crontab().unwrap_or_default();
-    let tag = format!(
-        "{}{}",
-        platform::CRON_TAG_PREFIX,
-        spec.working_dir.display()
-    );
-    match existing.lines().find(|l| l.trim_end().ends_with(&tag)) {
+    match existing
+        .lines()
+        .find(|l| l.trim_end().ends_with(&spec.cron_tag))
+    {
         Some(line) => {
             let expr: String = line
                 .split_whitespace()
@@ -264,4 +307,17 @@ fn write_crontab(content: &str) -> Result<()> {
         anyhow::bail!("crontab - exited with {status}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_specs_lists_run_then_triage() {
+        let ws = Workspace::new("/home/me/myrepo");
+        let specs = all_specs(&ws, Path::new("/usr/local/bin/ralphy"));
+        let names: Vec<&str> = specs.iter().map(|s| s.task_name.as_str()).collect();
+        assert_eq!(names, vec!["ralphy-run-myrepo", "ralphy-triage-myrepo"]);
+    }
 }

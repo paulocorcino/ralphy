@@ -24,11 +24,18 @@ pub enum Platform {
     Cron,
 }
 
-/// The trailing crontab comment that marks a Ralphy-installed line. `status` and
-/// `remove` match on `<prefix><repo-root>`, so it must stay byte-identical
-/// between install and remove — it is the only handle we have on a user-global
-/// crontab we must not otherwise disturb.
-pub const CRON_TAG_PREFIX: &str = "# ralphy-schedule:run:";
+/// The trailing crontab comment prefix that marks a Ralphy-installed line.
+/// `status` and `remove` match on `<prefix><target-slug>:<repo-root>` via
+/// [`cron_tag`], so a given target's tag must stay byte-identical between
+/// install and remove — it is the only handle we have on a user-global crontab
+/// we must not otherwise disturb. Per-target (not per-repo alone) so `run` and
+/// `triage` timers on the same repo never strip each other's line.
+pub const CRON_TAG_PREFIX: &str = "# ralphy-schedule:";
+
+/// The full crontab tag for `slug` (`"run"`/`"triage"`) anchored at `wd`.
+pub fn cron_tag(slug: &str, wd: &Path) -> String {
+    format!("{CRON_TAG_PREFIX}{slug}:{}", wd.display())
+}
 
 /// Render the install command for `spec` on `p`.
 ///
@@ -74,8 +81,9 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
                 Schedule::Minutes(n) => format!("*/{n} * * * *"),
                 Schedule::Hours(n) => format!("0 */{n} * * *"),
             };
+            let tag = &spec.cron_tag;
             vec![format!(
-                "{expr} cd '{wd}' && '{exe}' {args} >> '{log}' 2>&1 {CRON_TAG_PREFIX}{wd}"
+                "{expr} cd '{wd}' && '{exe}' {args} >> '{log}' 2>&1 {tag}"
             )]
         }
     }
@@ -97,15 +105,15 @@ pub fn render_remove(p: Platform, task_name: &str) -> Vec<String> {
     }
 }
 
-/// Drop only the crontab line this repo installed (the one ending in
-/// `<CRON_TAG_PREFIX><wd>`), preserving every other line verbatim and the
-/// input's trailing-newline shape. This is the read-modify half of cron
-/// install/remove; the write half pipes the result back through `crontab -`.
-pub fn strip_cron_line(existing: &str, wd: &Path) -> String {
-    let tag = format!("{CRON_TAG_PREFIX}{}", wd.display());
+/// Drop only the crontab line tagged `tag` (a [`cron_tag`] value), preserving
+/// every other line verbatim — including another target's tagged line on the
+/// same repo — and the input's trailing-newline shape. This is the
+/// read-modify half of cron install/remove; the write half pipes the result
+/// back through `crontab -`.
+pub fn strip_cron_line(existing: &str, tag: &str) -> String {
     let kept: Vec<&str> = existing
         .lines()
-        .filter(|line| !line.trim_end().ends_with(&tag))
+        .filter(|line| !line.trim_end().ends_with(tag))
         .collect();
     let mut out = kept.join("\n");
     if existing.ends_with('\n') && !out.is_empty() {
@@ -171,6 +179,19 @@ mod tests {
             working_dir: PathBuf::from("/home/me/myrepo"),
             log_path: PathBuf::from("/home/me/myrepo/.ralphy/schedule.log"),
             schedule,
+            cron_tag: "# ralphy-schedule:run:/home/me/myrepo".into(),
+        }
+    }
+
+    fn triage_spec(schedule: Schedule) -> TimerSpec {
+        TimerSpec {
+            task_name: "ralphy-triage-myrepo".into(),
+            program: PathBuf::from("/usr/local/bin/ralphy"),
+            args: vec!["triage".into(), "--if-idle".into(), "--yes".into()],
+            working_dir: PathBuf::from("/home/me/myrepo"),
+            log_path: PathBuf::from("/home/me/myrepo/.ralphy/schedule.log"),
+            schedule,
+            cron_tag: "# ralphy-schedule:triage:/home/me/myrepo".into(),
         }
     }
 
@@ -242,12 +263,60 @@ mod tests {
         let s = spec(Schedule::Minutes(30));
         let installed = render_install(Platform::Cron, &s).remove(0);
         let crontab = format!("# keep me\n{installed}\n");
-        let out = strip_cron_line(&crontab, &s.working_dir);
+        let out = strip_cron_line(&crontab, &s.cron_tag);
         assert!(out.contains("# keep me"), "unrelated line must survive");
         assert!(
             !out.contains("run --if-idle"),
             "the tagged ralphy line must be gone"
         );
+    }
+
+    #[test]
+    fn strip_cron_line_is_target_scoped() {
+        let run = spec(Schedule::Minutes(30));
+        let triage = triage_spec(Schedule::Minutes(30));
+        let run_line = render_install(Platform::Cron, &run).remove(0);
+        let triage_line = render_install(Platform::Cron, &triage).remove(0);
+        let crontab = format!("{run_line}\n{triage_line}\n");
+
+        let out = strip_cron_line(&crontab, &triage.cron_tag);
+        assert!(
+            out.contains("run --if-idle"),
+            "removing the triage line must leave the run line intact: {out:?}"
+        );
+        assert!(
+            !out.contains("triage --if-idle --yes"),
+            "the tagged triage line must be gone: {out:?}"
+        );
+    }
+
+    #[test]
+    fn render_install_windows_triage() {
+        let argv = render_install(Platform::Windows, &triage_spec(Schedule::Minutes(30)));
+        let joined = argv.join(" ");
+        for needle in [
+            "triage",
+            "--if-idle",
+            "--yes",
+            "/SC",
+            "MINUTE",
+            "ralphy-triage-myrepo",
+        ] {
+            assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
+        }
+    }
+
+    #[test]
+    fn render_install_cron_triage() {
+        let argv = render_install(Platform::Cron, &triage_spec(Schedule::Minutes(30)));
+        let line = &argv[0];
+        for needle in [
+            "triage --if-idle --yes",
+            "*/30 * * * *",
+            "# ralphy-schedule:triage:",
+        ] {
+            assert!(line.contains(needle), "missing {needle:?} in {line:?}");
+        }
     }
 
     #[test]
