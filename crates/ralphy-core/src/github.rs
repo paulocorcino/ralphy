@@ -2,6 +2,7 @@
 //! issues, so this is a core (domain) concern — distinct from how any agent is
 //! driven.
 
+mod attachments;
 mod client;
 mod comments;
 mod issues;
@@ -9,6 +10,11 @@ mod labels;
 mod references;
 mod repo;
 
+pub use attachments::{
+    classify_format, extract_user_attachment_links, fetch_triage_attachments, looks_like_login_html,
+    render_manifest, truncate_free_text, AttachmentOutcome, FormatClass, TriageAttachments,
+    ATTACHMENT_HOST_PREFIX, COUNT_CAP, STRUCTURED_CAP, TEXT_CAP,
+};
 pub use comments::{
     comment_issue, edit_comment, find_marked_comment, issue_comments, list_comments_with_ids,
     parse_issue_comments, parse_rest_comments, upsert_marked_comment,

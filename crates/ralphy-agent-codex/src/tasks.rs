@@ -124,7 +124,11 @@ pub fn triage_issues(
 ) -> Result<TriageDraft> {
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
-    let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
+    let prompt = format!(
+        "{}{}",
+        build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.attachments_manifest
+    );
 
     info!(%model, effort, "triaging issues with codex exec");
     let cmd = build_codex_init_command(&model, effort, repo);

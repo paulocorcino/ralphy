@@ -113,6 +113,10 @@ pub fn build_init_issues_prompt(
 pub struct TriageRequest<'a> {
     pub issue_numbers: &'a [u64],
     pub queue_label: &'a str,
+    /// The inline `## Attachments (issue #N)` manifest each adapter appends to
+    /// the built prompt (ADR-0025 §6); empty string when no attachments. Kept as
+    /// an additive field so `build_triage_prompt`'s signature stays stable.
+    pub attachments_manifest: &'a str,
 }
 
 /// Build the triage prompt: the embedded charter followed by an `## Inputs`

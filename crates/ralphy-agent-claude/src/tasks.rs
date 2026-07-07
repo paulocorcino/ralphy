@@ -280,7 +280,11 @@ pub fn triage_issues(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
+    let prompt = format!(
+        "{}{}",
+        build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.attachments_manifest
+    );
     let log_path = repo.join(".ralphy").join("triage.log");
     run_json_session(
         JsonSession {

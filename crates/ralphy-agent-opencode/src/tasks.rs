@@ -137,7 +137,11 @@ pub fn triage_issues(
     // OpenCode has no reasoning-effort knob (ADR-0005 D3); accepted for a uniform
     // dispatch signature and ignored.
     let _ = effort;
-    let prompt = build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path);
+    let prompt = format!(
+        "{}{}",
+        build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.attachments_manifest
+    );
     info!(?model, "triaging issues with opencode run");
     let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
     let log_path = repo.join(".ralphy").join("triage.log");

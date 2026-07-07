@@ -225,10 +225,15 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         marker: CONSOLIDATED_SPEC_MARKER.to_string(),
     };
 
+    // Mechanically pre-fetch text attachments as guardrailed evidence (ADR-0025).
+    // Best-effort: only a temp-dir creation failure errors; downloads never abort.
+    let attachments = github::fetch_triage_attachments(&repo, &numbers)?;
+
     let out_path = repo.join(".ralphy").join("triage-draft.json");
     let req = TriageRequest {
         issue_numbers: &numbers,
         queue_label: &queue_label,
+        attachments_manifest: &attachments.manifest,
     };
     let draft = triage_with_agent(
         agent,
@@ -239,6 +244,9 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         Some(&args.effort),
         Duration::from_secs(args.max_minutes * 60),
     )?;
+    // Pin the TempDir alive until AFTER the session has read the files; its Drop
+    // deletes the attachment dir last (ADR-0025 §7).
+    drop(attachments);
     draft
         .validate()
         .map_err(|reason| anyhow::anyhow!("triage draft is invalid: {reason}"))?;
