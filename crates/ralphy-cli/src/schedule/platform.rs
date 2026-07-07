@@ -50,6 +50,7 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
     let wd = spec.working_dir.display();
     let exe = spec.program.display();
     let log = spec.log_path.display();
+    let pre = spec.pre_invocation.as_ref().map(|p| p.join(" "));
     match p {
         Platform::Windows => {
             let (sc, mo) = match spec.schedule {
@@ -59,9 +60,14 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
             // Single-quote the paths so PowerShell tolerates spaces; the outer
             // double-quotes belong to the `-Command` argument, not to schtasks
             // shell-quoting (we pass this argv straight to CreateProcess).
-            let tr = format!(
-                "pwsh -NoProfile -Command \"Set-Location '{wd}'; '{exe}' {args} *>> '{log}'\""
-            );
+            let tr = match &pre {
+                Some(pre) => format!(
+                    "pwsh -NoProfile -Command \"Set-Location '{wd}'; '{exe}' {pre} *>> '{log}'; '{exe}' {args} *>> '{log}'\""
+                ),
+                None => format!(
+                    "pwsh -NoProfile -Command \"Set-Location '{wd}'; '{exe}' {args} *>> '{log}'\""
+                ),
+            };
             vec![
                 "schtasks".into(),
                 "/Create".into(),
@@ -82,9 +88,13 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
                 Schedule::Hours(n) => format!("0 */{n} * * *"),
             };
             let tag = &spec.cron_tag;
-            vec![format!(
-                "{expr} cd '{wd}' && '{exe}' {args} >> '{log}' 2>&1 {tag}"
-            )]
+            let line = match &pre {
+                Some(pre) => format!(
+                    "{expr} cd '{wd}' && {{ '{exe}' {pre} ; '{exe}' {args} ; }} >> '{log}' 2>&1 {tag}"
+                ),
+                None => format!("{expr} cd '{wd}' && '{exe}' {args} >> '{log}' 2>&1 {tag}"),
+            };
+            vec![line]
         }
     }
 }
@@ -180,6 +190,7 @@ mod tests {
             log_path: PathBuf::from("/home/me/myrepo/.ralphy/schedule.log"),
             schedule,
             cron_tag: "# ralphy-schedule:run:/home/me/myrepo".into(),
+            pre_invocation: None,
         }
     }
 
@@ -192,6 +203,7 @@ mod tests {
             log_path: PathBuf::from("/home/me/myrepo/.ralphy/schedule.log"),
             schedule,
             cron_tag: "# ralphy-schedule:triage:/home/me/myrepo".into(),
+            pre_invocation: None,
         }
     }
 
@@ -317,6 +329,78 @@ mod tests {
         ] {
             assert!(line.contains(needle), "missing {needle:?} in {line:?}");
         }
+    }
+
+    #[test]
+    fn render_install_windows_run_with_triage() {
+        let mut s = spec(Schedule::Minutes(30));
+        s.pre_invocation = Some(vec!["triage".into(), "--yes".into()]);
+        let argv = render_install(Platform::Windows, &s);
+        let joined = argv.join(" ");
+        assert!(joined.contains("triage --yes"), "{joined:?}");
+        assert!(joined.contains("run --if-idle"), "{joined:?}");
+        assert!(joined.contains("ralphy-run-myrepo"), "{joined:?}");
+        let triage_idx = joined.find("triage --yes").unwrap();
+        let run_idx = joined.find("run --if-idle").unwrap();
+        assert!(
+            triage_idx < run_idx,
+            "triage must render before run: {joined:?}"
+        );
+        assert!(
+            joined.contains("; '"),
+            "phases must be `;`-chained: {joined:?}"
+        );
+        assert!(
+            !joined.contains("triage --yes &&"),
+            "chain must use `;`, not `&&`: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn render_install_cron_run_with_triage() {
+        let mut s = spec(Schedule::Minutes(30));
+        s.pre_invocation = Some(vec!["triage".into(), "--yes".into()]);
+        let argv = render_install(Platform::Cron, &s);
+        assert_eq!(argv.len(), 1);
+        let line = &argv[0];
+        for needle in [
+            "*/30 * * * *",
+            "cd '",
+            "triage --yes ;",
+            "run --if-idle",
+            "2>&1",
+            "# ralphy-schedule:run:",
+        ] {
+            assert!(line.contains(needle), "missing {needle:?} in {line:?}");
+        }
+        let triage_idx = line.find("triage --yes").unwrap();
+        let run_idx = line.find("run --if-idle").unwrap();
+        assert!(
+            triage_idx < run_idx,
+            "triage must render before run: {line:?}"
+        );
+        assert!(
+            !line.contains("triage --yes && "),
+            "chain must use `;`, not `&&`: {line:?}"
+        );
+    }
+
+    #[test]
+    fn strip_cron_line_removes_chained_run_line() {
+        let mut s = spec(Schedule::Minutes(30));
+        s.pre_invocation = Some(vec!["triage".into(), "--yes".into()]);
+        let installed = render_install(Platform::Cron, &s).remove(0);
+        let crontab = format!("# keep me\n{installed}\n");
+        let out = strip_cron_line(&crontab, &s.cron_tag);
+        assert!(out.contains("# keep me"), "unrelated line must survive");
+        assert!(
+            !out.contains("triage --yes"),
+            "chained triage phase must be gone"
+        );
+        assert!(
+            !out.contains("run --if-idle"),
+            "chained run phase must be gone"
+        );
     }
 
     #[test]

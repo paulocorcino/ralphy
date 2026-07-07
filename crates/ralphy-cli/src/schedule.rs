@@ -41,6 +41,10 @@ pub(crate) enum ScheduleCommand {
         /// Any path inside the target repo; resolved to its git toplevel.
         #[arg(long, default_value = ".")]
         repo: PathBuf,
+        /// Chain `triage --yes` before the run in one window (run target
+        /// only) — ADR-0026 §3.
+        #[arg(long)]
+        with_triage: bool,
     },
     /// Show every Ralphy timer registered for this repo and its firing history.
     Status {
@@ -85,7 +89,8 @@ pub(crate) fn run(cmd: ScheduleCommand) -> Result<()> {
             every,
             log,
             repo,
-        } => install(&repo, target.into(), &every, log),
+            with_triage,
+        } => install(&repo, target.into(), &every, log, with_triage),
         ScheduleCommand::Status { repo } => status(&repo),
         ScheduleCommand::Remove {
             target: Some(target),
@@ -133,16 +138,30 @@ fn all_specs(ws: &Workspace, exe: &Path) -> Vec<TimerSpec> {
     ]
 }
 
-fn install(repo: &Path, target: Target, every: &str, log: Option<PathBuf>) -> Result<()> {
+fn install(
+    repo: &Path,
+    target: Target,
+    every: &str,
+    log: Option<PathBuf>,
+    with_triage: bool,
+) -> Result<()> {
     let ws = workspace(repo)?;
     let exe = current_exe()?;
     let schedule = parse_interval(every)?;
-    let spec = spec::timer_spec(&ws, &exe, target, schedule, log);
+    let mut spec = spec::timer_spec(&ws, &exe, target, schedule, log);
+    if with_triage {
+        anyhow::ensure!(
+            target == Target::Run,
+            "--with-triage applies only to the run target"
+        );
+        spec.pre_invocation = Some(spec::triage_prelude());
+    }
     host_install(&spec)?;
     println!(
-        "Registered timer {} ({}), logging to {}.",
+        "Registered timer {} ({}){}, logging to {}.",
         spec.task_name,
         describe(schedule),
+        if with_triage { " (triage-first)" } else { "" },
         spec.log_path.display()
     );
     Ok(())

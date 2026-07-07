@@ -60,6 +60,10 @@ pub struct TimerSpec {
     pub log_path: PathBuf,
     pub schedule: Schedule,
     pub cron_tag: String,
+    /// The invocation `;`-chained before `args` in the same window, to the same
+    /// log — `Some(["triage","--yes"])` for `install run --with-triage`, `None`
+    /// otherwise.
+    pub pre_invocation: Option<Vec<String>>,
 }
 
 /// The `install`/`remove` target noun: which command the registered timer
@@ -113,7 +117,14 @@ pub fn timer_spec(
         log_path,
         schedule,
         cron_tag: super::platform::cron_tag(target.slug(), repo_root),
+        pre_invocation: None,
     }
+}
+
+/// The chained `triage --yes` invocation for `install run --with-triage`
+/// (ADR-0026 §3) — sequential in one window, so no `--if-idle` of its own.
+pub fn triage_prelude() -> Vec<String> {
+    vec!["triage".into(), "--yes".into()]
 }
 
 #[cfg(test)]
@@ -187,5 +198,25 @@ mod tests {
             ]
         );
         assert!(spec.cron_tag.starts_with("# ralphy-schedule:triage:"));
+    }
+
+    #[test]
+    fn timer_spec_run_with_triage_chains_triage_first() {
+        let ws = Workspace::new("/home/me/myrepo");
+        let mut spec = timer_spec(
+            &ws,
+            Path::new("/usr/local/bin/ralphy"),
+            Target::Run,
+            Schedule::Minutes(30),
+            None,
+        );
+        spec.pre_invocation = Some(triage_prelude());
+        assert_eq!(spec.task_name, "ralphy-run-myrepo");
+        assert!(spec.cron_tag.starts_with("# ralphy-schedule:run:"));
+        assert_eq!(spec.args, vec!["run".to_string(), "--if-idle".to_string()]);
+        assert_eq!(
+            spec.pre_invocation,
+            Some(vec!["triage".to_string(), "--yes".to_string()])
+        );
     }
 }

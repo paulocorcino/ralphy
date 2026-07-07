@@ -350,6 +350,22 @@ mod tests {
     }
 
     #[test]
+    fn schedule_install_run_with_triage_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "run", "--with-triage"])
+            .expect("schedule install run --with-triage must parse");
+        let Command::Schedule(schedule::ScheduleCommand::Install {
+            target,
+            with_triage,
+            ..
+        }) = cli.command
+        else {
+            panic!("expected the `schedule install` subcommand");
+        };
+        assert!(with_triage);
+        assert!(matches!(target, schedule::ScheduleTarget::Run));
+    }
+
+    #[test]
     fn schedule_install_triage_parses() {
         let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "triage", "--every", "8h"])
             .expect("schedule install triage must parse");
