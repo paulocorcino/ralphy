@@ -150,10 +150,7 @@ fn install(
     let schedule = parse_interval(every)?;
     let mut spec = spec::timer_spec(&ws, &exe, target, schedule, log);
     if with_triage {
-        anyhow::ensure!(
-            target == Target::Run,
-            "--with-triage applies only to the run target"
-        );
+        validate_with_triage_target(target)?;
         spec.pre_invocation = Some(spec::triage_prelude());
     }
     host_install(&spec)?;
@@ -163,6 +160,16 @@ fn install(
         describe(schedule),
         if with_triage { " (triage-first)" } else { "" },
         spec.log_path.display()
+    );
+    Ok(())
+}
+
+/// `--with-triage` chains onto a run timer only (ADR-0026 §3); reject it on
+/// the `triage` target with a clear error rather than silently ignoring it.
+fn validate_with_triage_target(target: Target) -> Result<()> {
+    anyhow::ensure!(
+        target == Target::Run,
+        "--with-triage applies only to the run target"
     );
     Ok(())
 }
@@ -338,5 +345,18 @@ mod tests {
         let specs = all_specs(&ws, Path::new("/usr/local/bin/ralphy"));
         let names: Vec<&str> = specs.iter().map(|s| s.task_name.as_str()).collect();
         assert_eq!(names, vec!["ralphy-run-myrepo", "ralphy-triage-myrepo"]);
+    }
+
+    #[test]
+    fn validate_with_triage_target_rejects_triage() {
+        let err = validate_with_triage_target(Target::Triage).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("--with-triage applies only to the run target"));
+    }
+
+    #[test]
+    fn validate_with_triage_target_accepts_run() {
+        assert!(validate_with_triage_target(Target::Run).is_ok());
     }
 }
