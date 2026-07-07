@@ -117,7 +117,19 @@ pub fn run_json_session<T>(
             log_path.display()
         )
     })?;
-    validate(&raw)
+    // A vendor CLI on Windows may write the artifact UTF-8-BOM-prefixed (the
+    // PowerShell default); `read_to_string` keeps the BOM as a leading `\u{feff}`,
+    // which `serde_json` then rejects with "expected value at line 1 column 1".
+    // Strip it before the adapter's parse so a BOM never masquerades as a schema
+    // mismatch (mirrors the BOM guard in `github::attachments`).
+    validate(strip_bom(&raw))
+}
+
+/// Strip a single leading UTF-8 BOM (`\u{feff}`) from a decoded artifact. A BOM is
+/// not whitespace, so `trim_start` misses it; left in place it makes `serde_json`
+/// fail at "line 1 column 1". Returns the input unchanged when no BOM is present.
+fn strip_bom(s: &str) -> &str {
+    s.strip_prefix('\u{feff}').unwrap_or(s)
 }
 
 /// [`run_json_session`] with the per-session **init preamble** the six init/triage
@@ -172,4 +184,34 @@ pub fn run_text_session(
         bail!("{} (see {})", timeout_msg, log_path.display());
     }
     Ok(log)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_bom;
+
+    #[test]
+    fn strip_bom_removes_single_leading_bom() {
+        assert_eq!(strip_bom("\u{feff}{\"ok\":true}"), "{\"ok\":true}");
+    }
+
+    #[test]
+    fn strip_bom_passthrough_without_bom() {
+        assert_eq!(strip_bom("{\"ok\":true}"), "{\"ok\":true}");
+        // Only a *leading* BOM is stripped; one mid-string is left untouched.
+        assert_eq!(strip_bom("{}\u{feff}"), "{}\u{feff}");
+    }
+
+    #[test]
+    fn bom_prefixed_diagnosis_json_parses_after_strip() {
+        // The exact issue #133 shape: a Windows-authored diagnosis.json led by a
+        // UTF-8 BOM. Raw parse fails at "line 1 column 1"; stripping fixes it.
+        let raw = "\u{feff}{\"repo_kind\":\"existing\"}";
+        assert!(
+            serde_json::from_str::<serde_json::Value>(raw).is_err(),
+            "BOM must break the raw parse (the #133 symptom)"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(strip_bom(raw)).unwrap();
+        assert_eq!(parsed["repo_kind"], "existing");
+    }
 }
