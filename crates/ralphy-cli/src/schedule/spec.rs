@@ -35,7 +35,14 @@ pub fn parse_interval(s: &str) -> Result<Schedule> {
         bail!("interval must be positive, got {s:?}");
     }
     match unit {
+        // Bounds keep the two backends in agreement: a cron `*/N` step above the
+        // field maximum silently caps (e.g. `*/90 * * * *` fires only at minute
+        // 0, hourly — NOT every 90 min) while Task Scheduler's `/MO 90` is valid.
+        // Rejecting the divergent range is honester than emitting a timer that
+        // fires at a different cadence than the operator asked for.
+        'm' if n > 59 => bail!("minute interval must be 1–59, got {s:?}; use hours (e.g. 2h)"),
         'm' => Ok(Schedule::Minutes(n)),
+        'h' if n > 23 => bail!("hour interval must be 1–23, got {s:?}"),
         'h' => Ok(Schedule::Hours(n)),
         other => bail!("unknown interval unit {other:?} in {s:?}: use m (minutes) or h (hours)"),
     }
@@ -100,6 +107,14 @@ mod tests {
             parse_interval("5d").is_err(),
             "unknown unit must be rejected"
         );
+        // Out-of-range: a cron `*/N` step above the field max would silently cap.
+        assert!(
+            parse_interval("90m").is_err(),
+            "minutes >59 must be rejected (cron caps the step)"
+        );
+        assert!(parse_interval("59m").is_ok(), "59m is the top valid minute");
+        assert!(parse_interval("24h").is_err(), "hours >23 must be rejected");
+        assert!(parse_interval("23h").is_ok(), "23h is the top valid hour");
     }
 
     #[test]
