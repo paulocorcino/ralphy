@@ -77,10 +77,13 @@ pub enum RunEvent {
     /// human-return label, or a verify gate still red after the repair budget).
     /// `label` names the parking label on a [`SkipKind::HumanReturn`] skip (so the
     /// operator sees exactly which label parked it); `None` for the other kinds.
+    /// `blockers` names the still-open issue(s) that gated a [`SkipKind::BlockedBy`]
+    /// skip (so the line reads `skipped (blocked by #139)`); empty for the other kinds.
     Skipped {
         number: u64,
         kind: SkipKind,
         label: Option<String>,
+        blockers: Vec<u64>,
     },
     /// An issue is stalled on a human gate (`ready-for-human`/`HITL`) in its
     /// dependency path (ADR-0014): `on` names the human-blocker issue(s) a person
@@ -227,6 +230,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             kind: SkipKind::BlockedBy,
             label: None,
+            blockers: parse_u64_list(fields.blockers.as_deref()),
         }),
         // A human gate (`ready-for-human`/`HITL`) sits in the issue's path: the
         // chain is parked until a person acts, but the run continues. `on` names
@@ -239,6 +243,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             kind: SkipKind::StopBefore,
             label: None,
+            blockers: Vec::new(),
         }),
         // A human-return label (`ready-for-human`/`HITL`, `needs-info`,
         // `needs-triage`, `wontfix`, `triage-agent`) outranks the queue label: the
@@ -248,6 +253,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             kind: SkipKind::HumanReturn,
             label: fields.label.clone(),
+            blockers: Vec::new(),
         }),
         // The verify gate stayed red after the repair budget: the issue is left
         // open and the queue marches on (ADR-0011). Surfaced as a skip so the miss
@@ -256,6 +262,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             kind: SkipKind::VerifyFailed,
             label: None,
+            blockers: Vec::new(),
         }),
         "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
         // The run entered a usage-limit sleep; the fold carries the reset hint and
@@ -598,7 +605,8 @@ mod tests {
             Some(RunEvent::Skipped {
                 number: 7,
                 kind: SkipKind::BlockedBy,
-                label: None
+                label: None,
+                blockers: vec![],
             })
         );
         assert_eq!(
@@ -610,7 +618,8 @@ mod tests {
             Some(RunEvent::Skipped {
                 number: 8,
                 kind: SkipKind::StopBefore,
-                label: None
+                label: None,
+                blockers: vec![],
             })
         );
         assert_eq!(
@@ -623,7 +632,8 @@ mod tests {
             Some(RunEvent::Skipped {
                 number: 9,
                 kind: SkipKind::HumanReturn,
-                label: Some("needs-info".into())
+                label: Some("needs-info".into()),
+                blockers: vec![],
             })
         );
         assert_eq!(
@@ -636,6 +646,39 @@ mod tests {
             Some(RunEvent::HumanBlocked {
                 number: 16,
                 on: vec![30]
+            })
+        );
+    }
+
+    #[test]
+    fn decoder_reads_blocked_by_blockers_and_tolerates_absence() {
+        // A dependency skip carrying the open-blocker list decodes it onto
+        // `Skipped.blockers`; an absent `blockers` field decodes to an empty vec.
+        assert_eq!(
+            decode(EventFields {
+                message: "blocked by open issue(s) — skipping".into(),
+                number: Some(140),
+                blockers: Some("[139]".into()),
+                ..Default::default()
+            }),
+            Some(RunEvent::Skipped {
+                number: 140,
+                kind: SkipKind::BlockedBy,
+                label: None,
+                blockers: vec![139],
+            })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "blocked by open issue(s) — skipping".into(),
+                number: Some(140),
+                ..Default::default()
+            }),
+            Some(RunEvent::Skipped {
+                number: 140,
+                kind: SkipKind::BlockedBy,
+                label: None,
+                blockers: vec![],
             })
         );
     }

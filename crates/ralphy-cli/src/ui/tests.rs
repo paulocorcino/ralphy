@@ -301,11 +301,13 @@ fn render_plain_skipped_shows_skip_label() {
         .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
         .single()
         .unwrap();
+    // A dependency skip with no resolved blockers keeps the bare fallback.
     let blocked = render_plain_line(
         &RunEvent::Skipped {
             number: 7,
             kind: SkipKind::BlockedBy,
             label: None,
+            blockers: vec![],
         },
         &ts,
         None,
@@ -313,11 +315,29 @@ fn render_plain_skipped_shows_skip_label() {
     .expect("Skipped renders a line");
     assert!(blocked.contains("skipped (blocked)"), "{blocked}");
 
+    // A dependency skip that knows its blocker names it (`blocked by #139`).
+    let blocked_by = render_plain_line(
+        &RunEvent::Skipped {
+            number: 140,
+            kind: SkipKind::BlockedBy,
+            label: None,
+            blockers: vec![139],
+        },
+        &ts,
+        None,
+    )
+    .expect("Skipped renders a line");
+    assert!(
+        blocked_by.contains("skipped (blocked by #139)"),
+        "{blocked_by}"
+    );
+
     let stop_before = render_plain_line(
         &RunEvent::Skipped {
             number: 8,
             kind: SkipKind::StopBefore,
             label: None,
+            blockers: vec![],
         },
         &ts,
         None,
@@ -333,6 +353,7 @@ fn render_plain_skipped_shows_skip_label() {
             number: 9,
             kind: SkipKind::HumanReturn,
             label: Some("needs-info".to_string()),
+            blockers: vec![],
         },
         &ts,
         None,

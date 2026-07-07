@@ -331,12 +331,18 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             number,
             kind,
             label,
+            blockers,
         } => Some(envelope(
             "dev.ralphy.issue.skipped",
             Some(&subject_for(*number)),
             ctx,
             state,
-            json!({ "number": number, "kind": skip_kind_name(*kind), "label": label }),
+            json!({
+                "number": number,
+                "kind": skip_kind_name(*kind),
+                "label": label,
+                "blocked_by": blockers,
+            }),
         )),
         RunEvent::HumanBlocked { number, on } => Some(envelope(
             "dev.ralphy.issue.human_blocked",
@@ -452,6 +458,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                         if let Some(kind) = e.kind {
                             obj.insert("kind".to_string(), json!(skip_kind_name(kind)));
                         }
+                        obj.insert("blocked_by".to_string(), json!(e.blocked_by));
                     }
                     Some(Value::Object(obj))
                 })

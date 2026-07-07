@@ -248,6 +248,32 @@ fn render_card_small_queue_one_line_per_issue() {
 }
 
 #[test]
+fn render_card_names_blocker_on_dependency_skip() {
+    // A blocked-by skip carrying its open blocker(s) names them on the issue line
+    // (`⏭️ #140 … (blocked by #139)`) so the operator knows which issue held it;
+    // the counters are untouched.
+    let mut state = RunState::new("repo · 1 issues", 1);
+    state.apply(RunEvent::Skipped {
+        number: 140,
+        kind: crate::runstate::SkipKind::BlockedBy,
+        label: None,
+        blockers: vec![139],
+    });
+    let card = render_card(&state, 0);
+    assert!(card.contains("⏭️ #140  (blocked by #139)"), "card: {card}");
+    // A skip with no resolved blocker adds no suffix.
+    let mut bare = RunState::new("repo · 1 issues", 1);
+    bare.apply(RunEvent::Skipped {
+        number: 141,
+        kind: crate::runstate::SkipKind::BlockedBy,
+        label: None,
+        blockers: vec![],
+    });
+    let bare_card = render_card(&bare, 0);
+    assert!(!bare_card.contains("blocked by"), "card: {bare_card}");
+}
+
+#[test]
 fn render_card_and_footer_surface_needs_split() {
     let mut state = RunState::new("repo · 1 issues", 1);
     state.apply(RunEvent::IssueStarted {

@@ -75,6 +75,10 @@ pub struct IssueEntry {
     /// `run.finished.issues` rollup can carry `kind` on a skip (#96); `None` for
     /// every non-skip entry.
     pub kind: Option<SkipKind>,
+    /// The still-open issue(s) that gated a [`SkipKind::BlockedBy`] skip, retained so
+    /// the Telegram card and the `run.finished.issues` rollup can name them
+    /// (`blocked by #139`). Empty for every non-skip entry and for the other skip kinds.
+    pub blocked_by: Vec<u64>,
 }
 
 /// A light `{number, title}` reference for the `run.started.queue` scope list and
@@ -186,6 +190,7 @@ impl RunState {
                 title: String::new(),
                 status: IssueStatus::Planning,
                 kind: None,
+                blocked_by: Vec::new(),
             });
             self.issues.last_mut().expect("just pushed")
         }
@@ -275,10 +280,16 @@ impl RunState {
                 self.entry_mut(n).status = status;
                 self.final_summary = Some(format!("stopped on #{n}: {outcome}"));
             }
-            RunEvent::Skipped { number, kind, .. } => {
+            RunEvent::Skipped {
+                number,
+                kind,
+                blockers,
+                ..
+            } => {
                 let e = self.entry_mut(number);
                 e.status = IssueStatus::Skipped;
                 e.kind = Some(kind);
+                e.blocked_by = blockers;
             }
             RunEvent::HumanBlocked { number, .. } => {
                 // Its own status so the card and counts surface "waiting on human"
@@ -512,8 +523,11 @@ mod tests {
             number: 9,
             kind: SkipKind::BlockedBy,
             label: None,
+            blockers: vec![7],
         });
         assert_eq!(state.issues[0].status, IssueStatus::Skipped);
+        // The open-blocker list is retained on the entry for the card / rollup.
+        assert_eq!(state.issues[0].blocked_by, vec![7]);
     }
 
     #[test]
@@ -582,6 +596,7 @@ mod tests {
             number: 2,
             kind: SkipKind::BlockedBy,
             label: None,
+            blockers: vec![],
         });
         state.apply(RunEvent::IssueStarted {
             number: 3,
@@ -686,16 +701,19 @@ mod tests {
             number: 1,
             kind: SkipKind::BlockedBy,
             label: None,
+            blockers: vec![],
         });
         state.apply(RunEvent::Skipped {
             number: 2,
             kind: SkipKind::StopBefore,
             label: None,
+            blockers: vec![],
         });
         state.apply(RunEvent::Skipped {
             number: 3,
             kind: SkipKind::HumanReturn,
             label: Some("wontfix".into()),
+            blockers: vec![],
         });
         assert_eq!(state.issues[0].status, IssueStatus::Skipped);
         assert_eq!(state.issues[1].status, IssueStatus::Skipped);

@@ -519,6 +519,7 @@ fn skipped_maps_kind_and_parking_label() {
             number: 9,
             kind: SkipKind::HumanReturn,
             label: Some("needs-info".into()),
+            blockers: vec![],
         },
         &RunState::new("t", 1),
     );
@@ -526,18 +527,23 @@ fn skipped_maps_kind_and_parking_label() {
     assert_eq!(v["subject"], "issue/9");
     assert_eq!(v["data"]["kind"], "human_return");
     assert_eq!(v["data"]["label"], "needs-info");
+    // A non-dependency skip carries an empty `blocked_by` list.
+    assert_eq!(v["data"]["blocked_by"], json!([]));
 
-    // A blocked-by skip has no parking label and the `blocked_by` kind.
+    // A blocked-by skip has no parking label, the `blocked_by` kind, and names the
+    // still-open blocker(s) in `data.blocked_by`.
     let v = map(
         RunEvent::Skipped {
             number: 4,
             kind: SkipKind::BlockedBy,
             label: None,
+            blockers: vec![139],
         },
         &RunState::new("t", 1),
     );
     assert_eq!(v["data"]["kind"], "blocked_by");
     assert!(v["data"]["label"].is_null(), "no parking label: {v}");
+    assert_eq!(v["data"]["blocked_by"], json!([139]));
 }
 
 #[test]
@@ -694,6 +700,7 @@ fn run_finished_maps_outcome_totals_without_subject() {
         number: 2,
         kind: SkipKind::HumanReturn,
         label: Some("needs-info".into()),
+        blockers: vec![],
     });
     let v = map(
         RunEvent::RunFinished {
@@ -727,7 +734,7 @@ fn run_finished_maps_outcome_totals_without_subject() {
         v["data"]["issues"],
         json!([
             { "number": 1, "title": "one", "status": "done" },
-            { "number": 2, "title": "two", "status": "skipped", "kind": "human_return" },
+            { "number": 2, "title": "two", "status": "skipped", "kind": "human_return", "blocked_by": [] },
         ])
     );
     // `run.finished` carries NO agent block.

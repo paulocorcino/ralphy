@@ -154,7 +154,7 @@ cache-write, `out` output (ADR-0008).
 | `issue.closed` | Green — the cycle closes the issue | `number`, `tokens` (flat total across **plan + execute**), `usage {up,cr,cw,out,model}` (execution phase only) |
 | `issue.non_green` | Non-green stop (stops the run) | `number`, `outcome` — the core's outcome name (e.g. `Stuck`, `Blocked`, `Timeout`); treat as an **opaque display label**, not an enum to switch on |
 | `issue.needs_split` | Planner judged the issue a bundle | `number` |
-| `issue.skipped` | Issue skipped, run continues | `number`, `kind` (`blocked_by` \| `stop_before` \| `human_return` \| `verify_failed`), `label?` (parking label on `human_return`, ADR-0016) |
+| `issue.skipped` | Issue skipped, run continues | `number`, `kind` (`blocked_by` \| `stop_before` \| `human_return` \| `verify_failed`), `label?` (parking label on `human_return`, ADR-0016), `blocked_by[]` (issue numbers — the still-open blocker(s) that gated a `blocked_by` skip; empty for the other kinds) |
 | `issue.human_blocked` | Human gate in the dependency path (ADR-0014) | `number`, `on[]` (issues a person must clear) |
 | `issue.deadline_passed` | Deadline hit before the issue started | `number` |
 | `run.sleep_started` | Usage-limit sleep begins (ADR-0003) | `reset`, `target_epoch` |
@@ -163,7 +163,7 @@ cache-write, `out` output (ADR-0008).
 | `knowledge.consolidated` | Consolidation finished | `archived` |
 | `run.notice` | Any WARN/ERROR on the bus | `level`, `message` |
 | `run.heartbeat` | Every ~30s while the process lives — **including during usage-limit sleeps** (`phase: "sleeping"`), so a long sleep is never mistaken for death | see below |
-| `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `issues[]` — per-issue rollup `{number, title, status, kind?}` (`status`: `done` \| `skipped` \| `blocked` \| `infeasible` \| `needs_split` \| `non_green` \| `hitl`; `kind` only on a `skipped`); `tokens_total {up,cr,cw,out}`, `duration_s`. Carries **no** `data.agent` block. The `issues[]` rollup lists only issues that **entered the run**; key completeness off the scalar `issues_total`, not the array length |
+| `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `issues[]` — per-issue rollup `{number, title, status, kind?, blocked_by?}` (`status`: `done` \| `skipped` \| `blocked` \| `infeasible` \| `needs_split` \| `non_green` \| `hitl`; `kind` and `blocked_by[]` only on a `skipped` — `blocked_by` names the open blocker(s), empty for non-dependency skips); `tokens_total {up,cr,cw,out}`, `duration_s`. Carries **no** `data.agent` block. The `issues[]` rollup lists only issues that **entered the run**; key completeness off the scalar `issues_total`, not the array length |
 | `queue.snapshot` | On demand: `ralphy issues --push` (ADR-0020) | identical `data` shape to the enriched `queue.built` (`count`, `order[]`, `stop_before?`, `issues[]`, `assignee_filter?`) |
 
 ### `run.heartbeat`

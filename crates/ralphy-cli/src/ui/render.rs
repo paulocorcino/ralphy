@@ -27,10 +27,21 @@ fn parse_outcome(debug: Option<&str>) -> FinishOutcome {
 }
 
 /// Label for a skipped issue: a UI-local string keyed off `runstate::SkipKind`.
-/// A human-return skip (ADR-0016) names the parking label when known
-/// (`skipped (needs-info)`), falling back to the bare kind otherwise.
-fn skip_label(kind: SkipKind, label: Option<&str>) -> String {
+/// A blocked-by skip names the still-open blocker(s) when known (`skipped (blocked
+/// by #139)`), so the operator knows where to act — falling back to the bare
+/// `skipped (blocked)` when the list is empty. A human-return skip (ADR-0016) names
+/// the parking label when known (`skipped (needs-info)`), falling back to the bare
+/// kind otherwise.
+fn skip_label(kind: SkipKind, label: Option<&str>, blockers: &[u64]) -> String {
     match kind {
+        SkipKind::BlockedBy if !blockers.is_empty() => {
+            let by = blockers
+                .iter()
+                .map(|n| format!("#{n}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("skipped (blocked by {by})")
+        }
         SkipKind::BlockedBy => "skipped (blocked)".to_string(),
         SkipKind::StopBefore => "skipped (stop-before)".to_string(),
         SkipKind::HumanReturn => match label {
@@ -257,10 +268,14 @@ pub(crate) fn render_line(
             number,
             kind,
             label,
+            blockers,
         } => (
             pick("⏭️", "[skip]", opts.emoji),
             Style::new().dim(),
-            format!("#{number} {}{dur}", skip_label(*kind, label.as_deref())),
+            format!(
+                "#{number} {}{dur}",
+                skip_label(*kind, label.as_deref(), blockers)
+            ),
         ),
         // A human gate gets its own glyph (🙋) and a non-dim style: it asks for a
         // person — and names which issue (`at #30`) — unlike an ordinary

@@ -163,6 +163,16 @@ early-platform window, keeping `runid` the **only** envelope extension:
   sink worker; `plan.opened`/`plan.closed` carry the raw `plan.md` at the
   plan-write and issue-close points (issue-scoped).
 
+### 8. Amendment: `issue.skipped.blocked_by`
+
+`issue.skipped` gains `data.blocked_by` = `[u64]` — the still-open issue
+number(s) that gated a `blocked_by` skip, so a consumer can name *which* issue
+held the skip (`skipped (blocked by #139)`) rather than only that it was
+blocked. The `run.finished` per-issue rollup carries the same field on its
+`skipped` entries (`{…, kind, blocked_by[]}`). The list is empty for the other
+skip kinds. Purely **additive** — no existing field changes, `runid` stays the
+only extension — so a consumer that ignores it is unaffected.
+
 ## Consequences
 
 - The platform can be built against [docs/events.md](../events.md) alone:

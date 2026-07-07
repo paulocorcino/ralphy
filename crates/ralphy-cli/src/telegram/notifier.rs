@@ -25,7 +25,7 @@ use chrono::Local;
 use super::client::{BotClient, Transport};
 use crate::delivery::{spawn_worker, DeliveryEngine, DeliveryLayer, WorkerHandle};
 pub use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
-use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState, SleepState};
+use crate::runstate::{IssueEntry, IssueStatus, RunEvent, RunState, SkipKind, SleepState};
 
 /// Telegram's hard per-message character limit.
 const TELEGRAM_LIMIT: usize = 4096;
@@ -58,10 +58,25 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
 
 /// One rendered issue line: `emoji #n title`. The card carries no per-issue clock —
 /// the budget is a static ceiling (e.g. `90:00`), not elapsed time, so showing it as
-/// a clock only misleads.
+/// a clock only misleads. A dependency skip appends ` (blocked by #N)` when the
+/// gating blocker(s) are known, so the operator sees which issue held it.
 fn issue_line(entry: &IssueEntry) -> String {
     let emoji = status_emoji(&entry.status);
-    format!("{emoji} #{} {}", entry.number, entry.title)
+    let blocked_by = if entry.status == IssueStatus::Skipped
+        && entry.kind == Some(SkipKind::BlockedBy)
+        && !entry.blocked_by.is_empty()
+    {
+        let by = entry
+            .blocked_by
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(" (blocked by {by})")
+    } else {
+        String::new()
+    };
+    format!("{emoji} #{} {}{blocked_by}", entry.number, entry.title)
 }
 
 /// The card's counter line, e.g. `▶️ 4 · ✅ 2 · ⏭️ 1 · ⛔ 0 · 🤷 0 · ❌ 0`. The

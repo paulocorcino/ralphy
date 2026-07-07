@@ -43,6 +43,10 @@ pub struct EventFields {
     /// The Debug-formatted human-blocker list (`[30]`) on a `blocked — waiting on
     /// human` event (ADR-0014): the issue(s) a person must clear.
     pub human_blockers: Option<String>,
+    /// The Debug-formatted open-blocker list (`[139]`) on a `blocked by open
+    /// issue(s) — skipping` event: the still-open issue(s) that gated this skip, so
+    /// the skip line can name *which* issue held it (`skipped (blocked by #139)`).
+    pub blockers: Option<String>,
     /// The parking label on a `human-return label — skipping issue` event
     /// (ADR-0016): which human-return label outranked the queue label.
     pub label: Option<String>,
@@ -105,6 +109,7 @@ impl Default for EventFields {
             cw: None,
             out: None,
             human_blockers: None,
+            blockers: None,
             label: None,
             repo: None,
             queue_labels: None,
@@ -196,6 +201,9 @@ impl Visit for EventFields {
             // The `?`-formatted `Vec<u64>` human-blocker list (`[30]`), kept raw
             // for the decoder to read the numbers out of (ADR-0014).
             "human_blockers" => self.human_blockers = Some(rendered),
+            // The `?`-formatted `Vec<u64>` open-blocker list (`[139]`) on a
+            // dependency skip, kept raw for the decoder to read the numbers out of.
+            "blockers" => self.blockers = Some(rendered),
             // The `%`-formatted (Display) parking label on a human-return skip
             // (ADR-0016) arrives here via tracing's Display wrapper.
             "label" => self.label = clean_opt(&rendered),
