@@ -1,6 +1,60 @@
-//! Path & program resolution.
+//! Path & program resolution, plus the shared process-tree teardown primitives
+//! (`own_process_group` at spawn + `kill_tree` on teardown) that both the verify
+//! gate and the headless adapter runner rely on to not leak a grandchild.
 
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+
+/// Put `cmd`'s child into its own process group (Unix) so a later [`kill_tree`]
+/// can signal the whole tree via the negative pgid, not just the direct child.
+/// A no-op off Unix — Windows walks the tree by PID with `taskkill /T` instead,
+/// needing nothing at spawn. Call this on the `Command` before `spawn`.
+///
+/// This is the single source of truth for the spawn-side half of process-tree
+/// teardown, shared so the verify gate (core) and the headless adapter runner
+/// (adapter-support) can never disagree on how a killable tree is set up.
+pub fn own_process_group(cmd: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(not(unix))]
+    let _ = cmd;
+}
+
+/// Kill `child` and every descendant it spawned, then reap it. `child.kill()`
+/// signals only the direct child, so a grandchild — an agent CLI's helper, or a
+/// dev server a `## Verify` command backgrounded — would survive and keep an
+/// inherited stdout/stderr pipe open, blocking a reader thread forever. On Windows
+/// `taskkill /F /T` terminates the whole tree rooted at the PID; on Unix a negative
+/// pgid signals the process group the child leads (set via [`own_process_group`] at
+/// spawn). Best-effort on every arm; always reaps the direct child so no zombie
+/// lingers.
+pub fn kill_tree(child: &mut Child) {
+    let pid = child.id();
+    #[cfg(windows)]
+    {
+        // `taskkill /T` terminates the whole tree rooted at PID.
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(unix)]
+    {
+        // The child leads its own process group (set at spawn), so a negative pgid
+        // signals the whole tree. Dependency-free via the `kill` utility.
+        let _ = Command::new("kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill(); // direct child / fallback
+    let _ = child.wait(); // reap so no zombie lingers
+}
 
 /// Resolve a home-scoped store/config path: when `override_base` is `Some` (a
 /// vendor `$XXX_HOME` env var), the path is `override_base.join(tail)` — the
