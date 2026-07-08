@@ -107,6 +107,7 @@ impl Agent for KimiAgent {
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let log_path = self.run_dir.join("kimi.log");
+        let model = self.resolve_model();
         let sessions_dir = kimi_sessions_dir();
         let snapshot = || {
             sessions_dir
@@ -117,8 +118,8 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            let cmd = build_kimi_command(&self.resolve_model(), ws.repo_root(), &skills_dir);
-            info!(model = %self.resolve_model(), "planning with kimi --print");
+            let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
+            info!(model = %model, "planning with kimi --print");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -151,9 +152,7 @@ impl Agent for KimiAgent {
         // None = resumed (finalized plan kept, no vendor run): no wire payload to
         // fold, so report zero planning tokens.
         let usage = match session {
-            Some((_, (before, after))) => {
-                fold_wire_usage(&before, &after, Some(self.resolve_model()))
-            }
+            Some((_, (before, after))) => fold_wire_usage(&before, &after, Some(model)),
             None => Usage::default(),
         };
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -168,6 +167,7 @@ impl Agent for KimiAgent {
 
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Execution> {
         let log_path = self.run_dir.join("kimi.log");
+        let model = self.resolve_model();
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let sessions_dir = kimi_sessions_dir();
@@ -180,8 +180,8 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            let cmd = build_kimi_command(&self.resolve_model(), ws.repo_root(), &skills_dir);
-            info!(model = %self.resolve_model(), "executing with kimi --print");
+            let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
+            info!(model = %model, "executing with kimi --print");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
             let r = self.run_kimi(cmd, PROMPT_EXECUTE, timeout)?;
@@ -214,7 +214,7 @@ impl Agent for KimiAgent {
         );
         Ok(Execution {
             outcome,
-            usage: fold_wire_usage(&before, &after, Some(self.resolve_model())),
+            usage: fold_wire_usage(&before, &after, Some(model)),
         })
     }
 }
