@@ -142,7 +142,7 @@ impl Agent for OpenCodeAgent {
         "opencode"
     }
 
-    fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
+    fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let log_path = self.run_dir.join("opencode.log");
 
@@ -166,8 +166,9 @@ impl Agent for OpenCodeAgent {
 
         let ralphy_dir = ws.ralphy_dir();
         let charter_path = ws.plan_charter_path();
-        let (_, stdout_text) = run_plan_session(
+        let session = run_plan_session(
             PlanCfg {
+                issue_number: issue.number,
                 ralphy_dir: &ralphy_dir,
                 run_dir: &self.run_dir,
                 plan_path: &plan_path,
@@ -185,7 +186,12 @@ impl Agent for OpenCodeAgent {
         )?;
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
-        let usage = opencode_usage(&stdout_text);
+        // None = resumed (finalized plan kept, no vendor run): no stdout to parse,
+        // so report zero planning tokens.
+        let usage = match session {
+            Some((_, stdout_text)) => opencode_usage(&stdout_text),
+            None => ralphy_core::Usage::default(),
+        };
         info!(
             model = resolved_model_label(&usage),
             "opencode plan resolved model"
@@ -373,6 +379,14 @@ mod tests {
         assert!(
             !lower.contains("as a subagent"),
             "reviewer step must not describe the reviewer as running as a subagent"
+        );
+    }
+
+    #[test]
+    fn prompt_plan_opencode_carries_finalize_trailer() {
+        assert!(
+            PROMPT_PLAN_OPENCODE.contains("<!-- ralphy-plan: issue="),
+            "planning prompt must instruct writing the finalized-plan trailer"
         );
     }
 }

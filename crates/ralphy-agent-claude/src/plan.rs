@@ -132,6 +132,18 @@ mod tests {
     }
 
     #[test]
+    fn plan_prompts_carry_finalize_trailer() {
+        assert!(
+            PROMPT_PLAN.contains("<!-- ralphy-plan: issue="),
+            "standard plan prompt must instruct writing the finalized-plan trailer"
+        );
+        assert!(
+            PROMPT_PLAN_STAGED.contains("<!-- ralphy-plan: issue="),
+            "staged plan prompt must instruct writing the finalized-plan trailer"
+        );
+    }
+
+    #[test]
     fn plan_prompt_for_selects_staged_when_label_present() {
         let issue = issue_with_labels(&["bug", "stagedplan"]);
         let (prompt, staged) = plan_prompt_for(&issue);

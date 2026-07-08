@@ -115,7 +115,7 @@ impl Agent for CodexAgent {
         "codex"
     }
 
-    fn plan(&self, _issue: &Issue, ws: &Workspace) -> Result<Plan> {
+    fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let model = self.resolve_model();
         let out_path = ws.ralphy_dir().join("codex-last.txt");
@@ -148,8 +148,9 @@ impl Agent for CodexAgent {
 
         let ralphy_dir = ws.ralphy_dir();
         let charter_path = ws.plan_charter_path();
-        let (_, (before, after)) = run_plan_session(
+        let session = run_plan_session(
             PlanCfg {
+                issue_number: issue.number,
                 ralphy_dir: &ralphy_dir,
                 run_dir: &self.run_dir,
                 plan_path: &plan_path,
@@ -175,12 +176,18 @@ impl Agent for CodexAgent {
             },
         )?;
 
+        // None = resumed (finalized plan kept, no vendor run): no rollout payload to
+        // fold, so report zero planning tokens — the whole point of the resume fix.
+        let usage = match session {
+            Some((_, (before, after))) => fold_rollout_usage(&before, &after, Some(model)),
+            None => ralphy_core::Usage::default(),
+        };
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
             recommended_model: recommended_tier(&md),
             path: plan_path,
-            usage: fold_rollout_usage(&before, &after, Some(model)),
+            usage,
         })
     }
 
@@ -349,6 +356,14 @@ mod tests {
         assert!(
             !PROMPT_PLAN_CODEX.contains("independent subagent"),
             "must not use Claude 'independent subagent' phrasing"
+        );
+    }
+
+    #[test]
+    fn prompt_plan_codex_carries_finalize_trailer() {
+        assert!(
+            PROMPT_PLAN_CODEX.contains("<!-- ralphy-plan: issue="),
+            "planning prompt must instruct writing the finalized-plan trailer"
         );
     }
 }

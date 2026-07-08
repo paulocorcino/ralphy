@@ -130,6 +130,18 @@ impl Agent for ClaudeAgent {
         fs::create_dir_all(&self.run_dir).ok();
 
         let plan_path = ws.plan_path();
+        // Resume: a finalized plan for this issue is kept as-is and execution
+        // resumes instead of re-planning (claude does not use the scaffold, so the
+        // guard is mirrored here before its own remove_file).
+        if ralphy_adapter_support::plan_is_finalized_for(&plan_path, issue.number) {
+            let md = fs::read_to_string(&plan_path).context("reading the resumed plan.md")?;
+            return Ok(Plan {
+                open_steps: ralphy_core::plan::count_open_steps(&md),
+                recommended_model: recommended_model(&md),
+                path: plan_path,
+                usage: Usage::default(),
+            });
+        }
         // Plan fresh every run; never reuse a stale artifact.
         let _ = fs::remove_file(&plan_path);
 

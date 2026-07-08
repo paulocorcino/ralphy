@@ -360,3 +360,15 @@ cargo test -p <crate>
 or, when nothing is machine-verifiable, the single line:
 
 none
+
+## Finalize
+
+After every section above is written, append — as the VERY LAST line of
+`.ralphy/plan.md`, after all other content — exactly:
+
+    <!-- ralphy-plan: issue=<N> -->
+
+with `<N>` replaced by this issue's number (from `.ralphy/issue.json`). This
+trailer marks the plan finalized: if the run is killed abruptly, the next
+session sees it as the last line and resumes execution instead of re-planning
+from scratch. Write nothing after it.
