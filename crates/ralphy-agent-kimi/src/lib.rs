@@ -12,7 +12,7 @@
 //!
 //! This is the walking-skeleton slice (ADR-0028): exit 75 maps to
 //! `Outcome::Limit(None)` and `--stop-on-limit` is forced for Kimi (D9, #153);
-//! the one-shot init flows remain deferred to later slices.
+//! the one-shot init flows (diagnose/draft-issues/triage) go through `tasks.rs`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -30,6 +30,7 @@ mod auth;
 mod command;
 mod outcome;
 mod skills;
+mod tasks;
 mod usage;
 
 /// Kimi's headless `--print` has no image-input channel in this slice, so images
@@ -40,6 +41,7 @@ use auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
 use command::{build_kimi_command, DEFAULT_KIMI_MODEL};
 use outcome::{classify_kimi_outcome, kimi_final_text};
 use skills::materialize_kimi_skills;
+pub use tasks::{diagnose_repo, draft_issues, triage_issues};
 use usage::{fold_wire_usage, kimi_sessions_dir};
 
 /// The Kimi planning prompt, embedded so the binary is self-contained as a global

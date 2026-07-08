@@ -44,6 +44,41 @@ pub(crate) fn build_kimi_command(model: &str, work_dir: &Path, skills_dir: &Path
     cmd
 }
 
+/// Resolve the model for a one-shot init session (diagnose/draft/triage): the
+/// explicit override, else [`DEFAULT_KIMI_MODEL`]. No config parse in this slice
+/// (ADR-0028 D4) — mirrors [`resolve_init_kimi_model`]'s sibling on Codex minus
+/// the `codex_config_model` lookup.
+pub(crate) fn resolve_init_kimi_model(model: Option<&str>) -> String {
+    model
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_string())
+}
+
+/// Build the headless `kimi --print` command for an `init` one-shot session
+/// (diagnose/draft/triage). Unlike [`build_kimi_command`] it omits `--skills-dir`:
+/// none of the init charters invoke the reviewer skill. `cwd` is the session's
+/// working directory — a neutral dir outside the repo for diagnosis, the repo
+/// itself for the issues draft and triage. The prompt is piped on stdin, never a
+/// positional argument (see [`build_kimi_command`] doc for why).
+pub(crate) fn build_kimi_init_command(model: &str, cwd: &Path) -> Command {
+    let mut cmd = Command::new(resolve_program("kimi"));
+    cmd.arg("--work-dir")
+        .arg(cwd)
+        .arg("--print")
+        .arg("--input-format")
+        .arg("text")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("-y")
+        .arg("-m")
+        .arg(model)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("PYTHONIOENCODING");
+    cmd
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +130,50 @@ mod tests {
             .get_envs()
             .any(|(k, v)| k == "PYTHONIOENCODING" && v.is_none());
         assert!(removed, "PYTHONIOENCODING should be removed on the child");
+    }
+
+    #[test]
+    fn build_init_command_argv_and_env() {
+        let cmd = build_kimi_init_command(DEFAULT_KIMI_MODEL, Path::new("/repo"));
+        let stem = PathBuf::from(cmd.get_program())
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        assert_eq!(stem, "kimi");
+
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let pos = |flag: &str, val: &str| {
+            let i = args.iter().position(|a| a == flag);
+            assert!(i.is_some(), "missing {flag}: {args:?}");
+            assert_eq!(args[i.unwrap() + 1], val, "value after {flag}: {args:?}");
+        };
+        pos("--work-dir", "/repo");
+        pos("--input-format", "text");
+        pos("--output-format", "stream-json");
+        pos("-m", DEFAULT_KIMI_MODEL);
+        assert!(args.contains(&"-y".to_string()), "argv: {args:?}");
+
+        assert!(
+            !args.iter().any(|a| a == "--skills-dir"),
+            "init sessions don't invoke the reviewer skill: {args:?}"
+        );
+        assert!(
+            !args.iter().any(|a| a == "hello"),
+            "prompt must be piped on stdin, never argv: {args:?}"
+        );
+
+        let removed = cmd
+            .get_envs()
+            .any(|(k, v)| k == "PYTHONIOENCODING" && v.is_none());
+        assert!(removed, "PYTHONIOENCODING should be removed on the child");
+    }
+
+    #[test]
+    fn resolve_init_kimi_model_override_wins() {
+        assert_eq!(resolve_init_kimi_model(Some("x")), "x");
+        assert_eq!(resolve_init_kimi_model(None), DEFAULT_KIMI_MODEL);
     }
 }
