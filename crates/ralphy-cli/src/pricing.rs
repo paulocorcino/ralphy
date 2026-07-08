@@ -105,6 +105,20 @@ impl PriceTable {
                 cache_creation: 0.95,
             },
         );
+        // `kimi-code/kimi-for-coding` is the id the native Kimi adapter reports
+        // (ADR-0028 D4; "K2.7 Code"). Priced with the same indicative K2-family
+        // list prices as `k2p6` so a `--agent kimi` run costs out instead of
+        // logging "unknown model"; Moonshot bills no separate cache-write premium,
+        // so `cache_creation` matches the plain input rate.
+        t.insert(
+            "kimi-code/kimi-for-coding".to_string(),
+            ModelPrice {
+                input: 0.95,
+                output: 4.0,
+                cache_read: 0.16,
+                cache_creation: 0.95,
+            },
+        );
         PriceTable(t)
     }
 
@@ -278,6 +292,12 @@ mod tests {
         assert!(
             table.cost_usd("k2p6", &tokens).is_some(),
             "OpenCode's `k2p6` must be priced by the defaults"
+        );
+        assert!(
+            table
+                .cost_usd("kimi-code/kimi-for-coding", &tokens)
+                .is_some(),
+            "the native Kimi adapter's `kimi-code/kimi-for-coding` must be priced (ADR-0028)"
         );
     }
 
