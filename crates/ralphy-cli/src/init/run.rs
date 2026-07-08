@@ -139,6 +139,10 @@ fn diagnose_with_agent(
             ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
 
+        Agent::Kimi => {
+            anyhow::bail!("kimi one-shot init is not supported in this slice (later slice #4)")
+        }
+
         Agent::Opencode => {
             ralphy_agent_opencode::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
@@ -206,7 +210,7 @@ fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> 
 fn init_model_for(agent: Agent) -> Option<&'static str> {
     match agent {
         Agent::Claude => Some("sonnet"),
-        Agent::Codex | Agent::Opencode => None,
+        Agent::Codex | Agent::Opencode | Agent::Kimi => None,
     }
 }
 
@@ -822,6 +826,7 @@ mod tests {
     fn init_model_pins_sonnet_for_claude_only() {
         assert_eq!(init_model_for(Agent::Claude), Some("sonnet"));
         assert_eq!(init_model_for(Agent::Codex), None);
+        assert_eq!(init_model_for(Agent::Kimi), None);
         assert_eq!(init_model_for(Agent::Opencode), None);
     }
 

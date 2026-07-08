@@ -140,6 +140,9 @@ fn triage_with_agent(
         Agent::Codex => {
             ralphy_agent_codex::triage_issues(repo, out_path, req, model, effort, timeout)
         }
+        Agent::Kimi => {
+            anyhow::bail!("kimi one-shot triage is not supported in this slice (later slice #4)")
+        }
         Agent::Opencode => {
             ralphy_agent_opencode::triage_issues(repo, out_path, req, model, effort, timeout)
         }

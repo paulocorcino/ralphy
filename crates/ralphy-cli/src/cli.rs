@@ -264,6 +264,8 @@ pub(crate) struct ConsolidateArgs {
 pub(crate) enum CliAgent {
     Claude,
     Codex,
+    // One word `kimi` derives correctly from the variant name — no `#[value]` attr.
+    Kimi,
     // The ADR-0005 contract and the documented invocation are `--agent opencode`
     // (one word). Clap would otherwise derive the kebab-cased `open-code` from the
     // variant name; pin the spelling and keep that derivation as an alias.
@@ -276,6 +278,7 @@ impl CliAgent {
         match self {
             CliAgent::Claude => "claude",
             CliAgent::Codex => "codex",
+            CliAgent::Kimi => "kimi",
             CliAgent::OpenCode => "opencode",
         }
     }
@@ -460,6 +463,14 @@ mod tests {
             Cli::try_parse_from(["ralphy", "run", "--assignee", "@me", "--no-assignee"]).is_err(),
             "--assignee and --no-assignee must conflict"
         );
+    }
+
+    #[test]
+    fn cli_agent_parses_kimi() {
+        // `--agent kimi` parses to the one-word variant and round-trips its cli_name.
+        use clap::ValueEnum;
+        assert_eq!(CliAgent::from_str("kimi", true).ok(), Some(CliAgent::Kimi));
+        assert_eq!(CliAgent::Kimi.cli_name(), "kimi");
     }
 
     #[test]

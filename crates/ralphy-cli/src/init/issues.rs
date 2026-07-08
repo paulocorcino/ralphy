@@ -244,6 +244,10 @@ pub(crate) fn draft_with_agent(
             ralphy_agent_codex::draft_issues(repo, out_path, req, model, effort, timeout)
         }
 
+        Agent::Kimi => {
+            anyhow::bail!("kimi one-shot init is not supported in this slice (later slice #4)")
+        }
+
         Agent::Opencode => {
             ralphy_agent_opencode::draft_issues(repo, out_path, req, model, effort, timeout)
         }

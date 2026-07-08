@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
+use ralphy_agent_kimi::KimiAgent;
 use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{github, Agent, BranchMode};
 use tracing::warn;
@@ -131,6 +132,14 @@ pub(crate) fn build_agent(
         ),
         CliAgent::Codex => Box::new(
             CodexAgent::new(
+                non_empty(args.exec_model.clone().unwrap_or_default()),
+                run_dir,
+            )
+            .with_run_deadline(run_deadline)
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue),
+        ),
+        CliAgent::Kimi => Box::new(
+            KimiAgent::new(
                 non_empty(args.exec_model.clone().unwrap_or_default()),
                 run_dir,
             )

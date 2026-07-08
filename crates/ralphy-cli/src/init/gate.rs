@@ -9,16 +9,18 @@ use ralphy_core::git;
 pub enum Agent {
     Claude,
     Codex,
+    Kimi,
     Opencode,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::Opencode];
+    pub const ALL: [Agent; 4] = [Agent::Claude, Agent::Codex, Agent::Kimi, Agent::Opencode];
 
     pub fn cli_name(&self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            Agent::Kimi => "kimi",
             Agent::Opencode => "opencode",
         }
     }
@@ -30,6 +32,7 @@ impl Agent {
         match self {
             Agent::Claude => ralphy_agent_claude::ACCEPTS_IMAGES,
             Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
+            Agent::Kimi => ralphy_agent_kimi::ACCEPTS_IMAGES,
             Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
         }
     }
@@ -173,6 +176,22 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
             cmd.env_remove("OPENAI_API_KEY");
         }
 
+        Agent::Kimi => {
+            // `hello` is passed as the VALUE of `-p`, never a positional word:
+            // Typer parses a bare positional as a subcommand (`No such command`,
+            // exit 2) → an always-false login probe. Logged-out → exit 1
+            // (`LLM not set`), logged-in → exit 0.
+            cmd.args([
+                "--print",
+                "--output-format",
+                "stream-json",
+                "-m",
+                "kimi-code/kimi-for-coding",
+                "-p",
+                hello,
+            ]);
+        }
+
         Agent::Opencode => {
             cmd.args(["run", hello]);
         }
@@ -204,6 +223,7 @@ mod tests {
     fn accepts_images_reflects_crate_consts() {
         assert!(Agent::Claude.accepts_images());
         assert!(Agent::Codex.accepts_images());
+        assert!(!Agent::Kimi.accepts_images());
         assert!(!Agent::Opencode.accepts_images());
     }
 

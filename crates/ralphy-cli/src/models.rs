@@ -9,6 +9,7 @@ fn agent_slug(a: crate::CliAgent) -> &'static str {
     match a {
         crate::CliAgent::Claude => "claude",
         crate::CliAgent::Codex => "codex",
+        crate::CliAgent::Kimi => "kimi",
         crate::CliAgent::OpenCode => "opencode",
     }
 }
