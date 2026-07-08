@@ -15,6 +15,7 @@
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -174,6 +175,14 @@ pub fn run(commands: &[Vec<String>], repo_root: &Path, timeout: Duration) -> Ver
 /// How many trailing characters of combined output to keep for the comment tail.
 const TAIL_BYTES: usize = 4000;
 
+/// Grace for collecting a command's output after its exit status is known. A
+/// descendant that inherited the pipes (a dev server a `## Verify` command
+/// backgrounded) can hold the write-end open past the foreground exit, so the
+/// reader never sees EOF; we wait only this long, then leak the stuck reader
+/// instead of blocking the gate forever (#156). Mirrors the headless runner's
+/// 5s collect grace.
+const OUTPUT_COLLECT_GRACE: Duration = Duration::from_secs(5);
+
 /// Run a single command, draining its output through threads (so a chatty command
 /// never deadlocks on a full pipe) and killing it if the shared `deadline` passes.
 fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutcome {
@@ -194,14 +203,17 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     // `CreateProcess` never locates (it only appends `.exe`) and cannot execute
     // even if named. On Unix this is a pass-through. See [`spawn_command`].
     let (spawn_program, spawn_args) = spawn_command(program, rest);
-    let mut child = match Command::new(&spawn_program)
-        .args(&spawn_args)
+    let mut cmd = Command::new(&spawn_program);
+    cmd.args(&spawn_args)
         .current_dir(repo_root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+        .stderr(Stdio::piped());
+    // Run the child in its own process group (Unix) so a timeout — or the teardown
+    // below — can signal the whole tree, not just the direct child. Windows walks
+    // the tree by PID at kill time and needs nothing here. See [`kill_tree`] (#156).
+    ralphy_proc_util::own_process_group(&mut cmd);
+    let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             return CommandOutcome {
@@ -215,21 +227,26 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     };
 
     // Drain stdout+stderr concurrently so neither pipe can fill and wedge the
-    // child while we poll for the deadline.
+    // child while we poll for the deadline. Each reader sends its buffer over a
+    // channel so the collect below can bound how long it waits (a descendant that
+    // inherited the pipe can hold it open past the foreground exit; the join must
+    // not block on that — #156).
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+    let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
+    let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
     let out_handle = stdout.map(|mut s| {
         thread::spawn(move || {
             let mut buf = Vec::new();
             let _ = s.read_to_end(&mut buf);
-            buf
+            let _ = tx_out.send(buf);
         })
     });
     let err_handle = stderr.map(|mut s| {
         thread::spawn(move || {
             let mut buf = Vec::new();
             let _ = s.read_to_end(&mut buf);
-            buf
+            let _ = tx_err.send(buf);
         })
     });
 
@@ -239,8 +256,9 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    // Kill the whole tree, not just the direct `sh`/`bash`, so a
+                    // detached grandchild can't survive to hold the pipe open.
+                    ralphy_proc_util::kill_tree(&mut child);
                     timed_out = true;
                     break None;
                 }
@@ -250,17 +268,24 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         }
     };
 
+    // Collect the captured output with a bounded grace. Once the exit status is
+    // known, a descendant that inherited the pipes keeps the write-end open so the
+    // reader never sees EOF — waiting on the join unboundedly is what hung the gate
+    // for ~43 min (#156). Leak a stuck reader (warned, tail may be truncated)
+    // rather than block.
     let mut combined = String::new();
     if let Some(h) = out_handle {
-        if let Ok(buf) = h.join() {
-            combined.push_str(&String::from_utf8_lossy(&buf));
-        }
+        combined.push_str(&recv_and_join(&rx_out, h, "stdout"));
     }
     if let Some(h) = err_handle {
-        if let Ok(buf) = h.join() {
-            combined.push_str(&String::from_utf8_lossy(&buf));
-        }
+        combined.push_str(&recv_and_join(&rx_err, h, "stderr"));
     }
+
+    // Teardown: kill any descendant that outlived the foreground command (a leaked
+    // dev server holding a port), so a self-leaking `## Verify` command can't poison
+    // later gates. The direct child's exit code stays the outcome. Best-effort; on
+    // the timeout path the tree is already gone.
+    ralphy_proc_util::kill_tree(&mut child);
 
     CommandOutcome {
         argv: argv.to_vec(),
@@ -342,6 +367,33 @@ fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std
         OsString::from(program),
         rest.iter().map(OsString::from).collect(),
     )
+}
+
+/// Await one reader thread's captured bytes within [`OUTPUT_COLLECT_GRACE`], then
+/// join it and return the bytes as lossy UTF-8. On a natural exit or after a
+/// [`ralphy_proc_util::kill_tree`] the pipe hits EOF and the thread sends promptly,
+/// so the join is immediate; if the grace elapses a descendant still holds the
+/// write-end — warn that the tail may be truncated and leak that one thread instead
+/// of blocking the gate on a join that would hang (#156). Mirrors
+/// `ralphy-adapter-support`'s `recv_and_join`.
+fn recv_and_join(
+    rx: &mpsc::Receiver<Vec<u8>>,
+    handle: thread::JoinHandle<()>,
+    stream: &str,
+) -> String {
+    match rx.recv_timeout(OUTPUT_COLLECT_GRACE) {
+        Ok(buf) => {
+            let _ = handle.join();
+            String::from_utf8_lossy(&buf).into_owned()
+        }
+        Err(_) => {
+            tracing::warn!(
+                stream,
+                "verify gate reader did not finish within the collect grace — output tail may be truncated"
+            );
+            String::new()
+        }
+    }
 }
 
 /// Keep the last [`TAIL_BYTES`] of `s`, trimmed to a whole-line boundary so the

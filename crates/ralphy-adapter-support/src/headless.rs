@@ -5,7 +5,7 @@
 use std::fs;
 use std::io::{BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -48,12 +48,9 @@ pub fn run_headless(mut cmd: Command, prompt: &str, timeout: Duration) -> Result
     // whole tree, not just the direct child. An agent CLI that spawned helpers
     // would otherwise leave a grandchild holding the stdout pipe open, blocking the
     // reader forever and forcing the collect grace to return empty — silently
-    // dropping the very output the limit/auth detectors scan.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
+    // dropping the very output the limit/auth detectors scan. Shared with the
+    // verify gate via `ralphy-proc-util` so both set up a killable tree identically.
+    ralphy_proc_util::own_process_group(&mut cmd);
 
     let mut child = cmd
         .spawn()
@@ -105,7 +102,7 @@ pub fn run_headless(mut cmd: Command, prompt: &str, timeout: Duration) -> Result
             break Some(s);
         }
         if Instant::now() >= deadline {
-            kill_tree(&mut child);
+            ralphy_proc_util::kill_tree(&mut child);
             timed_out = true;
             break None;
         }
@@ -204,32 +201,4 @@ fn recv_and_join(
             Vec::new()
         }
     }
-}
-
-/// Kill the child and every descendant it spawned. `child.kill()` signals only the
-/// direct child, so a helper process started by an agent CLI would survive and
-/// hold the stdout pipe open. Best-effort on every arm; always reaps the child.
-fn kill_tree(child: &mut std::process::Child) {
-    let pid = child.id();
-    #[cfg(windows)]
-    {
-        // `taskkill /T` terminates the whole tree rooted at PID.
-        let _ = Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(unix)]
-    {
-        // The child leads its own process group (set at spawn), so a negative pgid
-        // signals the whole tree. Dependency-free via the `kill` utility.
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    let _ = child.kill(); // direct child / fallback
-    let _ = child.wait(); // reap so no zombie lingers
 }
