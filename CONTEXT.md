@@ -53,7 +53,7 @@ Where commits land. `BranchMode new` cuts a fresh `afk/run-<stamp>` off the base
 
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
-Code today; Codex, OpenCode later), behind the core's agent contract. Each
+Code, Codex, Kimi, and OpenCode), behind the core's agent contract. Each
 adapter owns its own execution mode and completion protocol.
 _Avoid_: driver, plugin, backend.
 

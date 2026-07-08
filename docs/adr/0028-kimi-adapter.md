@@ -25,8 +25,9 @@ location, exit-code semantics, and Windows I/O traps — is in
 [docs/research/kimi-cli-adapter-spike.md](../research/kimi-cli-adapter-spike.md);
 this ADR records the decisions, the spike records the observations.
 
-Status: **proposed** — design complete and grounded in the v1.48.0 spike; not yet
-implemented. Amends nothing; consistent with ADR-0002/0003/0004/0005/0008/0023.
+Status: **accepted** — implemented (#151–#154) and validated end-to-end against a
+real repo (#155); see [0028-kimi-validation.md](./0028-kimi-validation.md) for the
+live findings. Amends nothing; consistent with ADR-0002/0003/0004/0005/0008/0023.
 
 ## D1 — Selection is per run, via `--agent kimi`; the core is untouched
 
@@ -118,6 +119,10 @@ correctness, not cosmetics):
   (`'charmap' codec can't encode…`, exit 1). stream-json is ASCII-safe.
 - **Never set `PYTHONIOENCODING=utf-8`** on a redirected/no-console child — it
   flips Kimi into trying to start the Textual TUI (`No Windows console found`).
+  **Do set `PYTHONUTF8=1`** instead (resolved at validation, #155): it puts Kimi's
+  stdio on UTF-8 so captured **tool-subprocess** output with a non-cp1252 char
+  (e.g. Prisma's `✔`) can't crash it with `'charmap' codec can't encode` (exit 1),
+  and — touching encoding, not console detection — it does not re-trigger the TUI.
 - **Prompt via stdin**, never a split argv (D2).
 
 The PTY, the Stop hook + flag file, the workspace-trust shim, and Codex's `-o`
@@ -227,16 +232,24 @@ signal).
   `IssueBudget`, `resolve_program`. The binary is resolved via
   `resolve_program("kimi")`, which must also probe `~/.local/bin` (the `uv tool
   install` location — `kimi` was not on PATH in a fresh shell).
-- `ACCEPTS_IMAGES`: the model advertises `image_in`/`video_in` capabilities, so
-  `true` is defensible for triage attachment fetch (ADR-0025 §4); the adapter
-  starts at `false` (safe) and revisits once a multimodal `--print` path is
-  verified.
+- `ACCEPTS_IMAGES`: **resolved to `false`** (#155). The model advertises
+  `image_in`/`video_in`, but `kimi --print` exposes no image/attachment flag — the
+  only input is a text/`stream-json` charter on stdin — so there is no verified
+  multimodal delivery path. Revisit only if Kimi ships a `--print` image channel.
 - Not ported, by design: the PTY, the Stop hook + flag file, `guard.rs`'s
   `PreToolUse` guard, the workspace-trust shim, Codex's `-o` file, native
   `--plan` mode, and complexity routing — none apply to `kimi --print`.
-- Deferred-until-implementation, none reopening a decision: the exact
-  `--skills-dir` materialization layout (D8, settled against the Codex clone), the
-  `ACCEPTS_IMAGES` multimodal path, and the optional 429-text reset-hint parser
-  (D9). The one item that could not be forced without burning real quota — a live
-  429 — was resolved by source instead (D9, exit 75); if a real limit later shows
-  a parseable timestamp, the optional upgrade applies.
+- Deferred-until-implementation, all resolved at validation (#155) except the
+  optional 429-parser: the `--skills-dir` layout settled as a gitignored
+  `.ralphy/skills` container (D8, confirmed loading the reviewer live); the
+  `ACCEPTS_IMAGES` multimodal path resolved to `false` (no `--print` image channel);
+  and the optional 429-text reset-hint parser (D9) still deferred. The one item that
+  could not be forced without burning real quota — a live 429 — was resolved by
+  source instead (D9, exit 75); if a real limit later shows a parseable timestamp,
+  the optional upgrade applies.
+- A Windows-only defect surfaced live and was fixed (#155,
+  [validation](./0028-kimi-validation.md)): kimi crashes with a cp1252 `'charmap'
+  codec can't encode` error, exit 1, when it captures **tool-subprocess** output
+  carrying a non-cp1252 char (e.g. Prisma's `✔`) — a path D5's forced `stream-json`
+  does not cover. Setting `PYTHONUTF8=1` on the child (alongside the existing
+  `PYTHONIOENCODING` strip) fixes it without re-triggering the D5 Textual-TUI trap.

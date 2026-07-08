@@ -33,8 +33,12 @@ mod skills;
 mod tasks;
 mod usage;
 
-/// Kimi's headless `--print` has no image-input channel in this slice, so images
-/// are never fetched for it (ADR-0028 consequences).
+/// `false`, settled at validation (ADR-0028 / 0028-kimi-validation). The model
+/// advertises `image_in`/`video_in`, but `kimi --print` exposes **no** attachment
+/// or image flag — its only input is a text/stream-json charter on stdin — so
+/// there is no verified multimodal path to deliver a fetched image on. Setting
+/// `true` would make triage attachment-fetch (ADR-0025 §4) pull images the adapter
+/// cannot hand to the CLI. Stays `false` until Kimi ships a `--print` image channel.
 pub const ACCEPTS_IMAGES: bool = false;
 
 use auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};

@@ -15,8 +15,8 @@ API key, so no per-token bill).
 
 > **Scope:** Ralphy runs on **Windows and Linux** (both built and tested in CI). It
 > drives one coding-agent CLI per run, picked with `--agent`:
-> **[Claude Code](https://claude.com/claude-code)** (the default), **Codex**, or
-> **OpenCode**.
+> **[Claude Code](https://claude.com/claude-code)** (the default), **Codex**, **Kimi**,
+> or **OpenCode**.
 
 ```text
 You, before bed:                          Ralphy, overnight:                 You, morning:
@@ -76,6 +76,7 @@ still respected. It is mutually exclusive with `--only-issue`.
 - The **agent CLI** for your `--agent` choice, signed in to its subscription (no API key):
   - `claude` (default) — Claude Code CLI
   - `codex` — signed in with `codex login` (use `--agent codex`)
+  - `kimi` — signed in with `kimi login` (use `--agent kimi`)
   - `opencode` — a provider set up with `opencode auth login` (use `--agent opencode`)
 - The Ralphy binary on your `PATH` (`ralphy.exe` on Windows, `ralphy` on Linux) — see
   [docs/BUILDING.md](docs/BUILDING.md).
@@ -152,9 +153,10 @@ Two extra controls:
 |---|---|---|
 | `claude` (default) | Claude Code, live session | Mobile Remote Control, model routing, auto-resume on usage limits |
 | `codex` | `codex exec`, headless | Scales effort on one model; stops and reports on a usage limit |
+| `kimi` | `kimi --print`, headless | Fixed model (`kimi-code/kimi-for-coding`); stops and reports on a usage limit |
 | `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant`; stops and reports on a usage limit |
 
-All three run on a **subscription, not a metered API key** — Ralphy makes sure your
+All four run on a **subscription, not a metered API key** — Ralphy makes sure your
 subscription login stays the one in charge. The same `reviewer` and `staged-plan` skills
 ship to every agent automatically, so a run never depends on what's installed on your
 machine, and your global skills are left untouched.
@@ -177,6 +179,7 @@ forces both phases to stop).
 
 ```powershell
 ralphy run --agent codex                   # use Codex instead of Claude
+ralphy run --agent kimi                     # use Kimi (kimi --print, headless)
 ralphy run --agent opencode                # use OpenCode
 ralphy run --agent opencode --plan-agent claude  # Claude plans, OpenCode executes
 ralphy run --base-branch feature/x         # cut the run branch from another base
@@ -352,8 +355,9 @@ nothing machine-verifiable — and it skips the per-repo fallback.
 There's no dollar cap to set — there's no API spend. On **Claude** and **Codex**, when you
 hit a usage limit Ralphy **waits for the reset and resumes the same issue** automatically
 (pass `--stop-on-limit` if you'd rather it stop and report). Both emit a trustworthy reset
-time — Codex an absolute timestamp, Claude a relative one. **OpenCode** always stops and
-reports — re-run once the limit clears.
+time — Codex an absolute timestamp, Claude a relative one. **Kimi** and **OpenCode** always
+stop and report — re-run once the limit clears. (Kimi keys the limit off the CLI's exit
+code 75, so there's no reset timestamp to wait on; the stop is forced.)
 
 ## Cost reporting
 
