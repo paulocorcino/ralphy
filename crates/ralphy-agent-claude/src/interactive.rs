@@ -217,7 +217,7 @@ impl ClaudeAgent {
 /// separates the words of one visual line with cursor moves instead of spaces
 /// (`Not<ESC[1C>logged<ESC[1C>in`), so without this no substring can match.
 /// CR/LF also become spaces so a phrase split across writes still joins.
-fn strip_pty_escapes(raw: &[u8]) -> String {
+pub(crate) fn strip_pty_escapes(raw: &[u8]) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {

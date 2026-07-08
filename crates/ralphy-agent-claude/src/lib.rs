@@ -26,6 +26,7 @@ use ralphy_adapter_support::{list_session_files, session_files_appeared};
 use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
 
+mod api_watch;
 mod auth;
 mod headless;
 mod interactive;
