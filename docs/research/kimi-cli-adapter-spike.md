@@ -8,6 +8,13 @@ the build is mechanical (clone the Codex adapter) with no surprises.
 Test project: `C:\Dev\FinCal` (throwaway repo created for this purpose).
 Status legend: ✅ confirmed on machine · ⚠️ needs a logged-in run · ❓ unknown.
 
+> **Spike complete (2026-07-08). No open questions.** Both phases done: all ⚠️
+> items resolved in §11 (logged-in battery), and the last ❓ (429/limit) resolved
+> in §11.9 by reading the installed source — `--print` exits **75** on
+> 429/5xx/timeout → `Outcome::Limit`. **Verdict in §12: clone the Codex adapter.**
+> Sections 1–10 are the logged-out phase (kept for the record); §11–12 supersede
+> the ⚠️/❓ notes above.
+
 ---
 
 ## 1. Environment
@@ -277,3 +284,191 @@ Run once authenticated (`kimi login`), then unattended:
 7. **Exit codes** for: success, blocked/refused, tool-approval-needed-but-afk,
    mid-run auth expiry.
 8. Whether `-m kimi-for-coding` is accepted verbatim or needs a `[models]` entry.
+
+---
+
+## 11. Logged-in findings — RESOLVED ✅ (2026-07-08)
+
+Ran the full battery authenticated (OAuth → Kimi Code) in `C:\Dev\FinCal`.
+
+**The invocation the adapter should use** (works everywhere; avoids the Typer
+arg-split and the Windows encoding trap):
+
+```
+kimi --work-dir <ws> --print --input-format text --output-format stream-json -y -m kimi-code/kimi-for-coding
+     < <prompt on stdin>
+```
+
+### 11.1 stdout stream-json = coarse OpenAI-role JSONL
+One JSON object per line, discriminated by top-level **`role`** (there is **no**
+top-level `type`):
+- `{"role":"assistant","content":[{"type":"think","think":…},{"type":"text","text":…}], "tool_calls":[{"type":"function","id":"tool_…","function":{"name":"WriteFile","arguments":"{…}"}}]}`
+- `{"role":"tool","content":…,"tool_call_id":"tool_…"}`
+- **Final assistant text** = the last `role:"assistant"` line whose `content[]`
+  has a `type:"text"` part **and no `tool_calls` key**. That absence is the
+  "turn finished" marker. The stream then just ends — **no explicit done/usage
+  envelope on stdout.**
+
+### 11.2 Token usage — lives ONLY in `wire.jsonl`, per-step 🎯
+Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
+
+```json
+{"type":"StatusUpdate","payload":{
+   "context_tokens":14248,"max_context_tokens":262144,
+   "token_usage":{"input_other":4776,"output":37,"input_cache_read":9472,"input_cache_creation":0},
+   "message_id":"chatcmpl-…","plan_mode":false}}
+```
+
+- Path: `wire.jsonl` line → `message.payload.token_usage.{input_other, output, input_cache_read, input_cache_creation}`.
+- **Per-step** (one `StatusUpdate` per LLM call). A turn total = sum of
+  StatusUpdates between `TurnBegin` and `TurnEnd`.
+- `wire.jsonl` event vocabulary: `metadata`, `TurnBegin{user_input}`,
+  `StepBegin{n}`, `ContentPart{think|text|…}`, `StatusUpdate{token_usage,…}`,
+  `TurnEnd`.
+- **Field → `Usage` mapping** (ADR-0008): `input_other`→`input`,
+  `output`→`output`, `input_cache_read`→`cache_read`,
+  `input_cache_creation`→`cache_creation`. Model id
+  `kimi-code/kimi-for-coding`.
+
+**Capture strategy decided:** snapshot-diff the session dir's `wire.jsonl`
+(Codex/Claude "appeared-over-grew" pattern via `session_files`), summing
+`StatusUpdate.token_usage` across the run. The session id is recoverable from
+**stderr** (`To resume this session: kimi -r <id>`) and from
+`~/.kimi/kimi.json` → `work_dirs[].last_session_id`. Session dir:
+`~/.kimi/sessions/<workdir-hash>/<session-id>/` (`wire.jsonl` + `context.jsonl`
++ `state.json`). Stdout stream-json is used only for the **final text / sentinel
+/ tool-call** view, not tokens.
+
+### 11.3 Auth on disk (refines §4/§6) ✅
+- Auth is **not** in `config.toml` (`api_key=""`). It's OAuth, file-stored:
+  `[providers."managed:kimi-code".oauth]` → `storage="file"`, `key="oauth/kimi-code"`.
+- Token file: **`~/.kimi/credentials/kimi-code.json`** (`access_token`,
+  `refresh_token`, `expires_at`, `scope`, `token_type`, `expires_in`).
+- Provider block: `[providers."managed:kimi-code"]` `type="kimi"`,
+  `base_url="https://api.kimi.com/coding/v1"`.
+- Model block: `[models."kimi-code/kimi-for-coding"]` `max_context_size=262144`,
+  `capabilities=["video_in","image_in","thinking"]`, `display_name="K2.7 Code"`.
+- **Auth-error detection stays behavioral** (exit 1 + stdout `LLM not set`, see
+  §11.5) rather than inspecting the credentials file — simpler and matches how
+  the other adapters do it.
+
+### 11.4 Completion / sentinel — Codex-style works ✅
+- Real task (`--print -y`, "create KIMI_SPIKE.txt with `done`"): **exit 0**,
+  file created & verified. Tool `WriteFile` (`{"path":…,"content":…}`); tool
+  result wrapped in `<system>…</system>`.
+- **Custom sentinel honored verbatim:** asked for `RALPHY_DONE` on the last
+  line → final assistant `text` ended with exactly `RALPHY_DONE`. So the
+  Codex-style *sentinel-in-final-message + exit code + HEAD-diff* completion
+  detection is viable. Feed the shared `PROMPT_EXECUTE` charter (with
+  `DONE_SENTINEL`/`blocked_reason`) and scrape the final assistant text.
+
+### 11.5 Exit-code table ✅
+| Case | Exit | Signal |
+|------|------|--------|
+| success | **0** | normal JSONL; resume hint on stderr |
+| refusal (won't/can't do it) | **0** | refusal is in assistant `text` — **not** distinguishable by exit code; must judge from content (→ `blocked_reason` sentinel in charter) |
+| **rate-limit 429 / 5xx / timeout** | **75** | `EX_TEMPFAIL`; provider error text on stdout → **`Outcome::Limit`** (§11.9) |
+| invalid flag | **2** | stderr Typer usage box (`No such option '…'`) |
+| permanent (auth `LLM not set`, invalid config, max steps) | **1** | plain text on stdout |
+
+→ `classify_kimi_outcome` maps: **75 → Limit**, **1 → auth/permanent bail**,
+**0 → Done or Blocked** decided by sentinel + HEAD-diff, **2 → usage error**.
+
+### 11.6 Model flag ✅
+- `-m kimi-code/kimi-for-coding` (full `provider-key/model`) → **accepted**.
+- `-m kimi-for-coding` (short) → **rejected** (exit 1, `LLM not set`).
+- Use the **full config-key form** `kimi-code/kimi-for-coding` as the default.
+
+### 11.7 `--plan` mode — don't use it ✅
+- `--plan` is `--print`-compatible (exit 0) but **explores heavily and is slow
+  (>120s)**, and signals completion via an `ExitPlanMode` tool call, writing to
+  `~/.kimi/plans/` + `state.json` (`plan_mode`, `plan_session_id`, `plan_slug`).
+- **Decision:** do NOT use native `--plan`. Like the other adapters, run a normal
+  headless `--print` with a **plan charter** that instructs the model to write
+  `.ralphy/plan.md` itself. Plan success = `.ralphy/plan.md` appears on disk
+  (same contract as Claude/Codex). Needs a `prompt.plan.kimi.md` (no tier line).
+
+### 11.9 Rate-limit / 429 — RESOLVED from source ✅ (the last ❓)
+Read straight from the installed source (v1.48.0) instead of guessing:
+
+- **`--print` mode has dedicated exit codes** (`kimi_cli/cli/__init__.py:53-56`):
+  ```python
+  class ExitCode:
+      SUCCESS   = 0
+      FAILURE   = 1
+      RETRYABLE = 75   # EX_TEMPFAIL from sysexits.h
+  ```
+- **429 (rate limit) and 5xx/timeout → exit 75** (`ui/print/__init__.py:438-449`,
+  `_classify_provider_error`): `_RETRYABLE_STATUS_CODES = {429,500,502,503,504}`
+  → `ExitCode.RETRYABLE`; connection/timeout/empty-response → `RETRYABLE` too;
+  any other API status → `FAILURE (1)`. Confirmed by CHANGELOG: *"print mode now
+  exits with code 1 for permanent failures (auth errors, invalid config) and
+  code 75 for retryable failures (429 rate limit, 5xx server errors, connection
+  timeouts)."*
+- The provider error text is `print(str(e))`'d to **stdout** before exit
+  (`ui/print/__init__.py:418-421`).
+- **No structured reset/Retry-After at the chat level.** `retry_after` exists
+  only for OAuth token refresh (`auth/oauth.py`), not for chat 429s. In-run
+  retries are `kosong` backoff (banner shows attempt/wait), but the final
+  give-up just returns exit 75. The 429 body *may* contain a human reset hint in
+  the printed text, but it isn't guaranteed or structured.
+
+**Adapter rule (final):** `classify_kimi_outcome` treats **exit 75 as
+`limit: Some(None)`** → `Outcome::Limit(None)` (default wait/resume, ADR-0003).
+This is cleaner than Claude/Codex (structured exit code, no text scraping).
+Optional later polish: scan the stdout error text for a timestamp and, if
+present, upgrade to `Outcome::Limit(Some(reset))` — same shape as PR #145, but
+**not required** for a correct first version. Exit 1 stays the permanent-fail
+bail (auth `LLM not set`, invalid config, max steps).
+
+### 11.8 Windows gotchas (must bake into the adapter) ⚠️→✅
+- **Always** drive with `--output-format stream-json`. The default rich/TUI
+  renderer writes box-drawing/emoji and **crashes on a cp1252-redirected stdout**
+  (`'charmap' codec can't encode…`, exit 1).
+- **Do not** set `PYTHONIOENCODING=utf-8` with redirected/no-console stdio — it
+  flips kimi into trying to start the Textual TUI (`No Windows console found`).
+  stream-json is ASCII-safe; that's the whole mitigation.
+- Prompt via **stdin** (`--input-format text`), never as a split argv (Typer
+  treats a stray word as a subcommand). Rust `Command::arg(prompt)` as a single
+  element also works, but stdin is the belt-and-suspenders choice.
+
+---
+
+## 12. Final verdict & closed de-para
+
+**Build `crates/ralphy-agent-kimi` by cloning `crates/ralphy-agent-codex`.**
+Headless-only, no PTY, uses the shared scaffold (`run_plan_session` /
+`run_exec_session`), `run_headless_logged`, and the `classify` ladder unchanged.
+
+Concrete adapter shape:
+
+| Concern | Kimi mechanism | Source of truth |
+|---------|----------------|-----------------|
+| Headless plan/exec | `kimi --print --input-format text --output-format stream-json -y -m kimi-code/kimi-for-coding` (prompt on stdin) | §11 |
+| `plan()` | normal `--print` + `prompt.plan.kimi.md` → model writes `.ralphy/plan.md`; success = file on disk (not native `--plan`) | §11.7 |
+| `execute()` | `run_exec_session` loop + `PROMPT_EXECUTE` charter; sentinel in final assistant `text` + exit + HEAD-diff | §11.4 |
+| Completion classify | `classify_kimi_outcome` → `CompletionSignals` → shared `classify`; exit **75**→Limit, **1**→auth bail, **0**→Done/Blocked via sentinel + HEAD-diff, **2**→usage error | §11.4/11.5/11.9 |
+| Limit detection | **exit code 75** (`EX_TEMPFAIL`, 429/5xx/timeout) → `Outcome::Limit(None)`; no scraping | §11.9 |
+| Permission bypass | `-y` (`--yolo`) | §2 |
+| Model | `-m kimi-code/kimi-for-coding` (full form); **no tier routing** | §11.6 |
+| Tokens (ADR-0008) | snapshot-diff `wire.jsonl` `StatusUpdate.payload.token_usage`, sum per run; map 4 fields → `Usage` | §11.2 |
+| Session dir | `~/.kimi/sessions/<workdir-hash>/<session-id>/`; id from stderr resume hint or `kimi.json` | §11.2 |
+| Auth-error bail | exit 1 + stdout `LLM not set` → `KIMI_AUTH_ERROR_MSG` telling user to run `kimi login` | §11.5 |
+| Binary resolve | `resolve_program("kimi")`, also probe `~/.local/bin` | §7 |
+| Skills | `--skills-dir` (repeatable) or `--agent-file`; materialize like Codex | §2 |
+| Config injection | `--config '<toml>'` inline if needed (else rely on `~/.kimi/config.toml`) | §6 |
+| `ACCEPTS_IMAGES` | model has `image_in` cap → defensible `true`; start `false` (safe) and revisit for triage | §11.3 |
+| Force stream-json + stdin | **mandatory** on Windows (encoding + Typer traps) | §11.8 |
+
+**No open questions remain.** The last one (429/limit behavior) was resolved by
+reading the installed source, not by triggering a real limit: `--print` exits
+**75** (`EX_TEMPFAIL`) on 429/5xx/timeout → `Outcome::Limit(None)`; exit 1 =
+permanent bail (§11.9). A structured reset timestamp is **not** exposed at the
+chat level, so `None` (default wait, ADR-0003) is correct; an optional text-scan
+upgrade later mirrors PR #145 but isn't needed for a correct v1.
+
+**Wiring checklist** (unchanged from the pre-spike analysis): two enums
+(`cli.rs` `CliAgent`, `init/gate.rs` `Agent`), `build_agent` in `wiring.rs`,
+the three one-shot dispatch matches (`init/run.rs`, `init/issues.rs`,
+`triage.rs`), `models.rs` (`agent_slug`/`plan_action`), Cargo workspace + CLI
+dep, and a `prompt.plan.kimi.md`. Zero changes to `ralphy-core`.
