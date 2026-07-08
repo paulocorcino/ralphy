@@ -10,10 +10,9 @@
 //! assistant message in Kimi's `stream-json` stream, the process exit code, and a
 //! HEAD-diff commit check — mapped onto the same core [`Outcome`].
 //!
-//! This is the walking-skeleton slice (ADR-0028): token accounting (D7), the
-//! usage-limit/exit-75 handling (D9), and the one-shot init flows are deferred to
-//! later slices, so `plan`/`execute` report `Usage::default()` and no limit path
-//! is wired.
+//! This is the walking-skeleton slice (ADR-0028): the usage-limit/exit-75
+//! handling (D9) and the one-shot init flows are deferred to later slices, so
+//! no limit path is wired.
 
 use std::fs;
 use std::path::PathBuf;
@@ -21,7 +20,8 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use ralphy_adapter_support::{
-    run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg, PROMPT_EXECUTE,
+    list_session_files, run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg,
+    PROMPT_EXECUTE,
 };
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Usage, Workspace};
 use tracing::info;
@@ -30,6 +30,7 @@ mod auth;
 mod command;
 mod outcome;
 mod skills;
+mod usage;
 
 /// Kimi's headless `--print` has no image-input channel in this slice, so images
 /// are never fetched for it (ADR-0028 consequences).
@@ -39,6 +40,7 @@ use auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
 use command::{build_kimi_command, DEFAULT_KIMI_MODEL};
 use outcome::{classify_kimi_outcome, kimi_final_text};
 use skills::materialize_kimi_skills;
+use usage::{fold_wire_usage, kimi_sessions_dir};
 
 /// The Kimi planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` with no `## Execution model` tier line
@@ -105,6 +107,13 @@ impl Agent for KimiAgent {
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let log_path = self.run_dir.join("kimi.log");
+        let sessions_dir = kimi_sessions_dir();
+        let snapshot = || {
+            sessions_dir
+                .as_deref()
+                .map(|d| list_session_files(d, "jsonl", true, Some("wire")))
+                .unwrap_or_default()
+        };
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
@@ -113,13 +122,15 @@ impl Agent for KimiAgent {
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
+            let before = snapshot();
             let r = self.run_kimi(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
-            Ok((r, ()))
+            let after = snapshot();
+            Ok((r, (before, after)))
         };
 
         let ralphy_dir = ws.ralphy_dir();
         let charter_path = ws.plan_charter_path();
-        run_plan_session(
+        let session = run_plan_session(
             PlanCfg {
                 issue_number: issue.number,
                 ralphy_dir: &ralphy_dir,
@@ -137,13 +148,21 @@ impl Agent for KimiAgent {
             |_log| None,
         )?;
 
+        // None = resumed (finalized plan kept, no vendor run): no wire payload to
+        // fold, so report zero planning tokens.
+        let usage = match session {
+            Some((_, (before, after))) => {
+                fold_wire_usage(&before, &after, Some(self.resolve_model()))
+            }
+            None => Usage::default(),
+        };
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
             // Kimi drives a single model, no complexity tier (ADR-0028 D3).
             recommended_model: None,
             path: plan_path,
-            usage: Usage::default(),
+            usage,
         })
     }
 
@@ -151,18 +170,27 @@ impl Agent for KimiAgent {
         let log_path = self.run_dir.join("kimi.log");
         // HEAD before/after bounds the work this call committed (progress guard).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
+        let sessions_dir = kimi_sessions_dir();
+        let snapshot = || {
+            sessions_dir
+                .as_deref()
+                .map(|d| list_session_files(d, "jsonl", true, Some("wire")))
+                .unwrap_or_default()
+        };
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
             let cmd = build_kimi_command(&self.resolve_model(), ws.repo_root(), &skills_dir);
             info!(model = %self.resolve_model(), "executing with kimi --print");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
+            let before = snapshot();
             let r = self.run_kimi(cmd, PROMPT_EXECUTE, timeout)?;
-            Ok((r, ()))
+            let after = snapshot();
+            Ok((r, (before, after)))
         };
 
         let ralphy_dir = ws.ralphy_dir();
-        let (r, ()) = run_exec_session(
+        let (r, (before, after)) = run_exec_session(
             ExecCfg {
                 ralphy_dir: &ralphy_dir,
                 run_dir: &self.run_dir,
@@ -186,7 +214,7 @@ impl Agent for KimiAgent {
         );
         Ok(Execution {
             outcome,
-            usage: Usage::default(),
+            usage: fold_wire_usage(&before, &after, Some(self.resolve_model())),
         })
     }
 }
