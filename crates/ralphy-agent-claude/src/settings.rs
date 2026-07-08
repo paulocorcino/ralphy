@@ -34,10 +34,10 @@ pub struct ClaudeSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec_effort: Option<String>,
     /// Per-issue wall-clock budget in minutes (`--max-minutes-per-issue`).
-    /// `None` → [`ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE`] (unbounded by
-    /// default). `0` — whether from the default or set explicitly — disables the
-    /// per-issue cap: the issue is then bounded only by `--deadline-hours`. A
-    /// positive value opts into a cap.
+    /// `None` → [`ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE`] (a finite ≈60 min
+    /// backstop by default). `0` — whether set explicitly or via
+    /// `claude.max_minutes_per_issue = 0` — disables the per-issue cap: the
+    /// issue is then bounded only by `--deadline-hours`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_minutes_per_issue: Option<u64>,
 }

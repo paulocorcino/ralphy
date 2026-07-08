@@ -7,15 +7,16 @@
 
 use std::time::Duration;
 
-/// Default per-issue wall-clock budget in minutes, used when neither the
-/// `--max-minutes-per-issue` flag nor a persisted per-agent settings default
-/// is set. `0` means **no per-issue cap** — the default is unbounded, and an
-/// issue is bounded only by the run-level deadline (`--deadline-hours`) if one
-/// is set. Set a positive value in settings.json (`claude.max_minutes_per_issue`)
-/// or via the flag to opt into a cap. The single source of truth for every
-/// adapter's default — keep adapter `Default` impls pointing here rather than
-/// re-spelling a literal.
-pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 0;
+/// Default per-issue wall-clock budget in minutes: resolved via
+/// `--max-minutes-per-issue` (flag) → persisted `claude.max_minutes_per_issue`
+/// (settings) → this constant, in that precedence order. The default is a
+/// finite backstop (60 min) so an unset flag/setting cannot silently produce
+/// an unbounded per-issue budget. Pass `0` explicitly (flag or
+/// `claude.max_minutes_per_issue = 0`) to opt out of the cap entirely — `0`
+/// stays a valid, deliberate "no per-issue cap" sentinel, just no longer the
+/// default. The single source of truth for every adapter's default — keep
+/// adapter `Default` impls pointing here rather than re-spelling a literal.
+pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 60;
 
 /// The finite window the runner-enforced verify gate (ADR-0011) borrows when the
 /// per-issue budget is disabled (`max_minutes_per_issue == 0`). The gate normally

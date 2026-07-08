@@ -82,13 +82,13 @@ box, leaving the hardcoded run default in place.
 | `claude.plan_effort` | `--plan-effort` | `low` \| `medium` \| `high` \| … | `medium` | Reasoning effort while planning. |
 | `claude.default_exec_model` | `--default-exec-model` | `sonnet` \| `opus` | `sonnet` | Execution model used **only when the plan emits no `## Execution model` judgment** (complexity routing). An explicit `--exec-model` or the plan's own judgment overrides it. |
 | `claude.exec_effort` | `--exec-effort` | `low` \| `medium` \| `high` \| … | `medium` | Reasoning effort while executing. |
-| `claude.max_minutes_per_issue` | `--max-minutes-per-issue` | non-negative integer | `0` (**unbounded**) | Per-issue wall-clock cap in minutes. **`0` disables the cap** — the issue is then bounded only by `--deadline-hours`. A positive value opts into a cap. |
+| `claude.max_minutes_per_issue` | `--max-minutes-per-issue` | non-negative integer | `60` (finite backstop) | Per-issue wall-clock cap in minutes. **`0` disables the cap** — the issue is then bounded only by `--deadline-hours`. |
 
 ```powershell
 ralphy config set claude.default_exec_model opus
 ralphy config set claude.plan_effort high
 ralphy config set claude.max_minutes_per_issue 90   # opt into a 90-min cap
-ralphy config set claude.max_minutes_per_issue 0    # back to unbounded
+ralphy config set claude.max_minutes_per_issue 0    # explicit opt-out: unbounded
 ```
 
 > The per-issue model choice is resolved as: explicit `--exec-model` > the plan's

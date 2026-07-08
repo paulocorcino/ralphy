@@ -685,4 +685,14 @@ mod tests {
             .unwrap_or(BranchMode::New);
         assert_eq!(branch_mode, BranchMode::New);
     }
+
+    #[test]
+    fn unset_max_minutes_resolves_to_finite_default() {
+        // The composition-root resolution (run.rs) an unset flag AND unset
+        // persisted setting must fall through to a finite backstop, never to
+        // `0` (which `issue_deadline` reads as unbounded).
+        let resolved = config::resolve_u64(None, None, ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE);
+        assert_eq!(resolved, 60);
+        assert_ne!(resolved, 0);
+    }
 }
