@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
+use chrono::{DateTime, Datelike, Local, NaiveDateTime, NaiveTime, Weekday};
 use tracing::info;
 
 /// Upper bound on a single usage-limit wait. A reset hint that resolves farther
@@ -54,10 +54,17 @@ impl RunClock for WallClock {
         let buffer = chrono::Duration::minutes(5);
         let target = match next_reset(reset, Local::now()) {
             Some(t) => t + buffer,
-            // An unparseable reset should never reach here (the loop only calls
-            // wait_for_reset when a reset was parsed); resume immediately rather
-            // than sleep on a guess.
-            None => return WaitOutcome::Resumed,
+            // The adapter parsed *some* reset string, but this clock cannot turn
+            // it into a wake time (an unrecognised format the adapter accepts but
+            // `next_reset` does not). Resuming immediately here hot-loops the
+            // execute retry until the progress-aware cap abandons the issue with a
+            // 0-second "wait" (issue #145). Fail safe instead: stop-and-report on
+            // the limit, exactly as a `Limit(None)` would, so an operator re-runs
+            // rather than the run silently burning attempts.
+            None => {
+                info!(%reset, "usage-limit reset hint not understood by the clock — stopping instead of waiting");
+                return WaitOutcome::DeadlinePassed;
+            }
         };
 
         if self.deadline_passed() {
@@ -105,13 +112,20 @@ impl RunClock for WallClock {
 
 /// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
 /// one of: an absolute RFC3339 instant (`"2026-06-09T18:00:00Z"`, as some adapters
-/// emit), a bare `"HH:mm"`, or a weekday-qualified `"Wkd HH:mm"` (the relative
-/// forms others emit). An absolute instant is unambiguous and used as-is — `now` is ignored. A
+/// emit), an absolute month-name date-time (`"Jun 10th, 2026 12:23 AM"`, as Codex
+/// emits), a bare 24-hour `"HH:mm"`, a bare 12-hour `"H:MM AM/PM"` (`"6:13 PM"`,
+/// also Codex), or a weekday-qualified `"Wkd HH:mm"` (the relative forms others
+/// emit). An absolute instant is unambiguous and used as-is — `now` is ignored. A
 /// bare time resolves to today, rolled to tomorrow when already past `now`; a
 /// weekday-qualified time resolves to the next date carrying that weekday (today
 /// only when the time is still ahead, else next week). Pure over its inputs so the
 /// rollover edge cases unit-test without sleeping. Returns `None` on an
 /// unparseable hint.
+///
+/// The Codex adapter accepts human-formatted hints verbatim (whatever follows
+/// "try again at "), so this clock must understand the same forms it emits — a
+/// parser this side that is stricter than the adapter's makes the run *think* it
+/// has a wake time and then refuse to wait on it (issue #145).
 fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     // Strip trailing sentence punctuation an adapter may leave on the hint (e.g.
     // "… Try again at 2026-06-09T18:00:00Z.").
@@ -129,6 +143,20 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
         }
     }
 
+    // An absolute month-name date-time carries its own date, like RFC3339 but in the
+    // human form Codex emits ("Jun 10th, 2026 12:23 AM"). No local zone is stated, so
+    // it is read as local wall-clock time.
+    if let Some(dt) = parse_month_name_datetime(trimmed) {
+        return Some(dt);
+    }
+
+    // A bare 12-hour time ("6:13 PM") is relative: resolve to its next occurrence
+    // like a bare 24-hour time. Checked before the weekday/`HH:mm` split below,
+    // whose `parse_weekday("6:13")` would otherwise reject it.
+    if let Some(time) = parse_12h_time(trimmed) {
+        return next_occurrence(time, None, now);
+    }
+
     let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
         Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
         // Use `trimmed` (trailing punctuation already stripped), not the raw
@@ -140,6 +168,17 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     let min: u32 = m.parse().ok()?;
     let time = NaiveTime::from_hms_opt(hour, min, 0)?;
 
+    next_occurrence(time, weekday, now)
+}
+
+/// The next date/time carrying `time`, relative to `now`: today when still ahead
+/// (else tomorrow) for a bare time, or the next date on `weekday` when qualified
+/// (today only when the time is still ahead, else next week).
+fn next_occurrence(
+    time: NaiveTime,
+    weekday: Option<Weekday>,
+    now: DateTime<Local>,
+) -> Option<DateTime<Local>> {
     let today = now.date_naive();
     let target_date = match weekday {
         None => {
@@ -164,6 +203,55 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
         .and_time(time)
         .and_local_timezone(Local)
         .single()
+}
+
+/// Parse a bare 12-hour clock time like `"6:13 PM"` (Codex's format). Returns
+/// `None` when the AM/PM marker is absent, so 24-hour `"18:13"` and
+/// weekday-qualified hints fall through to their own parsers.
+fn parse_12h_time(s: &str) -> Option<NaiveTime> {
+    let upper = s.trim().to_uppercase();
+    if !upper.ends_with("AM") && !upper.ends_with("PM") {
+        return None;
+    }
+    // chrono's numeric specifiers accept an unpadded hour, so "6:13 PM" parses.
+    NaiveTime::parse_from_str(&upper, "%I:%M %p").ok()
+}
+
+/// Parse an absolute month-name date-time like `"Jun 10th, 2026 12:23 AM"`
+/// (Codex's format) into a local instant. Ordinal suffixes and commas are
+/// stripped first so chrono's format specifiers match. Returns `None` when the
+/// hint is not this form.
+fn parse_month_name_datetime(s: &str) -> Option<DateTime<Local>> {
+    let cleaned = s.replace(',', " ");
+    let normalized = cleaned
+        .split_whitespace()
+        .map(strip_ordinal_suffix)
+        .collect::<Vec<_>>()
+        .join(" ");
+    for fmt in [
+        "%b %d %Y %I:%M %p",
+        "%B %d %Y %I:%M %p",
+        "%b %d %Y %H:%M",
+        "%B %d %Y %H:%M",
+    ] {
+        if let Ok(ndt) = NaiveDateTime::parse_from_str(&normalized, fmt) {
+            return ndt.and_local_timezone(Local).single();
+        }
+    }
+    None
+}
+
+/// Drop an ordinal suffix (`st`/`nd`/`rd`/`th`) from a token that is otherwise all
+/// digits, so `"10th"` becomes `"10"`. Any other token is returned unchanged.
+fn strip_ordinal_suffix(tok: &str) -> &str {
+    for suf in ["st", "nd", "rd", "th"] {
+        if let Some(stem) = tok.strip_suffix(suf) {
+            if !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit()) {
+                return stem;
+            }
+        }
+    }
+    tok
 }
 
 /// Parse a three-letter weekday abbreviation (case-insensitive) into a chrono
@@ -251,6 +339,59 @@ mod tests {
     fn next_reset_unparseable_is_none() {
         let now = at(2026, 6, 9, 10, 0);
         assert_eq!(next_reset("not a time", now), None);
+    }
+
+    #[test]
+    fn next_reset_12h_pm_future_same_day_stays_today() {
+        // Codex emits a bare 12-hour time ("try again at 6:13 PM"). Before the
+        // fix for #145 this parsed to None and the run refused to wait.
+        let now = at(2026, 6, 9, 15, 20);
+        let got = next_reset("6:13 PM", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 9, 18, 13),
+            "6:13 PM resolves to 18:13 today"
+        );
+    }
+
+    #[test]
+    fn next_reset_12h_pm_past_rolls_to_tomorrow() {
+        // Same 12-hour form, but already past today, rolls to tomorrow.
+        let now = at(2026, 6, 9, 19, 0);
+        let got = next_reset("6:13 PM", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 10, 18, 13),
+            "past 12-hour time rolls to tomorrow"
+        );
+    }
+
+    #[test]
+    fn next_reset_12h_am_midnight_hour() {
+        // 12:23 AM is 00:23 — the 12-hour edge chrono gets right via %I/%p.
+        let now = at(2026, 6, 9, 23, 0);
+        let got = next_reset("12:23 AM", now).unwrap();
+        assert_eq!(got, at(2026, 6, 10, 0, 23), "12:23 AM is 00:23 next day");
+    }
+
+    #[test]
+    fn next_reset_month_name_datetime_used_directly() {
+        // Codex also emits a full month-name date-time with an ordinal day:
+        // "Jun 10th, 2026 12:23 AM". Absolute — `now` is ignored.
+        let now = at(2026, 6, 9, 10, 0);
+        let got = next_reset("Jun 10th, 2026 12:23 AM", now).unwrap();
+        assert_eq!(
+            got,
+            at(2026, 6, 10, 0, 23),
+            "month-name date-time resolves to its exact local instant"
+        );
+    }
+
+    #[test]
+    fn next_reset_24h_still_parses_without_ampm() {
+        // The AM/PM path must not shadow a bare 24-hour hint from other adapters.
+        let now = at(2026, 6, 9, 10, 0);
+        assert_eq!(next_reset("18:13", now).unwrap(), at(2026, 6, 9, 18, 13));
     }
 
     #[test]
