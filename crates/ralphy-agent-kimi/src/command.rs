@@ -1,7 +1,7 @@
 //! Building the headless `kimi --print` invocation. A single point that fixes the
-//! flags, points Kimi at the materialized skills store, and neutralizes the
-//! `PYTHONIOENCODING` trap (ADR-0028 D5) so the contract holds regardless of the
-//! operator's env.
+//! flags, points Kimi at the materialized skills store, and settles Kimi's Windows
+//! stdio encoding (ADR-0028 D5 + 0028-kimi-validation) so the contract holds
+//! regardless of the operator's env.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -20,9 +20,17 @@ pub(crate) const DEFAULT_KIMI_MODEL: &str = "kimi-code/kimi-for-coding";
 /// forces the ASCII-safe role-JSONL stream (avoids the cp1252 Textual-TUI crash);
 /// `-y` auto-approves tool use; `--skills-dir` points at the ralphy-owned store.
 ///
-/// `PYTHONIOENCODING` is removed on the child: an inherited `PYTHONIOENCODING=utf-8`
-/// flips Kimi into starting the Textual TUI ("No Windows console found"), so
-/// stripping it guarantees the headless contract (ADR-0028 D5).
+/// Windows stdio encoding is settled with two env moves that must go together
+/// (validated live, 0028-kimi-validation):
+/// - `PYTHONIOENCODING` is **removed**: an inherited `PYTHONIOENCODING=utf-8` flips
+///   Kimi into starting the Textual TUI ("No Windows console found"), breaking the
+///   headless contract (ADR-0028 D5).
+/// - `PYTHONUTF8=1` is **set**: without it Kimi's Python stdio defaults to cp1252 on
+///   Windows and crashes with `'charmap' codec can't encode…` (exit 1) the moment a
+///   tool subprocess prints a non-cp1252 char — e.g. Prisma/npm's `✔` during
+///   `npm install`, which killed the first live execute. UTF-8 Mode (PEP 540) fixes
+///   the capture without touching Kimi's console detection, so it does **not**
+///   re-trigger the TUI trap. No-op on an already-UTF-8 Linux locale.
 pub(crate) fn build_kimi_command(model: &str, work_dir: &Path, skills_dir: &Path) -> Command {
     let mut cmd = Command::new(resolve_program("kimi"));
     cmd.arg("--work-dir")
@@ -40,7 +48,8 @@ pub(crate) fn build_kimi_command(model: &str, work_dir: &Path, skills_dir: &Path
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env_remove("PYTHONIOENCODING");
+        .env_remove("PYTHONIOENCODING")
+        .env("PYTHONUTF8", "1");
     cmd
 }
 
@@ -75,7 +84,8 @@ pub(crate) fn build_kimi_init_command(model: &str, cwd: &Path) -> Command {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env_remove("PYTHONIOENCODING");
+        .env_remove("PYTHONIOENCODING")
+        .env("PYTHONUTF8", "1");
     cmd
 }
 
@@ -130,6 +140,13 @@ mod tests {
             .get_envs()
             .any(|(k, v)| k == "PYTHONIOENCODING" && v.is_none());
         assert!(removed, "PYTHONIOENCODING should be removed on the child");
+
+        // PYTHONUTF8=1 is set so Kimi's Python stdio is UTF-8 and captured tool
+        // subprocess output with non-cp1252 chars (e.g. `✔`) can't crash it.
+        let utf8 = cmd
+            .get_envs()
+            .any(|(k, v)| k == "PYTHONUTF8" && v == Some("1".as_ref()));
+        assert!(utf8, "PYTHONUTF8 should be set to 1 on the child");
     }
 
     #[test]
@@ -169,6 +186,11 @@ mod tests {
             .get_envs()
             .any(|(k, v)| k == "PYTHONIOENCODING" && v.is_none());
         assert!(removed, "PYTHONIOENCODING should be removed on the child");
+
+        let utf8 = cmd
+            .get_envs()
+            .any(|(k, v)| k == "PYTHONUTF8" && v == Some("1".as_ref()));
+        assert!(utf8, "PYTHONUTF8 should be set to 1 on the child");
     }
 
     #[test]

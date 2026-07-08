@@ -190,10 +190,12 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
                 "-p",
                 hello,
             ]);
-            // Mirror the adapter's mandatory scrub (command.rs): an inherited
-            // PYTHONIOENCODING flips Kimi into the Textual TUI, which would make a
-            // logged-in operator's probe falsely report "not logged in".
+            // Mirror the adapter's mandatory encoding contract (command.rs): strip
+            // PYTHONIOENCODING (an inherited value flips Kimi into the Textual TUI,
+            // falsely failing a logged-in operator's probe) and set PYTHONUTF8=1 (so
+            // a non-cp1252 char in Kimi's reply can't crash the probe on Windows).
             cmd.env_remove("PYTHONIOENCODING");
+            cmd.env("PYTHONUTF8", "1");
         }
 
         Agent::Opencode => {
