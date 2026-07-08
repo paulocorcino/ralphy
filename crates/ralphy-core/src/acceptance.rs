@@ -66,8 +66,10 @@ pub struct TickResult {
 
 /// Normalize an acceptance line for matching only: drop the inline-markdown
 /// delimiters (`*`, `_`, and backtick) that a ledger criterion routinely loses
-/// when it is transcribed from the issue's AC bullet, and collapse runs of
-/// whitespace. Applied to BOTH sides of the comparison, so an identifier like
+/// when it is transcribed from the issue's AC bullet, collapse runs of
+/// whitespace, and drop trailing sentence punctuation (`.`, `;`, `:`, `,`) that
+/// the transcription just as routinely drops when it rewrites the AC bullet as a
+/// bare clause. Applied to BOTH sides of the comparison, so an identifier like
 /// `blob_id` reduces identically on each side and still matches — this affects
 /// matching alone; the ticked line keeps its original text verbatim.
 fn normalize_ac(s: &str) -> String {
@@ -77,6 +79,8 @@ fn normalize_ac(s: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+        .trim_end_matches(['.', ';', ':', ','])
+        .to_string()
 }
 
 /// Apply verified verdicts to an issue body by flipping `- [ ] <criterion>` to
@@ -302,6 +306,50 @@ some note
         assert!(result
             .new_body
             .contains("- [x] Rate-limit anti-abuso por sessão demonstrado **sem** linha `auth↔blob` persistida"));
+    }
+
+    #[test]
+    fn apply_ledger_ticks_through_trailing_punctuation_mismatch() {
+        // The #152/#153 failure: the issue's AC bullets are written as full
+        // sentences ending in a period, but the ledger transcribed each criterion
+        // as a bare clause without the trailing `.`. Inline-markdown normalization
+        // alone left them unmatched → every verified criterion was flagged
+        // NEEDS REVIEW instead of auto-ticked. Trailing-punctuation trimming ticks
+        // them while preserving the line's original text.
+        let body = "## Acceptance criteria\n\
+            - [ ] Usage is summed per-step across `TurnBegin`/`TurnEnd`, not double-counted.\n\
+            - [ ] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` pass on Windows and Linux.\n";
+        let verdicts = vec![
+            Verdict {
+                // criterion as the ledger recorded it: backticks and the trailing
+                // period both stripped.
+                criterion:
+                    "Usage is summed per-step across TurnBegin/TurnEnd, not double-counted".into(),
+                kind: VerdictKind::Verified,
+                evidence: "unit test".into(),
+            },
+            Verdict {
+                criterion:
+                    "cargo fmt --check, cargo clippy -- -D warnings, cargo test pass on Windows and Linux"
+                        .into(),
+                kind: VerdictKind::Verified,
+                evidence: "CI".into(),
+            },
+        ];
+        let result = apply_ledger(body, &verdicts);
+        assert!(
+            result.unmatched.is_empty(),
+            "trailing punctuation must not block matching: {:?}",
+            result.unmatched
+        );
+        assert_eq!(result.ticked.len(), 2, "both verified criteria tick");
+        // The ticked lines keep their original text, period and all — only the box flips.
+        assert!(result.new_body.contains(
+            "- [x] Usage is summed per-step across `TurnBegin`/`TurnEnd`, not double-counted."
+        ));
+        assert!(result.new_body.contains(
+            "- [x] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` pass on Windows and Linux."
+        ));
     }
 
     #[test]
