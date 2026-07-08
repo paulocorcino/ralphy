@@ -1,0 +1,15 @@
+[package]
+name = "ralphy-agent-kimi"
+version = "0.1.0-rc10"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Kimi CLI adapter for Ralphy: drives `kimi --print` behind the core Agent contract."
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+include_dir.workspace = true
+ralphy-core.workspace = true
+ralphy-adapter-support.workspace = true

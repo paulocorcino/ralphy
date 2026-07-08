@@ -5,6 +5,7 @@ members = [
     "crates/ralphy-cli",
     "crates/ralphy-agent-claude",
     "crates/ralphy-agent-codex",
+    "crates/ralphy-agent-kimi",
     "crates/ralphy-agent-opencode",
     "crates/ralphy-pty",
     "crates/ralphy-adapter-support",
@@ -39,6 +40,7 @@ tempfile = "3"
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-agent-codex = { path = "crates/ralphy-agent-codex" }
+ralphy-agent-kimi = { path = "crates/ralphy-agent-kimi" }
 ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
 ralphy-adapter-support = { path = "crates/ralphy-adapter-support" }
