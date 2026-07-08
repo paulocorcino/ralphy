@@ -15,11 +15,40 @@ use ralphy_core::{Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
 
+use crate::api_watch::{ApiWatch, ApiWatchAction};
 use crate::auth::{is_claude_auth_error, transcript_limit, CLAUDE_AUTH_ERROR_MSG};
 use crate::headless::classify_outcome;
 use crate::plan::materialize_plugin;
 use crate::usage::{dirs_home, latest_transcript_text, latest_transcript_text_since};
 use crate::{ClaudeAgent, EXEC_CHARTER};
+
+/// How a `drive_session` ended: a terminal [`Outcome`], or a signal that the
+/// child stayed degraded past the API watch's kill and should be re-spawned once.
+pub(crate) enum DriveEnd {
+    Outcome(Outcome),
+    Respawn,
+}
+
+/// One turn of the respawn loop's decision: either settle on a final outcome or
+/// spawn one more child.
+enum RespawnStep {
+    Done(Outcome),
+    Again,
+}
+
+/// The respawn-budget rule (budget = exactly 1), pure so it unit-tests without a
+/// real PTY: a terminal outcome settles; the FIRST `Respawn` (flips `respawned`)
+/// asks for another child; any later `Respawn` settles on `Timeout`.
+fn respawn_step(end: DriveEnd, respawned: &mut bool) -> RespawnStep {
+    match end {
+        DriveEnd::Outcome(o) => RespawnStep::Done(o),
+        DriveEnd::Respawn if !*respawned => {
+            *respawned = true;
+            RespawnStep::Again
+        }
+        DriveEnd::Respawn => RespawnStep::Done(Outcome::Timeout),
+    }
+}
 
 impl ClaudeAgent {
     /// Drive the execution session (headless `-p` loop or interactive PTY) to a
@@ -62,22 +91,27 @@ impl ClaudeAgent {
 
         // Build the claude argv: settings, skip-permissions, model, effort,
         // optional remote-control, then the charter as the positional prompt.
-        let mut cmd = PtyCommand::new(resolve_claude_binary())
-            .cwd(ws.repo_root())
-            .env("RALPHY_FLAG_FILE", &flag_file)
-            .arg("--dangerously-skip-permissions")
-            .arg("--settings")
-            .arg(settings_path.as_os_str())
-            .arg("--plugin-dir")
-            .arg(plugin_dir.as_os_str());
-        cmd = cmd.arg("--model").arg(&exec_model);
-        if let Some(e) = &self.exec.exec_effort {
-            cmd = cmd.arg("--effort").arg(e);
-        }
-        if self.exec.remote_control {
-            cmd = cmd.arg("--remote-control").arg(&rc_name);
-        }
-        cmd = cmd.arg(EXEC_CHARTER);
+        // A closure so the respawn loop can rebuild an IDENTICAL command (the
+        // second child resumes from the on-disk `plan.md`, untouched between
+        // spawns — see `prompt.execute.md` resume instruction).
+        let build_cmd = || {
+            let mut cmd = PtyCommand::new(resolve_claude_binary())
+                .cwd(ws.repo_root())
+                .env("RALPHY_FLAG_FILE", &flag_file)
+                .arg("--dangerously-skip-permissions")
+                .arg("--settings")
+                .arg(settings_path.as_os_str())
+                .arg("--plugin-dir")
+                .arg(plugin_dir.as_os_str());
+            cmd = cmd.arg("--model").arg(&exec_model);
+            if let Some(e) = &self.exec.exec_effort {
+                cmd = cmd.arg("--effort").arg(e);
+            }
+            if self.exec.remote_control {
+                cmd = cmd.arg("--remote-control").arg(&rc_name);
+            }
+            cmd.arg(EXEC_CHARTER)
+        };
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
         info!(model = %exec_model, effort = self.exec.exec_effort.as_deref().unwrap_or("medium"), remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
@@ -87,18 +121,35 @@ impl ClaudeAgent {
             .checked_sub(Duration::from_secs(2))
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        let mut session =
-            PtySession::spawn(cmd).context("spawning the claude execution session")?;
-        let result = self.drive_session(
-            &mut session,
-            &flag_file,
-            transcript_dir.as_deref(),
-            transcript_since,
-        );
-        // Reclaim: kill the tree and drop the session (closes the ConPTY).
-        // Kill unconditionally so the child never outlives us on error paths.
-        let _ = session.kill();
-        result
+        // Respawn budget = exactly 1: a child stuck degraded past the API watch's
+        // kill is re-spawned once against `plan.md`; a second degradation returns
+        // `Timeout`. Kill-before-return is invariant on EVERY iteration — the
+        // `session.kill()` sits before `match end?` so an `Err` from
+        // `drive_session` still reclaims the child, and there is no early
+        // `return`/`?` between `spawn` and `kill`.
+        let mut respawned = false;
+        let outcome = loop {
+            let _ = std::fs::remove_file(&flag_file);
+            let mut session =
+                PtySession::spawn(build_cmd()).context("spawning the claude execution session")?;
+            let end = self.drive_session(
+                &mut session,
+                &flag_file,
+                transcript_dir.as_deref(),
+                transcript_since,
+            );
+            // Reclaim: kill the tree and drop the session (closes the ConPTY).
+            // Unconditional so the child never outlives us on error paths.
+            let _ = session.kill();
+            match respawn_step(end?, &mut respawned) {
+                RespawnStep::Done(o) => break o,
+                RespawnStep::Again => {
+                    info!("api degraded past kill — re-spawning child once against plan.md");
+                    continue;
+                }
+            }
+        };
+        Ok(outcome)
     }
 
     /// Drain the PTY (tee to `exec.log`, answer DSR queries) while polling for the
@@ -110,7 +161,7 @@ impl ClaudeAgent {
         flag_file: &Path,
         transcript_dir: Option<&Path>,
         transcript_since: SystemTime,
-    ) -> Result<Outcome> {
+    ) -> Result<DriveEnd> {
         let mut reader = session.reader()?;
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         thread::spawn(move || {
@@ -131,6 +182,10 @@ impl ClaudeAgent {
         let mut next_transcript_poll = Instant::now();
         let mut dsr_carry: Vec<u8> = Vec::new();
         let mut login_watch = LoginTuiWatch::new();
+        let mut api_watch = ApiWatch::new();
+        // Last observed transcript length; a growth between polls is the
+        // "activity resumed" signal that clears a degraded state.
+        let mut last_len: usize = 0;
         loop {
             // Act as the terminal: tee output and answer cursor-position queries.
             while let Ok(chunk) = rx.try_recv() {
@@ -138,6 +193,7 @@ impl ClaudeAgent {
                     let _ = session.write_all(CURSOR_POSITION_REPLY);
                 }
                 login_watch.feed(&chunk);
+                api_watch.feed(&chunk);
                 if let Some(f) = log.as_mut() {
                     let _ = f.write_all(&chunk);
                 }
@@ -147,20 +203,32 @@ impl ClaudeAgent {
                 break;
             }
             if Instant::now() >= next_transcript_poll {
+                let advanced;
                 if let Some(t) = latest_transcript_text_since(transcript_dir, transcript_since) {
                     // Any transcript activity proves the model loop started —
                     // a logged-out session never produces one (see LoginTuiWatch).
                     login_watch.disarm();
+                    advanced = t.len() > last_len;
+                    last_len = t.len();
                     if transcript_limit(&t).is_some() {
                         limit_transcript = Some(t);
                         break;
                     }
-                } else if login_watch.detected() {
-                    // Logged-out interactive session: the login TUI stalls
-                    // without exiting, so fail fast with the auth message
-                    // instead of burning the wall budget into a misleading
-                    // `Timeout` (issue #72). The caller kills the session.
-                    bail!("{CLAUDE_AUTH_ERROR_MSG}");
+                } else {
+                    advanced = false;
+                    if login_watch.detected() {
+                        // Logged-out interactive session: the login TUI stalls
+                        // without exiting, so fail fast with the auth message
+                        // instead of burning the wall budget into a misleading
+                        // `Timeout` (issue #72). The caller kills the session.
+                        bail!("{CLAUDE_AUTH_ERROR_MSG}");
+                    }
+                }
+                match api_watch.poll(Instant::now(), advanced) {
+                    ApiWatchAction::Degraded => info!("api degraded — child retrying"),
+                    ApiWatchAction::Recovered => info!("api recovered — child resuming"),
+                    ApiWatchAction::Respawn => return Ok(DriveEnd::Respawn),
+                    ApiWatchAction::None => {}
                 }
                 next_transcript_poll = Instant::now() + Duration::from_secs(2);
             }
@@ -207,7 +275,7 @@ impl ClaudeAgent {
 
         let outcome = classify_outcome(flag.as_deref(), timed_out, transcript.as_deref());
         info!(?outcome, child_exited, timed_out, "execution session ended");
-        Ok(outcome)
+        Ok(DriveEnd::Outcome(outcome))
     }
 }
 
@@ -454,6 +522,30 @@ mod tests {
             !scan_dsr_request(&mut carry3, b"hello world"),
             "unrelated bytes should not fire"
         );
+    }
+
+    #[test]
+    fn respawn_budget_is_exactly_one() {
+        // A terminal outcome settles immediately, untouched.
+        let mut respawned = false;
+        assert!(matches!(
+            respawn_step(DriveEnd::Outcome(Outcome::Done), &mut respawned),
+            RespawnStep::Done(Outcome::Done)
+        ));
+        assert!(!respawned);
+
+        // First Respawn asks for one more child and spends the budget…
+        let mut respawned = false;
+        assert!(matches!(
+            respawn_step(DriveEnd::Respawn, &mut respawned),
+            RespawnStep::Again
+        ));
+        assert!(respawned);
+        // …a second Respawn settles on Timeout (budget = 1).
+        assert!(matches!(
+            respawn_step(DriveEnd::Respawn, &mut respawned),
+            RespawnStep::Done(Outcome::Timeout)
+        ));
     }
 
     #[test]
