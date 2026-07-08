@@ -844,7 +844,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "ralphy-adapter-support"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-claude"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-codex"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-kimi"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -897,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-opencode"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -911,7 +911,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-cli"
-version = "0.1.0-rc12"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "chrono",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-core"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "chrono",
@@ -954,11 +954,11 @@ dependencies = [
 
 [[package]]
 name = "ralphy-proc-util"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 
 [[package]]
 name = "ralphy-pty"
-version = "0.1.0-rc10"
+version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
  "portable-pty",
