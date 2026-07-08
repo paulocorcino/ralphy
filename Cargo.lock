@@ -924,6 +924,7 @@ dependencies = [
  "ralphy-adapter-support",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
+ "ralphy-agent-kimi",
  "ralphy-agent-opencode",
  "ralphy-core",
  "regex",
