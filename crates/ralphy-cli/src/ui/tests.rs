@@ -674,7 +674,7 @@ fn render_active_line_executing_shows_icon_number_title_model_and_budget() {
 
 #[test]
 fn render_active_line_executing_zero_budget_shows_elapsed_only() {
-    // A disabled per-issue cap (`0` = unbounded, the default) renders just the
+    // A disabled per-issue cap (`0` = unbounded, explicit opt-out) renders just the
     // elapsed clock — never a misleading `/ 0:00` ceiling.
     let opts = RenderOpts {
         color: false,

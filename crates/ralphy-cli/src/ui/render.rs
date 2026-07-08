@@ -100,7 +100,7 @@ pub(crate) fn render_active_line(
             seg
         });
     }
-    // A `0` budget means the per-issue cap is disabled (unbounded, the default):
+    // A `0` budget means the per-issue cap is disabled (unbounded, explicit opt-out):
     // show only the elapsed clock, never a misleading `/ 0:00` ceiling.
     let clock = match budget_min {
         Some(b) if b > 0 => format!(
