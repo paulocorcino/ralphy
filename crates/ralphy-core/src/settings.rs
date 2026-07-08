@@ -61,6 +61,11 @@ pub struct Settings {
     /// lowercase canonical string `"new"`/`"current"`. `None` → hardcoded `new`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch_mode: Option<String>,
+    /// Agent-agnostic Remote-Control default (`--remote-control` /
+    /// `--no-remote-control`). `None` → OFF (`false`); only the Claude adapter
+    /// reads this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_control: Option<bool>,
     /// The runner-enforced verify gate's per-repo fallback (ADR-0011).
     #[serde(default)]
     pub verify: VerifySettings,
@@ -197,11 +202,13 @@ mod tests {
         let mut s = Settings::load(&ws).unwrap();
         s.base_branch = Some("origin/dev".into());
         s.branch_mode = Some("current".into());
+        s.remote_control = Some(true);
         s.save(&ws).unwrap();
 
         let reloaded = Settings::load(&ws).unwrap();
         assert_eq!(reloaded.base_branch.as_deref(), Some("origin/dev"));
         assert_eq!(reloaded.branch_mode.as_deref(), Some("current"));
+        assert_eq!(reloaded.remote_control, Some(true));
 
         // The unknown peer key must survive the typed save.
         let back = fs::read_to_string(ws.settings_path()).unwrap();
