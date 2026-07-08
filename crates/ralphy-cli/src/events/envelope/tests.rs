@@ -596,6 +596,23 @@ fn sleep_events_map_without_subject() {
 }
 
 #[test]
+fn api_degraded_events_map_without_subject() {
+    let v = map(RunEvent::ApiDegraded, &RunState::new("t", 1));
+    assert_eq!(v["type"], "dev.ralphy.run.api_degraded");
+    assert!(
+        v.get("subject").is_none(),
+        "api_degraded has no subject: {v}"
+    );
+
+    let v = map(RunEvent::ApiRecovered, &RunState::new("t", 1));
+    assert_eq!(v["type"], "dev.ralphy.run.api_recovered");
+    assert!(
+        v.get("subject").is_none(),
+        "api_recovered has no subject: {v}"
+    );
+}
+
+#[test]
 fn knowledge_events_map_counts() {
     let v = map(
         RunEvent::KnowledgeConsolidating { notes: 4 },

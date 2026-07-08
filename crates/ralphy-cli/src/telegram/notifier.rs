@@ -255,6 +255,23 @@ pub fn render_resume_push(state: &RunState) -> String {
     )
 }
 
+/// The push sent when the active child enters a sustained API-degraded state
+/// (issue #149). A new message so the phone buzzes, mirroring the sleep push.
+pub fn render_degraded_push(state: &RunState) -> String {
+    truncate_chars(
+        format!("⚠️ {} — API degraded, child retrying", state.title),
+        TELEGRAM_LIMIT,
+    )
+}
+
+/// The push sent when the API recovers, matching a prior degraded push.
+pub fn render_recover_push(state: &RunState) -> String {
+    truncate_chars(
+        format!("✅ {} — API recovered, resuming", state.title),
+        TELEGRAM_LIMIT,
+    )
+}
+
 /// Truncate `s` to at most `max` characters on a char boundary.
 fn truncate_chars(mut s: String, max: usize) -> String {
     if s.chars().count() <= max {
@@ -329,6 +346,10 @@ struct TelegramEngine<T: Transport> {
     last_card: String,
     last_edit: Instant,
     prev_sleeping: bool,
+    /// Tracks the folded `degraded` flag so the API-degraded push fires on the
+    /// false→true edge and the recover push on true→false — matched pairs, never
+    /// a lone recover (issue #149).
+    prev_degraded: bool,
 }
 
 impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
@@ -349,6 +370,7 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // an exceptional event worth a buzz.
         self.last_edit = Instant::now();
         self.prev_sleeping = self.state.sleep.is_some();
+        self.prev_degraded = self.state.degraded;
     }
 
     fn on_event(&mut self, event: RunEvent) {
@@ -377,6 +399,27 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
             }
         }
         self.prev_sleeping = now_sleeping;
+
+        // The API-degraded edge, same matched-pair shape as the sleep edge: a
+        // false→true buzzes on entering degraded, true→false on recovery. A lone
+        // `ApiRecovered` (no prior degraded folded) is a no-op.
+        let now_degraded = self.state.degraded;
+        if now_degraded && !self.prev_degraded {
+            if let Err(e) = self
+                .client
+                .send_message(self.chat_id, &render_degraded_push(&self.state))
+            {
+                warn!("telegram: degraded push failed: {e}");
+            }
+        } else if !now_degraded && self.prev_degraded {
+            if let Err(e) = self
+                .client
+                .send_message(self.chat_id, &render_recover_push(&self.state))
+            {
+                warn!("telegram: recover push failed: {e}");
+            }
+        }
+        self.prev_degraded = now_degraded;
     }
 
     fn on_tick(&mut self, changed: bool) {
@@ -468,6 +511,7 @@ pub fn try_start_notifier<T: Transport + Send + 'static>(
         last_card: String::new(),
         last_edit: Instant::now(),
         prev_sleeping: false,
+        prev_degraded: false,
     };
     spawn_worker("ralphy-telegram", engine, queue, detach_warn)
 }

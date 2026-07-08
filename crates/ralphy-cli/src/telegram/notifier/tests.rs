@@ -24,6 +24,7 @@ fn drive_worker<T: Transport>(
         last_card: String::new(),
         last_edit: Instant::now(),
         prev_sleeping: false,
+        prev_degraded: false,
     };
     run_delivery_worker(engine, queue, shutdown);
 }
@@ -672,6 +673,84 @@ fn worker_fires_both_pushes_when_sleep_events_co_batch() {
         .position(|t| t.contains("resuming"))
         .expect("resume push fired");
     assert!(sleep_idx < resume_idx, "order: {texts:?}");
+}
+
+#[test]
+fn worker_pushes_on_api_degraded_and_recover_edges() {
+    // The matched-pair edge (issue #149): one buzz on the false→true degraded
+    // edge, one on the true→false recover edge — mirrors the sleep-edge test.
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let queue = Arc::new(EventQueue::new());
+    let shutdown = Arc::new(AtomicBool::new(false));
+
+    let worker_queue = queue.clone();
+    let worker_shutdown = shutdown.clone();
+    let state = RunState::new("title", 1);
+    let handle =
+        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+
+    queue.push(RunEvent::ApiDegraded);
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("API degraded"))
+    });
+
+    queue.push(RunEvent::ApiRecovered);
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("API recovered"))
+    });
+
+    shutdown.store(true, Ordering::SeqCst);
+    queue.wake();
+    handle.join().unwrap();
+
+    let calls = calls.lock().unwrap();
+    let texts = send_texts(&calls);
+    let degraded_idx = texts
+        .iter()
+        .position(|t| t.contains("API degraded"))
+        .expect("degraded push");
+    let recover_idx = texts
+        .iter()
+        .position(|t| t.contains("API recovered"))
+        .expect("recover push");
+    assert!(
+        degraded_idx < recover_idx,
+        "degraded push must precede recover push: {texts:?}"
+    );
+    // initial card + degraded + recover = three sendMessage calls.
+    assert_eq!(
+        texts.len(),
+        3,
+        "expected exactly 3 sendMessage, got {texts:?}"
+    );
+}
+
+#[test]
+fn worker_lone_api_recover_pushes_nothing() {
+    // A lone `ApiRecovered` with no prior degraded folded is a no-op: matched
+    // pairs only (`prev_degraded` starts false), so no recover buzz fires.
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let queue = Arc::new(EventQueue::new());
+    let shutdown = Arc::new(AtomicBool::new(true)); // run inline: drain then finish.
+
+    queue.push(RunEvent::ApiRecovered);
+
+    drive_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+
+    let calls = calls.lock().unwrap();
+    let texts = send_texts(&calls);
+    assert!(
+        !texts.iter().any(|t| t.contains("API recovered")),
+        "a lone recover must not push: {texts:?}"
+    );
+    // Only the initial card was sent.
+    assert_eq!(texts.len(), 1, "expected only the card: {texts:?}");
 }
 
 #[test]

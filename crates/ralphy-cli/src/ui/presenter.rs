@@ -17,7 +17,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use super::render::{meter_for, render_active_line, render_line, sleep_label, LineExtra};
+use super::render::{meter_for, pick, render_active_line, render_line, sleep_label, LineExtra};
 use super::{
     render_info_line, render_totals_panel, PanelData, Phase, QueueState, RenderOpts, UsageLite,
 };
@@ -48,6 +48,9 @@ struct LiveState {
     active: Option<ActiveIssue>,
     queue: Option<QueueState>,
     sleep: Option<String>,
+    /// The active child is in a sustained API-degraded state (issue #149): the
+    /// active spinner shows a retry indicator until recovery. Live-region only.
+    degraded: bool,
     queue_bar: Option<ProgressBar>,
     active_bar: Option<ProgressBar>,
 }
@@ -286,6 +289,20 @@ impl Presenter {
                 self.refresh_active_bar(s);
                 LineExtra::default()
             }
+            // The API-degraded transitions swap the active spinner's label for a
+            // retry indicator immediately (unthrottled live region), unlike the
+            // ~60s Telegram card refresh (issue #149). Live-region only — the
+            // scroll line is drawn by `render_line`.
+            RunEvent::ApiDegraded => {
+                s.degraded = true;
+                self.refresh_active_bar(s);
+                LineExtra::default()
+            }
+            RunEvent::ApiRecovered => {
+                s.degraded = false;
+                self.refresh_active_bar(s);
+                LineExtra::default()
+            }
             _ => LineExtra::default(),
         }
     }
@@ -333,7 +350,7 @@ impl Presenter {
 /// timer keeps the elapsed time advancing between events (ADR-0006 D4).
 fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
     if let (Some(a), Some(bar)) = (s.active.as_ref(), s.active_bar.as_ref()) {
-        bar.set_message(render_active_line(
+        let line = render_active_line(
             a.phase,
             a.number,
             &a.title,
@@ -342,7 +359,15 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
             a.start.elapsed(),
             a.budget_min,
             opts,
-        ));
+        );
+        // API-degraded: prefix the spinner message with a retry indicator so the
+        // operator sees the child is retrying, not stalled (issue #149).
+        let msg = if s.degraded {
+            format!("{} {line}", pick("🔄", "[api-retry]", opts.emoji))
+        } else {
+            line
+        };
+        bar.set_message(msg);
     }
 }
 

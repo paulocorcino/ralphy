@@ -104,6 +104,14 @@ pub enum RunEvent {
     SleepStarted { reset: String, target_epoch: i64 },
     /// The reset arrived and the run resumed; clears any active sleep.
     SleepEnded,
+    /// The active issue's child hit a sustained API failure (banner persisted
+    /// ≥ 3 min): the adapter is retrying. Live-region only (retry indicator) plus
+    /// a matched Telegram/CloudEvents ping. All the "is this a failure" timing
+    /// lives in the adapter; the sink just reacts.
+    ApiDegraded,
+    /// The child's API recovered (transcript activity resumed) after an
+    /// [`RunEvent::ApiDegraded`] — always a matched pair, never emitted alone.
+    ApiRecovered,
     /// The end-of-run knowledge consolidation started, folding `notes` loose
     /// per-issue notes into `KNOWLEDGE.md`.
     KnowledgeConsolidating { notes: u64 },
@@ -272,6 +280,10 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             target_epoch: fields.target_epoch.unwrap_or(0),
         }),
         "reset reached — resuming" => Some(RunEvent::SleepEnded),
+        // The claude adapter's API-degraded transitions (issue #149): all timing
+        // gating happens in the adapter, so these fire only on the real edges.
+        "api degraded — child retrying" => Some(RunEvent::ApiDegraded),
+        "api recovered — child resuming" => Some(RunEvent::ApiRecovered),
         // The end-of-run knowledge consolidation trigger: both events reuse the
         // generic `count` field (notes in / notes archived).
         "consolidating knowledge" => Some(RunEvent::KnowledgeConsolidating {
@@ -680,6 +692,24 @@ mod tests {
                 label: None,
                 blockers: vec![],
             })
+        );
+    }
+
+    #[test]
+    fn decoder_maps_api_degraded_events() {
+        assert_eq!(
+            decode(EventFields {
+                message: "api degraded — child retrying".into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::ApiDegraded)
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: "api recovered — child resuming".into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::ApiRecovered)
         );
     }
 

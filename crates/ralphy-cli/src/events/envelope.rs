@@ -375,6 +375,20 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({}),
         )),
+        RunEvent::ApiDegraded => Some(envelope(
+            "dev.ralphy.run.api_degraded",
+            None,
+            ctx,
+            state,
+            json!({}),
+        )),
+        RunEvent::ApiRecovered => Some(envelope(
+            "dev.ralphy.run.api_recovered",
+            None,
+            ctx,
+            state,
+            json!({}),
+        )),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
             "dev.ralphy.knowledge.consolidating",
             None,

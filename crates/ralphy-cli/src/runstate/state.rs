@@ -124,6 +124,10 @@ pub struct RunState {
     pub final_summary: Option<String>,
     /// The active usage-limit sleep, if the run is currently waiting for a reset.
     pub sleep: Option<SleepState>,
+    /// The active issue's child is in a sustained API-degraded state (issue #149):
+    /// set on `ApiDegraded`, cleared on `ApiRecovered`. Drives the live-region
+    /// retry indicator and the Telegram matched-pair push edge.
+    pub degraded: bool,
     /// Whether the run has reached its terminal state. The worker flips this to
     /// `true` just before the final card render so the card grows its `🏁` footer
     /// (the consolidated single-component card — ADR-0007 D3); it stays `false`
@@ -318,6 +322,12 @@ impl RunState {
             RunEvent::SleepEnded => {
                 self.sleep = None;
             }
+            RunEvent::ApiDegraded => {
+                self.degraded = true;
+            }
+            RunEvent::ApiRecovered => {
+                self.degraded = false;
+            }
             RunEvent::KnowledgeConsolidating { notes } => {
                 self.consolidating = Some(notes);
             }
@@ -398,6 +408,16 @@ mod tests {
     use crate::runstate::event::event_to_runevent;
     use crate::runstate::{EventFields, UsageLite};
     use tracing::Level;
+
+    #[test]
+    fn api_degraded_folds_the_degraded_flag() {
+        let mut s = RunState::new("t", 1);
+        assert!(!s.degraded);
+        s.apply(RunEvent::ApiDegraded);
+        assert!(s.degraded);
+        s.apply(RunEvent::ApiRecovered);
+        assert!(!s.degraded);
+    }
 
     #[test]
     fn full_lifecycle_yields_expected_statuses_and_summary() {

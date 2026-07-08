@@ -315,6 +315,16 @@ pub(crate) fn render_line(
             Style::new().yellow(),
             "usage limit reset — resuming".to_string(),
         ),
+        RunEvent::ApiDegraded => (
+            pick("🔄", "[api]", opts.emoji),
+            Style::new().yellow(),
+            "API degraded — child retrying".to_string(),
+        ),
+        RunEvent::ApiRecovered => (
+            pick("🔄", "[api]", opts.emoji),
+            Style::new().green(),
+            "API recovered — resuming".to_string(),
+        ),
         RunEvent::DeadlinePassed { number } => (
             pick("⏱️", "[timeout]", opts.emoji),
             Style::new().yellow(),
@@ -725,7 +735,7 @@ pub fn render_info_line(
 }
 
 /// Choose the emoji or its ASCII fallback.
-fn pick(emoji: &'static str, ascii: &'static str, use_emoji: bool) -> &'static str {
+pub(crate) fn pick(emoji: &'static str, ascii: &'static str, use_emoji: bool) -> &'static str {
     if use_emoji {
         emoji
     } else {
