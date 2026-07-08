@@ -142,6 +142,7 @@ mod tests {
             log: log.to_string(),
             exited_cleanly: true,
             timed_out: false,
+            exit_code: Some(0),
         }
     }
 

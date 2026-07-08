@@ -147,6 +147,10 @@ pub struct HeadlessRun {
     pub exited_cleanly: bool,
     /// `true` when the child outlived the timeout and was killed.
     pub timed_out: bool,
+    /// The raw numeric exit code, `None` when killed on the timeout. For adapters
+    /// like Kimi that map a specific code (e.g. 75 → `Limit`), the boolean
+    /// `exited_cleanly` erases this — keep both.
+    pub exit_code: Option<i32>,
 }
 
 /// [`run_headless`] plus the post-run shell every headless adapter repeats: combine
@@ -165,12 +169,14 @@ pub fn run_headless_logged(
     let mut log = stdout.clone();
     log.push_str(&r.stderr);
     let _ = fs::write(log_path, &log);
-    let exited_cleanly = r.exit.map(|s| s.success()).unwrap_or(false);
+    let exit = r.exit;
+    let exited_cleanly = exit.map(|s| s.success()).unwrap_or(false);
     Ok(HeadlessRun {
         stdout,
         log,
         exited_cleanly,
         timed_out: r.timed_out,
+        exit_code: exit.and_then(|s| s.code()),
     })
 }
 

@@ -10,9 +10,9 @@
 //! assistant message in Kimi's `stream-json` stream, the process exit code, and a
 //! HEAD-diff commit check — mapped onto the same core [`Outcome`].
 //!
-//! This is the walking-skeleton slice (ADR-0028): the usage-limit/exit-75
-//! handling (D9) and the one-shot init flows are deferred to later slices, so
-//! no limit path is wired.
+//! This is the walking-skeleton slice (ADR-0028): exit 75 maps to
+//! `Outcome::Limit(None)` and `--stop-on-limit` is forced for Kimi (D9, #153);
+//! the one-shot init flows remain deferred to later slices.
 
 use std::fs;
 use std::path::PathBuf;
@@ -204,11 +204,18 @@ impl Agent for KimiAgent {
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let final_text = kimi_final_text(&r.stdout);
-        let outcome = classify_kimi_outcome(r.exited_cleanly, r.timed_out, committed, &final_text);
+        let outcome = classify_kimi_outcome(
+            r.exited_cleanly,
+            r.timed_out,
+            committed,
+            r.exit_code,
+            &final_text,
+        );
         info!(
             ?outcome,
             exited_cleanly = r.exited_cleanly,
             timed_out = r.timed_out,
+            exit_code = ?r.exit_code,
             committed,
             "kimi execution ended"
         );

@@ -59,18 +59,25 @@ pub(crate) fn kimi_final_text(stdout: &str) -> String {
 /// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
 /// ladder (ADR-0023 D1/D2). `final_text` is the ALREADY-extracted final assistant
 /// message ([`kimi_final_text`]); this keeps the truth-table testable with plain
-/// strings. `limit` is always `None` in this slice (auth/limit edges are a later
-/// slice, ADR-0028 D9), so a non-clean exit maps to `Stuck`.
+/// strings. `exit_code == Some(75)` maps to `Limit(None)` — no structured reset
+/// hint at the chat level (ADR-0028 D9); the auth/permanent exit-1 case is handled
+/// by the scaffold's `is_kimi_auth_error` bail, not here.
 pub(crate) fn classify_kimi_outcome(
     exited_cleanly: bool,
     timed_out: bool,
     committed: bool,
+    exit_code: Option<i32>,
     final_text: &str,
 ) -> Outcome {
+    let limit = if exit_code == Some(75) {
+        Some(None)
+    } else {
+        None
+    };
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(final_text),
         blocked: ralphy_adapter_support::blocked_reason(final_text),
-        limit: None,
+        limit,
         committed,
         timed_out,
         exited_ok: exited_cleanly,
@@ -152,7 +159,7 @@ mod tests {
     #[test]
     fn classify_done_on_clean_exit_commit_and_sentinel() {
         assert_eq!(
-            classify_kimi_outcome(true, false, true, "all green\nRALPHY_DONE_EXIT"),
+            classify_kimi_outcome(true, false, true, Some(0), "all green\nRALPHY_DONE_EXIT"),
             Outcome::Done
         );
     }
@@ -160,7 +167,13 @@ mod tests {
     #[test]
     fn classify_blocked_on_blocked_sentinel() {
         assert_eq!(
-            classify_kimi_outcome(true, false, true, "work\nRALPHY_BLOCKED_EXIT missing crate"),
+            classify_kimi_outcome(
+                true,
+                false,
+                true,
+                Some(0),
+                "work\nRALPHY_BLOCKED_EXIT missing crate"
+            ),
             Outcome::Blocked("missing crate".into())
         );
     }
@@ -168,7 +181,7 @@ mod tests {
     #[test]
     fn classify_timeout_wins() {
         assert_eq!(
-            classify_kimi_outcome(false, true, false, "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(false, true, false, None, "RALPHY_DONE_EXIT"),
             Outcome::Timeout
         );
     }
@@ -176,7 +189,7 @@ mod tests {
     #[test]
     fn classify_stuck_on_non_zero_exit() {
         assert_eq!(
-            classify_kimi_outcome(false, false, true, "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT"),
             Outcome::Stuck
         );
     }
@@ -185,8 +198,25 @@ mod tests {
     fn classify_done_on_no_commit() {
         // A commit is a progress signal, not a Done gate (ADR-0023 D3).
         assert_eq!(
-            classify_kimi_outcome(true, false, false, "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(true, false, false, Some(0), "RALPHY_DONE_EXIT"),
             Outcome::Done
+        );
+    }
+
+    #[test]
+    fn classify_limit_on_exit_75() {
+        // The literal DONE sentinel is present, proving the limit outranks a would-be Done.
+        assert_eq!(
+            classify_kimi_outcome(false, false, false, Some(75), "RALPHY_DONE_EXIT"),
+            Outcome::Limit(None)
+        );
+    }
+
+    #[test]
+    fn classify_limit_beats_timeout() {
+        assert_eq!(
+            classify_kimi_outcome(false, true, false, Some(75), ""),
+            Outcome::Limit(None)
         );
     }
 }
