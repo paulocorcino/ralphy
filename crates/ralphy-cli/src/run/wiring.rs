@@ -27,6 +27,7 @@ pub(crate) struct ResolvedClaude {
     pub(crate) exec_effort: String,
     pub(crate) default_exec_model: String,
     pub(crate) max_minutes_per_issue: u64,
+    pub(crate) remote_control: bool,
 }
 
 /// Build the run's issue queue and the explicitly-named ("forced") issue set. Two
@@ -122,7 +123,7 @@ pub(crate) fn build_agent(
                 non_empty(claude.exec_effort.clone()),
                 claude.default_exec_model.clone(),
                 claude.max_minutes_per_issue,
-                !args.no_remote_control,
+                claude.remote_control,
                 args.headless_exec,
                 args.max_exec_calls,
             )

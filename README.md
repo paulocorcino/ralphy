@@ -183,7 +183,8 @@ ralphy run --base-branch feature/x         # cut the run branch from another bas
 ralphy run --branch-mode current           # commit onto the current branch (no new branch)
 ralphy run --exec-model opus               # force the execution model for every issue
 ralphy run --exec-variant high             # OpenCode effort passthrough
-ralphy run --no-remote-control             # turn off mobile Remote Control (Claude)
+ralphy run --remote-control                # opt into mobile Remote Control (Claude, off by default)
+ralphy run --no-remote-control             # per-run override: force it off even if configured on
 ralphy run --queue-label my-label          # use your own queue label
 ralphy run --no-telegram                   # mute the Telegram monitor for this run
 ralphy run --if-idle                       # no-op (exit 0) if a run is already active — for schedulers
@@ -191,6 +192,9 @@ ralphy run --if-idle                       # no-op (exit 0) if a run is already 
 
 Run `ralphy run --help` for the full list (planning model/effort, time budgets, and
 more).
+
+Remote Control is opt-in and off by default (#148): pass `--remote-control` per
+run, or persist it with `ralphy config set remote_control true`.
 
 ### Scheduled runs (`--if-idle`)
 

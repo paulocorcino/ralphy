@@ -70,6 +70,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "opencode.model",
     "base_branch",
     "branch_mode",
+    "remote_control",
     "queue.assignee",
     "verify.command",
     "verify.require_verify_gate",
@@ -171,6 +172,12 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             parse_branch_mode(value)?;
             s.branch_mode = Some(value.to_owned());
         }
+        "remote_control" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("remote_control must be 'true' or 'false', got '{value}'"))?;
+            s.remote_control = Some(b);
+        }
         "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
         "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = Some(value.to_owned()))?,
         "claude.default_exec_model" => {
@@ -211,6 +218,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "base_branch" => s.base_branch = None,
         "queue.assignee" => s.queue.assignee = None,
         "branch_mode" => s.branch_mode = None,
+        "remote_control" => s.remote_control = None,
         "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = None)?,
         "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = None)?,
         "claude.default_exec_model" => with_claude(&mut s, |c| c.default_exec_model = None)?,
@@ -235,6 +243,10 @@ pub fn get(ws: &Workspace) -> Result<()> {
     }
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
+    match s.remote_control {
+        Some(b) => println!("remote_control = {b}"),
+        None => println!("remote_control: not set"),
+    }
     print_str("queue.assignee", s.queue.assignee);
     print_str("claude.plan_model", claude.plan_model);
     print_str("claude.plan_effort", claude.plan_effort);
@@ -313,6 +325,23 @@ pub fn resolve_assignee(
 /// persisted `settings.json` value > hardcoded `default`.
 pub fn resolve_u64(flag: Option<u64>, persisted: Option<u64>, default: u64) -> u64 {
     flag.or(persisted).unwrap_or(default)
+}
+
+/// Resolve the effective Remote Control switch (#148). Precedence:
+/// `--remote-control` > `--no-remote-control` > persisted `remote_control` >
+/// `false` (OFF by default).
+pub fn resolve_remote_control(
+    remote_control: bool,
+    no_remote_control: bool,
+    persisted: Option<bool>,
+) -> bool {
+    if remote_control {
+        true
+    } else if no_remote_control {
+        false
+    } else {
+        persisted.unwrap_or(false)
+    }
 }
 
 /// Parse a persisted/`config set` `branch_mode` string into the core enum.
@@ -441,6 +470,43 @@ mod tests {
             Some("cfg".to_string())
         );
         assert_eq!(resolve_assignee(None, false, Some("")), None);
+    }
+
+    // --- resolve_remote_control precedence ---
+
+    #[test]
+    fn resolve_remote_control_precedence() {
+        // flag on wins over persisted off.
+        assert!(resolve_remote_control(true, false, Some(false)));
+        // --no wins over persisted on.
+        assert!(!resolve_remote_control(false, true, Some(true)));
+        // persisted on used when no flag.
+        assert!(resolve_remote_control(false, false, Some(true)));
+        // default OFF.
+        assert!(!resolve_remote_control(false, false, None));
+        // remote_control precedes no_remote_control.
+        assert!(resolve_remote_control(true, true, None));
+    }
+
+    #[test]
+    fn remote_control_config_round_trip() {
+        let (ws, dir) = tmp_ws("remote-control-config");
+
+        set(&ws, "remote_control", "true").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.remote_control, Some(true));
+
+        unset(&ws, "remote_control").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        assert_eq!(s.remote_control, None);
+
+        let err = set(&ws, "remote_control", "maybe").unwrap_err();
+        assert!(
+            err.to_string().contains("must be 'true' or 'false'"),
+            "got: {err}"
+        );
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     // --- parse_branch_mode ---
@@ -656,6 +722,7 @@ mod tests {
             match key {
                 "branch_mode" => "current",
                 "verify.require_verify_gate" => "true",
+                "remote_control" => "true",
                 "claude.max_minutes_per_issue" => "45",
                 _ => "x",
             }

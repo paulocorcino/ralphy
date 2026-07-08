@@ -68,6 +68,8 @@ pub(crate) struct ExecConfig {
     /// Per-issue wall-clock budget before the session is reclaimed.
     pub(crate) max_minutes_per_issue: u64,
     /// Whether to enable Remote Control (follow/intervene from the mobile app).
+    /// Opt-in (#148): `false` by default, resolved by the CLI's agnostic
+    /// `remote_control` config key / `--remote-control` flag.
     pub(crate) remote_control: bool,
     /// When true, use a `claude -p` loop instead of an interactive PTY session.
     pub(crate) headless_exec: bool,
@@ -87,7 +89,7 @@ impl Default for ExecConfig {
             exec_effort: Some("medium".into()),
             default_exec_model: "sonnet".into(),
             max_minutes_per_issue: ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
-            remote_control: true,
+            remote_control: false,
             headless_exec: false,
             max_exec_calls: 6,
             run_deadline: None,
@@ -199,6 +201,11 @@ mod tests {
             false,
             6,
         )
+    }
+
+    #[test]
+    fn exec_config_default_remote_control_off() {
+        assert!(!ExecConfig::default().remote_control);
     }
 
     #[test]

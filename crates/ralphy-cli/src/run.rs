@@ -360,6 +360,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             claude_settings.max_minutes_per_issue,
             ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE,
         ),
+        remote_control: config::resolve_remote_control(
+            args.remote_control,
+            args.no_remote_control,
+            settings.remote_control,
+        ),
     };
     let executor = build_agent(
         args.agent,

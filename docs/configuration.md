@@ -55,6 +55,7 @@ These apply to every agent (`--agent claude`/`codex`/`opencode`).
 | --- | --- | --- | --- | --- |
 | `base_branch` | `--base-branch` | any git ref | `origin/main` | The base the run branch is cut from (`new` mode). |
 | `branch_mode` | `--branch-mode` | `new` \| `current` | `new` | `new` cuts a fresh `afk/run-<stamp>` branch; `current` commits onto the branch you're on. Both require a clean tree. |
+| `remote_control` | `--remote-control` / `--no-remote-control` | `true` \| `false` | `false` | Opt into Claude mobile Remote Control (follow/intervene). Codex/OpenCode ignore it. |
 | `queue.assignee` | `--assignee` / `--no-assignee` | a GitHub login, or `@me` | none (no filter) | Build the queue only from issues this login is assigned to. `@me` = the authenticated user. `--only-issue`/`--issues` ignore it. |
 | `verify.command` | — | one command line | none | The fallback verify gate, used only when a plan has **no** `## Verify` section. Tokenized into argv and run directly (no shell). See [Verify gate](#the-verify-gate). |
 | `verify.require_verify_gate` | — | `true` \| `false` | `false` | When `true`, an issue that resolves to **no gate at all** is parked as `ready-for-human` and left open instead of closing on the agent's self-report. |
@@ -62,6 +63,7 @@ These apply to every agent (`--agent claude`/`codex`/`opencode`).
 ```powershell
 ralphy config set base_branch origin/develop
 ralphy config set branch_mode current
+ralphy config set remote_control true
 ralphy config set queue.assignee @me
 ralphy config set verify.command "cargo test"
 ralphy config set verify.require_verify_gate true

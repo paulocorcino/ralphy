@@ -188,8 +188,7 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) max_minutes_per_issue: Option<u64>,
 
-    /// Enable Remote Control so you can follow/intervene from the mobile app
-    /// (the default).
+    /// Enable Remote Control so you can follow/intervene from the mobile app.
     #[arg(long, overrides_with = "no_remote_control")]
     pub(crate) remote_control: bool,
 
