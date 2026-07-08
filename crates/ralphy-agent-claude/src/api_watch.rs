@@ -102,6 +102,13 @@ impl ApiWatch {
             };
         }
         if !self.banner_present() {
+            // Banner gone without a transcript advance (e.g. flushed past MAX_BUF
+            // by healthy bytes): restart the clock so it strictly tracks
+            // *continuous* banner presence and a later banner can't inherit an
+            // earlier gap's elapsed time. `degraded_emitted` is deliberately kept
+            // so a still-pending emitted degrade keeps its matched `Recovered` on
+            // the next transcript advance.
+            self.degraded_since = None;
             return ApiWatchAction::None;
         }
         let since = *self.degraded_since.get_or_insert(now);
@@ -179,6 +186,33 @@ mod tests {
         assert_eq!(
             w.poll(t0 + Duration::from_secs(17 * 60), false),
             ApiWatchAction::Respawn
+        );
+    }
+
+    #[test]
+    fn clock_restarts_when_banner_clears_between_polls() {
+        // A banner that vanishes (evicted past MAX_BUF by healthy bytes, no
+        // transcript advance) must NOT let a later banner inherit the earlier
+        // gap: the degraded clock restarts from the reappearance.
+        let mut w = ApiWatch::new();
+        w.feed(BANNER);
+        let t0 = Instant::now();
+        assert_eq!(w.poll(t0, false), ApiWatchAction::None); // clock starts at t0
+                                                             // Evict the banner with >MAX_BUF of non-banner bytes.
+        w.feed(&vec![b'.'; 40 * 1024]);
+        assert_eq!(
+            w.poll(t0 + Duration::from_secs(200), false),
+            ApiWatchAction::None // banner gone → clock reset
+        );
+        // A fresh banner: Degraded fires 3 min AFTER reappearance, not immediately.
+        w.feed(BANNER);
+        assert_eq!(
+            w.poll(t0 + Duration::from_secs(200), false),
+            ApiWatchAction::None
+        );
+        assert_eq!(
+            w.poll(t0 + Duration::from_secs(200 + 180), false),
+            ApiWatchAction::Degraded
         );
     }
 
