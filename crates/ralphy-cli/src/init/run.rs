@@ -139,9 +139,7 @@ fn diagnose_with_agent(
             ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
 
-        Agent::Kimi => {
-            anyhow::bail!("kimi one-shot init is not supported in this slice (later slice #4)")
-        }
+        Agent::Kimi => ralphy_agent_kimi::diagnose_repo(repo, neutral_cwd, model, effort, timeout),
 
         Agent::Opencode => {
             ralphy_agent_opencode::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
