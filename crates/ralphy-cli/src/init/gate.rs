@@ -190,6 +190,10 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
                 "-p",
                 hello,
             ]);
+            // Mirror the adapter's mandatory scrub (command.rs): an inherited
+            // PYTHONIOENCODING flips Kimi into the Textual TUI, which would make a
+            // logged-in operator's probe falsely report "not logged in".
+            cmd.env_remove("PYTHONIOENCODING");
         }
 
         Agent::Opencode => {

@@ -78,8 +78,10 @@ mod tests {
         pos("--output-format", "stream-json");
         pos("-m", DEFAULT_KIMI_MODEL);
         assert!(args.contains(&"-y".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"--work-dir".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"--skills-dir".to_string()), "argv: {args:?}");
+        // Assert the path VALUES, not just flag presence, so a swap of the two path
+        // args (work-dir ↔ skills-dir) would fail.
+        pos("--work-dir", "/repo");
+        pos("--skills-dir", "/repo/.ralphy/skills");
 
         // NO positional prompt arg: Typer would parse a bare word as a subcommand.
         assert!(

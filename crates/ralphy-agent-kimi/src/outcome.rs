@@ -29,12 +29,16 @@ pub(crate) fn kimi_final_text(stdout: &str) -> String {
         if obj.get("role").and_then(Value::as_str) != Some("assistant") {
             continue;
         }
-        // A turn with pending tool_calls is intermediate work, not the final answer.
-        let has_tool_calls = obj
+        // A turn with PENDING tool_calls is intermediate work, not the final answer.
+        // Guard on a NON-EMPTY array, not merely non-null: a terminal turn that
+        // carries an empty `tool_calls: []` is still the final answer, and skipping
+        // it would lose its `RALPHY_DONE_EXIT` sentinel (Done misread as Stuck).
+        let has_pending_tool_calls = obj
             .get("tool_calls")
-            .map(|v| !v.is_null())
+            .and_then(Value::as_array)
+            .map(|a| !a.is_empty())
             .unwrap_or(false);
-        if has_tool_calls {
+        if has_pending_tool_calls {
             continue;
         }
         let Some(parts) = obj.get("content").and_then(Value::as_array) else {
@@ -114,10 +118,35 @@ mod tests {
     }
 
     #[test]
+    fn kimi_final_text_ignores_a_trailing_tool_call_turn() {
+        // A tool_calls turn AFTER the answer must NOT win: this discriminates the
+        // "skip tool_calls turns" rule from "just take the last assistant line".
+        let answer = r#"{"role":"assistant","content":[{"type":"text","text":"all green\nRALPHY_DONE_EXIT"}]}"#;
+        let trailing = r#"{"role":"assistant","content":[{"type":"text","text":"more"}],"tool_calls":[{"type":"function","id":"t2","function":{"name":"Bash","arguments":"{}"}}]}"#;
+        let text = kimi_final_text(&format!("{answer}\n{trailing}\n"));
+        assert!(text.ends_with("RALPHY_DONE_EXIT"), "got: {text:?}");
+        assert!(
+            !text.contains("more"),
+            "trailing tool_calls turn must lose: {text:?}"
+        );
+    }
+
+    #[test]
+    fn kimi_final_text_keeps_empty_tool_calls_answer() {
+        // A terminal turn with an empty `tool_calls: []` is still the final answer.
+        let line = r#"{"role":"assistant","content":[{"type":"text","text":"done\nRALPHY_DONE_EXIT"}],"tool_calls":[]}"#;
+        assert!(kimi_final_text(line).ends_with("RALPHY_DONE_EXIT"));
+    }
+
+    #[test]
     fn kimi_final_text_survives_malformed_and_empty() {
         // A truncated last line and blank lines must not panic; empty in → empty out.
         assert_eq!(kimi_final_text(""), "");
         assert_eq!(kimi_final_text("\n\n{not json"), "");
+        // A valid answer line followed by a truncated tail: the answer still wins.
+        let answer =
+            r#"{"role":"assistant","content":[{"type":"text","text":"ok\nRALPHY_DONE_EXIT"}]}"#;
+        assert!(kimi_final_text(&format!("{answer}\n{{trunc")).ends_with("RALPHY_DONE_EXIT"));
     }
 
     #[test]
