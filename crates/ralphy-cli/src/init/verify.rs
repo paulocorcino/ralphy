@@ -135,21 +135,28 @@ fn print_final_report(r: &VerifyReport) {
     }
 }
 
+/// The exact argv passed to the smoke-test child (everything after the exe
+/// path), pure and subprocess-free so it can be asserted directly.
+fn smoke_test_args(repo: &Path, n: u64, agent: Agent) -> Vec<String> {
+    vec![
+        "run".to_string(),
+        "--repo".to_string(),
+        repo.display().to_string(),
+        "--only-issue".to_string(),
+        n.to_string(),
+        "--dry-run".to_string(),
+        "--agent".to_string(),
+        agent.cli_name().to_string(),
+    ]
+}
+
 /// Spawn the current binary as `ralphy run --repo <repo> --only-issue <n>
-/// --dry-run`, inheriting stdio. A non-zero exit is surfaced as a warning line
-/// but does NOT fail `finalize` — the smoke test is diagnostic.
-fn run_smoke_test(repo: &Path, n: u64) -> Result<()> {
+/// --dry-run --agent <agent>`, inheriting stdio. A non-zero exit is surfaced as
+/// a warning line but does NOT fail `finalize` — the smoke test is diagnostic.
+fn run_smoke_test(repo: &Path, n: u64, agent: Agent) -> Result<()> {
     let exe = std::env::current_exe().context("resolving current exe for smoke test")?;
-    let repo_str = repo.display().to_string();
     let status = std::process::Command::new(&exe)
-        .args([
-            "run",
-            "--repo",
-            &repo_str,
-            "--only-issue",
-            &n.to_string(),
-            "--dry-run",
-        ])
+        .args(smoke_test_args(repo, n, agent))
         .status()
         .with_context(|| format!("spawning smoke test: {}", exe.display()))?;
     if !status.success() {
@@ -163,7 +170,12 @@ fn run_smoke_test(repo: &Path, n: u64) -> Result<()> {
 /// required artifact is missing, and — when the queue is non-empty — offer an
 /// optional `--dry-run` smoke test. Called from every completion point in
 /// [`run`] so the report always appears regardless of which path the dev took.
-pub(crate) fn finalize(repo: &Path, cfg: &InitConfig, logged_in: &[Agent]) -> Result<()> {
+pub(crate) fn finalize(
+    repo: &Path,
+    cfg: &InitConfig,
+    logged_in: &[Agent],
+    selected_agent: Agent,
+) -> Result<()> {
     let triage_doc = std::fs::read_to_string(repo.join("docs/agents/triage-labels.md")).ok();
 
     let ralphy_present = repo.join(".ralphy").is_dir();
@@ -234,7 +246,7 @@ pub(crate) fn finalize(repo: &Path, cfg: &InitConfig, logged_in: &[Agent]) -> Re
         let n = suggested_issue(&r.queue).unwrap();
         let answer = ask_yes_no("Try a safe practice run now (no changes made)?", false)?;
         if smoke_test_decision(&answer) {
-            run_smoke_test(repo, n)?;
+            run_smoke_test(repo, n, selected_agent)?;
         } else {
             print_note(&format!(
                 "Skipped. Run it yourself anytime: {}",
@@ -332,6 +344,18 @@ mod tests {
         assert!(!smoke_test_decision("n"), "n should decline");
         assert!(smoke_test_decision("y"), "y should accept");
         assert!(smoke_test_decision("yes"), "yes should accept");
+    }
+
+    #[test]
+    fn smoke_test_args_includes_selected_agent() {
+        let args = smoke_test_args(Path::new("/tmp/x"), 7, Agent::Codex);
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["--agent".to_string(), "codex".to_string()]),
+            "expected --agent codex in {args:?}"
+        );
+        assert!(args.contains(&"--dry-run".to_string()));
+        assert!(args.contains(&"--only-issue".to_string()));
     }
 
     #[test]

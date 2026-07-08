@@ -575,7 +575,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
             ));
         }
 
-        return finalize(&repo, &cfg, &findings.agents_logged_in);
+        return finalize(&repo, &cfg, &findings.agents_logged_in, selected_agent);
     }
 
     // Partial-publish resume: a prior run already created the milestone and/or
@@ -628,7 +628,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
         ));
         state.mark(Stage::Issues);
         state.save(&ws)?;
-        return finalize(&repo, &cfg, &findings.agents_logged_in);
+        return finalize(&repo, &cfg, &findings.agents_logged_in, selected_agent);
     }
 
     match decide_issues_path(&cfg) {
@@ -661,7 +661,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
                 // Declined — don't run the agent. Leave Stage::Issues unmarked so a
                 // re-run offers drafting again (mirrors a declined publish).
                 print_note("Skipped — no tasks drafted.");
-                return finalize(&repo, &cfg, &findings.agents_logged_in);
+                return finalize(&repo, &cfg, &findings.agents_logged_in, selected_agent);
             }
 
             let triage_label = resolve_triage_label(&repo);
@@ -711,7 +711,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
         }
     }
 
-    finalize(&repo, &cfg, &findings.agents_logged_in)
+    finalize(&repo, &cfg, &findings.agents_logged_in, selected_agent)
 }
 
 #[cfg(test)]
