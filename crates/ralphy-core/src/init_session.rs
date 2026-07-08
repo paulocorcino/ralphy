@@ -148,9 +148,11 @@ pub fn build_triage_prompt(
          - Issues to triage (each carries `triage-agent`): {numbers}\n\
          - Queue label a promote/consolidate verdict swaps in: {queue_label}\n\
          - The consolidated-spec marker (put it first in a consolidate comment): {marker}\n\
+         - The promote-evidence marker (put it first in a promote comment): {promote_marker}\n\
          - Write the JSON draft to this path: {out}\n",
         repo = repo.display(),
         marker = crate::blocked::CONSOLIDATED_SPEC_MARKER,
+        promote_marker = crate::blocked::PROMOTE_EVIDENCE_MARKER,
         out = out.display(),
     )
 }
@@ -217,6 +219,10 @@ mod tests {
         assert!(
             prompt.contains("ralphy:consolidated-spec"),
             "marker named:\n{prompt}"
+        );
+        assert!(
+            prompt.contains("ralphy:promote-evidence"),
+            "promote marker named:\n{prompt}"
         );
         assert!(
             prompt.contains("#12, #15"),

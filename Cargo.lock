@@ -898,7 +898,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-cli"
-version = "0.1.0-rc10"
+version = "0.1.0-rc12"
 dependencies = [
  "anyhow",
  "chrono",

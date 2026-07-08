@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriageVerdict {
-    /// Executable as-is: swap `triage-agent` for the queue label. No comment.
+    /// Executable as-is: post the evidence-stamp comment (the ADR-0018
+    /// evidence-gate citations that justified admitting it), then swap
+    /// `triage-agent` for the queue label (ADR-0027). No rewriting of the body.
     Promote,
     /// The executable spec must be assembled from body + thread: post the
     /// consolidated-spec comment, then swap the labels.
@@ -42,18 +44,19 @@ pub struct DraftIssue {
 }
 
 /// One triaged issue: its number, the verdict, and the comment body the verdict
-/// requires. `promote` needs no comment; `consolidate` carries the full
-/// consolidated-spec body (marker included by the agent); `bounce` carries the
-/// what-is-missing note.
+/// requires. `promote` carries the evidence stamp (marker included, ADR-0027);
+/// `consolidate` carries the full consolidated-spec body (marker included by the
+/// agent); `bounce` carries the what-is-missing note.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TriageItem {
     /// The open issue this verdict applies to.
     pub number: u64,
     /// The triage verdict.
     pub verdict: TriageVerdict,
-    /// The comment body: the consolidated spec (`consolidate`), the
-    /// what-is-missing note (`bounce`), or the decision-delivering diagnostic
-    /// (`escalate`). Absent/empty for `promote`.
+    /// The comment body: the evidence stamp (`promote`), the consolidated spec
+    /// (`consolidate`), the what-is-missing note (`bounce`), or the
+    /// decision-delivering diagnostic (`escalate`). Required by every verdict
+    /// (ADR-0027 made `promote` carry its evidence stamp).
     #[serde(default)]
     pub comment: Option<String>,
     /// An optional follow-up issue an `escalate` verdict proposes (ADR-0018 §4).
@@ -64,10 +67,11 @@ pub struct TriageItem {
 }
 
 impl TriageItem {
-    /// A verdict is well-formed when the arms that must speak carry a non-empty
-    /// comment: `consolidate` (the spec), `bounce` (the missing-info note), and
-    /// `escalate` (the decision-delivering diagnostic). `promote` must NOT carry
-    /// one. Returns the offending reason, or `None`.
+    /// A verdict is well-formed when it carries the non-empty comment its arm
+    /// requires: `promote` (the evidence stamp, ADR-0027), `consolidate` (the
+    /// spec), `bounce` (the missing-info note), and `escalate` (the
+    /// decision-delivering diagnostic). Every verdict now speaks. Returns the
+    /// offending reason, or `None`.
     fn invalid_reason(&self) -> Option<String> {
         let has_comment = self
             .comment
@@ -75,6 +79,10 @@ impl TriageItem {
             .map(|c| !c.trim().is_empty())
             .unwrap_or(false);
         match self.verdict {
+            TriageVerdict::Promote if !has_comment => Some(format!(
+                "#{}: promote needs an evidence-stamp comment",
+                self.number
+            )),
             TriageVerdict::Consolidate if !has_comment => Some(format!(
                 "#{}: consolidate needs a comment body",
                 self.number
@@ -104,9 +112,10 @@ impl TriageDraft {
         self.items.len()
     }
 
-    /// Reject a draft whose verdicts are self-contradictory (a `consolidate` or
-    /// `bounce` without the comment its arm requires) before any GitHub write.
-    /// Returns the first offending reason.
+    /// Reject a draft whose verdicts are self-contradictory (any verdict without
+    /// the comment its arm requires — including a `promote` missing its evidence
+    /// stamp, ADR-0027) before any GitHub write. Returns the first offending
+    /// reason.
     pub fn validate(&self) -> Result<(), String> {
         for item in &self.items {
             if let Some(reason) = item.invalid_reason() {
@@ -124,7 +133,7 @@ mod tests {
     /// A canonical draft covering all three verdicts, pinning the wire format.
     const SAMPLE_JSON: &str = r###"{
         "items": [
-            { "number": 12, "verdict": "promote" },
+            { "number": 12, "verdict": "promote", "comment": "<!-- ralphy:promote-evidence -->\n## Evidence (AFK)\n- src/foo.rs:42 raises on empty input" },
             { "number": 15, "verdict": "consolidate", "comment": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\n..." },
             { "number": 18, "verdict": "bounce", "comment": "Missing acceptance criteria and a repro." }
         ]
@@ -135,7 +144,11 @@ mod tests {
         let draft: TriageDraft = serde_json::from_str(SAMPLE_JSON).expect("parse sample");
         assert_eq!(draft.item_count(), 3);
         assert_eq!(draft.items[0].verdict, TriageVerdict::Promote);
-        assert!(draft.items[0].comment.is_none());
+        assert!(draft.items[0]
+            .comment
+            .as_deref()
+            .unwrap()
+            .contains("ralphy:promote-evidence"));
         assert_eq!(draft.items[1].verdict, TriageVerdict::Consolidate);
         assert!(draft.items[1]
             .comment
@@ -227,17 +240,38 @@ mod tests {
     }
 
     #[test]
-    fn promote_with_comment_is_still_valid() {
-        // A stray comment on promote is tolerated (ignored at apply time), not a
-        // validation failure — the agent occasionally over-explains.
+    fn promote_with_evidence_stamp_is_valid() {
+        // ADR-0027: promote carries the evidence stamp; a non-empty comment
+        // validates.
         let draft = TriageDraft {
             items: vec![TriageItem {
                 number: 3,
                 verdict: TriageVerdict::Promote,
-                comment: Some("looks good".into()),
+                comment: Some(format!(
+                    "{}\n## Evidence (AFK)\n- foo.rs:1",
+                    crate::PROMOTE_EVIDENCE_MARKER
+                )),
                 draft_issue: None,
             }],
         };
         assert!(draft.validate().is_ok());
+    }
+
+    #[test]
+    fn promote_without_comment_is_invalid() {
+        // ADR-0027 made promote speak: a label flip with no recorded evidence
+        // never publishes.
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 4,
+                verdict: TriageVerdict::Promote,
+                comment: None,
+                draft_issue: None,
+            }],
+        };
+        let err = draft
+            .validate()
+            .expect_err("promote needs an evidence stamp");
+        assert!(err.contains("#4"), "reason names the issue: {err}");
     }
 }

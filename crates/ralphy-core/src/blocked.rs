@@ -14,6 +14,14 @@ use crate::Issue;
 /// rather than stacking a second one.
 pub const CONSOLIDATED_SPEC_MARKER: &str = "<!-- ralphy:consolidated-spec -->";
 
+/// The stable machine marker on the single evidence-stamp comment a `promote`
+/// verdict authors (ADR-0027). Unlike [`CONSOLIDATED_SPEC_MARKER`] it is NOT an
+/// authoritative spec — it records the ADR-0018 evidence-gate citations that
+/// justified admitting the issue to the queue, and its `## Blocked by` (if any)
+/// is never parsed for gating. Re-triage finds this marker to edit its own
+/// comment rather than stacking a second one.
+pub const PROMOTE_EVIDENCE_MARKER: &str = "<!-- ralphy:promote-evidence -->";
+
 /// The first comment in `comments` carrying [`CONSOLIDATED_SPEC_MARKER`] — the
 /// authoritative consolidated spec `ralphy triage` posted (ADR-0017), or `None`
 /// when no comment is marked. Unmarked comments (the author's body, ordinary

@@ -57,7 +57,9 @@ non-configurable — it stays out of the `docs/agents/triage-labels.md` mapping 
 `ralphy init` syncs it automatically. It is also a **human-return** label: while
 present it parks the issue out of the run queue (ADR-0016), so triage and run never
 race. `ralphy triage` consumes it, then swaps it for `ready-for-agent` (promote /
-consolidate), `needs-info` (bounce), or `ready-for-human` (escalate). The two
+consolidate), `needs-info` (bounce), or `ready-for-human` (escalate). A `promote`
+also posts a marked **evidence-stamp** comment recording the evidence gate it
+passed, so the AFK judgment is auditable rather than a bare label flip (ADR-0027). The two
 human-return arms split the debt they used to conflate: `bounce` = the reporter
 owes information → `needs-info`; `escalate` = a maintainer owes a decision →
 `ready-for-human` (ADR-0018 §3). The promotion bar for promote/consolidate is

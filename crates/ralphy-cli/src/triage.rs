@@ -13,7 +13,7 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 use ralphy_core::{
     git, github, GhTracker, IssueTracker, TriageDraft, TriageItem, TriageRequest, TriageVerdict,
-    Workspace, CONSOLIDATED_SPEC_MARKER, TRIAGE_AGENT_LABEL,
+    Workspace, CONSOLIDATED_SPEC_MARKER, PROMOTE_EVIDENCE_MARKER, TRIAGE_AGENT_LABEL,
 };
 
 use crate::init::{agent_logged_in, resolve_human_label, resolve_triage_label, Agent};
@@ -118,6 +118,8 @@ pub struct TriageLabels {
     pub triage_agent_label: String,
     /// The consolidated-spec comment marker.
     pub marker: String,
+    /// The promote evidence-stamp comment marker (ADR-0027).
+    pub promote_marker: String,
 }
 
 /// Dispatch the triage session to the selected agent's adapter. The charter is
@@ -173,7 +175,7 @@ fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
 fn verdict_line(item: &TriageItem, labels: &TriageLabels) -> String {
     match item.verdict {
         TriageVerdict::Promote => format!(
-            "  #{}: promote — swap {} → {}",
+            "  #{}: promote — post evidence stamp, swap {} → {}",
             item.number, labels.triage_agent_label, labels.queue_label
         ),
         TriageVerdict::Consolidate => format!(
@@ -194,8 +196,9 @@ fn verdict_line(item: &TriageItem, labels: &TriageLabels) -> String {
 /// Apply the triage verdicts through the tracker. `decide` gates the outward
 /// promote/consolidate publishes (the operator's confirm; `--yes` passes
 /// `|_| true`); the bounce arm never consults it — returning work to a human is
-/// always safe (ADR-0017 §5). Label swaps use `remove_label` + `add_label`; a
-/// consolidate posts-or-edits the marked comment (idempotent). Pure over the
+/// always safe (ADR-0017 §5). Label swaps use `remove_label` + `add_label`;
+/// promote (its evidence stamp, ADR-0027) and consolidate (its spec) both
+/// post-or-edit their marked comment (idempotent). Pure over the
 /// [`IssueTracker`] trait so it unit-tests against a recording fake.
 pub fn apply_triage(
     draft: &TriageDraft,
@@ -209,6 +212,11 @@ pub fn apply_triage(
                 if !decide(item) {
                     continue;
                 }
+                // ADR-0027: promote records its evidence stamp before admitting
+                // the issue to the queue. Upsert (not plain comment) so re-triage
+                // edits the marked comment rather than stacking a second one.
+                let body = item.comment.as_deref().unwrap_or_default();
+                tracker.upsert_marked_comment(item.number, &labels.promote_marker, body)?;
                 tracker.remove_label(item.number, &labels.triage_agent_label)?;
                 tracker.add_label(item.number, &labels.queue_label)?;
             }
@@ -293,6 +301,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         human_label: resolve_human_label(&repo),
         triage_agent_label: TRIAGE_AGENT_LABEL.to_string(),
         marker: CONSOLIDATED_SPEC_MARKER.to_string(),
+        promote_marker: PROMOTE_EVIDENCE_MARKER.to_string(),
     };
 
     // Mechanically pre-fetch text + (capability-gated) image attachments as
@@ -524,25 +533,33 @@ mod tests {
             human_label: "ready-for-human".into(),
             triage_agent_label: TRIAGE_AGENT_LABEL.into(),
             marker: CONSOLIDATED_SPEC_MARKER.into(),
+            promote_marker: PROMOTE_EVIDENCE_MARKER.into(),
         }
     }
 
     #[test]
-    fn promote_swaps_labels_without_comment() {
+    fn promote_upserts_evidence_stamp_then_swaps_labels() {
+        // ADR-0027: promote records its evidence stamp via upsert (idempotent),
+        // then swaps the labels.
+        let body = format!("{PROMOTE_EVIDENCE_MARKER}\n## Evidence (AFK)\n- foo.rs:1");
         let draft = TriageDraft {
             items: vec![TriageItem {
                 number: 12,
                 verdict: TriageVerdict::Promote,
-                comment: None,
+                comment: Some(body.clone()),
                 draft_issue: None,
             }],
         };
         let t = RecordingTracker::default();
         apply_triage(&draft, &t, &labels(), |_| true).unwrap();
+        let upserts = t.upserts.borrow();
+        assert_eq!(upserts.len(), 1);
+        assert_eq!(upserts[0].0, 12);
+        assert_eq!(upserts[0].1, PROMOTE_EVIDENCE_MARKER);
+        assert!(upserts[0].2.contains("Evidence (AFK)"));
         assert_eq!(*t.removed.borrow(), vec![(12, "triage-agent".to_string())]);
         assert_eq!(*t.added.borrow(), vec![(12, "ready-for-agent".to_string())]);
-        assert!(t.comments.borrow().is_empty(), "promote posts no comment");
-        assert!(t.upserts.borrow().is_empty(), "promote upserts nothing");
+        assert!(t.comments.borrow().is_empty(), "promote uses upsert");
     }
 
     #[test]
@@ -659,7 +676,7 @@ mod tests {
                 TriageItem {
                     number: 1,
                     verdict: TriageVerdict::Promote,
-                    comment: None,
+                    comment: Some(format!("{PROMOTE_EVIDENCE_MARKER}\nevidence")),
                     draft_issue: None,
                 },
                 TriageItem {
@@ -677,7 +694,10 @@ mod tests {
             "nothing published on decline"
         );
         assert!(t.added.borrow().is_empty());
-        assert!(t.upserts.borrow().is_empty());
+        assert!(
+            t.upserts.borrow().is_empty(),
+            "declined promote/consolidate upsert nothing"
+        );
     }
 
     #[test]

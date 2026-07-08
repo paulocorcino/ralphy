@@ -7,6 +7,13 @@ on anything on GitHub. The `ralphy triage` binary applies your verdicts after th
 operator confirms (or immediately with `--yes`). No human is watching this
 session — never ask questions, never wait for input, just judge and write the JSON.
 
+## Language
+Write every comment you author (the promote evidence stamp, the consolidated
+spec, the bounce note, the escalate diagnostic) in the SAME language as the
+issue's body and thread — a Portuguese issue gets a Portuguese comment. Keep the
+machine markers, the `##` headings, and the JSON keys in English (they are
+parsed); only the human-facing prose follows the reporter's language.
+
 ## What you are given
 The `## Inputs` block appended below this charter names:
 - the repo root (read it for the domain glossary, ADRs, existing code and
@@ -51,9 +58,10 @@ what evidence is missing; anything that instead needs a maintainer's decision
 executable spec) → escalate (below).
 
 ## Pick one verdict per issue
-- **promote** — executable as-is AND passes the evidence gate above. No
-  comment, no rewriting. Expected common case. The binary swaps `triage-agent`
-  for the queue label.
+- **promote** — executable as-is AND passes the evidence gate above. Expected
+  common case. Write the **evidence-stamp comment** (below) — the citations that
+  satisfied the evidence gate — never a rewrite of the author's body. The binary
+  posts it, then swaps `triage-agent` for the queue label.
 - **consolidate** — the executable spec must be ASSEMBLED from the body +
   thread, AND it passes the evidence gate above. Write the consolidated-spec
   comment (below), which must name a red test in its acceptance criteria: a
@@ -77,6 +85,25 @@ park a maintainer decision under `needs-info`.
 
 Judge by whether the spec is executable, never by effort. When unsure between
 consolidate and bounce, prefer bounce — returning work to a human is always safe.
+
+## The evidence-stamp comment (promote only)
+A single compact comment recording WHY this issue is agent-ready — the audit
+trail for a decision that otherwise leaves only a label flip. Its FIRST line MUST
+be the promote-evidence marker named in `## Inputs`
+(`<!-- ralphy:promote-evidence -->`) so re-triage finds and EDITS it rather than
+stacking a second one. After the marker, in this order:
+
+- a fixed heading `## Evidence (AFK)`,
+- checkable citations only — the same three the evidence gate demands, never
+  narrative that merely sounds verified: what **reproduces** the problem
+  (`file:line`, a log excerpt, a command and its output), the **mechanism** (where
+  the defect is and why), and the **documented intent** the fix restores (the
+  test, doc, or ADR).
+
+This stamp is NOT a spec and NOT authoritative — it does not restate the request
+or add acceptance criteria; the planner reads the author's body as the spec, as
+always. Keep it short. NEVER rewrite the author's body or other people's
+comments — the stamp is additive, exactly like the consolidated-spec comment.
 
 ## The consolidated-spec comment (consolidate only)
 A single self-contained comment. Its FIRST line MUST be the marker named in
@@ -126,7 +153,7 @@ this schema (no extra keys, no trailing comments):
 ```json
 {
   "items": [
-    { "number": 12, "verdict": "promote" },
+    { "number": 12, "verdict": "promote", "comment": "<!-- ralphy:promote-evidence -->\n## Evidence (AFK)\n- Reproduces: src/foo.rs:42 panics on empty input (see log excerpt ...)\n- Mechanism: unchecked index in `parse_row`\n- Intent: restores the behavior tests/foo.rs::empty_ok already documents\n" },
     { "number": 15, "verdict": "consolidate", "comment": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\n...\n\n## Acceptance criteria\n- [ ] ...\n\n## Provenance\n- ... (from comment by @alice)\n" },
     { "number": 18, "verdict": "bounce", "comment": "Under-specified: no acceptance criteria and the data source in the thread is unresolved. Please add ..." },
     { "number": 21, "verdict": "escalate", "comment": "Confirmed the flow change is needed (## Evidence: ...). Decide: keep the current rule or ...? Proposal below.", "draft_issue": { "title": "Restricted follow-up: ...", "body": "...\n\nCloses #21\n" } }
@@ -136,9 +163,10 @@ this schema (no extra keys, no trailing comments):
 
 Rules for the JSON:
 - One item per triaged issue number, using its real GitHub number.
-- `promote` carries NO `comment` (omit the key or set it null).
-- `consolidate`, `bounce`, and `escalate` MUST carry a non-empty `comment`.
-- A `consolidate` comment MUST begin with the marker line.
+- EVERY verdict MUST carry a non-empty `comment` — `promote` included (its
+  evidence stamp). A promote with no comment is rejected before publishing.
+- A `promote` comment MUST begin with the promote-evidence marker line.
+- A `consolidate` comment MUST begin with the consolidated-spec marker line.
 - `escalate` MAY carry an optional `draft_issue` (`{ "title", "body" }`) when it
   proposes a single restricted follow-up; omit it for a decomposition-only
   proposal. Any other verdict MUST NOT carry `draft_issue`.
