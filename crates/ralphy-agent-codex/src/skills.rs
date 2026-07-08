@@ -281,4 +281,50 @@ mod tests {
 
         let _ = fs::remove_dir_all(&base);
     }
+
+    #[test]
+    fn embedded_skill_frontmatter_is_valid_yaml() {
+        let mut checked = 0usize;
+        for skill in SKILLS.dirs() {
+            let name = skill
+                .path()
+                .file_name()
+                .expect("embedded skill directory has no name")
+                .to_string_lossy()
+                .into_owned();
+            let skill_md = SKILLS
+                .get_file(format!("{name}/SKILL.md"))
+                .unwrap_or_else(|| panic!("{name} has no SKILL.md"));
+            let contents = skill_md
+                .contents_utf8()
+                .unwrap_or_else(|| panic!("{name}/SKILL.md is not valid UTF-8"));
+
+            let mut all_lines = contents.lines();
+            let first = all_lines
+                .next()
+                .unwrap_or_else(|| panic!("{name}/SKILL.md is empty"));
+            assert_eq!(
+                first, "---",
+                "{name}/SKILL.md does not start with a '---' frontmatter delimiter"
+            );
+            let rest: Vec<&str> = all_lines.collect();
+            let end = rest
+                .iter()
+                .position(|l| *l == "---")
+                .unwrap_or_else(|| panic!("{name}/SKILL.md has no closing '---' delimiter"));
+            let frontmatter = rest[..end].join("\n");
+
+            let res = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&frontmatter);
+            assert!(
+                res.is_ok(),
+                "{name}/SKILL.md frontmatter is not valid YAML: {:?}",
+                res.err()
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 3,
+            "expected to check at least 3 skills, checked {checked}"
+        );
+    }
 }

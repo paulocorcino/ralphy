@@ -1,6 +1,6 @@
 ---
 name: staged-plan
-description: Design a self-contained multi-stage plan whose markdown is the operational contract — every execution detail (Execution model, Hand-off conventions, retry rule, working-tree policy, reviewer gate, pre-execution placeholder gate) is encoded in the plan file itself. This is a PLANNING skill: it produces a plan and stops. Use when the user wants to design, scaffold, or decompose work into a staged subagent track. Typical invocations - "design a staged plan", "decompose this into stages", "scaffold a multi-stage plan", "plan in stages", "create a staged execution plan". Do NOT invoke during Phase 2 execution — the plan markdown is self-sufficient and re-invoking the skill is redundant.
+description: Design a self-contained multi-stage plan whose markdown is the operational contract — every execution detail (Execution model, Hand-off conventions, retry rule, working-tree policy, reviewer gate, pre-execution placeholder gate) is encoded in the plan file itself. This is a PLANNING skill — it produces a plan and stops. Use when the user wants to design, scaffold, or decompose work into a staged subagent track. Typical invocations - "design a staged plan", "decompose this into stages", "scaffold a multi-stage plan", "plan in stages", "create a staged execution plan". Do NOT invoke during Phase 2 execution — the plan markdown is self-sufficient and re-invoking the skill is redundant.
 ---
 
 # Staged Plan

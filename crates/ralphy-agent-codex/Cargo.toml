@@ -14,3 +14,6 @@ serde_json.workspace = true
 include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
+
+[dev-dependencies]
+serde_yaml_ng = "0.10.0"
