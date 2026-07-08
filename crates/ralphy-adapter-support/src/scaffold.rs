@@ -25,6 +25,10 @@ use crate::HeadlessRun;
 /// no-plan bails; the `(see <log>)` / `at <plan>` suffixes are appended by the
 /// runner, so `auth_msg`/`no_plan_msg` carry only the prefix.
 pub struct PlanCfg<'a> {
+    /// The current issue's number — identity for the finalized-plan trailer. When
+    /// `plan_path`'s last line already carries this issue's trailer, the session
+    /// resumes (keeps the plan, skips the run) instead of re-planning.
+    pub issue_number: u64,
     /// The workspace `.ralphy` dir (created if absent).
     pub ralphy_dir: &'a Path,
     /// The run's log/scratch dir (created if absent).
@@ -43,17 +47,26 @@ pub struct PlanCfg<'a> {
     pub no_plan_msg: &'a str,
 }
 
-/// Drive the shared plan shell: create dirs, write the charter, drop a stale plan,
-/// run the vendor `run` closure, then — if no plan landed — walk the no-plan
-/// ladder. `on_missing` wins first (the typed limit lifted to an `anyhow::Error`),
-/// then `is_auth_error` (the auth bail), then the generic `no_plan_msg`. Returns
-/// the vendor's `(HeadlessRun, P)` when a plan exists.
+/// Drive the shared plan shell. FIRST checks the resume short-circuit: when
+/// `cfg.plan_path` is already a finalized plan for `cfg.issue_number` (its last
+/// line carries the trailer), returns `Ok(None)` WITHOUT touching the file or
+/// running `run` — an abruptly-killed run resumes execution instead of re-planning.
+/// Otherwise: create dirs, write the charter, drop the stale plan, run the vendor
+/// `run` closure, then — if no plan landed — walk the no-plan ladder. `on_missing`
+/// wins first (the typed limit lifted to an `anyhow::Error`), then `is_auth_error`
+/// (the auth bail), then the generic `no_plan_msg`. Returns
+/// `Ok(Some((HeadlessRun, P)))` when a fresh plan was produced.
 pub fn run_plan_session<P>(
     cfg: PlanCfg,
     run: impl FnOnce() -> Result<(HeadlessRun, P)>,
     is_auth_error: impl Fn(&str) -> bool,
     on_missing: impl FnOnce(&str) -> Option<anyhow::Error>,
-) -> Result<(HeadlessRun, P)> {
+) -> Result<Option<(HeadlessRun, P)>> {
+    // Resume before any side effect: a finalized plan for this issue is kept
+    // byte-for-byte and the vendor run is skipped (zero planning tokens).
+    if crate::resume::plan_is_finalized_for(cfg.plan_path, cfg.issue_number) {
+        return Ok(None);
+    }
     fs::create_dir_all(cfg.ralphy_dir).ok();
     fs::create_dir_all(cfg.run_dir).ok();
     // Plan fresh every run; never reuse a stale artifact.
@@ -83,7 +96,7 @@ pub fn run_plan_session<P>(
             cfg.log_path.display()
         );
     }
-    Ok((r, p))
+    Ok(Some((r, p)))
 }
 
 /// The paths and auth wording for a [`run_exec_session`] call — no plan/charter,
@@ -138,6 +151,7 @@ mod tests {
 
     fn plan_cfg<'a>(dir: &'a Path, plan_path: &'a Path, charter_path: &'a Path) -> PlanCfg<'a> {
         PlanCfg {
+            issue_number: 0,
             ralphy_dir: dir,
             run_dir: dir,
             plan_path,
@@ -211,9 +225,117 @@ mod tests {
             |_| true,
             |_| Some(anyhow::anyhow!("limit")),
         )
-        .unwrap();
+        .unwrap()
+        .expect("fresh plan yields Some");
         assert_eq!(p, 7);
         assert!(r.log.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resume_keeps_finalized_plan_and_skips_run() {
+        let dir = tmp("resume");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        fs::write(&plan_path, "# plan\n<!-- ralphy-plan: issue=147 -->\n").unwrap();
+        let before = fs::read(&plan_path).unwrap();
+        let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+        cfg.issue_number = 147;
+        let ran = std::cell::Cell::new(false);
+        let out = run_plan_session(
+            cfg,
+            || {
+                ran.set(true);
+                Ok((fake_run(""), 1u32))
+            },
+            |_| true,
+            |_| None,
+        )
+        .unwrap();
+        assert!(out.is_none(), "finalized plan should resume (None)");
+        assert!(!ran.get(), "run closure must NOT be invoked on resume");
+        assert_eq!(
+            fs::read(&plan_path).unwrap(),
+            before,
+            "plan bytes unchanged"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resume_reruns_on_other_issue_trailer() {
+        let dir = tmp("other-trailer");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        fs::write(&plan_path, "# plan\n<!-- ralphy-plan: issue=999 -->\n").unwrap();
+        let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+        cfg.issue_number = 147;
+        let out = run_plan_session(
+            cfg,
+            || {
+                fs::write(&plan_path, "# fresh plan").unwrap();
+                Ok((fake_run(""), 5u32))
+            },
+            |_| true,
+            |_| None,
+        )
+        .unwrap();
+        assert!(out.is_some(), "other-issue trailer must re-plan (Some)");
+        assert_eq!(fs::read_to_string(&plan_path).unwrap(), "# fresh plan");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resume_reruns_on_truncated_plan() {
+        let dir = tmp("truncated");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        fs::write(&plan_path, "# plan\n## Steps").unwrap();
+        let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+        cfg.issue_number = 147;
+        let out = run_plan_session(
+            cfg,
+            || {
+                fs::write(&plan_path, "# fresh plan").unwrap();
+                Ok((fake_run(""), 5u32))
+            },
+            |_| true,
+            |_| None,
+        )
+        .unwrap();
+        assert!(out.is_some(), "truncated plan (no trailer) must re-plan");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resume_twice_is_side_effect_free() {
+        let dir = tmp("resume-twice");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        fs::write(&plan_path, "# plan\n<!-- ralphy-plan: issue=147 -->\n").unwrap();
+        let before = fs::read(&plan_path).unwrap();
+        let ran = std::cell::Cell::new(false);
+        for _ in 0..2 {
+            let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+            cfg.issue_number = 147;
+            let out = run_plan_session(
+                cfg,
+                || {
+                    ran.set(true);
+                    Ok((fake_run(""), 1u32))
+                },
+                |_| true,
+                |_| None,
+            )
+            .unwrap();
+            assert!(out.is_none());
+        }
+        assert!(!ran.get(), "run closure never called across two resumes");
+        assert_eq!(fs::read(&plan_path).unwrap(), before, "bytes identical");
         let _ = fs::remove_dir_all(&dir);
     }
 

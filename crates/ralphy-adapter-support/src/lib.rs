@@ -45,6 +45,9 @@ pub use json_session::{
     run_init_session, run_json_session, run_text_session, JsonSession, TextSession,
 };
 
+mod resume;
+pub use resume::{plan_is_finalized_for, plan_trailer};
+
 mod scaffold;
 pub use scaffold::{run_exec_session, run_plan_session, ExecCfg, PlanCfg};
 
