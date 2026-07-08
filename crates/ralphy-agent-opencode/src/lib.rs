@@ -384,9 +384,12 @@ mod tests {
 
     #[test]
     fn prompt_plan_opencode_carries_finalize_trailer() {
+        // Pin the FULL literal (suffix + spacing), not just the prefix: a drift to
+        // `issue = <N> -->` would keep a prefix check green yet make the trailer no
+        // longer match `plan_is_finalized_for`, silently disabling resume.
         assert!(
-            PROMPT_PLAN_OPENCODE.contains("<!-- ralphy-plan: issue="),
-            "planning prompt must instruct writing the finalized-plan trailer"
+            PROMPT_PLAN_OPENCODE.contains("<!-- ralphy-plan: issue=<N> -->"),
+            "planning prompt must instruct writing the exact finalized-plan trailer"
         );
     }
 }

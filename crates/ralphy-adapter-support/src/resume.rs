@@ -11,9 +11,15 @@
 use std::fs;
 use std::path::Path;
 
-/// The finalized-plan marker for `issue_number`, written by the planner as the
-/// last line of `.ralphy/plan.md`. Reuses the existing consolidate last-line
-/// marker convention; the number carries plan identity.
+/// The finalized-plan marker for `issue_number`. The PRODUCER is the LLM planner
+/// (instructed by the plan prompt to write this as the last line of
+/// `.ralphy/plan.md`); Rust only DETECTS it here — there is no Rust caller that
+/// writes the trailer. Exists so both the prompt-const tests and
+/// [`plan_is_finalized_for`] derive the exact literal from one place.
+///
+/// "Finalized" means "the planner finished writing" — NOT "the issue completed".
+/// Resume relies on the external invariant that a completed issue leaves the
+/// queue and worktrees are per-run, so a finalized plan is never re-executed.
 pub fn plan_trailer(issue_number: u64) -> String {
     format!("<!-- ralphy-plan: issue={issue_number} -->")
 }
