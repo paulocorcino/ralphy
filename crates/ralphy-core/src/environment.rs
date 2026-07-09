@@ -144,7 +144,12 @@ struct Detected {
 /// can't be parsed).
 fn detect() -> Detected {
     let info = os_info::get();
-    let os = format!("{} · {}", info, std::env::consts::ARCH);
+    let os = format!(
+        "{} · {}{}",
+        info,
+        std::env::consts::ARCH,
+        wsl_suffix().map(|w| format!(" ({w})")).unwrap_or_default(),
+    );
     let path = std::env::var_os("PATH");
     let pathext = std::env::var_os("PATHEXT");
     let tools = TOOLS
@@ -187,6 +192,32 @@ fn parse_version(text: &str) -> Option<String> {
     re.find(text).map(|m| m.as_str().to_string())
 }
 
+/// The WSL flavor of the host, or `None` when not under WSL (native Linux,
+/// Windows, macOS). Read from `/proc/version` — absent off Linux, so the read
+/// simply fails and yields `None` without any platform gate. os_info reports the
+/// underlying distro under WSL and never surfaces this, yet it is the exact
+/// signal that separates a real Linux box from one where a Windows toolchain may
+/// be reachable (or, on WSL1, unreachable) — the class of trap this brief exists
+/// to flag.
+fn wsl_suffix() -> Option<&'static str> {
+    let text = std::fs::read_to_string("/proc/version").ok()?;
+    classify_wsl(&text)
+}
+
+/// Classify a `/proc/version` string: WSL2 kernels carry `WSL2`, WSL1 carries
+/// `microsoft` without it. Pure over its input so it unit-tests without a Linux
+/// host.
+fn classify_wsl(proc_version: &str) -> Option<&'static str> {
+    let lower = proc_version.to_ascii_lowercase();
+    if lower.contains("wsl2") {
+        Some("WSL2")
+    } else if lower.contains("microsoft") {
+        Some("WSL1")
+    } else {
+        None
+    }
+}
+
 /// Assemble the brief: the fixed header, then one `- ` bullet per fact (OS first,
 /// then each detected tool). Kept as a pure function over [`Detected`] so it
 /// unit-tests without touching the host.
@@ -226,6 +257,25 @@ mod tests {
         assert_eq!(parse_version("no version here"), None);
         // A lone integer is not a version — needs at least two groups.
         assert_eq!(parse_version("build 12345"), None);
+    }
+
+    #[test]
+    fn classify_wsl_separates_wsl2_wsl1_and_native() {
+        // WSL2 kernel banner.
+        assert_eq!(
+            classify_wsl("Linux version 5.15.90.1-microsoft-standard-WSL2 (oe-user@oe-host) ..."),
+            Some("WSL2")
+        );
+        // WSL1 banner: carries Microsoft but not WSL2.
+        assert_eq!(
+            classify_wsl("Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com) ..."),
+            Some("WSL1")
+        );
+        // Native Linux — no WSL marker.
+        assert_eq!(
+            classify_wsl("Linux version 6.5.0-14-generic (buildd@lcy02) ..."),
+            None
+        );
     }
 
     #[test]
