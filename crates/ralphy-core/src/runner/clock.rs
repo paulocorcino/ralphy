@@ -102,7 +102,17 @@ impl RunClock for WallClock {
             }
         }
 
-        info!(%reset, target = %target.format("%Y-%m-%d %H:%M"), target_epoch = target.timestamp(), "usage limit — waiting for reset");
+        // Emit the display `reset` as the wake time-of-day (`HH:MM`, buffer included),
+        // NOT the raw hint: the hint may be a full RFC3339 instant (Codex, or a
+        // synthesised window) that reads badly in a card. The countdown downstream is
+        // driven by `target_epoch`, so a bare `HH:MM` here is enough for the UI; the
+        // raw hint stays as `hint` for the log.
+        info!(
+            reset = %target.format("%H:%M"),
+            hint = %reset,
+            target_epoch = target.timestamp(),
+            "usage limit — waiting for reset"
+        );
         let mut last_heartbeat = Instant::now();
         loop {
             if self.deadline_passed() {

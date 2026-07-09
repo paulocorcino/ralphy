@@ -182,7 +182,13 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
             || msg.contains("rate_limit_error")
             || msg.contains("rate limit exceeded")
             || msg.contains("too many requests")
-            || msg.contains("quota exceeded");
+            || msg.contains("quota exceeded")
+            // Kimi's billing-cycle quota block surfaces through OpenCode as an
+            // `APIError` with `statusCode:403` (not 429) and this wording — a genuine
+            // usage limit to wait out, not a permission error. Keyed on the specific
+            // billing-cycle phrase so an ordinary 403 (no model access) still fails as
+            // an error rather than parking a synthetic wait (observed live).
+            || msg.contains("usage limit for this billing cycle");
 
         is_limit.then(|| parse_opencode_reset_hint(detail))
     })
@@ -316,6 +322,27 @@ mod tests {
             Some(Some("2026-06-10T20:00:00Z".into())),
             "must read name/statusCode/retryAfter from error.data"
         );
+    }
+
+    #[test]
+    fn parse_limit_detects_kimi_403_billing_cycle_block() {
+        // Kimi's billing-cycle quota block through OpenCode: an `APIError` with
+        // statusCode 403 (not 429) and no reset hint — must map to Limit(None), the
+        // exact live event shape that previously fell through to Stuck.
+        let stream = r#"{"type":"error","error":{"name":"APIError","data":{"message":"You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.","statusCode":403,"isRetryable":false}}}"#;
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(None),
+            "Kimi's 403 billing-cycle block is a usage limit with no reset hint"
+        );
+    }
+
+    #[test]
+    fn parse_limit_plain_403_is_not_a_limit() {
+        // A generic 403 (e.g. no access to a model) is a permission error, not a
+        // usage limit — it must stay unrecognised so it fails as Stuck, not sleep.
+        let stream = r#"{"type":"error","error":{"name":"APIError","data":{"message":"forbidden: model not available","statusCode":403}}}"#;
+        assert_eq!(parse_opencode_limit(stream), None);
     }
 
     #[test]
