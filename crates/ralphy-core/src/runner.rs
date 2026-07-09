@@ -112,6 +112,12 @@ fn run_queue_with(
 ) -> Result<QueueReport> {
     let ws = Workspace::new(&cfg.repo_root);
 
+    // Write the build-environment brief once (no-op if it already exists) so the
+    // planner and executor see the machine their `## Verify`/smoke commands run
+    // on, before the first plan pass reads it.
+    let _ = std::fs::create_dir_all(ws.ralphy_dir());
+    crate::environment::ensure_brief(&ws);
+
     let (orig, branch, compare_ref) = prepare_branch(
         repo,
         &cfg.repo_root,

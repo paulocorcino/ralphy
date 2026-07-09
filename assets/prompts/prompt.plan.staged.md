@@ -50,6 +50,11 @@ on one.
   those too before planning a step that re-derives an environment procedure
   (bringing up the lab, probing a service); a predecessor may have already
   paid for it. Ignore `knowledge/raw/` (archived input, already folded in).
+- `.ralphy/environment.md` — the build machine: the OS and the toolchains
+  confirmed present, with versions. Every `## Verify` command and smoke script
+  you write runs HERE — match them to this OS and these tools. Never assume a
+  tool exists because it is common (a `netstat`, a bare `python3`); verify it is
+  present before a step depends on it.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
   is relevant; they define the project's language, toolchain, and how tests
   and builds run.
