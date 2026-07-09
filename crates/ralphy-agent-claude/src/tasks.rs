@@ -16,9 +16,10 @@ use ralphy_core::{
 };
 use tracing::info;
 
+use ralphy_core::PROMPT_CONSOLIDATE;
+
 use crate::auth::{is_claude_auth_error, CLAUDE_AUTH_ERROR_MSG};
 use crate::interactive::resolve_claude_binary;
-use crate::plan::PROMPT_CONSOLIDATE;
 use crate::settings::SETTINGS_JSON;
 
 /// Run a one-shot headless `claude -p` knowledge-consolidation session in

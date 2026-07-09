@@ -2473,14 +2473,62 @@ fn blocked_by_in_consolidated_comment_gates_issue() {
 }
 
 #[test]
-fn limit_outcome_with_no_reset_carries_none() {
-    let repo = init_repo("limit-noreset");
+fn limit_no_reset_synthesizes_a_wait_and_auto_resumes() {
+    // A limit with no parseable reset (Kimi's 403 account block) no longer stops:
+    // it parks a synthesised ~30-min window and re-runs execute() when the wait
+    // returns (ADR-0030). Two consecutive no-commit synthetic limits also prove the
+    // progress cap is skipped for this path (B2) — a real reset would abandon at two,
+    // but an account-wide pause is the human's call, so the loop resumes until Done.
+    let repo = init_repo("limit-noreset-resume");
+    let queue = vec![issue(11)];
+    let agent = ScriptedAgent::scripted(vec![
+        (Outcome::Limit(None), false),
+        (Outcome::Limit(None), false),
+        (Outcome::Done, true),
+    ]);
+    let tracker = RecordingTracker::default();
+    let clock = ScriptedClock::never();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-limit-none", false),
+        &queue,
+        &agent,
+        &tracker,
+        &clock,
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![11, 11, 11],
+        "execute re-ran after each synthetic wait; the cap did not abandon the issue"
+    );
+    assert!(
+        report.stop.is_none(),
+        "a no-reset limit auto-resumes, not a stop"
+    );
+    // A synthetic, parseable reset target was passed to wait_for_reset each cycle.
+    let waited = clock.waited_for.borrow();
+    assert_eq!(waited.len(), 2, "waited once per no-reset limit");
+    assert!(
+        waited.iter().all(|w| !w.is_empty()),
+        "each wait carried a synthesised reset target, got {waited:?}"
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn limit_no_reset_stops_when_stop_on_limit() {
+    // `--stop-on-limit` is the opt-out (e.g. CI that must not hang): a no-reset limit
+    // stops and reports with a None reset instead of parking a synthetic wait.
+    let repo = init_repo("limit-noreset-stop");
     let queue = vec![issue(11)];
     let agent = ScriptedAgent::new(vec![Outcome::Limit(None)]);
     let tracker = RecordingTracker::default();
 
     let report = run_queue(
-        &cfg(&repo, "stamp-limit-none", false),
+        &cfg_stop_on_limit(&repo, "stamp-limit-none-stop"),
         &queue,
         &agent,
         &tracker,

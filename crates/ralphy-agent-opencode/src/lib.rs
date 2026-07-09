@@ -48,7 +48,7 @@ use events::{
 };
 use outcome::classify_opencode_outcome;
 use skills::{materialize_opencode_skills, opencode_skills_config};
-pub use tasks::{diagnose_repo, draft_issues, list_models, triage_issues};
+pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 use usage::{opencode_usage, resolved_model_label};
 
 /// The OpenCode planning prompt, embedded so the binary is self-contained as a

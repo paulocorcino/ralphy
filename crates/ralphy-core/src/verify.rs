@@ -403,7 +403,12 @@ fn tail(s: &str) -> String {
     if trimmed.len() <= TAIL_BYTES {
         return trimmed.to_string();
     }
-    let start = trimmed.len() - TAIL_BYTES;
+    let mut start = trimmed.len() - TAIL_BYTES;
+    // The byte offset may land inside a multi-byte char (e.g. box-drawing '└' in
+    // vitest output, #…); nudge it forward to a char boundary before slicing.
+    while !trimmed.is_char_boundary(start) {
+        start += 1;
+    }
     // Advance to the next newline so we drop the partial leading line.
     let slice = &trimmed[start..];
     match slice.find('\n') {

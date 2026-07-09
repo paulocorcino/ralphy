@@ -244,14 +244,22 @@ pub(crate) struct ConsolidateArgs {
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Model for the consolidation session. Curation is judgment-heavy
-    /// (dedup, conflict resolution, what to cut), so it defaults to opus.
-    #[arg(long, default_value = "opus")]
-    pub(crate) model: String,
+    /// Which agent CLI drives the consolidation session (docs/adr/0031). Defaults
+    /// to Claude so a bare `ralphy consolidate` is unchanged; every adapter drives
+    /// the same charter.
+    #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
+    pub(crate) agent: CliAgent,
 
-    /// Reasoning effort for the consolidation session.
-    #[arg(long, default_value = "medium")]
-    pub(crate) effort: String,
+    /// Model for the consolidation session. Curation is judgment-heavy (dedup,
+    /// conflict resolution, what to cut); when omitted the default is the agent's —
+    /// opus for Claude, the adapter's own default for the rest.
+    #[arg(long)]
+    pub(crate) model: Option<String>,
+
+    /// Reasoning effort for the consolidation session (Claude/Codex only; Kimi and
+    /// OpenCode have no such knob). When omitted, `medium` on Claude.
+    #[arg(long)]
+    pub(crate) effort: Option<String>,
 
     /// Wall-clock budget (minutes) before the session is reclaimed.
     #[arg(long, default_value_t = 30)]

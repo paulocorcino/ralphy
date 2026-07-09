@@ -40,7 +40,7 @@ use command::{
 };
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
-pub use tasks::{diagnose_repo, draft_issues, triage_issues};
+pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 use usage::{codex_sessions_dir, fold_rollout_usage};
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global

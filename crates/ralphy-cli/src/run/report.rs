@@ -8,7 +8,7 @@
 use ralphy_core::{git, BranchMode, Outcome, StopReason, Workspace};
 use tracing::{info, warn};
 
-use crate::{pricing, ui};
+use crate::{pricing, ui, CliAgent};
 
 /// Knowledge consolidation trigger: a non-dry run that finished (`run_ok`) and left
 /// loose per-issue notes folds them into KNOWLEDGE.md, so the curated cache the next
@@ -21,9 +21,13 @@ use crate::{pricing, ui};
 /// (timestamp + 📚) and the live Telegram card folds (a 📚 line during, a footer
 /// segment after). A failed session is a warning, never a run failure — the run
 /// already succeeded and the notes stay loose for a later retry. `ANTHROPIC_API_KEY`
-/// was already cleared up front; defaults mirror the `consolidate` command
-/// (opus / medium / 30 min).
+/// was already cleared up front. The session runs on the run's own executor
+/// `agent` (docs/adr/0031) — not a hardwired Claude — so a Kimi/Codex/OpenCode run
+/// never reaches for `claude`. The model/effort defaults come from
+/// `consolidate_defaults`: opus/medium for Claude (curation is judgment-heavy),
+/// the adapter's own default for the rest. 30-minute wall like the command.
 pub(crate) fn maybe_consolidate_knowledge(
+    agent: CliAgent,
     run_ok: bool,
     dry_run: bool,
     ws: &Workspace,
@@ -34,7 +38,8 @@ pub(crate) fn maybe_consolidate_knowledge(
         if !notes.is_empty() {
             info!(count = notes.len() as u64, "consolidating knowledge");
             let run_dir = ws.run_dir(stamp);
-            match crate::run_consolidation(ws, &run_dir, Some("opus"), Some("medium"), 30, &notes) {
+            let (model, effort) = crate::consolidate_defaults(agent);
+            match crate::run_consolidation(agent, ws, &run_dir, model, effort, 30, &notes) {
                 Ok(archived) => info!(count = archived as u64, "knowledge consolidated"),
                 Err(e) => {
                     warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry")

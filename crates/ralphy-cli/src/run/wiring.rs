@@ -219,16 +219,6 @@ pub(crate) fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<
     .map_err(|e| anyhow::anyhow!(e))
 }
 
-/// Force `stop_on_limit` for OpenCode and Kimi runs: OpenCode already self-waits
-/// short limits and long ones carry no parseable reset, and Kimi's exit-75 limit
-/// carries no schedulable reset either (ADR-0028 D9) — auto-resume is never useful
-/// for either. Claude and Codex pass the flag through unchanged — both emit a
-/// trustworthy reset time (Codex an absolute RFC3339 instant, Claude a relative
-/// one), so both auto-resume by default and honour `--stop-on-limit` as the opt-out.
-pub(crate) fn effective_stop_on_limit(flag: bool, agent: CliAgent) -> bool {
-    flag || matches!(agent, CliAgent::OpenCode | CliAgent::Kimi)
-}
-
 /// Install the tracing stack. The full structured log always goes to the run's
 /// `ralphy.log` (no colour, local timestamps). On screen, the animated presenter
 /// (ADR-0006) renders the run's lifecycle by default; `--verbose` (or a set
@@ -323,32 +313,6 @@ mod tests {
             operating_branch(BranchMode::Current, "20260703-120000", None),
             ""
         );
-    }
-
-    #[test]
-    fn effective_stop_on_limit_codex_passes_flag_through() {
-        // Codex emits an absolute RFC3339 reset, so it auto-resumes by default like
-        // Claude — the flag is no longer forced on.
-        assert!(!effective_stop_on_limit(false, CliAgent::Codex));
-        assert!(effective_stop_on_limit(true, CliAgent::Codex));
-    }
-
-    #[test]
-    fn effective_stop_on_limit_claude_passes_flag_through() {
-        assert!(!effective_stop_on_limit(false, CliAgent::Claude));
-        assert!(effective_stop_on_limit(true, CliAgent::Claude));
-    }
-
-    #[test]
-    fn effective_stop_on_limit_opencode_forces_true() {
-        assert!(effective_stop_on_limit(false, CliAgent::OpenCode));
-        assert!(effective_stop_on_limit(true, CliAgent::OpenCode));
-    }
-
-    #[test]
-    fn effective_stop_on_limit_kimi_forces_true() {
-        assert!(effective_stop_on_limit(false, CliAgent::Kimi));
-        assert!(effective_stop_on_limit(true, CliAgent::Kimi));
     }
 
     #[test]

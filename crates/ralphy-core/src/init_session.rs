@@ -30,6 +30,16 @@ pub const PROMPT_INIT_ISSUES: &str = include_str!("../../../assets/prompts/promp
 /// GitHub. The cli applies the verdicts after the operator confirms.
 pub const PROMPT_TRIAGE: &str = include_str!("../../../assets/prompts/prompt.triage.md");
 
+/// The knowledge-consolidation charter (`ralphy consolidate` and the automatic
+/// end-of-run trigger): curate the loose `.ralphy/knowledge/issue-<N>.md` notes
+/// into a single `KNOWLEDGE.md`, declaring the folded notes so the cli can archive
+/// them. Unlike the diagnose/issues/triage charters this session writes no JSON —
+/// its only deliverable is the rewritten `KNOWLEDGE.md`, which the caller verifies
+/// against [`crate::knowledge::validate_knowledge`]. Lives here (not in the Claude
+/// adapter) so every adapter drives the *same* charter; only the CLI invocation
+/// differs.
+pub const PROMPT_CONSOLIDATE: &str = include_str!("../../../assets/prompts/prompt.consolidate.md");
+
 /// Build the diagnosis prompt: the embedded charter followed by a `## Target`
 /// block naming the absolute repo path (read-only data) and the absolute output
 /// path the session writes its JSON report to. The repo is named as a *data

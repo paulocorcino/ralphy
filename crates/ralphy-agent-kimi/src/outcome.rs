@@ -67,15 +67,25 @@ pub(crate) fn kimi_final_text(stdout: &str) -> String {
 /// strings. `exit_code == Some(75)` maps to `Limit(None)` — no structured reset
 /// hint at the chat level (ADR-0028 D9); the auth/permanent exit-1 case is handled
 /// by the scaffold's `is_kimi_auth_error` bail, not here.
+///
+/// `log` is the raw stdout+stderr the call captured: the API-level usage-limit 403
+/// (`access_terminated_error`) lands there as a bare error line, never in the parsed
+/// `final_text`, so it must be scanned separately. As with Codex, that text scan is
+/// only trusted on a non-clean exit — a genuine limit fails the process, so a clean
+/// exit is itself the proof the phrase was merely echoed, not a real limit.
 pub(crate) fn classify_kimi_outcome(
     exited_cleanly: bool,
     timed_out: bool,
     committed: bool,
     exit_code: Option<i32>,
     final_text: &str,
+    log: &str,
 ) -> Outcome {
     let limit = if exit_code == Some(75) {
         Some(None)
+    } else if !exited_cleanly {
+        // No reset hint: Kimi's 403 body only promises "the next cycle", no timestamp.
+        ralphy_adapter_support::detect_limit(log, crate::auth::is_kimi_limit_text, |_| None)
     } else {
         None
     };
@@ -173,7 +183,14 @@ mod tests {
     #[test]
     fn classify_done_on_clean_exit_commit_and_sentinel() {
         assert_eq!(
-            classify_kimi_outcome(true, false, true, Some(0), "all green\nRALPHY_DONE_EXIT"),
+            classify_kimi_outcome(
+                true,
+                false,
+                true,
+                Some(0),
+                "all green\nRALPHY_DONE_EXIT",
+                ""
+            ),
             Outcome::Done
         );
     }
@@ -186,7 +203,8 @@ mod tests {
                 false,
                 true,
                 Some(0),
-                "work\nRALPHY_BLOCKED_EXIT missing crate"
+                "work\nRALPHY_BLOCKED_EXIT missing crate",
+                ""
             ),
             Outcome::Blocked("missing crate".into())
         );
@@ -195,7 +213,7 @@ mod tests {
     #[test]
     fn classify_timeout_wins() {
         assert_eq!(
-            classify_kimi_outcome(false, true, false, None, "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(false, true, false, None, "RALPHY_DONE_EXIT", ""),
             Outcome::Timeout
         );
     }
@@ -203,7 +221,7 @@ mod tests {
     #[test]
     fn classify_stuck_on_non_zero_exit() {
         assert_eq!(
-            classify_kimi_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT", ""),
             Outcome::Stuck
         );
     }
@@ -212,7 +230,7 @@ mod tests {
     fn classify_done_on_no_commit() {
         // A commit is a progress signal, not a Done gate (ADR-0023 D3).
         assert_eq!(
-            classify_kimi_outcome(true, false, false, Some(0), "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(true, false, false, Some(0), "RALPHY_DONE_EXIT", ""),
             Outcome::Done
         );
     }
@@ -221,7 +239,7 @@ mod tests {
     fn classify_limit_on_exit_75() {
         // The literal DONE sentinel is present, proving the limit outranks a would-be Done.
         assert_eq!(
-            classify_kimi_outcome(false, false, false, Some(75), "RALPHY_DONE_EXIT"),
+            classify_kimi_outcome(false, false, false, Some(75), "RALPHY_DONE_EXIT", ""),
             Outcome::Limit(None)
         );
     }
@@ -229,8 +247,31 @@ mod tests {
     #[test]
     fn classify_limit_beats_timeout() {
         assert_eq!(
-            classify_kimi_outcome(false, true, false, Some(75), ""),
+            classify_kimi_outcome(false, true, false, Some(75), "", ""),
             Outcome::Limit(None)
+        );
+    }
+
+    #[test]
+    fn classify_limit_on_403_access_terminated_in_log() {
+        // The live regression: an exhausted billing-cycle quota returns a 403 whose
+        // body lands in the log (not in final_text), the child exits non-zero, and no
+        // DONE sentinel is present. Without the log scan this is misread as Stuck.
+        let log = "…{'type': 'access_terminated_error'}}\nTo resume: kimi -r abc";
+        assert_eq!(
+            classify_kimi_outcome(false, false, false, Some(1), "", log),
+            Outcome::Limit(None)
+        );
+    }
+
+    #[test]
+    fn classify_403_ignored_on_clean_exit() {
+        // A clean exit is proof the 403 phrase was merely echoed, not a real limit:
+        // the DONE sentinel then wins (mirrors Codex's non-clean-exit trust guard).
+        let log = "…{'type': 'access_terminated_error'}}";
+        assert_eq!(
+            classify_kimi_outcome(true, false, true, Some(0), "RALPHY_DONE_EXIT", log),
+            Outcome::Done
         );
     }
 }

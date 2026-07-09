@@ -13,7 +13,7 @@ use ralphy_core::{
 };
 use tracing::{info, warn};
 
-use crate::cli::RunArgs;
+use crate::cli::{CliAgent, RunArgs};
 use crate::{config, events, runlock, runstate, split_agent, telegram, ui};
 
 mod report;
@@ -23,8 +23,8 @@ use report::{
     emit_run_finished, empty_queue_scope, maybe_consolidate_knowledge, render_final_panel,
 };
 use wiring::{
-    build_agent, build_run_queue, effective_stop_on_limit, init_tracing, operating_branch,
-    preflight_agents, resolve_plan_agent, strip_events_token_from_env, ResolvedClaude,
+    build_agent, build_run_queue, init_tracing, operating_branch, preflight_agents,
+    resolve_plan_agent, strip_events_token_from_env, ResolvedClaude,
 };
 
 pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
@@ -400,10 +400,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         branch_mode,
         forced_issues,
         human_return_labels,
-        // Per-phase limit stance, each derived from the agent serving that phase;
-        // an explicit `--stop-on-limit` forces both (docs/adr/0009).
-        stop_on_limit_plan: effective_stop_on_limit(args.stop_on_limit, plan_agent),
-        stop_on_limit_exec: effective_stop_on_limit(args.stop_on_limit, args.agent),
+        // Limit stance for both phases. Every agent auto-resumes on a usage limit:
+        // a scheduled reset (Codex/Claude) waits to its target time, and a limit with
+        // no parseable reset (Kimi/OpenCode) parks a synthetic ~30-min poll window
+        // (ADR-0030). `--stop-on-limit` is the opt-out that stops-and-reports instead.
+        stop_on_limit_plan: args.stop_on_limit,
+        stop_on_limit_exec: args.stop_on_limit,
         // The runner-enforced verify gate (ADR-0011): the per-repo fallback
         // command (tokenized into one argv) used only when a plan emits no
         // `## Verify` section, and the gate's time budget (the per-issue budget).
@@ -447,6 +449,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Kept before the `?` propagation so a non-green result still finalizes and
     // pushes; `render_final_panel` runs after, only on the green path.
     finalize_run(
+        args.agent,
         &presenter,
         &result,
         args.dry_run,
@@ -617,6 +620,7 @@ fn emit_queue_built(
 /// open. Borrows `result` so the caller can still `?`-propagate it afterwards.
 #[allow(clippy::too_many_arguments)]
 fn finalize_run(
+    agent: CliAgent,
     presenter: &ui::PresenterHandle,
     result: &Result<ralphy_core::QueueReport>,
     dry_run: bool,
@@ -634,7 +638,7 @@ fn finalize_run(
     // Consolidate any loose knowledge notes into KNOWLEDGE.md. Runs BEFORE the
     // notifier/sink shutdown and AFTER the presenter finalize so it surfaces as a
     // first-class lifecycle event in both surfaces (see `maybe_consolidate_knowledge`).
-    maybe_consolidate_knowledge(result.is_ok(), dry_run, ws, stamp);
+    maybe_consolidate_knowledge(agent, result.is_ok(), dry_run, ws, stamp);
 
     // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
     // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the

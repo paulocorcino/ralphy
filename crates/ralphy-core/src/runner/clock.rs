@@ -10,6 +10,18 @@ use tracing::info;
 /// issue horizon (~365 days) when no run-level deadline is set.
 const MAX_RESET_WAIT: Duration = Duration::from_secs(12 * 60 * 60);
 
+/// A synthetic reset hint for a usage limit that carries **no** schedulable reset
+/// time (e.g. Kimi's HTTP-403 account block, or any adapter's `Limit(None)`): treat
+/// "unknown" as "retry in ~30 min". Returns `now + 25min` as RFC3339 —
+/// [`wait_for_reset`](RunClock::wait_for_reset)'s 5-minute policy buffer then makes
+/// the effective wake ~30 min out. Re-synthesised each cycle, so a still-limited
+/// retry simply parks another window; the loop is unbounded until the run deadline
+/// cuts it or a human interrupts (Ctrl-C), which is the point — the operator, not a
+/// parseable reset, decides when to give up (ADR-0030).
+pub fn synthetic_reset() -> String {
+    (Local::now() + chrono::Duration::minutes(25)).to_rfc3339()
+}
+
 /// How a [`RunClock::wait_for_reset`] wait ended: the reset time arrived and the
 /// run may resume, or the global deadline cut the wait short (deadline beats
 /// resume).

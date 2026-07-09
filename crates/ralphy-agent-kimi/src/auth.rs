@@ -14,6 +14,18 @@ pub(crate) fn is_kimi_auth_error(text: &str) -> bool {
     ralphy_adapter_support::auth_error(text, &[&["llm not set"]])
 }
 
+/// Return `true` when `text` shows a Kimi API-level usage-limit failure. When the
+/// billing-cycle quota is exhausted, `kimi --print` gets an HTTP 403 whose body
+/// carries `access_terminated_error`; the CLI writes that line to the log and exits
+/// non-zero *without* the exit-75 chat-level sentinel (ADR-0028 D9) and without a
+/// `RALPHY_DONE_EXIT`, so — absent this marker — a genuine limit is misread as
+/// `Outcome::Stuck`. The marker is deliberately the distinctive error *type*, not
+/// the prose "usage limit", to avoid matching a task that merely echoed the phrase.
+pub(crate) fn is_kimi_limit_text(text: &str) -> bool {
+    text.to_ascii_lowercase()
+        .contains("access_terminated_error")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -25,5 +37,16 @@ mod tests {
         assert!(is_kimi_auth_error("llm not set"));
         // A clean run is not an auth error.
         assert!(!is_kimi_auth_error("all green\nRALPHY_DONE_EXIT\n"));
+    }
+
+    #[test]
+    fn is_kimi_limit_text_matches_403_access_terminated() {
+        // The live 403 body from an exhausted billing-cycle quota.
+        let log = "Error code: 403 - {'error': {'message': \"You've reached your \
+            usage limit for this billing cycle.\", 'type': 'access_terminated_error'}}";
+        assert!(is_kimi_limit_text(log));
+        // A usage limit is not an auth error, and a clean run is neither.
+        assert!(!is_kimi_auth_error(log));
+        assert!(!is_kimi_limit_text("all green\nRALPHY_DONE_EXIT\n"));
     }
 }

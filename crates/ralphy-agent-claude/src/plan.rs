@@ -21,11 +21,6 @@ pub(crate) const PROMPT_PLAN: &str = include_str!("../../../assets/prompts/promp
 pub(crate) const PROMPT_PLAN_STAGED: &str =
     include_str!("../../../assets/prompts/prompt.plan.staged.md");
 
-/// The knowledge-consolidation charter (`ralphy consolidate`): curate the loose
-/// `.ralphy/knowledge/issue-<N>.md` notes into one `KNOWLEDGE.md`.
-pub(crate) const PROMPT_CONSOLIDATE: &str =
-    include_str!("../../../assets/prompts/prompt.consolidate.md");
-
 /// The operational Claude Code plugin, embedded at build time so the binary is a
 /// self-contained global tool. It bundles the `reviewer` and `staged-plan`
 /// skills the planning/execution prompts depend on; the single source of truth

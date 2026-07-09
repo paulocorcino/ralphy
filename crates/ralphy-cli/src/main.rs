@@ -56,6 +56,48 @@ fn main() -> Result<()> {
     }
 }
 
+/// The default consolidation model/effort per vendor when the operator names none.
+/// Claude keeps the deliberate opus/medium pairing (curation is judgment-heavy);
+/// every other adapter passes `None`, letting it resolve its own default model and
+/// (for Kimi/OpenCode, which have no reasoning-effort knob) ignore `effort`.
+pub(crate) fn consolidate_defaults(
+    agent: CliAgent,
+) -> (Option<&'static str>, Option<&'static str>) {
+    match agent {
+        CliAgent::Claude => (Some("opus"), Some("medium")),
+        CliAgent::Codex | CliAgent::Kimi | CliAgent::OpenCode => (None, None),
+    }
+}
+
+/// Dispatch the one-shot knowledge-consolidation session to the selected agent's
+/// adapter (docs/adr/0031). Each adapter drives the SAME vendor-neutral charter
+/// (`ralphy_core::PROMPT_CONSOLIDATE`); only the CLI invocation differs. Mirrors
+/// the `diagnose_with_agent`/triage dispatch so `--agent` selects the vendor here
+/// exactly as it does for the plan/execute loop and the other one-shots.
+fn consolidate_with_agent(
+    agent: CliAgent,
+    ws: &Workspace,
+    run_dir: &std::path::Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    match agent {
+        CliAgent::Claude => {
+            ralphy_agent_claude::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        CliAgent::Codex => {
+            ralphy_agent_codex::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        CliAgent::Kimi => {
+            ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        CliAgent::OpenCode => {
+            ralphy_agent_opencode::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+    }
+}
+
 /// The shared consolidation step behind both `ralphy consolidate` and the
 /// automatic end-of-run trigger: run the curation session, verify it actually
 /// rewrote `KNOWLEDGE.md` AND that the result passes the structural gate
@@ -72,6 +114,7 @@ fn main() -> Result<()> {
 /// sentinel) before this runs — `run` already does so up front, `consolidate` does
 /// it just before calling.
 fn run_consolidation(
+    agent: CliAgent,
     ws: &Workspace,
     run_dir: &std::path::Path,
     model: Option<&str>,
@@ -87,7 +130,8 @@ fn run_consolidation(
     // The curated file before the session, to verify the session produced one.
     let before = std::fs::read_to_string(ws.knowledge_file()).ok();
 
-    ralphy_agent_claude::consolidate_knowledge(
+    consolidate_with_agent(
+        agent,
         ws,
         run_dir,
         model,
@@ -171,11 +215,18 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
     // Same subscription-quota sentinel as `run` (see the comment there).
     std::env::set_var("ANTHROPIC_API_KEY", "");
 
+    // An explicit `--model`/`--effort` wins; otherwise fall back to the vendor's
+    // default pairing (opus/medium for Claude, the adapter's own for the rest).
+    let (def_model, def_effort) = consolidate_defaults(args.agent);
+    let model = args.model.and_then(non_empty);
+    let effort = args.effort.and_then(non_empty);
+
     let archived = run_consolidation(
+        args.agent,
         &ws,
         &run_dir,
-        non_empty(args.model).as_deref(),
-        non_empty(args.effort).as_deref(),
+        model.as_deref().or(def_model),
+        effort.as_deref().or(def_effort),
         args.max_minutes,
         &notes,
     )?;

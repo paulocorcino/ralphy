@@ -24,7 +24,7 @@ pub(crate) use branch::prepare_branch;
 #[allow(unused_imports)]
 pub use branch::BranchMode;
 #[allow(unused_imports)]
-pub use clock::{RunClock, WaitOutcome, WallClock};
+pub use clock::{synthetic_reset, RunClock, WaitOutcome, WallClock};
 pub(crate) use comments::no_gate_comment;
 pub(crate) use phases::{
     close_and_record, execute_phase, open_blockers, plan_phase, prepare_issue, protocol_gate,

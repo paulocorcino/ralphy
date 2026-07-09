@@ -70,7 +70,7 @@ pub use blocked::{
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use init_session::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DraftRequest, IssuesMode,
-    TriageRequest, PROMPT_DIAGNOSE, PROMPT_INIT_ISSUES, PROMPT_TRIAGE,
+    TriageRequest, PROMPT_CONSOLIDATE, PROMPT_DIAGNOSE, PROMPT_INIT_ISSUES, PROMPT_TRIAGE,
 };
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};

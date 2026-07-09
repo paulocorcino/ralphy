@@ -11,10 +11,12 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use tracing::info;
 
-use ralphy_adapter_support::{resolve_program, run_init_session, JsonSession};
+use ralphy_adapter_support::{
+    resolve_program, run_init_session, run_text_session, JsonSession, TextSession,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::command::build_opencode_command;
@@ -167,6 +169,40 @@ pub fn triage_issues(
             })
         },
     )
+}
+
+/// Run a one-shot headless `opencode run` knowledge-consolidation session in
+/// `ws`'s repo cwd: pipe the shared consolidation charter on stdin and wait up to
+/// `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
+/// which the caller verifies; the consumed notes are archived by the caller, not
+/// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
+/// can dispatch on the selected agent. `effort` is unused: OpenCode has no
+/// reasoning-effort knob (ADR-0005 D3).
+pub fn consolidate_knowledge(
+    ws: &Workspace,
+    run_dir: &Path,
+    model: Option<&str>,
+    effort: Option<&str>,
+    timeout: Duration,
+) -> Result<()> {
+    let _ = effort;
+    std::fs::create_dir_all(run_dir).ok();
+
+    info!(?model, "consolidating knowledge with opencode run");
+    let cmd = build_opencode_command(model, None, ws.repo_root(), INIT_OPENCODE_CONFIG);
+    run_text_session(
+        TextSession {
+            cmd,
+            prompt: PROMPT_CONSOLIDATE,
+            timeout,
+            log_path: &run_dir.join("consolidate.log"),
+            spawn_err: "failed to spawn the `opencode` CLI (is it installed and on PATH?)",
+            auth_msg: OPENCODE_AUTH_ERROR_MSG,
+            timeout_msg: "consolidation session hit the wall timeout",
+        },
+        is_opencode_auth_error,
+    )?;
+    Ok(())
 }
 
 /// List available models by passing through to `opencode models`.

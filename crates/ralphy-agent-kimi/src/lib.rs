@@ -45,7 +45,7 @@ use auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
 use command::{build_kimi_command, DEFAULT_KIMI_MODEL};
 use outcome::{classify_kimi_outcome, kimi_final_text};
 use skills::materialize_kimi_skills;
-pub use tasks::{diagnose_repo, draft_issues, triage_issues};
+pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 use usage::{fold_wire_usage, kimi_sessions_dir};
 
 /// The Kimi planning prompt, embedded so the binary is self-contained as a global
@@ -216,6 +216,7 @@ impl Agent for KimiAgent {
             committed,
             r.exit_code,
             &final_text,
+            &r.log,
         );
         info!(
             ?outcome,

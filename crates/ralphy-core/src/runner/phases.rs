@@ -21,7 +21,7 @@ use super::artifacts::{
 };
 use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
-use super::{IssueResult, QueueConfig, RunClock, RunLedger, WaitOutcome};
+use super::{synthetic_reset, IssueResult, QueueConfig, RunClock, RunLedger, WaitOutcome};
 
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
@@ -319,8 +319,9 @@ pub(crate) enum PlanPhase {
     /// The planner judged the issue infeasible or a bundle; the verdict is
     /// posted on the issue — skip to the next one.
     Infeasible,
-    /// A plan-time usage limit stops the run (configured stop, no reset to
-    /// wait for, or the no-progress cap).
+    /// A plan-time usage limit stops the run (configured `stop_on_limit_plan`, or a
+    /// scheduled reset that hit the no-progress cap). A limit with no parseable reset
+    /// no longer stops here — it parks a synthetic wait and re-plans (ADR-0030).
     StopLimit { reset: Option<String> },
     /// The global deadline cut a reset wait short — stop the run.
     StopDeadline,
@@ -329,10 +330,11 @@ pub(crate) enum PlanPhase {
 /// Plan one issue, auto-resuming through usage-limit reset windows the same
 /// way execution does, and record the plan's ledger line. A usage limit during
 /// planning surfaces as a typed `PlanLimit` (not a generic failure): wait for
-/// the reset and re-plan, unless `stop_on_limit_plan`, no reset was parsed, or
-/// repeated no-progress limits hit the cap — any of which stops and reports
-/// the limit. A genuine (non-limit) planning failure is an `Err`: the caller
-/// restores the branch and propagates.
+/// the reset and re-plan. A limit with no parseable reset parks a synthetic
+/// ~30-min window instead of stopping (ADR-0030); only `stop_on_limit_plan`, or a
+/// *scheduled* reset that hits the no-progress cap, stops and reports the limit. A
+/// genuine (non-limit) planning failure is an `Err`: the caller restores the branch
+/// and propagates.
 pub(crate) fn plan_phase(
     cx: &IssueCtx,
     issue: &Issue,
@@ -348,10 +350,17 @@ pub(crate) fn plan_phase(
 
         plan_limit_streak += 1;
         let capped = plan_limit_streak > MAX_PLAN_LIMIT_RESUMES;
-        // Stop-and-report when configured, when no reset was parsed (nothing
-        // to wait for), or when the cap is hit — never delete the branch, so
-        // it is handed back exactly like an execute-time limit stop.
-        if cx.cfg.stop_on_limit_plan || limit.reset.is_none() || capped {
+        // A limit that carries no parseable reset is an account-wide pause: instead
+        // of stopping, park a synthetic ~30-min window and re-plan, unbounded until
+        // the deadline or a human interrupt decides to give up (ADR-0030). The
+        // no-progress cap only guards the *scheduled*-reset resume path — a synthetic
+        // wait makes no per-issue progress by definition, so counting it would abandon
+        // the issue the moment the account is throttled.
+        let synthetic = limit.reset.is_none();
+        // Stop-and-report when configured, or when a real reset hit the no-progress
+        // cap — never delete the branch, so it is handed back exactly like an
+        // execute-time limit stop.
+        if cx.cfg.stop_on_limit_plan || (!synthetic && capped) {
             info!(
                 number = issue.number,
                 reset = ?limit.reset,
@@ -361,7 +370,7 @@ pub(crate) fn plan_phase(
         }
 
         // Deadline beats resume: a reset past the deadline stops the run.
-        let reset = limit.reset.expect("reset present: checked above");
+        let reset = limit.reset.unwrap_or_else(synthetic_reset);
         if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
             info!(
                 number = issue.number,
@@ -495,16 +504,24 @@ pub(crate) fn execute_phase(
             _ => {}
         }
 
-        let reset = match &outcome {
-            Outcome::Limit(Some(r)) if !cx.cfg.stop_on_limit_exec => r.clone(),
-            // Done, any non-limit outcome, a bare `Limit(None)`, or
-            // `stop_on_limit_exec` all leave the loop with the outcome as-is.
+        let (reset, synthetic) = match &outcome {
+            // A scheduled reset (Codex/Claude) auto-resumes at its target time.
+            Outcome::Limit(Some(r)) if !cx.cfg.stop_on_limit_exec => (r.clone(), false),
+            // A limit with no parseable reset is an account-wide pause: park a
+            // synthetic ~30-min window and retry, unbounded until the deadline or a
+            // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap
+            // below skips it.
+            Outcome::Limit(None) if !cx.cfg.stop_on_limit_exec => (synthetic_reset(), true),
+            // Done, any non-limit outcome, or `stop_on_limit_exec` leave the loop
+            // with the outcome as-is.
             _ => break outcome,
         };
 
-        // Progress-aware cap: two consecutive no-commit limits abandon the
-        // issue. Checked before waiting so a stuck issue gives up at once.
-        if no_commit_streak >= 2 {
+        // Progress-aware cap: two consecutive no-commit limits abandon the issue.
+        // Only the scheduled-reset path is capped — a synthetic wait makes no
+        // per-issue progress by definition (the whole account is throttled), so the
+        // human resolves it (re-running continues the work), not the cap (B2).
+        if !synthetic && no_commit_streak >= 2 {
             info!(
                 number = issue.number,
                 "progress-aware cap reached — abandoning issue"

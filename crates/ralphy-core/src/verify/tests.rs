@@ -84,6 +84,28 @@ fn tail_keeps_whole_last_lines() {
     assert_eq!(tail(s), "line1\nline2\nline3");
 }
 
+/// Regression: the byte cut at `len - TAIL_BYTES` can land inside a multi-byte
+/// char (box-drawing '└' in vitest output). `tail` must nudge to a char boundary
+/// instead of panicking. Each '└' is 3 bytes on 0/3/6… boundaries; TAIL_BYTES is
+/// not a multiple of 3, so a pure run of '└' guarantees the cut lands mid-char.
+#[test]
+fn tail_does_not_split_multibyte_char() {
+    let n = TAIL_BYTES; // plenty long so the cut is well inside the '└' run
+    let s = format!("{}\nTAIL", "\u{2514}".repeat(n));
+    let start = s.trim_end().len() - TAIL_BYTES;
+    assert!(
+        !s.is_char_boundary(start),
+        "test setup: cut must be mid-char"
+    );
+    // Must not panic; the retained tail is whole-line and valid UTF-8.
+    let out = tail(&s);
+    assert_eq!(out, "TAIL");
+    assert!(
+        !out.contains('\u{FFFD}'),
+        "no replacement chars from a bad split"
+    );
+}
+
 /// A portable command that exits 0 on every platform: the OS shell builtin via
 /// the host interpreter. We avoid a shell and instead use a tiny program both
 /// platforms ship — but argv-only. On Windows `cmd /c exit 0`, elsewhere
