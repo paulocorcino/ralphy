@@ -43,6 +43,7 @@ pub mod acceptance;
 pub mod blocked;
 pub mod cmdcost;
 pub mod diagnosis;
+pub mod environment;
 pub mod git;
 pub mod github;
 pub mod gitignore;

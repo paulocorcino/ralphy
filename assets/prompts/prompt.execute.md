@@ -41,6 +41,10 @@ before relying on a detail.
   (environment facts and working commands extracted from each handoff). Before
   re-deriving an environment procedure (bringing up the lab, probing a
   service), grep this folder first; ignore `knowledge/raw/` (archived input).
+- `.ralphy/environment.md` — the build machine: the OS and the toolchains
+  confirmed present, with versions. Every command you run — build steps, verify
+  commands, smoke scripts — runs HERE. Match them to this OS and these tools;
+  never assume a tool exists because it is common, verify it first.
 - `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## If `.ralphy/verify-failure.md` is present (a failed verify gate)
