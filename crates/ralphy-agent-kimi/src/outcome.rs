@@ -41,14 +41,19 @@ pub(crate) fn kimi_final_text(stdout: &str) -> String {
         if has_pending_tool_calls {
             continue;
         }
-        let Some(parts) = obj.get("content").and_then(Value::as_array) else {
-            continue;
+        // `content` comes in two shapes: intermediate turns carry an array of
+        // `{type,text}` parts, but Kimi's FINAL answer turn carries `content` as a
+        // bare string (the `RALPHY_DONE_EXIT` sentinel rides there). Handle both, or
+        // the sentinel is lost and a genuine Done is misread as Stuck.
+        let text: String = match obj.get("content") {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Array(parts)) => parts
+                .iter()
+                .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect(),
+            _ => continue,
         };
-        let text: String = parts
-            .iter()
-            .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
-            .filter_map(|p| p.get("text").and_then(Value::as_str))
-            .collect();
         // Keep the LAST qualifying assistant turn (overwrite as we go).
         final_text = Some(text);
     }
@@ -136,6 +141,15 @@ mod tests {
             !text.contains("more"),
             "trailing tool_calls turn must lose: {text:?}"
         );
+    }
+
+    #[test]
+    fn kimi_final_text_reads_string_form_content() {
+        // Kimi's FINAL answer turn carries `content` as a bare string, not an
+        // array of parts — the sentinel rides there. Regression from a live run
+        // where a green issue was misread as Stuck (the string turn was skipped).
+        let line = r#"{"role":"assistant","content":"All plan steps are implemented, committed, and the verification gate passes.\n\nRALPHY_DONE_EXIT"}"#;
+        assert!(kimi_final_text(line).ends_with("RALPHY_DONE_EXIT"));
     }
 
     #[test]
