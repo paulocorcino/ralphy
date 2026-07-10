@@ -7,6 +7,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -14,7 +15,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
 
@@ -144,8 +145,14 @@ pub fn router(
     auth: auth::AuthPolicy,
 ) -> Router {
     let ws_identity = identity.clone();
+    // The session manager owns sessions for this router's lifetime (the tmux
+    // model, issue #166). Constructed here — NOT a `router` parameter — so the
+    // public `router` signature and its ~20 call sites are untouched; production
+    // calls `router` exactly once, so one manager per router is correct.
+    let sessions = Arc::new(session::SessionManager::new());
     // `shutdown` is consumed by the `/ws` presence closure; clone one for the
-    // session route so a live session also tears down on graceful shutdown.
+    // session route so a live session bridge also stops serving on graceful
+    // shutdown (it detaches, never closing the session).
     let session_shutdown = shutdown.clone();
     let session_registry = registry_path.clone();
     // A dispatched run must survive daemon shutdown (inverse of the session
@@ -174,10 +181,28 @@ pub fn router(
         )
         .route(
             "/ws/session",
-            get(move |ws: WebSocketUpgrade, q: Query<SessionQuery>| {
-                let registry_path = session_registry.clone();
-                let shutdown = session_shutdown.clone();
-                async move { session_ws_upgrade(ws, q, registry_path, shutdown).await }
+            get({
+                let sessions = sessions.clone();
+                move |ws: WebSocketUpgrade, q: Query<SessionQuery>| {
+                    let sessions = sessions.clone();
+                    let registry_path = session_registry.clone();
+                    let shutdown = session_shutdown.clone();
+                    async move { session_ws_upgrade(ws, q, sessions, registry_path, shutdown).await }
+                }
+            }),
+        )
+        .route(
+            "/api/sessions",
+            get({
+                let sessions = sessions.clone();
+                move || sessions_route(sessions.clone())
+            }),
+        )
+        .route(
+            "/api/sessions/close",
+            post({
+                let sessions = sessions.clone();
+                move |q: Query<CloseQuery>| close_session_route(q, sessions.clone())
             }),
         )
         .route(
@@ -268,26 +293,56 @@ async fn ws_presence_loop(
     }
 }
 
-/// Query for `/ws/session`: which registered `repo` slug and which `agent`.
+/// Query for `/ws/session`. A NEW launch carries `repo` + `agent`; a REATTACH
+/// carries `id` (and optional `takeover=1`). All optional so one struct serves
+/// both shapes; the handler dispatches on `id`.
 #[derive(serde::Deserialize)]
 struct SessionQuery {
-    repo: String,
-    agent: String,
+    repo: Option<String>,
+    agent: Option<String>,
+    id: Option<u64>,
+    takeover: Option<u32>,
 }
 
-/// `GET /ws/session?repo=<slug>&agent=<claude|codex|opencode>`: resolve the repo
-/// and agent, then upgrade to a WebSocket bridging the codec to a live PTY
-/// session. Rejects (`400`) an unknown agent, an unreadable registry, or an
-/// unregistered slug BEFORE upgrading, so a bad request fails as HTTP, not as a
-/// silently-dropped socket.
+/// Query for `POST /api/sessions/close`: which session to end.
+#[derive(serde::Deserialize)]
+struct CloseQuery {
+    id: u64,
+}
+
+/// `GET /ws/session`: two shapes over one route.
+///
+/// - `?id=<id>[&takeover=1]` — REATTACH to a daemon-owned session. `attach`
+///   returns `404` for an unknown id and `409` for a busy one (a single writer is
+///   attached and `takeover` was not set) — both BEFORE the upgrade, so a refusal
+///   is an HTTP status the browser can read, not a silently-dropped socket.
+/// - `?repo=<slug>&agent=<claude|codex|opencode>` — NEW launch. Rejects (`400`)
+///   an unknown agent, an unreadable registry, or an unregistered slug before
+///   upgrading; a spawn failure is `500`.
 async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(query): Query<SessionQuery>,
+    sessions: Arc<session::SessionManager>,
     registry_path: PathBuf,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
-    let Some(agent) = session::Agent::from_query(&query.agent) else {
+    if let Some(id) = query.id {
+        return match sessions.attach(id, query.takeover == Some(1)) {
+            Ok(att) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+            Err(session::AttachError::Unknown) => {
+                (StatusCode::NOT_FOUND, "unknown session").into_response()
+            }
+            Err(session::AttachError::Busy) => (StatusCode::CONFLICT, "session busy").into_response(),
+        };
+    }
+    let Some(agent_str) = query.agent.as_deref() else {
         return (StatusCode::BAD_REQUEST, "unknown agent").into_response();
+    };
+    let Some(agent) = session::Agent::from_query(agent_str) else {
+        return (StatusCode::BAD_REQUEST, "unknown agent").into_response();
+    };
+    let Some(repo) = query.repo.as_deref() else {
+        return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
     };
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -296,43 +351,65 @@ async fn session_ws_upgrade(
             return (StatusCode::BAD_REQUEST, "repo registry unreadable").into_response();
         }
     };
-    let Some(entry) = store.entry(&query.repo) else {
+    let Some(entry) = store.entry(repo) else {
         return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
     };
     let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
-    ws.on_upgrade(move |socket| session_ws(socket, spec, shutdown))
+    match sessions.spawn_attached(repo.to_string(), agent_str.to_string(), spec) {
+        Ok((id, att)) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to spawn a workbench session");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session").into_response()
+        }
+    }
 }
 
-/// Bridge one WebSocket to one PTY session: PTY output → `Frame::Terminal`
-/// binary messages; client `Frame::Terminal` → PTY stdin; client
-/// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
-/// close/error, child EOF, a send failure, OR daemon shutdown.
+/// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
+/// FIRST replays the scrollback snapshot, then loops: session output (via the
+/// broadcast `rx`) → `Frame::Terminal`; client `Frame::Terminal` → PTY stdin;
+/// client `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
+/// close/error, a send failure, an eviction (a `takeover` reattach OR the child
+/// exiting), or daemon shutdown.
 ///
-/// TEARDOWN INVARIANT: exactly one `session.close()` runs on EVERY exit path.
-/// There is no `?`/early `return` between spawn and the post-loop `close()`, so a
-/// live session can neither leak its child tree nor stall graceful shutdown
-/// (mirrors `ws_presence_loop`'s shutdown arm; #161 friction c2c44b5).
+/// TEARDOWN INVARIANT (INVERTED vs #162): on EVERY exit path the bridge drops
+/// `attach` — releasing the single-writer slot — and does NOT close the session.
+/// A WebSocket drop detaches; the child survives it and a later reattach resumes
+/// it. A session ends only via `POST /api/sessions/close` or its child exiting,
+/// never because a browser tab closed.
 async fn session_ws(
     mut socket: WebSocket,
-    spec: session::SessionSpec,
+    mut attach: session::Attachment,
+    id: session::SessionId,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let mut session = match session::Session::spawn(spec) {
-        Ok(session) => session,
-        Err(e) => {
-            // Spawn failed → no session to close; report and drop the socket.
-            tracing::warn!(error = %e, "failed to spawn a workbench session");
-            let _ = socket.send(Message::Close(None)).await;
+    // Replay the backlog first so a reattaching client sees history before the
+    // live stream resumes. Skip an empty snapshot (a fresh session).
+    if !attach.snapshot.is_empty() {
+        let frame = Frame::Terminal {
+            session: id,
+            data: std::mem::take(&mut attach.snapshot),
+        };
+        if socket
+            .send(Message::Binary(protocol::encode(&frame).into()))
+            .await
+            .is_err()
+        {
             return;
         }
-    };
-    let mut output = session.take_output();
+    }
+    // Pin ONE eviction future across the whole loop: `notify_waiters` only wakes
+    // currently-registered waiters, so a fresh `notified()` per iteration could
+    // miss an eviction that fires mid-iteration and leak the single-writer slot.
+    let evict = attach.evict.clone();
+    let notified = evict.notified();
+    tokio::pin!(notified);
     loop {
         tokio::select! {
             _ = shutdown.changed() => break,
-            chunk = output.recv() => match chunk {
-                Some(bytes) => {
-                    let frame = Frame::Terminal { session: 1, data: bytes };
+            _ = &mut notified => break, // taken over, or the child exited
+            recv = attach.rx.recv() => match recv {
+                Ok(bytes) => {
+                    let frame = Frame::Terminal { session: id, data: bytes };
                     if socket
                         .send(Message::Binary(protocol::encode(&frame).into()))
                         .await
@@ -341,12 +418,15 @@ async fn session_ws(
                         break;
                     }
                 }
-                None => break, // the child tree exited
+                // A burst outran this slow attach; scrollback already replayed and
+                // xterm.js tolerates a gap, so keep streaming.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             },
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
                     Ok(Frame::Terminal { data, .. }) => {
-                        if session.write(&data).is_err() {
+                        if attach.write(&data).is_err() {
                             break;
                         }
                     }
@@ -358,7 +438,7 @@ async fn session_ws(
                         let cols: Option<u16> =
                             cmd.payload.get("cols").and_then(|v| v.as_u64()?.try_into().ok());
                         if let (Some(rows), Some(cols)) = (rows, cols) {
-                            let _ = session.resize(rows, cols);
+                            let _ = attach.resize(rows, cols);
                         }
                     }
                     _ => {} // other frames carry no session meaning here
@@ -369,7 +449,9 @@ async fn session_ws(
             },
         }
     }
-    session.close();
+    // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
+    // session (and its child) live on for a later reattach.
+    drop(attach);
 }
 
 /// Send a structured command reply frame over the socket, ignoring a send error
@@ -530,6 +612,27 @@ async fn repos_route(registry_path: PathBuf) -> Response {
         })
         .collect();
     Json(views).into_response()
+}
+
+/// `GET /api/sessions`: the daemon's live sessions as JSON, each with its
+/// identity (`id`, `repo`, `agent`, `kind`, `started_at`) so the UI can list,
+/// reattach, and close them. A WebSocket drop leaves its session here (the child
+/// keeps running); only a close or the child exiting removes one.
+async fn sessions_route(sessions: Arc<session::SessionManager>) -> Response {
+    Json(sessions.list()).into_response()
+}
+
+/// `POST /api/sessions/close?id=<id>`: end a session (tree-kill its child, evict
+/// any attached client). `200 {"closed":true}` when it existed, `404` otherwise.
+async fn close_session_route(
+    Query(q): Query<CloseQuery>,
+    sessions: Arc<session::SessionManager>,
+) -> Response {
+    if sessions.close(q.id) {
+        Json(serde_json::json!({ "closed": true })).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, "unknown session").into_response()
+    }
 }
 
 /// `GET /api/identity`: the loaded identity's `name`/`avatar` as JSON, or 404
