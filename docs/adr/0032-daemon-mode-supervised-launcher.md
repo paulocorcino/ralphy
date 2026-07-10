@@ -82,6 +82,31 @@ terminal streams + control commands + presence heartbeat):
   opt-in and **requires a bearer token** (generated at install); localhost is
   exempt. Personal remote access works in this phase via an overlay VPN with
   zero extra code.
+
+  **People vs. machines (issue #179).** Over a network bind the two client
+  kinds authenticate differently:
+  - **Machine clients** (the phone `run` trigger, CloudEvents consumers, curl)
+    keep the **static bearer token, unchanged** — one `Authorization: Bearer`
+    header per request.
+  - **Browsers** get an interactive **login screen**. The core factor is
+    **TOTP** (RFC 6238, Authy/Google Authenticator); an operator-set
+    **password is an optional second factor** (defense-in-depth, the weakest /
+    highest-friction link — TOTP first, password opt-in). A valid login mints a
+    **signed, stateless, short-TTL session cookie** (`ralphy_session`): value
+    `1.<exp>.<HMAC-SHA1(token, "1|<exp>")>`, signing key = the daemon access
+    token, verified by recompute + constant-time compare + `exp > now` — **no
+    server-side session store** (re-minting the token invalidates live cookies,
+    accepted). TTL is a fixed 12h. The cookie is `HttpOnly; SameSite=Strict;
+    Path=/` but **not `Secure`**: the daemon never does TLS (this §4) and rides
+    Tailscale/localhost for transport confidentiality.
+
+  **Posture: recommended default, operator's choice.** TOTP (+ optional
+  password) is the recommended hardening for a network bind and is documented
+  as best practice, but it is **opt-in, never forced**: a network bind resolves
+  to the session policy only once a TOTP seed is enrolled (via `ralphy daemon
+  setup`, mint-once like the token); with no seed a network bind stays
+  bearer-only — the operator is never denied the bearer-only trade-off they
+  accept. Localhost stays frictionless (no login, no token).
 - **Phase 2 — control-plane tunnel.** The daemon dials **out** (WSS, 443) to
   the control-plane relay and the same protocol rides the tunnel (the GitHub
   Actions runner / Cloudflare Tunnel pattern). The relay is a stateless
