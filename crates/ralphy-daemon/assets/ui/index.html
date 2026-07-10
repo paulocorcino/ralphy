@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ralphy daemon</title>
+    <link rel="stylesheet" href="vendor/xterm.css" />
     <style>
       body {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -55,6 +56,39 @@
         color: #9b948a;
         margin-left: 0.6rem;
       }
+      #repos .agents {
+        margin-left: 0.6rem;
+        display: inline-flex;
+        gap: 0.3rem;
+      }
+      #repos button.tile {
+        font: inherit;
+        font-size: 0.8rem;
+        color: #e8e2d9;
+        background: #241f1b;
+        border: 1px solid #3a332d;
+        border-radius: 4px;
+        padding: 0.1rem 0.5rem;
+        cursor: pointer;
+      }
+      #repos button.tile:hover {
+        background: #322b25;
+      }
+      #repos li.unreachable button.tile {
+        pointer-events: none;
+      }
+      /* The live terminal takes over the viewport once a session launches. */
+      #terminal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        padding: 0.5rem;
+        box-sizing: border-box;
+        background: #000;
+      }
+      #terminal.active {
+        display: block;
+      }
     </style>
   </head>
   <body>
@@ -64,6 +98,9 @@
       <p>The resident process is up. Workbench sessions arrive in a later slice.</p>
       <ul id="repos"></ul>
     </main>
+    <div id="terminal"></div>
+    <script src="vendor/xterm.js"></script>
+    <script src="vendor/xterm-addon-fit.js"></script>
     <script>
       // Identity is delivered at runtime (the embedded HTML bakes in none):
       // render "avatar name" when the daemon has been baptized, else leave the
@@ -122,8 +159,83 @@
       ws.onclose = markOffline;
       ws.onerror = markOffline;
 
+      // The workbench session codec, mirrored from src/protocol.rs. A terminal
+      // frame is [0x01][session u64 BE][raw bytes]; a resize rides a command
+      // frame [0x02][JSON {id, verb:"resize", payload:{rows, cols}}]. One session
+      // at a time in this slice, so the session id is always 1.
+      const AGENTS = ["claude", "codex", "opencode"];
+      const TAG_TERMINAL = 0x01;
+      const TAG_COMMAND = 0x02;
+      const SESSION_ID = 1;
+
+      function encodeTerminal(str) {
+        const data = new TextEncoder().encode(str);
+        const out = new Uint8Array(1 + 8 + data.length);
+        out[0] = TAG_TERMINAL;
+        // session id as a big-endian u64; only the low byte is ever non-zero.
+        out[8] = SESSION_ID;
+        out.set(data, 9);
+        return out;
+      }
+
+      function encodeResize(rows, cols) {
+        const json = JSON.stringify({
+          id: 0,
+          verb: "resize",
+          payload: { rows, cols },
+        });
+        const body = new TextEncoder().encode(json);
+        const out = new Uint8Array(1 + body.length);
+        out[0] = TAG_COMMAND;
+        out.set(body, 1);
+        return out;
+      }
+
+      // Launch a session: hand the viewport to xterm.js, open the session
+      // WebSocket, and wire keystrokes/resize out and PTY bytes in. xterm.js is
+      // the terminal emulator, so it answers the child's startup cursor-position
+      // request itself — the daemon stays a transparent byte pipe.
+      function launch(slug, agent) {
+        document.querySelector("main").style.display = "none";
+        const host = document.getElementById("terminal");
+        host.classList.add("active");
+        const term = new Terminal({ convertEol: false });
+        const fit = new FitAddon.FitAddon();
+        term.loadAddon(fit);
+        term.open(host);
+        fit.fit();
+
+        const url =
+          "ws://" +
+          location.host +
+          "/ws/session?repo=" +
+          encodeURIComponent(slug) +
+          "&agent=" +
+          encodeURIComponent(agent);
+        const ws = new WebSocket(url);
+        ws.binaryType = "arraybuffer";
+        ws.onopen = () => {
+          fit.fit();
+          ws.send(encodeResize(term.rows, term.cols));
+        };
+        ws.onmessage = (ev) => {
+          const a = new Uint8Array(ev.data);
+          if (a[0] === TAG_TERMINAL) term.write(a.subarray(9));
+        };
+        term.onData((d) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
+        });
+        term.onResize(({ rows, cols }) => {
+          if (ws.readyState === WebSocket.OPEN)
+            ws.send(encodeResize(rows, cols));
+        });
+        window.addEventListener("resize", () => fit.fit());
+        ws.onclose = () => term.write("\r\n[session closed]\r\n");
+      }
+
       // Registered repos, refreshed from disk on each load. Unreachable repos
-      // (a moved/deleted path) are greyed but retained — never dropped.
+      // (a moved/deleted path) are greyed but retained — never dropped. Each
+      // reachable repo gets a launch tile per agent (zero typing to launch).
       fetch("/api/repos")
         .then((r) => (r.ok ? r.json() : []))
         .then((repos) => {
@@ -141,7 +253,16 @@
             const path = document.createElement("span");
             path.className = "path";
             path.textContent = repo.path;
-            li.append(slug, path);
+            const agents = document.createElement("span");
+            agents.className = "agents";
+            for (const agent of AGENTS) {
+              const btn = document.createElement("button");
+              btn.className = "tile";
+              btn.textContent = agent;
+              btn.onclick = () => launch(repo.slug, agent);
+              agents.append(btn);
+            }
+            li.append(slug, path, agents);
             ul.append(li);
           }
         })

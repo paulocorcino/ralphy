@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::Query;
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -118,6 +119,10 @@ pub fn router(
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Router {
     let ws_identity = identity.clone();
+    // `shutdown` is consumed by the `/ws` presence closure; clone one for the
+    // session route so a live session also tears down on graceful shutdown.
+    let session_shutdown = shutdown.clone();
+    let session_registry = registry_path.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -135,6 +140,14 @@ pub fn router(
                 async move {
                     ws.on_upgrade(move |socket| ws_presence_loop(socket, id, start, shutdown))
                 }
+            }),
+        )
+        .route(
+            "/ws/session",
+            get(move |ws: WebSocketUpgrade, q: Query<SessionQuery>| {
+                let registry_path = session_registry.clone();
+                let shutdown = session_shutdown.clone();
+                async move { session_ws_upgrade(ws, q, registry_path, shutdown).await }
             }),
         )
         .fallback(ui_asset)
@@ -189,6 +202,107 @@ async fn ws_presence_loop(
             }
         }
     }
+}
+
+/// Query for `/ws/session`: which registered `repo` slug and which `agent`.
+#[derive(serde::Deserialize)]
+struct SessionQuery {
+    repo: String,
+    agent: String,
+}
+
+/// `GET /ws/session?repo=<slug>&agent=<claude|codex|opencode>`: resolve the repo
+/// and agent, then upgrade to a WebSocket bridging the codec to a live PTY
+/// session. Rejects (`400`) an unknown agent, an unreadable registry, or an
+/// unregistered slug BEFORE upgrading, so a bad request fails as HTTP, not as a
+/// silently-dropped socket.
+async fn session_ws_upgrade(
+    ws: WebSocketUpgrade,
+    Query(query): Query<SessionQuery>,
+    registry_path: PathBuf,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Response {
+    let Some(agent) = session::Agent::from_query(&query.agent) else {
+        return (StatusCode::BAD_REQUEST, "unknown agent").into_response();
+    };
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry for a session");
+            return (StatusCode::BAD_REQUEST, "repo registry unreadable").into_response();
+        }
+    };
+    let Some(entry) = store.entry(&query.repo) else {
+        return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
+    };
+    let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
+    ws.on_upgrade(move |socket| session_ws(socket, spec, shutdown))
+}
+
+/// Bridge one WebSocket to one PTY session: PTY output → `Frame::Terminal`
+/// binary messages; client `Frame::Terminal` → PTY stdin; client
+/// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
+/// close/error, child EOF, a send failure, OR daemon shutdown.
+///
+/// TEARDOWN INVARIANT: exactly one `session.close()` runs on EVERY exit path.
+/// There is no `?`/early `return` between spawn and the post-loop `close()`, so a
+/// live session can neither leak its child tree nor stall graceful shutdown
+/// (mirrors `ws_presence_loop`'s shutdown arm; #161 friction c2c44b5).
+async fn session_ws(
+    mut socket: WebSocket,
+    spec: session::SessionSpec,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    let mut session = match session::Session::spawn(spec) {
+        Ok(session) => session,
+        Err(e) => {
+            // Spawn failed → no session to close; report and drop the socket.
+            tracing::warn!(error = %e, "failed to spawn a workbench session");
+            let _ = socket.send(Message::Close(None)).await;
+            return;
+        }
+    };
+    let mut output = session.take_output();
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            chunk = output.recv() => match chunk {
+                Some(bytes) => {
+                    let frame = Frame::Terminal { session: 1, data: bytes };
+                    if socket
+                        .send(Message::Binary(protocol::encode(&frame).into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                None => break, // the child tree exited
+            },
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
+                    Ok(Frame::Terminal { data, .. }) => {
+                        if session.write(&data).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
+                        if let (Some(rows), Some(cols)) = (
+                            cmd.payload.get("rows").and_then(|v| v.as_u64()),
+                            cmd.payload.get("cols").and_then(|v| v.as_u64()),
+                        ) {
+                            let _ = session.resize(rows as u16, cols as u16);
+                        }
+                    }
+                    _ => {} // other frames carry no session meaning here
+                },
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(_)) => {} // text/ping/pong: ignore
+                Some(Err(_)) => break,
+            },
+        }
+    }
+    session.close();
 }
 
 /// `GET /api/repos`: the registered repos as JSON, each with its live
@@ -315,6 +429,20 @@ mod tests {
             body.contains("ralphy daemon"),
             "the page must identify the daemon; got: {body}"
         );
+    }
+
+    #[tokio::test]
+    async fn xterm_asset_is_served() {
+        // The embedded xterm.js loads over HTTP with a JS content-type — the
+        // terminal UI can pull it from `/vendor/xterm.js`.
+        let resp = get("/vendor/xterm.js").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        assert!(!body.is_empty(), "the embedded xterm.js must be non-empty");
     }
 
     #[tokio::test]
