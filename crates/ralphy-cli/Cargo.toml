@@ -44,3 +44,8 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+# Embed the ralphy.exe application icon (assets/icons/ralphy.ico) into the
+# Windows binary via build.rs. Windows-only; on Linux build.rs is a no-op.
+[target.'cfg(windows)'.build-dependencies]
+winresource = { workspace = true }

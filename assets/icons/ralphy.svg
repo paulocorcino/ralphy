@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Ralphy — Proposal 1: The Loop R (autonomous cycle)</title>
+  <defs>
+    <linearGradient id="p1bg" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#20304F"/>
+      <stop offset="1" stop-color="#0B1120"/>
+    </linearGradient>
+    <linearGradient id="p1loop" x1="120" y1="120" x2="392" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="0.5" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="p1glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- app-icon plate -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#p1bg)"/>
+  <rect x="16.5" y="16.5" width="479" height="479" rx="111.5" stroke="#3B4A72" stroke-opacity="0.6"/>
+
+  <!-- autonomous loop: ~300° cycle arc with a tangential arrowhead -->
+  <g filter="url(#p1glow)">
+    <path d="M331 126 A150 150 0 1 1 181 126"
+          stroke="url(#p1loop)" stroke-width="28" stroke-linecap="round" fill="none"/>
+    <path d="M207 111 L187 152 L161 108 Z" fill="url(#p1loop)"/>
+  </g>
+
+  <!-- the R, built from stroked centerlines (stem + bowl + leg), bold & clean -->
+  <g stroke="#F8FAFC" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M221 334 V178 H261 A33 33 0 0 1 261 244 H231"/>
+    <path d="M244 242 L302 334"/>
+  </g>
+</svg>
