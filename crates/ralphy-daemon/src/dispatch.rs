@@ -125,13 +125,18 @@ impl Spawner for ProcessSpawner {
         // Detach so daemon shutdown never reaches the run. On Unix its own process
         // group isolates it from the daemon's group.
         ralphy_proc_util::own_process_group(&mut cmd);
-        // On Windows `own_process_group` is a no-op, so a same-console child would
-        // receive the daemon's Ctrl+C `CTRL_C_EVENT`. CREATE_NEW_PROCESS_GROUP
-        // (0x00000200) puts the run in its own group, closing that gap.
+        // On Windows `own_process_group` is a no-op, so a same-console child
+        // would receive the daemon's console control events. Two flags detach it:
+        // CREATE_NEW_PROCESS_GROUP (0x200) stops CTRL_C/CTRL_BREAK reaching it,
+        // and DETACHED_PROCESS (0x8) gives it no console at all — otherwise a
+        // CTRL_CLOSE/LOGOFF/SHUTDOWN event, delivered to every process on the
+        // daemon's console regardless of group, would still kill the run. The
+        // child is null-stdio, so it needs no console. Together they honor the
+        // "spawned runs keep their own lifecycle" invariant on Windows.
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0000_0200);
+            cmd.creation_flags(0x0000_0208);
         }
         let child = cmd.spawn()?;
         Ok(Box::new(ProcessChild(child)))
