@@ -1,6 +1,7 @@
 //! Autostart registration for the resident daemon (ADR-0032 §10): a native OS
 //! mechanism that starts `ralphy daemon` at logon, without ralphy ever becoming
-//! the scheduler. Windows: one Task Scheduler task, `/SC ONLOGON`. Linux/WSL: a
+//! the scheduler. Windows: a per-user HKCU `…\CurrentVersion\Run` value,
+//! launched hidden via `pwsh -WindowStyle Hidden` — no elevation. Linux/WSL: a
 //! systemd user unit, `WantedBy=default.target`. Registration/removal is
 //! resolved with the DEFAULT daemon (loopback, `DEFAULT_PORT`) — no
 //! `--bind`/`--port` passthrough in v1 (ADR-0032 §4).
@@ -38,10 +39,15 @@ pub enum SystemctlVerb {
     IsEnabled,
 }
 
-/// The Windows Task Scheduler task name, and the systemd user unit name.
-/// Fixed — one daemon autostart registration per machine (ADR-0032 §10).
+/// Autostart registration handle (Run-key value name), and the systemd user
+/// unit name. Fixed — one daemon autostart registration per machine
+/// (ADR-0032 §10).
 pub const TASK_NAME: &str = "ralphy-daemon";
 pub const UNIT_NAME: &str = "ralphy-daemon.service";
+
+/// The per-user Run key Windows autostart writes to. No elevation required —
+/// HKCU is writable by the owning user (ADR-0032 §10).
+pub const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
 /// A fully-resolved autostart registration: the program to invoke and where it
 /// appends its log. Platform-neutral; the renderers below turn it into a
@@ -54,10 +60,12 @@ pub struct AutostartSpec {
 
 /// Render the install command for `spec` on `p`.
 ///
-/// - Windows: the `schtasks /Create …` argv, each element one argument. The
-///   `/TR` value wraps the invocation in `pwsh -NoProfile -Command "…"` so the
-///   `*>>` all-stream log redirect is handled (mirrors `schedule::platform`'s
-///   log-capture fix).
+/// - Windows: `reg add` writing the per-user Run key, each element one
+///   argument. The `/d` value wraps the invocation in
+///   `pwsh -NoProfile -WindowStyle Hidden -Command "…"` so the daemon starts
+///   with no visible console window and the `*>>` all-stream log redirect is
+///   preserved (mirrors `schedule::platform`'s log-capture fix). No elevation:
+///   HKCU is writable by the owning user.
 /// - Systemd: the `systemctl --user enable ralphy-daemon.service` argv. The
 ///   unit body itself is written to disk by the executor via [`systemd_unit`],
 ///   not rendered as an argv.
@@ -67,52 +75,57 @@ pub fn render_install(p: Platform, spec: &AutostartSpec) -> Vec<String> {
             let exe = spec.program.display();
             let log = spec.log_path.display();
             // Single-quote the paths so PowerShell tolerates spaces; the outer
-            // double-quotes belong to the `-Command` argument, not to schtasks
+            // double-quotes belong to the `-Command` argument, not to `reg`
             // shell-quoting (we pass this argv straight to CreateProcess).
-            let tr = format!("pwsh -NoProfile -Command \"'{exe}' daemon *>> '{log}'\"");
+            let tr = format!(
+                "pwsh -NoProfile -WindowStyle Hidden -Command \"'{exe}' daemon *>> '{log}'\""
+            );
             vec![
-                "schtasks".into(),
-                "/Create".into(),
-                "/TN".into(),
+                "reg".into(),
+                "add".into(),
+                RUN_KEY.into(),
+                "/v".into(),
                 TASK_NAME.into(),
-                "/SC".into(),
-                "ONLOGON".into(),
-                "/TR".into(),
+                "/t".into(),
+                "REG_SZ".into(),
+                "/d".into(),
                 tr,
-                "/F".into(),
+                "/f".into(),
             ]
         }
         Platform::Systemd => render_systemctl(SystemctlVerb::Enable),
     }
 }
 
-/// Render the uninstall command. Windows: `schtasks /Delete /TN <task> /F`.
+/// Render the uninstall command. Windows: `reg delete <RUN_KEY> /v <task> /f`.
 /// Systemd: `systemctl --user disable ralphy-daemon.service` (the unit FILE
 /// removal is the executor's job, not rendered here).
 pub fn render_uninstall(p: Platform) -> Vec<String> {
     match p {
         Platform::Windows => vec![
-            "schtasks".into(),
-            "/Delete".into(),
-            "/TN".into(),
+            "reg".into(),
+            "delete".into(),
+            RUN_KEY.into(),
+            "/v".into(),
             TASK_NAME.into(),
-            "/F".into(),
+            "/f".into(),
         ],
         Platform::Systemd => render_systemctl(SystemctlVerb::Disable),
     }
 }
 
-/// Render the registration-query command. Windows: `schtasks /Query /TN
-/// <task>` — the executor reads only its EXIT CODE (never the localized LIST
-/// text; see the module-level pt-BR trap this sidesteps). Systemd: `systemctl
-/// --user is-enabled ralphy-daemon.service`, whose stdout [`systemd_is_enabled`]
-/// parses.
+/// Render the registration-query command. Windows: `reg query <RUN_KEY> /v
+/// <task>` — the executor reads only its EXIT CODE (0 when the value exists,
+/// 1 when absent; never localized text — see the module-level pt-BR trap this
+/// sidesteps). Systemd: `systemctl --user is-enabled ralphy-daemon.service`,
+/// whose stdout [`systemd_is_enabled`] parses.
 pub fn render_query(p: Platform) -> Vec<String> {
     match p {
         Platform::Windows => vec![
-            "schtasks".into(),
-            "/Query".into(),
-            "/TN".into(),
+            "reg".into(),
+            "query".into(),
+            RUN_KEY.into(),
+            "/v".into(),
             TASK_NAME.into(),
         ],
         Platform::Systemd => render_systemctl(SystemctlVerb::IsEnabled),
@@ -215,7 +228,12 @@ fn run_argv(argv: &[String], tolerate_missing: bool) -> Result<()> {
 #[cfg(windows)]
 pub fn install() -> Result<()> {
     let spec = build_spec()?;
-    run_argv(&render_install(Platform::Windows, &spec), false)
+    run_argv(&render_install(Platform::Windows, &spec), false).with_context(|| {
+        format!(
+            "could not register daemon autostart (writing {RUN_KEY}\\{TASK_NAME}); \
+             this should not require elevation — check that the registry is writable"
+        )
+    })
 }
 
 #[cfg(windows)]
@@ -233,8 +251,9 @@ pub fn status() -> Result<AutostartStatus> {
         .args(rest)
         .output()
         .with_context(|| format!("running {prog}"))?;
-    // EXIT CODE only — sidesteps the pt-BR localized `TaskName:` label bug
-    // (KNOWLEDGE #139/#140) that misreports a real task as absent.
+    // `reg query` EXIT CODE only (0 = present, 1 = absent) — sidesteps the
+    // pt-BR localized label bug (KNOWLEDGE #139/#140) that misreported a real
+    // `schtasks` task as absent; `reg query` has no such localized text path.
     Ok(AutostartStatus {
         registered: out.status.success(),
     })
@@ -289,19 +308,29 @@ mod tests {
     }
 
     #[test]
-    fn render_install_windows_onlogon() {
+    fn render_install_windows_runkey() {
         let joined = render_install(Platform::Windows, &spec()).join(" ");
         for needle in [
-            "/Create", "/TN", TASK_NAME, "/SC", "ONLOGON", "daemon", "*>>", "/F",
+            "reg",
+            "add",
+            RUN_KEY,
+            "/v",
+            TASK_NAME,
+            "REG_SZ",
+            "-WindowStyle Hidden",
+            "daemon",
+            "*>>",
         ] {
             assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
         }
+        assert!(!joined.contains("schtasks"), "{joined:?}");
+        assert!(!joined.contains("ONLOGON"), "{joined:?}");
     }
 
     #[test]
     fn render_uninstall_windows() {
         let joined = render_uninstall(Platform::Windows).join(" ");
-        for needle in ["/Delete", "/TN", TASK_NAME, "/F"] {
+        for needle in ["reg", "delete", RUN_KEY, "/v", TASK_NAME, "/f"] {
             assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
         }
     }
@@ -309,7 +338,7 @@ mod tests {
     #[test]
     fn render_query_windows() {
         let joined = render_query(Platform::Windows).join(" ");
-        for needle in ["/Query", "/TN", TASK_NAME] {
+        for needle in ["reg", "query", RUN_KEY, "/v", TASK_NAME] {
             assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
         }
     }
@@ -319,8 +348,10 @@ mod tests {
         let install_joined = render_install(Platform::Windows, &spec()).join(" ");
         let uninstall_joined = render_uninstall(Platform::Windows).join(" ");
         assert!(install_joined.contains(TASK_NAME));
-        assert!(uninstall_joined.contains("/Delete"));
+        assert!(install_joined.contains(RUN_KEY));
+        assert!(uninstall_joined.contains("delete"));
         assert!(uninstall_joined.contains(TASK_NAME));
+        assert!(uninstall_joined.contains(RUN_KEY));
 
         let disable = render_uninstall(Platform::Systemd).join(" ");
         assert!(disable.contains("disable"), "{disable:?}");
