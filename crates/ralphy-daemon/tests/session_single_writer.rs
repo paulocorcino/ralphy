@@ -122,7 +122,11 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
     let busy = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
     match tokio_tungstenite::connect_async(&busy).await {
         Err(tungstenite::Error::Http(resp)) => {
-            assert_eq!(resp.status(), 409, "a busy session refuses a non-takeover attach");
+            assert_eq!(
+                resp.status(),
+                409,
+                "a busy session refuses a non-takeover attach"
+            );
         }
         Ok(_) => panic!("second attach without takeover must NOT succeed"),
         Err(other) => panic!("expected an HTTP 409, got {other:?}"),
@@ -145,7 +149,10 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
         }
     })
     .await;
-    assert!(ended.is_ok(), "the evicted first client's stream must end, not hang");
+    assert!(
+        ended.is_ok(),
+        "the evicted first client's stream must end, not hang"
+    );
 
     // The taker drives the child: a keystroke round-trips (no cursor answer — the
     // child is past startup on this reattach).

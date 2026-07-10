@@ -332,7 +332,9 @@ async fn session_ws_upgrade(
             Err(session::AttachError::Unknown) => {
                 (StatusCode::NOT_FOUND, "unknown session").into_response()
             }
-            Err(session::AttachError::Busy) => (StatusCode::CONFLICT, "session busy").into_response(),
+            Err(session::AttachError::Busy) => {
+                (StatusCode::CONFLICT, "session busy").into_response()
+            }
         };
     }
     let Some(agent_str) = query.agent.as_deref() else {

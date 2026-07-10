@@ -159,7 +159,10 @@ impl Session {
     /// would otherwise never end after a `quit`. A closed session counts as exited.
     pub fn has_exited(&mut self) -> bool {
         match self.pty.as_mut() {
-            Some(pty) => pty.try_wait().map(|status| status.is_some()).unwrap_or(true),
+            Some(pty) => pty
+                .try_wait()
+                .map(|status| status.is_some())
+                .unwrap_or(true),
             None => true,
         }
     }
@@ -257,12 +260,15 @@ impl ManagedSession {
 
     /// Resize the PTY window. Behind the session mutex (see [`write`]).
     fn resize(&self, rows: u16, cols: u16) -> Result<()> {
-        self.session.lock().expect("session mutex").resize(rows, cols)
+        self.session
+            .lock()
+            .expect("session mutex")
+            .resize(rows, cols)
     }
 }
 
 /// The daemon's set of live sessions (docs/adr/0032 §2, issue #166). Sessions
-/// belong to the manager, not to any connection: a WebSocket drop detaches, never
+/// belong to the manager, not to any connection: a client disconnect detaches, never
 /// closes. Constructed once inside `router()`; a `Weak` clone is handed to each
 /// pump so a finished child can remove itself.
 pub struct SessionManager {
@@ -316,7 +322,10 @@ impl SessionManager {
             tx,
             attached: Mutex::new(None),
         });
-        self.sessions.lock().expect("sessions mutex").insert(id, managed.clone());
+        self.sessions
+            .lock()
+            .expect("sessions mutex")
+            .insert(id, managed.clone());
         start_pump(managed.clone(), Arc::downgrade(self), output);
         let attachment = self
             .attach(id, true)
@@ -332,7 +341,11 @@ impl SessionManager {
     /// lock, mirroring the pump which holds that same lock across push+send. So
     /// every byte lands in exactly one of {replayed snapshot, live broadcast} —
     /// no gap and no duplicate at the attach seam.
-    pub fn attach(self: &Arc<Self>, id: SessionId, takeover: bool) -> Result<Attachment, AttachError> {
+    pub fn attach(
+        self: &Arc<Self>,
+        id: SessionId,
+        takeover: bool,
+    ) -> Result<Attachment, AttachError> {
         let sess = {
             let map = self.sessions.lock().expect("sessions mutex");
             map.get(&id).cloned().ok_or(AttachError::Unknown)?
@@ -413,7 +426,11 @@ impl SessionManager {
 /// push AND `tx.send`, mirrored by [`SessionManager::attach`] holding it across
 /// snapshot+subscribe — so an attach never sees a byte both in its snapshot and
 /// on its live receiver, nor misses one in the gap.
-fn start_pump(sess: Arc<ManagedSession>, manager: Weak<SessionManager>, mut output: UnboundedReceiver<Vec<u8>>) {
+fn start_pump(
+    sess: Arc<ManagedSession>,
+    manager: Weak<SessionManager>,
+    mut output: UnboundedReceiver<Vec<u8>>,
+) {
     tokio::spawn(async move {
         // Poll for a self-exited child alongside draining output: ConPTY does not
         // EOF the reader on child death (only on master drop), so without this a

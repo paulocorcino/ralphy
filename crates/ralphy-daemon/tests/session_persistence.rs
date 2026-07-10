@@ -146,7 +146,11 @@ async fn session_survives_ws_drop_reattach_replays_then_streams_and_close_remove
     assert_eq!(status, 200, "GET /api/sessions body:\n{body}");
     let list: serde_json::Value = serde_json::from_str(&body).expect("sessions JSON");
     let arr = list.as_array().expect("sessions is an array");
-    assert_eq!(arr.len(), 1, "the dropped session must still be listed: {body}");
+    assert_eq!(
+        arr.len(),
+        1,
+        "the dropped session must still be listed: {body}"
+    );
     let entry = &arr[0];
     assert_eq!(entry["repo"], slug, "listed session carries its repo slug");
     assert_eq!(entry["agent"], "claude", "listed session carries its agent");
