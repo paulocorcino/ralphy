@@ -43,7 +43,10 @@ use auth::{is_claude_auth_error, is_limit_text, parse_reset_hhmm, CLAUDE_AUTH_ER
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};
 use settings::{recommended_model, ExecConfig, SETTINGS_JSON};
-use usage::{fold_exec_usage, parse_plan_usage, parse_transcript_usage};
+use usage::{
+    fold_exec_usage, parse_plan_session_id, parse_plan_usage, parse_transcript_usage,
+    session_id_from_files,
+};
 
 pub use settings::ClaudeSettings;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
@@ -141,6 +144,7 @@ impl Agent for ClaudeAgent {
                 recommended_model: recommended_model(&md),
                 path: plan_path,
                 usage: Usage::default(),
+                session_id: None,
             });
         }
         // Plan fresh every run; never reuse a stale artifact.
@@ -241,6 +245,7 @@ impl Agent for ClaudeAgent {
             recommended_model: recommended_model(&md),
             path: plan_path,
             usage: parse_plan_usage(&log),
+            session_id: parse_plan_session_id(&log),
         })
     }
 
@@ -262,13 +267,18 @@ impl Agent for ClaudeAgent {
             .as_deref()
             .map(|d| list_session_files(d, "jsonl", false, None))
             .unwrap_or_default();
-        let per_transcript: Vec<Usage> = session_files_appeared(&before, &after)
+        let appeared = session_files_appeared(&before, &after);
+        let per_transcript: Vec<Usage> = appeared
             .iter()
             .filter_map(|p| fs::read_to_string(p).ok())
             .map(|t| parse_transcript_usage(&t))
             .collect();
         let usage = fold_exec_usage(&per_transcript, &self.resolve_exec_model(plan));
-        Ok(Execution { outcome, usage })
+        Ok(Execution {
+            outcome,
+            usage,
+            session_id: session_id_from_files(&appeared),
+        })
     }
 }
 

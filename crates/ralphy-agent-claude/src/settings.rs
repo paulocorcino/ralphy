@@ -188,6 +188,7 @@ mod tests {
             open_steps: 3,
             recommended_model: recommended.map(str::to_string),
             usage: Usage::default(),
+            session_id: None,
         }
     }
 

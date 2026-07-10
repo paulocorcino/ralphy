@@ -79,6 +79,40 @@ pub(crate) fn parse_plan_usage(stdout: &str) -> Usage {
     found.unwrap_or_default()
 }
 
+/// The vendor session identity of a headless `claude -p` plan (ADR-0033 §5): the
+/// terminal `{"type":"result",…}` event's top-level `session_id`. Same last-result
+/// scan as [`parse_plan_usage`]. `None` when no result event carries one.
+pub(crate) fn parse_plan_session_id(stdout: &str) -> Option<String> {
+    let mut found: Option<String> = None;
+    for line in stdout.lines() {
+        let line = line.trim_start();
+        if !line.starts_with('{') {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(|t| t.as_str()) != Some("result") {
+            continue;
+        }
+        if let Some(id) = value.get("session_id").and_then(|v| v.as_str()) {
+            found = Some(id.to_string()); // keep the LAST result object
+        }
+    }
+    found
+}
+
+/// The vendor session identity of a Claude exec (ADR-0033 §5): the first appeared
+/// transcript file's stem, which is the bare session uuid (== the plan payload's
+/// `session_id`). `None` when no transcript appeared.
+pub(crate) fn session_id_from_files(appeared: &[PathBuf]) -> Option<String> {
+    appeared
+        .first()
+        .and_then(|p| p.file_stem())
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+}
+
 /// Sum a session's per-transcript usages and attribute the phase to one model.
 /// Delegates to [`Usage::fold_usage`] — the single place accumulated-usage model
 /// derivation lives (ADR-0008 D8) — so the heaviest transcript's model is carried,
@@ -396,6 +430,25 @@ mod tests {
         let usage = fold_exec_usage(&[a], "sonnet");
         assert_eq!(usage.input, 100);
         assert_eq!(usage.model.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn parse_plan_session_id_reads_result_event() {
+        let stdout = "no stdin data received in 3s.\n\
+{\"type\":\"system\",\"subtype\":\"init\"}\n\
+{\"type\":\"result\",\"session_id\":\"sess-abc\",\"usage\":{}}\n";
+        assert_eq!(parse_plan_session_id(stdout).as_deref(), Some("sess-abc"));
+        // No result event → None.
+        assert_eq!(parse_plan_session_id("{\"type\":\"system\"}\n"), None);
+    }
+
+    #[test]
+    fn session_id_from_files_takes_first_stem() {
+        assert_eq!(
+            session_id_from_files(&[PathBuf::from("/x/c6ab25d8-de.jsonl")]).as_deref(),
+            Some("c6ab25d8-de")
+        );
+        assert_eq!(session_id_from_files(&[]), None);
     }
 
     #[test]
