@@ -1422,6 +1422,7 @@ dependencies = [
  "hostname",
  "indicatif",
  "libc",
+ "qrcode",
  "ralphy-adapter-support",
  "ralphy-agent-claude",
  "ralphy-agent-codex",

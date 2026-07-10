@@ -13,9 +13,9 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
 use ralphy_core::git;
-use ralphy_daemon::auth;
 use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
 use ralphy_daemon::registry;
+use ralphy_daemon::{auth, password, totp};
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
@@ -145,8 +145,9 @@ fn setup(port: u16) -> Result<()> {
     let suggested = identity::suggest_name(&host);
 
     let stdin = std::io::stdin();
+    let mut locked = stdin.lock();
     let mut stdout = std::io::stdout();
-    let (name, avatar) = baptize_console(stdin.lock(), &mut stdout, &suggested)?;
+    let (name, avatar) = baptize_console(&mut locked, &mut stdout, &suggested)?;
 
     let id = identity::baptize(&identity::daemon_toml_path()?, name, avatar)?;
     writeln!(stdout, "\nbaptized: {}", format_status_line(&id))?;
@@ -159,7 +160,58 @@ fn setup(port: u16) -> Result<()> {
     } else {
         writeln!(stdout, "access token: already set (not shown)")?;
     }
+
+    // TOTP enrolment (issue #179): mint-once, shown exactly once; then the
+    // opt-in login password (blank = skip). Both are the recommended-but-opt-in
+    // hardening for a network bind (ADR-0032 §4).
+    enroll_totp(&mut stdout, &totp::seed_path()?, &id.name)?;
+    enroll_password(&mut locked, &mut stdout, &password::password_path()?)?;
+
     writeln!(stdout, "listener: http://127.0.0.1:{port}")?;
+    Ok(())
+}
+
+/// Enrol the TOTP seed (mint-once) and, when freshly minted, print the
+/// `otpauth://` URI, its terminal QR, and the base32 secret EXACTLY once. A later
+/// `setup` finds the seed and prints only "already enrolled" — the secret never
+/// re-prints. Returns whether it was newly minted.
+fn enroll_totp<W: Write>(out: &mut W, seed_path: &Path, account: &str) -> Result<bool> {
+    let (seed, minted) = totp::ensure_seed_at(seed_path)?;
+    if minted {
+        let uri = seed.otpauth_uri("ralphy", account);
+        writeln!(out, "\nTOTP enrolled — scan this once with your authenticator:")?;
+        match qrcode::QrCode::new(uri.as_bytes()) {
+            Ok(code) => {
+                let rendered = code
+                    .render::<qrcode::render::unicode::Dense1x2>()
+                    .quiet_zone(true)
+                    .build();
+                writeln!(out, "{rendered}")?;
+            }
+            Err(e) => writeln!(out, "  (QR render unavailable: {e})")?,
+        }
+        writeln!(out, "  otpauth: {uri}")?;
+        writeln!(out, "  secret:  {}", seed.secret_base32())?;
+    } else {
+        writeln!(out, "TOTP: already enrolled (not shown)")?;
+    }
+    Ok(minted)
+}
+
+/// Prompt for the OPTIONAL login password over the console: an empty line skips;
+/// a non-blank line is PBKDF2-hashed and saved owner-only, overwriting any prior
+/// password. The password is the weakest, opt-in second factor (ADR-0032 §4).
+fn enroll_password<R: BufRead, W: Write>(input: &mut R, out: &mut W, path: &Path) -> Result<()> {
+    writeln!(out, "\nset a login password? (blank = skip):")?;
+    out.flush()?;
+    let line = read_line(input)?;
+    let pw = line.trim();
+    if pw.is_empty() {
+        writeln!(out, "password: skipped")?;
+    } else {
+        password::save_to(&password::Hash::hash_password(pw), path)?;
+        writeln!(out, "password: set")?;
+    }
     Ok(())
 }
 
@@ -173,6 +225,22 @@ fn status(port: u16) -> Result<()> {
     println!(
         "access token: {}",
         if auth::load_token()?.is_some() {
+            "set"
+        } else {
+            "not set"
+        }
+    );
+    println!(
+        "totp: {}",
+        if totp::load_seed()?.is_some() {
+            "enrolled"
+        } else {
+            "not enrolled"
+        }
+    );
+    println!(
+        "password: {}",
+        if password::load()?.is_some() {
             "set"
         } else {
             "not set"
@@ -313,6 +381,68 @@ mod tests {
         assert_eq!(store.repos.len(), 1, "exactly one entry written");
         let entry = store.repos.values().next().unwrap();
         assert_eq!(entry.path, repo_dir.path().to_string_lossy());
+    }
+
+    #[test]
+    fn totp_enrolment_is_mint_once_and_shows_secret_once() {
+        // Path-explicit (temp seed path, no env mutation), mirroring
+        // `register_repo_at`. The secret is printed on the first mint and NEVER on
+        // a later setup — the mint-once display invariant (AC1).
+        let dir = tempfile::tempdir().unwrap();
+        let seed_path = dir.path().join("daemon-totp");
+
+        let mut out1: Vec<u8> = Vec::new();
+        assert!(
+            enroll_totp(&mut out1, &seed_path, "anvil").unwrap(),
+            "first enrol mints"
+        );
+        let printed1 = String::from_utf8(out1).unwrap();
+        let seed = totp::load_seed_from(&seed_path).unwrap().unwrap();
+        assert!(
+            printed1.contains(&seed.secret_base32()),
+            "first mint prints the base32 secret; got: {printed1}"
+        );
+        assert!(
+            printed1.contains("otpauth://"),
+            "first mint prints the otpauth URI; got: {printed1}"
+        );
+
+        let mut out2: Vec<u8> = Vec::new();
+        assert!(
+            !enroll_totp(&mut out2, &seed_path, "anvil").unwrap(),
+            "second enrol does not re-mint"
+        );
+        let printed2 = String::from_utf8(out2).unwrap();
+        assert!(
+            !printed2.contains(&seed.secret_base32()),
+            "the secret must NOT re-print on a later setup; got: {printed2}"
+        );
+        assert!(
+            printed2.contains("already enrolled"),
+            "a re-enrol reports already enrolled; got: {printed2}"
+        );
+    }
+
+    #[test]
+    fn password_enrolment_skips_on_blank_and_saves_on_input() {
+        use std::io::Cursor;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("daemon-password");
+
+        // Blank line → skipped, nothing written.
+        let mut blank = Cursor::new(b"\n".to_vec());
+        let mut out: Vec<u8> = Vec::new();
+        enroll_password(&mut blank, &mut out, &path).unwrap();
+        assert!(password::load_from(&path).unwrap().is_none(), "blank skips");
+        assert!(String::from_utf8(out).unwrap().contains("skipped"));
+
+        // A non-blank line → hashed and saved; the hash verifies.
+        let mut typed = Cursor::new(b"hunter2\n".to_vec());
+        let mut out: Vec<u8> = Vec::new();
+        enroll_password(&mut typed, &mut out, &path).unwrap();
+        let saved = password::load_from(&path).unwrap().expect("a password was saved");
+        assert!(saved.verify("hunter2"), "the saved hash verifies the input");
+        assert!(String::from_utf8(out).unwrap().contains("set"));
     }
 
     #[test]

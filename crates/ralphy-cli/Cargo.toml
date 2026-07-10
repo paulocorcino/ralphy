@@ -33,6 +33,9 @@ ralphy-agent-kimi.workspace = true
 ralphy-agent-opencode.workspace = true
 ralphy-adapter-support.workspace = true
 ralphy-daemon.workspace = true
+# Terminal QR for `daemon setup` TOTP enrolment (issue #179); pure-Rust unicode
+# render only (no image/svg feature tree). Same version as ralphy-daemon.
+qrcode = { version = "0.14", default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true
