@@ -170,7 +170,11 @@ pub fn kimi_code_dir_path() -> anyhow::Result<PathBuf> {
 /// excluding sessions the ledger already owns (their `session_id` appears in
 /// `run_records`), and serialize each to JSON (ADR-0033 §2/§6). `registry.repos`
 /// supplies the project/actor attribution. Read-only: no scan writes. The Codex
-/// records are chained after the Claude ones, then the OpenCode ones.
+/// records are chained after the Claude ones, then the OpenCode ones, then the
+/// Kimi ones.
+// One positional per store path/handle; grouping them into a struct would only
+// move the argument list, not shrink it (mirrors `router`/`usage_route`).
+#[allow(clippy::too_many_arguments)]
 pub fn interactive_records(
     claude_dir: &Path,
     codex_dir: &Path,

@@ -218,12 +218,8 @@ fn scan_kimi_code(
             continue;
         }
         // WORKSPACE is the first path segment under `sessions/`.
-        let (project, actor_email) = workspace_attribution(
-            &file,
-            &sessions_root,
-            repos,
-            &mut email_cache,
-        );
+        let (project, actor_email) =
+            workspace_attribution(&file, &sessions_root, repos, &mut email_cache);
         let Ok(text) = fs::read_to_string(&file) else {
             continue;
         };
@@ -339,7 +335,12 @@ fn workspace_attribution(
 /// all four are zero (skip the entry, oracle `to_breakdown`). A signed field is
 /// parsed as `i64` first so a legitimately-negative value clamps to 0 rather than
 /// being read as absent (which straight-to-`u64` parsing would do).
-fn to_breakdown(input_other: i64, output: i64, cache_read: i64, cache_creation: i64) -> Option<Tokens> {
+fn to_breakdown(
+    input_other: i64,
+    output: i64,
+    cache_read: i64,
+    cache_creation: i64,
+) -> Option<Tokens> {
     let input = input_other.max(0);
     let output = output.max(0);
     let cache_read = cache_read.max(0);
@@ -455,7 +456,13 @@ mod tests {
         })
     }
 
-    fn status_update(ts: f64, input: i64, output: i64, cache_read: i64, message_id: &str) -> String {
+    fn status_update(
+        ts: f64,
+        input: i64,
+        output: i64,
+        cache_read: i64,
+        message_id: &str,
+    ) -> String {
         format!(
             "{{\"timestamp\": {ts}, \"message\": {{\"type\": \"StatusUpdate\", \"payload\": {{\"token_usage\": {{\"input_other\": {input}, \"output\": {output}, \"input_cache_read\": {cache_read}, \"input_cache_creation\": 0}}, \"message_id\": \"{message_id}\"}}}}}}"
         )

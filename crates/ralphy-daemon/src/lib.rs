@@ -752,6 +752,9 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 /// `since` keeps run records whose `ts` is lexically `>=` it and interactive
 /// records whose `last_ts` is `>=` it. The interactive scan excludes any session
 /// the ledger already owns (its `session_id` in `records`) and writes nothing.
+// One positional per resolved-at-boot store path; grouping them would only move
+// the argument list, not shrink it (mirrors `router`).
+#[allow(clippy::too_many_arguments)]
 async fn usage_route(
     usage_dir: PathBuf,
     claude_projects_dir: PathBuf,
