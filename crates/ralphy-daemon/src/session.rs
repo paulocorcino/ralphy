@@ -172,3 +172,12 @@ impl Session {
         }
     }
 }
+
+impl Drop for Session {
+    /// Honor the type's contract — dropping a session tears its child tree down —
+    /// so a consumer that never calls `close` still cannot leak a process tree.
+    /// `close` is idempotent, so an explicit `close()` before drop is harmless.
+    fn drop(&mut self) {
+        self.close();
+    }
+}

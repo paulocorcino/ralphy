@@ -287,11 +287,14 @@ async fn session_ws(
                         }
                     }
                     Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
-                        if let (Some(rows), Some(cols)) = (
-                            cmd.payload.get("rows").and_then(|v| v.as_u64()),
-                            cmd.payload.get("cols").and_then(|v| v.as_u64()),
-                        ) {
-                            let _ = session.resize(rows as u16, cols as u16);
+                        // `try_into` rejects a garbage/oversized dimension rather
+                        // than truncating it into a wrong terminal size.
+                        let rows: Option<u16> =
+                            cmd.payload.get("rows").and_then(|v| v.as_u64()?.try_into().ok());
+                        let cols: Option<u16> =
+                            cmd.payload.get("cols").and_then(|v| v.as_u64()?.try_into().ok());
+                        if let (Some(rows), Some(cols)) = (rows, cols) {
+                            let _ = session.resize(rows, cols);
                         }
                     }
                     _ => {} // other frames carry no session meaning here
