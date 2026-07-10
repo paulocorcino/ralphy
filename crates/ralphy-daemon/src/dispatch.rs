@@ -186,9 +186,12 @@ mod tests {
 
     /// Records what `dispatch` asked to spawn and hands back a child with a preset
     /// exit code — no OS process touched, so the argv mapping is asserted purely.
+    /// One recorded spawn: (program, argv, cwd, daemon_id).
+    type SpawnCall = (OsString, Vec<String>, std::path::PathBuf, Option<String>);
+
     #[derive(Default)]
     struct FakeSpawner {
-        calls: Mutex<Vec<(OsString, Vec<String>, std::path::PathBuf, Option<String>)>>,
+        calls: Mutex<Vec<SpawnCall>>,
     }
 
     struct FakeChild {
