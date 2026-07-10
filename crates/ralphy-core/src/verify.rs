@@ -29,6 +29,12 @@ pub enum VerifySpec {
     None,
     /// One or more commands, each tokenized into an argv.
     Commands(Vec<Vec<String>>),
+    /// The section is present but malformed — a markdown checklist masquerading as
+    /// commands (a leading `-`/`*`/`+` bullet, `- [ ]` checkbox, or backtick-wrapped
+    /// command). Tokenizing it would spawn a bogus `-`/`` ` `` program and the real
+    /// command would never run (#181), so it resolves to this arm instead. Carries a
+    /// clear, operator-facing error naming the malformed line(s).
+    Invalid(String),
     /// Section absent or present-but-empty — a planner omission. The runner falls
     /// back to `settings.json` `verify.command`.
     Unspecified,
@@ -39,7 +45,10 @@ pub enum VerifySpec {
 /// One command per line, code-fence-tolerant (` ``` ` lines are ignored), with
 /// quote-aware argv tokenization so `sh -c "cargo test"` survives as three
 /// tokens. A lone `none` line (case-insensitive) is the explicit opt-out. An
-/// absent or whitespace-only section is [`VerifySpec::Unspecified`].
+/// absent or whitespace-only section is [`VerifySpec::Unspecified`]. A section
+/// authored as a markdown checklist (a leading bullet, checkbox, or
+/// backtick-wrapped command) is rejected as [`VerifySpec::Invalid`] rather than
+/// tokenized into a bogus `-`/`` ` `` program that spawn-fails (#181).
 pub fn parse_verify(md: &str) -> VerifySpec {
     let heading_re = Regex::new(r"(?im)^##\s+Verify\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(md, &heading_re);
@@ -59,6 +68,19 @@ pub fn parse_verify(md: &str) -> VerifySpec {
         return VerifySpec::None;
     }
 
+    // Reject a markdown checklist before tokenizing: a leading `-`/`*`/`+` bullet,
+    // `- [ ]` checkbox, or backtick-wrapped command would tokenize its marker into a
+    // bogus `-`/`` ` `` `argv[0]` the gate spawn-fails on, so the real command never
+    // runs (#181). Enforces ADR-0011's "one bare command per line" contract.
+    let malformed: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| looks_like_markdown_list(l))
+        .collect();
+    if !malformed.is_empty() {
+        return VerifySpec::Invalid(malformed_error(&malformed));
+    }
+
     let commands: Vec<Vec<String>> = lines
         .iter()
         .map(|l| tokenize(l))
@@ -70,6 +92,30 @@ pub fn parse_verify(md: &str) -> VerifySpec {
     } else {
         VerifySpec::Commands(commands)
     }
+}
+
+/// Whether a `## Verify` line is markdown prose rather than a bare command: a
+/// leading list bullet (`-`/`*`/`+`), which also covers a `- [ ]` checkbox, or a
+/// leading backtick (a backtick-wrapped command). A real command never begins with
+/// any of these — `argv[0]` is a program name, not a flag or a fence — so their
+/// presence is an unambiguous authoring mistake (#181).
+fn looks_like_markdown_list(line: &str) -> bool {
+    matches!(line.chars().next(), Some('-' | '*' | '+' | '`'))
+}
+
+/// The operator-facing error for a malformed `## Verify` section: state the
+/// contract and quote each offending line so the plan author can find and fix it.
+fn malformed_error(malformed: &[&str]) -> String {
+    let offenders = malformed
+        .iter()
+        .map(|l| format!("`{l}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "`## Verify` must be one bare command per line, not a markdown list \
+         (no `-`/`*`/`+` bullet, `- [ ]` checkbox, or backtick-wrapped command). \
+         Offending line(s): {offenders}"
+    )
 }
 
 /// Split one command line into argv tokens, honoring single and double quotes so
@@ -118,11 +164,16 @@ pub fn tokenize(line: &str) -> Vec<String> {
 #[derive(Debug, Clone)]
 pub struct CommandOutcome {
     pub argv: Vec<String>,
-    /// The process exit code, or `None` when it timed out or was killed by a
-    /// signal (no numeric code).
+    /// The process exit code, or `None` when it timed out, was killed by a
+    /// signal, or never spawned (no numeric code).
     pub exit_code: Option<i32>,
     /// The command exceeded the gate's remaining time budget and was killed.
     pub timed_out: bool,
+    /// The command never ran: the program could not be spawned (not found on
+    /// PATH, a typo'd binary, an empty argv). Distinct from a signal kill or a
+    /// non-zero exit — re-running the SAME argv can never make it pass, so the
+    /// gate treats it as a non-repairable spec/spawn problem (#182).
+    pub spawn_failed: bool,
     /// Last few lines of combined stdout+stderr — empty on success when there was
     /// no output. Captured on every command so the artifact comment can show it.
     pub output_tail: String,
@@ -144,6 +195,24 @@ impl CommandOutcome {
 pub struct VerifyReport {
     pub commands: Vec<CommandOutcome>,
     pub passed: bool,
+}
+
+impl VerifyReport {
+    /// The first command that did not pass, or `None` when the gate passed. The
+    /// gate stops at the first failure, so this is the command that decided the
+    /// gate — and the only one whose failure *kind* matters.
+    pub fn first_failure(&self) -> Option<&CommandOutcome> {
+        self.commands.iter().find(|c| !c.passed())
+    }
+
+    /// Whether the gate's deciding failure is a spawn failure: the command never
+    /// ran (program not found / empty argv), so re-running the SAME argv can never
+    /// make it pass. The runner short-circuits such a gate — skipping the issue
+    /// without spending the repair budget on a structural failure it can already
+    /// see is non-repairable (#182).
+    pub fn spawn_failed(&self) -> bool {
+        self.first_failure().is_some_and(|c| c.spawn_failed)
+    }
 }
 
 /// Run `commands` as direct argv in `repo_root`, sequentially, stopping at the
@@ -193,6 +262,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
             argv: argv.to_vec(),
             exit_code: None,
             timed_out: false,
+            spawn_failed: true,
             output_tail: "empty command".into(),
             secs: 0.0,
         };
@@ -220,6 +290,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
                 argv: argv.to_vec(),
                 exit_code: None,
                 timed_out: false,
+                spawn_failed: true,
                 output_tail: format!("failed to spawn `{program}`: {e}"),
                 secs: 0.0,
             };
@@ -291,6 +362,9 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         argv: argv.to_vec(),
         exit_code: status.and_then(|s| s.code()),
         timed_out,
+        // The program spawned — whatever happened next (a non-zero exit, a
+        // timeout kill, a signal) is a real run, not a spawn failure.
+        spawn_failed: false,
         output_tail: tail(&combined),
         secs: started.elapsed().as_secs_f64(),
     }
@@ -417,6 +491,28 @@ fn tail(s: &str) -> String {
     }
 }
 
+/// One command's status line in an honesty artifact: a ✓/✗ marker, the argv, and
+/// why it failed. A spawn failure ("could not spawn — program not found") reads
+/// distinctly from a signal kill ("exit killed"), a timeout, and a non-zero exit,
+/// so every artifact names an unrunnable command the same way (#182). Shared by
+/// [`comment`], [`repair_brief`], and [`spawn_failure_comment`].
+fn status_line(cmd: &CommandOutcome) -> String {
+    let line = cmd.argv.join(" ");
+    if cmd.passed() {
+        format!("\u{2713} {line}    exit 0")
+    } else if cmd.spawn_failed {
+        format!("\u{2717} {line}    could not spawn — program not found")
+    } else if cmd.timed_out {
+        format!("\u{2717} {line}    timed out")
+    } else {
+        let code = cmd
+            .exit_code
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "killed".into());
+        format!("\u{2717} {line}    exit {code}")
+    }
+}
+
 /// Render the honesty artifact comment for a gate run (ADR-0011): one line per
 /// command with a ✓/✗ marker and its exit code, plus a tail of the failing
 /// command's output. This is what the operator reads in the morning to see why an
@@ -432,18 +528,8 @@ pub fn comment(stamp: &str, report: &VerifyReport) -> String {
 
     out.push_str("```\n");
     for cmd in &report.commands {
-        let line = cmd.argv.join(" ");
-        if cmd.passed() {
-            out.push_str(&format!("\u{2713} {line}    exit 0\n"));
-        } else if cmd.timed_out {
-            out.push_str(&format!("\u{2717} {line}    timed out\n"));
-        } else {
-            let code = cmd
-                .exit_code
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "killed".into());
-            out.push_str(&format!("\u{2717} {line}    exit {code}\n"));
-        }
+        out.push_str(&status_line(cmd));
+        out.push('\n');
     }
     out.push_str("```\n");
 
@@ -455,6 +541,56 @@ pub fn comment(stamp: &str, report: &VerifyReport) -> String {
                 out.push_str(&last.output_tail);
                 out.push_str("\n```\n\n</details>\n");
             }
+        }
+    }
+
+    out
+}
+
+/// Render the honesty artifact comment for a malformed `## Verify` section (#181):
+/// the gate never ran — no command output to show — so the comment carries the
+/// parse error naming the offending line(s) and states plainly that the issue was
+/// left open. Mirrors [`comment`]'s framing so the operator reads one consistent
+/// artifact shape whether the gate failed or could not run at all.
+pub fn invalid_comment(stamp: &str, error: &str) -> String {
+    format!(
+        "## Verify (Ralphy run {stamp})\n\n\
+         Verify gate could NOT run — the plan's `## Verify` section is malformed, \
+         so no command was executed and the issue was left open.\n\n{error}\n"
+    )
+}
+
+/// Render the honesty artifact for a gate whose command could not be spawned
+/// (#182): the program was never found (a typo'd binary, a missing tool), so it
+/// never ran. This is a spec/spawn problem, not a test failure — re-running the
+/// SAME argv can never make it pass — so the runner skips the issue immediately
+/// WITHOUT spending the repair budget. The comment says so, lists the commands
+/// (marking the one that could not spawn), and shows the spawn error detail. Same
+/// heading shape as [`comment`] so the operator reads one consistent artifact.
+pub fn spawn_failure_comment(stamp: &str, report: &VerifyReport) -> String {
+    let mut out = format!("## Verify (Ralphy run {stamp})\n\n");
+    out.push_str(
+        "Verify gate could NOT run — a `## Verify` command could not be spawned \
+         (program not found), so it never executed. This is a spec/spawn problem, \
+         not a test failure: re-running the same command cannot fix it, so the issue \
+         was left open WITHOUT spending any repair attempts. Fix the command name in \
+         the plan's `## Verify` section (or install the missing tool).\n\n",
+    );
+
+    out.push_str("```\n");
+    for cmd in &report.commands {
+        out.push_str(&status_line(cmd));
+        out.push('\n');
+    }
+    out.push_str("```\n");
+
+    // Show the spawn error detail (which program, what OS error) from the
+    // command that could not run — the actionable part for the plan author.
+    if let Some(failure) = report.first_failure() {
+        if !failure.output_tail.is_empty() {
+            out.push_str("\n<details><summary>Spawn error</summary>\n\n```\n");
+            out.push_str(&failure.output_tail);
+            out.push_str("\n```\n\n</details>\n");
         }
     }
 
@@ -483,18 +619,8 @@ pub fn repair_brief(stamp: &str, report: &VerifyReport, done_signal: &str) -> St
 
     out.push_str("Gate commands (✗ marks where it failed):\n\n```\n");
     for cmd in &report.commands {
-        let line = cmd.argv.join(" ");
-        if cmd.passed() {
-            out.push_str(&format!("\u{2713} {line}    exit 0\n"));
-        } else if cmd.timed_out {
-            out.push_str(&format!("\u{2717} {line}    timed out\n"));
-        } else {
-            let code = cmd
-                .exit_code
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "killed".into());
-            out.push_str(&format!("\u{2717} {line}    exit {code}\n"));
-        }
+        out.push_str(&status_line(cmd));
+        out.push('\n');
     }
     out.push_str("```\n");
 

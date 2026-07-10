@@ -994,6 +994,63 @@ mod tests {
     }
 
     #[test]
+    fn verify_spawn_failure_short_circuits_without_repairs() {
+        let root = test_dir("verify-spawn");
+        let cfg = test_cfg(&root, "ut-vspawn");
+        let repo = FakeRepo::new();
+        let sink = FakeLedger::default();
+        // A `## Verify` command that can't be spawned (a typo'd binary). The
+        // MiniAgent is scripted with a SINGLE Done: if the gate handed the failure
+        // back for repair, the repair execute would pop a second scripted outcome
+        // and panic — so a clean run proves no repair attempt was ever spent (#182).
+        let agent = MiniAgent::new(vec![Outcome::Done])
+            .with_extra("## Verify\n\ndefinitely-not-a-real-binary-xyz\n");
+        let tracker = FakeTracker::default();
+
+        let report = run_queue_with(
+            &cfg,
+            &[test_issue(8)],
+            &agent,
+            &tracker,
+            &FakeClock,
+            &repo,
+            &sink,
+        )
+        .expect("run succeeds");
+
+        // Skipped, not stopped: the issue is left open, the run marches on, and
+        // nothing was closed on a gate that could not run.
+        assert!(report.stop.is_none(), "a spawn failure skips, never stops");
+        assert_eq!(report.worked.len(), 1);
+        assert!(!report.worked[0].closed);
+        assert!(tracker.closes.borrow().is_empty());
+
+        // No repair attempt was spent: only plan + the initial execute ran. A
+        // repair phase would appear here (and would have panicked the MiniAgent).
+        let phases: Vec<String> = sink
+            .records
+            .borrow()
+            .iter()
+            .map(|r| r.phase.clone())
+            .collect();
+        assert_eq!(
+            phases,
+            vec!["plan", "execute"],
+            "no repair phase — the budget was untouched"
+        );
+
+        // The honesty artifact names it a spec/spawn problem, not a test failure.
+        assert!(tracker.comments.borrow().iter().any(|(n, b)| *n == 8
+            && b.contains("## Verify (Ralphy run ut-vspawn)")
+            && b.contains("spec/spawn problem")));
+
+        // The run finished cleanly, so the repo returned to the original branch.
+        assert_eq!(repo.checkouts.borrow().last().unwrap(), "force:main");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn protocol_bounce_repairs_then_closes() {
         let root = test_dir("protocol");
         let cfg = test_cfg(&root, "ut-protocol");

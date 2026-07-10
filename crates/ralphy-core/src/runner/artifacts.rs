@@ -86,6 +86,20 @@ pub(crate) fn verify_failure_summary(report: &verify::VerifyReport) -> String {
     }
 }
 
+/// A one-line digest for a gate that could not spawn its deciding command (#182):
+/// name the command and that it could not be spawned, so the skip line reads as a
+/// spec/spawn problem (a typo'd binary, a missing tool) — never a test failure the
+/// agent could have repaired.
+pub(crate) fn verify_spawn_failure_summary(report: &verify::VerifyReport) -> String {
+    match report.first_failure() {
+        Some(c) => format!(
+            "`{}` could not be spawned (program not found)",
+            c.argv.join(" ")
+        ),
+        None => "verify gate command could not be spawned".into(),
+    }
+}
+
 /// Refresh `.ralphy/handoffs.md` for the issue about to be planned: collect the
 /// handoff comments its closed blockers left, render them, and write the file —
 /// or remove a stale one when there is nothing to feed. Best-effort: a fetch
