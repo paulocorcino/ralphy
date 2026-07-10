@@ -29,6 +29,12 @@ pub enum VerifySpec {
     None,
     /// One or more commands, each tokenized into an argv.
     Commands(Vec<Vec<String>>),
+    /// The section is present but malformed — a markdown checklist masquerading as
+    /// commands (a leading `-`/`*`/`+` bullet, `- [ ]` checkbox, or backtick-wrapped
+    /// command). Tokenizing it would spawn a bogus `-`/`` ` `` program and the real
+    /// command would never run (#181), so it resolves to this arm instead. Carries a
+    /// clear, operator-facing error naming the malformed line(s).
+    Invalid(String),
     /// Section absent or present-but-empty — a planner omission. The runner falls
     /// back to `settings.json` `verify.command`.
     Unspecified,
@@ -39,7 +45,10 @@ pub enum VerifySpec {
 /// One command per line, code-fence-tolerant (` ``` ` lines are ignored), with
 /// quote-aware argv tokenization so `sh -c "cargo test"` survives as three
 /// tokens. A lone `none` line (case-insensitive) is the explicit opt-out. An
-/// absent or whitespace-only section is [`VerifySpec::Unspecified`].
+/// absent or whitespace-only section is [`VerifySpec::Unspecified`]. A section
+/// authored as a markdown checklist (a leading bullet, checkbox, or
+/// backtick-wrapped command) is rejected as [`VerifySpec::Invalid`] rather than
+/// tokenized into a bogus `-`/`` ` `` program that spawn-fails (#181).
 pub fn parse_verify(md: &str) -> VerifySpec {
     let heading_re = Regex::new(r"(?im)^##\s+Verify\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(md, &heading_re);
@@ -59,6 +68,19 @@ pub fn parse_verify(md: &str) -> VerifySpec {
         return VerifySpec::None;
     }
 
+    // Reject a markdown checklist before tokenizing: a leading `-`/`*`/`+` bullet,
+    // `- [ ]` checkbox, or backtick-wrapped command would tokenize its marker into a
+    // bogus `-`/`` ` `` `argv[0]` the gate spawn-fails on, so the real command never
+    // runs (#181). Enforces ADR-0011's "one bare command per line" contract.
+    let malformed: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| looks_like_markdown_list(l))
+        .collect();
+    if !malformed.is_empty() {
+        return VerifySpec::Invalid(malformed_error(&malformed));
+    }
+
     let commands: Vec<Vec<String>> = lines
         .iter()
         .map(|l| tokenize(l))
@@ -70,6 +92,30 @@ pub fn parse_verify(md: &str) -> VerifySpec {
     } else {
         VerifySpec::Commands(commands)
     }
+}
+
+/// Whether a `## Verify` line is markdown prose rather than a bare command: a
+/// leading list bullet (`-`/`*`/`+`), which also covers a `- [ ]` checkbox, or a
+/// leading backtick (a backtick-wrapped command). A real command never begins with
+/// any of these — `argv[0]` is a program name, not a flag or a fence — so their
+/// presence is an unambiguous authoring mistake (#181).
+fn looks_like_markdown_list(line: &str) -> bool {
+    matches!(line.chars().next(), Some('-' | '*' | '+' | '`'))
+}
+
+/// The operator-facing error for a malformed `## Verify` section: state the
+/// contract and quote each offending line so the plan author can find and fix it.
+fn malformed_error(malformed: &[&str]) -> String {
+    let offenders = malformed
+        .iter()
+        .map(|l| format!("`{l}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "`## Verify` must be one bare command per line, not a markdown list \
+         (no `-`/`*`/`+` bullet, `- [ ]` checkbox, or backtick-wrapped command). \
+         Offending line(s): {offenders}"
+    )
 }
 
 /// Split one command line into argv tokens, honoring single and double quotes so
@@ -459,6 +505,19 @@ pub fn comment(stamp: &str, report: &VerifyReport) -> String {
     }
 
     out
+}
+
+/// Render the honesty artifact comment for a malformed `## Verify` section (#181):
+/// the gate never ran — no command output to show — so the comment carries the
+/// parse error naming the offending line(s) and states plainly that the issue was
+/// left open. Mirrors [`comment`]'s framing so the operator reads one consistent
+/// artifact shape whether the gate failed or could not run at all.
+pub fn invalid_comment(stamp: &str, error: &str) -> String {
+    format!(
+        "## Verify (Ralphy run {stamp})\n\n\
+         Verify gate could NOT run — the plan's `## Verify` section is malformed, \
+         so no command was executed and the issue was left open.\n\n{error}\n"
+    )
 }
 
 /// Render the repair brief the runner drops in the workspace after a failed gate

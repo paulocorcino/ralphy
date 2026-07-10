@@ -69,6 +69,75 @@ fn parse_single_quotes_too() {
     );
 }
 
+/// A bulleted checklist is rejected at parse time: the leading `-` would tokenize
+/// into a bogus `-` program the gate spawn-fails on, so the real command never runs
+/// (#181). The error must name the offending line so the plan author can fix it.
+#[test]
+fn parse_bulleted_list_is_invalid() {
+    let md = "## Verify\n\n- cargo test\n- cargo fmt --check\n";
+    match parse_verify(md) {
+        VerifySpec::Invalid(error) => {
+            assert!(
+                error.contains("one bare command per line"),
+                "names the contract: {error}"
+            );
+            assert!(error.contains("`- cargo test`"), "names offender: {error}");
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+/// A `- [ ]` checkbox line is markdown prose, not a command — rejected (#181).
+#[test]
+fn parse_checkbox_list_is_invalid() {
+    let md = "## Verify\n\n- [ ] cargo test\n";
+    match parse_verify(md) {
+        VerifySpec::Invalid(error) => {
+            assert!(
+                error.contains("`- [ ] cargo test`"),
+                "names offender: {error}"
+            );
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+/// The real-world trigger (#181): a backtick-wrapped command with trailing prose.
+/// The leading `-` and the backticks both mark it as markdown, not a command.
+#[test]
+fn parse_backtick_prose_is_invalid() {
+    let md = "## Verify\n\n- `npm run lint` — passou, sem warnings\n";
+    assert!(matches!(parse_verify(md), VerifySpec::Invalid(_)));
+}
+
+/// A `*`/`+` bullet or a bare backtick-wrapped command (no leading bullet) is also
+/// markdown prose — the leading backtick alone marks it (#181).
+#[test]
+fn parse_star_bullet_and_bare_backtick_are_invalid() {
+    assert!(matches!(
+        parse_verify("## Verify\n\n* cargo test\n"),
+        VerifySpec::Invalid(_)
+    ));
+    assert!(matches!(
+        parse_verify("## Verify\n\n`cargo test`\n"),
+        VerifySpec::Invalid(_)
+    ));
+}
+
+/// The clean bare-command path is untouched: a section that is one bare command
+/// per line still parses to `VerifySpec::Commands` (regression guard for #181).
+#[test]
+fn parse_bare_commands_unaffected() {
+    let md = "## Verify\n\ncargo test\ncargo fmt --check\n";
+    assert_eq!(
+        parse_verify(md),
+        VerifySpec::Commands(vec![
+            vec!["cargo".into(), "test".into()],
+            vec!["cargo".into(), "fmt".into(), "--check".into()],
+        ])
+    );
+}
+
 #[test]
 fn parse_stops_at_next_heading() {
     let md = "## Verify\ncargo test\n## Other\ncargo bogus\n";
@@ -187,6 +256,20 @@ fn comment_marks_pass_and_fail() {
     assert!(c.contains("\u{2713} cargo fmt"));
     assert!(c.contains("\u{2717} cargo test    exit 101"));
     assert!(c.contains("panicked at assertion"), "failing tail shown");
+}
+
+/// The honesty artifact for a malformed section (#181): same heading shape as the
+/// gate-run comment, says plainly that nothing ran and the issue stayed open, and
+/// carries the parse error naming the offender.
+#[test]
+fn invalid_comment_names_error_and_open_issue() {
+    let error = "`## Verify` must be one bare command per line, not a markdown list. \
+                 Offending line(s): `- cargo test`";
+    let c = invalid_comment("stamp-7", error);
+    assert!(c.contains("## Verify (Ralphy run stamp-7)"));
+    assert!(c.contains("could NOT run"));
+    assert!(c.contains("left open"));
+    assert!(c.contains("`- cargo test`"), "carries the parse error");
 }
 
 /// The Windows batch-routing decision, isolated from PATH resolution: a resolved

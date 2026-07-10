@@ -125,6 +125,10 @@ enum VerifyPlan {
     /// The plan opted out with `## Verify: none` — close on the self-report, no
     /// warning (the absence of verification was a deliberate, visible decision).
     OptedOut,
+    /// The plan's `## Verify` section is malformed (a markdown checklist instead of
+    /// bare commands, #181). Carries the operator-facing error; the gate cannot run,
+    /// so the issue is left open with this summary rather than closed silently.
+    Invalid(String),
     /// Nothing resolved — no plan section and no settings fallback. Close on the
     /// agent's self-report but warn loudly (no-silent-caps: a missing gate is
     /// always a visible decision, never a silent hole).
@@ -139,6 +143,7 @@ fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyP
     match verify::parse_verify(plan_md) {
         VerifySpec::Commands(commands) => VerifyPlan::Run(commands),
         VerifySpec::None => VerifyPlan::OptedOut,
+        VerifySpec::Invalid(error) => VerifyPlan::Invalid(error),
         VerifySpec::Unspecified => match fallback {
             Some(commands) if !commands.is_empty() => VerifyPlan::Run(commands.clone()),
             _ => VerifyPlan::NoGate,
@@ -780,6 +785,26 @@ pub(crate) fn verify_gate(
                 "verify gate skipped — plan declared `## Verify: none`"
             );
             GateDecision::Green
+        }
+        VerifyPlan::Invalid(error) => {
+            // A malformed `## Verify` section cannot be run: leave the issue open
+            // with the parse error as its summary rather than close it silently
+            // (the gate never saw anything pass). The plan author fixes the section.
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                %error,
+                "verify gate — malformed `## Verify` section, issue not closed"
+            );
+            // Honesty artifact on the issue itself, like every other gate outcome
+            // (#181). Best-effort — a comment failure must not crash the run.
+            if let Err(e) = cx.tracker.comment(
+                issue.number,
+                &verify::invalid_comment(&cx.cfg.stamp, &error),
+            ) {
+                warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+            }
+            GateDecision::Failed(error)
         }
         VerifyPlan::NoGate if cx.cfg.require_verify_gate => {
             // consumed by the telegram notifier / presenter — keep stable
