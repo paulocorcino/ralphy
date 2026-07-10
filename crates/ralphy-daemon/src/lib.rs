@@ -19,6 +19,7 @@ use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
 
 pub mod auth;
+pub mod autostart;
 pub mod dispatch;
 pub mod identity;
 pub mod protocol;
