@@ -6,6 +6,7 @@
 //! by importing the core).
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use axum::http::{header, StatusCode, Uri};
@@ -15,6 +16,7 @@ use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
 
 pub mod identity;
+pub mod registry;
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
 pub const DEFAULT_PORT: u16 = 7257;
@@ -76,7 +78,11 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     if id.is_none() {
         tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
     }
-    axum::serve(listener, router(id))
+    // Resolve the registry path once and hand it to the router. `/api/repos`
+    // reads it FRESH from disk on each request, so the resident daemon sees
+    // writes made by separate `ralphy run` processes (ADR-0032).
+    let registry_path = registry::repos_toml_path()?;
+    axum::serve(listener, router(id, registry_path))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("serving the daemon listener")?;
@@ -88,10 +94,47 @@ async fn serve(addr: SocketAddr) -> Result<()> {
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
 /// at runtime (the embedded HTML bakes in no identity).
-pub fn router(identity: Option<identity::Identity>) -> Router {
+pub fn router(identity: Option<identity::Identity>, registry_path: PathBuf) -> Router {
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
+        .route(
+            "/api/repos",
+            get({
+                let p = registry_path.clone();
+                move || repos_route(p)
+            }),
+        )
         .fallback(ui_asset)
+}
+
+/// `GET /api/repos`: the registered repos as JSON, each with its live
+/// reachability. Read FRESH from disk on every request so a separate `ralphy
+/// run` process's write shows up on the next page refresh. A load error yields
+/// an empty list with `200` (logged) rather than failing the page.
+async fn repos_route(registry_path: PathBuf) -> Response {
+    #[derive(serde::Serialize)]
+    struct RepoView {
+        slug: String,
+        path: String,
+        reachable: bool,
+    }
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry; serving empty list");
+            registry::RegistryStore::default()
+        }
+    };
+    let views: Vec<RepoView> = store
+        .repos
+        .iter()
+        .map(|(slug, entry)| RepoView {
+            slug: slug.clone(),
+            path: entry.path.clone(),
+            reachable: entry.reachable(),
+        })
+        .collect();
+    Json(views).into_response()
 }
 
 /// `GET /api/identity`: the loaded identity's `name`/`avatar` as JSON, or 404
@@ -157,7 +200,7 @@ mod tests {
     use tower::ServiceExt;
 
     async fn get(path: &str) -> Response {
-        router(None)
+        router(None, PathBuf::from("does-not-exist"))
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap()
@@ -192,7 +235,7 @@ mod tests {
             name: "anvil".into(),
             avatar: "🐙".into(),
         };
-        let resp = router(Some(id))
+        let resp = router(Some(id), PathBuf::from("does-not-exist"))
             .oneshot(
                 Request::builder()
                     .uri("/api/identity")
@@ -213,7 +256,7 @@ mod tests {
             "body must carry the avatar; got: {body}"
         );
 
-        let resp = router(None)
+        let resp = router(None, PathBuf::from("does-not-exist"))
             .oneshot(
                 Request::builder()
                     .uri("/api/identity")
@@ -223,6 +266,43 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn api_repos_reports_reachability() {
+        // Write a temp repos.toml with one existing-dir entry (reachable) and one
+        // bogus-path entry (unreachable), then read it back through the route.
+        let dir = tempfile::tempdir().unwrap();
+        let registry_path = dir.path().join("repos.toml");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/here", &dir.path().to_string_lossy());
+        store.upsert("owner/gone", "/no/such/path/exists");
+        registry::save_to(&store, &registry_path).unwrap();
+
+        let resp = router(None, registry_path)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/repos")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("owner/here") && body.contains("owner/gone"),
+            "body must carry both slugs; got: {body}"
+        );
+        assert!(
+            body.contains("\"reachable\":true"),
+            "the existing-dir entry must be reachable; got: {body}"
+        );
+        assert!(
+            body.contains("\"reachable\":false"),
+            "the bogus-path entry must be unreachable; got: {body}"
+        );
     }
 
     #[test]
