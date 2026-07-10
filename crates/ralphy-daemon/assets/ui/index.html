@@ -100,7 +100,8 @@
     <main>
       <h1 id="ident">ralphy daemon</h1>
       <p id="status">connecting…</p>
-      <p>The resident process is up. Workbench sessions arrive in a later slice.</p>
+      <p>The resident process is up. Launch a session, or reattach a live one.</p>
+      <ul id="sessions"></ul>
       <ul id="repos"></ul>
     </main>
     <div id="terminal"></div>
@@ -244,13 +245,16 @@
         };
       }
 
-      // Launch a session: hand the viewport to xterm.js, open the session
-      // WebSocket, and wire keystrokes/resize out and PTY bytes in. xterm.js is
-      // the terminal emulator, so it answers the child's startup cursor-position
-      // request itself — the daemon stays a transparent byte pipe.
-      function launch(slug, agent) {
+      // Launch or reattach a session: hand the viewport to xterm.js, open the
+      // session WebSocket, and wire keystrokes/resize out and PTY bytes in.
+      // xterm.js is the terminal emulator, so it answers the child's startup
+      // cursor-position request itself — the daemon stays a transparent byte pipe.
+      // `opts` is either {repo, agent} (a NEW launch) or {id[, takeover]} (a
+      // REATTACH to a daemon-owned session, #166).
+      function launch(opts) {
         document.querySelector("main").style.display = "none";
         const host = document.getElementById("terminal");
+        host.innerHTML = "";
         host.classList.add("active");
         const term = new Terminal({ convertEol: false });
         const fit = new FitAddon.FitAddon();
@@ -258,16 +262,22 @@
         term.open(host);
         fit.fit();
 
-        const url =
-          "ws://" +
-          location.host +
-          "/ws/session?repo=" +
-          encodeURIComponent(slug) +
-          "&agent=" +
-          encodeURIComponent(agent);
+        let url = "ws://" + location.host + "/ws/session?";
+        if (opts.id != null) {
+          url += "id=" + encodeURIComponent(opts.id);
+          if (opts.takeover) url += "&takeover=1";
+        } else {
+          url +=
+            "repo=" +
+            encodeURIComponent(opts.repo) +
+            "&agent=" +
+            encodeURIComponent(opts.agent);
+        }
         const ws = new WebSocket(url);
         ws.binaryType = "arraybuffer";
+        let opened = false;
         ws.onopen = () => {
+          opened = true;
           fit.fit();
           ws.send(encodeResize(term.rows, term.cols));
         };
@@ -283,8 +293,69 @@
             ws.send(encodeResize(rows, cols));
         });
         window.addEventListener("resize", () => fit.fit());
-        ws.onclose = () => term.write("\r\n[session closed]\r\n");
+        ws.onclose = () => {
+          // A reattach that closes WITHOUT ever opening is the server refusing a
+          // busy session (409 before the upgrade — a single writer is attached).
+          // Offer an explicit takeover, once.
+          if (opts.id != null && !opened && !opts.takeover) {
+            if (confirm("session busy — take over?")) {
+              term.dispose();
+              launch({ id: opts.id, takeover: true });
+              return;
+            }
+          }
+          term.write("\r\n[session closed]\r\n");
+        };
       }
+
+      // Live sessions (the tmux model, #166): each survives its browser tab, so a
+      // reconnecting client lists them, reattaches (replaying scrollback then
+      // streaming live), or closes them. Refreshed on load and after a close.
+      function fmtStarted(secs) {
+        try {
+          return new Date(secs * 1000).toLocaleTimeString();
+        } catch {
+          return "";
+        }
+      }
+
+      function refreshSessions() {
+        fetch("/api/sessions")
+          .then((r) => (r.ok ? r.json() : []))
+          .then((sessions) => {
+            const ul = document.getElementById("sessions");
+            ul.innerHTML = "";
+            for (const s of sessions) {
+              const li = document.createElement("li");
+              const label = document.createElement("span");
+              label.className = "slug";
+              label.textContent = `${s.repo} · ${s.agent}`;
+              const when = document.createElement("span");
+              when.className = "path";
+              when.textContent = `started ${fmtStarted(s.started_at)}`;
+              const controls = document.createElement("span");
+              controls.className = "agents";
+              const reattach = document.createElement("button");
+              reattach.className = "tile";
+              reattach.textContent = "reattach";
+              reattach.onclick = () => launch({ id: s.id });
+              const close = document.createElement("button");
+              close.className = "tile";
+              close.textContent = "close";
+              close.onclick = () => {
+                fetch(`/api/sessions/close?id=${s.id}`, { method: "POST" }).then(
+                  refreshSessions,
+                );
+              };
+              controls.append(reattach, close);
+              li.append(label, when, controls);
+              ul.append(li);
+            }
+          })
+          .catch(() => {});
+      }
+
+      refreshSessions();
 
       // Registered repos, refreshed from disk on each load. Unreachable repos
       // (a moved/deleted path) are greyed but retained — never dropped. Each
@@ -312,7 +383,7 @@
               const btn = document.createElement("button");
               btn.className = "tile";
               btn.textContent = agent;
-              btn.onclick = () => launch(repo.slug, agent);
+              btn.onclick = () => launch({ repo: repo.slug, agent });
               agents.append(btn);
             }
             // Per-repo remote-trigger buttons + an inline status span reporting
