@@ -11,6 +11,7 @@ use tracing::warn;
 
 mod cli;
 mod config;
+mod daemon;
 mod delivery;
 mod events;
 mod guard;
@@ -53,6 +54,7 @@ fn main() -> Result<()> {
         Command::Triage(args) => triage::run(&args),
         Command::Issues(args) => issues::issues_cmd(args),
         Command::Schedule(cmd) => schedule::run(cmd),
+        Command::Daemon(args) => daemon::run(&args),
     }
 }
 

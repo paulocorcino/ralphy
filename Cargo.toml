@@ -10,6 +10,7 @@ members = [
     "crates/ralphy-pty",
     "crates/ralphy-adapter-support",
     "crates/ralphy-proc-util",
+    "crates/ralphy-daemon",
 ]
 
 [workspace.package]
@@ -46,6 +47,7 @@ ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
 ralphy-adapter-support = { path = "crates/ralphy-adapter-support" }
 ralphy-proc-util = { path = "crates/ralphy-proc-util" }
+ralphy-daemon = { path = "crates/ralphy-daemon" }
 
 [profile.release]
 strip = true

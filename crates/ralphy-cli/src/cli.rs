@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::BranchMode;
 
-use crate::{config, init, install, issues, models, schedule, telegram, triage, usage};
+use crate::{config, daemon, init, install, issues, models, schedule, telegram, triage, usage};
 
 #[derive(Parser)]
 #[command(
@@ -73,6 +73,9 @@ pub(crate) enum Command {
     /// run` on a cadence (Windows Task Scheduler or cron) — ADR-0026.
     #[command(subcommand)]
     Schedule(schedule::ScheduleCommand),
+    /// Run the resident daemon in the foreground: a localhost HTTP listener
+    /// serving the embedded workbench UI (docs/adr/0032). Ctrl+C stops it.
+    Daemon(daemon::DaemonArgs),
 }
 
 #[derive(Subcommand)]
@@ -344,6 +347,22 @@ mod tests {
                 .any(|s| s.get_name() == "schedule"),
             "the `schedule` subcommand must be registered in the CLI"
         );
+    }
+
+    #[test]
+    fn daemon_subcommand_parses_with_default_and_explicit_port() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.port, ralphy_daemon::DEFAULT_PORT);
+
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "--port", "9000"])
+            .expect("daemon --port must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.port, 9000);
     }
 
     #[test]

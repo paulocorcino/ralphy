@@ -32,6 +32,7 @@ ralphy-agent-codex.workspace = true
 ralphy-agent-kimi.workspace = true
 ralphy-agent-opencode.workspace = true
 ralphy-adapter-support.workspace = true
+ralphy-daemon.workspace = true
 
 # Liveness probe for the run.lock presence lock (runlock.rs): one syscall per
 # platform, so two tiny cfg-split crates instead of the sysinfo tree.
