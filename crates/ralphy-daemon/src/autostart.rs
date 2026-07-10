@@ -51,7 +51,7 @@ pub const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
 /// A fully-resolved autostart registration: the program to invoke and where it
 /// appends its log. Platform-neutral; the renderers below turn it into a
-/// `schtasks` argv or a systemd unit body.
+/// `reg` argv or a systemd unit body.
 #[derive(Debug, Clone)]
 pub struct AutostartSpec {
     pub program: PathBuf,
