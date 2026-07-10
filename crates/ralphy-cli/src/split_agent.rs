@@ -67,6 +67,7 @@ mod tests {
                 recommended_model: None,
                 path: ws.plan_path(),
                 usage: Usage::default(),
+                session_id: None,
             })
         }
 
@@ -75,6 +76,7 @@ mod tests {
             Ok(Execution {
                 outcome: Outcome::Done,
                 usage: Usage::default(),
+                session_id: None,
             })
         }
     }
@@ -135,6 +137,7 @@ mod tests {
             recommended_model: None,
             path: ws.plan_path(),
             usage: Usage::default(),
+            session_id: None,
         };
 
         agent.execute(&plan, &ws).unwrap();
