@@ -82,6 +82,36 @@
         margin-left: 0.6rem;
         font-size: 0.8rem;
       }
+      /* The free console (issue #167): a deliberate escape hatch, styled apart
+         from the curated repo×agent tiles so it never reads as the default
+         click path. */
+      button.console-tile {
+        font: inherit;
+        font-size: 0.8rem;
+        color: #e8d9a8;
+        background: #2b2410;
+        border: 1px solid #5a4a1e;
+        border-radius: 4px;
+        padding: 0.1rem 0.5rem;
+        cursor: pointer;
+        margin-left: 0.6rem;
+      }
+      button.console-tile:hover {
+        background: #3a3016;
+      }
+      #console-escape-hatch {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px dashed #3a332d;
+      }
+      #console-escape-hatch h2 {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #9b948a;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin: 0 0 0.4rem;
+      }
       /* The live terminal takes over the viewport once a session launches. */
       #terminal {
         position: fixed;
@@ -103,6 +133,10 @@
       <p>The resident process is up. Launch a session, or reattach a live one.</p>
       <ul id="sessions"></ul>
       <ul id="repos"></ul>
+      <section id="console-escape-hatch">
+        <h2>escape hatch — free console</h2>
+        <button class="console-tile" id="home-console-btn">open a free console (home dir)</button>
+      </section>
     </main>
     <div id="terminal"></div>
     <script src="vendor/xterm.js"></script>
@@ -249,8 +283,9 @@
       // session WebSocket, and wire keystrokes/resize out and PTY bytes in.
       // xterm.js is the terminal emulator, so it answers the child's startup
       // cursor-position request itself — the daemon stays a transparent byte pipe.
-      // `opts` is either {repo, agent} (a NEW launch) or {id[, takeover]} (a
-      // REATTACH to a daemon-owned session, #166).
+      // `opts` is one of: {repo, agent} (a NEW agent launch), {console: true[,
+      // repo]} (a NEW free-console launch, #167 — home dir when `repo` is
+      // absent), or {id[, takeover]} (a REATTACH to a daemon-owned session, #166).
       function launch(opts) {
         document.querySelector("main").style.display = "none";
         const host = document.getElementById("terminal");
@@ -266,6 +301,9 @@
         if (opts.id != null) {
           url += "id=" + encodeURIComponent(opts.id);
           if (opts.takeover) url += "&takeover=1";
+        } else if (opts.console) {
+          url += "console=1";
+          if (opts.repo) url += "&repo=" + encodeURIComponent(opts.repo);
         } else {
           url +=
             "repo=" +
@@ -357,6 +395,12 @@
 
       refreshSessions();
 
+      // The standalone escape-hatch launcher (#167): a free console at the
+      // daemon's home directory, no repo chosen.
+      document
+        .getElementById("home-console-btn")
+        .addEventListener("click", () => launch({ console: true }));
+
       // Registered repos, refreshed from disk on each load. Unreachable repos
       // (a moved/deleted path) are greyed but retained — never dropped. Each
       // reachable repo gets a launch tile per agent (zero typing to launch).
@@ -386,6 +430,13 @@
               btn.onclick = () => launch({ repo: repo.slug, agent });
               agents.append(btn);
             }
+            // A per-repo free console (#167): visually distinct from the
+            // curated agent tiles above, and never the default click path.
+            const consoleBtn = document.createElement("button");
+            consoleBtn.className = "console-tile";
+            consoleBtn.textContent = "console";
+            consoleBtn.onclick = () => launch({ console: true, repo: repo.slug });
+            agents.append(consoleBtn);
             // Per-repo remote-trigger buttons + an inline status span reporting
             // the spawn ack then the child's exit (or an error).
             const commands = document.createElement("span");
