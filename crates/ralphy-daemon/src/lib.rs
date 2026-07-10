@@ -820,13 +820,18 @@ async fn command_ws(
                     None => output_open = false,
                 }
             }
-            // The run exited: flush ALL remaining output before the exit frame.
+            // The run exited: flush remaining output before the exit frame.
             // `recv().await` (not `try_recv`) closes the trailing-output race —
-            // `wait` can return before the drain thread has forwarded the child's
-            // final bytes; the child's exit closed every write end, so the drain
-            // hits EOF and drops `tx`, ending this loop deterministically.
+            // `wait` returns before the drain thread has forwarded the child's
+            // final bytes. But the drain reaches EOF (and drops `tx`) only when
+            // EVERY pipe write end is closed, and a `ralphy run` DESCENDANT can
+            // inherit the merged fds and outlive the primary child — so we bound
+            // the wait for each next chunk: an idle gap (or channel close) ends
+            // the flush and we always emit `exited`, never wedging the handler.
             joined = &mut wait => {
-                while let Some(chunk) = rx.recv().await {
+                while let Ok(Some(chunk)) =
+                    tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
+                {
                     send_command(
                         &mut socket,
                         id,
