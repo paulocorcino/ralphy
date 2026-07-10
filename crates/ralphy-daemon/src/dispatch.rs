@@ -18,6 +18,15 @@
 //! it has no kill and dropping it does not kill (std semantics). The `/ws/command`
 //! handler's teardown arms enforce the rest.
 //!
+//! OUTPUT STREAMING (issue #180): the child's stdout+stderr are merged into a
+//! single OS pipe ([`Child::take_output`]) so the `/ws/command` handler can
+//! stream the live output into the UI log pane. This does NOT weaken teardown:
+//! a Rust child ignores `SIGPIPE`, so after a daemon crash the child's writes to
+//! the now-broken pipe return a non-fatal `EPIPE`/Windows write error rather than
+//! killing it. The obligation this adds is on the DAEMON, not the child: a live
+//! daemon MUST drain the reader to EOF continuously, so the pipe never fills and
+//! stalls the child. The handler's detached drain task discharges that.
+//!
 //! The [`Spawner`]/[`Child`] seam keeps this module unit-testable: a `FakeSpawner`
 //! records the argv and returns a preset exit code without touching the OS.
 
@@ -73,6 +82,11 @@ pub trait Child: Send {
     fn pid(&self) -> Option<u32>;
     /// Block until the child exits; yield its exit code.
     fn wait(&mut self) -> Result<Option<i32>>;
+    /// Take the child's merged stdout+stderr reader, ONCE. Yields `Some(reader)`
+    /// on the first call and `None` thereafter — the caller owns the reader and
+    /// must drain it to EOF (see the module OUTPUT STREAMING note). `wait` no
+    /// longer owns the reader, so the drain and the wait can proceed concurrently.
+    fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>>;
 }
 
 /// Spawns a blessed child. The seam that keeps [`dispatch`] testable: production
@@ -129,14 +143,19 @@ impl Spawner for ProcessSpawner {
     ) -> Result<Box<dyn Child>> {
         use std::process::{Command, Stdio};
         let mut cmd = Command::new(program);
+        // Merge stdout+stderr into ONE pipe so the handler streams a single
+        // ordered log (issue #180). The child ignores SIGPIPE, so a daemon crash
+        // that drops the reader gives it a non-fatal broken-pipe write, never a
+        // kill — but a LIVE daemon must drain the reader to EOF or the pipe fills
+        // and stalls the child (the detached drain task in `command_ws` does).
+        let (reader, writer) = std::io::pipe()?;
+        let writer2 = writer.try_clone()?;
         cmd.args(args)
             .current_dir(cwd)
-            // Null stdio: a dispatched run keeps its own console-less lifecycle
-            // and CloudEvents sink; null prevents pipe-fill blocking and keeps the
-            // daemon's own logs clean.
+            // Null stdin (no console); piped stdout+stderr for live streaming.
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stdout(Stdio::from(writer))
+            .stderr(Stdio::from(writer2));
         // Cross-process wire contract read by ralphy-cli `emitter::DAEMON_ID_ENV`:
         // identity, NOT a credential. Set per-child here (the dispatch path) rather
         // than process-globally, so console/session children — which never get this
@@ -161,21 +180,32 @@ impl Spawner for ProcessSpawner {
             cmd.creation_flags(0x0000_0208);
         }
         let child = cmd.spawn()?;
-        Ok(Box::new(ProcessChild(child)))
+        Ok(Box::new(ProcessChild {
+            child,
+            output: Some(reader),
+        }))
     }
 }
 
 /// A real OS child. `wait`-only: no kill method exists, and dropping it does not
-/// kill (std semantics) — the dispatched run outlives the daemon.
-struct ProcessChild(std::process::Child);
+/// kill (std semantics) — the dispatched run outlives the daemon. `output` holds
+/// the merged stdout+stderr reader until [`Child::take_output`] hands it off.
+struct ProcessChild {
+    child: std::process::Child,
+    output: Option<std::io::PipeReader>,
+}
 
 impl Child for ProcessChild {
     fn pid(&self) -> Option<u32> {
-        Some(self.0.id())
+        Some(self.child.id())
     }
 
     fn wait(&mut self) -> Result<Option<i32>> {
-        Ok(self.0.wait()?.code())
+        Ok(self.child.wait()?.code())
+    }
+
+    fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
+        self.output.take().map(|r| Box::new(r) as _)
     }
 }
 
@@ -194,8 +224,10 @@ mod tests {
         calls: Mutex<Vec<SpawnCall>>,
     }
 
+    #[derive(Default)]
     struct FakeChild {
         code: i32,
+        output: Option<Vec<u8>>,
     }
 
     impl Child for FakeChild {
@@ -204,6 +236,11 @@ mod tests {
         }
         fn wait(&mut self) -> Result<Option<i32>> {
             Ok(Some(self.code))
+        }
+        fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
+            self.output
+                .take()
+                .map(|b| Box::new(std::io::Cursor::new(b)) as _)
         }
     }
 
@@ -221,8 +258,28 @@ mod tests {
                 cwd.to_path_buf(),
                 daemon_id.map(str::to_owned),
             ));
-            Ok(Box::new(FakeChild { code: 7 }))
+            Ok(Box::new(FakeChild {
+                code: 7,
+                output: None,
+            }))
         }
+    }
+
+    #[test]
+    fn take_output_yields_child_bytes() {
+        use std::io::Read;
+        let mut child = FakeChild {
+            code: 0,
+            output: Some(b"hello-output".to_vec()),
+        };
+        let mut reader = child.take_output().expect("first take yields the reader");
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).unwrap();
+        assert_eq!(buf, b"hello-output", "the reader yields the child's bytes");
+        assert!(
+            child.take_output().is_none(),
+            "a second take_output yields None"
+        );
     }
 
     #[test]
