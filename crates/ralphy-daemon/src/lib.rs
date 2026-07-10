@@ -18,6 +18,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
 
+pub mod dispatch;
 pub mod identity;
 pub mod protocol;
 pub mod registry;
