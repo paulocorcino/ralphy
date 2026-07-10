@@ -293,15 +293,18 @@ async fn ws_presence_loop(
     }
 }
 
-/// Query for `/ws/session`. A NEW launch carries `repo` + `agent`; a REATTACH
-/// carries `id` (and optional `takeover=1`). All optional so one struct serves
-/// both shapes; the handler dispatches on `id`.
+/// Query for `/ws/session`. A NEW agent launch carries `repo` + `agent`; a NEW
+/// free-console launch (issue #167) carries `console=1` and an optional `repo`
+/// (home dir when absent); a REATTACH carries `id` (and optional `takeover=1`).
+/// All optional so one struct serves every shape; the handler dispatches on
+/// `id` first, then `console`.
 #[derive(serde::Deserialize)]
 struct SessionQuery {
     repo: Option<String>,
     agent: Option<String>,
     id: Option<u64>,
     takeover: Option<u32>,
+    console: Option<u32>,
 }
 
 /// Query for `POST /api/sessions/close`: which session to end.
@@ -310,15 +313,19 @@ struct CloseQuery {
     id: u64,
 }
 
-/// `GET /ws/session`: two shapes over one route.
+/// `GET /ws/session`: three shapes over one route.
 ///
 /// - `?id=<id>[&takeover=1]` — REATTACH to a daemon-owned session. `attach`
 ///   returns `404` for an unknown id and `409` for a busy one (a single writer is
 ///   attached and `takeover` was not set) — both BEFORE the upgrade, so a refusal
 ///   is an HTTP status the browser can read, not a silently-dropped socket.
-/// - `?repo=<slug>&agent=<claude|codex|opencode>` — NEW launch. Rejects (`400`)
-///   an unknown agent, an unreadable registry, or an unregistered slug before
-///   upgrading; a spawn failure is `500`.
+/// - `?repo=<slug>&agent=<claude|codex|opencode>` — NEW agent launch. Rejects
+///   (`400`) an unknown agent, an unreadable registry, or an unregistered slug
+///   before upgrading; a spawn failure is `500`.
+/// - `?console=1[&repo=<slug>]` — NEW free-console launch (issue #167): the
+///   platform shell in the chosen repo's dir, or the home dir when `repo` is
+///   absent. Rejects (`400`) an unreadable registry or an unregistered slug;
+///   a spawn failure is `500`.
 async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(query): Query<SessionQuery>,
@@ -334,6 +341,40 @@ async fn session_ws_upgrade(
             }
             Err(session::AttachError::Busy) => {
                 (StatusCode::CONFLICT, "session busy").into_response()
+            }
+        };
+    }
+    if query.console == Some(1) {
+        let repo_path = match query.repo.as_deref() {
+            Some(slug) => {
+                let store = match registry::load_from(&registry_path) {
+                    Ok(store) => store,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to load repo registry for a console session");
+                        return (StatusCode::BAD_REQUEST, "repo registry unreadable")
+                            .into_response();
+                    }
+                };
+                let Some(entry) = store.entry(slug) else {
+                    return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
+                };
+                Some(PathBuf::from(&entry.path))
+            }
+            None => None,
+        };
+        let cwd = session::console_cwd(repo_path);
+        let spec = session::console_spec(cwd, 24, 80);
+        let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
+        return match sessions.spawn_attached(
+            repo_label,
+            "console".to_string(),
+            "console".to_string(),
+            spec,
+        ) {
+            Ok((id, att)) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to spawn a console session");
+                (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session").into_response()
             }
         };
     }
@@ -357,7 +398,12 @@ async fn session_ws_upgrade(
         return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
     };
     let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
-    match sessions.spawn_attached(repo.to_string(), agent_str.to_string(), spec) {
+    match sessions.spawn_attached(
+        repo.to_string(),
+        agent_str.to_string(),
+        "agent".to_string(),
+        spec,
+    ) {
         Ok((id, att)) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");

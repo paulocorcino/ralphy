@@ -90,6 +90,49 @@ pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec
     }
 }
 
+/// The platform's default interactive shell for the free console (issue #167).
+/// Windows prefers `pwsh` (PowerShell 7), falling back to Windows PowerShell,
+/// then `%ComSpec%`/`cmd.exe` (both always present, unlike `pwsh`) so the
+/// console stays usable on a box without PowerShell 7. Off Windows, the user's
+/// login shell (`$SHELL`), falling back to `/bin/sh`.
+fn default_shell() -> OsString {
+    if cfg!(windows) {
+        ralphy_proc_util::locate_program("pwsh")
+            .or_else(|| ralphy_proc_util::locate_program("powershell"))
+            .map(Into::into)
+            .or_else(|| std::env::var_os("ComSpec"))
+            .unwrap_or_else(|| "cmd.exe".into())
+    } else {
+        std::env::var_os("SHELL").unwrap_or_else(|| "/bin/sh".into())
+    }
+}
+
+/// The free console's working directory: the chosen repo's path, or the home
+/// directory when none was chosen, or `.` when even the home directory cannot
+/// be resolved (so a console still spawns rather than failing outright).
+pub fn console_cwd(repo_path: Option<PathBuf>) -> PathBuf {
+    repo_path
+        .or_else(ralphy_proc_util::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Build the launch spec for the free console (issue #167): the platform shell
+/// in `cwd`, no args — unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a stand-in
+/// program instead (the same test seam [`spec_for`] uses).
+pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
+    let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
+        Some(over) => over,
+        None => default_shell(),
+    };
+    SessionSpec {
+        program,
+        args: Vec::new(),
+        cwd,
+        rows,
+        cols,
+    }
+}
+
 /// A live workbench session: the PTY child, the reader thread draining its
 /// output, and the async channel that thread feeds. Drop or [`close`] it to tear
 /// the child tree down.
@@ -228,8 +271,8 @@ const SCROLLBACK_CAP_BYTES: usize = 256 * 1024;
 const BROADCAST_CAP: usize = 1024;
 
 /// The identity of a live session as the UI lists it: which repo and agent, what
-/// kind, and when it started. `kind` is the constant `"agent"` for the curated
-/// launcher (the free-console kind is a separate slice, PRD #157 story 11).
+/// kind, and when it started. `kind` is `"agent"` for the curated launcher and
+/// `"console"` for the free console (issue #167, PRD #157 story 11).
 #[derive(Clone, serde::Serialize)]
 pub struct SessionInfo {
     pub id: SessionId,
@@ -299,6 +342,7 @@ impl SessionManager {
         self: &Arc<Self>,
         repo: String,
         agent: String,
+        kind: String,
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -309,7 +353,7 @@ impl SessionManager {
             id,
             repo,
             agent,
-            kind: "agent".to_string(),
+            kind,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -551,6 +595,20 @@ mod tests {
             ring.iter().copied().collect::<Vec<u8>>(),
             b"456789AB".to_vec(),
             "the FRONT is dropped and the tail retained"
+        );
+    }
+
+    #[test]
+    fn console_cwd_prefers_chosen_repo_then_falls_back_to_home() {
+        assert_eq!(
+            console_cwd(Some(PathBuf::from("x"))),
+            PathBuf::from("x"),
+            "a chosen repo path wins over the home-dir default"
+        );
+        assert_eq!(
+            console_cwd(None),
+            ralphy_proc_util::home_dir().unwrap_or_else(|| PathBuf::from(".")),
+            "no chosen repo falls back to the home directory (or '.' if unresolvable)"
         );
     }
 }
