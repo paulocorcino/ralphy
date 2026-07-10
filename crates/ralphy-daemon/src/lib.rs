@@ -373,7 +373,11 @@ async fn command_ws(
         .await;
         return;
     };
-    let slug = cmd.payload.get("repo").and_then(|v| v.as_str()).unwrap_or("");
+    let slug = cmd
+        .payload
+        .get("repo")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
         Err(e) => {
