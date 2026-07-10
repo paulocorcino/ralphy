@@ -18,3 +18,5 @@ __pycache__/
 *.pyc
 docs/old/exec.md
 docs/old/plan-charter.md
+
+docs/oracle
