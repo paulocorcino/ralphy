@@ -713,6 +713,7 @@ mod tests {
                     model: Some("fake-model".into()),
                     ..Usage::default()
                 },
+                session_id: None,
             })
         }
 
@@ -735,6 +736,7 @@ mod tests {
                     model: Some("fake-model".into()),
                     ..Usage::default()
                 },
+                session_id: None,
             })
         }
     }

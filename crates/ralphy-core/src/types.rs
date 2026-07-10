@@ -89,6 +89,9 @@ impl Usage {
 pub struct Execution {
     pub outcome: Outcome,
     pub usage: Usage,
+    /// The vendor session identity for the run-vs-scan dedup key (ADR-0033 §5);
+    /// `None` when no vendor run occurred (resumed plan).
+    pub session_id: Option<String>,
 }
 
 /// A planning artifact produced by an [`crate::Agent`] for one issue. The plan
@@ -108,6 +111,9 @@ pub struct Plan {
     /// The token usage the planning phase consumed, filled by the adapter
     /// (ADR-0008 D4). `Usage::default()` when the adapter does not capture it.
     pub usage: Usage,
+    /// The vendor session identity for the run-vs-scan dedup key (ADR-0033 §5);
+    /// `None` when no vendor run occurred (resumed plan).
+    pub session_id: Option<String>,
 }
 
 impl Plan {

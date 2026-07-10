@@ -191,6 +191,7 @@ impl Agent for ScriptedAgent {
             recommended_model: None,
             path,
             usage: Usage::default(),
+            session_id: None,
         })
     }
 
@@ -229,6 +230,7 @@ impl Agent for ScriptedAgent {
         Ok(Execution {
             outcome,
             usage: Usage::default(),
+            session_id: None,
         })
     }
 }

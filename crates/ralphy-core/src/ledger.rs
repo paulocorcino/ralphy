@@ -37,6 +37,11 @@ pub struct LedgerRecord {
     pub agent: String,
     /// The model the price table resolves on (D8), or `unknown`.
     pub model: String,
+    /// The vendor session identity for the run-vs-scan dedup key (ADR-0033 §5).
+    /// Absent on old lines and resumed-plan phases; skipped when `None` so the
+    /// on-disk shape stays additive and append-only safe.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// The terminal status of this phase (D6).
     pub outcome: String,
     /// The four-way token split, written WITHOUT `Usage::model`.
@@ -121,6 +126,9 @@ pub struct UsageRow {
     pub phase: String,
     pub agent: String,
     pub model: String,
+    /// The vendor session identity (ADR-0033 §5); `None` on old lines that
+    /// predate the field.
+    pub session_id: Option<String>,
     pub outcome: String,
     /// The four numeric token fields (never carries `model` — the row's `model` is
     /// the top-level field).
@@ -168,6 +176,10 @@ pub fn read_rows(jsonl: &str) -> Vec<UsageRow> {
             phase: s("phase"),
             agent: s("agent"),
             model: s("model"),
+            session_id: value
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             outcome: s("outcome"),
             tokens: Usage {
                 input: tok("input"),
@@ -255,6 +267,7 @@ mod tests {
             phase: "execute".into(),
             agent: "agent-a".into(),
             model: "model-a".into(),
+            session_id: Some("sess-x".into()),
             outcome: "done".into(),
             tokens: Usage {
                 input: 100,
@@ -279,6 +292,7 @@ mod tests {
             "phase",
             "agent",
             "model",
+            "session_id",
             "outcome",
             "tokens",
             "ts",
@@ -336,6 +350,20 @@ mod tests {
         assert_eq!(rows[1].phase, "execute");
         assert_eq!(rows[1].agent, "agent-b");
         assert_eq!(rows[1].tokens.output, 2);
+    }
+
+    #[test]
+    fn read_rows_parses_mixed_session_id() {
+        // One OLD line lacking `session_id`, one NEW line carrying it — both must
+        // parse into a `UsageRow`, neither skipped (additive, append-only safe).
+        let jsonl = "\
+{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\"m\",\"outcome\":\"ok\",\"tokens\":{\"input\":1,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
+{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-b\",\"outcome\":\"done\",\"tokens\":{\"input\":2,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
+";
+        let rows = read_rows(jsonl);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].session_id.is_none(), "old line has no session_id");
+        assert_eq!(rows[1].session_id.as_deref(), Some("sess-b"));
     }
 
     #[test]
