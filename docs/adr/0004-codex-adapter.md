@@ -52,6 +52,9 @@ compatibility-shaped code this design avoids.
 
 ## D3 — Complexity routing is reasoning effort, not a model swap
 
+_Superseded by the Amendment (2026-07-10) below: the Codex 5.6 family inverted
+this decision's premise, and the tier now routes to a model._
+
 Claude routes complexity by swapping models (`sonnet`/`opus`). Codex scales by a
 **reasoning-effort** knob on one coding model, so the Codex adapter expresses the
 same routing as effort: a fixed, operator-parametrizable model (defaulting to the
@@ -139,3 +142,85 @@ explicit absolute instant.
 - A defensive option remains open: `.env_remove("OPENAI_API_KEY")` on the Codex
   child `Command` to prevent an inherited key from silently switching the run to
   API billing.
+
+## Amendment (2026-07-10): the Codex 5.6 family inverts D3 — the tier routes to a model
+
+D3's premise — "Codex scales by a reasoning-effort knob on **one** coding model" —
+no longer describes the vendor. Codex 5.6 ships a three-model family positioned by
+weight, the same shape ADR-0002 codified for Claude: `gpt-5.6-sol` (flagship, for
+complex/high-value work), `gpt-5.6-terra` (balanced everyday model), `gpt-5.6-luna`
+(fast/affordable, for clear and repetitive work). The old fallback `gpt-5-codex` is
+gone from the catalog entirely (even `gpt-5.3-codex` is deprecated for ChatGPT-auth
+accounts), so `DEFAULT_CODEX_MODEL = "gpt-5-codex"` became a known-invalid
+configuration. Routing complexity by model swap is now the vendor's **own** shape;
+D3's rejection of it as "imitation of the wrong vendor's shape" is inverted, not
+merely renamed.
+
+**Decision.** The plan's neutral `## Execution model: low|medium|high` tier now
+routes to a **model**, and `model_reasoning_effort` is held at the vendor default
+(`medium`) instead of being derived from the tier:
+
+| role                   | Claude (ADR-0002) | Codex                     |
+| ---------------------- | ----------------- | ------------------------- |
+| planning               | opus              | `gpt-5.6-sol`, effort medium |
+| execute, tier `high`   | opus              | `gpt-5.6-sol`             |
+| execute, tier `medium` | sonnet            | `gpt-5.6-terra`           |
+| execute, tier `low`    | sonnet            | `gpt-5.6-luna`            |
+
+- **One axis, not two.** The tier chooses the model; effort stays a single global
+  operator override (opt-up to `high`/`xhigh`, the latter model-dependent), never
+  part of the tier mapping. A free tier→(model, effort) matrix was rejected as
+  configuration surface without evidence. This also supersedes D3's "planning
+  always runs at `high`": planning runs on Sol at default effort, aligning with
+  the vendor's own "start at the default effort, raise only when needed" guidance.
+- **Luna on tier `low` is the vendor's positioning**, and matches the tier's own
+  definition ("mechanical, localized, well-understood"). Routing `low` to Terra
+  was considered as the conservative alternative and stays available as the
+  fallback if live runs show Luna under-delivering.
+- **Resolution order is unchanged**: `--exec-model` override → the user's
+  `config.toml` `model` → the routing table above. Where no tier exists (the
+  one-shot `init` sessions, ADR-0012/0025), the adapter instead **omits `-m`**
+  when neither override nor config names a model, delegating to Codex's own
+  recommended default.
+- **Pinned `gpt-5.6-*` names re-create the obsolescence this amendment fixes.**
+  The mitigation is structural, not nominal: the family lives in a single
+  constants table in the adapter's command module, so a generation change is a
+  three-line diff plus a new amendment — never a hunt across the repo. The
+  ChatGPT-subscription cost of heavier routes shows up as faster usage-limit
+  burn (`Outcome::Limit`), not billing, so mis-calibration is observable in runs.
+- `## Execution model:` and `Plan.recommended_model` keep their names: the tier
+  now selects a model in fact, so both are honest again and no public-API rename
+  is needed.
+- The deferred Consequences item on `$reviewer` vs `.codex/agents/reviewer.toml`
+  is updated: custom agents in `.codex/agents/*.toml` are now officially
+  supported, but the choice **remains deferred** pending a measured benefit over
+  the default subagent + auto-discovered skill. (`.agents/skills` remains the
+  skills surface — D4 is unaffected.)
+
+**Live validation (2026-07-10, codex-cli 0.144.1).** A headless spike ran each
+route through the exact invocation this ADR fixes (`codex exec -C <neutral dir>
+--skip-git-repo-check -m <model> -s read-only -`, prompt on stdin):
+
+- `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` all complete with exit 0; the
+  banner (`model: …`) confirms the requested model is what runs.
+- `gpt-5-codex` fails hard: HTTP 400 `"The 'gpt-5-codex' model is not supported
+  when using Codex with a ChatGPT account"`, preceded by a "model metadata not
+  found" warning — the old `DEFAULT_CODEX_MODEL` is confirmed dead, not merely
+  deprecated.
+- With `-m` omitted, the CLI resolves the user's `config.toml` `model` first;
+  with no config at all its built-in default is `gpt-5.6-sol` (resolved
+  client-side, visible in the banner). Omitting `-m` on the init one-shots is
+  therefore safe.
+- `-c model_reasoning_effort="medium"` takes effect and **overrides** the
+  user's `config.toml` effort (observed against a config pinning `low`).
+  Pinning `medium` per invocation is thus a deliberate override of the
+  operator's interactive default, not a complement to it.
+- The invocation surface is unchanged in 0.144.1: `exec`, `-C`, `-m`, `-c`,
+  `-s`, `-o`, `-i`, stdin `-`, `--skip-git-repo-check` all behave as D2 fixed.
+- Two observational cautions: the model's *self-reported* slug is unreliable
+  (Sol answered "gpt-5.3-codex"; Terra/Luna answered "gpt-5") — the banner and
+  the session rollout are the only truth about which model ran (the rollout is
+  what ADR-0008 usage tracking already reads, so `usage` stays faithful). And
+  `config.toml` now has a native `plan_mode_reasoning_effort` key; it governs
+  Codex's own interactive plan mode, not ralphy's plan charter (which is an
+  ordinary `exec` run), so it does not interact with this routing.

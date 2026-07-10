@@ -164,17 +164,36 @@ cross-platform rule), and each daemon scans **its own environment's** stores
 only — the WSL daemon reports WSL usage (ADR-0032 §3, "WSL is just Linux"),
 never across the boundary.
 
-## Pre-implementation spike (three local checks, ~1h)
+## Pre-implementation spike (three local checks — executed 2026-07-10)
 
-1. **Codex interactive rollouts carry `token_count`** on the operator's
-   current build (openai/codex#9660 was the old counter-signal; tokscale's
-   parser suggests it is resolved — verify against a fresh interactive
-   session's rollout).
-2. **Kimi store format matches** the `docs/oracle/` snapshot
-   (`wire.jsonl` with `StatusUpdate` / `usage.record` lines) on the
-   installed kimi build.
-3. **Effective Claude `cleanupPeriodDays`** on the operator's machines —
-   fixes the real retention slack the platform's poll cadence must beat.
+1. **Codex interactive rollouts carry `token_count`: confirmed.** A
+   same-day interactive session (`originator: "codex-tui"`, `source: "cli"`,
+   cli 0.144.1, cwd `C:\Dev\ralphy`) held 17 `token_count` events with both
+   `total_token_usage` and `last_token_usage` fully populated — the
+   openai/codex#9660 gap is resolved on the current build. The events also
+   carry the `rate_limits` block ADR-0008 D5 flagged as a future
+   subscription-usage signal. `~/.codex/archived_sessions/` does not exist
+   on this machine; the scanner treats it as optional.
+2. **Kimi store format matches the oracle snapshot: confirmed** for the
+   legacy store — 73 of 93 `wire.jsonl` files carry `token_usage`, and the
+   newest (protocol 1.10, same-day) has the exact `StatusUpdate` shape the
+   ported parser expects (`input_other` / `output` / `input_cache_read` /
+   `input_cache_creation`, `message_id` for dedup). Two findings the
+   snapshot's parser does not cover: (a) sessions nest
+   **`subagents/<id>/wire.jsonl`** files that carry their own usage — the
+   scanner must glob `**/wire.jsonl` and attribute subagent files to the
+   *parent* session directory, not the subagent id; (b) the local
+   `~/.kimi-code` store holds only config-stub sessions (no `usage.record`
+   lines yet), so the kimi-code branch of the parser ships
+   ported-but-locally-unvalidated — flagged for verification on first real
+   kimi-code usage. Zero-usage files (interrupted/config-only sessions, ~20%
+   of the store) parse to empty and cost nothing.
+3. **Effective Claude retention: the default** — `cleanupPeriodDays` is not
+   set in `~/.claude/settings.json`, so the ~30-day default applies.
+   Recommendation adopted: pin it explicitly (e.g. `90`) on each machine
+   before the platform's ingestion exists, so the first-ever poll can
+   backfill months of interactive history instead of one; once the platform
+   polls steadily, the value only needs to beat its worst outage window.
 
 ## Consequences
 

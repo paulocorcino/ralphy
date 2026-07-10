@@ -246,28 +246,33 @@ questions.
 _Avoid_: gateway/proxy (a raw passthrough was rejected — ADR-0032 §6), GitHub
 query (the contract is forge-neutral), graph (nothing is graph-shaped here).
 
+**Session store**:
+A vendor CLI's own on-disk record of its sessions — Claude's transcript
+JSONL, Codex's rollout JSONL, OpenCode's database, Kimi's wire files. It
+records **every** session, run-driven or human-driven, which is why both the
+ledger harvest (ADR-0008) and the **usage scan** (ADR-0033) read it instead
+of intercepting traffic. It is the vendor's property, not a durable archive:
+each vendor prunes on its own schedule.
+_Avoid_: transcript (Claude's store only), logs, history.
+
 **Interactive usage**:
-Token consumption from agent CLI sessions the operator drives directly
-(terminal or IDE — Claude Code, Codex, OpenCode, Kimi), outside any **run**.
-It is recorded by the vendors' own on-disk session stores, **never written to
-the ledger** (the ledger stays the runs' record, ADR-0008), and surfaces only
-through the **usage scan**. Durability is the **control plane**'s: it polls
-and persists, upserting by session id; history older than the vendor's own
-retention window is accepted loss (ADR-0033).
+Token consumption from agent CLI sessions a human drives directly (terminal
+or IDE), outside any **run** — **workbench** and **supervised sessions**
+included. It exists only in the **session stores** and surfaces only through
+the **usage scan**; it is never written to the ledger (the ledger stays the
+runs' record), and history older than a vendor's retention is accepted loss —
+the **control plane** polls and persists (ADR-0033).
 _Avoid_: invisible tokens, proxy capture (rejected twice — ADR-0008 D1 and
 ADR-0033 §1), manual usage.
 
 **Usage scan**:
-The stateless read-time scan that answers the daemon's read-only `usage`
-verb (same request/response family as **Forge query**, though it never
-touches the forge): parse the four vendors' session stores from scratch,
-deduplicate in memory, exclude sessions whose `session_id` a run already
-recorded in the ledger, attribute projects via the **repo registry**, and
-respond — run records and **interactive usage** records, tokens only, USD
-never (read-time pricing, ADR-0008 D8). No background job, no watermarks, no
-state: it executes only when asked, so it is on by default and costs nothing
-idle. Each daemon scans only its own environment's stores (WSL scans WSL).
-Lives in `crates/ralphy-usage-scan` (ADR-0033).
+The stateless read-time scan answering the daemon's read-only `usage` verb
+(the **Forge query** family's request/response shape, though it never touches
+the forge): re-parse the **session stores** from scratch, exclude the
+sessions the ledger already attributes to runs, and answer with run and
+**interactive usage** records — tokens only, never USD. No background job, no
+stored state: it executes only when asked, and each daemon scans only its own
+environment's stores. Lives in `ralphy-usage-scan` (ADR-0033).
 _Avoid_: harvester (nothing runs in the background), proxy, telemetry
 (nothing is pushed), collector.
 
@@ -409,6 +414,14 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   Ralphys", **Emitter identity**) and the set of enrolled daemons — resolved:
   **Fleet** canonically means the enrolled daemons; the event-stream sense is
   descriptive prose, keyed by `runid`, never by fleet membership.
+- "Session" names three species and one forbidden sense: the **vendor's**
+  session (a CLI conversation recorded in its **session store**, identified
+  by the vendor's session id — the unit the **usage scan** counts and the
+  ledger's `session_id` dedup key), the daemon-hosted **Workbench session**,
+  and the **Supervised session** (live oversight of a run). The loose sense
+  "session = one issue's execution within a run" stays forbidden (**Run**),
+  and run events stay keyed by `runid`, never by a vendor session id
+  (**Emitter identity**).
 - "GitHub" vs "forge": **Forge** is the neutral term — already used
   informally (ADR-0021: "the forge does: the GitHub assignee"), canonized
   2026-07-09 for contracts that must not bake in a vendor dialect

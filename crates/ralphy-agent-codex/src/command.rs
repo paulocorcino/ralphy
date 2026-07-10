@@ -1,16 +1,29 @@
 //! Building the `codex exec` invocation and resolving the model/effort it runs
 //! with, from the operator override, the user's Codex config, and the
-//! planner's neutral complexity tier.
+//! planner's neutral complexity tier (routed to a model — ADR-0004, Amendment
+//! 2026-07-10).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// The last-resort Codex model, used only when neither `--exec-model` nor the
-/// user's Codex config names one. ChatGPT-auth accounts reject `gpt-5-codex`, so
-/// in practice the config-derived model (see [`codex_config_model`]) is what most
-/// subscription runs use; this constant is the floor for an unconfigured setup.
-pub(crate) const DEFAULT_CODEX_MODEL: &str = "gpt-5-codex";
+// The Codex model family, positioned by weight (ADR-0004, Amendment 2026-07-10).
+// This table is the SINGLE place the pinned `gpt-5.6-*` generation lives: when
+// the vendor ships the next family, the migration is these constants plus a new
+// ADR amendment — never a hunt across the repo.
+/// Flagship model: planning and tier-`high` execution (the `opus` analogue).
+pub(crate) const CODEX_MODEL_SOL: &str = "gpt-5.6-sol";
+/// Balanced everyday model: tier-`medium` execution (the `sonnet` analogue).
+pub(crate) const CODEX_MODEL_TERRA: &str = "gpt-5.6-terra";
+/// Fast/affordable model: tier-`low` (mechanical, well-understood) execution.
+pub(crate) const CODEX_MODEL_LUNA: &str = "gpt-5.6-luna";
+
+/// The fixed `model_reasoning_effort` every routed run pins. The tier chooses the
+/// MODEL; effort stays at the vendor default so routing is one axis, not a
+/// tier×effort matrix. Note this `-c` override supersedes the user's own
+/// `config.toml` effort (observed live, ADR-0004 Amendment) — deliberate, so runs
+/// don't inherit an interactive-use setting.
+pub(crate) const DEFAULT_CODEX_EFFORT: &str = "medium";
 
 /// Locate the Codex config file: `$CODEX_HOME/config.toml` when `CODEX_HOME` is
 /// set (matching Codex's own resolution), else `<home>/.codex/config.toml`
@@ -25,7 +38,7 @@ fn codex_config_path() -> Option<PathBuf> {
 
 /// The top-level `model = "..."` from the user's Codex config, if present and
 /// readable. `None` when the file or the key is absent — the caller then falls
-/// back to [`DEFAULT_CODEX_MODEL`].
+/// back to the tier-routed family table (or omits `-m` on init one-shots).
 pub(crate) fn codex_config_model() -> Option<String> {
     let text = fs::read_to_string(codex_config_path()?).ok()?;
     parse_codex_config_model(&text)
@@ -60,13 +73,14 @@ pub(crate) fn recommended_tier(md: &str) -> Option<String> {
     re.captures(md).map(|c| c[1].to_lowercase())
 }
 
-/// Map a neutral complexity tier to the `model_reasoning_effort` value. Unknown or
-/// absent tiers default to `medium` — the single tier→effort point (ADR-0004 D3).
-pub(crate) fn tier_to_effort(tier: Option<&str>) -> &'static str {
+/// Map a neutral complexity tier to the executor MODEL. Unknown or absent tiers
+/// default to Terra — the single tier→model point (ADR-0004, Amendment
+/// 2026-07-10), the mirror of the Claude adapter's tier↔model point (ADR-0002).
+pub(crate) fn tier_to_model(tier: Option<&str>) -> &'static str {
     match tier {
-        Some("low") => "low",
-        Some("high") => "high",
-        _ => "medium",
+        Some("low") => CODEX_MODEL_LUNA,
+        Some("high") => CODEX_MODEL_SOL,
+        _ => CODEX_MODEL_TERRA,
     }
 }
 
@@ -109,13 +123,12 @@ pub(crate) fn build_codex_command(
 // ── init one-shot sessions (ADR-0012 stages 2 & 8) ──────────────────────────
 
 /// Resolve the Codex model for a one-shot `init` session: the explicit override,
-/// then the user's Codex config model, then [`DEFAULT_CODEX_MODEL`]. Mirrors
-/// `CodexAgent::resolve_model` without needing an agent instance.
-pub(crate) fn resolve_init_model(model: Option<&str>) -> String {
-    model
-        .map(str::to_string)
-        .or_else(codex_config_model)
-        .unwrap_or_else(|| DEFAULT_CODEX_MODEL.to_string())
+/// then the user's Codex config model. `None` when neither names one — the init
+/// command then OMITS `-m`, delegating to Codex's own recommended default
+/// (ADR-0004, Amendment 2026-07-10). Init sessions have no plan tier to route,
+/// which is why they delegate where plan/execute fall back to the family table.
+pub(crate) fn resolve_init_model(model: Option<&str>) -> Option<String> {
+    model.map(str::to_string).or_else(codex_config_model)
 }
 
 /// Build the headless `codex exec` command for an `init` one-shot session. Unlike
@@ -135,7 +148,7 @@ pub(crate) fn resolve_init_model(model: Option<&str>) -> String {
 /// `-` stdin marker (`-i`/`--image` is an option that must precede the `-`
 /// positional prompt, per `codex exec --help`, ADR-0025 §4).
 pub(crate) fn build_codex_init_command(
-    model: &str,
+    model: Option<&str>,
     effort: &str,
     cwd: &Path,
     images: &[PathBuf],
@@ -144,10 +157,13 @@ pub(crate) fn build_codex_init_command(
     cmd.arg("exec")
         .arg("-C")
         .arg(cwd)
-        .arg("--skip-git-repo-check")
-        .arg("-m")
-        .arg(model)
-        .arg("-c")
+        .arg("--skip-git-repo-check");
+    // `-m` only when the operator/config named a model; otherwise delegate to
+    // Codex's own recommended default (ADR-0004, Amendment 2026-07-10).
+    if let Some(m) = model {
+        cmd.arg("-m").arg(m);
+    }
+    cmd.arg("-c")
         .arg(format!("model_reasoning_effort=\"{effort}\""))
         .arg("-s")
         .arg("danger-full-access");
@@ -171,7 +187,7 @@ mod tests {
     #[test]
     fn build_command_argv_and_env() {
         let cmd = build_codex_command(
-            "gpt-5-codex",
+            CODEX_MODEL_SOL,
             "high",
             Path::new("/repo"),
             Path::new("/repo/.ralphy/codex-last.txt"),
@@ -207,7 +223,7 @@ mod tests {
     #[test]
     fn build_command_threads_the_effort_through() {
         let cmd = build_codex_command(
-            "gpt-5-codex",
+            CODEX_MODEL_TERRA,
             "low",
             Path::new("/repo"),
             Path::new("/repo/out.txt"),
@@ -224,7 +240,7 @@ mod tests {
     #[test]
     fn build_init_command_attaches_images() {
         let cmd = build_codex_init_command(
-            "gpt-5-codex",
+            Some(CODEX_MODEL_TERRA),
             "medium",
             Path::new("/repo"),
             &[PathBuf::from("/t/a.png")],
@@ -241,7 +257,8 @@ mod tests {
 
     #[test]
     fn build_init_command_no_images_emits_no_i_flag() {
-        let cmd = build_codex_init_command("gpt-5-codex", "medium", Path::new("/repo"), &[]);
+        let cmd =
+            build_codex_init_command(Some(CODEX_MODEL_TERRA), "medium", Path::new("/repo"), &[]);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -250,6 +267,26 @@ mod tests {
             !args.iter().any(|a| a == "-i"),
             "no -i for empty slice: {args:?}"
         );
+    }
+
+    #[test]
+    fn build_init_command_without_model_omits_m_flag() {
+        // No override and no config model → delegate to Codex's recommended
+        // default by omitting `-m` entirely (ADR-0004, Amendment 2026-07-10).
+        let cmd = build_codex_init_command(None, "medium", Path::new("/repo"), &[]);
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !args.iter().any(|a| a == "-m"),
+            "no -m when no model is named: {args:?}"
+        );
+        // The rest of the invocation is unchanged.
+        assert!(args.iter().any(|a| a == "--skip-git-repo-check"));
+        assert!(args
+            .iter()
+            .any(|a| a == "model_reasoning_effort=\"medium\""));
     }
 
     // ── recommended_tier ────────────────────────────────────────────────────
@@ -277,16 +314,16 @@ mod tests {
         assert_eq!(recommended_tier("## Execution model: opus"), None);
     }
 
-    // ── tier_to_effort ──────────────────────────────────────────────────────
+    // ── tier_to_model ───────────────────────────────────────────────────────
 
     #[test]
-    fn tier_to_effort_maps_and_defaults() {
-        assert_eq!(tier_to_effort(Some("low")), "low");
-        assert_eq!(tier_to_effort(Some("medium")), "medium");
-        assert_eq!(tier_to_effort(Some("high")), "high");
-        // Absent or unrecognized tiers default to medium.
-        assert_eq!(tier_to_effort(None), "medium");
-        assert_eq!(tier_to_effort(Some("bogus")), "medium");
+    fn tier_to_model_maps_and_defaults() {
+        assert_eq!(tier_to_model(Some("low")), CODEX_MODEL_LUNA);
+        assert_eq!(tier_to_model(Some("medium")), CODEX_MODEL_TERRA);
+        assert_eq!(tier_to_model(Some("high")), CODEX_MODEL_SOL);
+        // Absent or unrecognized tiers default to the everyday model.
+        assert_eq!(tier_to_model(None), CODEX_MODEL_TERRA);
+        assert_eq!(tier_to_model(Some("bogus")), CODEX_MODEL_TERRA);
     }
 
     // ── parse_codex_config_model ────────────────────────────────────────────

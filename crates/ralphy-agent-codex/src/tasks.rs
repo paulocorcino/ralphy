@@ -37,8 +37,11 @@ pub fn diagnose_repo(
     let effort = effort.unwrap_or("medium");
     let prompt = build_diagnose_prompt(repo, &out_path);
 
-    info!(%model, effort, "diagnosing repo with codex exec");
-    let cmd = build_codex_init_command(&model, effort, neutral_cwd, &[]);
+    info!(
+        model = model.as_deref().unwrap_or("(codex default)"),
+        effort, "diagnosing repo with codex exec"
+    );
+    let cmd = build_codex_init_command(model.as_deref(), effort, neutral_cwd, &[]);
     let log_path = neutral_cwd.join("diagnose.log");
     run_init_session(
         JsonSession {
@@ -83,8 +86,13 @@ pub fn draft_issues(
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
 
-    info!(%model, effort, mode = req.mode.as_str(), "drafting issues with codex exec");
-    let cmd = build_codex_init_command(&model, effort, repo, &[]);
+    info!(
+        model = model.as_deref().unwrap_or("(codex default)"),
+        effort,
+        mode = req.mode.as_str(),
+        "drafting issues with codex exec"
+    );
+    let cmd = build_codex_init_command(model.as_deref(), effort, repo, &[]);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     run_init_session(
         JsonSession {
@@ -127,8 +135,11 @@ pub fn consolidate_knowledge(
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
 
-    info!(%model, effort, "consolidating knowledge with codex exec");
-    let cmd = build_codex_init_command(&model, effort, ws.repo_root(), &[]);
+    info!(
+        model = model.as_deref().unwrap_or("(codex default)"),
+        effort, "consolidating knowledge with codex exec"
+    );
+    let cmd = build_codex_init_command(model.as_deref(), effort, ws.repo_root(), &[]);
     run_text_session(
         TextSession {
             cmd,
@@ -164,8 +175,11 @@ pub fn triage_issues(
         req.attachments_manifest
     );
 
-    info!(%model, effort, "triaging issues with codex exec");
-    let cmd = build_codex_init_command(&model, effort, repo, req.image_paths);
+    info!(
+        model = model.as_deref().unwrap_or("(codex default)"),
+        effort, "triaging issues with codex exec"
+    );
+    let cmd = build_codex_init_command(model.as_deref(), effort, repo, req.image_paths);
     let log_path = repo.join(".ralphy").join("triage.log");
     run_init_session(
         JsonSession {
