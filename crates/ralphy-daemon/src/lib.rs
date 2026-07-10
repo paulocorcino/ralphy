@@ -26,6 +26,7 @@ pub mod identity;
 pub mod protocol;
 pub mod registry;
 pub mod session;
+pub mod usage;
 
 use protocol::{Command, Frame, Presence};
 
@@ -117,9 +118,10 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
+    let usage_dir = usage::usage_dir_path()?;
     axum::serve(
         listener,
-        router(id, registry_path, start, shutdown_rx, policy),
+        router(id, registry_path, usage_dir, start, shutdown_rx, policy),
     )
     .with_graceful_shutdown(async move {
         shutdown_signal().await;
@@ -140,6 +142,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
 pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
+    usage_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: auth::AuthPolicy,
@@ -164,6 +167,10 @@ pub fn router(
     // captured here BEFORE `identity` is moved into the `/api/identity` closure.
     // Only the dispatch path passes it; session/console children get none.
     let command_daemon_id = identity.as_ref().map(|i| i.id.to_string());
+    // The daemon identity served on `/api/usage` responses: captured here BEFORE
+    // `identity` is moved into the `/api/identity` closure (mirrors
+    // `command_daemon_id` above).
+    let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -171,6 +178,14 @@ pub fn router(
             get({
                 let p = registry_path.clone();
                 move || repos_route(p)
+            }),
+        )
+        .route(
+            "/api/usage",
+            get({
+                let dir = usage_dir.clone();
+                let daemon_id = usage_daemon_id.clone();
+                move |q: Query<UsageQuery>| usage_route(dir, daemon_id, q.0.since)
             }),
         )
         .route(
@@ -318,6 +333,14 @@ struct SessionQuery {
 #[derive(serde::Deserialize)]
 struct CloseQuery {
     id: u64,
+}
+
+/// Query for `GET /api/usage`: an optional `since` (RFC3339 UTC) lower bound.
+/// Callers MUST URL-encode `+` as `%2B` — axum/`serde_urlencoded` decode a raw
+/// `+` as a space, corrupting the `+00:00` offset.
+#[derive(serde::Deserialize)]
+struct UsageQuery {
+    since: Option<String>,
 }
 
 /// `GET /ws/session`: three shapes over one route.
@@ -679,6 +702,23 @@ async fn repos_route(registry_path: PathBuf) -> Response {
     Json(views).into_response()
 }
 
+/// `GET /api/usage[?since=<RFC3339 UTC, with `+` encoded as `%2B`>]`: the
+/// token-usage ledger's run records verbatim, as `{ daemon_id, records: [...] }`
+/// (ADR-0033 §3). Read FRESH from disk on every request, same as `/api/repos`.
+/// `since` keeps records whose `ts` is lexically `>=` it; omitted returns
+/// everything. Read-only tracer — no `session_id` scan/dedup here (PRD #170).
+async fn usage_route(
+    usage_dir: PathBuf,
+    daemon_id: Option<String>,
+    since: Option<String>,
+) -> Response {
+    Json(serde_json::json!({
+        "daemon_id": daemon_id,
+        "records": usage::run_records(&usage_dir, since.as_deref()),
+    }))
+    .into_response()
+}
+
 /// `GET /api/sessions`: the daemon's live sessions as JSON, each with its
 /// identity (`id`, `repo`, `agent`, `kind`, `started_at`) so the UI can list,
 /// reattach, and close them. A WebSocket drop leaves its session here (the child
@@ -772,6 +812,7 @@ mod tests {
         router(
             None,
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -827,6 +868,7 @@ mod tests {
         let resp = router(
             Some(id),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -853,6 +895,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -883,6 +926,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -909,6 +953,91 @@ mod tests {
         assert!(
             body.contains("\"reachable\":false"),
             "the bogus-path entry must be unreachable; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_usage_serves_run_records_and_honors_since() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("owner-repo.jsonl"),
+            "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
+             {\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-b\",\"outcome\":\"ok\",\"tokens\":{\"input\":20,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+        )
+        .unwrap();
+
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            dir.path().to_path_buf(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"sess-a\""),
+            "must carry sess-a; got: {body}"
+        );
+        assert!(
+            body.contains("\"sess-b\""),
+            "must carry sess-b; got: {body}"
+        );
+        assert!(
+            body.contains("00000000000000000000000000"),
+            "must carry the daemon_id; got: {body}"
+        );
+        assert!(
+            !body.contains("usd"),
+            "must not carry a usd field; got: {body}"
+        );
+        assert!(
+            !body.contains("cost"),
+            "must not carry a cost field; got: {body}"
+        );
+
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            dir.path().to_path_buf(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage?since=2026-06-15T12:05:00%2B00:00")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"sess-b\"") && !body.contains("\"sess-a\""),
+            "since must keep only sess-b; got: {body}"
         );
     }
 
@@ -944,6 +1073,7 @@ mod tests {
         let resp = router(
             None,
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Bearer("tok".into()),
@@ -969,6 +1099,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -997,6 +1128,7 @@ mod tests {
         let resp = router(
             Some(id),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1019,6 +1151,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -1044,9 +1177,14 @@ mod tests {
     /// silently serving an unauthenticated shell/run trigger.
     #[tokio::test]
     async fn bearer_policy_gates_the_remote_exec_ws_routes() {
-        for uri in ["/ws/session?repo=x&agent=claude", "/ws/command"] {
+        for uri in [
+            "/ws/session?repo=x&agent=claude",
+            "/ws/command",
+            "/api/usage",
+        ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 Instant::now(),
                 idle_shutdown(),

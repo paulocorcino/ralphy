@@ -75,6 +75,7 @@ async fn console_ws_spawns_shell_in_chosen_repo_and_lists_as_console_kind() {
     let app = router(
         None,
         registry_path,
+        std::path::PathBuf::from("does-not-exist"),
         std::time::Instant::now(),
         rx,
         ralphy_daemon::auth::AuthPolicy::Localhost,

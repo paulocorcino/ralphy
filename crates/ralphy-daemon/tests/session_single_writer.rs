@@ -97,6 +97,7 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
     let app = router(
         None,
         registry_path,
+        std::path::PathBuf::from("does-not-exist"),
         std::time::Instant::now(),
         rx,
         ralphy_daemon::auth::AuthPolicy::Localhost,
