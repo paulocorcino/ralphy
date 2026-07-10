@@ -112,17 +112,59 @@
         text-transform: uppercase;
         margin: 0 0 0.4rem;
       }
-      /* The live terminal takes over the viewport once a session launches. */
+      /* The live terminal takes over the viewport once a session launches,
+         framed as a window with a title bar carrying close/detach controls. */
       #terminal {
         position: fixed;
-        inset: 0;
+        inset: 0.5rem;
         display: none;
-        padding: 0.5rem;
-        box-sizing: border-box;
+        flex-direction: column;
         background: #000;
+        border: 1px solid #3a332d;
+        border-radius: 6px;
+        overflow: hidden;
+        box-sizing: border-box;
       }
       #terminal.active {
-        display: block;
+        display: flex;
+      }
+      .session-titlebar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.35rem 0.6rem;
+        background: #241f1b;
+        border-bottom: 1px solid #3a332d;
+        flex-shrink: 0;
+      }
+      .session-title {
+        color: #9b948a;
+        font-size: 0.85rem;
+      }
+      .session-actions {
+        display: flex;
+        gap: 0.4rem;
+      }
+      .session-actions button {
+        font: inherit;
+        font-size: 0.8rem;
+        color: #e8e2d9;
+        background: #241f1b;
+        border: 1px solid #3a332d;
+        border-radius: 4px;
+        padding: 0.1rem 0.5rem;
+        cursor: pointer;
+      }
+      .session-actions button:hover {
+        background: #322b25;
+      }
+      .session-actions button.session-close {
+        color: #c56b5c;
+        border-color: #5a2e28;
+      }
+      #terminal-body {
+        flex: 1 1 auto;
+        min-height: 0;
       }
     </style>
   </head>
@@ -291,11 +333,50 @@
         const host = document.getElementById("terminal");
         host.innerHTML = "";
         host.classList.add("active");
+
+        const titlebar = document.createElement("div");
+        titlebar.className = "session-titlebar";
+        const title = document.createElement("span");
+        title.className = "session-title";
+        const label = opts.repo
+          ? `${opts.repo} · ${opts.agent ?? (opts.console ? "console" : "session")}`
+          : opts.id != null
+            ? `id ${opts.id}`
+            : opts.console
+              ? "console"
+              : "session";
+        title.textContent = label;
+        const actions = document.createElement("span");
+        actions.className = "session-actions";
+        const detachBtn = document.createElement("button");
+        detachBtn.textContent = "detach";
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "session-close";
+        closeBtn.textContent = "close";
+        actions.append(detachBtn, closeBtn);
+        titlebar.append(title, actions);
+        const body = document.createElement("div");
+        body.id = "terminal-body";
+        host.append(titlebar, body);
+
+        let currentSessionId = opts.id ?? null;
+        let leaving = false;
+
         const term = new Terminal({ convertEol: false });
         const fit = new FitAddon.FitAddon();
         term.loadAddon(fit);
-        term.open(host);
+        term.open(body);
         fit.fit();
+
+        function returnToLauncher() {
+          leaving = true;
+          term.dispose();
+          window.removeEventListener("resize", onResize);
+          host.classList.remove("active");
+          host.innerHTML = "";
+          document.querySelector("main").style.display = "";
+          refreshSessions();
+        }
 
         let url = "ws://" + location.host + "/ws/session?";
         if (opts.id != null) {
@@ -321,7 +402,14 @@
         };
         ws.onmessage = (ev) => {
           const a = new Uint8Array(ev.data);
-          if (a[0] === TAG_TERMINAL) term.write(a.subarray(9));
+          if (a[0] === TAG_TERMINAL) {
+            if (currentSessionId == null) {
+              currentSessionId = Number(
+                new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
+              );
+            }
+            term.write(a.subarray(9));
+          }
         };
         term.onData((d) => {
           if (ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
@@ -330,8 +418,35 @@
           if (ws.readyState === WebSocket.OPEN)
             ws.send(encodeResize(rows, cols));
         });
-        window.addEventListener("resize", () => fit.fit());
+        const onResize = () => fit.fit();
+        window.addEventListener("resize", onResize);
+
+        detachBtn.onclick = () => {
+          if (
+            ws.readyState === WebSocket.OPEN ||
+            ws.readyState === WebSocket.CONNECTING
+          )
+            ws.close();
+          returnToLauncher();
+        };
+        closeBtn.onclick = () => {
+          const id = currentSessionId;
+          const done = () => {
+            if (ws.readyState <= 1) ws.close();
+            returnToLauncher();
+          };
+          if (id != null) {
+            fetch(`/api/sessions/close?id=${id}`, { method: "POST" }).then(
+              done,
+              done,
+            );
+          } else {
+            done();
+          }
+        };
+
         ws.onclose = () => {
+          if (leaving) return;
           // A reattach that closes WITHOUT ever opening is the server refusing a
           // busy session (409 before the upgrade — a single writer is attached).
           // Offer an explicit takeover, once.
