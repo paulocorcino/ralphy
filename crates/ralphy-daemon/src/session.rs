@@ -153,6 +153,17 @@ impl Session {
         }
     }
 
+    /// Whether the child has already exited (non-blocking). The pump polls this
+    /// so a SELF-exited child ends the session: on Windows ConPTY the output pipe
+    /// EOFs only when the master is dropped, NOT when the child dies, so the reader
+    /// would otherwise never end after a `quit`. A closed session counts as exited.
+    pub fn has_exited(&mut self) -> bool {
+        match self.pty.as_mut() {
+            Some(pty) => pty.try_wait().map(|status| status.is_some()).unwrap_or(true),
+            None => true,
+        }
+    }
+
     /// Resize the PTY window so the child's TUI reflows. A no-op once closed.
     pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
         match self.pty.as_ref() {
@@ -404,11 +415,31 @@ impl SessionManager {
 /// on its live receiver, nor misses one in the gap.
 fn start_pump(sess: Arc<ManagedSession>, manager: Weak<SessionManager>, mut output: UnboundedReceiver<Vec<u8>>) {
     tokio::spawn(async move {
-        while let Some(chunk) = output.recv().await {
-            let mut ring = sess.scrollback.lock().expect("scrollback mutex");
-            push_capped(&mut ring, &chunk, SCROLLBACK_CAP_BYTES);
-            let _ = sess.tx.send(chunk);
-            drop(ring);
+        // Poll for a self-exited child alongside draining output: ConPTY does not
+        // EOF the reader on child death (only on master drop), so without this a
+        // child that exits on its own (e.g. `quit`) would leak its session forever
+        // on Windows. On exit, `close()` drops the master → the reader EOFs → the
+        // loop below ends. On Unix the reader EOFs directly and the tick is moot.
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(250));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                chunk = output.recv() => match chunk {
+                    Some(chunk) => {
+                        let mut ring = sess.scrollback.lock().expect("scrollback mutex");
+                        push_capped(&mut ring, &chunk, SCROLLBACK_CAP_BYTES);
+                        let _ = sess.tx.send(chunk);
+                        drop(ring);
+                    }
+                    None => break, // reader EOF (child exited + master dropped)
+                },
+                _ = tick.tick() => {
+                    if sess.session.lock().expect("session mutex").has_exited() {
+                        // Drops the master → the reader drains then EOFs → break.
+                        sess.session.lock().expect("session mutex").close();
+                    }
+                }
+            }
         }
         // Child EOF: a session ends besides `close` only when its child exits
         // (issue #166). Remove it from the list, then evict any attached client so

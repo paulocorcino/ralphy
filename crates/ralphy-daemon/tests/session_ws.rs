@@ -1,11 +1,13 @@
 //! End-to-end workbench session over a real loopback WebSocket (docs/adr/0032
-//! §2; issue #162): a client connects to `/ws/session?repo=<slug>&agent=claude`
-//! (the agent program overridden to the helper bin), types a line, and reads it
-//! echoed back through the codec + PTY — proving the WS → codec → PTY → child
-//! path. Then closing the socket makes the server tear the session down (its loop
-//! exits and runs `session.close()`), observed as the server-side socket closing
-//! within a bounded wait. Tree-kill DEPTH is proven by `session_roundtrip`; this
-//! proves the transport + the WS-drop teardown path.
+//! §2; issues #162, #166): a client connects to `/ws/session?repo=<slug>&agent=
+//! claude` (the agent program overridden to the helper bin), types a line, and
+//! reads it echoed back through the codec + PTY — proving the WS → codec → PTY →
+//! child path. Then it types `quit` so the CHILD exits: under the #166 tmux model
+//! a WS drop no longer kills the session (persistence — see
+//! `session_persistence.rs`), so the session ends only when its child exits, and
+//! that end is observed as the server-side stream closing within a bounded wait.
+//! Tree-kill DEPTH is proven by `session_roundtrip`; this proves the transport +
+//! the child-exit teardown path.
 
 use std::time::{Duration, Instant};
 
@@ -92,17 +94,12 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
         "server must echo the typed line back through codec + PTY; got:\n{got}"
     );
 
-    // Spawn a grandchild so the child would not exit on its own — the teardown we
-    // observe next is therefore driven by the socket close, not the child ending.
-    // `GOT:ping` (processed in stdin order) confirms the grandchild spawned.
-    ws.send(terminal(b"spawn-grandchild\r")).await.unwrap();
-    ws.send(terminal(b"ping\r")).await.unwrap();
-
-    // Close the socket. The server's session loop must break and run
-    // `session.close()`, then return — dropping the server socket, which the
-    // client observes as the stream ending. Bounded so a hung loop fails.
-    ws.close(None).await.unwrap();
-    let torn_down = tokio::time::timeout(Duration::from_secs(5), async {
+    // End the CHILD (not the socket): under the #166 tmux model a WS drop only
+    // detaches, so a session ends when its child exits. `quit` exits the helper;
+    // its PTY reaches EOF, the pump removes the session and evicts this bridge,
+    // and the client observes the server-side stream ending. Bounded so a hang fails.
+    ws.send(terminal(b"quit\r")).await.unwrap();
+    let ended = tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(msg) = ws.next().await {
             match msg {
                 Ok(Message::Close(_)) | Err(_) => break,
@@ -112,7 +109,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     })
     .await;
     assert!(
-        torn_down.is_ok(),
-        "closing the socket must tear the session down (server loop exits + close()), not hang"
+        ended.is_ok(),
+        "the child exiting must end the session's stream (pump EOF → evict), not hang"
     );
 }
