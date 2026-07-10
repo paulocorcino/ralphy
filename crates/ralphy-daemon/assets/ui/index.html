@@ -77,6 +77,11 @@
       #repos li.unreachable button.tile {
         pointer-events: none;
       }
+      #repos .cmd-status {
+        color: #9b948a;
+        margin-left: 0.6rem;
+        font-size: 0.8rem;
+      }
       /* The live terminal takes over the viewport once a session launches. */
       #terminal {
         position: fixed;
@@ -191,6 +196,54 @@
         return out;
       }
 
+      // The remote-trigger verbs (src/dispatch.rs): each maps to a blessed
+      // `ralphy` invocation server-side. The button sends only the verb name;
+      // the client never composes a command line.
+      const COMMANDS = ["run", "triage", "push"];
+
+      function encodeCommand(verb, repo) {
+        const json = JSON.stringify({
+          id: 1,
+          verb,
+          payload: { repo },
+        });
+        const body = new TextEncoder().encode(json);
+        const out = new Uint8Array(1 + body.length);
+        out[0] = TAG_COMMAND;
+        out.set(body, 1);
+        return out;
+      }
+
+      // Fire one remote command: open a dedicated `/ws/command` socket, send the
+      // verb, and reflect each reply frame (spawn ack → exit / error) into the
+      // repo's status span. One command per connection (mirror of the server).
+      function sendCommand(slug, verb, statusEl) {
+        statusEl.textContent = `${verb}: …`;
+        const ws = new WebSocket(`ws://${location.host}/ws/command`);
+        ws.binaryType = "arraybuffer";
+        ws.onopen = () => ws.send(encodeCommand(verb, slug));
+        ws.onmessage = (ev) => {
+          const a = new Uint8Array(ev.data);
+          if (a[0] !== TAG_COMMAND) return;
+          let p;
+          try {
+            p = JSON.parse(new TextDecoder().decode(a.subarray(1))).payload;
+          } catch {
+            return;
+          }
+          if (p.status === "spawned") {
+            statusEl.textContent = `${verb}: spawned pid ${p.pid}`;
+          } else if (p.status === "exited") {
+            statusEl.textContent = `${verb}: exited code ${p.code}`;
+          } else if (p.status === "error") {
+            statusEl.textContent = `${verb}: error ${p.message}`;
+          }
+        };
+        ws.onerror = () => {
+          statusEl.textContent = `${verb}: connection error`;
+        };
+      }
+
       // Launch a session: hand the viewport to xterm.js, open the session
       // WebSocket, and wire keystrokes/resize out and PTY bytes in. xterm.js is
       // the terminal emulator, so it answers the child's startup cursor-position
@@ -262,7 +315,20 @@
               btn.onclick = () => launch(repo.slug, agent);
               agents.append(btn);
             }
-            li.append(slug, path, agents);
+            // Per-repo remote-trigger buttons + an inline status span reporting
+            // the spawn ack then the child's exit (or an error).
+            const commands = document.createElement("span");
+            commands.className = "agents";
+            const cmdStatus = document.createElement("span");
+            cmdStatus.className = "cmd-status";
+            for (const verb of COMMANDS) {
+              const btn = document.createElement("button");
+              btn.className = "tile";
+              btn.textContent = verb;
+              btn.onclick = () => sendCommand(repo.slug, verb, cmdStatus);
+              commands.append(btn);
+            }
+            li.append(slug, path, agents, commands, cmdStatus);
             ul.append(li);
           }
         })
