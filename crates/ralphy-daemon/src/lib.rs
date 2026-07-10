@@ -665,16 +665,20 @@ async fn send_command(socket: &mut WebSocket, id: u64, verb: &str, payload: serd
 
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
 /// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
-/// repo spawns the run and reports two events — an ack (`status:"spawned"` +
-/// pid), then the child's exit (`status:"exited"` + code). An unknown verb or an
-/// unregistered repo gets one `status:"error"` frame and spawns nothing.
+/// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
+/// pid), a stream of live output (`status:"output"` + `chunk`, issue #180), then
+/// the child's exit (`status:"exited"` + code). An unknown verb or an unregistered
+/// repo gets one `status:"error"` frame and spawns nothing.
 ///
 /// TEARDOWN INVARIANT (the INVERSE of `session_ws`): the dispatched run keeps its
 /// OWN lifecycle. NONE of the `select!` arms — daemon shutdown, client
-/// close/error, wait-complete — kills the child; the `Box<dyn dispatch::Child>`
-/// has no kill and dropping it does not kill (std semantics). A daemon shutdown
-/// or a browser disconnect stops us serving THIS socket but never the run
-/// (PRD #157 story 18/20). Do not add a kill to any arm.
+/// close/error, output, wait-complete — kills the child; the
+/// `Box<dyn dispatch::Child>` has no kill and dropping it does not kill (std
+/// semantics). A daemon shutdown or a browser disconnect stops us serving THIS
+/// socket but never the run (PRD #157 story 18/20). Do not add a kill to any arm.
+/// The output DRAIN task is likewise detached: it reads the child's pipe to EOF
+/// regardless of client presence, so a disconnect never stalls the child on a
+/// full pipe. Do not await it on a teardown arm.
 async fn command_ws(
     mut socket: WebSocket,
     registry_path: PathBuf,
@@ -751,6 +755,9 @@ async fn command_ws(
         }
     };
     let pid = child.pid();
+    // Take the merged output reader BEFORE `child` moves into the wait task, so
+    // the drain and the wait run concurrently (each owns its half).
+    let output = child.take_output();
     send_command(
         &mut socket,
         id,
@@ -759,25 +766,86 @@ async fn command_ws(
     )
     .await;
 
+    // A DETACHED drain owns the reader and reads to EOF unconditionally — never
+    // awaited on a teardown arm, so a client disconnect never stops it and the
+    // child never stalls on a full pipe (see dispatch.rs OUTPUT STREAMING). A
+    // dropped receiver only makes `send` error, which the drain IGNORES.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    if let Some(mut reader) = output {
+        tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let mut buf = [0u8; 8192];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => {
+                        let _ = tx.send(buf[..n].to_vec());
+                    }
+                }
+            }
+        });
+    }
+
     // `Child::wait` is blocking and must not sit on the tokio runtime.
     let mut wait = tokio::task::spawn_blocking(move || child.wait());
-    tokio::select! {
-        // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
-        _ = shutdown.changed() => {}
-        // Client closed or errored: same — abandon the wait, never kill.
-        incoming = socket.recv() => {
-            let _ = incoming;
-        }
-        // The run exited: report its code (None → serde null).
-        joined = &mut wait => {
-            let code = joined.ok().and_then(|r| r.ok()).flatten();
-            send_command(
-                &mut socket,
-                id,
-                &cmd.verb,
-                serde_json::json!({ "status": "exited", "code": code }),
-            )
-            .await;
+    loop {
+        tokio::select! {
+            // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
+            _ = shutdown.changed() => break,
+            // Client closed or errored: same — abandon the wait, never kill.
+            incoming = socket.recv() => {
+                let _ = incoming;
+                break;
+            }
+            // A live output chunk: forward it into the UI log pane.
+            chunk = rx.recv() => {
+                match chunk {
+                    Some(chunk) => {
+                        send_command(
+                            &mut socket,
+                            id,
+                            &cmd.verb,
+                            serde_json::json!({
+                                "status": "output",
+                                "chunk": String::from_utf8_lossy(&chunk),
+                            }),
+                        )
+                        .await;
+                    }
+                    // Drain closed (child's pipe hit EOF) with no exit yet: keep
+                    // waiting on the other arms rather than spinning on a closed
+                    // channel (`recv` returns `None` immediately once closed).
+                    None => std::future::pending::<()>().await,
+                }
+            }
+            // The run exited: flush ALL remaining output before the exit frame.
+            // `recv().await` (not `try_recv`) closes the trailing-output race —
+            // `wait` can return before the drain thread has forwarded the child's
+            // final bytes; the child's exit closed every write end, so the drain
+            // hits EOF and drops `tx`, ending this loop deterministically.
+            joined = &mut wait => {
+                while let Some(chunk) = rx.recv().await {
+                    send_command(
+                        &mut socket,
+                        id,
+                        &cmd.verb,
+                        serde_json::json!({
+                            "status": "output",
+                            "chunk": String::from_utf8_lossy(&chunk),
+                        }),
+                    )
+                    .await;
+                }
+                let code = joined.ok().and_then(|r| r.ok()).flatten();
+                send_command(
+                    &mut socket,
+                    id,
+                    &cmd.verb,
+                    serde_json::json!({ "status": "exited", "code": code }),
+                )
+                .await;
+                break;
+            }
         }
     }
 }
