@@ -33,6 +33,7 @@ async fn bearer_policy_gates_the_ws_upgrade() {
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         AuthPolicy::Bearer("tok".into()),

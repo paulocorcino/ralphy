@@ -120,6 +120,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let registry_path = registry::repos_toml_path()?;
     let usage_dir = usage::usage_dir_path()?;
     let claude_projects_dir = usage::claude_projects_dir_path()?;
+    let codex_dir = usage::codex_dir_path()?;
     axum::serve(
         listener,
         router(
@@ -127,6 +128,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             registry_path,
             usage_dir,
             claude_projects_dir,
+            codex_dir,
             start,
             shutdown_rx,
             policy,
@@ -153,6 +155,7 @@ pub fn router(
     registry_path: PathBuf,
     usage_dir: PathBuf,
     claude_projects_dir: PathBuf,
+    codex_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: auth::AuthPolicy,
@@ -195,10 +198,11 @@ pub fn router(
             get({
                 let dir = usage_dir.clone();
                 let claude_dir = claude_projects_dir.clone();
+                let codex_dir = codex_dir.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
-                    usage_route(dir, claude_dir, registry, daemon_id, q.0.since)
+                    usage_route(dir, claude_dir, codex_dir, registry, daemon_id, q.0.since)
                 }
             }),
         )
@@ -718,7 +722,7 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 
 /// `GET /api/usage[?since=<RFC3339 UTC, with `+` encoded as `%2B`>]`: the
 /// token-usage ledger's run records PLUS the interactive records scanned from the
-/// Claude store, as `{ daemon_id, records: [...], interactive: [...] }` (ADR-0033
+/// Claude and Codex stores, as `{ daemon_id, records: [...], interactive: [...] }` (ADR-0033
 /// §2/§3). Both read FRESH from disk on every request, same as `/api/repos`.
 /// `since` keeps run records whose `ts` is lexically `>=` it and interactive
 /// records whose `last_ts` is `>=` it. The interactive scan excludes any session
@@ -726,6 +730,7 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 async fn usage_route(
     usage_dir: PathBuf,
     claude_projects_dir: PathBuf,
+    codex_dir: PathBuf,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -740,8 +745,13 @@ async fn usage_route(
             registry::RegistryStore::default()
         }
     };
-    let interactive =
-        usage::interactive_records(&claude_projects_dir, &store, &runs, since.as_deref());
+    let interactive = usage::interactive_records(
+        &claude_projects_dir,
+        &codex_dir,
+        &store,
+        &runs,
+        since.as_deref(),
+    );
     Json(serde_json::json!({
         "daemon_id": daemon_id,
         "records": runs,
@@ -845,6 +855,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -902,6 +913,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -928,6 +940,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -960,6 +973,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
@@ -1011,6 +1025,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1056,6 +1071,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -1108,6 +1124,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
             claude_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1153,6 +1170,64 @@ mod tests {
         );
     }
 
+    /// `/api/usage` also carries Codex interactive records: a rollout under the
+    /// codex base dir's `sessions/` tree flows through the scan and appears in the
+    /// `interactive` array with `agent=="codex"` and its `session_meta.id`. Proves
+    /// the codex_dir router arg is threaded end-to-end, not just Claude.
+    #[tokio::test]
+    async fn api_usage_carries_codex_interactive_records() {
+        let codex_dir = tempfile::tempdir().unwrap();
+        let roll = codex_dir
+            .path()
+            .join("sessions")
+            .join("2026")
+            .join("07")
+            .join("10");
+        std::fs::create_dir_all(&roll).unwrap();
+        let meta_id = "019c5131-651b-78f2-b8e7-93995bff4dad";
+        let body = format!(
+            "{{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{{\"id\":\"{meta_id}\",\"cwd\":\"c:\\\\Dev\\\\x\"}}}}\n\
+             {{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"turn_context\",\"payload\":{{\"model\":\"gpt-5.3-codex\"}}}}\n\
+             {{\"timestamp\":\"2026-07-10T10:00:01Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":1000,\"cached_input_tokens\":800,\"output_tokens\":200}}}}}}}}\n"
+        );
+        std::fs::write(roll.join("rollout-int-abc.jsonl"), body).unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            codex_dir.path().to_path_buf(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("codex")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some(meta_id)
+            }),
+            "interactive must carry a codex record with the meta id; got: {body_string}"
+        );
+        assert!(
+            !body_string.contains("usd"),
+            "no pricing in the payload; got: {body_string}"
+        );
+    }
+
     #[test]
     fn build_presence_carries_identity_and_uptime() {
         let id = identity::Identity {
@@ -1187,6 +1262,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Bearer("tok".into()),
@@ -1212,6 +1288,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1244,6 +1321,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1266,6 +1344,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1300,6 +1379,7 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),

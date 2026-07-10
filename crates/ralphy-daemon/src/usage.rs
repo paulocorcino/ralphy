@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use ralphy_usage_scan::{scan_claude, ClaudeScan, RegisteredRepo};
+use ralphy_usage_scan::{scan_claude, scan_codex, ClaudeScan, CodexScan, RegisteredRepo};
 
 use crate::registry::RegistryStore;
 
@@ -90,12 +90,33 @@ pub fn claude_projects_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".claude").join("projects"))
 }
 
-/// Scan the Claude store for interactive usage records, excluding sessions the
-/// ledger already owns (their `session_id` appears in `run_records`), and
-/// serialize each to JSON (ADR-0033 §2/§6). `registry.repos` supplies the
-/// dashed-cwd project/actor attribution. Read-only: `scan_claude` writes nothing.
+/// The Codex session store root: `$RALPHY_CODEX_DIR` when set (tests point it at
+/// a temp dir), else `$CODEX_HOME` (Codex's own base var), else `<home>/.codex`.
+/// This is the `.codex` BASE — `scan_codex` walks its `sessions`/
+/// `archived_sessions` subtrees. Mirrors [`claude_projects_dir_path`].
+pub fn codex_dir_path() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("RALPHY_CODEX_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    if let Some(dir) = std::env::var_os("CODEX_HOME") {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("no home directory resolved for the Codex sessions store")
+        })?;
+    Ok(PathBuf::from(home).join(".codex"))
+}
+
+/// Scan the Claude AND Codex stores for interactive usage records, excluding
+/// sessions the ledger already owns (their `session_id` appears in
+/// `run_records`), and serialize each to JSON (ADR-0033 §2/§6). `registry.repos`
+/// supplies the project/actor attribution. Read-only: neither scan writes. The
+/// Codex records are chained after the Claude ones.
 pub fn interactive_records(
     claude_dir: &Path,
+    codex_dir: &Path,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -113,15 +134,23 @@ pub fn interactive_records(
             path: entry.path.clone(),
         })
         .collect();
-    scan_claude(&ClaudeScan {
+    let claude = scan_claude(&ClaudeScan {
         projects_dir: claude_dir,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
-    })
-    .iter()
-    .filter_map(|r| serde_json::to_value(r).ok())
-    .collect()
+    });
+    let codex = scan_codex(&CodexScan {
+        codex_dir,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
+    claude
+        .iter()
+        .chain(codex.iter())
+        .filter_map(|r| serde_json::to_value(r).ok())
+        .collect()
 }
 
 #[cfg(test)]
