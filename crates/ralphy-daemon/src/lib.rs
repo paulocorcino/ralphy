@@ -195,8 +195,14 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8_lossy(&body);
-        assert!(body.contains("anvil"), "body must carry the name; got: {body}");
-        assert!(body.contains("🐙"), "body must carry the avatar; got: {body}");
+        assert!(
+            body.contains("anvil"),
+            "body must carry the name; got: {body}"
+        );
+        assert!(
+            body.contains("🐙"),
+            "body must carry the avatar; got: {body}"
+        );
 
         let resp = router(None)
             .oneshot(

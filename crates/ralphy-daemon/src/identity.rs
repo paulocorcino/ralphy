@@ -48,9 +48,29 @@ pub fn format_status_line(id: &Identity) -> String {
 /// models that parse the vocabulary. Indicative — the dispatcher slice may
 /// re-home this list to a single authoritative source (see plan Caveats).
 pub const RESERVED: &[&str] = &[
-    "run", "triage", "queue", "status", "session", "sessions", "open", "close", "reattach",
-    "list", "add", "remove", "forge", "issue", "thread", "label", "branch", "daemon", "install",
-    "uninstall", "enroll", "console", "setup",
+    "run",
+    "triage",
+    "queue",
+    "status",
+    "session",
+    "sessions",
+    "open",
+    "close",
+    "reattach",
+    "list",
+    "add",
+    "remove",
+    "forge",
+    "issue",
+    "thread",
+    "label",
+    "branch",
+    "daemon",
+    "install",
+    "uninstall",
+    "enroll",
+    "console",
+    "setup",
 ];
 
 /// Why a proposed daemon name was refused, each carrying an operator-facing
@@ -123,7 +143,8 @@ pub fn suggest_name(hostname: &str) -> String {
 pub fn load_from(path: &Path) -> Result<Option<Identity>> {
     match std::fs::read_to_string(path) {
         Ok(text) => {
-            let id = toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+            let id =
+                toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
             Ok(Some(id))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -212,8 +233,14 @@ mod tests {
     #[test]
     fn reserved_names_refused() {
         assert!(matches!(validate_name("run"), Err(NameError::Reserved(_))));
-        assert!(matches!(validate_name("queue"), Err(NameError::Reserved(_))));
-        assert!(matches!(validate_name("forge"), Err(NameError::Reserved(_))));
+        assert!(matches!(
+            validate_name("queue"),
+            Err(NameError::Reserved(_))
+        ));
+        assert!(matches!(
+            validate_name("forge"),
+            Err(NameError::Reserved(_))
+        ));
         assert_eq!(validate_name("anvil").unwrap(), "anvil");
     }
 
@@ -239,7 +266,10 @@ mod tests {
         assert_eq!(avatar_by_number(1), Some(AVATARS[0]));
         assert_eq!(avatar_by_number(0), None);
         assert_eq!(avatar_by_number(AVATARS.len() + 1), None);
-        assert_eq!(avatar_by_number(AVATARS.len()), Some(AVATARS[AVATARS.len() - 1]));
+        assert_eq!(
+            avatar_by_number(AVATARS.len()),
+            Some(AVATARS[AVATARS.len() - 1])
+        );
     }
 
     #[test]
@@ -275,7 +305,10 @@ mod tests {
             "path must live at <home>/.ralphy/daemon.toml, got {}",
             path.display()
         );
-        assert!(path.starts_with(dir.path()), "path must be under the temp home");
+        assert!(
+            path.starts_with(dir.path()),
+            "path must be under the temp home"
+        );
 
         // Restore the process-global env for other tests.
         match prev_daemon {
