@@ -3,21 +3,24 @@
 //! session × model. Pure and sync — no tokio, no state files, no writes; the
 //! daemon calls it on request and serializes the result.
 //!
-//! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]), and
-//! **OpenCode** ([`opencode`]) modules. The one-module-per-vendor shape (§7)
-//! leaves room for more (a Kimi module) to follow; when that lands it carries
-//! any tokscale-derived parsing prior-art — none of that attribution belongs in
-//! this file, which owns only the shared record contract.
+//! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]),
+//! **OpenCode** ([`opencode`]), and **Kimi** ([`kimi`]) modules. The
+//! one-module-per-vendor shape (§7) leaves room for more to follow. The [`kimi`]
+//! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
+//! attribution lives in `kimi.rs`, not here; this file owns only the shared
+//! record contract.
 
 use std::collections::HashSet;
 use std::path::Path;
 
 pub mod claude;
 pub mod codex;
+pub mod kimi;
 pub mod opencode;
 
 pub use claude::scan_claude;
 pub use codex::scan_codex;
+pub use kimi::scan_kimi;
 pub use opencode::scan_opencode;
 
 /// The four Messages-API token counts an interactive record carries (ADR-0033 §3
@@ -83,6 +86,21 @@ pub struct CodexScan<'a> {
 /// (ADR-0033 §2).
 pub struct OpenCodeScan<'a> {
     pub db_path: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Kimi scan reads, mirroring [`OpenCodeScan`] but with TWO store
+/// roots (ADR-0033 §2): `kimi_dir` is the `.kimi` base (legacy `kimi-cli`
+/// `StatusUpdate` wire files) and `kimi_code_dir` is the `.kimi-code` base
+/// (`usage.record` wire files). Per-root dispatch avoids content-sniffing — the
+/// format is decided by which root a `wire.jsonl` lives under. Plus the run-owned
+/// ids to exclude, the repo registry for attribution, and an optional `since`
+/// lower bound on `last_ts`.
+pub struct KimiScan<'a> {
+    pub kimi_dir: &'a Path,
+    pub kimi_code_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
     pub repos: &'a [RegisteredRepo],
     pub since: Option<&'a str>,
