@@ -74,6 +74,19 @@ pub(crate) fn fold_wire_usage(
     Usage::fold_usage(&parsed, model.as_deref())
 }
 
+/// The vendor session identity of a Kimi run (ADR-0033 §5): the first appeared
+/// `wire.jsonl`'s **parent directory name** — the `<session-id>` path segment Kimi
+/// nests each session under (`<workdir-hash>/<session-id>/wire.jsonl`, see
+/// `kimi_sessions_dir`). `None` when no wire.jsonl appeared.
+pub(crate) fn wire_session_id(before: &[PathBuf], after: &[PathBuf]) -> Option<String> {
+    session_files_appeared(before, after)
+        .first()
+        .and_then(|p| p.parent())
+        .and_then(|d| d.file_name())
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +116,14 @@ mod tests {
         assert_eq!(usage.cache_creation, 25);
         assert_eq!(usage.model.as_deref(), Some("kimi-code/kimi-for-coding"));
         assert_eq!(usage.total(), 14660);
+    }
+
+    #[test]
+    fn wire_session_id_takes_parent_dir_name() {
+        let after = vec![PathBuf::from("/k/hash7/sess-42/wire.jsonl")];
+        assert_eq!(wire_session_id(&[], &after).as_deref(), Some("sess-42"));
+        // Nothing appeared → None.
+        assert_eq!(wire_session_id(&[], &[]), None);
     }
 
     #[test]
