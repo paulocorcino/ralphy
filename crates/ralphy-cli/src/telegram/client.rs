@@ -134,6 +134,18 @@ impl<T: Transport> BotClient<T> {
         )?;
         result_of(resp, "editMessageText")
     }
+
+    /// `deleteMessage` — remove an existing message. Used to keep the disposable
+    /// usage-limit sleep notice down to at most one live message in the chat: each
+    /// re-park deletes the prior notice before posting a fresh one, and resuming
+    /// deletes it outright so the chat self-cleans (issue: sleep-notice pileup).
+    pub fn delete_message(&self, chat_id: i64, message_id: i64) -> Result<Value> {
+        let resp = self.transport.post(
+            "deleteMessage",
+            json!({ "chat_id": chat_id, "message_id": message_id }),
+        )?;
+        result_of(resp, "deleteMessage")
+    }
 }
 
 /// Unwrap a Bot API envelope (`{ "ok": bool, "result"|"description": ... }`),

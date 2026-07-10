@@ -11,5 +11,10 @@ worktrees/
 state/
 # Ralphy run artifacts (scratch, logs, per-run plans)
 .ralphy/
+
+# Python bytecode from running the bundled skill scripts in place — never
+# commit: include_dir embeds everything under assets/plugin into the binary.
+__pycache__/
+*.pyc
 docs/old/exec.md
 docs/old/plan-charter.md
