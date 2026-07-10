@@ -358,8 +358,11 @@ impl SessionManager {
                     return Err(AttachError::Busy);
                 }
                 // Break the incumbent's bridge loop; its guard-drop will NOT clear
-                // this new token (ptr_eq mismatch).
-                existing.notify_waiters();
+                // this new token (ptr_eq mismatch). `notify_one` (not
+                // `notify_waiters`) because each token has exactly ONE waiter and
+                // `notify_one` STORES a permit if the incumbent is momentarily not
+                // parked (mid-iteration), so the eviction can never be lost.
+                existing.notify_one();
             }
             *slot = Some(token.clone());
         }
@@ -408,7 +411,7 @@ impl SessionManager {
         match sess {
             Some(sess) => {
                 if let Some(tok) = sess.attached.lock().expect("attached mutex").as_ref() {
-                    tok.notify_waiters();
+                    tok.notify_one();
                 }
                 sess.session.lock().expect("session mutex").close();
                 true
@@ -451,9 +454,12 @@ fn start_pump(
                     None => break, // reader EOF (child exited + master dropped)
                 },
                 _ = tick.tick() => {
-                    if sess.session.lock().expect("session mutex").has_exited() {
+                    // One lock spanning the check + close so a client write/resize
+                    // cannot interleave between them.
+                    let mut session = sess.session.lock().expect("session mutex");
+                    if session.has_exited() {
                         // Drops the master → the reader drains then EOFs → break.
-                        sess.session.lock().expect("session mutex").close();
+                        session.close();
                     }
                 }
             }
@@ -469,7 +475,7 @@ fn start_pump(
                 .remove(&sess.info.id);
         }
         if let Some(tok) = sess.attached.lock().expect("attached mutex").as_ref() {
-            tok.notify_waiters();
+            tok.notify_one();
         }
     });
 }

@@ -384,6 +384,20 @@ async fn session_ws(
     id: session::SessionId,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
+    // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
+    // future across the whole loop (a fresh `notified()` per iteration could miss
+    // an eviction firing mid-iteration), and `enable()` it up front so the waiter
+    // is parked before the snapshot replay below: an eviction (a `takeover`
+    // reattach or the child exiting) that fires during that replay `await` — or in
+    // the `on_upgrade` scheduling gap — is delivered as a stored permit and breaks
+    // the loop on the first poll, never lost. Missing this leaks the single-writer
+    // slot AND hangs the bridge forever (the `Attachment` keeps `tx` alive, so
+    // `rx.recv()` never returns `Closed`).
+    let evict = attach.evict.clone();
+    let notified = evict.notified();
+    tokio::pin!(notified);
+    notified.as_mut().enable();
+
     // Replay the backlog first so a reattaching client sees history before the
     // live stream resumes. Skip an empty snapshot (a fresh session).
     if !attach.snapshot.is_empty() {
@@ -399,12 +413,6 @@ async fn session_ws(
             return;
         }
     }
-    // Pin ONE eviction future across the whole loop: `notify_waiters` only wakes
-    // currently-registered waiters, so a fresh `notified()` per iteration could
-    // miss an eviction that fires mid-iteration and leak the single-writer slot.
-    let evict = attach.evict.clone();
-    let notified = evict.notified();
-    tokio::pin!(notified);
     loop {
         tokio::select! {
             _ = shutdown.changed() => break,
