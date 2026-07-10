@@ -42,12 +42,8 @@ impl RegistryStore {
     /// Insert or overwrite the entry for `slug`. Overwriting is the self-heal:
     /// a moved repo re-registers under the same slug with its new path.
     pub fn upsert(&mut self, slug: &str, path: &str) {
-        self.repos.insert(
-            slug.into(),
-            RepoEntry {
-                path: path.into(),
-            },
-        );
+        self.repos
+            .insert(slug.into(), RepoEntry { path: path.into() });
     }
 
     /// Remove the entry for `slug`; `true` when one was present (idempotent:

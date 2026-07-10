@@ -57,7 +57,11 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         Some(DaemonCommand::Add { path }) => {
             let repo = git::resolve_toplevel(path)?;
             let slug = git::project_slug(&repo);
-            upsert_at(&registry::repos_toml_path()?, &slug, &repo.to_string_lossy())?;
+            upsert_at(
+                &registry::repos_toml_path()?,
+                &slug,
+                &repo.to_string_lossy(),
+            )?;
             println!("registered {slug} → {}", repo.display());
             Ok(())
         }
