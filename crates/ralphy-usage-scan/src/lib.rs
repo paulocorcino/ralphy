@@ -3,18 +3,20 @@
 //! session × model. Pure and sync — no tokio, no state files, no writes; the
 //! daemon calls it on request and serializes the result.
 //!
-//! This slice ships the **Claude** module only ([`claude`]). The one-module-
-//! per-vendor shape (§7) leaves room for a Kimi module to follow; when that lands
-//! it carries any tokscale-derived parsing prior-art — none of that attribution
-//! belongs in this file, which owns only the Claude harvest and the shared record
-//! contract.
+//! This slice ships the **Claude** ([`claude`]) and **Codex** ([`codex`])
+//! modules. The one-module-per-vendor shape (§7) leaves room for more (a Kimi
+//! module) to follow; when that lands it carries any tokscale-derived parsing
+//! prior-art — none of that attribution belongs in this file, which owns only
+//! the shared record contract.
 
 use std::collections::HashSet;
 use std::path::Path;
 
 pub mod claude;
+pub mod codex;
 
 pub use claude::scan_claude;
+pub use codex::scan_codex;
 
 /// The four Messages-API token counts an interactive record carries (ADR-0033 §3
 /// record shape). Snake_case field names mirror the ledger's `tokens` block so a
@@ -56,6 +58,17 @@ pub struct RegisteredRepo {
 /// project/actor attribution, and an optional `since` lower bound on `last_ts`.
 pub struct ClaudeScan<'a> {
     pub projects_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Codex scan reads, mirroring [`ClaudeScan`]: `codex_dir` is the
+/// `.codex` base (the scan walks its `sessions/` and `archived_sessions/`
+/// subtrees), plus the run-owned ids to exclude, the repo registry for
+/// attribution, and an optional `since` lower bound on `last_ts` (ADR-0033 §2).
+pub struct CodexScan<'a> {
+    pub codex_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
     pub repos: &'a [RegisteredRepo],
     pub since: Option<&'a str>,
