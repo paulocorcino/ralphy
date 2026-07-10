@@ -63,7 +63,16 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let addr = listener.local_addr().context("reading the bound address")?;
     tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
 
-    let id = identity::load_current().unwrap_or(None);
+    // Log a load failure rather than masking a corrupt daemon.toml as
+    // "un-baptized" — the operator needs to see the real fault, not a silent
+    // fall-through to no-identity.
+    let id = match identity::load_current() {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load daemon identity; serving without one");
+            None
+        }
+    };
     if id.is_none() {
         tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
     }

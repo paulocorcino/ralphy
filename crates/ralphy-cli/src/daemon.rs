@@ -115,8 +115,9 @@ fn baptize_console<R: BufRead, W: Write>(
     Ok((name, avatar))
 }
 
-/// Read one line, returning an error only on I/O failure. EOF yields an empty
-/// string so an exhausted script cannot spin the prompt loop forever.
+/// Read one line. EOF (0 bytes) is an error, not an empty line, so an exhausted
+/// script cannot spin the prompt loop forever waiting for input that will never
+/// come.
 fn read_line<R: BufRead>(input: &mut R) -> Result<String> {
     let mut buf = String::new();
     let n = input.read_line(&mut buf).context("reading console input")?;
