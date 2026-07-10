@@ -194,9 +194,15 @@ in one listener; tungstenite underneath) — and that stack is confined there:
 crate depends on `ralphy-pty` for sessions (blocking PTY I/O bridged to tokio
 via reader threads + channels) and reaches runs only by spawning `ralphy`
 processes — it never imports the core. Cross-platform per CLAUDE.md: the
-listener, session spawn, and autostart registration (Task Scheduler at logon
-/ systemd unit) must work on both Windows and Linux, tested per the
-CONTEXT.md helper-bin convention.
+listener, session spawn, and autostart registration (a per-user HKCU `Run`
+value on Windows / a systemd `--user` unit on Linux) must work on both
+Windows and Linux, tested per the CONTEXT.md helper-bin convention.
+
+Windows autostart is a per-user HKCU `…\CurrentVersion\Run` value (no
+elevation, hidden console via `pwsh -WindowStyle Hidden`), chosen over a
+machine-level `/SC ONLOGON` Task Scheduler task because the daemon is a
+per-user loopback resident, not a machine service — systemd `--user` on
+Linux/WSL already has this property (#177).
 
 ## Consequences
 

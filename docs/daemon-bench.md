@@ -62,8 +62,9 @@ the runs you trigger, or their passive registration writes to the real store.)
      never re-shows the token.
 2. `ralphy daemon status` → expect `🐙 <name>`, `access token: set`,
    `listener: http://127.0.0.1:7257`, `autostart: not registered`.
-3. `ralphy daemon install` → registers a logon Task Scheduler task named
-   `ralphy-daemon` (Windows) or a systemd user unit `ralphy-daemon.service`
+3. `ralphy daemon install` → registers a per-user `Run` registry value named
+   `ralphy-daemon` (Windows, non-elevated PowerShell, no visible console
+   window at logon) or a systemd user unit `ralphy-daemon.service`
    (Linux/WSL). `status` now says `autostart: registered`.
 4. Reboot (or log off/on). The daemon must be listening without any manual
    start: open `http://127.0.0.1:7257` and see the page with your avatar+name.

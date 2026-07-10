@@ -17,9 +17,10 @@ ralphy daemon status   # identity, access token state, listener, autostart
 native OS mechanism for the running platform — ralphy never becomes the
 scheduler, it only writes and removes one registration:
 
-- **Windows**: a Task Scheduler task named `ralphy-daemon`, `/SC ONLOGON`,
-  running `ralphy daemon` and appending its output to
-  `<home>/.ralphy/daemon.log`.
+- **Windows**: a per-user registry value `ralphy-daemon` in
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, running
+  `pwsh -WindowStyle Hidden` → `ralphy daemon` (no visible console window) and
+  appending its output to `<home>/.ralphy/daemon.log`. No elevation required.
 - **Linux / WSL**: a systemd **user** unit at
   `~/.config/systemd/user/ralphy-daemon.service`, `WantedBy=default.target`
   (starts at user login), enabled via `systemctl --user enable`.
