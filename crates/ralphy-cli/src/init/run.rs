@@ -282,6 +282,7 @@ fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
 
 pub fn run(args: &InitArgs) -> Result<()> {
     let repo = resolve_or_bootstrap_repo(&args.repo)?;
+    crate::daemon::register_repo(&repo);
 
     // Reuse the run command's branding banner so `init` opens with the same face:
     // the `🦊 Ralphy - vX` header + `📦 project · 🌿 branch · 🔗 url` info line. Seed

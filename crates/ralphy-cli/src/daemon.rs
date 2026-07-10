@@ -7,11 +7,14 @@
 //! autostart, mirroring `schedule`) come in later slices.
 
 use std::io::{BufRead, Write};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
+use ralphy_core::git;
 use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
+use ralphy_daemon::registry;
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
@@ -31,6 +34,16 @@ pub(crate) enum DaemonCommand {
     Setup,
     /// Show the daemon's identity ("avatar name") and the listener hint.
     Status,
+    /// Register a repo with the daemon by path (idempotent).
+    Add {
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+    },
+    /// Remove a repo from the registry by `owner/repo` slug (idempotent).
+    Remove {
+        #[arg(value_name = "SLUG")]
+        slug: String,
+    },
 }
 
 pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
@@ -41,6 +54,56 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         }
         Some(DaemonCommand::Setup) => setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
+        Some(DaemonCommand::Add { path }) => {
+            let repo = git::resolve_toplevel(path)?;
+            let slug = git::project_slug(&repo);
+            upsert_at(&registry::repos_toml_path()?, &slug, &repo.to_string_lossy())?;
+            println!("registered {slug} → {}", repo.display());
+            Ok(())
+        }
+        Some(DaemonCommand::Remove { slug }) => {
+            let removed = remove_repo_at(&registry::repos_toml_path()?, slug)?;
+            if removed {
+                println!("removed {slug}");
+            } else {
+                println!("{slug} was not registered");
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Load the registry at `registry_path`, upsert `(slug → path)`, and save it.
+fn upsert_at(registry_path: &Path, slug: &str, path: &str) -> Result<()> {
+    let mut store = registry::load_from(registry_path)?;
+    store.upsert(slug, path);
+    registry::save_to(&store, registry_path)
+}
+
+/// Load the registry at `registry_path`, remove `slug`, and save it. Returns
+/// whether an entry was actually removed (idempotent for callers).
+fn remove_repo_at(registry_path: &Path, slug: &str) -> Result<bool> {
+    let mut store = registry::load_from(registry_path)?;
+    let removed = store.remove(slug);
+    registry::save_to(&store, registry_path)?;
+    Ok(removed)
+}
+
+/// Resolve the slug from `repo_root` (CLI-side, since the daemon has no
+/// `ralphy-core`) and upsert it into the registry at `registry_path`.
+fn register_repo_at(registry_path: &Path, repo_root: &Path) -> Result<()> {
+    let slug = git::project_slug(repo_root);
+    upsert_at(registry_path, &slug, &repo_root.to_string_lossy())
+}
+
+/// Best-effort passive registration for the run/triage/init entry paths. AC5:
+/// this MUST NEVER fail a run — the `()` return type structurally forbids
+/// propagating an error; a failed write only logs a warning and the run
+/// proceeds. Absent from the UI until the next successful write is acceptable.
+pub(crate) fn register_repo(repo_root: &Path) {
+    let result = registry::repos_toml_path().and_then(|p| register_repo_at(&p, repo_root));
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "failed to register repo with the daemon; run proceeds");
     }
 }
 
@@ -182,5 +245,40 @@ mod tests {
             name: "anvil".into(),
         };
         assert_eq!(format_status_line(&id), "🐙 anvil");
+    }
+
+    #[test]
+    fn register_repo_at_writes_entry() {
+        // Path-explicit: a temp registry path + a temp repo dir, no env mutation.
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry_path = reg_dir.path().join("repos.toml");
+        let repo_dir = tempfile::tempdir().unwrap();
+
+        register_repo_at(&registry_path, repo_dir.path()).unwrap();
+
+        let store = registry::load_from(&registry_path).unwrap();
+        assert_eq!(store.repos.len(), 1, "exactly one entry written");
+        let entry = store.repos.values().next().unwrap();
+        assert_eq!(entry.path, repo_dir.path().to_string_lossy());
+    }
+
+    #[test]
+    fn add_remove_idempotent() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry_path = reg_dir.path().join("repos.toml");
+
+        upsert_at(&registry_path, "owner/repo", "/some/path").unwrap();
+        upsert_at(&registry_path, "owner/repo", "/some/path").unwrap();
+        let store = registry::load_from(&registry_path).unwrap();
+        assert_eq!(store.repos.len(), 1, "repeated upsert keeps one entry");
+
+        assert!(
+            remove_repo_at(&registry_path, "owner/repo").unwrap(),
+            "first remove reports true"
+        );
+        assert!(
+            !remove_repo_at(&registry_path, "owner/repo").unwrap(),
+            "second remove reports false"
+        );
     }
 }

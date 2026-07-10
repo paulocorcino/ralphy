@@ -31,6 +31,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Anchors the `run.finished` `duration_s` (ADR-0019) — the run's wall-clock.
     let run_start = std::time::Instant::now();
     let repo_root = git::resolve_toplevel(&args.repo)?;
+    crate::daemon::register_repo(&repo_root);
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     preflight_agents(args.agent, plan_agent)?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();

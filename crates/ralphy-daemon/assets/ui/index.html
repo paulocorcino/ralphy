@@ -25,12 +25,33 @@
       p {
         color: #9b948a;
       }
+      #repos {
+        list-style: none;
+        padding: 0;
+        margin: 1.5rem 0 0;
+        text-align: left;
+        display: inline-block;
+      }
+      #repos li {
+        padding: 0.15rem 0;
+      }
+      #repos li.unreachable {
+        opacity: 0.45;
+      }
+      #repos .slug {
+        font-weight: 600;
+      }
+      #repos .path {
+        color: #9b948a;
+        margin-left: 0.6rem;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1 id="ident">ralphy daemon</h1>
       <p>The resident process is up. Workbench sessions arrive in a later slice.</p>
+      <ul id="repos"></ul>
     </main>
     <script>
       // Identity is delivered at runtime (the embedded HTML bakes in none):
@@ -42,6 +63,31 @@
           if (id) {
             document.getElementById("ident").textContent =
               `${id.avatar} ${id.name}`;
+          }
+        })
+        .catch(() => {});
+
+      // Registered repos, refreshed from disk on each load. Unreachable repos
+      // (a moved/deleted path) are greyed but retained — never dropped.
+      fetch("/api/repos")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((repos) => {
+          const ul = document.getElementById("repos");
+          if (!repos.length) {
+            ul.innerHTML = "<li>no repos registered yet</li>";
+            return;
+          }
+          for (const repo of repos) {
+            const li = document.createElement("li");
+            if (!repo.reachable) li.className = "unreachable";
+            const slug = document.createElement("span");
+            slug.className = "slug";
+            slug.textContent = repo.slug;
+            const path = document.createElement("span");
+            path.className = "path";
+            path.textContent = repo.path;
+            li.append(slug, path);
+            ul.append(li);
           }
         })
         .catch(() => {});
