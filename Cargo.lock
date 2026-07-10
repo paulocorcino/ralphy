@@ -1473,6 +1473,7 @@ name = "ralphy-usage-scan"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

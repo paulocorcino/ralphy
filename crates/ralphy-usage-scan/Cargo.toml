@@ -9,6 +9,7 @@ description = "Stateless, sync scan of the on-disk vendor session stores into no
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+rusqlite.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
