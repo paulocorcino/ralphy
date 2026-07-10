@@ -128,6 +128,17 @@ carries `emitter.daemon_id` in its CloudEvents (injected via the child's
 environment), letting the platform correlate run ↔ fleet daemon without
 host/PID guessing; cron/manual runs simply lack the field.
 
+**Live logs, Part A only (issue #180).** A run the daemon spawns streams its
+merged stdout+stderr over the existing `/ws/command` socket as transient
+`status:"output"` frames, so the UI shows the live log of a run it fired — no
+new on-disk log/history store, CloudEvents stay the sole run-history source.
+This is bounded to runs the daemon spawned: cross-cutting/external run
+observability (Part B) is **deferred entirely to the events platform**, with
+no daemon-side CloudEvents mirror. The stream never weakens teardown — a
+detached drain reads the child's pipe to EOF regardless of client presence, and
+no path kills the child (the child ignores `SIGPIPE`, so a daemon crash yields
+a non-fatal broken-pipe write, not a kill).
+
 ### 6. Remote command vocabulary v1: only what cron could already fire
 
 The daemon accepts: `run` (spawns `ralphy run --if-idle`), `triage` (spawns
