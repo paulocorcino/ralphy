@@ -7,8 +7,10 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -16,7 +18,10 @@ use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
 
 pub mod identity;
+pub mod protocol;
 pub mod registry;
+
+use protocol::{Frame, Presence};
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
 pub const DEFAULT_PORT: u16 = 7257;
@@ -57,6 +62,9 @@ pub fn run(config: DaemonConfig) -> Result<()> {
 }
 
 async fn serve(addr: SocketAddr) -> Result<()> {
+    // Captured at daemon start so every presence heartbeat reports process
+    // uptime, not per-connection age.
+    let start = Instant::now();
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding the daemon listener on {addr}"))?;
@@ -82,7 +90,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
-    axum::serve(listener, router(id, registry_path))
+    axum::serve(listener, router(id, registry_path, start))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("serving the daemon listener")?;
@@ -94,7 +102,12 @@ async fn serve(addr: SocketAddr) -> Result<()> {
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
 /// at runtime (the embedded HTML bakes in no identity).
-pub fn router(identity: Option<identity::Identity>, registry_path: PathBuf) -> Router {
+pub fn router(
+    identity: Option<identity::Identity>,
+    registry_path: PathBuf,
+    start: Instant,
+) -> Router {
+    let ws_identity = identity.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -104,7 +117,60 @@ pub fn router(identity: Option<identity::Identity>, registry_path: PathBuf) -> R
                 move || repos_route(p)
             }),
         )
+        .route(
+            "/ws",
+            get(move |ws: WebSocketUpgrade| {
+                let id = ws_identity.clone();
+                async move { ws.on_upgrade(move |socket| ws_presence_loop(socket, id, start)) }
+            }),
+        )
         .fallback(ui_asset)
+}
+
+/// Build the presence heartbeat for the loaded identity and the daemon's
+/// current uptime. `None` identity → a heartbeat with no name/avatar (the
+/// daemon is alive but un-baptized).
+fn build_presence(identity: Option<&identity::Identity>, uptime: Duration) -> Frame {
+    Frame::Presence(Presence {
+        name: identity.map(|i| i.name.clone()),
+        avatar: identity.map(|i| i.avatar.clone()),
+        uptime_secs: uptime.as_secs(),
+    })
+}
+
+/// Push a presence heartbeat to a connected client every 2s until it hangs up.
+/// The send loop MUST exit on every client-close path (the `recv` arm): a
+/// `None`/`Close`/error from the client breaks the loop and drops the socket, so
+/// no task keeps sending after a disconnect.
+async fn ws_presence_loop(
+    mut socket: WebSocket,
+    identity: Option<identity::Identity>,
+    start: Instant,
+) {
+    let mut tick = tokio::time::interval(Duration::from_secs(2));
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {
+                let frame = build_presence(identity.as_ref(), start.elapsed());
+                if socket
+                    .send(Message::Binary(protocol::encode(&frame).into()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            incoming = socket.recv() => {
+                // None (stream closed), a Close frame, or a recv error all end
+                // the loop; the socket drops when this task returns.
+                match incoming {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Err(_)) => break,
+                    Some(Ok(_)) => {}
+                }
+            }
+        }
+    }
 }
 
 /// `GET /api/repos`: the registered repos as JSON, each with its live
@@ -200,7 +266,7 @@ mod tests {
     use tower::ServiceExt;
 
     async fn get(path: &str) -> Response {
-        router(None, PathBuf::from("does-not-exist"))
+        router(None, PathBuf::from("does-not-exist"), Instant::now())
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap()
@@ -235,7 +301,7 @@ mod tests {
             name: "anvil".into(),
             avatar: "🐙".into(),
         };
-        let resp = router(Some(id), PathBuf::from("does-not-exist"))
+        let resp = router(Some(id), PathBuf::from("does-not-exist"), Instant::now())
             .oneshot(
                 Request::builder()
                     .uri("/api/identity")
@@ -256,7 +322,7 @@ mod tests {
             "body must carry the avatar; got: {body}"
         );
 
-        let resp = router(None, PathBuf::from("does-not-exist"))
+        let resp = router(None, PathBuf::from("does-not-exist"), Instant::now())
             .oneshot(
                 Request::builder()
                     .uri("/api/identity")
@@ -279,7 +345,7 @@ mod tests {
         store.upsert("owner/gone", "/no/such/path/exists");
         registry::save_to(&store, &registry_path).unwrap();
 
-        let resp = router(None, registry_path)
+        let resp = router(None, registry_path, Instant::now())
             .oneshot(
                 Request::builder()
                     .uri("/api/repos")
@@ -303,6 +369,24 @@ mod tests {
             body.contains("\"reachable\":false"),
             "the bogus-path entry must be unreachable; got: {body}"
         );
+    }
+
+    #[test]
+    fn build_presence_carries_identity_and_uptime() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let frame = build_presence(Some(&id), Duration::from_secs(5));
+        match frame {
+            Frame::Presence(p) => {
+                assert_eq!(p.name, Some("anvil".into()));
+                assert_eq!(p.avatar, Some("🐙".into()));
+                assert_eq!(p.uptime_secs, 5);
+            }
+            other => panic!("expected a presence frame, got {other:?}"),
+        }
     }
 
     #[test]

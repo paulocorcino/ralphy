@@ -25,6 +25,16 @@
       p {
         color: #9b948a;
       }
+      h1.offline {
+        opacity: 0.4;
+      }
+      #status {
+        color: #9b948a;
+        min-height: 1.2em;
+      }
+      #status.offline {
+        color: #c56b5c;
+      }
       #repos {
         list-style: none;
         padding: 0;
@@ -50,6 +60,7 @@
   <body>
     <main>
       <h1 id="ident">ralphy daemon</h1>
+      <p id="status">connecting…</p>
       <p>The resident process is up. Workbench sessions arrive in a later slice.</p>
       <ul id="repos"></ul>
     </main>
@@ -66,6 +77,50 @@
           }
         })
         .catch(() => {});
+
+      // Live presence over the daemon's WebSocket: the heartbeat carries the
+      // identity and uptime, and its silence is how the page detects the daemon
+      // dying. Mirror of the Rust codec (src/protocol.rs): tag byte 0x03 =
+      // presence, rest is JSON.
+      const ident = document.getElementById("ident");
+      const status = document.getElementById("status");
+      let watchdog = null;
+
+      function markOffline() {
+        ident.classList.add("offline");
+        status.classList.add("offline");
+        status.textContent = "daemon offline";
+      }
+
+      function fmtUptime(s) {
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        return h ? `${h}h ${m}m` : m ? `${m}m ${sec}s` : `${sec}s`;
+      }
+
+      function onPresence(p) {
+        ident.classList.remove("offline");
+        status.classList.remove("offline");
+        if (p.name) ident.textContent = `${p.avatar ?? ""} ${p.name}`.trim();
+        status.textContent = `up ${fmtUptime(p.uptime_secs)}`;
+        // Three missed 2s beats (6s) of silence ⇒ presume the daemon dead.
+        clearTimeout(watchdog);
+        watchdog = setTimeout(markOffline, 6000);
+      }
+
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.binaryType = "arraybuffer";
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] === 3) {
+          try {
+            onPresence(JSON.parse(new TextDecoder().decode(a.subarray(1))));
+          } catch {}
+        }
+      };
+      ws.onclose = markOffline;
+      ws.onerror = markOffline;
 
       // Registered repos, refreshed from disk on each load. Unreachable repos
       // (a moved/deleted path) are greyed but retained — never dropped.
