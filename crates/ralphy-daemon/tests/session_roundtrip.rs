@@ -37,22 +37,18 @@ async fn read_until(
 ) -> String {
     let mut acc = String::new();
     let res = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            match rx.recv().await {
-                Some(chunk) => {
-                    let data = through_codec(chunk);
-                    if data
-                        .windows(CURSOR_POSITION_REQUEST.len())
-                        .any(|w| w == CURSOR_POSITION_REQUEST)
-                    {
-                        let _ = session.write(CURSOR_POSITION_REPLY);
-                    }
-                    acc.push_str(&String::from_utf8_lossy(&data));
-                    if acc.contains(needle) {
-                        break;
-                    }
-                }
-                None => break, // EOF before the needle appeared
+        // Loop ends on EOF (`None`) or once the needle appears.
+        while let Some(chunk) = rx.recv().await {
+            let data = through_codec(chunk);
+            if data
+                .windows(CURSOR_POSITION_REQUEST.len())
+                .any(|w| w == CURSOR_POSITION_REQUEST)
+            {
+                let _ = session.write(CURSOR_POSITION_REPLY);
+            }
+            acc.push_str(&String::from_utf8_lossy(&data));
+            if acc.contains(needle) {
+                break;
             }
         }
     })
