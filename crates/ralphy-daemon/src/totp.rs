@@ -50,8 +50,8 @@ impl Seed {
     /// `pub(crate)` so the router integration test can compute the current code
     /// without exposing the primitive publicly.
     pub(crate) fn code_at(&self, counter: u64) -> String {
-        let mut mac = Hmac::<Sha1>::new_from_slice(&self.0)
-            .expect("HMAC accepts a key of any length");
+        let mut mac =
+            Hmac::<Sha1>::new_from_slice(&self.0).expect("HMAC accepts a key of any length");
         mac.update(&counter.to_be_bytes());
         let hs = mac.finalize().into_bytes();
         // RFC 6238 §5.3 dynamic truncation: low 4 bits of the last byte pick the
@@ -160,8 +160,14 @@ mod tests {
     #[test]
     fn rfc6238_sha1_vector() {
         let seed = Seed::from_bytes(b"12345678901234567890".to_vec());
-        assert!(seed.verify("287082", 59, 0), "the RFC vector code must verify");
-        assert!(!seed.verify("999999", 59, 0), "a wrong code must not verify");
+        assert!(
+            seed.verify("287082", 59, 0),
+            "the RFC vector code must verify"
+        );
+        assert!(
+            !seed.verify("999999", 59, 0),
+            "a wrong code must not verify"
+        );
     }
 
     /// The ±1-step window accepts a code from the neighbouring step (clock skew,
@@ -170,7 +176,10 @@ mod tests {
     #[test]
     fn verify_honors_skew_window() {
         let seed = Seed::from_bytes(b"12345678901234567890".to_vec());
-        assert!(seed.verify("287082", 89, 1), "±1 step accepts the prior code");
+        assert!(
+            seed.verify("287082", 89, 1),
+            "±1 step accepts the prior code"
+        );
         assert!(
             !seed.verify("287082", 89, 0),
             "no skew rejects the prior step's code"
@@ -183,7 +192,9 @@ mod tests {
         let uri = seed.otpauth_uri("ralphy", "anvil");
         assert!(uri.starts_with("otpauth://totp/ralphy:anvil?"));
         assert!(uri.contains(&format!("secret={}", seed.secret_base32())));
-        assert!(uri.contains("algorithm=SHA1") && uri.contains("digits=6") && uri.contains("period=30"));
+        assert!(
+            uri.contains("algorithm=SHA1") && uri.contains("digits=6") && uri.contains("period=30")
+        );
     }
 
     #[test]
@@ -204,7 +215,9 @@ mod tests {
     #[test]
     fn load_seed_from_missing_is_none() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(load_seed_from(&dir.path().join("absent")).unwrap().is_none());
+        assert!(load_seed_from(&dir.path().join("absent"))
+            .unwrap()
+            .is_none());
     }
 
     #[cfg(unix)]

@@ -137,7 +137,8 @@ pub fn save_to(hash: &Hash, path: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    std::fs::write(path, hash.to_string()).with_context(|| format!("writing {}", path.display()))?;
+    std::fs::write(path, hash.to_string())
+        .with_context(|| format!("writing {}", path.display()))?;
     auth::set_owner_only(path)?;
     Ok(())
 }

@@ -315,10 +315,18 @@ mod tests {
             password: None,
         };
         // T=59 → RFC vector code 287082 mints a cookie that then validates.
-        let cookie = s.login("287082", None, 59).expect("valid TOTP mints a cookie");
+        let cookie = s
+            .login("287082", None, 59)
+            .expect("valid TOTP mints a cookie");
         let header = format!("{}={cookie}", cookie::COOKIE_NAME);
-        assert!(s.cookie_valid(Some(&header), 60), "the minted cookie authorizes");
-        assert!(s.login("999999", None, 59).is_none(), "a wrong code mints nothing");
+        assert!(
+            s.cookie_valid(Some(&header), 60),
+            "the minted cookie authorizes"
+        );
+        assert!(
+            s.login("999999", None, 59).is_none(),
+            "a wrong code mints nothing"
+        );
     }
 
     #[test]
@@ -328,24 +336,47 @@ mod tests {
             totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
             password: Some(password::Hash::hash_password("pw")),
         };
-        assert!(s.login("287082", Some("pw"), 59).is_some(), "TOTP + right pw logs in");
-        assert!(s.login("287082", Some("bad"), 59).is_none(), "wrong pw fails");
-        assert!(s.login("287082", None, 59).is_none(), "a required pw cannot be omitted");
+        assert!(
+            s.login("287082", Some("pw"), 59).is_some(),
+            "TOTP + right pw logs in"
+        );
+        assert!(
+            s.login("287082", Some("bad"), 59).is_none(),
+            "wrong pw fails"
+        );
+        assert!(
+            s.login("287082", None, 59).is_none(),
+            "a required pw cannot be omitted"
+        );
     }
 
     #[test]
     fn upgrade_with_session_only_promotes_bearer_with_seed() {
         let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
-        let promoted =
-            upgrade_with_session(AuthPolicy::Bearer("t".into()), Some("t".into()), Some(seed()), None);
-        assert!(matches!(promoted, AuthPolicy::Session(_)), "Bearer + seed → Session");
+        let promoted = upgrade_with_session(
+            AuthPolicy::Bearer("t".into()),
+            Some("t".into()),
+            Some(seed()),
+            None,
+        );
+        assert!(
+            matches!(promoted, AuthPolicy::Session(_)),
+            "Bearer + seed → Session"
+        );
 
         let no_seed =
             upgrade_with_session(AuthPolicy::Bearer("t".into()), Some("t".into()), None, None);
-        assert!(matches!(no_seed, AuthPolicy::Bearer(_)), "Bearer + no seed stays Bearer");
+        assert!(
+            matches!(no_seed, AuthPolicy::Bearer(_)),
+            "Bearer + no seed stays Bearer"
+        );
 
-        let local = upgrade_with_session(AuthPolicy::Localhost, Some("t".into()), Some(seed()), None);
-        assert!(matches!(local, AuthPolicy::Localhost), "Localhost stays Localhost");
+        let local =
+            upgrade_with_session(AuthPolicy::Localhost, Some("t".into()), Some(seed()), None);
+        assert!(
+            matches!(local, AuthPolicy::Localhost),
+            "Localhost stays Localhost"
+        );
     }
 
     #[test]

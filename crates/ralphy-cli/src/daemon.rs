@@ -179,7 +179,10 @@ fn enroll_totp<W: Write>(out: &mut W, seed_path: &Path, account: &str) -> Result
     let (seed, minted) = totp::ensure_seed_at(seed_path)?;
     if minted {
         let uri = seed.otpauth_uri("ralphy", account);
-        writeln!(out, "\nTOTP enrolled — scan this once with your authenticator:")?;
+        writeln!(
+            out,
+            "\nTOTP enrolled — scan this once with your authenticator:"
+        )?;
         match qrcode::QrCode::new(uri.as_bytes()) {
             Ok(code) => {
                 let rendered = code
@@ -440,7 +443,9 @@ mod tests {
         let mut typed = Cursor::new(b"hunter2\n".to_vec());
         let mut out: Vec<u8> = Vec::new();
         enroll_password(&mut typed, &mut out, &path).unwrap();
-        let saved = password::load_from(&path).unwrap().expect("a password was saved");
+        let saved = password::load_from(&path)
+            .unwrap()
+            .expect("a password was saved");
         assert!(saved.verify("hunter2"), "the saved hash verifies the input");
         assert!(String::from_utf8(out).unwrap().contains("set"));
     }

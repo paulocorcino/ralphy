@@ -106,7 +106,10 @@ mod tests {
     #[test]
     fn wrong_token_rejected() {
         let c = sign("tok", 1000);
-        assert!(!verify("other", &c, 900), "a different signing key must not verify");
+        assert!(
+            !verify("other", &c, 900),
+            "a different signing key must not verify"
+        );
     }
 
     #[test]
@@ -121,7 +124,10 @@ mod tests {
         let h = set_cookie_value("1.1000.abc");
         assert!(h.starts_with("ralphy_session=1.1000.abc"));
         assert!(h.contains("HttpOnly") && h.contains("SameSite=Strict") && h.contains("Path=/"));
-        assert!(!h.contains("Secure"), "the cookie is deliberately not Secure");
+        assert!(
+            !h.contains("Secure"),
+            "the cookie is deliberately not Secure"
+        );
     }
 
     #[test]
@@ -130,7 +136,10 @@ mod tests {
             from_cookie_header(Some("a=1; ralphy_session=xyz; b=2")),
             Some("xyz".to_string())
         );
-        assert_eq!(from_cookie_header(Some("ralphy_session=lone")), Some("lone".into()));
+        assert_eq!(
+            from_cookie_header(Some("ralphy_session=lone")),
+            Some("lone".into())
+        );
         assert_eq!(from_cookie_header(Some("other=1")), None);
         assert_eq!(from_cookie_header(None), None);
     }

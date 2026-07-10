@@ -1712,7 +1712,12 @@ mod tests {
 
         // 2. The login screen is reachable without a cookie.
         let resp = session_router("tok")
-            .oneshot(Request::builder().uri("/login").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/login")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK, "GET /login → 200");
@@ -1725,10 +1730,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/api/login")
-                    .header(
-                        header::CONTENT_TYPE,
-                        "application/x-www-form-urlencoded",
-                    )
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                     .body(Body::from(format!("code={code}")))
                     .unwrap(),
             )
@@ -1741,9 +1743,15 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .expect("a Set-Cookie header")
             .to_string();
-        assert!(set_cookie.contains("ralphy_session="), "cookie name: {set_cookie}");
+        assert!(
+            set_cookie.contains("ralphy_session="),
+            "cookie name: {set_cookie}"
+        );
         assert!(set_cookie.contains("HttpOnly"), "HttpOnly: {set_cookie}");
-        assert!(set_cookie.contains("SameSite=Strict"), "SameSite: {set_cookie}");
+        assert!(
+            set_cookie.contains("SameSite=Strict"),
+            "SameSite: {set_cookie}"
+        );
 
         // The cookie value is everything up to the first attribute `;`.
         let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
@@ -1768,7 +1776,9 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FOUND, "GET / → 302");
         assert_eq!(
-            resp.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()),
+            resp.headers()
+                .get(header::LOCATION)
+                .and_then(|v| v.to_str().ok()),
             Some("/login"),
             "redirect target is /login"
         );
@@ -1784,7 +1794,11 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "Bearer authorizes under Session");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Bearer authorizes under Session"
+        );
     }
 
     /// A wrong TOTP code is rejected `401` by `POST /api/login` (the login handler
