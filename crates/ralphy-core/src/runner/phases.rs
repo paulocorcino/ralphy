@@ -16,8 +16,8 @@ use crate::{
 
 use super::artifacts::{
     clear_protocol_failure, clear_verify_failure, record_citations, verify_failure_summary,
-    write_handoffs, write_issue_json, write_knowledge, write_protocol_failure, write_references,
-    write_verify_failure,
+    verify_spawn_failure_summary, write_handoffs, write_issue_json, write_knowledge,
+    write_protocol_failure, write_references, write_verify_failure,
 };
 use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
@@ -722,6 +722,33 @@ pub(crate) fn verify_gate(
                         .map(|c| (c.argv.clone(), c.secs))
                         .collect::<Vec<_>>(),
                 );
+                // Short-circuit a non-repairable spawn failure (#182): the gate's
+                // deciding command never ran (program not found / typo'd binary),
+                // so re-running the SAME argv can never make it pass. Handing it
+                // back would burn the whole VERIFY_MAX_REPAIRS budget on a fix the
+                // agent has no way to win. Skip immediately with a spawn-specific
+                // artifact and summary — still honoring ADR-0011 (the runner never
+                // lets a self-report past a red gate); it just stops wasting the
+                // budget on a structural failure it can already see.
+                if report.spawn_failed() {
+                    let summary = verify_spawn_failure_summary(&report);
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(
+                        number = issue.number,
+                        %summary,
+                        "verify gate — command could not spawn, non-repairable, issue not closed"
+                    );
+                    // Distinct honesty artifact: names it a spec/spawn problem, not
+                    // a test failure. Best-effort — a comment failure must not crash
+                    // the run.
+                    if let Err(e) = cx.tracker.comment(
+                        issue.number,
+                        &verify::spawn_failure_comment(&cx.cfg.stamp, &report),
+                    ) {
+                        warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+                    }
+                    break GateDecision::Failed(summary);
+                }
                 // Honesty artifact: every command + its exit code (pass or
                 // fail), with the failing tail on a failure. Best-effort — a
                 // comment failure must not crash a run that otherwise passed.

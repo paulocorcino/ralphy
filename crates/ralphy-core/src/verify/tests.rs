@@ -228,6 +228,64 @@ fn run_spawn_failure_is_a_failure() {
     );
     assert!(!report.passed, "an unspawnable command fails the gate");
     assert!(report.commands[0].output_tail.contains("failed to spawn"));
+    // The command never ran: flagged spawn_failed distinctly from a signal kill
+    // or a non-zero exit, and surfaced through the report (#182).
+    assert!(
+        report.commands[0].spawn_failed,
+        "flagged as a spawn failure"
+    );
+    assert!(
+        report.spawn_failed(),
+        "the gate's failure is a spawn failure"
+    );
+}
+
+/// An empty argv can't be run — treated as a spawn failure so the gate short-
+/// circuits rather than handing back an unrepairable command (#182).
+#[test]
+fn run_empty_argv_is_a_spawn_failure() {
+    let dir = std::env::temp_dir();
+    let report = run(&[vec![]], &dir, Duration::from_secs(30));
+    assert!(!report.passed);
+    assert!(report.commands[0].spawn_failed);
+    assert!(report.spawn_failed());
+}
+
+/// A real non-zero exit is NOT a spawn failure: the command ran and failed, so the
+/// gate keeps its full repair budget (regression guard — the short-circuit must not
+/// swallow a repairable test failure, #182).
+#[test]
+fn run_nonzero_exit_is_not_a_spawn_failure() {
+    let dir = std::env::temp_dir();
+    let report = run(&[fail_cmd()], &dir, Duration::from_secs(30));
+    assert!(!report.passed);
+    assert!(
+        !report.commands[0].spawn_failed,
+        "it ran, then exited non-zero"
+    );
+    assert!(
+        !report.spawn_failed(),
+        "a ran-and-failed gate is not a spawn failure"
+    );
+}
+
+/// The gate's *deciding* failure is what counts: a passing command followed by an
+/// unspawnable one is still a spawn failure (the short-circuit keys off the first
+/// failure, which the gate stops at — #182).
+#[test]
+fn run_spawn_failure_after_a_pass_is_still_a_spawn_failure() {
+    let dir = std::env::temp_dir();
+    let report = run(
+        &[ok_cmd(), vec!["definitely-not-a-real-binary-xyz".into()]],
+        &dir,
+        Duration::from_secs(30),
+    );
+    assert!(!report.passed);
+    assert!(report.spawn_failed());
+    assert_eq!(
+        report.first_failure().map(|c| c.argv.as_slice()),
+        Some(["definitely-not-a-real-binary-xyz".to_string()].as_slice())
+    );
 }
 
 #[test]
@@ -238,6 +296,7 @@ fn comment_marks_pass_and_fail() {
                 argv: vec!["cargo".into(), "fmt".into()],
                 exit_code: Some(0),
                 timed_out: false,
+                spawn_failed: false,
                 output_tail: String::new(),
                 secs: 0.1,
             },
@@ -245,6 +304,7 @@ fn comment_marks_pass_and_fail() {
                 argv: vec!["cargo".into(), "test".into()],
                 exit_code: Some(101),
                 timed_out: false,
+                spawn_failed: false,
                 output_tail: "panicked at assertion".into(),
                 secs: 0.1,
             },
@@ -270,6 +330,68 @@ fn invalid_comment_names_error_and_open_issue() {
     assert!(c.contains("could NOT run"));
     assert!(c.contains("left open"));
     assert!(c.contains("`- cargo test`"), "carries the parse error");
+}
+
+/// The honesty artifact for a spawn failure (#182): same heading shape, names it a
+/// spec/spawn problem (not a test failure), says no repair attempts were spent, and
+/// shows both the "could not spawn" status line and the spawn error detail.
+#[test]
+fn spawn_failure_comment_names_spawn_problem_and_no_repairs() {
+    let report = VerifyReport {
+        commands: vec![CommandOutcome {
+            argv: vec!["cargo".into(), "test".into()],
+            exit_code: None,
+            timed_out: false,
+            spawn_failed: true,
+            output_tail: "failed to spawn `cargo`: program not found".into(),
+            secs: 0.0,
+        }],
+        passed: false,
+    };
+    let c = spawn_failure_comment("stamp-8", &report);
+    assert!(c.contains("## Verify (Ralphy run stamp-8)"));
+    assert!(c.contains("could NOT run"));
+    assert!(
+        c.contains("spec/spawn problem"),
+        "named as spec/spawn, not test"
+    );
+    assert!(
+        c.contains("WITHOUT spending any repair attempts"),
+        "states no repair budget was burned"
+    );
+    assert!(
+        c.contains("\u{2717} cargo test    could not spawn"),
+        "status line names the unspawnable command"
+    );
+    assert!(c.contains("failed to spawn `cargo`"), "spawn error shown");
+}
+
+/// The shared status line renders a spawn failure distinctly from a signal kill:
+/// "could not spawn" vs. "exit killed", both of which carry `exit_code: None`
+/// (#182). Regression guard for the core distinction the issue is about.
+#[test]
+fn status_line_distinguishes_spawn_failure_from_kill() {
+    let spawn = CommandOutcome {
+        argv: vec!["nope".into()],
+        exit_code: None,
+        timed_out: false,
+        spawn_failed: true,
+        output_tail: String::new(),
+        secs: 0.0,
+    };
+    let killed = CommandOutcome {
+        argv: vec!["cargo".into(), "test".into()],
+        exit_code: None,
+        timed_out: false,
+        spawn_failed: false,
+        output_tail: String::new(),
+        secs: 0.0,
+    };
+    assert_eq!(
+        status_line(&spawn),
+        "\u{2717} nope    could not spawn — program not found"
+    );
+    assert_eq!(status_line(&killed), "\u{2717} cargo test    exit killed");
 }
 
 /// The Windows batch-routing decision, isolated from PATH resolution: a resolved
@@ -322,6 +444,7 @@ fn repair_brief_names_failure_and_forbids_weakening() {
             argv: vec!["pnpm".into(), "install".into()],
             exit_code: Some(1),
             timed_out: false,
+            spawn_failed: false,
             output_tail: "ERR_PNPM_LOCKFILE_MISMATCH".into(),
             secs: 0.1,
         }],
