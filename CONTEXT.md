@@ -101,7 +101,8 @@ only extension attribute, since CloudEvents extensions must be simple types),
 plus attribution and diagnostics grouped in the reserved `data.emitter`
 object (`version`, `user`, `host`, `os`, `pid`, `ip`, `tz`). PID is
 diagnostic, never a key (recycled, collides across hosts).
-_Avoid_: instance id (implies persistence we don't have), session id.
+_Avoid_: instance id (the persistent identity is the **daemon**'s `daemon_id`,
+a different species — run events stay keyed by the ephemeral `runid`), session id.
 
 **Queue snapshot**:
 The per-issue backlog view as the runner judges it — number, title, labels,
@@ -177,6 +178,119 @@ The human is in the loop while the agent works. Distinct from the **Human label*
 triage role: there the agent never works the issue at all.
 _Avoid_: HITL (reserved for the triage role), human-in-the-loop.
 
+**Daemon**:
+The resident "department" of the same `ralphy` binary (`ralphy daemon`; ADR-0032).
+A **supervised launcher, never a runtime**: remote commands make it spawn
+ordinary run-scoped child processes — exactly the invocations a scheduled
+timer would fire (ADR-0026's blessed forms), no more — and it hosts
+**workbench sessions**. It never contains a run's execution loop, so "the run,
+not the cron" survives it. A run *is the daemon's* only when the daemon
+spawned it (it then carries the daemon's identity in its events); a run typed
+by hand inside a free-console session is an ordinary manual run. **One daemon
+per environment**: WSL is a plain Linux host running its own daemon; the
+**control plane** groups a machine's daemons by host. It reaches the control
+plane by dialing **out** (see **Control-plane tunnel**); it opens no inbound
+port.
+_Avoid_: service, server (it dials out), agent (reserved for the CLI vendors),
+instance id (the persistent key is `daemon_id`; `runid` stays run-scoped).
+
+**Daemon identity**:
+Three layers, three audiences: the `daemon_id` (minted once at install — the
+stable machine key that credentials and history reference; humans never see
+it), the **name** (operator-given baptism, fleet-unique, renameable — the
+handle humans *and models* address: "run X on *anvil*"; names colliding with
+command-vocabulary terms — e.g. "forge", "queue" — are refused at
+enrollment, or the handle becomes ambiguous to the very models it serves),
+and the **emoji
+avatar** (cosmetic, non-unique — the daemon's face in fleet UIs). Models and
+humans speak the name; machines speak the id — name→id resolves at the
+control plane, so a rename never breaks anything in flight. A daemon joins
+the **fleet** by **enrollment**: a one-time short-lived code exchanged for a
+per-daemon revocable credential (revoking one daemon never shuts the fleet).
+_Avoid_: hostname (a suggestion for the name, not the name), token (the
+credential is per-daemon and revocable, not a shared static secret).
+
+**Fleet**:
+The set of enrolled **daemons** an operator commands through the **control
+plane** — many machines, many environments (a Windows host and its WSL distro
+are two fleet members grouped under one machine). Daemon **names** are unique
+within the fleet; revocation removes one member without touching the rest.
+Distinct from the "fleet of Ralphys" in **Emitter identity**, which is about
+concurrent *run processes* telling themselves apart in the event stream.
+_Avoid_: cluster (no shared workload), farm.
+
+**Forge**:
+The service hosting a repo's remotes, issues and labels — GitHub today, and
+GitHub only; the word exists so contracts that *could* one day face GitLab /
+Gitea / a local mirror are named neutrally (see **Forge query**), not as a
+promise that they exist. A repo with no remote has no forge — forge-facing
+concepts (queue, labels, forge queries) simply don't apply to it. Historical
+prose in this glossary keeps saying "GitHub" where it means today's only
+forge; that is accurate, not a violation.
+_Avoid_: provider (vague), host (overloaded with **Emitter identity**'s
+`host`), platform (that's the **control plane**'s word).
+
+**Forge query**:
+The read-only request/response family of the tunnel's command vocabulary: the
+**control plane** asks, the **daemon** answers with repository data (issues in
+any state, an issue's full thread, labels, branches…) fetched with the
+operator's local forge authentication — the platform itself never holds a
+forge token (ADR-0019's stance, extended from push to pull). The vocabulary
+is **Ralphy's, never the forge's**: verbs are named in this glossary's terms
+(issue, thread, label, queue), parameterized and paginated, each backed by a
+fixed read-only invocation with the repo always resolved from the **repo
+registry**. GitHub is the only implementation today; the forge-neutral
+contract is the seam a future GitLab/Gitea slots into. Complementary to the
+**queue snapshot** push (ADR-0020): the sink pushes facts, the query answers
+questions.
+_Avoid_: gateway/proxy (a raw passthrough was rejected — ADR-0032 §6), GitHub
+query (the contract is forge-neutral), graph (nothing is graph-shaped here).
+
+**Repo registry**:
+The list of repos a **daemon** can act on, one registry per daemon. It is
+**passive**: every `init`/`run`/`triage` upserts its repo, keyed by the
+ADR-0008 project identity (`owner/repo` slug) with the path as a mutable
+attribute — a moved repo self-heals on its next run, and the key never
+breaks. Entries are never auto-deleted, only marked unreachable; removal is a
+human act (`ralphy daemon remove`). Explicit `ralphy daemon add` exists only
+to register a repo before its first run.
+_Avoid_: workspace list, auto-discovery (nothing scans the disk).
+
+**Workbench session**:
+A human-driven interactive agent CLI session (Claude/Codex/OpenCode) hosted by
+a **daemon** and driven through a browser terminal. Defined by two
+coordinates: repo and agent CLI — always spawned **native to the hosting
+daemon's OS** (picking a WSL repo means picking the WSL daemon, never a
+cross-boundary spawn). Sessions belong to the daemon, not the connection:
+the session and its scrollback survive a dropped connection and the browser
+**reattaches** (tmux model). The curated launcher (repo × agent) is the
+product; a **free console** is a separate, explicit session kind. Distinct
+from **Supervised session** (watching a *run's* agent): here the human
+drives; no run is involved.
+_Avoid_: remote shell (the free-console kind only), terminal (the widget, not
+the session), remote session (too generic).
+
+**Control plane**:
+The single web application (Phase 2 of ADR-0032; not yet built) where the
+**fleet** converges: it consumes run telemetry (the CloudEvents sink,
+ADR-0019), relays **control-plane tunnels**, answers the Telegram command
+bot, and serves the fleet UI with browser terminals. One platform, two data
+paths by nature — fire-and-forget events from ephemeral runs, live tunnel
+from resident daemons — separate in protocol, converging only here. It holds
+no GitHub token; Ralphy remains the bus.
+_Avoid_: dashboard (it commands, not just displays), relay (one of its roles,
+not the whole), events platform (subsumed).
+
+**Control-plane tunnel**:
+The single persistent outbound connection each **daemon** holds to the
+**control plane**, multiplexing terminal streams and control commands, plus a
+presence heartbeat. Carries only what is *interactive*; run telemetry stays
+on the CloudEvents sink (ADR-0019). The relay side is a stateless bridge
+(session state lives in the daemon), but it sits in the trust path — the
+relay host is critical infrastructure.
+_Avoid_: webhook, event channel (that's the sink), gateway (the daemon is not
+a server).
+
 **Blocked by / dependency gating**:
 An issue's `## Blocked by` section names other issues (`#N`) it depends on. The
 runner gates on it: if any named blocker is still **open**, the blocked issue is
@@ -227,6 +341,13 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
 - The **core** is execution-mode-agnostic: it asks an **adapter** to work an issue
   and receives an outcome. PTY, interactive sessions, and completion sentinels
   live inside the **adapter**, never in the core.
+- A **daemon** launches runs but never contains them: a daemon-spawned run is
+  a normal run that additionally carries the daemon's identity in its events;
+  a cron or manual run (including one typed inside a **free console**) simply
+  doesn't. Observability never depends on a daemon existing.
+- A **workbench session** involves no run; a **Supervised session** watches a
+  run. The **control plane** sees both worlds — tunnel (interactive) and
+  CloudEvents sink (telemetry) — but the two never share a channel.
 - **Triage evidence** = the issue body, its full comment thread, and the
   guardrailed attachments the CLI fetches for the triage agent (ADR-0025); an
   attachment listed `not fetched (<reason>)` is evidence the agent does **not**
@@ -258,3 +379,13 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
 - "HITL" was used to mean both the **Human label** triage role (agent never works
   the issue) and live human oversight of a running session — resolved: HITL is
   **only** the triage role; the oversight concept is a **Supervised session**.
+- "Fleet" was used loosely for both concurrent run processes ("fleet of
+  Ralphys", **Emitter identity**) and the set of enrolled daemons — resolved:
+  **Fleet** canonically means the enrolled daemons; the event-stream sense is
+  descriptive prose, keyed by `runid`, never by fleet membership.
+- "GitHub" vs "forge": **Forge** is the neutral term — already used
+  informally (ADR-0021: "the forge does: the GitHub assignee"), canonized
+  2026-07-09 for contracts that must not bake in a vendor dialect
+  (**Forge query**). GitHub
+  is the only forge and existing prose naming it stays as-is; new
+  cross-boundary contracts say forge, vendor-specific mechanics say GitHub.
