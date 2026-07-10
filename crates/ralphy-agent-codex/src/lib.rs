@@ -42,7 +42,7 @@ use command::{
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
-use usage::{codex_sessions_dir, fold_rollout_usage};
+use usage::{codex_sessions_dir, fold_rollout_usage, rollout_session_id};
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` that emits a vendor-neutral
@@ -184,9 +184,12 @@ impl Agent for CodexAgent {
 
         // None = resumed (finalized plan kept, no vendor run): no rollout payload to
         // fold, so report zero planning tokens — the whole point of the resume fix.
-        let usage = match session {
-            Some((_, (before, after))) => fold_rollout_usage(&before, &after, Some(model)),
-            None => ralphy_core::Usage::default(),
+        let (usage, session_id) = match session {
+            Some((_, (before, after))) => (
+                fold_rollout_usage(&before, &after, Some(model)),
+                rollout_session_id(&before, &after),
+            ),
+            None => (ralphy_core::Usage::default(), None),
         };
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
@@ -194,6 +197,7 @@ impl Agent for CodexAgent {
             recommended_model: recommended_tier(&md),
             path: plan_path,
             usage,
+            session_id,
         })
     }
 
@@ -259,6 +263,7 @@ impl Agent for CodexAgent {
         Ok(Execution {
             outcome,
             usage: fold_rollout_usage(&before, &after, Some(model)),
+            session_id: rollout_session_id(&before, &after),
         })
     }
 }

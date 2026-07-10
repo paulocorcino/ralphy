@@ -95,6 +95,18 @@ pub(crate) fn fold_rollout_usage(
     Usage::fold_usage(&parsed, model.as_deref())
 }
 
+/// The vendor session identity of a Codex run (ADR-0033 §5): the first appeared
+/// `rollout-*.jsonl` file's **stem** (`rollout-<ts>-<uuid>`). This is the dedup
+/// contract the future usage-scan MUST key Codex sessions on identically. `None`
+/// when no rollout appeared.
+pub(crate) fn rollout_session_id(before: &[PathBuf], after: &[PathBuf]) -> Option<String> {
+    session_files_appeared(before, after)
+        .first()
+        .and_then(|p| p.file_stem())
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +135,19 @@ mod tests {
         assert_eq!(usage.cache_creation, 0);
         assert_eq!(usage.model.as_deref(), Some("gpt-5-codex"));
         assert_eq!(usage.total(), 852423, "reconciles with Codex's own total");
+    }
+
+    #[test]
+    fn rollout_session_id_takes_first_appeared_stem() {
+        let after = vec![PathBuf::from(
+            "/s/rollout-2026-01-01T00-00-00-uuid.jsonl",
+        )];
+        assert_eq!(
+            rollout_session_id(&[], &after).as_deref(),
+            Some("rollout-2026-01-01T00-00-00-uuid")
+        );
+        // Nothing appeared → None.
+        assert_eq!(rollout_session_id(&[], &[]), None);
     }
 
     #[test]
