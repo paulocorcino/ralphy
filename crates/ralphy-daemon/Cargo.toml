@@ -32,6 +32,19 @@ terminal_size = "0.3"
 # CSPRNG for the access token (ADR-0032 §4); "0.2" matches the 0.2.17 already in
 # Cargo.lock, so no new transitive tree.
 getrandom = "0.2"
+# Browser-session auth (issue #179, ADR-0032 §4): TOTP (RFC 6238), a signed
+# stateless session cookie, and an optional PBKDF2 password.
+# `sha1`/`data-encoding`/`subtle`/`digest` are already in Cargo.lock (0.10.6 /
+# 2.11.0 / 2.6.1 / 0.10.7); `hmac`/`pbkdf2`/`qrcode` are new but reuse the
+# existing `digest 0.10` / `sha1 0.10` RustCrypto tree (qrcode is pure-Rust).
+hmac = "0.12"
+sha1 = "0.10"
+data-encoding = "2"
+subtle = "2"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+# `default-features = false` drops the `image`/`svg` renderers — only the pure
+# unicode string render is used, so no image/bytemuck transitive tree.
+qrcode = { version = "0.14", default-features = false }
 
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.

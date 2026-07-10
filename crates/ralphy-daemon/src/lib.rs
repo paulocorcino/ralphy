@@ -21,11 +21,14 @@ use include_dir::{include_dir, Dir};
 
 pub mod auth;
 pub mod autostart;
+pub mod cookie;
 pub mod dispatch;
 pub mod identity;
+pub mod password;
 pub mod protocol;
 pub mod registry;
 pub mod session;
+pub mod totp;
 pub mod usage;
 
 use protocol::{Command, Frame, Presence};

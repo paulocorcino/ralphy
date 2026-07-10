@@ -15,8 +15,11 @@
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+
+use crate::{cookie, password, totp};
 
 /// Env override for the access token: when set non-empty it wins over the
 /// on-disk token (a spawned daemon can be handed its token this way). Stripped
@@ -110,15 +113,64 @@ pub fn strip_token_from_env() {
     std::env::remove_var(TOKEN_ENV);
 }
 
+/// The browser-session credentials for a hardened network bind (issue #179): the
+/// signing-key token, the enrolled TOTP seed, and an OPTIONAL password. Held
+/// behind an `Arc` in [`AuthPolicy::Session`] so the policy stays cheap to clone.
+pub struct SessionAuth {
+    /// The daemon access token — doubles as the machine bearer AND the cookie
+    /// signing key. One secret, two roles (ADR-0032 §4, stateless-cookie).
+    pub token: String,
+    /// The enrolled TOTP seed (the core login factor).
+    pub totp: totp::Seed,
+    /// An optional password (defense-in-depth); `None` when the operator did not
+    /// enrol one.
+    pub password: Option<password::Hash>,
+}
+
+impl SessionAuth {
+    /// Whether a `Cookie:` header carries a valid, unexpired session cookie
+    /// signed by this daemon's token.
+    pub fn cookie_valid(&self, cookie_header: Option<&str>, now: u64) -> bool {
+        match cookie::from_cookie_header(cookie_header) {
+            Some(value) => cookie::verify(&self.token, &value, now),
+            None => false,
+        }
+    }
+
+    /// Attempt a login: the TOTP `code` must verify (±1 step), AND — when a
+    /// password is enrolled — the supplied `password` must match. On success
+    /// returns a freshly signed cookie value; `None` on any failure (a missing
+    /// password when one is required is a failure).
+    pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
+        if !self.totp.verify(code, now, 1) {
+            return None;
+        }
+        if let Some(expected) = &self.password {
+            match password {
+                Some(pw) if expected.verify(pw) => {}
+                _ => return None,
+            }
+        }
+        Some(cookie::sign(&self.token, now + cookie::SESSION_TTL_SECS))
+    }
+}
+
 /// How a request is authorized for the daemon's bind. A loopback bind trusts the
-/// local user (no token); a network bind requires the exact bearer token.
-#[derive(Debug, Clone)]
+/// local user (no token); a bearer-only network bind requires the exact token; a
+/// [`Session`](AuthPolicy::Session) bind additionally accepts a browser session
+/// cookie (people) while the bearer still authorizes machines.
+#[derive(Clone)]
 pub enum AuthPolicy {
     /// Loopback bind: every request is authorized without a token.
     Localhost,
     /// Network bind: only a request carrying `Authorization: Bearer <token>`
     /// with this exact token is authorized.
     Bearer(String),
+    /// Hardened network bind: a machine `Bearer <token>` OR a valid browser
+    /// session cookie authorizes. The middleware also drives the login flow
+    /// (ADR-0032 §4). Additive so the `Localhost`/`Bearer` call sites stay
+    /// untouched.
+    Session(Arc<SessionAuth>),
 }
 
 impl AuthPolicy {
@@ -145,18 +197,53 @@ impl AuthPolicy {
     pub fn authorizes(&self, header: Option<&str>) -> bool {
         match self {
             AuthPolicy::Localhost => true,
-            AuthPolicy::Bearer(expected) => match header.and_then(|h| h.strip_prefix("Bearer ")) {
-                Some(got) => ct_eq(got.as_bytes(), expected.as_bytes()),
-                None => false,
-            },
+            AuthPolicy::Bearer(expected) => bearer_matches(header, expected),
+            // The machine path under a Session policy: a `Bearer <token>` header
+            // still authorizes non-browser clients unchanged (the cookie path is
+            // handled by the middleware, which owns `now`).
+            AuthPolicy::Session(s) => bearer_matches(header, &s.token),
         }
+    }
+}
+
+/// Whether an `Authorization` header is `Bearer <token>` matching `expected`
+/// (constant-time). Shared by the `Bearer` and `Session` (machine) arms.
+fn bearer_matches(header: Option<&str>, expected: &str) -> bool {
+    match header.and_then(|h| h.strip_prefix("Bearer ")) {
+        Some(got) => ct_eq(got.as_bytes(), expected.as_bytes()),
+        None => false,
+    }
+}
+
+/// Upgrade a resolved bind policy to a browser-session policy when a TOTP seed is
+/// enrolled (issue #179). Maps `Bearer(token)` + `Some(seed)` →
+/// `Session(SessionAuth{token, seed, password})`; leaves `Localhost`, and a
+/// `Bearer` with no seed, unchanged — honoring the opt-in posture (a network
+/// bind with no seed stays bearer-only). `token` is the effective access token
+/// captured BEFORE it is stripped from the env; it becomes the cookie signing
+/// key.
+pub fn upgrade_with_session(
+    policy: AuthPolicy,
+    token: Option<String>,
+    totp: Option<totp::Seed>,
+    password: Option<password::Hash>,
+) -> AuthPolicy {
+    match (policy, token, totp) {
+        (AuthPolicy::Bearer(_), Some(key), Some(seed)) => {
+            AuthPolicy::Session(Arc::new(SessionAuth {
+                token: key,
+                totp: seed,
+                password,
+            }))
+        }
+        (policy, _, _) => policy,
     }
 }
 
 /// Constant-time byte equality: length-checked, then XOR-accumulate over the
 /// whole slice so the compare time does not vary with how many leading bytes
 /// match. Avoids a timing side-channel on the token.
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -170,7 +257,7 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 /// Restrict a freshly written token file to the owner only (mode `0o600` on
 /// unix; the per-user home ACL on Windows), mirroring `identity::set_owner_only`.
 #[cfg(unix)]
-fn set_owner_only(path: &Path) -> Result<()> {
+pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let perms = std::fs::Permissions::from_mode(0o600);
     std::fs::set_permissions(path, perms)
@@ -178,7 +265,7 @@ fn set_owner_only(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_owner_only(_path: &Path) -> Result<()> {
+pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -200,6 +287,65 @@ mod tests {
         assert!(!policy.authorizes(None));
         // A bare token without the `Bearer ` scheme prefix is not authorized.
         assert!(!policy.authorizes(Some("s3cret")));
+    }
+
+    fn session_over(token: &str) -> AuthPolicy {
+        AuthPolicy::Session(Arc::new(SessionAuth {
+            token: token.to_string(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: None,
+        }))
+    }
+
+    #[test]
+    fn session_authorizes_machine_bearer() {
+        // The machine path under Session: a correct `Bearer <token>` still
+        // authorizes; a wrong one and a bare cookie-less request do not.
+        let policy = session_over("tok");
+        assert!(policy.authorizes(Some("Bearer tok")));
+        assert!(!policy.authorizes(Some("Bearer wrong")));
+        assert!(!policy.authorizes(None));
+    }
+
+    #[test]
+    fn session_login_and_cookie_valid() {
+        let s = SessionAuth {
+            token: "tok".into(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: None,
+        };
+        // T=59 → RFC vector code 287082 mints a cookie that then validates.
+        let cookie = s.login("287082", None, 59).expect("valid TOTP mints a cookie");
+        let header = format!("{}={cookie}", cookie::COOKIE_NAME);
+        assert!(s.cookie_valid(Some(&header), 60), "the minted cookie authorizes");
+        assert!(s.login("999999", None, 59).is_none(), "a wrong code mints nothing");
+    }
+
+    #[test]
+    fn session_login_requires_password_when_set() {
+        let s = SessionAuth {
+            token: "tok".into(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: Some(password::Hash::hash_password("pw")),
+        };
+        assert!(s.login("287082", Some("pw"), 59).is_some(), "TOTP + right pw logs in");
+        assert!(s.login("287082", Some("bad"), 59).is_none(), "wrong pw fails");
+        assert!(s.login("287082", None, 59).is_none(), "a required pw cannot be omitted");
+    }
+
+    #[test]
+    fn upgrade_with_session_only_promotes_bearer_with_seed() {
+        let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
+        let promoted =
+            upgrade_with_session(AuthPolicy::Bearer("t".into()), Some("t".into()), Some(seed()), None);
+        assert!(matches!(promoted, AuthPolicy::Session(_)), "Bearer + seed → Session");
+
+        let no_seed =
+            upgrade_with_session(AuthPolicy::Bearer("t".into()), Some("t".into()), None, None);
+        assert!(matches!(no_seed, AuthPolicy::Bearer(_)), "Bearer + no seed stays Bearer");
+
+        let local = upgrade_with_session(AuthPolicy::Localhost, Some("t".into()), Some(seed()), None);
+        assert!(matches!(local, AuthPolicy::Localhost), "Localhost stays Localhost");
     }
 
     #[test]
