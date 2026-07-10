@@ -150,6 +150,9 @@ async fn serve(addr: SocketAddr) -> Result<()> {
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
 /// at runtime (the embedded HTML bakes in no identity).
+// One positional per resolved-at-boot path/handle; grouping them into a struct
+// would only move the argument list, not shrink it, and churn the ~20 call sites.
+#[allow(clippy::too_many_arguments)]
 pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
