@@ -139,9 +139,7 @@ mod tests {
 
     #[test]
     fn rollout_session_id_takes_first_appeared_stem() {
-        let after = vec![PathBuf::from(
-            "/s/rollout-2026-01-01T00-00-00-uuid.jsonl",
-        )];
+        let after = vec![PathBuf::from("/s/rollout-2026-01-01T00-00-00-uuid.jsonl")];
         assert_eq!(
             rollout_session_id(&[], &after).as_deref(),
             Some("rollout-2026-01-01T00-00-00-uuid")
