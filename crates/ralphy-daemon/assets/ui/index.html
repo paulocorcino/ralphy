@@ -29,8 +29,22 @@
   </head>
   <body>
     <main>
-      <h1>ralphy daemon</h1>
+      <h1 id="ident">ralphy daemon</h1>
       <p>The resident process is up. Workbench sessions arrive in a later slice.</p>
     </main>
+    <script>
+      // Identity is delivered at runtime (the embedded HTML bakes in none):
+      // render "avatar name" when the daemon has been baptized, else leave the
+      // default heading.
+      fetch("/api/identity")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((id) => {
+          if (id) {
+            document.getElementById("ident").textContent =
+              `${id.avatar} ${id.name}`;
+          }
+        })
+        .catch(() => {});
+    </script>
   </body>
 </html>

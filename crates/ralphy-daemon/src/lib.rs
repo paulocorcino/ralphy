@@ -10,8 +10,11 @@ use std::net::SocketAddr;
 use anyhow::{Context, Result};
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::Router;
+use axum::routing::get;
+use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
+
+pub mod identity;
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
 pub const DEFAULT_PORT: u16 = 7257;
@@ -60,7 +63,11 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let addr = listener.local_addr().context("reading the bound address")?;
     tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
 
-    axum::serve(listener, router())
+    let id = identity::load_current().unwrap_or(None);
+    if id.is_none() {
+        tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
+    }
+    axum::serve(listener, router(id))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("serving the daemon listener")?;
@@ -68,11 +75,32 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     Ok(())
 }
 
-/// The daemon's HTTP surface. Everything is the embedded UI for now; real
-/// routes (WebSocket upgrade, command vocabulary) will be added *before* the
-/// fallback as they land.
-pub fn router() -> Router {
-    Router::new().fallback(ui_asset)
+/// The daemon's HTTP surface. Real routes sit *before* the embedded-UI
+/// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
+/// when the daemon is un-baptized, so the static page can render "avatar name"
+/// at runtime (the embedded HTML bakes in no identity).
+pub fn router(identity: Option<identity::Identity>) -> Router {
+    Router::new()
+        .route("/api/identity", get(move || identity_route(identity)))
+        .fallback(ui_asset)
+}
+
+/// `GET /api/identity`: the loaded identity's `name`/`avatar` as JSON, or 404
+/// when the daemon has not been baptized yet.
+async fn identity_route(identity: Option<identity::Identity>) -> Response {
+    #[derive(serde::Serialize)]
+    struct IdentityView {
+        name: String,
+        avatar: String,
+    }
+    match identity {
+        Some(id) => Json(IdentityView {
+            name: id.name,
+            avatar: id.avatar,
+        })
+        .into_response(),
+        None => (StatusCode::NOT_FOUND, "no identity").into_response(),
+    }
 }
 
 /// Serve a file from the embedded UI tree; `/` means `index.html`.
@@ -120,7 +148,7 @@ mod tests {
     use tower::ServiceExt;
 
     async fn get(path: &str) -> Response {
-        router()
+        router(None)
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap()
@@ -145,6 +173,40 @@ mod tests {
     #[tokio::test]
     async fn unknown_path_is_404() {
         let resp = get("/no-such-asset").await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn api_identity_route_returns_name_and_avatar() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(Some(id))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(body.contains("anvil"), "body must carry the name; got: {body}");
+        assert!(body.contains("🐙"), "body must carry the avatar; got: {body}");
+
+        let resp = router(None)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
