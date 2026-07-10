@@ -65,6 +65,9 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // Captured at daemon start so every presence heartbeat reports process
     // uptime, not per-connection age.
     let start = Instant::now();
+    // Fired when the operator asks the daemon to stop. Every `/ws` presence loop
+    // watches this so a held-open connection cannot stall graceful shutdown.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding the daemon listener on {addr}"))?;
@@ -90,8 +93,13 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
-    axum::serve(listener, router(id, registry_path, start))
-        .with_graceful_shutdown(shutdown_signal())
+    axum::serve(listener, router(id, registry_path, start, shutdown_rx))
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            // Break every live `/ws` loop so graceful shutdown does not wait on
+            // a long-lived heartbeat connection.
+            let _ = shutdown_tx.send(true);
+        })
         .await
         .context("serving the daemon listener")?;
     tracing::info!("daemon stopped");
@@ -106,6 +114,7 @@ pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
     start: Instant,
+    shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Router {
     let ws_identity = identity.clone();
     Router::new()
@@ -121,7 +130,10 @@ pub fn router(
             "/ws",
             get(move |ws: WebSocketUpgrade| {
                 let id = ws_identity.clone();
-                async move { ws.on_upgrade(move |socket| ws_presence_loop(socket, id, start)) }
+                let shutdown = shutdown.clone();
+                async move {
+                    ws.on_upgrade(move |socket| ws_presence_loop(socket, id, start, shutdown))
+                }
             }),
         )
         .fallback(ui_asset)
@@ -138,18 +150,23 @@ fn build_presence(identity: Option<&identity::Identity>, uptime: Duration) -> Fr
     })
 }
 
-/// Push a presence heartbeat to a connected client every 2s until it hangs up.
-/// The send loop MUST exit on every client-close path (the `recv` arm): a
-/// `None`/`Close`/error from the client breaks the loop and drops the socket, so
-/// no task keeps sending after a disconnect.
+/// Push a presence heartbeat to a connected client every 2s until it hangs up
+/// or the daemon shuts down. The send loop MUST exit on every teardown path —
+/// a `None`/`Close`/error from the client (the `recv` arm) OR a daemon shutdown
+/// (the `shutdown` arm) — and drop the socket, so no task keeps sending after a
+/// disconnect and a held-open connection cannot stall graceful shutdown.
 async fn ws_presence_loop(
     mut socket: WebSocket,
     identity: Option<identity::Identity>,
     start: Instant,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let mut tick = tokio::time::interval(Duration::from_secs(2));
     loop {
         tokio::select! {
+            // Ok = the daemon signalled shutdown; Err = the sender was dropped
+            // (its runtime is going away). Either way, stop serving this socket.
+            _ = shutdown.changed() => break,
             _ = tick.tick() => {
                 let frame = build_presence(identity.as_ref(), start.elapsed());
                 if socket
@@ -265,11 +282,22 @@ mod tests {
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
+    /// A never-fired shutdown receiver for the in-process router tests (none of
+    /// them exercise `/ws`, so its sender dropping immediately is harmless).
+    fn idle_shutdown() -> tokio::sync::watch::Receiver<bool> {
+        tokio::sync::watch::channel(false).1
+    }
+
     async fn get(path: &str) -> Response {
-        router(None, PathBuf::from("does-not-exist"), Instant::now())
-            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
-            .await
-            .unwrap()
+        router(
+            None,
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+        )
+        .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap()
     }
 
     #[tokio::test]
@@ -301,15 +329,20 @@ mod tests {
             name: "anvil".into(),
             avatar: "🐙".into(),
         };
-        let resp = router(Some(id), PathBuf::from("does-not-exist"), Instant::now())
-            .oneshot(
-                Request::builder()
-                    .uri("/api/identity")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8_lossy(&body);
@@ -322,15 +355,20 @@ mod tests {
             "body must carry the avatar; got: {body}"
         );
 
-        let resp = router(None, PathBuf::from("does-not-exist"), Instant::now())
-            .oneshot(
-                Request::builder()
-                    .uri("/api/identity")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
@@ -345,7 +383,7 @@ mod tests {
         store.upsert("owner/gone", "/no/such/path/exists");
         registry::save_to(&store, &registry_path).unwrap();
 
-        let resp = router(None, registry_path, Instant::now())
+        let resp = router(None, registry_path, Instant::now(), idle_shutdown())
             .oneshot(
                 Request::builder()
                     .uri("/api/repos")

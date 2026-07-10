@@ -17,7 +17,7 @@ toml.workspace = true
 ulid = { workspace = true, features = ["serde"] }
 # The workspace's first — and only — async stack (ADR-0032 §10): narrow tokio
 # features, not `full`; axum carries HTTP now and the WebSocket upgrade later.
-tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "macros", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "macros", "time", "sync"] }
 axum = { version = "0.8", features = ["ws"] }
 
 [dev-dependencies]
