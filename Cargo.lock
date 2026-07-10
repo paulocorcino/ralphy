@@ -1444,6 +1444,7 @@ dependencies = [
  "ralphy-proc-util",
  "ralphy-pty",
  "ralphy-usage-scan",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
