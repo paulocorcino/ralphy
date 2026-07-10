@@ -842,4 +842,55 @@ mod tests {
         .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
+
+    /// A Bearer router with the WRONG token returns `401` — the guard checks the
+    /// token VALUE, not merely the header's presence (a presence-only bug would
+    /// pass every other test here).
+    #[tokio::test]
+    async fn bearer_policy_rejects_wrong_token() {
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Bearer("tok".into()),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .header(header::AUTHORIZATION, "Bearer wrong")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// The auth layer covers the REMOTE-EXEC WS routes, not just `/api`: an
+    /// unauthenticated `/ws/session` (PTY) and `/ws/command` (run dispatch)
+    /// request is rejected `401` by the middleware BEFORE reaching the upgrade
+    /// handler. A `401` here (not the handler's `400`) proves the layer fired, so
+    /// a future route reordered past the layer would fail this test instead of
+    /// silently serving an unauthenticated shell/run trigger.
+    #[tokio::test]
+    async fn bearer_policy_gates_the_remote_exec_ws_routes() {
+        for uri in ["/ws/session?repo=x&agent=claude", "/ws/command"] {
+            let resp = router(
+                None,
+                PathBuf::from("does-not-exist"),
+                Instant::now(),
+                idle_shutdown(),
+                auth::AuthPolicy::Bearer("tok".into()),
+            )
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "{uri} must be gated by the auth layer, not reach its handler"
+            );
+        }
+    }
 }
