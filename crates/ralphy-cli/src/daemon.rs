@@ -1,11 +1,17 @@
-//! `ralphy daemon`: run the resident daemon in the foreground (docs/adr/0032).
-//! The CLI is only the composition root — it installs a plain tracing stack for
-//! readable foreground logs and hands off to `ralphy-daemon`, where the async
-//! runtime lives. `install`/`status`/`uninstall` (OS autostart, mirroring
-//! `schedule`) come in later slices.
+//! `ralphy daemon`: run the resident daemon in the foreground (docs/adr/0032),
+//! plus `daemon setup` (interactive baptism) and `daemon status`. The CLI is the
+//! composition root — it installs a plain tracing stack for readable foreground
+//! logs and hands off to `ralphy-daemon`, where the async runtime lives.
+//! Baptism is interactive stdin, so it lives in `setup`, never in the resident
+//! foreground process which must not block on stdin. `install`/`uninstall` (OS
+//! autostart, mirroring `schedule`) come in later slices.
 
-use anyhow::Result;
-use clap::Args;
+use std::io::{BufRead, Write};
+
+use anyhow::{Context, Result};
+use clap::{Args, Subcommand};
+
+use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
@@ -13,11 +19,111 @@ pub(crate) struct DaemonArgs {
     /// non-localhost bind is a future explicit opt-in (docs/adr/0032 §4).
     #[arg(long, default_value_t = ralphy_daemon::DEFAULT_PORT)]
     pub(crate) port: u16,
+
+    #[command(subcommand)]
+    pub(crate) command: Option<DaemonCommand>,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum DaemonCommand {
+    /// Baptize the daemon: pick a name (hostname-derived default) and an avatar,
+    /// minting the daemon_id on first run.
+    Setup,
+    /// Show the daemon's identity ("avatar name") and the listener hint.
+    Status,
 }
 
 pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
-    init_tracing();
-    ralphy_daemon::run(ralphy_daemon::DaemonConfig { port: args.port })
+    match &args.command {
+        None => {
+            init_tracing();
+            ralphy_daemon::run(ralphy_daemon::DaemonConfig { port: args.port })
+        }
+        Some(DaemonCommand::Setup) => setup(args.port),
+        Some(DaemonCommand::Status) => status(args.port),
+    }
+}
+
+/// Interactive baptism: derive a default name from the hostname, run the console
+/// over real stdin/stdout, then persist the identity (mint-once) and echo the
+/// resulting status line.
+fn setup(port: u16) -> Result<()> {
+    let host = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let suggested = identity::suggest_name(&host);
+
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    let (name, avatar) = baptize_console(stdin.lock(), &mut stdout, &suggested)?;
+
+    let id = identity::baptize(&identity::daemon_toml_path()?, name, avatar)?;
+    writeln!(stdout, "\nbaptized: {}", format_status_line(&id))?;
+    writeln!(stdout, "listener: http://127.0.0.1:{port}")?;
+    Ok(())
+}
+
+/// Print the daemon's identity and listener hint, or a setup hint when the
+/// daemon has not been baptized yet.
+fn status(port: u16) -> Result<()> {
+    match identity::load_current()? {
+        Some(id) => println!("{}", format_status_line(&id)),
+        None => println!("not set up — run `ralphy daemon setup`"),
+    }
+    println!("listener: http://127.0.0.1:{port}");
+    Ok(())
+}
+
+/// Drive the interactive baptism over `input`/`out`: prompt for a name
+/// (defaulting to `suggested` on an empty line), re-prompting on any
+/// [`validate_name`] error; then present the numbered avatar list and read a
+/// number until [`avatar_by_number`] resolves. Returns the `(name, avatar)`.
+fn baptize_console<R: BufRead, W: Write>(
+    mut input: R,
+    out: &mut W,
+    suggested: &str,
+) -> Result<(String, String)> {
+    let name = loop {
+        writeln!(out, "daemon name [{suggested}]:")?;
+        out.flush()?;
+        let line = read_line(&mut input)?;
+        let raw = if line.trim().is_empty() {
+            suggested
+        } else {
+            line.trim()
+        };
+        match validate_name(raw) {
+            Ok(name) => break name,
+            Err(e) => writeln!(out, "  {e}")?,
+        }
+    };
+
+    writeln!(out, "\npick an avatar by number:")?;
+    for (i, emoji) in AVATARS.iter().enumerate() {
+        writeln!(out, "  {} {}", i + 1, emoji)?;
+    }
+    let avatar = loop {
+        writeln!(out, "avatar number:")?;
+        out.flush()?;
+        let line = read_line(&mut input)?;
+        match line.trim().parse::<usize>().ok().and_then(avatar_by_number) {
+            Some(emoji) => break emoji.to_string(),
+            None => writeln!(out, "  pick a number from 1 to {}", AVATARS.len())?,
+        }
+    };
+
+    Ok((name, avatar))
+}
+
+/// Read one line, returning an error only on I/O failure. EOF yields an empty
+/// string so an exhausted script cannot spin the prompt loop forever.
+fn read_line<R: BufRead>(input: &mut R) -> Result<String> {
+    let mut buf = String::new();
+    let n = input.read_line(&mut buf).context("reading console input")?;
+    if n == 0 {
+        anyhow::bail!("unexpected end of input during baptism");
+    }
+    Ok(buf)
 }
 
 /// Foreground logs to stderr: raw INFO `fmt` lines with local timestamps (the
@@ -33,4 +139,47 @@ fn init_tracing() {
         .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
         .with_writer(std::io::stderr)
         .init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ralphy_daemon::identity::Identity;
+    use std::io::Cursor;
+    use ulid::Ulid;
+
+    #[test]
+    fn baptism_refuses_reserved_then_accepts() {
+        // "run" is reserved → refused; "anvil" accepted; avatar #3 → AVATARS[2].
+        let input = Cursor::new(b"run\nanvil\n3\n".to_vec());
+        let mut out: Vec<u8> = Vec::new();
+        let (name, avatar) = baptize_console(input, &mut out, "suggested").unwrap();
+
+        let printed = String::from_utf8(out).unwrap();
+        assert!(
+            printed.contains("run") && printed.to_lowercase().contains("reserved"),
+            "the console must show a refusal naming `run`; got: {printed}"
+        );
+        assert_eq!(name, "anvil");
+        assert_eq!(avatar, AVATARS[2].to_string());
+    }
+
+    #[test]
+    fn empty_name_accepts_suggestion() {
+        let input = Cursor::new(b"\n1\n".to_vec());
+        let mut out: Vec<u8> = Vec::new();
+        let (name, avatar) = baptize_console(input, &mut out, "anvil").unwrap();
+        assert_eq!(name, "anvil");
+        assert_eq!(avatar, AVATARS[0].to_string());
+    }
+
+    #[test]
+    fn status_line_shows_avatar_then_name() {
+        let id = Identity {
+            id: Ulid::nil(),
+            avatar: "🐙".into(),
+            name: "anvil".into(),
+        };
+        assert_eq!(format_status_line(&id), "🐙 anvil");
+    }
 }
