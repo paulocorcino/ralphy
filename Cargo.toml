@@ -11,6 +11,7 @@ members = [
     "crates/ralphy-adapter-support",
     "crates/ralphy-proc-util",
     "crates/ralphy-daemon",
+    "crates/ralphy-usage-scan",
 ]
 
 [workspace.package]
@@ -49,6 +50,7 @@ ralphy-pty = { path = "crates/ralphy-pty" }
 ralphy-adapter-support = { path = "crates/ralphy-adapter-support" }
 ralphy-proc-util = { path = "crates/ralphy-proc-util" }
 ralphy-daemon = { path = "crates/ralphy-daemon" }
+ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 
 [profile.release]
 strip = true

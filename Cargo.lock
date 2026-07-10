@@ -1468,6 +1468,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-usage-scan"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "rand"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
