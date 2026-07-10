@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{Form, Query, State};
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -110,7 +110,17 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // token — the daemon must never begin serving an unauthenticated network
     // socket (ADR-0032 §4).
     let token = auth::effective_token()?;
+    // Capture the token as the cookie SIGNING KEY before `for_bind` consumes it and
+    // before it is stripped from the env — the Session policy owns this key for the
+    // process lifetime, same discipline as today's Bearer.
+    let token_for_key = token.clone();
     let policy = auth::AuthPolicy::for_bind(addr.ip(), token)?;
+    // Opt-in browser-session hardening (issue #179): a network Bearer bind upgrades
+    // to Session ONLY when a TOTP seed is enrolled; with no seed it stays
+    // bearer-only, and Localhost is untouched.
+    let seed = totp::load_seed()?;
+    let pw = password::load()?;
+    let policy = auth::upgrade_with_session(policy, token_for_key, seed, pw);
     // INVARIANT: strip the token from the process env on the boot path BEFORE any
     // child can be spawned, so every subsequent `dispatch`/`session` child
     // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
@@ -199,6 +209,11 @@ pub fn router(
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
     let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
+    // The login form needs the auth policy (the `Session`'s TOTP/password/token)
+    // to validate a code and sign a cookie. Cloned here BEFORE `auth` is moved
+    // into the guard layer below; `Session` is `Arc`-cheap, `Bearer`/`Localhost`
+    // trivially so.
+    let login_auth = auth.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -283,6 +298,17 @@ pub fn router(
                 }
             }),
         )
+        .route("/login", get(login_page))
+        .route(
+            "/api/login",
+            post({
+                let auth = login_auth.clone();
+                move |form: Form<LoginForm>| {
+                    let auth = auth.clone();
+                    async move { login_submit(auth, form).await }
+                }
+            }),
+        )
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
@@ -290,10 +316,17 @@ pub fn router(
         .layer(axum::middleware::from_fn_with_state(auth, require_auth))
 }
 
-/// The bearer-token guard over the whole axum surface. Reads
-/// `Authorization` and asks the [`auth::AuthPolicy`]; on refusal returns `401`
-/// without running the inner handler. A `Localhost` policy authorizes every
-/// request unconditionally, so the loopback path is unaffected.
+/// Paths reachable WITHOUT a session cookie under a `Session` policy — the login
+/// screen and its form endpoint. Everything else falls through to the
+/// browser-redirect / `401` logic below.
+const LOGIN_ALLOWLIST: &[&str] = &["/login", "/api/login"];
+
+/// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
+/// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a
+/// correct `Bearer <token>`). Under a `Session` policy a request with no valid
+/// bearer is then checked for a browser session cookie; failing that, a top-level
+/// `GET` navigation is redirected to `/login` and anything else is `401`.
+/// `Localhost`/`Bearer` keep the plain `401` fall-through — fail closed.
 async fn require_auth(
     State(policy): State<auth::AuthPolicy>,
     req: axum::extract::Request,
@@ -304,10 +337,41 @@ async fn require_auth(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
     if policy.authorizes(header) {
-        next.run(req).await
-    } else {
-        (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response()
+        return next.run(req).await;
     }
+    if let auth::AuthPolicy::Session(session) = &policy {
+        let cookie_header = req
+            .headers()
+            .get(header::COOKIE)
+            .and_then(|v| v.to_str().ok());
+        let now = now_unix();
+        if session.cookie_valid(cookie_header, now) {
+            return next.run(req).await;
+        }
+        let path = req.uri().path();
+        if LOGIN_ALLOWLIST.contains(&path) {
+            return next.run(req).await;
+        }
+        // A top-level browser navigation (GET, not an /api or /ws call) gets a
+        // redirect to the login screen; API/WS/other verbs fail closed with 401.
+        if req.method() == axum::http::Method::GET
+            && !path.starts_with("/api")
+            && !path.starts_with("/ws")
+        {
+            return (StatusCode::FOUND, [(header::LOCATION, "/login")]).into_response();
+        }
+        return (StatusCode::UNAUTHORIZED, "login required").into_response();
+    }
+    (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response()
+}
+
+/// Seconds since the Unix epoch. A backward clock (`SystemTime` before epoch)
+/// yields `0`, which only makes cookies look more expired — fail closed.
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Build the presence heartbeat for the loaded identity and the daemon's
@@ -833,6 +897,46 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
         })
         .into_response(),
         None => (StatusCode::NOT_FOUND, "no identity").into_response(),
+    }
+}
+
+/// The `POST /api/login` form: the current TOTP `code` and, when a password is
+/// enrolled, the operator's `password`. `password` is `Option` so a bind with no
+/// password enrolled accepts a form carrying only `code`.
+#[derive(serde::Deserialize)]
+struct LoginForm {
+    code: String,
+    password: Option<String>,
+}
+
+/// `GET /login`: the embedded login screen (in the login allowlist, so it is
+/// reachable without a cookie under a `Session` policy).
+async fn login_page() -> Response {
+    match UI.get_file("login.html") {
+        Some(file) => (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            file.contents(),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+/// `POST /api/login`: validate the TOTP code (and password, if enrolled) against
+/// the `Session` policy. On success `200` + a `Set-Cookie: ralphy_session=…`
+/// header; on a bad credential `401`. Login is meaningless without a network
+/// `Session` policy, so any other policy returns `404`.
+async fn login_submit(auth: auth::AuthPolicy, Form(form): Form<LoginForm>) -> Response {
+    let auth::AuthPolicy::Session(session) = &auth else {
+        return (StatusCode::NOT_FOUND, "login not enabled").into_response();
+    };
+    match session.login(&form.code, form.password.as_deref(), now_unix()) {
+        Some(cookie) => (
+            StatusCode::OK,
+            [(header::SET_COOKIE, cookie::set_cookie_value(&cookie))],
+        )
+            .into_response(),
+        None => (StatusCode::UNAUTHORIZED, "invalid credentials").into_response(),
     }
 }
 
@@ -1552,6 +1656,154 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// The RFC 6238 seed, wrapped for the session router tests.
+    fn rfc_seed() -> totp::Seed {
+        totp::Seed::from_bytes(b"12345678901234567890".to_vec())
+    }
+
+    /// Build a router under a `Session` policy over `token` + the RFC seed, with a
+    /// baptized identity so `/api/identity` answers `200` once authorized.
+    fn session_router(token: &str) -> Router {
+        let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
+            token: token.to_string(),
+            totp: rfc_seed(),
+            password: None,
+        }));
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            policy,
+        )
+    }
+
+    /// The full browser-login round trip under a `Session` policy (issue #179):
+    /// no-cookie `401`, `GET /login` `200`, a valid-TOTP `POST /api/login` `200` +
+    /// `Set-Cookie`, the cookie authorizes a follow-up, `GET /` redirects to
+    /// `/login`, and a machine `Bearer` still authorizes. Plumbing only — the code
+    /// itself is pinned by the `totp` RFC-vector unit test.
+    #[tokio::test]
+    async fn session_policy_login_flow() {
+        // 1. No cookie / no bearer → the API is 401.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "no cookie → 401");
+
+        // 2. The login screen is reachable without a cookie.
+        let resp = session_router("tok")
+            .oneshot(Request::builder().uri("/login").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "GET /login → 200");
+
+        // 3. A valid current TOTP mints a session cookie.
+        let now = now_unix();
+        let code = rfc_seed().code_at(now / 30);
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/login")
+                    .header(
+                        header::CONTENT_TYPE,
+                        "application/x-www-form-urlencoded",
+                    )
+                    .body(Body::from(format!("code={code}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "valid TOTP → 200");
+        let set_cookie = resp
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .expect("a Set-Cookie header")
+            .to_string();
+        assert!(set_cookie.contains("ralphy_session="), "cookie name: {set_cookie}");
+        assert!(set_cookie.contains("HttpOnly"), "HttpOnly: {set_cookie}");
+        assert!(set_cookie.contains("SameSite=Strict"), "SameSite: {set_cookie}");
+
+        // The cookie value is everything up to the first attribute `;`.
+        let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
+
+        // 4. That cookie authorizes a follow-up request.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .header(header::COOKIE, &cookie_pair)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "cookie authorizes → 200");
+
+        // 5. A top-level GET with no cookie redirects to the login screen.
+        let resp = session_router("tok")
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FOUND, "GET / → 302");
+        assert_eq!(
+            resp.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()),
+            Some("/login"),
+            "redirect target is /login"
+        );
+
+        // 6. The machine path is unchanged: a correct Bearer still authorizes.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .header(header::AUTHORIZATION, "Bearer tok")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "Bearer authorizes under Session");
+    }
+
+    /// A wrong TOTP code is rejected `401` by `POST /api/login` (the login handler
+    /// checks the code VALUE, not merely form presence — a presence-only bug would
+    /// pass the happy-path test above).
+    #[tokio::test]
+    async fn session_login_rejects_wrong_code() {
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from("code=000000"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "wrong code → 401");
     }
 
     /// The auth layer covers the REMOTE-EXEC WS routes, not just `/api`: an
