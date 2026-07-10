@@ -788,6 +788,9 @@ async fn command_ws(
 
     // `Child::wait` is blocking and must not sit on the tokio runtime.
     let mut wait = tokio::task::spawn_blocking(move || child.wait());
+    // Disables the output arm once the drain channel closes (child pipe EOF), so
+    // a closed `rx` never busy-loops and the other arms keep being polled.
+    let mut output_open = true;
     loop {
         tokio::select! {
             // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
@@ -798,7 +801,7 @@ async fn command_ws(
                 break;
             }
             // A live output chunk: forward it into the UI log pane.
-            chunk = rx.recv() => {
+            chunk = rx.recv(), if output_open => {
                 match chunk {
                     Some(chunk) => {
                         send_command(
@@ -812,10 +815,9 @@ async fn command_ws(
                         )
                         .await;
                     }
-                    // Drain closed (child's pipe hit EOF) with no exit yet: keep
-                    // waiting on the other arms rather than spinning on a closed
-                    // channel (`recv` returns `None` immediately once closed).
-                    None => std::future::pending::<()>().await,
+                    // Drain closed (child pipe EOF): stop polling this arm and let
+                    // the wait arm report the exit.
+                    None => output_open = false,
                 }
             }
             // The run exited: flush ALL remaining output before the exit frame.

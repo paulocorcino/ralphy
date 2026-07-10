@@ -67,9 +67,11 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
 
     ws.send(command(1, "run", slug)).await.unwrap();
 
-    let (spawned, exited) = tokio::time::timeout(Duration::from_secs(10), async {
+    let (spawned, output, exited) = tokio::time::timeout(Duration::from_secs(10), async {
         let mut spawned: Option<serde_json::Value> = None;
         let mut exited: Option<serde_json::Value> = None;
+        // Concatenated `chunk` text from every `status:"output"` frame, in order.
+        let mut output = String::new();
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
@@ -78,6 +80,9 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 match cmd.payload.get("status").and_then(|s| s.as_str()) {
                     Some("spawned") => spawned = Some(cmd.payload),
+                    Some("output") => {
+                        output.push_str(cmd.payload["chunk"].as_str().unwrap_or_default());
+                    }
                     Some("exited") => {
                         exited = Some(cmd.payload);
                         break;
@@ -86,16 +91,28 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
                 }
             }
         }
-        (spawned, exited)
+        (spawned, output, exited)
     })
     .await
-    .expect("ack + exit must arrive within 10s");
+    .expect("ack + output + exit must arrive within 10s");
 
     let spawned = spawned.expect("must receive a spawn ack frame");
     assert_eq!(spawned["status"], "spawned");
     assert!(
         spawned["pid"].as_u64().is_some(),
         "the ack must carry a numeric pid; got: {spawned}"
+    );
+
+    // Output arrives BEFORE the exit frame (we break on exit, so anything the
+    // loop accumulated in `output` was received earlier) and carries BOTH the
+    // child's stdout and stderr markers — proving the merged-pipe stream works.
+    assert!(
+        output.contains("dispatch-stdout-marker"),
+        "the streamed output must carry the stdout marker; got: {output:?}"
+    );
+    assert!(
+        output.contains("dispatch-stderr-marker"),
+        "the streamed output must carry the stderr marker; got: {output:?}"
     );
 
     let exited = exited.expect("must receive an exit frame");
