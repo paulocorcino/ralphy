@@ -41,3 +41,5 @@ tempfile.workspace = true
 # A real WebSocket client for the `/ws` presence integration test.
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
+# Seed an `opencode.db` fixture for the OpenCode interactive-usage integration test.
+rusqlite.workspace = true

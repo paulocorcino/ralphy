@@ -6,7 +6,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use ralphy_usage_scan::{scan_claude, scan_codex, ClaudeScan, CodexScan, RegisteredRepo};
+use ralphy_usage_scan::{
+    scan_claude, scan_codex, scan_opencode, ClaudeScan, CodexScan, OpenCodeScan, RegisteredRepo,
+};
 
 use crate::registry::RegistryStore;
 
@@ -109,14 +111,33 @@ pub fn codex_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".codex"))
 }
 
-/// Scan the Claude AND Codex stores for interactive usage records, excluding
-/// sessions the ledger already owns (their `session_id` appears in
+/// The OpenCode SQLite store: `$RALPHY_OPENCODE_DB` when set (tests point it at a
+/// temp file), else `<home>/.local/share/opencode/opencode.db` (USERPROFILE on
+/// Windows, HOME elsewhere). Mirrors the adapter's `opencode_db_path` and
+/// [`codex_dir_path`]; `None` when no home directory can be resolved.
+pub fn opencode_db_path() -> anyhow::Result<PathBuf> {
+    if let Some(db) = std::env::var_os("RALPHY_OPENCODE_DB") {
+        return Ok(PathBuf::from(db));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the OpenCode store"))?;
+    Ok(PathBuf::from(home)
+        .join(".local")
+        .join("share")
+        .join("opencode")
+        .join("opencode.db"))
+}
+
+/// Scan the Claude, Codex, AND OpenCode stores for interactive usage records,
+/// excluding sessions the ledger already owns (their `session_id` appears in
 /// `run_records`), and serialize each to JSON (ADR-0033 §2/§6). `registry.repos`
-/// supplies the project/actor attribution. Read-only: neither scan writes. The
-/// Codex records are chained after the Claude ones.
+/// supplies the project/actor attribution. Read-only: no scan writes. The Codex
+/// records are chained after the Claude ones, then the OpenCode ones.
 pub fn interactive_records(
     claude_dir: &Path,
     codex_dir: &Path,
+    opencode_db: &Path,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -146,9 +167,16 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
+    let opencode = scan_opencode(&OpenCodeScan {
+        db_path: opencode_db,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
     claude
         .iter()
         .chain(codex.iter())
+        .chain(opencode.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()
 }

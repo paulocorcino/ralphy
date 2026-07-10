@@ -121,6 +121,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let usage_dir = usage::usage_dir_path()?;
     let claude_projects_dir = usage::claude_projects_dir_path()?;
     let codex_dir = usage::codex_dir_path()?;
+    let opencode_db = usage::opencode_db_path()?;
     axum::serve(
         listener,
         router(
@@ -129,6 +130,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             usage_dir,
             claude_projects_dir,
             codex_dir,
+            opencode_db,
             start,
             shutdown_rx,
             policy,
@@ -159,6 +161,7 @@ pub fn router(
     usage_dir: PathBuf,
     claude_projects_dir: PathBuf,
     codex_dir: PathBuf,
+    opencode_db: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: auth::AuthPolicy,
@@ -202,10 +205,19 @@ pub fn router(
                 let dir = usage_dir.clone();
                 let claude_dir = claude_projects_dir.clone();
                 let codex_dir = codex_dir.clone();
+                let opencode_db = opencode_db.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
-                    usage_route(dir, claude_dir, codex_dir, registry, daemon_id, q.0.since)
+                    usage_route(
+                        dir,
+                        claude_dir,
+                        codex_dir,
+                        opencode_db,
+                        registry,
+                        daemon_id,
+                        q.0.since,
+                    )
                 }
             }),
         )
@@ -734,6 +746,7 @@ async fn usage_route(
     usage_dir: PathBuf,
     claude_projects_dir: PathBuf,
     codex_dir: PathBuf,
+    opencode_db: PathBuf,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -751,6 +764,7 @@ async fn usage_route(
     let interactive = usage::interactive_records(
         &claude_projects_dir,
         &codex_dir,
+        &opencode_db,
         &store,
         &runs,
         since.as_deref(),
@@ -859,6 +873,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -917,6 +932,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -943,6 +959,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -976,6 +993,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1029,6 +1047,7 @@ mod tests {
             dir.path().to_path_buf(),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1074,6 +1093,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
@@ -1127,6 +1147,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
             claude_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -1201,6 +1222,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             codex_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1224,6 +1246,69 @@ mod tests {
                     && r.get("session_id").and_then(|v| v.as_str()) == Some(meta_id)
             }),
             "interactive must carry a codex record with the meta id; got: {body_string}"
+        );
+        assert!(
+            !body_string.contains("usd"),
+            "no pricing in the payload; got: {body_string}"
+        );
+    }
+
+    /// `/api/usage` also carries OpenCode interactive records: an assistant row in
+    /// a seeded `opencode.db` flows through the scan and appears in the
+    /// `interactive` array with `agent=="opencode"` and its `session_id`. Proves
+    /// the `opencode_db` router arg is threaded end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_opencode_interactive_records() {
+        use rusqlite::Connection;
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("opencode.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute(
+                "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
+                [],
+            )
+            .unwrap();
+            conn.execute("CREATE TABLE session (id TEXT, directory TEXT)", [])
+                .unwrap();
+            let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":2168,"output":100,"cache":{"write":0,"read":11264}}}"#;
+            conn.execute(
+                "INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)",
+                rusqlite::params!["msg_1", "ses_oc", data],
+            )
+            .unwrap();
+        }
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            db.clone(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("opencode")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_oc")
+            }),
+            "interactive must carry an opencode record with the session id; got: {body_string}"
         );
         assert!(
             !body_string.contains("usd"),
@@ -1266,6 +1351,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Bearer("tok".into()),
@@ -1291,6 +1377,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1325,6 +1412,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1347,6 +1435,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1382,6 +1471,7 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
