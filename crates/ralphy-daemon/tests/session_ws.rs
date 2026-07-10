@@ -49,6 +49,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
         None,
         registry_path,
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         ralphy_daemon::auth::AuthPolicy::Localhost,

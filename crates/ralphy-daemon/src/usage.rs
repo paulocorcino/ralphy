@@ -3,7 +3,12 @@
 //! `ralphy-core` (ADR-0032 §10) — mirroring `registry.rs`, which reparses
 //! `repos.toml` itself rather than depending on core.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use ralphy_usage_scan::{scan_claude, ClaudeScan, RegisteredRepo};
+
+use crate::registry::RegistryStore;
 
 /// The ledger root: `$RALPHY_USAGE_DIR` when set, else `<home>/.ralphy/usage`.
 /// Copied from `ralphy-core`'s `ledger::usage_root()` so the daemon reads the
@@ -68,6 +73,55 @@ pub fn run_records(dir: &Path, since: Option<&str>) -> Vec<serde_json::Value> {
         ts(a).cmp(&ts(b))
     });
     records
+}
+
+/// The Claude projects store root: `$RALPHY_CLAUDE_PROJECTS_DIR` when set (tests
+/// point it at a temp dir), else `<home>/.claude/projects`. Mirrors
+/// [`usage_dir_path`]; `None` when no home directory can be resolved.
+pub fn claude_projects_dir_path() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("RALPHY_CLAUDE_PROJECTS_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("no home directory resolved for the Claude projects store")
+        })?;
+    Ok(PathBuf::from(home).join(".claude").join("projects"))
+}
+
+/// Scan the Claude store for interactive usage records, excluding sessions the
+/// ledger already owns (their `session_id` appears in `run_records`), and
+/// serialize each to JSON (ADR-0033 §2/§6). `registry.repos` supplies the
+/// dashed-cwd project/actor attribution. Read-only: `scan_claude` writes nothing.
+pub fn interactive_records(
+    claude_dir: &Path,
+    registry: &RegistryStore,
+    run_records: &[serde_json::Value],
+    since: Option<&str>,
+) -> Vec<serde_json::Value> {
+    let run_session_ids: HashSet<String> = run_records
+        .iter()
+        .filter_map(|r| r.get("session_id").and_then(|v| v.as_str()))
+        .map(str::to_string)
+        .collect();
+    let repos: Vec<RegisteredRepo> = registry
+        .repos
+        .iter()
+        .map(|(slug, entry)| RegisteredRepo {
+            slug: slug.clone(),
+            path: entry.path.clone(),
+        })
+        .collect();
+    scan_claude(&ClaudeScan {
+        projects_dir: claude_dir,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    })
+    .iter()
+    .filter_map(|r| serde_json::to_value(r).ok())
+    .collect()
 }
 
 #[cfg(test)]

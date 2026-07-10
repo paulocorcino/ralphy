@@ -23,6 +23,9 @@ axum = { version = "0.8", features = ["ws"] }
 # program cross-platform (ralphy-proc-util); neither pulls in ralphy-core.
 ralphy-pty.workspace = true
 ralphy-proc-util.workspace = true
+# The stateless usage scan (ADR-0033 §7): sync, no tokio, no ralphy-core — the
+# daemon joins its interactive records onto the ledger's run records.
+ralphy-usage-scan.workspace = true
 # `terminal_size()` lets the session_test_child observe PTY resizes; a normal dep
 # (not dev) because src/bin/ targets don't see [dev-dependencies].
 terminal_size = "0.3"

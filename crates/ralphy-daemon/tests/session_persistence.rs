@@ -123,6 +123,7 @@ async fn session_survives_ws_drop_reattach_replays_then_streams_and_close_remove
         None,
         registry_path,
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         std::time::Instant::now(),
         rx,
         ralphy_daemon::auth::AuthPolicy::Localhost,

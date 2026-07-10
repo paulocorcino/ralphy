@@ -119,9 +119,18 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
     let usage_dir = usage::usage_dir_path()?;
+    let claude_projects_dir = usage::claude_projects_dir_path()?;
     axum::serve(
         listener,
-        router(id, registry_path, usage_dir, start, shutdown_rx, policy),
+        router(
+            id,
+            registry_path,
+            usage_dir,
+            claude_projects_dir,
+            start,
+            shutdown_rx,
+            policy,
+        ),
     )
     .with_graceful_shutdown(async move {
         shutdown_signal().await;
@@ -143,6 +152,7 @@ pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
     usage_dir: PathBuf,
+    claude_projects_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: auth::AuthPolicy,
@@ -184,8 +194,12 @@ pub fn router(
             "/api/usage",
             get({
                 let dir = usage_dir.clone();
+                let claude_dir = claude_projects_dir.clone();
+                let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
-                move |q: Query<UsageQuery>| usage_route(dir, daemon_id, q.0.since)
+                move |q: Query<UsageQuery>| {
+                    usage_route(dir, claude_dir, registry, daemon_id, q.0.since)
+                }
             }),
         )
         .route(
@@ -703,18 +717,35 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 }
 
 /// `GET /api/usage[?since=<RFC3339 UTC, with `+` encoded as `%2B`>]`: the
-/// token-usage ledger's run records verbatim, as `{ daemon_id, records: [...] }`
-/// (ADR-0033 §3). Read FRESH from disk on every request, same as `/api/repos`.
-/// `since` keeps records whose `ts` is lexically `>=` it; omitted returns
-/// everything. Read-only tracer — no `session_id` scan/dedup here (PRD #170).
+/// token-usage ledger's run records PLUS the interactive records scanned from the
+/// Claude store, as `{ daemon_id, records: [...], interactive: [...] }` (ADR-0033
+/// §2/§3). Both read FRESH from disk on every request, same as `/api/repos`.
+/// `since` keeps run records whose `ts` is lexically `>=` it and interactive
+/// records whose `last_ts` is `>=` it. The interactive scan excludes any session
+/// the ledger already owns (its `session_id` in `records`) and writes nothing.
 async fn usage_route(
     usage_dir: PathBuf,
+    claude_projects_dir: PathBuf,
+    registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
 ) -> Response {
+    let runs = usage::run_records(&usage_dir, since.as_deref());
+    // A registry load error must not fail the page — serve interactive records
+    // with no project/actor attribution, like `repos_route` (logged).
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry for the usage scan; serving unattributed");
+            registry::RegistryStore::default()
+        }
+    };
+    let interactive =
+        usage::interactive_records(&claude_projects_dir, &store, &runs, since.as_deref());
     Json(serde_json::json!({
         "daemon_id": daemon_id,
-        "records": usage::run_records(&usage_dir, since.as_deref()),
+        "records": runs,
+        "interactive": interactive,
     }))
     .into_response()
 }
@@ -813,6 +844,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -869,6 +901,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -895,6 +928,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
@@ -926,6 +960,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -975,6 +1010,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1020,6 +1056,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1038,6 +1075,81 @@ mod tests {
         assert!(
             body.contains("\"sess-b\"") && !body.contains("\"sess-a\""),
             "since must keep only sess-b; got: {body}"
+        );
+    }
+
+    /// `/api/usage` now carries an `interactive` array from the Claude scan
+    /// alongside the ledger's `records`. A session the ledger already owns
+    /// (`run-sess`) is excluded from `interactive`; a genuinely-interactive one
+    /// (`int-sess`) appears. The scan runs against a temp store, so no operator
+    /// state is read.
+    #[tokio::test]
+    async fn api_usage_carries_run_and_interactive_records() {
+        let usage_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            usage_dir.path().join("owner-repo.jsonl"),
+            "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"plan\",\"session_id\":\"run-sess\",\"ts\":\"2026-06-15T12:00:00+00:00\"}\n",
+        )
+        .unwrap();
+
+        let claude_dir = tempfile::tempdir().unwrap();
+        let ws = claude_dir.path().join("ws-key");
+        std::fs::create_dir_all(&ws).unwrap();
+        let line = |id: &str| {
+            format!(
+                "{{\"requestId\":\"r1\",\"timestamp\":\"2026-07-10T10:00:00Z\",\"message\":{{\"id\":\"{id}\",\"model\":\"claude-opus-4-8\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}"
+            )
+        };
+        std::fs::write(ws.join("run-sess.jsonl"), line("m1")).unwrap();
+        std::fs::write(ws.join("int-sess.jsonl"), line("m2")).unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            usage_dir.path().to_path_buf(),
+            claude_dir.path().to_path_buf(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        let has = |sid: &str| {
+            interactive
+                .iter()
+                .any(|r| r.get("session_id").and_then(|v| v.as_str()) == Some(sid))
+        };
+        assert!(
+            has("int-sess"),
+            "interactive must carry int-sess; got: {body_string}"
+        );
+        assert!(
+            !has("run-sess"),
+            "the run-owned session must be excluded; got: {body_string}"
+        );
+
+        let records = body["records"].as_array().expect("records array");
+        assert!(
+            records
+                .iter()
+                .any(|r| r.get("session_id").and_then(|v| v.as_str()) == Some("run-sess")),
+            "records must still carry the run line; got: {body_string}"
+        );
+        assert!(
+            !body_string.contains("usd"),
+            "no pricing in the payload; got: {body_string}"
         );
     }
 
@@ -1074,6 +1186,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Bearer("tok".into()),
@@ -1099,6 +1212,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
@@ -1129,6 +1243,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1151,6 +1266,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
@@ -1184,6 +1300,7 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 Instant::now(),
