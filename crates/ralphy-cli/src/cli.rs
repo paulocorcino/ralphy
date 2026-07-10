@@ -383,6 +383,26 @@ mod tests {
     }
 
     #[test]
+    fn daemon_bind_defaults_to_loopback() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(
+            args.bind,
+            "127.0.0.1".parse::<std::net::IpAddr>().unwrap(),
+            "the default bind is loopback"
+        );
+
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "--bind", "100.64.0.1"])
+            .expect("daemon --bind must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.bind, "100.64.0.1".parse::<std::net::IpAddr>().unwrap());
+    }
+
+    #[test]
     fn schedule_install_run_parses() {
         let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "run", "--every", "30m"])
             .expect("schedule install run must parse");

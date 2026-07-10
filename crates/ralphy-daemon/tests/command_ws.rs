@@ -43,7 +43,13 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
-    let app = router(None, registry_path, Instant::now(), rx);
+    let app = router(
+        None,
+        registry_path,
+        Instant::now(),
+        rx,
+        ralphy_daemon::auth::AuthPolicy::Localhost,
+    );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });

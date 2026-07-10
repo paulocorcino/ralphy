@@ -5,19 +5,20 @@
 //! axum) confined here, runs reached only by spawning `ralphy` processes (never
 //! by importing the core).
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::Query;
+use axum::extract::{Query, State};
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use include_dir::{include_dir, Dir};
 
+pub mod auth;
 pub mod dispatch;
 pub mod identity;
 pub mod protocol;
@@ -35,22 +36,28 @@ static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/ui");
 
 /// What the composition root decides; everything else is the daemon's.
 pub struct DaemonConfig {
-    /// TCP port for the listener. The interface is not configurable in this
-    /// slice: the daemon binds `127.0.0.1` only — a non-localhost bind is a
-    /// future explicit opt-in that requires a bearer token (ADR-0032 §4).
+    /// TCP port for the listener.
     pub port: u16,
+    /// The interface to bind. Defaults to `127.0.0.1` (loopback only); a
+    /// non-localhost bind is an explicit opt-in that REQUIRES a bearer access
+    /// token, enforced at boot by [`auth::AuthPolicy::for_bind`] (ADR-0032 §4).
+    pub bind: IpAddr,
 }
 
 impl Default for DaemonConfig {
     fn default() -> Self {
-        Self { port: DEFAULT_PORT }
+        Self {
+            port: DEFAULT_PORT,
+            bind: Ipv4Addr::LOCALHOST.into(),
+        }
     }
 }
 
-/// The loopback-only bind address (ADR-0032 §4: local listener first,
-/// inbound never). Centralized so no call site constructs a wider bind.
-pub fn bind_addr(port: u16) -> SocketAddr {
-    SocketAddr::from(([127, 0, 0, 1], port))
+/// Compose the bind address from an interface and port. Centralized so the
+/// resolved interface flows through one place (the auth policy keys on
+/// `addr.ip()`).
+pub fn bind_addr(ip: IpAddr, port: u16) -> SocketAddr {
+    SocketAddr::new(ip, port)
 }
 
 /// Run the daemon in the foreground until Ctrl+C. Blocking on purpose: the
@@ -61,7 +68,7 @@ pub fn run(config: DaemonConfig) -> Result<()> {
         .enable_all()
         .build()
         .context("building the daemon's tokio runtime")?;
-    runtime.block_on(serve(bind_addr(config.port)))
+    runtime.block_on(serve(bind_addr(config.bind, config.port)))
 }
 
 async fn serve(addr: SocketAddr) -> Result<()> {
@@ -92,19 +99,34 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     if id.is_none() {
         tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
     }
+    // Resolve the effective access token, then the bind policy. INVARIANT:
+    // `for_bind` returns Err and aborts startup on a non-loopback bind with no
+    // token — the daemon must never begin serving an unauthenticated network
+    // socket (ADR-0032 §4).
+    let token = auth::effective_token()?;
+    let policy = auth::AuthPolicy::for_bind(addr.ip(), token)?;
+    // INVARIANT: strip the token from the process env on the boot path BEFORE any
+    // child can be spawned, so every subsequent `dispatch`/`session` child
+    // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
+    // ADR-0019). The policy already holds the effective token.
+    auth::strip_token_from_env();
+
     // Resolve the registry path once and hand it to the router. `/api/repos`
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
-    axum::serve(listener, router(id, registry_path, start, shutdown_rx))
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            // Break every live `/ws` loop so graceful shutdown does not wait on
-            // a long-lived heartbeat connection.
-            let _ = shutdown_tx.send(true);
-        })
-        .await
-        .context("serving the daemon listener")?;
+    axum::serve(
+        listener,
+        router(id, registry_path, start, shutdown_rx, policy),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        // Break every live `/ws` loop so graceful shutdown does not wait on
+        // a long-lived heartbeat connection.
+        let _ = shutdown_tx.send(true);
+    })
+    .await
+    .context("serving the daemon listener")?;
     tracing::info!("daemon stopped");
     Ok(())
 }
@@ -118,6 +140,7 @@ pub fn router(
     registry_path: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
+    auth: auth::AuthPolicy,
 ) -> Router {
     let ws_identity = identity.clone();
     // `shutdown` is consumed by the `/ws` presence closure; clone one for the
@@ -167,6 +190,30 @@ pub fn router(
             }),
         )
         .fallback(ui_asset)
+        // The auth guard wraps EVERY route above — the API handlers, all three
+        // WS upgrades, and the UI fallback — so a network bind rejects an
+        // unauthenticated request before it reaches any handler or upgrade.
+        .layer(axum::middleware::from_fn_with_state(auth, require_auth))
+}
+
+/// The bearer-token guard over the whole axum surface. Reads
+/// `Authorization` and asks the [`auth::AuthPolicy`]; on refusal returns `401`
+/// without running the inner handler. A `Localhost` policy authorizes every
+/// request unconditionally, so the loopback path is unaffected.
+async fn require_auth(
+    State(policy): State<auth::AuthPolicy>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let header = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    if policy.authorizes(header) {
+        next.run(req).await
+    } else {
+        (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response()
+    }
 }
 
 /// Build the presence heartbeat for the loaded identity and the daemon's
@@ -558,6 +605,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
+            auth::AuthPolicy::Localhost,
         )
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await
@@ -612,6 +660,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
+            auth::AuthPolicy::Localhost,
         )
         .oneshot(
             Request::builder()
@@ -638,6 +687,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
+            auth::AuthPolicy::Localhost,
         )
         .oneshot(
             Request::builder()
@@ -661,15 +711,21 @@ mod tests {
         store.upsert("owner/gone", "/no/such/path/exists");
         registry::save_to(&store, &registry_path).unwrap();
 
-        let resp = router(None, registry_path, Instant::now(), idle_shutdown())
-            .oneshot(
-                Request::builder()
-                    .uri("/api/repos")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let resp = router(
+            None,
+            registry_path,
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/repos")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8_lossy(&body);
@@ -706,9 +762,84 @@ mod tests {
     }
 
     #[test]
-    fn bind_addr_is_loopback_only() {
-        let addr = bind_addr(DEFAULT_PORT);
+    fn bind_addr_default_is_loopback() {
+        let addr = bind_addr(Ipv4Addr::LOCALHOST.into(), DEFAULT_PORT);
         assert!(addr.ip().is_loopback(), "default bind must be 127.0.0.1");
         assert_eq!(addr.port(), DEFAULT_PORT);
+    }
+
+    /// A router under a `Bearer` policy rejects a request with no
+    /// `Authorization` header — the guard covers the API surface, not just `/ws`.
+    #[tokio::test]
+    async fn bearer_policy_rejects_missing_header() {
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Bearer("tok".into()),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// The same router passes a request carrying the correct bearer token.
+    #[tokio::test]
+    async fn bearer_policy_accepts_correct_header() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Bearer("tok".into()),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .header(header::AUTHORIZATION, "Bearer tok")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// A `Localhost` policy serves the API with no `Authorization` header.
+    #[tokio::test]
+    async fn localhost_policy_serves_without_token() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

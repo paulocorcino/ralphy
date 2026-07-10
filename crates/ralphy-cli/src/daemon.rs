@@ -13,15 +13,21 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
 use ralphy_core::git;
+use ralphy_daemon::auth;
 use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
 use ralphy_daemon::registry;
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
-    /// TCP port for the local listener. The daemon binds 127.0.0.1 only; a
-    /// non-localhost bind is a future explicit opt-in (docs/adr/0032 §4).
+    /// TCP port for the local listener.
     #[arg(long, default_value_t = ralphy_daemon::DEFAULT_PORT)]
     pub(crate) port: u16,
+
+    /// Interface to bind. Defaults to 127.0.0.1 (loopback only). A non-localhost
+    /// bind is an explicit opt-in that REQUIRES an access token minted by
+    /// `ralphy daemon setup`, or the daemon refuses to start (docs/adr/0032 §4).
+    #[arg(long, default_value = "127.0.0.1")]
+    pub(crate) bind: std::net::IpAddr,
 
     #[command(subcommand)]
     pub(crate) command: Option<DaemonCommand>,
@@ -50,7 +56,10 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
     match &args.command {
         None => {
             init_tracing();
-            ralphy_daemon::run(ralphy_daemon::DaemonConfig { port: args.port })
+            ralphy_daemon::run(ralphy_daemon::DaemonConfig {
+                port: args.port,
+                bind: args.bind,
+            })
         }
         Some(DaemonCommand::Setup) => setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
@@ -126,6 +135,15 @@ fn setup(port: u16) -> Result<()> {
 
     let id = identity::baptize(&identity::daemon_toml_path()?, name, avatar)?;
     writeln!(stdout, "\nbaptized: {}", format_status_line(&id))?;
+
+    // Mint-once access token, independent of re-baptism: shown exactly once when
+    // freshly minted, never re-echoed (a re-`setup` keeps the existing token).
+    let (token, minted) = auth::ensure_token_at(&auth::token_path()?)?;
+    if minted {
+        writeln!(stdout, "access token (shown once): {token}")?;
+    } else {
+        writeln!(stdout, "access token: already set (not shown)")?;
+    }
     writeln!(stdout, "listener: http://127.0.0.1:{port}")?;
     Ok(())
 }
@@ -137,6 +155,14 @@ fn status(port: u16) -> Result<()> {
         Some(id) => println!("{}", format_status_line(&id)),
         None => println!("not set up — run `ralphy daemon setup`"),
     }
+    println!(
+        "access token: {}",
+        if auth::load_token()?.is_some() {
+            "set"
+        } else {
+            "not set"
+        }
+    );
     println!("listener: http://127.0.0.1:{port}");
     Ok(())
 }

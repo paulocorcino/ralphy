@@ -43,7 +43,13 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
-    let app = router(None, registry_path, Instant::now(), rx);
+    let app = router(
+        None,
+        registry_path,
+        Instant::now(),
+        rx,
+        ralphy_daemon::auth::AuthPolicy::Localhost,
+    );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });

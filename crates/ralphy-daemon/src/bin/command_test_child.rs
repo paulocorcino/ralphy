@@ -6,9 +6,16 @@
 //! child (house convention).
 //!
 //! Behavior: read `RALPHY_TEST_EXIT_CODE` (default `0`), print a one-line marker,
-//! and exit with that code. Ignores its argv.
+//! and exit with that code. Ignores its argv. When `RALPHY_TEST_ENV_DUMP` names a
+//! path, first write the child's view of `RALPHY_DAEMON_TOKEN` there (for the
+//! child-env-hygiene test) — proving the boot-time env strip reached this child.
 
 fn main() {
+    if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
+        let token = std::env::var("RALPHY_DAEMON_TOKEN").unwrap_or_else(|_| "ABSENT".into());
+        std::fs::write(&dump_path, format!("RALPHY_DAEMON_TOKEN={token}"))
+            .expect("writing the env dump");
+    }
     let code = std::env::var("RALPHY_TEST_EXIT_CODE")
         .ok()
         .and_then(|v| v.parse::<i32>().ok())

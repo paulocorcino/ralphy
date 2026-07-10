@@ -46,7 +46,13 @@ async fn ws_pushes_live_presence_heartbeat() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
-    let app = router(Some(anvil()), PathBuf::from("does-not-exist"), start, rx);
+    let app = router(
+        Some(anvil()),
+        PathBuf::from("does-not-exist"),
+        start,
+        rx,
+        ralphy_daemon::auth::AuthPolicy::Localhost,
+    );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
@@ -80,7 +86,13 @@ async fn ws_loop_stops_on_shutdown() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let (tx, rx) = tokio::sync::watch::channel(false);
-    let app = router(Some(anvil()), PathBuf::from("does-not-exist"), start, rx);
+    let app = router(
+        Some(anvil()),
+        PathBuf::from("does-not-exist"),
+        start,
+        rx,
+        ralphy_daemon::auth::AuthPolicy::Localhost,
+    );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
