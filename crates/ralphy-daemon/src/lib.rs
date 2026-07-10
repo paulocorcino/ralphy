@@ -160,6 +160,10 @@ pub fn router(
     // socket — it just never kills the child. Clone one for that route.
     let command_shutdown = shutdown.clone();
     let command_registry = registry_path.clone();
+    // The daemon identity a dispatched child inherits as RALPHY_DAEMON_ID (#168):
+    // captured here BEFORE `identity` is moved into the `/api/identity` closure.
+    // Only the dispatch path passes it; session/console children get none.
+    let command_daemon_id = identity.as_ref().map(|i| i.id.to_string());
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -210,8 +214,11 @@ pub fn router(
             get(move |ws: WebSocketUpgrade| {
                 let registry_path = command_registry.clone();
                 let shutdown = command_shutdown.clone();
+                let daemon_id = command_daemon_id.clone();
                 async move {
-                    ws.on_upgrade(move |socket| command_ws(socket, registry_path, shutdown))
+                    ws.on_upgrade(move |socket| {
+                        command_ws(socket, registry_path, shutdown, daemon_id)
+                    })
                 }
             }),
         )
@@ -539,6 +546,7 @@ async fn command_ws(
     mut socket: WebSocket,
     registry_path: PathBuf,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
+    daemon_id: Option<String>,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     let Some(Ok(Message::Binary(bytes))) = socket.recv().await else {
@@ -594,6 +602,7 @@ async fn command_ws(
         &dispatch::ralphy_exe(),
         verb,
         Path::new(&entry.path),
+        daemon_id.as_deref(),
     ) {
         Ok(child) => child,
         Err(e) => {

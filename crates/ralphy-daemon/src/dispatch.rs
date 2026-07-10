@@ -79,7 +79,15 @@ pub trait Child: Send {
 /// uses [`ProcessSpawner`]; tests use a fake that records the argv.
 pub trait Spawner: Send + Sync + 'static {
     /// Spawn `program` with `args` in `cwd`, detached from the daemon's lifecycle.
-    fn spawn(&self, program: &OsStr, args: &[&str], cwd: &Path) -> Result<Box<dyn Child>>;
+    /// When `daemon_id` is `Some`, inject it as `RALPHY_DAEMON_ID` on the child so
+    /// its emitter carries the daemon identity (dispatch path only).
+    fn spawn(
+        &self,
+        program: &OsStr,
+        args: &[&str],
+        cwd: &Path,
+        daemon_id: Option<&str>,
+    ) -> Result<Box<dyn Child>>;
 }
 
 /// Spawn the blessed child for `verb`: `program` (the resolved `ralphy` exe) with
@@ -90,8 +98,9 @@ pub fn dispatch(
     program: &OsStr,
     verb: Verb,
     cwd: &Path,
+    daemon_id: Option<&str>,
 ) -> Result<Box<dyn Child>> {
-    spawner.spawn(program, verb.blessed_args(), cwd)
+    spawner.spawn(program, verb.blessed_args(), cwd, daemon_id)
 }
 
 /// Test seam pointing the dispatcher at a stand-in exe: `RALPHY_EXE_OVERRIDE`
@@ -111,7 +120,13 @@ pub fn ralphy_exe() -> OsString {
 pub struct ProcessSpawner;
 
 impl Spawner for ProcessSpawner {
-    fn spawn(&self, program: &OsStr, args: &[&str], cwd: &Path) -> Result<Box<dyn Child>> {
+    fn spawn(
+        &self,
+        program: &OsStr,
+        args: &[&str],
+        cwd: &Path,
+        daemon_id: Option<&str>,
+    ) -> Result<Box<dyn Child>> {
         use std::process::{Command, Stdio};
         let mut cmd = Command::new(program);
         cmd.args(args)
@@ -122,6 +137,13 @@ impl Spawner for ProcessSpawner {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        // Cross-process wire contract read by ralphy-cli `emitter::DAEMON_ID_ENV`:
+        // identity, NOT a credential. Set per-child here (the dispatch path) rather
+        // than process-globally, so console/session children — which never get this
+        // injection — truthfully lack it (a `ralphy run` typed in a free console).
+        if let Some(id) = daemon_id {
+            cmd.env("RALPHY_DAEMON_ID", id);
+        }
         // Detach so daemon shutdown never reaches the run. On Unix its own process
         // group isolates it from the daemon's group.
         ralphy_proc_util::own_process_group(&mut cmd);
@@ -166,7 +188,7 @@ mod tests {
     /// exit code — no OS process touched, so the argv mapping is asserted purely.
     #[derive(Default)]
     struct FakeSpawner {
-        calls: Mutex<Vec<(OsString, Vec<String>, std::path::PathBuf)>>,
+        calls: Mutex<Vec<(OsString, Vec<String>, std::path::PathBuf, Option<String>)>>,
     }
 
     struct FakeChild {
@@ -183,11 +205,18 @@ mod tests {
     }
 
     impl Spawner for FakeSpawner {
-        fn spawn(&self, program: &OsStr, args: &[&str], cwd: &Path) -> Result<Box<dyn Child>> {
+        fn spawn(
+            &self,
+            program: &OsStr,
+            args: &[&str],
+            cwd: &Path,
+            daemon_id: Option<&str>,
+        ) -> Result<Box<dyn Child>> {
             self.calls.lock().unwrap().push((
                 program.to_os_string(),
                 args.iter().map(|a| a.to_string()).collect(),
                 cwd.to_path_buf(),
+                daemon_id.map(str::to_owned),
             ));
             Ok(Box::new(FakeChild { code: 7 }))
         }
@@ -204,10 +233,10 @@ mod tests {
         ];
         for (verb, expected) in cases {
             let spawner = FakeSpawner::default();
-            let mut child = dispatch(&spawner, &exe, verb, cwd).unwrap();
+            let mut child = dispatch(&spawner, &exe, verb, cwd, None).unwrap();
             let calls = spawner.calls.lock().unwrap();
             assert_eq!(calls.len(), 1, "{verb:?} must spawn exactly once");
-            let (program, args, seen_cwd) = &calls[0];
+            let (program, args, seen_cwd, _daemon_id) = &calls[0];
             assert_eq!(args, &expected, "{verb:?} argv");
             assert_eq!(program, &exe, "program must be the passed exe");
             // The program is a resolved exe, never a shell — remote input can
@@ -218,6 +247,27 @@ mod tests {
             assert_eq!(seen_cwd, cwd);
             assert_eq!(child.wait().unwrap(), Some(7));
         }
+    }
+
+    #[test]
+    fn daemon_id_is_forwarded_to_the_spawner() {
+        let spawner = FakeSpawner::default();
+        let exe = OsString::from("/opt/ralphy/bin/ralphy");
+        let cwd = Path::new("/work/repo");
+        dispatch(
+            &spawner,
+            &exe,
+            Verb::Run,
+            cwd,
+            Some("01FWD00000000000000000000"),
+        )
+        .unwrap();
+        let calls = spawner.calls.lock().unwrap();
+        assert_eq!(
+            calls[0].3,
+            Some("01FWD00000000000000000000".to_string()),
+            "the daemon_id must reach the spawner"
+        );
     }
 
     #[test]
