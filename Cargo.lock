@@ -1443,6 +1443,7 @@ dependencies = [
  "include_dir",
  "ralphy-proc-util",
  "ralphy-pty",
+ "ralphy-usage-scan",
  "serde",
  "serde_json",
  "tempfile",
