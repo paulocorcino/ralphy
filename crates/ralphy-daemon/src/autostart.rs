@@ -331,6 +331,9 @@ mod tests {
     fn systemd_unit_has_execstart_and_wantedby() {
         let unit = systemd_unit(&spec());
         for needle in [
+            "[Unit]",
+            "[Service]",
+            "[Install]",
             "Description=Ralphy daemon",
             "ExecStart=",
             "daemon",
