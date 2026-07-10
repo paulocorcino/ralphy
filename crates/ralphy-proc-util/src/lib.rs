@@ -32,7 +32,19 @@ pub fn own_process_group(cmd: &mut Command) {
 /// spawn). Best-effort on every arm; always reaps the direct child so no zombie
 /// lingers.
 pub fn kill_tree(child: &mut Child) {
-    let pid = child.id();
+    kill_tree_by_pid(child.id());
+    let _ = child.kill(); // direct child / fallback
+    let _ = child.wait(); // reap so no zombie lingers
+}
+
+/// Kill the process tree rooted at `pid` by OS pid alone — for a child this crate
+/// does not own as a [`Child`] (e.g. a `ralphy-pty` session, whose PTY child is
+/// not a `std::process::Child`). On Windows `taskkill /F /T` walks the tree; on
+/// Unix the pid doubles as a process-group id (the PTY child is a session leader,
+/// or was placed in its own group via [`own_process_group`]), so a negative pgid
+/// signals the whole group. Best-effort, and does not reap — the caller owns
+/// reaping its handle.
+pub fn kill_tree_by_pid(pid: u32) {
     #[cfg(windows)]
     {
         // `taskkill /T` terminates the whole tree rooted at PID.
@@ -44,16 +56,14 @@ pub fn kill_tree(child: &mut Child) {
     }
     #[cfg(unix)]
     {
-        // The child leads its own process group (set at spawn), so a negative pgid
-        // signals the whole tree. Dependency-free via the `kill` utility.
+        // A negative pgid signals the whole process group. Dependency-free via the
+        // `kill` utility.
         let _ = Command::new("kill")
             .args(["-KILL", &format!("-{pid}")])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
     }
-    let _ = child.kill(); // direct child / fallback
-    let _ = child.wait(); // reap so no zombie lingers
 }
 
 /// Resolve a home-scoped store/config path: when `override_base` is `Some` (a

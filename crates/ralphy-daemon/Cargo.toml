@@ -19,6 +19,13 @@ ulid = { workspace = true, features = ["serde"] }
 # features, not `full`; axum carries HTTP now and the WebSocket upgrade later.
 tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "macros", "time", "sync"] }
 axum = { version = "0.8", features = ["ws"] }
+# The session manager drives a real PTY child (ralphy-pty) and resolves the agent
+# program cross-platform (ralphy-proc-util); neither pulls in ralphy-core.
+ralphy-pty.workspace = true
+ralphy-proc-util.workspace = true
+# `terminal_size()` lets the session_test_child observe PTY resizes; a normal dep
+# (not dev) because src/bin/ targets don't see [dev-dependencies].
+terminal_size = "0.3"
 
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.

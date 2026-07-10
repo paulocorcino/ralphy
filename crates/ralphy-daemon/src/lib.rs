@@ -20,6 +20,7 @@ use include_dir::{include_dir, Dir};
 pub mod identity;
 pub mod protocol;
 pub mod registry;
+pub mod session;
 
 use protocol::{Frame, Presence};
 
