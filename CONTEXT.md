@@ -246,6 +246,31 @@ questions.
 _Avoid_: gateway/proxy (a raw passthrough was rejected — ADR-0032 §6), GitHub
 query (the contract is forge-neutral), graph (nothing is graph-shaped here).
 
+**Interactive usage**:
+Token consumption from agent CLI sessions the operator drives directly
+(terminal or IDE — Claude Code, Codex, OpenCode, Kimi), outside any **run**.
+It is recorded by the vendors' own on-disk session stores, **never written to
+the ledger** (the ledger stays the runs' record, ADR-0008), and surfaces only
+through the **usage scan**. Durability is the **control plane**'s: it polls
+and persists, upserting by session id; history older than the vendor's own
+retention window is accepted loss (ADR-0033).
+_Avoid_: invisible tokens, proxy capture (rejected twice — ADR-0008 D1 and
+ADR-0033 §1), manual usage.
+
+**Usage scan**:
+The stateless read-time scan that answers the daemon's read-only `usage`
+verb (same request/response family as **Forge query**, though it never
+touches the forge): parse the four vendors' session stores from scratch,
+deduplicate in memory, exclude sessions whose `session_id` a run already
+recorded in the ledger, attribute projects via the **repo registry**, and
+respond — run records and **interactive usage** records, tokens only, USD
+never (read-time pricing, ADR-0008 D8). No background job, no watermarks, no
+state: it executes only when asked, so it is on by default and costs nothing
+idle. Each daemon scans only its own environment's stores (WSL scans WSL).
+Lives in `crates/ralphy-usage-scan` (ADR-0033).
+_Avoid_: harvester (nothing runs in the background), proxy, telemetry
+(nothing is pushed), collector.
+
 **Repo registry**:
 The list of repos a **daemon** can act on, one registry per daemon. It is
 **passive**: every `init`/`run`/`triage` upserts its repo, keyed by the
@@ -346,7 +371,8 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   a cron or manual run (including one typed inside a **free console**) simply
   doesn't. Observability never depends on a daemon existing.
 - A **workbench session** involves no run; a **Supervised session** watches a
-  run. The **control plane** sees both worlds — tunnel (interactive) and
+  run. Tokens either kind burns are **interactive usage** — visible to the
+  **usage scan**, never in the ledger. The **control plane** sees both worlds — tunnel (interactive) and
   CloudEvents sink (telemetry) — but the two never share a channel.
 - **Triage evidence** = the issue body, its full comment thread, and the
   guardrailed attachments the CLI fetches for the triage agent (ADR-0025); an
