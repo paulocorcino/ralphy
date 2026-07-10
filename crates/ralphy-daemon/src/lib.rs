@@ -6,7 +6,7 @@
 //! by importing the core).
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -24,7 +24,7 @@ pub mod protocol;
 pub mod registry;
 pub mod session;
 
-use protocol::{Frame, Presence};
+use protocol::{Command, Frame, Presence};
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
 pub const DEFAULT_PORT: u16 = 7257;
@@ -124,6 +124,11 @@ pub fn router(
     // session route so a live session also tears down on graceful shutdown.
     let session_shutdown = shutdown.clone();
     let session_registry = registry_path.clone();
+    // A dispatched run must survive daemon shutdown (inverse of the session
+    // invariant), but the handler still watches `shutdown` to stop serving the
+    // socket — it just never kills the child. Clone one for that route.
+    let command_shutdown = shutdown.clone();
+    let command_registry = registry_path.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -149,6 +154,16 @@ pub fn router(
                 let registry_path = session_registry.clone();
                 let shutdown = session_shutdown.clone();
                 async move { session_ws_upgrade(ws, q, registry_path, shutdown).await }
+            }),
+        )
+        .route(
+            "/ws/command",
+            get(move |ws: WebSocketUpgrade| {
+                let registry_path = command_registry.clone();
+                let shutdown = command_shutdown.clone();
+                async move {
+                    ws.on_upgrade(move |socket| command_ws(socket, registry_path, shutdown))
+                }
             }),
         )
         .fallback(ui_asset)
@@ -307,6 +322,132 @@ async fn session_ws(
         }
     }
     session.close();
+}
+
+/// Send a structured command reply frame over the socket, ignoring a send error
+/// (the client may already be gone).
+async fn send_command(socket: &mut WebSocket, id: u64, verb: &str, payload: serde_json::Value) {
+    let frame = Frame::Command(Command {
+        id,
+        verb: verb.to_string(),
+        payload,
+    });
+    let _ = socket
+        .send(Message::Binary(protocol::encode(&frame).into()))
+        .await;
+}
+
+/// `GET /ws/command`: one remote command per connection. Read the first frame; a
+/// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
+/// repo spawns the run and reports two events — an ack (`status:"spawned"` +
+/// pid), then the child's exit (`status:"exited"` + code). An unknown verb or an
+/// unregistered repo gets one `status:"error"` frame and spawns nothing.
+///
+/// TEARDOWN INVARIANT (the INVERSE of `session_ws`): the dispatched run keeps its
+/// OWN lifecycle. NONE of the `select!` arms — daemon shutdown, client
+/// close/error, wait-complete — kills the child; the `Box<dyn dispatch::Child>`
+/// has no kill and dropping it does not kill (std semantics). A daemon shutdown
+/// or a browser disconnect stops us serving THIS socket but never the run
+/// (PRD #157 story 18/20). Do not add a kill to any arm.
+async fn command_ws(
+    mut socket: WebSocket,
+    registry_path: PathBuf,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    // First frame or nothing: a client that opens and hangs up spawns nothing.
+    let Some(Ok(Message::Binary(bytes))) = socket.recv().await else {
+        return;
+    };
+    let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
+        return;
+    };
+    let id = cmd.id;
+
+    let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
+        send_command(
+            &mut socket,
+            id,
+            &cmd.verb,
+            serde_json::json!({ "status": "error", "message": "unknown verb" }),
+        )
+        .await;
+        return;
+    };
+    let slug = cmd.payload.get("repo").and_then(|v| v.as_str()).unwrap_or("");
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry for a command");
+            send_command(
+                &mut socket,
+                id,
+                &cmd.verb,
+                serde_json::json!({ "status": "error", "message": "repo registry unreadable" }),
+            )
+            .await;
+            return;
+        }
+    };
+    let Some(entry) = store.entry(slug) else {
+        send_command(
+            &mut socket,
+            id,
+            &cmd.verb,
+            serde_json::json!({ "status": "error", "message": "unknown repo" }),
+        )
+        .await;
+        return;
+    };
+
+    let mut child = match dispatch::dispatch(
+        &dispatch::ProcessSpawner,
+        &dispatch::ralphy_exe(),
+        verb,
+        Path::new(&entry.path),
+    ) {
+        Ok(child) => child,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to spawn a dispatched command");
+            send_command(
+                &mut socket,
+                id,
+                &cmd.verb,
+                serde_json::json!({ "status": "error", "message": "spawn failed" }),
+            )
+            .await;
+            return;
+        }
+    };
+    let pid = child.pid();
+    send_command(
+        &mut socket,
+        id,
+        &cmd.verb,
+        serde_json::json!({ "status": "spawned", "pid": pid }),
+    )
+    .await;
+
+    // `Child::wait` is blocking and must not sit on the tokio runtime.
+    let mut wait = tokio::task::spawn_blocking(move || child.wait());
+    tokio::select! {
+        // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
+        _ = shutdown.changed() => {}
+        // Client closed or errored: same — abandon the wait, never kill.
+        incoming = socket.recv() => {
+            let _ = incoming;
+        }
+        // The run exited: report its code (None → serde null).
+        joined = &mut wait => {
+            let code = joined.ok().and_then(|r| r.ok()).flatten();
+            send_command(
+                &mut socket,
+                id,
+                &cmd.verb,
+                serde_json::json!({ "status": "exited", "code": code }),
+            )
+            .await;
+        }
+    }
 }
 
 /// `GET /api/repos`: the registered repos as JSON, each with its live
