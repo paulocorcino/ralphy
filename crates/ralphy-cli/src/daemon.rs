@@ -50,6 +50,11 @@ pub(crate) enum DaemonCommand {
         #[arg(value_name = "SLUG")]
         slug: String,
     },
+    /// Register the daemon for OS autostart at logon (Task Scheduler / systemd
+    /// user unit).
+    Install,
+    /// Remove the daemon's autostart registration (idempotent).
+    Uninstall,
 }
 
 pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
@@ -81,6 +86,16 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             } else {
                 println!("{slug} was not registered");
             }
+            Ok(())
+        }
+        Some(DaemonCommand::Install) => {
+            ralphy_daemon::autostart::install()?;
+            println!("registered daemon autostart");
+            Ok(())
+        }
+        Some(DaemonCommand::Uninstall) => {
+            ralphy_daemon::autostart::uninstall()?;
+            println!("removed daemon autostart");
             Ok(())
         }
     }
@@ -164,6 +179,14 @@ fn status(port: u16) -> Result<()> {
         }
     );
     println!("listener: http://127.0.0.1:{port}");
+    match ralphy_daemon::autostart::status() {
+        Ok(st) if st.registered => println!("autostart: registered"),
+        Ok(_) => println!("autostart: not registered"),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to probe daemon autostart status");
+            println!("autostart: unknown");
+        }
+    }
     Ok(())
 }
 

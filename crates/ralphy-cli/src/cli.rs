@@ -383,6 +383,26 @@ mod tests {
     }
 
     #[test]
+    fn daemon_install_and_uninstall_subcommands_parse() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "install"])
+            .expect("daemon install must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(matches!(args.command, Some(daemon::DaemonCommand::Install)));
+
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "uninstall"])
+            .expect("daemon uninstall must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(matches!(
+            args.command,
+            Some(daemon::DaemonCommand::Uninstall)
+        ));
+    }
+
+    #[test]
     fn daemon_bind_defaults_to_loopback() {
         let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
         let Command::Daemon(args) = cli.command else {
