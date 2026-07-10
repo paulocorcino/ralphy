@@ -37,8 +37,9 @@ fn usage_from_opencode_message(data: &serde_json::Value) -> Option<Usage> {
 /// `opencode run --format json` stream — the session this run created. Each
 /// headless `opencode run` opens a fresh session (no continuation flag is
 /// passed, ADR-0005), so this value uniquely selects this run's messages.
-/// `None` when the stream carries none.
-fn session_id_from_stream(stdout: &str) -> Option<String> {
+/// `None` when the stream carries none. Also the ledger session-id source
+/// (ADR-0033 §5) — the identity the run-vs-scan dedup key is built on.
+pub(crate) fn session_id_from_stream(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {

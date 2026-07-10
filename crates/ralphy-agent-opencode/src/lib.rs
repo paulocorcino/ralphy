@@ -49,7 +49,7 @@ use events::{
 use outcome::classify_opencode_outcome;
 use skills::{materialize_opencode_skills, opencode_skills_config};
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
-use usage::{opencode_usage, resolved_model_label};
+use usage::{opencode_usage, resolved_model_label, session_id_from_stream};
 
 /// The OpenCode planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with the `## Execution model` tier
@@ -188,9 +188,12 @@ impl Agent for OpenCodeAgent {
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         // None = resumed (finalized plan kept, no vendor run): no stdout to parse,
         // so report zero planning tokens.
-        let usage = match session {
-            Some((_, stdout_text)) => opencode_usage(&stdout_text),
-            None => ralphy_core::Usage::default(),
+        let (usage, session_id) = match session {
+            Some((_, stdout_text)) => (
+                opencode_usage(&stdout_text),
+                session_id_from_stream(&stdout_text),
+            ),
+            None => (ralphy_core::Usage::default(), None),
         };
         info!(
             model = resolved_model_label(&usage),
@@ -202,6 +205,7 @@ impl Agent for OpenCodeAgent {
             recommended_model: None,
             path: plan_path,
             usage,
+            session_id,
         })
     }
 
@@ -263,7 +267,11 @@ impl Agent for OpenCodeAgent {
             saw_error,
             "opencode execution ended"
         );
-        Ok(Execution { outcome, usage })
+        Ok(Execution {
+            outcome,
+            usage,
+            session_id: session_id_from_stream(&stdout_text),
+        })
     }
 }
 
