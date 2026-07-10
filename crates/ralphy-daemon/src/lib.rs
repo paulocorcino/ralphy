@@ -122,6 +122,8 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let claude_projects_dir = usage::claude_projects_dir_path()?;
     let codex_dir = usage::codex_dir_path()?;
     let opencode_db = usage::opencode_db_path()?;
+    let kimi_dir = usage::kimi_dir_path()?;
+    let kimi_code_dir = usage::kimi_code_dir_path()?;
     axum::serve(
         listener,
         router(
@@ -131,6 +133,8 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             claude_projects_dir,
             codex_dir,
             opencode_db,
+            kimi_dir,
+            kimi_code_dir,
             start,
             shutdown_rx,
             policy,
@@ -162,6 +166,8 @@ pub fn router(
     claude_projects_dir: PathBuf,
     codex_dir: PathBuf,
     opencode_db: PathBuf,
+    kimi_dir: PathBuf,
+    kimi_code_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: auth::AuthPolicy,
@@ -206,6 +212,8 @@ pub fn router(
                 let claude_dir = claude_projects_dir.clone();
                 let codex_dir = codex_dir.clone();
                 let opencode_db = opencode_db.clone();
+                let kimi_dir = kimi_dir.clone();
+                let kimi_code_dir = kimi_code_dir.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
@@ -214,6 +222,8 @@ pub fn router(
                         claude_dir,
                         codex_dir,
                         opencode_db,
+                        kimi_dir,
+                        kimi_code_dir,
                         registry,
                         daemon_id,
                         q.0.since,
@@ -747,6 +757,8 @@ async fn usage_route(
     claude_projects_dir: PathBuf,
     codex_dir: PathBuf,
     opencode_db: PathBuf,
+    kimi_dir: PathBuf,
+    kimi_code_dir: PathBuf,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -765,6 +777,8 @@ async fn usage_route(
         &claude_projects_dir,
         &codex_dir,
         &opencode_db,
+        &kimi_dir,
+        &kimi_code_dir,
         &store,
         &runs,
         since.as_deref(),
@@ -874,6 +888,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -933,6 +949,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -959,6 +977,8 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -993,6 +1013,8 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1048,6 +1070,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1093,6 +1117,8 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1147,6 +1173,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
             claude_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
@@ -1223,6 +1251,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             codex_dir.path().to_path_buf(),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1286,6 +1316,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             db.clone(),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1309,6 +1341,58 @@ mod tests {
                     && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_oc")
             }),
             "interactive must carry an opencode record with the session id; got: {body_string}"
+        );
+        assert!(
+            !body_string.contains("usd"),
+            "no pricing in the payload; got: {body_string}"
+        );
+    }
+
+    /// `/api/usage` also carries Kimi interactive records: a legacy `wire.jsonl`
+    /// with one non-zero `StatusUpdate` under the kimi base dir's `sessions/` tree
+    /// flows through the scan and appears in the `interactive` array with
+    /// `agent=="kimi"` and its parent-dir session id. Proves the `kimi_dir` router
+    /// arg is threaded end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_kimi_interactive_records() {
+        let kimi_dir = tempfile::tempdir().unwrap();
+        let sess = kimi_dir.path().join("sessions").join("GRP").join("SESS");
+        std::fs::create_dir_all(&sess).unwrap();
+        let line = "{\"timestamp\": 1770983410.0, \"message\": {\"type\": \"StatusUpdate\", \"payload\": {\"token_usage\": {\"input_other\": 100, \"output\": 10, \"input_cache_read\": 0, \"input_cache_creation\": 0}, \"message_id\": \"m1\"}}}";
+        std::fs::write(sess.join("wire.jsonl"), line).unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            kimi_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("kimi")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some("SESS")
+            }),
+            "interactive must carry a kimi record with the session id; got: {body_string}"
         );
         assert!(
             !body_string.contains("usd"),
@@ -1352,6 +1436,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Bearer("tok".into()),
@@ -1377,6 +1463,8 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1413,6 +1501,8 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthPolicy::Localhost,
@@ -1435,6 +1525,8 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -1471,6 +1563,8 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),

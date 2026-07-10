@@ -7,7 +7,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
-    scan_claude, scan_codex, scan_opencode, ClaudeScan, CodexScan, OpenCodeScan, RegisteredRepo,
+    scan_claude, scan_codex, scan_kimi, scan_opencode, ClaudeScan, CodexScan, KimiScan,
+    OpenCodeScan, RegisteredRepo,
 };
 
 use crate::registry::RegistryStore;
@@ -129,7 +130,43 @@ pub fn opencode_db_path() -> anyhow::Result<PathBuf> {
         .join("opencode.db"))
 }
 
-/// Scan the Claude, Codex, AND OpenCode stores for interactive usage records,
+/// The legacy Kimi (`kimi-cli`) session store root: `$RALPHY_KIMI_DIR` when set
+/// (tests point it at a temp dir), else `$KIMI_HOME` (Kimi's own base var), else
+/// `<home>/.kimi`. This is the `.kimi` BASE — `scan_kimi` walks its `sessions/`
+/// subtree and reads its `config.json`. Mirrors [`codex_dir_path`].
+pub fn kimi_dir_path() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("RALPHY_KIMI_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    if let Some(dir) = std::env::var_os("KIMI_HOME") {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the Kimi sessions store"))?;
+    Ok(PathBuf::from(home).join(".kimi"))
+}
+
+/// The `kimi-code` session store root: `$RALPHY_KIMI_CODE_DIR` when set (tests
+/// point it at a temp dir), else `$KIMI_CODE_HOME`, else `<home>/.kimi-code`.
+/// This is the `.kimi-code` BASE — `scan_kimi` walks its `sessions/` subtree.
+/// Mirrors [`kimi_dir_path`].
+pub fn kimi_code_dir_path() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("RALPHY_KIMI_CODE_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    if let Some(dir) = std::env::var_os("KIMI_CODE_HOME") {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("no home directory resolved for the kimi-code sessions store")
+        })?;
+    Ok(PathBuf::from(home).join(".kimi-code"))
+}
+
+/// Scan the Claude, Codex, OpenCode, AND Kimi stores for interactive usage records,
 /// excluding sessions the ledger already owns (their `session_id` appears in
 /// `run_records`), and serialize each to JSON (ADR-0033 §2/§6). `registry.repos`
 /// supplies the project/actor attribution. Read-only: no scan writes. The Codex
@@ -138,6 +175,8 @@ pub fn interactive_records(
     claude_dir: &Path,
     codex_dir: &Path,
     opencode_db: &Path,
+    kimi_dir: &Path,
+    kimi_code_dir: &Path,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -173,10 +212,18 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
+    let kimi = scan_kimi(&KimiScan {
+        kimi_dir,
+        kimi_code_dir,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
     claude
         .iter()
         .chain(codex.iter())
         .chain(opencode.iter())
+        .chain(kimi.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()
 }
