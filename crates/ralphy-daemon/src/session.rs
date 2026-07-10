@@ -181,3 +181,35 @@ impl Drop for Session {
         self.close();
     }
 }
+
+/// Append `bytes` to the scrollback `ring`, then drop from the FRONT until it is
+/// no longer over `cap` — a byte-bounded ring so a chatty session cannot grow the
+/// daemon's memory without bound (issue #166 AC2). Front-drop is intentional:
+/// scrollback keeps the most RECENT output; the truncated seam is resynchronized
+/// by the live stream that follows the replay.
+fn push_capped(ring: &mut std::collections::VecDeque<u8>, bytes: &[u8], cap: usize) {
+    ring.extend(bytes.iter().copied());
+    while ring.len() > cap {
+        ring.pop_front();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrollback_ring_is_bounded() {
+        let mut ring = std::collections::VecDeque::new();
+        // Fed in ≥2 chunks: proves the cap holds across successive pushes, not
+        // only on a single oversized write.
+        push_capped(&mut ring, b"012345", 8);
+        push_capped(&mut ring, b"6789AB", 8);
+        assert_eq!(ring.len(), 8, "ring must not exceed the cap");
+        assert_eq!(
+            ring.iter().copied().collect::<Vec<u8>>(),
+            b"456789AB".to_vec(),
+            "the FRONT is dropped and the tail retained"
+        );
+    }
+}
