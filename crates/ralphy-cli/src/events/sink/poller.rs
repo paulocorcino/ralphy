@@ -34,10 +34,9 @@ fn parse_checkbox_steps(md: &str) -> Vec<(String, &'static str)> {
                 ("open", r)
             } else if let Some(r) = t.strip_prefix("- [x]").or_else(|| t.strip_prefix("- [X]")) {
                 ("checked", r)
-            } else if let Some(r) = t.strip_prefix("- [!]") {
-                ("noticed", r)
             } else {
-                return None;
+                let r = t.strip_prefix("- [!]")?;
+                ("noticed", r)
             };
             Some((normalize_step(rest), status))
         })
