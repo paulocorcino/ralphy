@@ -16,8 +16,8 @@ use crate::{
 
 use super::artifacts::{
     clear_protocol_failure, clear_verify_failure, record_citations, verify_failure_summary,
-    write_handoffs, write_issue_json, write_knowledge, write_protocol_failure, write_references,
-    write_verify_failure,
+    verify_spawn_failure_summary, write_handoffs, write_issue_json, write_knowledge,
+    write_protocol_failure, write_references, write_verify_failure,
 };
 use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
@@ -125,6 +125,10 @@ enum VerifyPlan {
     /// The plan opted out with `## Verify: none` — close on the self-report, no
     /// warning (the absence of verification was a deliberate, visible decision).
     OptedOut,
+    /// The plan's `## Verify` section is malformed (a markdown checklist instead of
+    /// bare commands, #181). Carries the operator-facing error; the gate cannot run,
+    /// so the issue is left open with this summary rather than closed silently.
+    Invalid(String),
     /// Nothing resolved — no plan section and no settings fallback. Close on the
     /// agent's self-report but warn loudly (no-silent-caps: a missing gate is
     /// always a visible decision, never a silent hole).
@@ -139,6 +143,7 @@ fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyP
     match verify::parse_verify(plan_md) {
         VerifySpec::Commands(commands) => VerifyPlan::Run(commands),
         VerifySpec::None => VerifyPlan::OptedOut,
+        VerifySpec::Invalid(error) => VerifyPlan::Invalid(error),
         VerifySpec::Unspecified => match fallback {
             Some(commands) if !commands.is_empty() => VerifyPlan::Run(commands.clone()),
             _ => VerifyPlan::NoGate,
@@ -407,7 +412,13 @@ pub(crate) fn plan_phase(
     // ledger. The plan line carries `ok` — the issue's terminal outcome is its
     // execute line's, joined by `issue` at read-time. Best-effort: a write
     // failure warns, never stops the run (D9).
-    ledger.record_phase(issue.number, "plan", "ok", &plan.usage);
+    ledger.record_phase(
+        issue.number,
+        "plan",
+        "ok",
+        &plan.usage,
+        plan.session_id.as_deref(),
+    );
 
     // An infeasible plan (no actionable steps) is a skip, not a failure, and
     // not green — the runner neither closes it nor stops the run. The
@@ -485,12 +496,23 @@ pub(crate) fn execute_phase(
     let mut no_commit_streak = 0u32;
     let mut deadline_cut = false;
     let mut exec_usage = Usage::default();
+    // Last non-empty vendor session across the resume loop — the terminal
+    // attempt's session is the one the single execute ledger line records
+    // (ADR-0033 §5, last-non-empty-wins).
+    let mut exec_session_id: Option<String> = None;
     let outcome = loop {
         let before_sha = cx.repo.head_sha().ok();
-        let Execution { outcome, usage } = cx.agent.execute(plan, cx.ws)?;
+        let Execution {
+            outcome,
+            usage,
+            session_id,
+        } = cx.agent.execute(plan, cx.ws)?;
         // Accumulate across the resume loop so the single execute ledger line
         // carries the whole issue's execution cost, not just the last attempt.
         exec_usage.add_tokens(&usage);
+        if session_id.is_some() {
+            exec_session_id = session_id;
+        }
         let after_sha = cx.repo.head_sha().ok();
 
         // Track progress: a commit resets the streak, a no-commit execute
@@ -550,6 +572,7 @@ pub(crate) fn execute_phase(
         "execute",
         outcome_label(&outcome),
         &exec_usage,
+        exec_session_id.as_deref(),
     );
 
     Ok(if outcome == Outcome::Done {
@@ -598,6 +621,8 @@ pub(crate) fn protocol_gate(
     // Set when the bounce itself hits a usage limit: that is the run's
     // limit, so stop on the reset instead of judging the lint again.
     let mut protocol_limit: Option<Option<String>> = None;
+    // The vendor session of the protocol bounce, so the repair line carries it.
+    let mut protocol_session_id: Option<String> = None;
     if !lint.passed() {
         // consumed by the telegram notifier / presenter — keep stable
         info!(
@@ -609,8 +634,12 @@ pub(crate) fn protocol_gate(
         let Execution {
             outcome: bounce_outcome,
             usage,
+            session_id,
         } = cx.agent.execute(plan, cx.ws)?;
         protocol_usage.add_tokens(&usage);
+        if session_id.is_some() {
+            protocol_session_id = session_id;
+        }
         if let Outcome::Limit(reset) = bounce_outcome {
             protocol_limit = Some(reset);
         } else {
@@ -631,6 +660,7 @@ pub(crate) fn protocol_gate(
             "protocol-failed"
         },
         &protocol_usage,
+        protocol_session_id.as_deref(),
     );
 
     // A usage limit mid-bounce is the run's limit — no tokens are left
@@ -691,6 +721,9 @@ pub(crate) fn verify_gate(
     // the initial execute line stays truthful and the repair cost is never
     // hidden (ADR-0008). Folded into the run totals either way.
     let mut repair_usage = Usage::default();
+    // Last non-empty vendor session across the repair loop — the repair line
+    // carries the terminal attempt's session (ADR-0033 §5, last-non-empty-wins).
+    let mut repair_session_id: Option<String> = None;
     // Set when a repair attempt itself hits a usage limit. `None` while the
     // gate is still being worked.
     let mut repair_limit: Option<Outcome> = None;
@@ -717,6 +750,33 @@ pub(crate) fn verify_gate(
                         .map(|c| (c.argv.clone(), c.secs))
                         .collect::<Vec<_>>(),
                 );
+                // Short-circuit a non-repairable spawn failure (#182): the gate's
+                // deciding command never ran (program not found / typo'd binary),
+                // so re-running the SAME argv can never make it pass. Handing it
+                // back would burn the whole VERIFY_MAX_REPAIRS budget on a fix the
+                // agent has no way to win. Skip immediately with a spawn-specific
+                // artifact and summary — still honoring ADR-0011 (the runner never
+                // lets a self-report past a red gate); it just stops wasting the
+                // budget on a structural failure it can already see.
+                if report.spawn_failed() {
+                    let summary = verify_spawn_failure_summary(&report);
+                    // consumed by the telegram notifier / presenter — keep stable
+                    info!(
+                        number = issue.number,
+                        %summary,
+                        "verify gate — command could not spawn, non-repairable, issue not closed"
+                    );
+                    // Distinct honesty artifact: names it a spec/spawn problem, not
+                    // a test failure. Best-effort — a comment failure must not crash
+                    // the run.
+                    if let Err(e) = cx.tracker.comment(
+                        issue.number,
+                        &verify::spawn_failure_comment(&cx.cfg.stamp, &report),
+                    ) {
+                        warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+                    }
+                    break GateDecision::Failed(summary);
+                }
                 // Honesty artifact: every command + its exit code (pass or
                 // fail), with the failing tail on a failure. Best-effort — a
                 // comment failure must not crash a run that otherwise passed.
@@ -760,8 +820,12 @@ pub(crate) fn verify_gate(
                 let Execution {
                     outcome: repair_outcome,
                     usage,
+                    session_id,
                 } = cx.agent.execute(plan, cx.ws)?;
                 repair_usage.add_tokens(&usage);
+                if session_id.is_some() {
+                    repair_session_id = session_id;
+                }
                 // A usage limit mid-repair stops the run on the limit; we do
                 // not re-verify (the agent never got to fix anything) and do
                 // not spend another attempt.
@@ -780,6 +844,26 @@ pub(crate) fn verify_gate(
                 "verify gate skipped — plan declared `## Verify: none`"
             );
             GateDecision::Green
+        }
+        VerifyPlan::Invalid(error) => {
+            // A malformed `## Verify` section cannot be run: leave the issue open
+            // with the parse error as its summary rather than close it silently
+            // (the gate never saw anything pass). The plan author fixes the section.
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                %error,
+                "verify gate — malformed `## Verify` section, issue not closed"
+            );
+            // Honesty artifact on the issue itself, like every other gate outcome
+            // (#181). Best-effort — a comment failure must not crash the run.
+            if let Err(e) = cx.tracker.comment(
+                issue.number,
+                &verify::invalid_comment(&cx.cfg.stamp, &error),
+            ) {
+                warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+            }
+            GateDecision::Failed(error)
         }
         VerifyPlan::NoGate if cx.cfg.require_verify_gate => {
             // consumed by the telegram notifier / presenter — keep stable
@@ -813,6 +897,7 @@ pub(crate) fn verify_gate(
             "done"
         },
         &repair_usage,
+        repair_session_id.as_deref(),
     );
 
     Ok(match gate {

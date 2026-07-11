@@ -3,9 +3,10 @@
 verdict: <BLOCKED | APPROVED-WITH-FIXES | APPROVED>
 scope: <full | partial(<one-phrase reason>)>
 base: <base>
+spec: <issue# | path | none-found | unavailable (<one-phrase blocker>)>
 checks: <executed summary>
 not exercised: <checks/lanes/runtime surfaces with reasons, or none>
-audit: <pass | partial | gap | scope-auto-narrowed>
+audit: <pass | partial | gap | scope-auto-narrowed | unavailable(<one-phrase blocker>)>
 
 ## Findings
 
@@ -25,7 +26,7 @@ narrowed-by-user-request: true   # only when the user explicitly requested narro
 
 ## Open Questions
 
-- <question, or omit section if empty>
+- <question> — needs: <what would settle it>   # omit section if empty
 
 ## Verification
 

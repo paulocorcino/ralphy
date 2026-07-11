@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::BranchMode;
 
-use crate::{config, init, install, issues, models, schedule, telegram, triage, usage};
+use crate::{config, daemon, init, install, issues, models, schedule, telegram, triage, usage};
 
 #[derive(Parser)]
 #[command(
@@ -73,6 +73,9 @@ pub(crate) enum Command {
     /// run` on a cadence (Windows Task Scheduler or cron) — ADR-0026.
     #[command(subcommand)]
     Schedule(schedule::ScheduleCommand),
+    /// Run the resident daemon in the foreground: a localhost HTTP listener
+    /// serving the embedded workbench UI (docs/adr/0032). Ctrl+C stops it.
+    Daemon(daemon::DaemonArgs),
 }
 
 #[derive(Subcommand)]
@@ -344,6 +347,79 @@ mod tests {
                 .any(|s| s.get_name() == "schedule"),
             "the `schedule` subcommand must be registered in the CLI"
         );
+    }
+
+    #[test]
+    fn daemon_subcommand_parses_with_default_and_explicit_port() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.port, ralphy_daemon::DEFAULT_PORT);
+
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "--port", "9000"])
+            .expect("daemon --port must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.port, 9000);
+    }
+
+    #[test]
+    fn daemon_setup_and_status_subcommands_parse() {
+        let cli =
+            Cli::try_parse_from(["ralphy", "daemon", "setup"]).expect("daemon setup must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(matches!(args.command, Some(daemon::DaemonCommand::Setup)));
+
+        let cli =
+            Cli::try_parse_from(["ralphy", "daemon", "status"]).expect("daemon status must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(matches!(args.command, Some(daemon::DaemonCommand::Status)));
+    }
+
+    #[test]
+    fn daemon_install_and_uninstall_subcommands_parse() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "install"])
+            .expect("daemon install must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(matches!(args.command, Some(daemon::DaemonCommand::Install)));
+
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "uninstall"])
+            .expect("daemon uninstall must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(matches!(
+            args.command,
+            Some(daemon::DaemonCommand::Uninstall)
+        ));
+    }
+
+    #[test]
+    fn daemon_bind_defaults_to_loopback() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(
+            args.bind,
+            "127.0.0.1".parse::<std::net::IpAddr>().unwrap(),
+            "the default bind is loopback"
+        );
+
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "--bind", "100.64.0.1"])
+            .expect("daemon --bind must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.bind, "100.64.0.1".parse::<std::net::IpAddr>().unwrap());
     }
 
     #[test]

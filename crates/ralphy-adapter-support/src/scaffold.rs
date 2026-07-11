@@ -96,7 +96,34 @@ pub fn run_plan_session<P>(
             cfg.log_path.display()
         );
     }
+
+    // The finalized-plan trailer is the resume marker (see [`crate::resume`]): the
+    // plan prompt asks the LLM to write it as the plan's last line, but some vendors
+    // (OpenCode) reliably end with a chat summary instead and omit it, silently
+    // breaking resume. When the planner exited CLEANLY and left a plan without the
+    // trailer, stamp it Rust-side so an abruptly-killed run can still resume. The
+    // clean-exit gate is load-bearing: a plan truncated by a kill/timeout must NOT be
+    // marked finalized. Idempotent (skipped when already present) and best-effort (a
+    // write failure just forgoes resume, never fails the plan).
+    if r.exited_cleanly && !crate::resume::plan_is_finalized_for(cfg.plan_path, cfg.issue_number) {
+        stamp_plan_trailer(cfg.plan_path, cfg.issue_number);
+    }
     Ok(Some((r, p)))
+}
+
+/// Append the finalized-plan [`crate::resume::plan_trailer`] as the plan's last line.
+/// Used only as the clean-exit fallback in [`run_plan_session`] when the planner wrote
+/// a plan but omitted the trailer; see that call site for why it is gated on a clean
+/// exit. Best-effort — a read/write failure simply leaves the plan un-stamped.
+fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
+    let Ok(md) = fs::read_to_string(plan_path) else {
+        return;
+    };
+    let mut out = md.trim_end().to_string();
+    out.push_str("\n\n");
+    out.push_str(&crate::resume::plan_trailer(issue_number));
+    out.push('\n');
+    let _ = fs::write(plan_path, out);
 }
 
 /// The paths and auth wording for a [`run_exec_session`] call — no plan/charter,
@@ -143,6 +170,18 @@ mod tests {
             exited_cleanly: true,
             timed_out: false,
             exit_code: Some(0),
+        }
+    }
+
+    // A `HeadlessRun` that was killed on the wall timeout (unclean exit) — the plan on
+    // disk may be truncated, so it must NOT be stamped as finalized.
+    fn fake_run_killed(log: &str) -> HeadlessRun {
+        HeadlessRun {
+            stdout: String::new(),
+            log: log.to_string(),
+            exited_cleanly: false,
+            timed_out: true,
+            exit_code: None,
         }
     }
 
@@ -234,6 +273,96 @@ mod tests {
     }
 
     #[test]
+    fn clean_plan_missing_trailer_is_stamped_for_resume() {
+        let dir = tmp("stamp");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+        cfg.issue_number = 71;
+        run_plan_session(
+            cfg,
+            || {
+                // A plan that ends in prose, not the trailer — the OpenCode symptom.
+                fs::write(&plan_path, "# plan\n## Steps\n- [ ] do a thing\n").unwrap();
+                Ok((fake_run(""), 1u32))
+            },
+            |_| true,
+            |_| None,
+        )
+        .unwrap()
+        .expect("fresh plan yields Some");
+        assert!(
+            crate::resume::plan_is_finalized_for(&plan_path, 71),
+            "a clean plan missing its trailer must be stamped so resume works"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn killed_plan_missing_trailer_is_not_stamped() {
+        let dir = tmp("killed");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+        cfg.issue_number = 71;
+        run_plan_session(
+            cfg,
+            || {
+                // A plan truncated by a kill: the run did not exit cleanly.
+                fs::write(&plan_path, "# plan\n## Steps\n- [ ] half-writ").unwrap();
+                Ok((fake_run_killed(""), 1u32))
+            },
+            |_| true,
+            |_| None,
+        )
+        .unwrap()
+        .expect("a plan on disk still yields Some");
+        assert!(
+            !crate::resume::plan_is_finalized_for(&plan_path, 71),
+            "an unclean (killed) plan must NOT be marked finalized"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clean_plan_with_trailer_is_not_double_stamped() {
+        let dir = tmp("idem");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        let mut cfg = plan_cfg(&dir, &plan_path, &charter);
+        cfg.issue_number = 71;
+        let body = format!(
+            "# plan\n## Steps\n- [ ] x\n\n{}\n",
+            crate::resume::plan_trailer(71)
+        );
+        run_plan_session(
+            cfg,
+            || {
+                fs::write(&plan_path, &body).unwrap();
+                Ok((fake_run(""), 1u32))
+            },
+            |_| true,
+            |_| None,
+        )
+        .unwrap()
+        .expect("fresh plan yields Some");
+        let after = fs::read_to_string(&plan_path).unwrap();
+        assert_eq!(
+            after, body,
+            "an already-finalized plan must not be re-stamped"
+        );
+        assert_eq!(
+            after.matches("ralphy-plan: issue=71").count(),
+            1,
+            "exactly one trailer"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn resume_keeps_finalized_plan_and_skips_run() {
         let dir = tmp("resume");
         fs::create_dir_all(&dir).unwrap();
@@ -284,7 +413,12 @@ mod tests {
         )
         .unwrap();
         assert!(out.is_some(), "other-issue trailer must re-plan (Some)");
-        assert_eq!(fs::read_to_string(&plan_path).unwrap(), "# fresh plan");
+        // The fresh plan replaced the #999 content; a clean run then re-stamps it for
+        // THIS issue, so it is finalized for #147 and no longer for #999.
+        let after = fs::read_to_string(&plan_path).unwrap();
+        assert!(after.starts_with("# fresh plan"), "got: {after:?}");
+        assert!(crate::resume::plan_is_finalized_for(&plan_path, 147));
+        assert!(!crate::resume::plan_is_finalized_for(&plan_path, 999));
         let _ = fs::remove_dir_all(&dir);
     }
 

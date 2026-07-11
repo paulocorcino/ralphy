@@ -46,7 +46,7 @@ use command::{build_kimi_command, DEFAULT_KIMI_MODEL};
 use outcome::{classify_kimi_outcome, kimi_final_text};
 use skills::materialize_kimi_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
-use usage::{fold_wire_usage, kimi_sessions_dir};
+use usage::{fold_wire_usage, kimi_sessions_dir, wire_session_id};
 
 /// The Kimi planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` with no `## Execution model` tier line
@@ -157,9 +157,12 @@ impl Agent for KimiAgent {
 
         // None = resumed (finalized plan kept, no vendor run): no wire payload to
         // fold, so report zero planning tokens.
-        let usage = match session {
-            Some((_, (before, after))) => fold_wire_usage(&before, &after, Some(model)),
-            None => Usage::default(),
+        let (usage, session_id) = match session {
+            Some((_, (before, after))) => (
+                fold_wire_usage(&before, &after, Some(model)),
+                wire_session_id(&before, &after),
+            ),
+            None => (Usage::default(), None),
         };
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
@@ -168,6 +171,7 @@ impl Agent for KimiAgent {
             recommended_model: None,
             path: plan_path,
             usage,
+            session_id,
         })
     }
 
@@ -229,6 +233,7 @@ impl Agent for KimiAgent {
         Ok(Execution {
             outcome,
             usage: fold_wire_usage(&before, &after, Some(model)),
+            session_id: wire_session_id(&before, &after),
         })
     }
 }

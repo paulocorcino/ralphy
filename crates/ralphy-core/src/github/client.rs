@@ -15,6 +15,10 @@ use anyhow::{bail, Context, Result};
 pub(crate) fn gh(repo_root: &Path) -> Command {
     let mut cmd = Command::new("gh");
     cmd.current_dir(repo_root);
+    // Hidden console so a `gh` call under the console-less daemon child (launched
+    // DETACHED_PROCESS) never flashes a visible window. Output is always captured
+    // by `gh_output`/`gh_stdin`, so nothing user-visible is lost.
+    ralphy_proc_util::no_window(&mut cmd);
     cmd
 }
 

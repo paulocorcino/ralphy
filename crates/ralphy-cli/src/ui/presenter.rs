@@ -4,10 +4,14 @@
 //! queue engine that happens to log.
 //!
 //! The seam is thin: `on_event` calls `runstate::event_to_runevent` to decode the
-//! raw tracing event into a [`RunEvent`], then passes it to [`Presenter::apply`].
-//! The presenter owns the side effects — timestamps, per-issue duration, and writing
-//! through `indicatif`'s `MultiProgress` so warn/error lines never corrupt live output.
+//! raw tracing event into a [`RunEvent`], then hands it to a dedicated render thread
+//! over a channel. ALL terminal I/O lives on that thread ([`Renderer`]), so a stalled
+//! console write (e.g. Windows QuickEdit text selection pausing output) can only
+//! freeze the UI, never the run thread that emitted the log line. The renderer owns
+//! the side effects — timestamps, per-issue duration, and writing through
+//! `indicatif`'s `MultiProgress` so warn/error lines never corrupt live output.
 
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -55,11 +59,31 @@ struct LiveState {
     active_bar: Option<ProgressBar>,
 }
 
-/// The console presenter: a `tracing` Layer that renders the run's lifecycle. It
-/// holds the active issue (so a finishing line can show the issue's wall-clock
-/// duration) and a live `MultiProgress` region (queue bar + active spinner) behind
-/// a shared `Mutex`, so on-screen lines never corrupt one another.
+/// The console presenter: a `tracing` Layer that renders the run's lifecycle. Its
+/// `on_event` only decodes and forwards; the drawing runs on a separate [`Renderer`]
+/// thread, so a wedged console write never blocks the run.
 pub struct Presenter {
+    /// Hands each decoded event to the render thread. The `Mutex` exists only so the
+    /// `Layer` stays `Sync`; it is held for a single non-blocking `send`, never across
+    /// terminal I/O — that is the freeze fix.
+    tx: Mutex<Sender<PresenterMsg>>,
+    /// Shared live region, handed to the [`PresenterHandle`] so teardown can clear it.
+    state: Arc<Mutex<LiveState>>,
+    multi: MultiProgress,
+    color: bool,
+}
+
+/// A message to the render thread: an event to draw, or a flush barrier teardown uses
+/// to drain every pending scroll line before it clears the live region.
+enum PresenterMsg {
+    Event(RunEvent),
+    Flush(SyncSender<()>),
+}
+
+/// The render half of the presenter: owns all terminal I/O and the live state, and
+/// runs on its own thread so a stalled console write (e.g. Windows QuickEdit text
+/// selection pausing output) freezes only the UI, never the run.
+struct Renderer {
     multi: MultiProgress,
     state: Arc<Mutex<LiveState>>,
     opts: RenderOpts,
@@ -75,29 +99,31 @@ impl Presenter {
         let is_tty = console::Term::stderr().is_term();
         let no_color = std::env::var_os("NO_COLOR").is_some();
         let styled = is_tty && !no_color;
-        let presenter = Presenter {
-            multi: MultiProgress::new(),
-            state: Arc::new(Mutex::new(LiveState::default())),
+        let state = Arc::new(Mutex::new(LiveState::default()));
+        let multi = MultiProgress::new();
+        let (tx, rx) = mpsc::channel();
+        let renderer = Renderer {
+            multi: multi.clone(),
+            state: Arc::clone(&state),
             opts: RenderOpts {
                 color: styled,
                 emoji: styled,
             },
             price: PriceTable::load(),
         };
-        // On a styled TTY, repaint the active line every second so the elapsed clock
-        // advances during quiet multi-minute execution stretches that emit no events.
-        // Detached: the process exit at end-of-run tears it down (it only ever reads
-        // shared state and updates an existing bar's message).
-        if styled {
-            let state = Arc::clone(&presenter.state);
-            let opts = presenter.opts;
-            std::thread::spawn(move || loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let s = state.lock().unwrap_or_else(|e| e.into_inner());
-                repaint_active_bar(&s, opts);
-            });
+        // ALL terminal I/O runs on this one thread: it applies each event and, on a
+        // styled TTY, repaints the active line every second so the elapsed clock keeps
+        // advancing during quiet multi-minute stretches that emit no events. Because
+        // `on_event` only hands work here (it never draws), a stalled console write
+        // freezes the UI, not the run. The thread ends when the last `Sender` (this
+        // `Presenter` and any `PresenterHandle`) drops.
+        std::thread::spawn(move || renderer.run(rx));
+        Presenter {
+            tx: Mutex::new(tx),
+            state,
+            multi,
+            color: styled,
         }
-        presenter
     }
 
     /// A teardown handle over the shared live region. `init_tracing` hands this to
@@ -107,7 +133,44 @@ impl Presenter {
         PresenterHandle {
             multi: self.multi.clone(),
             state: Arc::clone(&self.state),
-            color: self.opts.color,
+            color: self.color,
+            flush: Some(self.tx.lock().unwrap_or_else(|e| e.into_inner()).clone()),
+        }
+    }
+}
+
+impl Renderer {
+    /// The render loop: apply each event as it arrives, repaint the clock on the idle
+    /// tick, and answer a [`PresenterMsg::Flush`] once everything already queued is
+    /// drained (so teardown clears the region only after the last scroll line is on
+    /// screen). Ends when every `Sender` has dropped.
+    fn run(self, rx: Receiver<PresenterMsg>) {
+        loop {
+            match rx.recv_timeout(Duration::from_secs(1)) {
+                Ok(PresenterMsg::Event(event)) => self.apply(event),
+                Ok(PresenterMsg::Flush(ack)) => {
+                    // Drain everything already queued so no scroll line is lost before
+                    // the region is cleared; a superseded flush just gets acked too.
+                    while let Ok(msg) = rx.try_recv() {
+                        match msg {
+                            PresenterMsg::Event(event) => self.apply(event),
+                            PresenterMsg::Flush(prev) => {
+                                let _ = prev.send(());
+                            }
+                        }
+                    }
+                    let _ = ack.send(());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Advance the elapsed clock between events (ADR-0006 D4). No-op off
+                    // a colour TTY or when no active bar exists.
+                    if self.opts.color {
+                        let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+                        repaint_active_bar(&s, self.opts);
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         }
     }
 
@@ -385,6 +448,9 @@ pub struct PresenterHandle {
     multi: MultiProgress,
     state: Arc<Mutex<LiveState>>,
     color: bool,
+    /// Sender to the render thread so [`finalize`](Self::finalize) can flush the last
+    /// scroll lines before clearing the region. `None` on the plain / banner path.
+    flush: Option<Sender<PresenterMsg>>,
 }
 
 impl PresenterHandle {
@@ -395,6 +461,7 @@ impl PresenterHandle {
             multi: MultiProgress::new(),
             state: Arc::new(Mutex::new(LiveState::default())),
             color: false,
+            flush: None,
         }
     }
 
@@ -452,7 +519,21 @@ impl PresenterHandle {
         if !self.color {
             return;
         }
-        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        // Drain the render thread so every scroll line is on screen before we clear
+        // the region. Bounded: if the render thread is wedged in a stalled console
+        // write, skip the clear rather than block teardown forever — the process is
+        // exiting anyway.
+        if let Some(tx) = self.flush.as_ref() {
+            let (ack_tx, ack_rx) = mpsc::sync_channel(0);
+            if tx.send(PresenterMsg::Flush(ack_tx)).is_err()
+                || ack_rx.recv_timeout(Duration::from_secs(2)).is_err()
+            {
+                return;
+            }
+        }
+        let Some(mut s) = self.lock_state_bounded(Duration::from_secs(2)) else {
+            return;
+        };
         if let Some(q) = s.queue.as_mut() {
             q.finish();
         }
@@ -468,6 +549,25 @@ impl PresenterHandle {
         }
         let _ = self.multi.clear();
     }
+
+    /// Acquire the live state without blocking teardown forever: on a wedged render
+    /// thread (holding the lock during a stalled console write) return `None` after
+    /// `budget` instead of parking. Recovers from a poisoned lock.
+    fn lock_state_bounded(&self, budget: Duration) -> Option<std::sync::MutexGuard<'_, LiveState>> {
+        let deadline = Instant::now() + budget;
+        loop {
+            match self.state.try_lock() {
+                Ok(g) => return Some(g),
+                Err(std::sync::TryLockError::Poisoned(e)) => return Some(e.into_inner()),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+    }
 }
 
 impl<S: Subscriber> Layer<S> for Presenter {
@@ -482,6 +582,56 @@ impl<S: Subscriber> Layer<S> for Presenter {
         else {
             return;
         };
-        self.apply(run_event);
+        // Off the run path: hand the event to the render thread. The `Mutex` guards
+        // only the `Sender` (never terminal I/O), so a wedged console can't block the
+        // thread that emitted this log line. A closed channel (render thread gone at
+        // shutdown) drops the line rather than erroring.
+        if let Ok(tx) = self.tx.lock() {
+            let _ = tx.send(PresenterMsg::Event(run_event));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The enqueue that `on_event` performs must never block the run thread, even if
+    /// the render thread is wedged in a stalled console write and drains nothing — the
+    /// freeze this whole design fixes. An unconsumed channel models the wedged renderer.
+    #[test]
+    fn enqueue_is_off_the_run_path_even_with_a_stalled_renderer() {
+        let (tx, _rx) = mpsc::channel::<PresenterMsg>();
+        let start = Instant::now();
+        for _ in 0..1000 {
+            tx.send(PresenterMsg::Event(RunEvent::SleepEnded))
+                .expect("send never blocks");
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "the on_event enqueue must be off the run path, took {elapsed:?}"
+        );
+    }
+
+    /// Teardown must not hang if the render thread holds the state lock (wedged mid-draw
+    /// in a stalled write): the bounded acquire returns `None` after its budget.
+    #[test]
+    fn finalize_lock_is_bounded_when_state_is_held() {
+        let handle = PresenterHandle {
+            multi: MultiProgress::new(),
+            state: Arc::new(Mutex::new(LiveState::default())),
+            color: true,
+            flush: None,
+        };
+        let _held = handle.state.lock().expect("hold the state lock");
+        let start = Instant::now();
+        let got = handle.lock_state_bounded(Duration::from_millis(100));
+        let elapsed = start.elapsed();
+        assert!(got.is_none(), "a held lock must not be acquired");
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "the bounded acquire must give up near its budget, took {elapsed:?}"
+        );
     }
 }

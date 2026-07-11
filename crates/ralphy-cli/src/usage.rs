@@ -319,6 +319,7 @@ mod tests {
             phase: phase.into(),
             agent: "claude".into(),
             model: model.into(),
+            session_id: None,
             outcome: "done".into(),
             tokens: tok,
             ts: ts.into(),

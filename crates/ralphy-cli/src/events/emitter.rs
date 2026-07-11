@@ -13,10 +13,17 @@ use std::time::Duration;
 use chrono::Local;
 use serde::Serialize;
 
+/// The env var the daemon sets on a dispatched child (`run`/`triage`/`push`) so
+/// that child's emitter carries the daemon's identity. Cross-process wire
+/// contract, NOT a shared symbol — `ralphy-daemon` sets the same literal (it does
+/// not depend on this crate). Absent on cron/manual/free-console runs.
+pub const DAEMON_ID_ENV: &str = "RALPHY_DAEMON_ID";
+
 /// The reserved `data.emitter` identity block carried on every event (ADR-0019 §3).
 /// Every field is best-effort: `user` is empty when `git config user.email` is
 /// unset, `ip` degrades to `0.0.0.0` when the host is offline. None of these are
-/// ever used as a key.
+/// ever used as a key. `daemon_id` is an additive, daemon-only field: present
+/// ONLY when the run was spawned by the daemon, absent otherwise.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Emitter {
     /// The Ralphy binary version — which contract vintage is emitting.
@@ -34,6 +41,11 @@ pub struct Emitter {
     /// Local timezone as a fixed UTC offset (e.g. `-03:00`) — parsers accept both
     /// this and an IANA name (docs/events.md).
     pub tz: String,
+    /// The daemon's mint-once identity ULID when this run was spawned by the
+    /// daemon (from [`DAEMON_ID_ENV`]); `None` on cron/manual/free-console runs.
+    /// Additive, daemon-only: absent serializes to NO key, never `null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daemon_id: Option<String>,
 }
 
 /// Detect the emitter identity for this process and repo. Every probe is
@@ -52,6 +64,9 @@ pub fn detect(repo_root: &Path) -> Emitter {
         // then `0.0.0.0` when every probe fails (offline/firewalled host).
         ip: public_ip().unwrap_or_else(local_ip),
         tz: Local::now().format("%:z").to_string(),
+        // Daemon-only: the daemon injects DAEMON_ID_ENV on dispatched children;
+        // an empty value is treated as absent (truthful absence off that path).
+        daemon_id: std::env::var(DAEMON_ID_ENV).ok().filter(|s| !s.is_empty()),
     }
 }
 
@@ -241,6 +256,44 @@ mod tests {
         let v = serde_json::to_value(&e).unwrap();
         for key in ["version", "user", "host", "os", "pid", "ip", "tz"] {
             assert!(v.get(key).is_some(), "emitter missing {key}: {v}");
+        }
+    }
+
+    #[test]
+    fn emitter_serializes_daemon_id_only_when_present() {
+        // Pure serde: construct the emitter directly (no env), so this test races
+        // no parallel test on the process-global RALPHY_DAEMON_ID.
+        let mut e = detect(Path::new("."));
+        e.daemon_id = Some("01DAEMONID0000000000000000".into());
+        let v = serde_json::to_value(&e).unwrap();
+        assert_eq!(v["daemon_id"], "01DAEMONID0000000000000000");
+        // Absent → NO key (skip_serializing_if), never `null`.
+        e.daemon_id = None;
+        let v = serde_json::to_value(&e).unwrap();
+        assert!(
+            v.get("daemon_id").is_none(),
+            "absent daemon_id must serialize to no key, got: {v}"
+        );
+    }
+
+    #[test]
+    fn detect_reads_daemon_id_env() {
+        // detect() reads DAEMON_ID_ENV; the var is process-global, so serialize
+        // through the events ENV_LOCK and save/restore the prior value on ALL paths.
+        let _g = crate::events::config::ENV_LOCK.lock().unwrap();
+        let prior = std::env::var(DAEMON_ID_ENV).ok();
+
+        std::env::set_var(DAEMON_ID_ENV, "01DAEMONID0000000000000000");
+        assert_eq!(
+            detect(Path::new(".")).daemon_id,
+            Some("01DAEMONID0000000000000000".to_string())
+        );
+        std::env::remove_var(DAEMON_ID_ENV);
+        assert_eq!(detect(Path::new(".")).daemon_id, None);
+
+        match prior {
+            Some(v) => std::env::set_var(DAEMON_ID_ENV, v),
+            None => std::env::remove_var(DAEMON_ID_ENV),
         }
     }
 

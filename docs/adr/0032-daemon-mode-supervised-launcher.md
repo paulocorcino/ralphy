@@ -82,6 +82,31 @@ terminal streams + control commands + presence heartbeat):
   opt-in and **requires a bearer token** (generated at install); localhost is
   exempt. Personal remote access works in this phase via an overlay VPN with
   zero extra code.
+
+  **People vs. machines (issue #179).** Over a network bind the two client
+  kinds authenticate differently:
+  - **Machine clients** (the phone `run` trigger, CloudEvents consumers, curl)
+    keep the **static bearer token, unchanged** — one `Authorization: Bearer`
+    header per request.
+  - **Browsers** get an interactive **login screen**. The core factor is
+    **TOTP** (RFC 6238, Authy/Google Authenticator); an operator-set
+    **password is an optional second factor** (defense-in-depth, the weakest /
+    highest-friction link — TOTP first, password opt-in). A valid login mints a
+    **signed, stateless, short-TTL session cookie** (`ralphy_session`): value
+    `1.<exp>.<HMAC-SHA1(token, "1|<exp>")>`, signing key = the daemon access
+    token, verified by recompute + constant-time compare + `exp > now` — **no
+    server-side session store** (re-minting the token invalidates live cookies,
+    accepted). TTL is a fixed 12h. The cookie is `HttpOnly; SameSite=Strict;
+    Path=/` but **not `Secure`**: the daemon never does TLS (this §4) and rides
+    Tailscale/localhost for transport confidentiality.
+
+  **Posture: recommended default, operator's choice.** TOTP (+ optional
+  password) is the recommended hardening for a network bind and is documented
+  as best practice, but it is **opt-in, never forced**: a network bind resolves
+  to the session policy only once a TOTP seed is enrolled (via `ralphy daemon
+  setup`, mint-once like the token); with no seed a network bind stays
+  bearer-only — the operator is never denied the bearer-only trade-off they
+  accept. Localhost stays frictionless (no login, no token).
 - **Phase 2 — control-plane tunnel.** The daemon dials **out** (WSS, 443) to
   the control-plane relay and the same protocol rides the tunnel (the GitHub
   Actions runner / Cloudflare Tunnel pattern). The relay is a stateless
@@ -102,6 +127,17 @@ resident process and a round trip. One additive stitch: a daemon-spawned run
 carries `emitter.daemon_id` in its CloudEvents (injected via the child's
 environment), letting the platform correlate run ↔ fleet daemon without
 host/PID guessing; cron/manual runs simply lack the field.
+
+**Live logs, Part A only (issue #180).** A run the daemon spawns streams its
+merged stdout+stderr over the existing `/ws/command` socket as transient
+`status:"output"` frames, so the UI shows the live log of a run it fired — no
+new on-disk log/history store, CloudEvents stay the sole run-history source.
+This is bounded to runs the daemon spawned: cross-cutting/external run
+observability (Part B) is **deferred entirely to the events platform**, with
+no daemon-side CloudEvents mirror. The stream never weakens teardown — a
+detached drain reads the child's pipe to EOF regardless of client presence, and
+no path kills the child (the child ignores `SIGPIPE`, so a daemon crash yields
+a non-fatal broken-pipe write, not a kill).
 
 ### 6. Remote command vocabulary v1: only what cron could already fire
 
@@ -194,9 +230,15 @@ in one listener; tungstenite underneath) — and that stack is confined there:
 crate depends on `ralphy-pty` for sessions (blocking PTY I/O bridged to tokio
 via reader threads + channels) and reaches runs only by spawning `ralphy`
 processes — it never imports the core. Cross-platform per CLAUDE.md: the
-listener, session spawn, and autostart registration (Task Scheduler at logon
-/ systemd unit) must work on both Windows and Linux, tested per the
-CONTEXT.md helper-bin convention.
+listener, session spawn, and autostart registration (a per-user HKCU `Run`
+value on Windows / a systemd `--user` unit on Linux) must work on both
+Windows and Linux, tested per the CONTEXT.md helper-bin convention.
+
+Windows autostart is a per-user HKCU `…\CurrentVersion\Run` value (no
+elevation, hidden console via `pwsh -WindowStyle Hidden`), chosen over a
+machine-level `/SC ONLOGON` Task Scheduler task because the daemon is a
+per-user loopback resident, not a machine service — systemd `--user` on
+Linux/WSL already has this property (#177).
 
 ## Consequences
 

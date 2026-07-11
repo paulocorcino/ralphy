@@ -54,6 +54,12 @@ independently: **trust the CLI's reported numbers**, normalize per-vendor shapes
 into one, keep capture adjacent to the spawn the adapter already owns. No new
 process, no new endpoint, no new daemon.
 
+*(2026-07-10: ADR-0033 covers the complementary gap — **interactive** usage,
+outside any run — with a stateless session-store scan served by the daemon.
+It re-rejects the proxy and does not reopen this D1: the scan serves a
+different consumer, off the run's hot path. It also adds one additive field,
+`session_id`, to the D6 record as the run-vs-scan dedup key.)*
+
 ## D2 — Tokens are the truth; USD is a derived estimate, never a stored fact
 
 Ralphy runs on the operator's **subscription**, not metered API billing — both

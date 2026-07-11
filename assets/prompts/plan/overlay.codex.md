@@ -1,7 +1,8 @@
 <!-- slot: execution-model -->
    ## Execution model: low | medium | high
    <one line justifying the choice. This is a vendor-neutral COMPLEXITY tier
-   that maps to the executor's reasoning effort. Pick the SMALLEST that will do
+   that selects the executor MODEL (low → the fast model, medium → the everyday
+   model, high → the flagship). Pick the SMALLEST that will do
    this reliably: `low` for mechanical, localized, well-understood changes (add
    a string, a field, a UI binding, a straightforward refactor); `medium` is the
    default for ordinary feature work; `high` only when the work is genuinely
@@ -10,20 +11,22 @@
    `medium` unless a concrete reason makes `low` or `high` the right call.>
 
 <!-- slot: self-review-step -->
-   - [ ] Self-review: spawn one Codex subagent in the background running the
+   - [ ] Self-review: delegate the review to one Codex subagent running the
          auto-discovered `reviewer` skill (`.agents/skills/reviewer/SKILL.md`),
          scoped to ONLY the commits you made for this issue — not the whole
-         branch; for a small mechanical diff, write this step as a direct
-         adversarial re-read of the diff instead (see the self-review rule
-         below). Resolve every HIGH finding before finishing; if one cannot be
-         fixed autonomously, record it under `## Notes & decisions` and block.
+         branch. Wait for the review result and adjudicate every finding; for a
+         small mechanical diff, write this step as a direct adversarial re-read
+         of the diff instead (see the self-review rule below). Resolve every
+         HIGH finding before finishing; if one cannot be fixed autonomously,
+         record it under `## Notes & decisions` and block.
 <!-- slot: self-review-guidance -->
 - The penultimate step is a Codex-native self-review over this issue's
   commits — include it by DEFAULT, but SCALE it to the expected diff:
   - changes with real domain logic or a multi-file/multi-crate surface get the
-    full review: spawn one Codex subagent in the background running
-    `.agents/skills/reviewer/`, scoped to ONLY this issue's commits, so the
-    closing paperwork proceeds while it reviews;
+    full review: delegate to one independent Codex subagent running
+    `.agents/skills/reviewer/`, scoped to ONLY this issue's commits, then WAIT
+    for its result and incorporate the findings before any closing paperwork —
+    "background" is an interface property, not a contract in headless runs;
   - small mechanical changes (single crate/package, no new control flow,
     follow-a-pattern edits) get a lighter step: a direct adversarial re-read
     of the final diff by the executor itself, hunting for what tests can't

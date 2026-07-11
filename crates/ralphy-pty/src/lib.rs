@@ -191,6 +191,13 @@ impl PtySession {
         self.child.kill().context("killing the PTY child")
     }
 
+    /// The child's OS process id, if it is still known. `kill` signals only this
+    /// direct child; a consumer that must reach a whole tree (a child that spawned
+    /// its own helpers) uses this pid with a platform tree-kill.
+    pub fn process_id(&self) -> Option<u32> {
+        self.child.process_id()
+    }
+
     /// Block until the child exits and report how it ended.
     pub fn wait(&mut self) -> Result<PtyExit> {
         let status = self.child.wait().context("waiting on the PTY child")?;

@@ -1,0 +1,15 @@
+[package]
+name = "ralphy-usage-scan"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Stateless, sync scan of the on-disk vendor session stores into normalized interactive token-usage records (ADR-0033 §2/§6/§7). No tokio, no state, no writes."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+rusqlite.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

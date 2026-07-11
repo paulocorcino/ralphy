@@ -114,6 +114,7 @@ reserved `emitter` object inside `data`, keeping the header clean:
 | `data.emitter.pid` | Process id | Which process among concurrent Ralphys on one host |
 | `data.emitter.ip` | **Public egress IP** (best-effort): probed at run start via `checkip.amazonaws.com` → `checkip.global.api.aws` → `icanhazip.com` → Cloudflare `cdn-cgi/trace`, each ~2s; falls back to the primary LAN IP, then `0.0.0.0`, when every probe fails | Network diagnostic — never a key (multi-NIC, DHCP, VPN) |
 | `data.emitter.tz` | Local timezone: IANA name (`America/Sao_Paulo`) when resolvable, else fixed offset (`-03:00`) — parsers accept both | Reconstruct local time from UTC `time` |
+| `data.emitter.daemon_id` | The daemon's mint-once `daemon_id` (ULID) | Present ONLY on daemon-spawned runs; absent on cron/manual/free-console runs — additive, best-effort (ADR-0032 §5) |
 
 `emitter` is a reserved key on every event's `data`, alongside the
 event-specific fields listed in the catalog below.
@@ -210,7 +211,9 @@ contract vintage):
 3. `data.emitter.version` on every event identifies the emitting contract vintage
    when forensics are needed.
 4. `runid` and the `data.emitter` block are stable; new emitter fields or
-   envelope extensions may be added, never repurposed.
+   envelope extensions may be added, never repurposed. `data.emitter.daemon_id`
+   is the additive, daemon-only emitter field — present only on daemon-spawned
+   runs (ADR-0032 §5, #168).
 5. A future finer-grained level (agent tool-calls, ADR-0019 §6) will arrive
    as new `dev.ralphy.agent.*` types behind a settings knob — never as extra
    fields on existing types.

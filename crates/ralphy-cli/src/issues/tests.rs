@@ -171,6 +171,7 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
         phase: phase.to_string(),
         agent: "scripted".into(),
         model: "claude-opus-4".into(),
+        session_id: None,
         outcome: "ok".into(),
         tokens: Usage {
             input: 100,

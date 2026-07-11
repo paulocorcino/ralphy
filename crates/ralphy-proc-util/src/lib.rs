@@ -23,6 +23,27 @@ pub fn own_process_group(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Suppress the console window a child would otherwise flash. On Windows, a
+/// console program spawned by a parent that has **no console** (e.g. the
+/// daemon-dispatched `ralphy`, launched `DETACHED_PROCESS`) is given a fresh
+/// *visible* console by the OS; `CREATE_NO_WINDOW` gives it a hidden console
+/// instead, so no black window flashes. A no-op off Windows.
+///
+/// Only safe for children whose stdout/stderr are captured or redirected — an
+/// inherited-stdio child (one meant to print to the user's terminal) would lose
+/// its visible output. Call it on the `Command` before `spawn`/`output`.
+pub fn no_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        /// `CREATE_NO_WINDOW` — a console app run with a hidden console.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = cmd;
+}
+
 /// Kill `child` and every descendant it spawned, then reap it. `child.kill()`
 /// signals only the direct child, so a grandchild — an agent CLI's helper, or a
 /// dev server a `## Verify` command backgrounded — would survive and keep an
@@ -32,28 +53,41 @@ pub fn own_process_group(cmd: &mut Command) {
 /// spawn). Best-effort on every arm; always reaps the direct child so no zombie
 /// lingers.
 pub fn kill_tree(child: &mut Child) {
-    let pid = child.id();
+    kill_tree_by_pid(child.id());
+    let _ = child.kill(); // direct child / fallback
+    let _ = child.wait(); // reap so no zombie lingers
+}
+
+/// Kill the process tree rooted at `pid` by OS pid alone — for a child this crate
+/// does not own as a [`Child`] (e.g. a `ralphy-pty` session, whose PTY child is
+/// not a `std::process::Child`). On Windows `taskkill /F /T` walks the tree; on
+/// Unix the pid doubles as a process-group id (the PTY child is a session leader,
+/// or was placed in its own group via [`own_process_group`]), so a negative pgid
+/// signals the whole group. Best-effort, and does not reap — the caller owns
+/// reaping its handle.
+pub fn kill_tree_by_pid(pid: u32) {
     #[cfg(windows)]
     {
-        // `taskkill /T` terminates the whole tree rooted at PID.
-        let _ = Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
+        // `taskkill /T` terminates the whole tree rooted at PID. Hidden console
+        // (`no_window`) so a teardown under the console-less daemon child never
+        // flashes a window.
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/F", "/T", "/PID", &pid.to_string()])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+            .stderr(Stdio::null());
+        no_window(&mut cmd);
+        let _ = cmd.status();
     }
     #[cfg(unix)]
     {
-        // The child leads its own process group (set at spawn), so a negative pgid
-        // signals the whole tree. Dependency-free via the `kill` utility.
+        // A negative pgid signals the whole process group. Dependency-free via the
+        // `kill` utility.
         let _ = Command::new("kill")
             .args(["-KILL", &format!("-{pid}")])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
     }
-    let _ = child.kill(); // direct child / fallback
-    let _ = child.wait(); // reap so no zombie lingers
 }
 
 /// Resolve a home-scoped store/config path: when `override_base` is `Some` (a

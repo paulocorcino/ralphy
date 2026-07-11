@@ -99,6 +99,14 @@ fn assemble(template: &str, slots: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// Normalize CRLF to LF so the byte comparison tracks prose drift, not the
+/// checkout's `core.autocrlf` state: template and artifact can legitimately
+/// carry different line endings on a Windows working tree when git touched
+/// them at different times.
+fn lf(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
 /// The four checked-in plan prompt artifacts must be exactly what template +
 /// overlay assemble to. A shared-prose edit made in one artifact (instead of in
 /// `plan/template.md`) diverges from the assembly and fails here; so does an
@@ -126,14 +134,15 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
 
         let artifact_path = dir.join(artifact);
         if regen {
-            fs::write(&artifact_path, &assembled)
+            fs::write(&artifact_path, lf(&assembled))
                 .unwrap_or_else(|e| panic!("cannot write {}: {e}", artifact_path.display()));
             continue;
         }
         let on_disk = fs::read_to_string(&artifact_path)
             .unwrap_or_else(|e| panic!("{} must exist: {e}", artifact_path.display()));
         assert_eq!(
-            assembled, on_disk,
+            lf(&assembled),
+            lf(&on_disk),
             "{artifact} drifted from plan/template.md + plan/overlay.{variant}.md — \
              edit the template/overlay sources and regenerate with \
              `RALPHY_REGEN_PROMPTS=1 cargo test -p ralphy-core --test prompt_assembly` \

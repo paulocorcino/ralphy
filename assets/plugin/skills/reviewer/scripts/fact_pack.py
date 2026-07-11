@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fact_pack.py — emit a project-agnostic ground-truth file inventory for reviewer-v3.
+"""fact_pack.py — emit a project-agnostic ground-truth file inventory for the reviewer skill.
 
 Output JSON to stdout. The reviewer's `## Coverage` section is reconciled
 against `material_files` and `excluded_files` by audit.py. This script does

@@ -16,3 +16,4 @@ serde_json.workspace = true
 ralphy-core.workspace = true
 ralphy-pty.workspace = true
 ralphy-adapter-support.workspace = true
+ralphy-proc-util.workspace = true

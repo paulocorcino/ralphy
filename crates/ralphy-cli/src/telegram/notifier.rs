@@ -37,6 +37,11 @@ const FULL_LIST_MAX: usize = 30;
 /// The throttled card-refresh cadence during long silent phases (ADR-0007 D4).
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
+/// How long the `🔔` progress ping lives before it is deleted. An edit to the card
+/// never raises a Telegram notification, so a genuine progress edit posts a brief
+/// ping to buzz the phone, then removes it to keep the chat clean.
+const PING_TTL: Duration = Duration::from_secs(2);
+
 // ---------------------------------------------------------------------------
 // Rendering (pure over &RunState)
 // ---------------------------------------------------------------------------
@@ -247,14 +252,6 @@ pub fn render_sleep_push(state: &RunState) -> String {
     )
 }
 
-/// The push sent on resuming from a usage-limit sleep. Bounded like the others.
-pub fn render_resume_push(state: &RunState) -> String {
-    truncate_chars(
-        format!("⏰ {} — reset reached, resuming", state.title),
-        TELEGRAM_LIMIT,
-    )
-}
-
 /// The push sent when the active child enters a sustained API-degraded state
 /// (issue #149). A new message so the phone buzzes, mirroring the sleep push.
 pub fn render_degraded_push(state: &RunState) -> String {
@@ -329,9 +326,11 @@ pub fn new_notifier_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
 /// fold each drained event and buzz on a usage-limit sleep/resume edge (`on_event`),
 /// edit the one owned `message_id` on change with a throttled ~60s refresh
 /// (`on_tick`), and grow the terminal `🏁` footer on the way out (`on_finish`). The
-/// card is a single consolidated component edited in place — no start/final pushes —
-/// though a sleep/resume still buzzes via its own push. Every per-call transport
-/// error is swallowed (`warn!`ed) so a stalled network never aborts or blocks the run.
+/// card is a single consolidated component edited in place — no start/final pushes.
+/// Entering a usage-limit sleep buzzes via a disposable notice; a re-parking limit
+/// replaces it (delete + resend) so at most one is ever live, and resuming deletes
+/// it, leaving the chat clean. Every per-call transport error is swallowed (`warn!`ed)
+/// so a stalled network never aborts or blocks the run.
 struct TelegramEngine<T: Transport> {
     client: BotClient<T>,
     chat_id: i64,
@@ -345,6 +344,16 @@ struct TelegramEngine<T: Transport> {
     /// compare against this and only edit when the render genuinely differs.
     last_card: String,
     last_edit: Instant,
+    /// The one live usage-limit sleep notice, treated as a disposable slot: it is
+    /// deleted before a fresh notice is posted (so a re-parking limit never piles
+    /// up messages) and deleted outright on resume, leaving the chat clean. `None`
+    /// when no notice is currently shown.
+    sleep_notice_id: Option<i64>,
+    /// A pending `🔔` progress ping and when it was sent. A card edit is silent, so
+    /// a genuine change posts this ping to force a notification, then a later tick
+    /// deletes it once [`PING_TTL`] has elapsed. `None` when none is outstanding;
+    /// while `Some`, a burst of edits coalesces into the one buzz already sent.
+    ping: Option<(i64, Instant)>,
     prev_sleeping: bool,
     /// Tracks the folded `degraded` flag so the API-degraded push fires on the
     /// false→true edge and the recover push on true→false — matched pairs, never
@@ -384,19 +393,24 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         self.state.apply(event);
         let now_sleeping = self.state.sleep.is_some();
         if now_sleeping && !self.prev_sleeping {
-            if let Err(e) = self
+            // Disposable notice: a usage limit that keeps re-parking (synthetic
+            // reset, ADR-0030) would otherwise post a fresh buzz every cycle and
+            // bury the chat. Delete the prior notice first so at most one is ever
+            // live, then buzz with the current reset time.
+            self.delete_sleep_notice();
+            match self
                 .client
                 .send_message(self.chat_id, &render_sleep_push(&self.state))
             {
-                warn!("telegram: sleep push failed: {e}");
+                Ok(v) => self.sleep_notice_id = v.get("message_id").and_then(Value::as_i64),
+                Err(e) => warn!("telegram: sleep push failed: {e}"),
             }
         } else if !now_sleeping && self.prev_sleeping {
-            if let Err(e) = self
-                .client
-                .send_message(self.chat_id, &render_resume_push(&self.state))
-            {
-                warn!("telegram: resume push failed: {e}");
-            }
+            // Resumed: the pause is over, so drop the disposable notice to keep the
+            // chat organized. No resume push — the live card already reflects the
+            // resume, and a lingering "resuming" line is exactly the clutter this
+            // change removes.
+            self.delete_sleep_notice();
         }
         self.prev_sleeping = now_sleeping;
 
@@ -423,6 +437,9 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
     }
 
     fn on_tick(&mut self, changed: bool) {
+        // Retire an expired progress ping first, every tick, independent of whether
+        // an edit happens this pass.
+        self.expire_ping();
         if let Some(mid) = self.message_id {
             if should_edit(changed, self.last_edit.elapsed(), REFRESH_INTERVAL) {
                 let card = render_card(&self.state, now_epoch());
@@ -432,7 +449,16 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
                     match self.client.edit_message_text(self.chat_id, mid, &card) {
                         // Only record the card as shown on success, so a transient
                         // failure is retried on the next refresh rather than masked.
-                        Ok(_) => self.last_card = card,
+                        Ok(_) => {
+                            self.last_card = card;
+                            // The edit is silent — buzz the phone on genuine
+                            // progress. Suppressed while sleeping: the disposable
+                            // sleep notice already buzzes, and the 60s countdown
+                            // re-render must not ping every minute.
+                            if self.state.sleep.is_none() {
+                                self.fire_ping();
+                            }
+                        }
                         Err(e) => warn!("telegram: edit failed: {e}"),
                     }
                 }
@@ -447,12 +473,66 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // card. Skip the edit when the terminal render matches what's already shown,
         // for the same "message is not modified" reason as the idle refresh above.
         self.state.finished = true;
+        // Drop any disposable sleep notice still up (e.g. the run ended while
+        // parked) so it doesn't outlive the run.
+        self.delete_sleep_notice();
+        // Retire a still-live progress ping before the terminal edit, so the run
+        // ends on the card edit (not a trailing deleteMessage) and no `🔔` lingers.
+        self.delete_ping();
         if let Some(mid) = self.message_id {
             let card = render_card(&self.state, now_epoch());
             if card != self.last_card {
                 if let Err(e) = self.client.edit_message_text(self.chat_id, mid, &card) {
                     warn!("telegram: final edit failed: {e}");
                 }
+            }
+        }
+    }
+}
+
+impl<T: Transport> TelegramEngine<T> {
+    /// Delete the current disposable sleep notice, if any, clearing the slot.
+    /// Best-effort: a failed delete is `warn!`ed, never fatal — a stale notice is
+    /// preferable to aborting the run.
+    fn delete_sleep_notice(&mut self) {
+        if let Some(mid) = self.sleep_notice_id.take() {
+            if let Err(e) = self.client.delete_message(self.chat_id, mid) {
+                warn!("telegram: sleep notice delete failed: {e}");
+            }
+        }
+    }
+
+    /// Post the `🔔` progress ping, unless one is already outstanding — while a
+    /// ping is live it has already buzzed, so a burst of edits coalesces into it.
+    fn fire_ping(&mut self) {
+        if self.ping.is_some() {
+            return;
+        }
+        match self.client.send_message(self.chat_id, "🔔") {
+            Ok(v) => {
+                if let Some(id) = v.get("message_id").and_then(Value::as_i64) {
+                    self.ping = Some((id, Instant::now()));
+                }
+            }
+            Err(e) => warn!("telegram: ping send failed: {e}"),
+        }
+    }
+
+    /// Delete the pending progress ping once it has outlived [`PING_TTL`].
+    fn expire_ping(&mut self) {
+        if let Some((_, sent)) = self.ping {
+            if sent.elapsed() >= PING_TTL {
+                self.delete_ping();
+            }
+        }
+    }
+
+    /// Delete the pending progress ping now, regardless of age, clearing the slot.
+    /// Best-effort: a failed delete is `warn!`ed, never fatal.
+    fn delete_ping(&mut self) {
+        if let Some((id, _)) = self.ping.take() {
+            if let Err(e) = self.client.delete_message(self.chat_id, id) {
+                warn!("telegram: ping delete failed: {e}");
             }
         }
     }
@@ -510,6 +590,8 @@ pub fn try_start_notifier<T: Transport + Send + 'static>(
         message_id: None,
         last_card: String::new(),
         last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
         prev_sleeping: false,
         prev_degraded: false,
     };

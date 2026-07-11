@@ -260,6 +260,7 @@ pub fn apply_triage(
 /// preview the verdicts, and apply them on confirm (or `--yes`).
 pub fn run(args: &TriageArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
+    crate::daemon::register_repo(&repo);
 
     let ws = Workspace::new(&repo);
     std::fs::create_dir_all(ws.ralphy_dir()).ok();

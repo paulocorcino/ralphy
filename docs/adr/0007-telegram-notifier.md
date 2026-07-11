@@ -91,6 +91,26 @@ entering a usage-limit sleep, resuming from it, and the final outcome. This is
 the literal reading of the request — read-only, aware of the whole lifecycle,
 "ok, ciente" on every sleep — without flooding a phone on a long queue.
 
+**Amendment (sleep notice is disposable).** Start/final pushes were later dropped
+(the card carries those silently), and the sleep/resume pushes were reworked: a
+limit that keeps re-parking (synthetic reset, ADR-0030) would otherwise post a
+fresh buzz every cycle and bury the chat in an alternating
+`waiting for reset` / `resuming` ladder. The engine now treats the sleep push as a
+single disposable notice — it stores the sent `message_id`, deletes the prior
+notice before posting a new one (so at most one is ever live), and on resume
+deletes the notice outright with no `resuming` message, since the live card
+already reflects the resume. `deleteMessage` was added to the transport for this.
+
+**Amendment (progress ping).** An `editMessageText` never raises a Telegram
+notification, so a run's progress — folded silently into the card — would buzz the
+phone only once, at the initial send. To restore a buzz on genuine progress, a
+real card edit posts a short `🔔` message (which does notify) and a later tick
+deletes it after a 2s TTL, keeping the chat clean. Bursts of edits coalesce into
+the one live ping, and the ping is suppressed while parked in a usage-limit sleep
+(the disposable sleep notice already buzzes, and the 60s countdown re-render must
+not ping every minute). The resume card edit is genuine progress, so it fires this
+ping too — a self-deleting "resumed" buzz that complements the notice cleanup.
+
 ## D4 — Synchronous `ureq` on a worker thread fed by an mpsc channel
 
 The Layer must never block the thread that emits a log on a network call, and the

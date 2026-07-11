@@ -86,7 +86,8 @@ emits one).
 ## D4 — Model resolution defers to OpenCode; `--exec-model` overrides
 
 Claude defaults to `sonnet`; Codex parses its `config.toml` then falls back to
-`gpt-5-codex` (ADR-0004). OpenCode has **no natural default** — the provider is
+its tier-routed model table (ADR-0004, Amendment 2026-07-10). OpenCode has **no
+natural default** — the provider is
 the operator's choice (`-m provider/model`) — and it *already* resolves a default
 itself: explicit `-m` → config `model` key → last-used → first-by-priority.
 

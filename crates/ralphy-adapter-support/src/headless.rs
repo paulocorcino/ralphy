@@ -51,6 +51,10 @@ pub fn run_headless(mut cmd: Command, prompt: &str, timeout: Duration) -> Result
     // dropping the very output the limit/auth detectors scan. Shared with the
     // verify gate via `ralphy-proc-util` so both set up a killable tree identically.
     ralphy_proc_util::own_process_group(&mut cmd);
+    // Hidden console on Windows: this child (an agent CLI) has its stdio piped and
+    // may run under the console-less daemon-dispatched `ralphy`, where a bare
+    // console child would flash a visible window. No-op off Windows.
+    ralphy_proc_util::no_window(&mut cmd);
 
     let mut child = cmd
         .spawn()

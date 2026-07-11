@@ -36,25 +36,26 @@ use auth::{
     is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
 };
 use command::{
-    build_codex_command, codex_config_model, recommended_tier, tier_to_effort, DEFAULT_CODEX_MODEL,
+    build_codex_command, codex_config_model, recommended_tier, tier_to_model, CODEX_MODEL_SOL,
+    DEFAULT_CODEX_EFFORT,
 };
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
-use usage::{codex_sessions_dir, fold_rollout_usage};
+use usage::{codex_sessions_dir, fold_rollout_usage, rollout_session_id};
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` that emits a vendor-neutral
-/// `low|medium|high` complexity tier (mapped to reasoning effort) instead of a
-/// Claude model name. Copied to `.ralphy/plan-charter.md` for the live session
-/// to read; only a one-line pointer is piped on stdin. Single source of truth
-/// lives at `assets/prompts/`.
+/// `low|medium|high` complexity tier (routed to the executor model, ADR-0004
+/// Amendment 2026-07-10) instead of a Claude model name. Copied to
+/// `.ralphy/plan-charter.md` for the live session to read; only a one-line
+/// pointer is piped on stdin. Single source of truth lives at `assets/prompts/`.
 const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.plan.codex.md");
 
-/// Drives the `codex` CLI. `model` is the operator override (else
-/// [`DEFAULT_CODEX_MODEL`]); `run_dir` is where the captured logs live;
-/// `max_minutes_per_issue` is the per-issue wall budget, clamped to `run_deadline`
-/// when the run carries a global deadline.
+/// Drives the `codex` CLI. `model` is the operator override (else the user's
+/// Codex config, else the tier-routed family table); `run_dir` is where the
+/// captured logs live; `max_minutes_per_issue` is the per-issue wall budget,
+/// clamped to `run_deadline` when the run carries a global deadline.
 pub struct CodexAgent {
     model: Option<String>,
     run_dir: PathBuf,
@@ -98,15 +99,16 @@ impl CodexAgent {
 
     /// The single model decision point, in precedence order: the explicit
     /// `--exec-model` override, then the `model` from the user's Codex config, then
-    /// [`DEFAULT_CODEX_MODEL`]. Honouring the config means a ChatGPT-auth account —
-    /// which rejects `gpt-5-codex` — picks up the model it is actually entitled to
-    /// with no explicit flag. Codex routes complexity by reasoning effort, not a
-    /// model swap (ADR-0004 D3), so this stays a single value.
-    fn resolve_model(&self) -> String {
+    /// `routed` — the role's row in the family table (planning → Sol; execution →
+    /// the plan tier via `tier_to_model`). Honouring the config keeps a
+    /// subscription account on the model it is entitled to with no explicit flag;
+    /// the routed fallback replaces the dead `gpt-5-codex` floor (ADR-0004,
+    /// Amendment 2026-07-10).
+    fn resolve_model(&self, routed: &str) -> String {
         if let Some(m) = self.model.as_deref() {
             return m.to_string();
         }
-        codex_config_model().unwrap_or_else(|| DEFAULT_CODEX_MODEL.to_string())
+        codex_config_model().unwrap_or_else(|| routed.to_string())
     }
 }
 
@@ -117,7 +119,9 @@ impl Agent for CodexAgent {
 
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
-        let model = self.resolve_model();
+        // Planning routes to the flagship model — the highest-leverage step of
+        // the run (ADR-0004, Amendment 2026-07-10; the `opus`-planning analogue).
+        let model = self.resolve_model(CODEX_MODEL_SOL);
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
         // Snapshotting the rollout tree around the call is Codex-specific (ADR-0008
@@ -135,9 +139,11 @@ impl Agent for CodexAgent {
             materialize_codex_skills(ws)?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
-            // Planning always runs at `high` effort (ADR-0004 D3).
-            let cmd = build_codex_command(&model, "high", ws.repo_root(), &out_path);
-            info!(model = %model, effort = "high", "planning with codex exec");
+            // Effort stays at the vendor default: the tier routes the MODEL, and
+            // planning quality comes from Sol, not an effort bump (ADR-0004,
+            // Amendment 2026-07-10 supersedes the old always-`high`).
+            let cmd = build_codex_command(&model, DEFAULT_CODEX_EFFORT, ws.repo_root(), &out_path);
+            info!(model = %model, effort = DEFAULT_CODEX_EFFORT, "planning with codex exec");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -178,9 +184,12 @@ impl Agent for CodexAgent {
 
         // None = resumed (finalized plan kept, no vendor run): no rollout payload to
         // fold, so report zero planning tokens — the whole point of the resume fix.
-        let usage = match session {
-            Some((_, (before, after))) => fold_rollout_usage(&before, &after, Some(model)),
-            None => ralphy_core::Usage::default(),
+        let (usage, session_id) = match session {
+            Some((_, (before, after))) => (
+                fold_rollout_usage(&before, &after, Some(model)),
+                rollout_session_id(&before, &after),
+            ),
+            None => (ralphy_core::Usage::default(), None),
         };
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
@@ -188,13 +197,16 @@ impl Agent for CodexAgent {
             recommended_model: recommended_tier(&md),
             path: plan_path,
             usage,
+            session_id,
         })
     }
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
-        let model = self.resolve_model();
-        // Execution takes the plan's neutral complexity tier as reasoning effort.
-        let effort = tier_to_effort(plan.recommended_model.as_deref());
+        // Execution routes the plan's neutral complexity tier to a MODEL
+        // (low→Luna, medium→Terra, high→Sol); effort stays at the vendor default
+        // (ADR-0004, Amendment 2026-07-10).
+        let model = self.resolve_model(tier_to_model(plan.recommended_model.as_deref()));
+        let effort = DEFAULT_CODEX_EFFORT;
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
         // HEAD before/after bounds the work this call committed (progress guard).
@@ -251,6 +263,7 @@ impl Agent for CodexAgent {
         Ok(Execution {
             outcome,
             usage: fold_rollout_usage(&before, &after, Some(model)),
+            session_id: rollout_session_id(&before, &after),
         })
     }
 }
@@ -303,10 +316,14 @@ mod tests {
 
     #[test]
     fn resolve_model_override_wins() {
-        // The explicit --exec-model override wins over config and default, with no
-        // dependence on the machine's Codex config.
+        // The explicit --exec-model override wins over config and the tier-routed
+        // fallback, with no dependence on the machine's Codex config.
         let overridden = CodexAgent::new(Some("gpt-5".into()), PathBuf::from("/run"));
-        assert_eq!(overridden.resolve_model(), "gpt-5");
+        assert_eq!(overridden.resolve_model(CODEX_MODEL_SOL), "gpt-5");
+        assert_eq!(
+            overridden.resolve_model(command::tier_to_model(Some("low"))),
+            "gpt-5"
+        );
     }
 
     // ── trait binding (compile-level) ───────────────────────────────────────

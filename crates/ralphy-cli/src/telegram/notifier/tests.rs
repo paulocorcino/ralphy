@@ -23,6 +23,8 @@ fn drive_worker<T: Transport>(
         message_id: None,
         last_card: String::new(),
         last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
         prev_sleeping: false,
         prev_degraded: false,
     };
@@ -543,13 +545,20 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
 
     let calls = calls.lock().unwrap();
     let m = methods(&calls);
-    // Exactly ONE sendMessage — the card itself. No start/final pushes; every
-    // later change is an in-place edit.
+    // Two sendMessages: the card itself, plus one disposable `🔔` progress ping
+    // that fires on the genuine card edit (an edit is silent, so it buzzes the
+    // phone). No start/final pushes; every card change is an in-place edit.
     let sends = m.iter().filter(|&&x| x == "sendMessage").count();
-    assert_eq!(sends, 1, "only the card is sent, not pushed: {m:?}");
+    assert_eq!(sends, 2, "card + one progress ping: {m:?}");
+    assert!(
+        send_texts(&calls).iter().any(|t| t.as_str() == "🔔"),
+        "a progress ping was sent: {:?}",
+        send_texts(&calls)
+    );
     assert_eq!(m.first(), Some(&"sendMessage"));
     assert!(m.contains(&"editMessageText"));
-    // The run ends on an edit (the terminal footer), never a push.
+    // The run ends on an edit (the terminal footer): the ping is deleted before
+    // the terminal edit, never left as the last call.
     assert_eq!(m.last(), Some(&"editMessageText"));
 
     // Every edit targets the card's message_id (the first sendMessage's id).
@@ -583,6 +592,15 @@ fn send_texts(calls: &[(String, Value)]) -> Vec<String> {
         .collect()
 }
 
+/// The `message_id`s targeted by `deleteMessage` calls, in order.
+fn delete_ids(calls: &[(String, Value)]) -> Vec<i64> {
+    calls
+        .iter()
+        .filter(|(m, _)| m == "deleteMessage")
+        .filter_map(|(_, b)| b["message_id"].as_i64())
+        .collect()
+}
+
 #[test]
 fn worker_pushes_on_sleep_enter_and_resume() {
     let transport = RecordingTransport::new();
@@ -607,12 +625,10 @@ fn worker_pushes_on_sleep_enter_and_resume() {
         send_texts(c).iter().any(|t| t.contains("usage limit"))
     });
 
-    // Resume, then wait for the resume buzz.
+    // Resume, then wait for the disposable notice to be deleted (no resume push).
     queue.push(RunEvent::SleepEnded);
     queue.wake();
-    wait_until(&calls, |c| {
-        send_texts(c).iter().any(|t| t.contains("resuming"))
-    });
+    wait_until(&calls, |c| !delete_ids(c).is_empty());
 
     shutdown.store(true, Ordering::SeqCst);
     queue.wake();
@@ -620,33 +636,29 @@ fn worker_pushes_on_sleep_enter_and_resume() {
 
     let calls = calls.lock().unwrap();
     let texts = send_texts(&calls);
-    let sleep_idx = texts
-        .iter()
-        .position(|t| t.contains("usage limit"))
-        .expect("sleep push");
-    let resume_idx = texts
-        .iter()
-        .position(|t| t.contains("resuming"))
-        .expect("resume push");
-    // Order: the sleep-in push fires before the resume push, both after the
-    // initial card. There are no start/final pushes anymore.
     assert!(
-        sleep_idx < resume_idx,
-        "sleep push must precede resume push: {texts:?}"
+        texts.iter().any(|t| t.contains("usage limit")),
+        "sleep notice sent: {texts:?}"
     );
-    // initial card + sleep + resume = three sendMessage calls (no start/final).
-    assert_eq!(
-        texts.len(),
-        3,
-        "expected exactly 3 sendMessage, got {texts:?}"
+    // Resume no longer posts a "resuming" message — it deletes the notice; the
+    // card's resume edit may fire a disposable `🔔`, which is fine.
+    assert!(
+        !texts.iter().any(|t| t.contains("resuming")),
+        "resume posts no lingering message: {texts:?}"
+    );
+    // The sleep notice (send #2, id 101) is deleted on resume.
+    assert!(
+        delete_ids(&calls).contains(&101),
+        "resume deletes the sleep notice: {:?}",
+        delete_ids(&calls)
     );
 }
 
 #[test]
-fn worker_fires_both_pushes_when_sleep_events_co_batch() {
+fn worker_fires_notice_and_delete_when_sleep_events_co_batch() {
     // A SleepStarted immediately followed by a SleepEnded drained in ONE batch
-    // nets to `sleep = None`; per-event edge detection must still fire both the
-    // sleep-in and the resume push (a batch-to-batch compare would swallow them).
+    // nets to `sleep = None`; per-event edge detection must still fire the
+    // sleep-in notice AND its delete (a batch-to-batch compare would swallow both).
     let transport = RecordingTransport::new();
     let calls = transport.calls.clone();
     let client = BotClient::new(transport);
@@ -664,15 +676,16 @@ fn worker_fires_both_pushes_when_sleep_events_co_batch() {
 
     let calls = calls.lock().unwrap();
     let texts = send_texts(&calls);
-    let sleep_idx = texts
-        .iter()
-        .position(|t| t.contains("usage limit"))
-        .expect("sleep push fired");
-    let resume_idx = texts
-        .iter()
-        .position(|t| t.contains("resuming"))
-        .expect("resume push fired");
-    assert!(sleep_idx < resume_idx, "order: {texts:?}");
+    assert!(
+        texts.iter().any(|t| t.contains("usage limit")),
+        "sleep notice fired: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.contains("resuming")),
+        "resume no longer posts a message: {texts:?}"
+    );
+    // The notice (send #2, id 101) is deleted on the resume edge.
+    assert_eq!(delete_ids(&calls), vec![101], "notice deleted on resume");
 }
 
 #[test]
@@ -811,6 +824,99 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     assert!(
         edited_text.contains("🏁") && edited_text.contains("run finished"),
         "terminal edit must carry the footer: {edited_text}"
+    );
+}
+
+#[test]
+fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
+    // Drive the engine directly so the ping lifecycle is exercised without real
+    // 2s waits: a genuine card edit posts a `🔔`, a burst coalesces into it, and
+    // once aged past PING_TTL the next tick deletes it.
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let mut engine = TelegramEngine {
+        client,
+        chat_id: 7,
+        state: RunState::new("t", 1),
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
+        prev_sleeping: false,
+        prev_degraded: false,
+    };
+    engine.on_start(); // card sent, id 100
+
+    // A genuine progress change, then a tick that edits the card and pings.
+    engine.on_event(RunEvent::IssueStarted {
+        number: 1,
+        title: "a".into(),
+    });
+    engine.on_tick(true);
+    assert!(engine.ping.is_some(), "ping pending after a progress edit");
+    let ping_count = |calls: &Arc<Mutex<Vec<(String, Value)>>>| {
+        send_texts(&calls.lock().unwrap())
+            .iter()
+            .filter(|t| t.as_str() == "🔔")
+            .count()
+    };
+    assert_eq!(ping_count(&calls), 1, "one ping on the first progress edit");
+
+    // A second edit while the ping is still live coalesces — no second buzz.
+    engine.on_event(RunEvent::Executing {
+        number: 1,
+        budget_min: 45,
+        model: String::new(),
+        effort: None,
+    });
+    engine.on_tick(true);
+    assert_eq!(ping_count(&calls), 1, "a burst coalesces into one ping");
+
+    // Age the ping past its TTL; the next tick deletes it and clears the slot.
+    let (id, _) = engine.ping.expect("ping still pending");
+    engine.ping = Some((id, Instant::now() - PING_TTL - Duration::from_millis(1)));
+    engine.on_tick(false);
+    assert!(engine.ping.is_none(), "expired ping cleared");
+    assert_eq!(
+        delete_ids(&calls.lock().unwrap()),
+        vec![id],
+        "expired ping deleted"
+    );
+}
+
+#[test]
+fn progress_ping_is_suppressed_while_sleeping() {
+    // The countdown card re-renders each refresh while parked; that edit must not
+    // ping every minute — the disposable sleep notice already buzzes.
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let mut engine = TelegramEngine {
+        client,
+        chat_id: 7,
+        state: RunState::new("t", 1),
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
+        prev_sleeping: false,
+        prev_degraded: false,
+    };
+    engine.on_start();
+    engine.on_event(RunEvent::SleepStarted {
+        reset: "14:30".into(),
+        target_epoch: 1_700_000_000,
+    });
+    engine.on_tick(true);
+    assert!(engine.ping.is_none(), "no progress ping while sleeping");
+    assert!(
+        !send_texts(&calls.lock().unwrap())
+            .iter()
+            .any(|t| t.as_str() == "🔔"),
+        "sleeping card edits do not ping"
     );
 }
 

@@ -1,0 +1,4 @@
+# Prompt sources and assembled artifacts are byte-compared by the
+# prompt_assembly anti-drift tests; pin LF so Windows autocrlf checkouts
+# cannot manufacture a false drift between template and artifact.
+assets/prompts/** text eol=lf

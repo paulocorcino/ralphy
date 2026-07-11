@@ -164,7 +164,14 @@ pub(crate) struct RunLedger<'a> {
 impl RunLedger<'_> {
     /// Append one phase line (best-effort — a write failure warns, never stops
     /// the run, D9) and fold the usage into the run totals.
-    pub(crate) fn record_phase(&mut self, issue: u64, phase: &str, outcome: &str, usage: &Usage) {
+    pub(crate) fn record_phase(
+        &mut self,
+        issue: u64,
+        phase: &str,
+        outcome: &str,
+        usage: &Usage,
+        session_id: Option<&str>,
+    ) {
         let rec = LedgerRecord {
             project: self.project.clone(),
             actor_email: self.actor_email.clone(),
@@ -174,6 +181,7 @@ impl RunLedger<'_> {
             phase: phase.into(),
             agent: self.agent.into(),
             model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
+            session_id: session_id.map(str::to_string),
             outcome: outcome.into(),
             tokens: usage.clone(),
             ts: chrono::Utc::now().to_rfc3339(),
@@ -195,9 +203,10 @@ impl RunLedger<'_> {
         phase: &str,
         outcome: &str,
         usage: &Usage,
+        session_id: Option<&str>,
     ) {
         if usage.total() > 0 {
-            self.record_phase(issue, phase, outcome, usage);
+            self.record_phase(issue, phase, outcome, usage, session_id);
         }
     }
 }

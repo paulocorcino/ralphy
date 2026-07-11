@@ -246,6 +246,90 @@ questions.
 _Avoid_: gateway/proxy (a raw passthrough was rejected — ADR-0032 §6), GitHub
 query (the contract is forge-neutral), graph (nothing is graph-shaped here).
 
+**Session store**:
+A vendor CLI's own on-disk record of its sessions — Claude's transcript
+JSONL, Codex's rollout JSONL, OpenCode's database, Kimi's wire files. It
+records **every** session, run-driven or human-driven, which is why both the
+ledger harvest (ADR-0008) and the **usage scan** (ADR-0033) read it instead
+of intercepting traffic. It is the vendor's property, not a durable archive:
+each vendor prunes on its own schedule.
+_Avoid_: transcript (Claude's store only), logs, history.
+
+**Interactive usage**:
+Token consumption from agent CLI sessions a human drives directly (terminal
+or IDE), outside any **run** — **workbench** and **supervised sessions**
+included. It exists only in the **session stores** and surfaces only through
+the **usage scan**; it is never written to the ledger (the ledger stays the
+runs' record), and history older than a vendor's retention is accepted loss —
+the **control plane** polls and persists (ADR-0033).
+_Avoid_: invisible tokens, proxy capture (rejected twice — ADR-0008 D1 and
+ADR-0033 §1), manual usage.
+
+**Usage scan**:
+The stateless read-time scan answering the daemon's read-only `usage` verb
+(the **Forge query** family's request/response shape, though it never touches
+the forge): re-parse the **session stores** from scratch, exclude the
+sessions the ledger already attributes to runs, and answer with run and
+**interactive usage** records — tokens only, never USD. No background job, no
+stored state: it executes only when asked, and each daemon scans only its own
+environment's stores. Lives in `ralphy-usage-scan` (ADR-0033).
+_Avoid_: harvester (nothing runs in the background), proxy, telemetry
+(nothing is pushed), collector.
+
+**Tokens**:
+The normalized, vendor-agnostic four-count token record — `input`, `output`,
+`cache_read`, `cache_creation` — that **every** collection path converges to,
+whichever store it read: the run **adapter** harvesting its own session
+(ADR-0008) and the **usage scan** re-reading offline (ADR-0033) produce the
+*same* shape. It is a **pure counter**: `model` is never inside it, it rides as
+an attribute of the record that carries the tokens (a ledger phase line, an
+**interactive** record). Vendor counting quirks are resolved *before* this shape
+— Codex's cached-subset (`input = input_tokens − cached`), Claude's `message.id`
+dedup and `ephemeral_5m/1h` cache-creation sub-tiers, and reasoning already
+sitting inside `output` (so it is never added) — so by the time usage is
+`Tokens`, it is comparable across vendors. The old run-only `Usage` struct is
+`Tokens` **+** `model`.
+_Avoid_: Usage (the old conflated name), TokenBreakdown, reasoning as a fifth
+count (it is inside `output`, not additive), counts.
+
+**Priced usage**:
+The read-time projection of **Tokens** into a USD *estimate*, keyed on the
+record's **`(provider, model)`** against the price table (ADR-0008 D8). Provider
+is explicit for OpenCode (its records carry `providerID`) and synthesized for
+single-provider vendors (`anthropic` for Claude, `openai` for Codex) so the key
+is uniform across every path. Resolution is **two-step and deterministic** (never
+fuzzy): the metered majors (Claude, Codex) resolve directly against models.dev,
+while OpenCode's ids are **operator aliases** (`providerID` is a subscription-plan
+slug like `kimi-for-coding`, `modelID` a short alias like `k2p6`) that a **curated
++ operator-extensible alias map** rewrites to a canonical `(provider, model)` —
+which models.dev then prices, or the operator prices directly. The captured
+provider disambiguates the alias, it is not itself a models.dev key. Always an estimate and
+**never stored** — the ledger and the scan hold **Tokens** only (D2); USD is
+computed when a report or the web summary is *read*, so re-pricing the entire
+history is a table swap, the records untouched. A model absent from the table
+prices to **unknown** (`None`), **never `$0`** — zero is a lie that hides spend.
+`None` is reserved for an unknown **model**: an absent or unmapped *provider*
+degrades to a model-part lookup, never straight to `None`. Both the run ledger
+and interactive records are priced through the **same** projection, so run and
+interactive spend sum in one currency.
+_Avoid_: cost (too generic), ghost cost (that is the *vendor's* self-reported
+figure the design deliberately ignores — D2), stored/written cost.
+
+**Delivery (entrega)**:
+The unit the cost surface divides project spend by: **one issue**. Its cost is
+the sum of *its* ledger phase lines (plan + execute, across both adapters on a
+**split run**, and across **every run** that touched the issue — failed
+attempts included, joined by `issue`) — the denominator of "cost per delivered
+issue", the efficiency question ADR-0008 D6 exists to answer. Attribution is honest by construction:
+**run** usage is per-issue (the ledger carries `issue`), so it *is* fractionable
+by delivery, while **interactive usage** carries no issue (a human session was
+never "delivering issue #N") — it rolls up as a **project-level overhead**,
+never rationed across deliveries. So the web summary reads two ways: *per
+delivery* = that issue's run phases; *per project* = Σ deliveries (run) **+**
+interactive overhead.
+_Avoid_: run (a run works many deliveries), PR/branch (the hand-off vehicle, not
+the unit), task (overloaded), ticket.
+
 **Repo registry**:
 The list of repos a **daemon** can act on, one registry per daemon. It is
 **passive**: every `init`/`run`/`triage` upserts its repo, keyed by the
@@ -346,7 +430,8 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   a cron or manual run (including one typed inside a **free console**) simply
   doesn't. Observability never depends on a daemon existing.
 - A **workbench session** involves no run; a **Supervised session** watches a
-  run. The **control plane** sees both worlds — tunnel (interactive) and
+  run. Tokens either kind burns are **interactive usage** — visible to the
+  **usage scan**, never in the ledger. The **control plane** sees both worlds — tunnel (interactive) and
   CloudEvents sink (telemetry) — but the two never share a channel.
 - **Triage evidence** = the issue body, its full comment thread, and the
   guardrailed attachments the CLI fetches for the triage agent (ADR-0025); an
@@ -383,6 +468,14 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   Ralphys", **Emitter identity**) and the set of enrolled daemons — resolved:
   **Fleet** canonically means the enrolled daemons; the event-stream sense is
   descriptive prose, keyed by `runid`, never by fleet membership.
+- "Session" names three species and one forbidden sense: the **vendor's**
+  session (a CLI conversation recorded in its **session store**, identified
+  by the vendor's session id — the unit the **usage scan** counts and the
+  ledger's `session_id` dedup key), the daemon-hosted **Workbench session**,
+  and the **Supervised session** (live oversight of a run). The loose sense
+  "session = one issue's execution within a run" stays forbidden (**Run**),
+  and run events stay keyed by `runid`, never by a vendor session id
+  (**Emitter identity**).
 - "GitHub" vs "forge": **Forge** is the neutral term — already used
   informally (ADR-0021: "the forge does: the GitHub assignee"), canonized
   2026-07-09 for contracts that must not bake in a vendor dialect
