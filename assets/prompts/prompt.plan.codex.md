@@ -221,16 +221,31 @@ on one.
   executor self-reports done, the RUNNER re-runs these exact commands over the
   committed state and refuses to close the issue if any one fails. List the
   command(s) that prove the `[verified]` criteria — typically the same commands
-  named in their `evidence:`. Each line is a PLAIN command — no bullet prefix,
-  no metadata — run as direct argv with NO shell, so
-  it must be a single command (no `&&`, pipes, globs, or env-var expansion); a
-  command that truly needs a shell writes `sh -c "…"` explicitly. Scope a
-  monorepo inside the command itself (`cargo test -p foo`, `npm --prefix x
+  named in their `evidence:`. Each line is ONE BARE COMMAND — the first token IS
+  the program the runner spawns. NO list bullet (`- `, `* `, `1. `), NO backticks
+  or code fences around it, NO prose annotation (`— passou`, `# lints`, a trailing
+  comment). The runner tokenizes the raw line into argv with NO shell, so a
+  leading `- ` makes it try to spawn a program literally named `-` and the gate
+  spawn-fails; backticks and trailing prose become bogus argv words that fail the
+  same way. It must be a single command (no `&&`, pipes, globs, or env-var
+  expansion); a command that truly needs a shell writes `sh -c "…"` explicitly.
+  Scope a monorepo inside the command itself (`cargo test -p foo`, `npm --prefix x
   test`). Order the lines cheap-first: the runner stops at the first non-zero
   exit, so a fast scoped command placed before an expensive full suite makes a
-  red gate cost seconds instead of minutes. Write `none` (on its own line)
-  ONLY when nothing is machine-verifiable — an honest opt-out, not a way to
-  dodge a gate you could write.
+  red gate cost seconds instead of minutes.
+
+  GOOD (bare commands, one per line):
+
+      cargo fmt --check
+      cargo test -p ralphy-core
+
+  BAD (bullets, backticks, and prose annotations — every line spawn-fails the gate):
+
+      - `cargo fmt --check` — passou
+      - `cargo test -p ralphy-core`  # unit tests
+
+  Write `none` (on its own line) ONLY when nothing is machine-verifiable — an
+  honest opt-out, not a way to dodge a gate you could write.
 - A `## Verify` made only of static checks (type-check, lint, dependency/boundary
   rules, presence-of-declaration tests) proves the code TYPES and the boundary
   holds — not that the artifact RUNS. When the issue creates or changes something
@@ -345,13 +360,18 @@ exactly these two line shapes (em dash `—`, literal `evidence:` key):
 - [verified] the test suite passes with a new test covering the ledger parser — evidence: a new test feeds the prompt example through the parser and asserts typed verdicts
 - [review-only] the empty-state screen looks visually consistent with the app — evidence: human views the screen in the PR
 
-The `## Verify` section is plain lines, one command per line, no bullets and no
-metadata — the runner tokenizes each line into argv and runs it directly:
+The `## Verify` section is bare command lines, one command per line, no bullets,
+no backticks, and no prose annotations — the runner tokenizes each raw line into
+argv and runs it directly, so the first token must be the program to spawn:
 
 cargo fmt --check
 cargo test -p <crate>
 
-or, when nothing is machine-verifiable, the single line:
+NOT `- cargo fmt --check — passou` and NOT `` `cargo test` `` — a leading bullet,
+wrapping backticks, or a trailing annotation all become bogus argv and spawn-fail
+the gate.
+
+Or, when nothing is machine-verifiable, the single line:
 
 none
 
