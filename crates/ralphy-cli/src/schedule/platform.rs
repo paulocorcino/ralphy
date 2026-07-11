@@ -40,9 +40,12 @@ pub fn cron_tag(slug: &str, wd: &Path) -> String {
 /// Render the install command for `spec` on `p`.
 ///
 /// - Windows: the `schtasks /Create …` argv, each element one argument. The
-///   `/TR` value wraps the invocation in `pwsh -NoProfile -Command "…"` so the
-///   working-directory `Set-Location` and the `*>>` all-stream log redirect are
-///   handled — the two traps `docs/scheduling.md` flags for Task Scheduler.
+///   `/TR` value wraps the invocation in `pwsh -NoProfile -WindowStyle Hidden
+///   -Command "…"` so the working-directory `Set-Location` and the `*>>`
+///   all-stream log redirect are handled — the two traps `docs/scheduling.md`
+///   flags for Task Scheduler — and `-WindowStyle Hidden` keeps an interactive
+///   (logged-on) task from flashing a visible pwsh console on every fire
+///   (mirrors `autostart`'s Run-key launcher).
 /// - Cron: a single-element vec holding the crontab line, `cd`-anchored, output
 ///   `>> … 2>&1`-redirected, and tagged for removal.
 pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
@@ -62,10 +65,10 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
             // shell-quoting (we pass this argv straight to CreateProcess).
             let tr = match &pre {
                 Some(pre) => format!(
-                    "pwsh -NoProfile -Command \"Set-Location '{wd}'; '{exe}' {pre} *>> '{log}'; '{exe}' {args} *>> '{log}'\""
+                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; '{exe}' {pre} *>> '{log}'; '{exe}' {args} *>> '{log}'\""
                 ),
                 None => format!(
-                    "pwsh -NoProfile -Command \"Set-Location '{wd}'; '{exe}' {args} *>> '{log}'\""
+                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; '{exe}' {args} *>> '{log}'\""
                 ),
             };
             vec![
@@ -220,6 +223,7 @@ mod tests {
             "run",
             "--if-idle",
             "Set-Location",
+            "-WindowStyle Hidden",
             "*>>",
         ] {
             assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");

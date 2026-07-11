@@ -7,11 +7,12 @@ use std::process::{Command, Output};
 use anyhow::{bail, Context, Result};
 
 fn raw(repo: &Path, args: &[&str]) -> Result<Output> {
-    Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .output()
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo).args(args);
+    // Hidden console so a `git` call under the console-less daemon child never
+    // flashes a visible window. Output is captured here, so nothing is lost.
+    ralphy_proc_util::no_window(&mut cmd);
+    cmd.output()
         .with_context(|| format!("failed to spawn `git {}`", args.join(" ")))
 }
 

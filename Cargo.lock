@@ -1363,6 +1363,7 @@ dependencies = [
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
+ "ralphy-proc-util",
  "ralphy-pty",
  "regex",
  "serde",

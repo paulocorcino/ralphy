@@ -129,21 +129,32 @@
         text-transform: uppercase;
         margin: 0 0 0.4rem;
       }
-      /* The live terminal takes over the viewport once a session launches,
-         framed as a window with a title bar carrying close/detach controls. */
-      #terminal {
+      /* Live sessions render as FLOATING, draggable windows layered over the
+         launcher (which stays visible, so more can be spawned without leaving).
+         The daemon already owns N concurrent sessions (the tmux model, #166);
+         each window is one attachment to a distinct session id. */
+      #workspace {
         position: fixed;
-        inset: 0.5rem;
-        display: none;
+        inset: 0;
+        pointer-events: none; /* the layer is click-through… */
+        z-index: 50;
+      }
+      .session-window {
+        position: fixed;
+        pointer-events: auto; /* …but each window itself is interactive */
+        display: flex;
         flex-direction: column;
         background: #000;
         border: 1px solid #3a332d;
         border-radius: 6px;
         overflow: hidden;
         box-sizing: border-box;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+        min-width: 240px;
+        min-height: 160px;
       }
-      #terminal.active {
-        display: flex;
+      .session-window.focused {
+        border-color: #6b5f52;
       }
       .session-titlebar {
         display: flex;
@@ -153,6 +164,8 @@
         background: #241f1b;
         border-bottom: 1px solid #3a332d;
         flex-shrink: 0;
+        cursor: move; /* the title bar is the drag handle */
+        user-select: none;
       }
       .session-title {
         color: #9b948a;
@@ -179,9 +192,29 @@
         color: #c56b5c;
         border-color: #5a2e28;
       }
-      #terminal-body {
+      .session-body {
         flex: 1 1 auto;
         min-height: 0;
+      }
+      /* A grab corner for resizing; the diagonal hatch hints the affordance. */
+      .session-resize {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 16px;
+        height: 16px;
+        cursor: nwse-resize;
+        background: linear-gradient(
+          135deg,
+          transparent 55%,
+          #6b5f52 55%,
+          #6b5f52 63%,
+          transparent 63%,
+          transparent 74%,
+          #6b5f52 74%,
+          #6b5f52 82%,
+          transparent 82%
+        );
       }
     </style>
   </head>
@@ -197,7 +230,7 @@
         <button class="console-tile" id="home-console-btn">open a free console (home dir)</button>
       </section>
     </main>
-    <div id="terminal"></div>
+    <div id="workspace"></div>
     <script src="vendor/xterm.js"></script>
     <script src="vendor/xterm-addon-fit.js"></script>
     <script>
@@ -345,18 +378,88 @@
         };
       }
 
-      // Launch or reattach a session: hand the viewport to xterm.js, open the
-      // session WebSocket, and wire keystrokes/resize out and PTY bytes in.
-      // xterm.js is the terminal emulator, so it answers the child's startup
-      // cursor-position request itself — the daemon stays a transparent byte pipe.
-      // `opts` is one of: {repo, agent} (a NEW agent launch), {console: true[,
-      // repo]} (a NEW free-console launch, #167 — home dir when `repo` is
-      // absent), or {id[, takeover]} (a REATTACH to a daemon-owned session, #166).
+      // --- floating-window chrome -------------------------------------------
+      // Multiple sessions coexist as draggable/resizable windows (the daemon
+      // already owns them concurrently). `zTop` is the running stacking order and
+      // `cascade` offsets each new window so they don't land exactly on top.
+      const workspace = document.getElementById("workspace");
+      let zTop = 60;
+      let cascade = 0;
+
+      // Raise `win` above every other window and mark it the focused one.
+      function focusWindow(win) {
+        zTop += 1;
+        win.style.zIndex = zTop;
+        for (const w of workspace.querySelectorAll(".session-window.focused")) {
+          if (w !== win) w.classList.remove("focused");
+        }
+        win.classList.add("focused");
+      }
+
+      // Drag `win` by `handle` (its title bar), except when the pointer lands on
+      // a control button (detach/close must still click, not drag).
+      function makeDraggable(win, handle) {
+        handle.addEventListener("mousedown", (e) => {
+          if (e.target.closest("button")) return;
+          focusWindow(win);
+          const rect = win.getBoundingClientRect();
+          const offX = e.clientX - rect.left;
+          const offY = e.clientY - rect.top;
+          const onMove = (ev) => {
+            win.style.left = Math.max(0, ev.clientX - offX) + "px";
+            win.style.top = Math.max(0, ev.clientY - offY) + "px";
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+          };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+          e.preventDefault();
+        });
+      }
+
+      // Resize `win` from its bottom-right `handle`; the terminal refits via a
+      // ResizeObserver on the body, so no extra callback is needed here.
+      function makeResizable(win, handle) {
+        handle.addEventListener("mousedown", (e) => {
+          focusWindow(win);
+          const rect = win.getBoundingClientRect();
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const startW = rect.width;
+          const startH = rect.height;
+          const onMove = (ev) => {
+            win.style.width = Math.max(240, startW + ev.clientX - startX) + "px";
+            win.style.height =
+              Math.max(160, startH + ev.clientY - startY) + "px";
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+          };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+          e.preventDefault();
+        });
+      }
+
+      // Launch or reattach a session into a NEW floating window: build the window
+      // chrome, open the session WebSocket, and wire keystrokes/resize out and PTY
+      // bytes in. xterm.js is the terminal emulator, so it answers the child's
+      // startup cursor-position request itself — the daemon stays a transparent
+      // byte pipe. `opts` is one of: {repo, agent} (a NEW agent launch),
+      // {console: true[, repo]} (a NEW free-console launch, #167 — home dir when
+      // `repo` is absent), or {id[, takeover]} (a REATTACH to a daemon-owned
+      // session, #166). Each call is independent, so N windows run side by side.
       function launch(opts) {
-        document.querySelector("main").style.display = "none";
-        const host = document.getElementById("terminal");
-        host.innerHTML = "";
-        host.classList.add("active");
+        const win = document.createElement("div");
+        win.className = "session-window";
+        cascade = (cascade + 1) % 8;
+        win.style.left = 44 + cascade * 26 + "px";
+        win.style.top = 44 + cascade * 26 + "px";
+        win.style.width = "min(760px, 82vw)";
+        win.style.height = "min(460px, 72vh)";
 
         const titlebar = document.createElement("div");
         titlebar.className = "session-titlebar";
@@ -380,8 +483,16 @@
         actions.append(detachBtn, closeBtn);
         titlebar.append(title, actions);
         const body = document.createElement("div");
-        body.id = "terminal-body";
-        host.append(titlebar, body);
+        body.className = "session-body";
+        const resizeGrip = document.createElement("div");
+        resizeGrip.className = "session-resize";
+        win.append(titlebar, body, resizeGrip);
+        workspace.append(win);
+
+        win.addEventListener("mousedown", () => focusWindow(win));
+        makeDraggable(win, titlebar);
+        makeResizable(win, resizeGrip);
+        focusWindow(win);
 
         let currentSessionId = opts.id ?? null;
         let leaving = false;
@@ -391,14 +502,21 @@
         term.loadAddon(fit);
         term.open(body);
         fit.fit();
+        // Refit whenever THIS window's body changes size (drag-resize or a
+        // viewport change), so the child's TUI reflows to the window, not the
+        // screen. Per-window, so one window's resize never disturbs another.
+        const ro = new ResizeObserver(() => {
+          try {
+            fit.fit();
+          } catch {}
+        });
+        ro.observe(body);
 
         function returnToLauncher() {
           leaving = true;
+          ro.disconnect();
           term.dispose();
-          window.removeEventListener("resize", onResize);
-          host.classList.remove("active");
-          host.innerHTML = "";
-          document.querySelector("main").style.display = "";
+          win.remove();
           refreshSessions();
         }
 
@@ -442,8 +560,6 @@
           if (ws.readyState === WebSocket.OPEN)
             ws.send(encodeResize(rows, cols));
         });
-        const onResize = () => fit.fit();
-        window.addEventListener("resize", onResize);
 
         detachBtn.onclick = () => {
           if (
@@ -476,7 +592,12 @@
           // Offer an explicit takeover, once.
           if (opts.id != null && !opened && !opts.takeover) {
             if (confirm("session busy — take over?")) {
+              // Tear THIS window down and relaunch as a takeover, so no dead
+              // empty window lingers.
+              leaving = true;
+              ro.disconnect();
               term.dispose();
+              win.remove();
               launch({ id: opts.id, takeover: true });
               return;
             }

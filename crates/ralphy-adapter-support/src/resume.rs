@@ -11,11 +11,12 @@
 use std::fs;
 use std::path::Path;
 
-/// The finalized-plan marker for `issue_number`. The PRODUCER is the LLM planner
-/// (instructed by the plan prompt to write this as the last line of
-/// `.ralphy/plan.md`); Rust only DETECTS it here — there is no Rust caller that
-/// writes the trailer. Exists so both the prompt-const tests and
-/// [`plan_is_finalized_for`] derive the exact literal from one place.
+/// The finalized-plan marker for `issue_number`. The primary PRODUCER is the LLM
+/// planner (instructed by the plan prompt to write this as the last line of
+/// `.ralphy/plan.md`); as a fallback, [`crate::scaffold::run_plan_session`] stamps it
+/// Rust-side when a planner exited cleanly but omitted it (some vendors reliably do).
+/// [`plan_is_finalized_for`] is the DETECTOR. Exists so the prompt-const tests, the
+/// stamper, and the detector all derive the exact literal from one place.
 ///
 /// "Finalized" means "the planner finished writing" — NOT "the issue completed".
 /// Resume relies on the external invariant that a completed issue leaves the

@@ -199,6 +199,9 @@ impl Agent for ClaudeAgent {
         if let Some((key, value)) = staged_plan_env(staged) {
             cmd.env(key, value);
         }
+        // Hidden console on Windows: the plan child's stdio is piped and it may run
+        // under the console-less daemon child, where it would otherwise flash a window.
+        ralphy_proc_util::no_window(&mut cmd);
         let mut child = cmd
             .spawn()
             .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;

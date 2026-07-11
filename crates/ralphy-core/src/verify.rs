@@ -283,6 +283,9 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     // below — can signal the whole tree, not just the direct child. Windows walks
     // the tree by PID at kill time and needs nothing here. See [`kill_tree`] (#156).
     ralphy_proc_util::own_process_group(&mut cmd);
+    // Hidden console on Windows: the verify child's stdio is piped and it may run
+    // under the console-less daemon child, where it would otherwise flash a window.
+    ralphy_proc_util::no_window(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
