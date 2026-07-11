@@ -44,7 +44,8 @@ pub const ACCEPTS_IMAGES: bool = false;
 
 use command::build_opencode_command;
 use events::{
-    is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, OPENCODE_AUTH_ERROR_MSG,
+    is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, parse_opencode_log_limit,
+    OPENCODE_AUTH_ERROR_MSG,
 };
 use outcome::classify_opencode_outcome;
 use skills::{materialize_opencode_skills, opencode_skills_config};
@@ -243,7 +244,11 @@ impl Agent for OpenCodeAgent {
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let (text, saw_error) = parse_opencode_events(&stdout_text);
-        let limit = parse_opencode_limit(&stdout_text);
+        // Prefer the JSON-event limit (structured, carries reset hints); fall back to
+        // the logfmt scan over the combined stdout+stderr log for providers whose
+        // quota block only prints to `--print-logs` stderr and never reaches the JSON
+        // stream (Z.ai `zai-coding-plan`/GLM, kimi — D9, FinCal #71).
+        let limit = parse_opencode_limit(&stdout_text).or_else(|| parse_opencode_log_limit(&r.log));
 
         let outcome = classify_opencode_outcome(
             r.exited_cleanly,

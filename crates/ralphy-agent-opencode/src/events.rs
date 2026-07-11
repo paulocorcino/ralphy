@@ -194,6 +194,55 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
     })
 }
 
+/// The usage-limit sentinels as they read in opencode's own logs (logfmt on
+/// stderr under `--print-logs`), NOT the `--format json` event stream. Some
+/// providers never surface a quota block as a `{type:"error"}` JSON event: Z.ai's
+/// `zai-coding-plan` (GLM) treats the `AI_APICallError: Usage limit reached` as a
+/// retryable stream error and loops on backoff, logging it only here (observed
+/// live 2026-07-11, FinCal #71, glm-5.2). Keyed on the specific "usage limit"
+/// wording so an ordinary transient stream error is not misread as a limit.
+const LOG_LIMIT_SENTINELS: &[&str] = &["usage limit reached", "usage limit for this billing cycle"];
+
+/// Scan opencode's raw combined log (stdout+stderr) for a usage-limit sentinel in
+/// the logfmt lines `--print-logs` prints to stderr — the path a JSON-event scan
+/// ([`parse_opencode_limit`], which reads the `--format json` stream) structurally
+/// cannot see. Same contract as [`parse_opencode_limit`]: `Some(Some(hint))` when a
+/// limit is seen with a reset hint, `Some(None)` when seen without one, `None`
+/// otherwise (ADR-0005 D9).
+pub(crate) fn parse_opencode_log_limit(log: &str) -> Option<Option<String>> {
+    for line in log.lines() {
+        let lower = line.to_ascii_lowercase();
+        if LOG_LIMIT_SENTINELS.iter().any(|s| lower.contains(s)) {
+            return Some(parse_reset_hint_from_text(line));
+        }
+    }
+    None
+}
+
+/// Best-effort reset-time extraction from a raw log line (the logfmt path, where
+/// the field lives inside a quoted `error.error="…"` value rather than a JSON
+/// field). Recognises Z.ai's `… reset at <ts>` wording alongside the common
+/// `try again at/in` phrasings; the reset value can carry a space (e.g.
+/// `2026-07-11 22:14:08`), so it runs to the quote/newline/period, not the first
+/// space. Returns `None` when absent (a reset hint is not guaranteed).
+fn parse_reset_hint_from_text(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    for prefix in &["reset at ", "try again at ", "try again in "] {
+        if let Some(pos) = lower.find(prefix) {
+            let rest = &line[pos + prefix.len()..];
+            let hint: String = rest
+                .chars()
+                .take_while(|c| *c != '"' && *c != '\n' && *c != '.')
+                .collect();
+            let hint = hint.trim().to_string();
+            if !hint.is_empty() {
+                return Some(hint);
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +410,55 @@ mod tests {
 {"type":"step_finish","reason":"stop"}
 "#;
         assert_eq!(parse_opencode_limit(stream), None);
+    }
+
+    // ── parse_opencode_log_limit ─────────────────────────────────────────────
+
+    #[test]
+    fn log_limit_detects_zai_5h_cap_with_reset() {
+        // The exact logfmt line opencode prints to stderr under `--print-logs` when
+        // Z.ai's `zai-coding-plan` (GLM) hits its 5-hour cap — captured live
+        // 2026-07-11 (FinCal #71). No `{type:"error"}` JSON event accompanies it, so
+        // only the log-scan (not `parse_opencode_limit`) can catch it. The reset
+        // value carries a space and must survive intact.
+        let log = concat!(
+            "{\"type\":\"step_finish\",\"reason\":\"stop\"}\n",
+            "timestamp=2026-07-11T09:48:22.735Z level=ERROR run=d9ec1918 ",
+            "message=\"stream error\" providerID=zai-coding-plan modelID=glm-5.2 ",
+            "session.id=ses_x error.error=\"AI_APICallError: Usage limit reached for ",
+            "5 hour. Your limit will reset at 2026-07-11 22:14:08\"",
+        );
+        assert_eq!(
+            parse_opencode_log_limit(log),
+            Some(Some("2026-07-11 22:14:08".into())),
+        );
+    }
+
+    #[test]
+    fn log_limit_detects_kimi_billing_cycle_without_reset() {
+        // Kimi's billing-cycle block as it reads in the logfmt log: a usage limit
+        // with no reset timestamp → `Some(None)`.
+        let log = concat!(
+            "timestamp=2026-07-09T23:19:01.732Z level=ERROR message=\"stream error\" ",
+            "providerID=kimi-for-coding error.error=\"AI_APICallError: You've reached ",
+            "your usage limit for this billing cycle. Your quota will be refreshed in ",
+            "the next cycle.\"",
+        );
+        assert_eq!(parse_opencode_log_limit(log), Some(None));
+    }
+
+    #[test]
+    fn log_limit_ignores_ordinary_and_non_limit_error_lines() {
+        // An INFO runtime line and a non-limit ERROR (transient backend blip) must
+        // not be misread as a usage limit.
+        let log = concat!(
+            "{\"type\":\"text\",\"text\":\"working\"}\n",
+            "timestamp=2026-07-11T09:47:41.590Z level=INFO message=\"llm runtime ",
+            "selected\" llm.provider=zai-coding-plan llm.model=glm-5.2\n",
+            "timestamp=2026-07-11T09:48:22.735Z level=ERROR message=\"stream error\" ",
+            "error.error=\"AI_APICallError: Unexpected server error\"",
+        );
+        assert_eq!(parse_opencode_log_limit(log), None);
     }
 
     // ── parse_opencode_events ────────────────────────────────────────────────
