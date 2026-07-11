@@ -233,6 +233,8 @@
     <div id="workspace"></div>
     <script src="vendor/xterm.js"></script>
     <script src="vendor/xterm-addon-fit.js"></script>
+    <script src="vendor/xterm-addon-webgl.js"></script>
+    <script src="vendor/xterm-addon-web-links.js"></script>
     <script>
       // Identity is delivered at runtime (the embedded HTML bakes in none):
       // render "avatar name" when the daemon has been baptized, else leave the
@@ -501,6 +503,17 @@
         const fit = new FitAddon.FitAddon();
         term.loadAddon(fit);
         term.open(body);
+        // GPU-accelerated glyph rendering. The DOM renderer stays the fallback:
+        // if WebGL is unavailable (headless, no GPU) or the context is lost
+        // (e.g. Chromium/Nvidia on OS resume), dispose the addon and xterm
+        // falls back to DOM without dropping the session.
+        try {
+          const webgl = new WebglAddon.WebglAddon();
+          webgl.onContextLoss(() => webgl.dispose());
+          term.loadAddon(webgl);
+        } catch {}
+        // Make URLs in the child's output clickable (GitHub issues/PRs, docs).
+        term.loadAddon(new WebLinksAddon.WebLinksAddon());
         fit.fit();
         // Refit whenever THIS window's body changes size (drag-resize or a
         // viewport change), so the child's TUI reflows to the window, not the
