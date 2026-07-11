@@ -31,7 +31,20 @@ pub(crate) fn build_opencode_command(
     cmd.arg("run")
         .arg("--format")
         .arg("json")
-        .arg("--dangerously-skip-permissions");
+        .arg("--dangerously-skip-permissions")
+        // Route opencode's own logs (logfmt) onto stderr at ERROR level. Some
+        // providers (Z.ai `zai-coding-plan`/GLM) never emit a `{type:"error"}`
+        // JSON event on a quota block: their ai-sdk treats the `AI_APICallError:
+        // Usage limit reached` as a *retryable* stream error and loops on backoff,
+        // printing it only to the server log — so the `--format json` stream stays
+        // silent and the run stalls until the wall timeout. `--print-logs` brings
+        // that line onto the stderr we already drain, where `parse_opencode_log_limit`
+        // can see it and classify the run as `Limit` instead of a mute `Timeout`
+        // (observed live 2026-07-11, FinCal #71, glm-5.2). ERROR keeps the combined
+        // log lean; the quota line is logged at ERROR.
+        .arg("--print-logs")
+        .arg("--log-level")
+        .arg("ERROR");
     if let Some(m) = model {
         cmd.arg("-m").arg(m);
     }
@@ -84,6 +97,12 @@ mod tests {
         );
         assert!(args.contains(&"--format".to_string()), "argv: {args:?}");
         assert!(args.contains(&"json".to_string()), "argv: {args:?}");
+        // `--print-logs`/`--log-level ERROR` route opencode's own logs to stderr so
+        // a provider quota block that never reaches the JSON stream is still visible
+        // to the limit detector (D9 — silent-quota fix, FinCal #71).
+        assert!(args.contains(&"--print-logs".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--log-level".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"ERROR".to_string()), "argv: {args:?}");
     }
 
     #[test]
