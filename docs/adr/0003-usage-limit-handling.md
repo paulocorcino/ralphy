@@ -28,10 +28,19 @@ and a **progress-aware cap**: two consecutive limit-resumes that commit nothing
 (`HEAD` sha unchanged) abandon the issue, so a run never burns reset windows
 forever on an issue that cannot move.
 
-A usage limit with **no parseable reset time** falls back to stop-and-report —
-auto-resume only engages when there is a trustworthy wake time, because inventing
-a fixed sleep risks waking early and re-limiting. A reset that lands **beyond the
-run deadline** does not sleep at all; the run stops with `Deadline` immediately.
+A reset that lands **beyond the run deadline** does not sleep at all; the run stops
+with `Deadline` immediately. The two guards above (run deadline + progress-aware
+cap) are the *only* bounds on the wait — there is no wall ceiling on how far out a
+parsed reset may be; honouring the agent's stated wake time, however distant, is the
+Ralph-loop principle (see [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)
+D5, which removed an interim 12 h cap that overrode a real reset on FinCal #72).
+
+> **Superseded (2026-07-09, [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)):**
+> the original rule here — *"a usage limit with no parseable reset time falls back to
+> stop-and-report"* — no longer holds. A `Limit(None)` (or a hint that does not parse
+> to a wake time) now **synthesises a ~30-min reset and retries** rather than stopping,
+> so an unschedulable limit is waited out like any other. Stopping is reached only via
+> the explicit `--stop-on-limit` opt-out or the run deadline.
 
 ## D2 — Resume is git + `plan.md`, never `claude --resume <session_id>`
 

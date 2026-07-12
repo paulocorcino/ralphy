@@ -54,6 +54,29 @@ wait). This reverses the "no-reset ⇒ stop" fail-safe that
 [ADR-0028](./0028-kimi-adapter.md) D9 relied on; that fail-safe existed only
 because there was no wait to fall back on, which D1 now provides.
 
+## D5 — A parsed reset has no arbitrary wall ceiling (2026-07-12)
+
+An interim guard (`MAX_RESET_WAIT`, 12 h) once stopped the run when a *parsed*
+reset resolved farther out than 12 hours, to stop a malformed hint parking the run
+for the ~365-day issue horizon. Live on FinCal #72 (2026-07-11) this misfired: Z.ai
+returned a real, correctly-parsed reset ~13.5 h out and the run **stopped instead
+of waiting** — the agent's output said exactly when it could resume, and the runner
+overrode that explicit signal with a time heuristic of its own. That contradicts
+both the D1 loop here ("unbounded … ends only when the run's global deadline cuts
+it, or a human interrupts") and [ADR-0003](./0003-usage-limit-handling.md) D1
+(bounds are the run deadline + the progress-aware cap — no wall ceiling).
+
+The ceiling is removed. A parsed reset is honoured however distant; the wait is
+bounded only by the operator's own levers — the run deadline (`--deadline-hours`),
+the progress-aware cap in `execute_phase` (two no-commit resumes abandon the issue),
+and Ctrl-C. The concern the ceiling addressed is now covered at the source by the
+model-agnostic limit detection ([ADR-0005](./0005-opencode-adapter.md) D9): a
+garbage hint never parses to a wake time, so it falls to the D1 ~30-min synthetic
+cadence rather than parking on a bogus instant. **Strict parsing, not a time cap, is
+the guard.** This is the Ralph-loop principle applied: act on what the output says;
+choosing to wait days (or not) is the human's decision, expressed via the deadline,
+never the runner's to pre-empt.
+
 ## D4 — Ctrl-C ends the run without consolidation (accepted, not yet cooperative)
 
 During a synthetic wait the run may park for hours or days; the human stops it with

@@ -4,12 +4,6 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, NaiveTime, Weekday};
 use tracing::info;
 
-/// Upper bound on a single usage-limit wait. A reset hint that resolves farther
-/// out than this is treated as a stop (`DeadlinePassed`) rather than parked on —
-/// guards against a malformed/hostile hint parking the run for the unbounded
-/// issue horizon (~365 days) when no run-level deadline is set.
-const MAX_RESET_WAIT: Duration = Duration::from_secs(12 * 60 * 60);
-
 /// A synthetic reset hint for a usage limit that carries **no** schedulable reset
 /// time (e.g. Kimi's HTTP-403 account block, or any adapter's `Limit(None)`): treat
 /// "unknown" as "retry in ~30 min". Returns `now + 25min` as RFC3339 —
@@ -86,16 +80,16 @@ impl RunClock for WallClock {
         if self.deadline_passed() {
             return WaitOutcome::DeadlinePassed;
         }
-        // A reset farther out than the max wait is a stop, regardless of whether a
-        // run deadline is set — without this, a hint resolving to the unbounded
-        // issue horizon would park the run for ~365 days.
-        if target - Local::now()
-            > chrono::Duration::from_std(MAX_RESET_WAIT)
-                .unwrap_or_else(|_| chrono::Duration::hours(12))
-        {
-            info!(%reset, "reset lands beyond the max wait — not waiting");
-            return WaitOutcome::DeadlinePassed;
-        }
+        // No arbitrary wall ceiling on how far out a parsed reset may be: the agent's
+        // output *is* the signal, and honouring "back at <ts>" — however distant — is
+        // the Ralph-loop principle (act on what the output says; waiting days is a
+        // human decision, ADR-0030). The wait is bounded only by the operator's own
+        // levers: the run deadline (below), the progress-aware cap in `execute_phase`
+        // (two no-commit resumes abandon the issue, ADR-0003 D1), and Ctrl-C. A
+        // garbage hint cannot park the run here because it never parses to a `target`
+        // in the first place (it falls to the ~30-min synthetic cadence above) — strict
+        // parsing, not a time cap, is the guard.
+        //
         // A reset beyond the global deadline never sleeps — the deadline wins the
         // moment it would pass.
         if let Some(d) = self.deadline {
