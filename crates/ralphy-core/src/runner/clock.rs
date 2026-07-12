@@ -64,17 +64,21 @@ impl RunClock for WallClock {
         // The 5-minute buffer is a wait policy (wake a little after the reset to
         // avoid re-limiting), applied here rather than baked into `next_reset`.
         let buffer = chrono::Duration::minutes(5);
-        let target = match next_reset(reset, Local::now()) {
+        // The adapter parsed *some* reset string, but this clock may not turn it
+        // into a wake time (a format the adapter accepts verbatim but `next_reset`
+        // does not). Rather than stop-and-abandon the limit (the old #145 fail-safe),
+        // fall back to the synthetic cadence — retry ~30 min out — so an unrecognised
+        // hint keeps trying until the reset lands, the run deadline cuts it, or a
+        // human interrupts. The 25-min floor in `synthetic_reset` prevents the
+        // 0-second hot-loop #145 was guarding against, so this stays safe.
+        let target = match next_reset(reset, Local::now())
+            .or_else(|| next_reset(&synthetic_reset(), Local::now()))
+        {
             Some(t) => t + buffer,
-            // The adapter parsed *some* reset string, but this clock cannot turn
-            // it into a wake time (an unrecognised format the adapter accepts but
-            // `next_reset` does not). Resuming immediately here hot-loops the
-            // execute retry until the progress-aware cap abandons the issue with a
-            // 0-second "wait" (issue #145). Fail safe instead: stop-and-report on
-            // the limit, exactly as a `Limit(None)` would, so an operator re-runs
-            // rather than the run silently burning attempts.
+            // Unreachable in practice: `synthetic_reset` is always RFC3339-parseable.
+            // Keep the fail-safe stop rather than an `unwrap` if that ever changes.
             None => {
-                info!(%reset, "usage-limit reset hint not understood by the clock — stopping instead of waiting");
+                info!(%reset, "reset hint unparseable and synthetic fallback failed — stopping");
                 return WaitOutcome::DeadlinePassed;
             }
         };
@@ -170,6 +174,25 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     // it is read as local wall-clock time.
     if let Some(dt) = parse_month_name_datetime(trimmed) {
         return Some(dt);
+    }
+
+    // A numeric ISO-like date-time WITHOUT a zone ("2026-07-12 11:11:48", or with a
+    // 'T' separator / minute precision), as Z.ai/GLM state their reset. It carries
+    // its own date but no zone, so — like the month-name form — it is read as local
+    // wall-clock time. Handled here because the weekday split below would treat the
+    // leading "2026-07-12" as a weekday token and reject the whole hint (the gap that
+    // made a real GLM reset unparseable and stopped the run instead of waiting).
+    for fmt in [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M",
+    ] {
+        if let Ok(ndt) = NaiveDateTime::parse_from_str(trimmed, fmt) {
+            if let Some(dt) = ndt.and_local_timezone(Local).single() {
+                return Some(dt);
+            }
+        }
     }
 
     // A bare 12-hour time ("6:13 PM") is relative: resolve to its next occurrence
@@ -361,6 +384,27 @@ mod tests {
     fn next_reset_unparseable_is_none() {
         let now = at(2026, 6, 9, 10, 0);
         assert_eq!(next_reset("not a time", now), None);
+    }
+
+    #[test]
+    fn next_reset_numeric_iso_without_zone_reads_as_local() {
+        // Z.ai/GLM state their reset as a zoneless numeric date-time. It carries its
+        // own date, so `now` is irrelevant; it reads as local wall-clock (including
+        // seconds). Before this, the weekday split rejected "2026-07-12" and the run
+        // stopped instead of waiting (FinCal #72, live 2026-07-11).
+        let now = at(2026, 7, 11, 21, 35);
+        let got = next_reset("2026-07-12 11:11:48", now).unwrap();
+        assert_eq!(
+            got.format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2026-07-12 11:11:48",
+        );
+    }
+
+    #[test]
+    fn next_reset_numeric_iso_with_t_and_minute_precision() {
+        let now = at(2026, 7, 11, 21, 35);
+        let got = next_reset("2026-07-12T09:00", now).unwrap();
+        assert_eq!(got, at(2026, 7, 12, 9, 0));
     }
 
     #[test]

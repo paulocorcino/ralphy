@@ -2,6 +2,23 @@
 //! assistant text, detecting error/limit events under the several observed
 //! envelope shapes, and the auth-error detector (ADR-0005 D2/D6/D9).
 
+use regex::Regex;
+
+/// A model-agnostic matcher for the *class* of usage-limit signals a provider
+/// message or log line can carry. opencode fronts many providers (Anthropic, Z.ai,
+/// Kimi, OpenAI-compatible, …) whose quota wording differs, so keying on any one
+/// vendor's exact phrase misses the next one — this matches the shared shape
+/// instead (D9). Anchored on limit-specific combos (`usage limit`, `rate limit`,
+/// `limit reached/exceeded`, `too many requests`, `quota exceeded/exhausted`), not
+/// a bare `"limit"`, so an ordinary error line (`limit not found`, a transient
+/// backend blip) is not misread as a quota cap. Compiled once per scan.
+fn usage_limit_regex() -> Regex {
+    Regex::new(
+        r"(?i)usage limit|rate[ _]?limit|limit (?:reached|exceeded)|too many requests|quota (?:exceeded|exhausted)",
+    )
+    .expect("valid usage-limit regex")
+}
+
 /// The actionable message shown when `is_opencode_auth_error` fires — tells the
 /// operator exactly what to do to recover (run `opencode auth login`).
 pub(crate) const OPENCODE_AUTH_ERROR_MSG: &str =
@@ -177,70 +194,57 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
             .unwrap_or("")
             .to_ascii_lowercase();
 
+        // A structural 429/`*UsageLimitError` is a limit outright; otherwise fall to
+        // the model-agnostic message matcher. This keeps Kimi's billing-cycle 403
+        // (statusCode 403, wording "usage limit for this billing cycle") a limit to
+        // wait out, while an ordinary 403 (no model access, "forbidden: …") stays an
+        // error — the matcher requires limit-specific wording, not a bare status.
         let is_limit = (name == "APIError" && status == 429)
             || name.ends_with("UsageLimitError")
-            || msg.contains("rate_limit_error")
-            || msg.contains("rate limit exceeded")
-            || msg.contains("too many requests")
-            || msg.contains("quota exceeded")
-            // Kimi's billing-cycle quota block surfaces through OpenCode as an
-            // `APIError` with `statusCode:403` (not 429) and this wording — a genuine
-            // usage limit to wait out, not a permission error. Keyed on the specific
-            // billing-cycle phrase so an ordinary 403 (no model access) still fails as
-            // an error rather than parking a synthetic wait (observed live).
-            || msg.contains("usage limit for this billing cycle");
+            || usage_limit_regex().is_match(&msg);
 
         is_limit.then(|| parse_opencode_reset_hint(detail))
     })
 }
 
-/// The usage-limit sentinels as they read in opencode's own logs (logfmt on
-/// stderr under `--print-logs`), NOT the `--format json` event stream. Some
-/// providers never surface a quota block as a `{type:"error"}` JSON event: Z.ai's
-/// `zai-coding-plan` (GLM) treats the `AI_APICallError: Usage limit reached` as a
-/// retryable stream error and loops on backoff, logging it only here (observed
-/// live 2026-07-11, FinCal #71, glm-5.2). Keyed on the specific "usage limit"
-/// wording so an ordinary transient stream error is not misread as a limit.
-const LOG_LIMIT_SENTINELS: &[&str] = &["usage limit reached", "usage limit for this billing cycle"];
-
-/// Scan opencode's raw combined log (stdout+stderr) for a usage-limit sentinel in
+/// Scan opencode's raw combined log (stdout+stderr) for a usage-limit signal in
 /// the logfmt lines `--print-logs` prints to stderr — the path a JSON-event scan
 /// ([`parse_opencode_limit`], which reads the `--format json` stream) structurally
-/// cannot see. Same contract as [`parse_opencode_limit`]: `Some(Some(hint))` when a
-/// limit is seen with a reset hint, `Some(None)` when seen without one, `None`
-/// otherwise (ADR-0005 D9).
+/// cannot see. Some providers never surface a quota block as a `{type:"error"}`
+/// JSON event: Z.ai's `zai-coding-plan` (GLM) treats `AI_APICallError: Usage limit
+/// reached` as a retryable stream error and loops on backoff, logging it only here
+/// (observed live 2026-07-11, FinCal #71, glm-5.2). Uses the same model-agnostic
+/// [`usage_limit_regex`] as the JSON path so a new provider's wording is caught
+/// without a per-model change. Same contract as [`parse_opencode_limit`]:
+/// `Some(Some(hint))` when a limit is seen with a reset hint, `Some(None)` when
+/// seen without one, `None` otherwise (ADR-0005 D9).
 pub(crate) fn parse_opencode_log_limit(log: &str) -> Option<Option<String>> {
-    for line in log.lines() {
-        let lower = line.to_ascii_lowercase();
-        if LOG_LIMIT_SENTINELS.iter().any(|s| lower.contains(s)) {
-            return Some(parse_reset_hint_from_text(line));
-        }
-    }
-    None
+    let re = usage_limit_regex();
+    log.lines()
+        .find(|line| re.is_match(line))
+        .map(parse_reset_hint_from_text)
 }
 
 /// Best-effort reset-time extraction from a raw log line (the logfmt path, where
 /// the field lives inside a quoted `error.error="…"` value rather than a JSON
-/// field). Recognises Z.ai's `… reset at <ts>` wording alongside the common
-/// `try again at/in` phrasings; the reset value can carry a space (e.g.
-/// `2026-07-11 22:14:08`), so it runs to the quote/newline/period, not the first
-/// space. Returns `None` when absent (a reset hint is not guaranteed).
+/// field). Anchored on a reset phrase (`reset[s]/reset at/reset in/try again
+/// at|in`) so the datetime that follows it — and not the logfmt line's own leading
+/// `timestamp=…` field, nor any other instant on the line — is what gets captured.
+/// The captured shape is model-agnostic: an absolute ISO date-time with or without
+/// a `T`/zone (`2026-07-11 22:14:08`, `…T…Z`, `…+02:00`) or a bare clock time
+/// (`22:14`, `6:13 PM`); the downstream clock ([`RunClock::wait_for_reset`])
+/// understands each. Returns `None` when no usable datetime follows a reset phrase
+/// — the caller then treats the limit as `Limit(None)` and retries on the
+/// synthetic-reset cadence rather than parking on an unusable hint.
 fn parse_reset_hint_from_text(line: &str) -> Option<String> {
-    let lower = line.to_ascii_lowercase();
-    for prefix in &["reset at ", "try again at ", "try again in "] {
-        if let Some(pos) = lower.find(prefix) {
-            let rest = &line[pos + prefix.len()..];
-            let hint: String = rest
-                .chars()
-                .take_while(|c| *c != '"' && *c != '\n' && *c != '.')
-                .collect();
-            let hint = hint.trim().to_string();
-            if !hint.is_empty() {
-                return Some(hint);
-            }
-        }
-    }
-    None
+    let re = Regex::new(
+        r"(?i)(?:reset(?:s)?(?:\s+(?:at|in))?|try\s+again\s+(?:at|in))\s*[:=]?\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:z|[+-]\d{2}:?\d{2})?|\d{1,2}:\d{2}(?:\s*[ap]m)?)",
+    )
+    .expect("valid reset-hint regex");
+    re.captures(line)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().trim().to_string())
+        .filter(|hint| !hint.is_empty())
 }
 
 #[cfg(test)]
@@ -444,6 +448,32 @@ mod tests {
             "your usage limit for this billing cycle. Your quota will be refreshed in ",
             "the next cycle.\"",
         );
+        assert_eq!(parse_opencode_log_limit(log), Some(None));
+    }
+
+    #[test]
+    fn log_limit_is_model_agnostic_and_extracts_iso_reset() {
+        // A provider whose wording differs from Z.ai/Kimi ("rate limit" + "try again
+        // at" + an ISO-Z reset): the model-agnostic class matcher catches it with no
+        // per-model phrase, and the reset that follows the phrase is captured — not
+        // the logfmt line's own leading `timestamp=` instant.
+        let log = concat!(
+            "timestamp=2026-08-01T09:00:00.000Z level=ERROR message=\"stream error\" ",
+            "error.error=\"Rate limit exceeded. Please try again at 2026-08-01T10:30:00Z\"",
+        );
+        assert_eq!(
+            parse_opencode_log_limit(log),
+            Some(Some("2026-08-01T10:30:00Z".into())),
+        );
+    }
+
+    #[test]
+    fn log_limit_seen_without_usable_datetime_is_some_none() {
+        // A usage limit whose only hint is relative ("in 30 minutes", no datetime):
+        // the limit is detected but there is no schedulable reset, so it maps to
+        // `Some(None)` — the caller then retries on the synthetic cadence rather than
+        // parking on an unparseable string.
+        let log = "level=ERROR error.error=\"Usage limit reached. Try again in 30 minutes.\"";
         assert_eq!(parse_opencode_log_limit(log), Some(None));
     }
 
