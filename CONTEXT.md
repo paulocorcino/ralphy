@@ -354,6 +354,16 @@ drives; no run is involved.
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
 the session), remote session (too generic).
 
+**Canvas / Agents tab**:
+The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
+Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
+strip** runs across the top where **tab 0 is the fixed Agents tab** — it never
+closes and hosts the floating agent (**workbench session**) consoles — and every
+opened file rides in after it as a **closable** tab. Decided in
+[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md).
+_Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
+"main tab" for the Agents tab (it is fixed, not merely first).
+
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the
 **fleet** converges: it consumes run telemetry (the CloudEvents sink,

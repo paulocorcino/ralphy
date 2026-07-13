@@ -40,15 +40,11 @@ use protocol::{Command, Frame, Presence};
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
 pub const DEFAULT_PORT: u16 = 7257;
 
-/// The embedded UI, baked in at build time like `assets/prompts` — the daemon
-/// reads no files from disk at runtime (ADR-0032 §4).
+/// The embedded workbench UI, baked in at build time like `assets/prompts` — the
+/// daemon reads no files from disk at runtime (ADR-0032 §4). Promoted to the
+/// daemon's `/` in #200 (PRD #185); the SPA self-gates its login (see
+/// [`require_auth`]), so there is no separate server-rendered login page.
 static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/ui");
-
-/// The workbench shell UI (PRD #185, issue #186): a SECOND embedded tree served
-/// at `/workbench/`, baked in at build time like [`UI`]. Kept as the single
-/// source of truth on the promotion path (#185 slice 8 prunes/promotes this same
-/// tree) rather than copied into `assets/`.
-static WORKBENCH: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../mocks/workbench-shell");
 
 /// What the composition root decides; everything else is the daemon's.
 pub struct DaemonConfig {
@@ -326,7 +322,6 @@ pub fn router(
                 }
             }),
         )
-        .route("/login", get(login_page))
         .route(
             "/api/login",
             post({
@@ -366,14 +361,6 @@ pub fn router(
             "/api/security/require-login",
             post(security_require_login_route),
         )
-        .route(
-            "/workbench",
-            get(|| async {
-                (StatusCode::FOUND, [(header::LOCATION, "/workbench/")]).into_response()
-            }),
-        )
-        .route("/workbench/", get(workbench_asset))
-        .route("/workbench/{*path}", get(workbench_asset))
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
@@ -381,17 +368,19 @@ pub fn router(
         .layer(axum::middleware::from_fn_with_state(auth, require_auth))
 }
 
-/// Paths reachable WITHOUT a session cookie under a `Session` policy — the login
-/// screen and its form endpoint. Everything else falls through to the
-/// browser-redirect / `401` logic below.
-const LOGIN_ALLOWLIST: &[&str] = &["/login", "/api/login", "/api/session", "/api/logout"];
+/// API endpoints reachable WITHOUT a session cookie under a `Session` policy —
+/// the SPA's own login gate posts to these before it holds a cookie. Every other
+/// `/api/*` and `/ws/*` endpoint stays gated; static UI bytes are served ungated
+/// (see [`require_auth`]).
+const LOGIN_ALLOWLIST: &[&str] = &["/api/login", "/api/session", "/api/logout"];
 
 /// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
 /// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a
 /// correct `Bearer <token>`). Under a `Session` policy a request with no valid
 /// bearer is then checked for a browser session cookie; failing that, a top-level
-/// `GET` navigation is redirected to `/login` and anything else is `401`.
-/// `Localhost`/`Bearer` keep the plain `401` fall-through — fail closed.
+/// `GET` navigation serves the static SPA (which renders its own login gate) and
+/// anything else is `401`. `Localhost`/`Bearer` keep the plain `401`
+/// fall-through — fail closed.
 async fn require_auth(
     State(policy): State<auth::AuthPolicy>,
     req: axum::extract::Request,
@@ -417,19 +406,16 @@ async fn require_auth(
         if LOGIN_ALLOWLIST.contains(&path) {
             return next.run(req).await;
         }
-        // The workbench shell is non-secret static bytes: served without a cookie
-        // so the SPA can render its own opaque login gate. Every DATA endpoint
-        // (`/api/*` except the allowlist, `/ws/*`) stays gated by the logic below.
-        if path == "/workbench" || path.starts_with("/workbench/") {
-            return next.run(req).await;
-        }
-        // A top-level browser navigation (GET, not an /api or /ws call) gets a
-        // redirect to the login screen; API/WS/other verbs fail closed with 401.
+        // The workbench shell is non-secret static bytes: a GET for any non-`/api`,
+        // non-`/ws` path is served without a cookie so the SPA can render its own
+        // opaque login gate. Every DATA endpoint (`/api/*` except the allowlist,
+        // `/ws/*`) stays gated — the SPA can show nothing until `/api/login`
+        // succeeds. API/WS/other verbs fail closed with 401.
         if req.method() == axum::http::Method::GET
             && !path.starts_with("/api")
             && !path.starts_with("/ws")
         {
-            return (StatusCode::FOUND, [(header::LOCATION, "/login")]).into_response();
+            return next.run(req).await;
         }
         return (StatusCode::UNAUTHORIZED, "login required").into_response();
     }
@@ -1423,19 +1409,6 @@ struct LoginForm {
     password: Option<String>,
 }
 
-/// `GET /login`: the embedded login screen (in the login allowlist, so it is
-/// reachable without a cookie under a `Session` policy).
-async fn login_page() -> Response {
-    match UI.get_file("login.html") {
-        Some(file) => (
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-            file.contents(),
-        )
-            .into_response(),
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
-    }
-}
-
 /// `POST /api/login`: validate the TOTP code (and password, if enrolled) against
 /// the `Session` policy. On success `200` + a `Set-Cookie: ralphy_session=…`
 /// header; on a bad credential `401`. Login is meaningless without a network
@@ -1459,26 +1432,6 @@ async fn ui_asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
     match UI.get_file(path) {
-        Some(file) => (
-            [(header::CONTENT_TYPE, content_type(path))],
-            file.contents(),
-        )
-            .into_response(),
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
-    }
-}
-
-/// Serve a file from the embedded [`WORKBENCH`] tree at `/workbench/`; the base
-/// (`/workbench/`) means `index.html`. Mirrors [`ui_asset`]; the trailing-slash
-/// base is what resolves the mock's relative `vendor/…`/`app.js` refs.
-async fn workbench_asset(uri: Uri) -> Response {
-    let path = uri
-        .path()
-        .strip_prefix("/workbench/")
-        .unwrap_or("")
-        .trim_start_matches('/');
-    let path = if path.is_empty() { "index.html" } else { path };
-    match WORKBENCH.get_file(path) {
         Some(file) => (
             [(header::CONTENT_TYPE, content_type(path))],
             file.contents(),
@@ -2561,11 +2514,12 @@ mod tests {
         )
     }
 
-    /// The full browser-login round trip under a `Session` policy (issue #179):
-    /// no-cookie `401`, `GET /login` `200`, a valid-TOTP `POST /api/login` `200` +
-    /// `Set-Cookie`, the cookie authorizes a follow-up, `GET /` redirects to
-    /// `/login`, and a machine `Bearer` still authorizes. Plumbing only — the code
-    /// itself is pinned by the `totp` RFC-vector unit test.
+    /// The full browser-login round trip under a `Session` policy (issue #179,
+    /// promoted in #200): no-cookie `401` on data, the SPA shell is served ungated
+    /// at `/` (it renders its own login gate), a valid-TOTP `POST /api/login` `200`
+    /// + `Set-Cookie`, the cookie authorizes a follow-up, and a machine `Bearer`
+    /// still authorizes. Plumbing only — the code itself is pinned by the `totp`
+    /// RFC-vector unit test.
     #[tokio::test]
     async fn session_policy_login_flow() {
         // 1. No cookie / no bearer → the API is 401.
@@ -2580,17 +2534,12 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "no cookie → 401");
 
-        // 2. The login screen is reachable without a cookie.
+        // 2. The shell (which hosts its own login gate) is served without a cookie.
         let resp = session_router("tok")
-            .oneshot(
-                Request::builder()
-                    .uri("/login")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "GET /login → 200");
+        assert_eq!(resp.status(), StatusCode::OK, "GET / → 200 (ungated shell)");
 
         // 3. A valid current TOTP mints a session cookie.
         let now = now_unix();
@@ -2639,21 +2588,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK, "cookie authorizes → 200");
 
-        // 5. A top-level GET with no cookie redirects to the login screen.
-        let resp = session_router("tok")
-            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::FOUND, "GET / → 302");
-        assert_eq!(
-            resp.headers()
-                .get(header::LOCATION)
-                .and_then(|v| v.to_str().ok()),
-            Some("/login"),
-            "redirect target is /login"
-        );
-
-        // 6. The machine path is unchanged: a correct Bearer still authorizes.
+        // 5. The machine path is unchanged: a correct Bearer still authorizes.
         let resp = session_router("tok")
             .oneshot(
                 Request::builder()
@@ -2684,41 +2619,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workbench_route_serves_shell() {
-        let resp = get_local("/workbench/").await;
-        assert_eq!(resp.status(), StatusCode::OK, "GET /workbench/ → 200");
+    async fn root_serves_workbench_shell() {
+        let resp = get_local("/").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");
         let body = body_string(resp).await;
         assert!(
             body.contains(r#"x-data="shell()""#),
-            "the workbench shell HTML must render; got: {}",
+            "the workbench shell HTML must render at the root; got: {}",
             &body[..body.len().min(200)]
         );
-        let resp = get_local("/workbench/app.js").await;
-        assert_eq!(resp.status(), StatusCode::OK, "GET /workbench/app.js → 200");
+        let resp = get_local("/app.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
     }
 
     #[tokio::test]
-    async fn workbench_serves_vendored_xterm() {
-        let resp = get_local("/workbench/vendor/xterm.js").await;
+    async fn root_serves_vendored_xterm() {
+        let resp = get_local("/vendor/xterm.js").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.js → 200");
         assert_eq!(
             resp.headers()[header::CONTENT_TYPE],
             "text/javascript; charset=utf-8"
         );
-        let resp = get_local("/workbench/vendor/xterm.css").await;
+        let resp = get_local("/vendor/xterm.css").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.css → 200");
         assert_eq!(
             resp.headers()[header::CONTENT_TYPE],
             "text/css; charset=utf-8"
         );
 
-        let shell = body_string(get_local("/workbench/").await).await;
+        let shell = body_string(get_local("/").await).await;
         assert!(
             shell.contains("vendor/xterm.js"),
             "the shell HTML must load the vendored xterm"
         );
 
-        let console = body_string(get_local("/workbench/wb-console.js").await).await;
+        let console = body_string(get_local("/wb-console.js").await).await;
         assert!(
             console.contains("new Terminal("),
             "wb-console.js must construct a real xterm terminal"
@@ -2730,8 +2665,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workbench_serves_wb_daemon() {
-        let resp = get_local("/workbench/wb-daemon.js").await;
+    async fn root_serves_wb_daemon() {
+        let resp = get_local("/wb-daemon.js").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET wb-daemon.js → 200");
         let daemon = body_string(resp).await;
         assert!(
@@ -2743,7 +2678,7 @@ mod tests {
             "wb-daemon.js must open the command WebSocket"
         );
 
-        let shell = body_string(get_local("/workbench/").await).await;
+        let shell = body_string(get_local("/").await).await;
         assert!(
             shell.contains("wb-daemon.js"),
             "the shell HTML must load the daemon adapter"
@@ -2751,33 +2686,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_ui_untouched() {
-        let resp = get_local("/").await;
-        assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");
-        let body = body_string(resp).await;
-        assert!(body.contains(r#"id="sessions""#), "the old UI still serves");
-        assert!(
-            !body.contains("shell()"),
-            "the root must NOT be the workbench shell"
-        );
-    }
-
-    #[tokio::test]
-    async fn session_serves_workbench_but_gates_data() {
+    async fn session_serves_shell_but_gates_data() {
         // The shell bytes are served without a cookie…
         let resp = session_router("tok")
-            .oneshot(
-                Request::builder()
-                    .uri("/workbench/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(
             resp.status(),
             StatusCode::OK,
-            "/workbench/ served pre-login (NOT redirected)"
+            "/ served pre-login (NOT redirected)"
         );
 
         // …but every DATA endpoint stays 401 under a no-cookie Session.

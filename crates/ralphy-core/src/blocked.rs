@@ -509,7 +509,7 @@ mod tests {
         }
 
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../mocks/workbench-shell/fixtures/graph-parity.json");
+            .join("tests/fixtures/graph-parity.json");
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
         let fixture: Fixture = serde_json::from_str(&raw).expect("valid parity fixture JSON");
