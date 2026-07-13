@@ -52,7 +52,11 @@ async fn serve_repo() -> (String, String, PathBuf) {
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    (format!("ws://127.0.0.1:{port}/ws/tree"), slug.to_string(), root)
+    (
+        format!("ws://127.0.0.1:{port}/ws/tree"),
+        slug.to_string(),
+        root,
+    )
 }
 
 /// Send a `watch`/`unwatch` command for `(repo, path)` over the open socket.
@@ -62,7 +66,9 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
         verb: verb.to_string(),
         payload: serde_json::json!({ "repo": repo, "path": path }),
     });
-    ws.send(Message::Binary(protocol::encode(&frame))).await.unwrap();
+    ws.send(Message::Binary(protocol::encode(&frame)))
+        .await
+        .unwrap();
 }
 
 /// Wait up to 10s for a `tree.dirty` frame and return its `(repo, path)` payload.
@@ -100,7 +106,11 @@ async fn dirty_nudge_reaches_a_watcher() {
     std::fs::write(root.join("f.txt"), b"hello").unwrap();
 
     let got = recv_dirty(&mut ws).await;
-    assert_eq!(got, Some((slug.clone(), String::new())), "a watched-root create nudges");
+    assert_eq!(
+        got,
+        Some((slug.clone(), String::new())),
+        "a watched-root create nudges"
+    );
 }
 
 #[tokio::test]

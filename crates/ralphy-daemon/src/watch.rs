@@ -206,10 +206,7 @@ impl WatcherManager {
         };
         let total: usize = repos.values().map(|r| r.watches.len()).sum();
         if total > self.max_watches {
-            repos
-                .get_mut(repo)
-                .expect("present")
-                .degrade_to_poll()?;
+            repos.get_mut(repo).expect("present").degrade_to_poll()?;
         }
         Ok(rx)
     }
@@ -417,7 +414,7 @@ mod tests {
         while recv_in(&mut rx, window()).await.is_some() {
             count += 1;
         }
-        assert!(count >= 1 && count <= 3, "coalesced count = {count}");
+        assert!((1..=3).contains(&count), "coalesced count = {count}");
     }
 
     #[tokio::test]
@@ -451,7 +448,11 @@ mod tests {
         let mgr = WatcherManager::new(MAX_WATCHES);
         let _rx1 = mgr.watch("owner/repo", dir.path(), "").unwrap();
         let _rx2 = mgr.watch("owner/repo", dir.path(), "").unwrap();
-        assert_eq!(mgr.watch_refcount("owner/repo", ""), 2, "two share one watch");
+        assert_eq!(
+            mgr.watch_refcount("owner/repo", ""),
+            2,
+            "two share one watch"
+        );
 
         mgr.unwatch("owner/repo", "");
         assert_eq!(mgr.watch_refcount("owner/repo", ""), 1);
