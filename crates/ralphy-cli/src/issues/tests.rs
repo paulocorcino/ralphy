@@ -238,26 +238,69 @@ fn show_view_json_includes_comments() {
 }
 
 #[test]
-fn render_board_json_folds_assignees_state_reason_and_label_colors() {
-    let queue = vec![issue(7, &["ready-for-agent"], "")];
-    let tr = FakeTracker::default();
-    let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
-    let meta = vec![ralphy_core::github::IssueMeta {
-        number: 7,
-        assignees: vec!["alice".to_string()],
-        state_reason: None,
-    }];
-    let repo_labels = vec![
-        ("queue".to_string(), "ededed".to_string()),
-        ("ready-for-agent".to_string(), "0e8a16".to_string()),
-    ];
-    let json = render_board_json(&view, &meta, &repo_labels).unwrap();
-    let val: Value = serde_json::from_str(&json).unwrap();
+fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
+    use ralphy_core::blocked::sort_queue_in_graph;
+    use ralphy_core::github::BoardIssue;
 
-    assert_eq!(val["issues"][0]["number"], 7);
-    assert_eq!(val["issues"][0]["assignees"], serde_json::json!(["alice"]));
-    assert!(val["issues"][0]["state_reason"].is_null());
-    assert_eq!(val["issues"][0]["queue_status"], "eligible");
+    // Board row factory: a whole-tracker BoardIssue with the given state,
+    // assignees, blocked_by, and (closed) reason.
+    let bi = |number: u64, state: &str, assignees: &[&str], blocked_by: &[u64], reason: Option<&str>| BoardIssue {
+        number,
+        title: format!("issue {number}"),
+        state: state.to_string(),
+        reason: reason.map(str::to_string),
+        labels: vec!["ready-for-agent".to_string()],
+        assignees: assignees.iter().map(|s| s.to_string()).collect(),
+        blocked_by: blocked_by.to_vec(),
+        created: "2026-07-01T00:00:00Z".to_string(),
+        updated: "2026-07-02T00:00:00Z".to_string(),
+    };
+
+    // A ready chain (#7 blocked by #8) → the graph order the fold must preserve.
+    let ready_q = vec![issue(7, &[], "## Blocked by\n- #8\n"), issue(8, &[], "")];
+    let ready_sorted = sort_queue_in_graph(ready_q.clone(), &ready_q);
+    let ready_order: Vec<u64> = ready_sorted.iter().map(|i| i.number).collect();
+    assert_eq!(ready_order, vec![8, 7], "#8 (root) precedes #7");
+
+    // Whole open tracker: the two ready issues + a backlog issue + one assigned to
+    // someone-else + one assigned to `octo`. One recent-closed row.
+    let open = vec![
+        bi(7, "open", &[], &[8], None),
+        bi(8, "open", &[], &[], None),
+        bi(30, "open", &[], &[], None),
+        bi(31, "open", &["someone-else"], &[], None),
+        bi(32, "open", &["octo"], &[], None),
+    ];
+    let closed = vec![bi(99, "closed", &[], &[], Some("not_planned"))];
+    let repo_labels = vec![("ready-for-agent".to_string(), "0e8a16".to_string())];
+
+    let nums = |val: &Value| -> Vec<u64> {
+        val["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["number"].as_u64().unwrap())
+            .collect()
+    };
+
+    // (a)+(b) default (login=None): Ready subset first in graph order, then the
+    // remaining UNASSIGNED open (#30), then closed (#99). The someone-else (#31)
+    // and octo (#32) rows are dropped — only empty-assignees rows survive.
+    let json = render_board_json(&ready_order, &open, &closed, None, &repo_labels).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(nums(&val), vec![8, 7, 30, 99], "default hides assigned: {val}");
+
+    // (d) the closed row carries state + lowercased reason.
+    let closed_row = val["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["number"] == 99)
+        .unwrap();
+    assert_eq!(closed_row["state"], "closed");
+    assert_eq!(closed_row["reason"], "not_planned");
+
+    // (e) labels[] carries the repo {name,color} vocabulary.
     assert!(
         val["labels"]
             .as_array()
@@ -265,24 +308,15 @@ fn render_board_json_folds_assignees_state_reason_and_label_colors() {
             .contains(&serde_json::json!({"name":"ready-for-agent","color":"0e8a16"})),
         "labels must carry the repo vocabulary with colors: {val}"
     );
-}
 
-#[test]
-fn render_board_json_degrades_when_an_issue_has_no_meta_entry() {
-    // #7 carries no matching `IssueMeta` row (e.g. the batched fetch raced or
-    // the issue fell outside the scoped labels) — must degrade to empty
-    // assignees + null state_reason, never panic.
-    let queue = vec![issue(7, &["queue"], "")];
-    let tr = FakeTracker::default();
-    let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
-    let meta: Vec<ralphy_core::github::IssueMeta> = vec![];
-    let repo_labels: Vec<(String, String)> = vec![];
-
-    let json = render_board_json(&view, &meta, &repo_labels).unwrap();
-    let val: Value = serde_json::from_str(&json).unwrap();
-
-    assert_eq!(val["issues"][0]["assignees"], serde_json::json!([]));
-    assert!(val["issues"][0]["state_reason"].is_null());
+    // (c) a configured login keeps unassigned OR that-login (#32 survives), while
+    // an issue assigned only to someone-else (#31) stays dropped.
+    let json2 = render_board_json(&ready_order, &open, &closed, Some("octo"), &repo_labels).unwrap();
+    let val2: Value = serde_json::from_str(&json2).unwrap();
+    let n2 = nums(&val2);
+    assert!(n2.contains(&32), "octo-assigned survives under login: {val2}");
+    assert!(!n2.contains(&31), "someone-else stays dropped: {val2}");
+    assert_eq!(n2, vec![8, 7, 30, 32, 99]);
 }
 
 #[test]

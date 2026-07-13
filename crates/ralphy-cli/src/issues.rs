@@ -142,12 +142,25 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         if args.format != Format::Json {
             anyhow::bail!("`--board` requires `--format json`");
         }
-        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
+        // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
+        // union applies later in the fold, so unassigned issues are present to
+        // union over) and graph-ordered by the same resolver the runner uses; the
+        // open+closed reads feed the Backlog/Closed columns.
+        let queue = build_list_queue(&repo_root, None)?;
         let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        let labels = github::resolve_queue_labels(&[], &repo_root);
-        let meta = github::list_issue_meta(&labels, assignee.as_deref(), &repo_root)?;
+        let ready_order: Vec<u64> = view.issues.iter().map(|iv| iv.number).collect();
+        let open = github::list_all_open_meta(&repo_root)?;
+        let closed = github::list_closed_board(&repo_root)?;
         let repo_labels = github::list_repo_labels(&repo_root)?;
-        println!("{}", render_board_json(&view, &meta, &repo_labels)?);
+        // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
+        let login = match assignee.as_deref() {
+            Some(a) => Some(github::resolve_login(a, &repo_root)?),
+            None => None,
+        };
+        println!(
+            "{}",
+            render_board_json(&ready_order, &open, &closed, login.as_deref(), &repo_labels)?
+        );
         return Ok(());
     }
 
@@ -389,35 +402,43 @@ fn render_show_json(view: &ShowView, fields: Option<&[String]>) -> Result<String
     Ok(serde_json::to_string_pretty(&select_fields(full, fields))?)
 }
 
-/// Render the Kanban board fold: the judged queue's `IssueView`s enriched with
-/// per-issue `assignees`/`state_reason` (from a batched [`ralphy_core::github::IssueMeta`]
-/// lookup, not a per-issue `gh` call) plus the repo's `labels[]` name→color
-/// vocabulary — the shape ADR-0036 names for the daemon Query verb.
+/// Render the whole-tracker Kanban board fold (ADR-0036 slice 6): the Ready
+/// subset (queue-labeled open, in `ready_order` — the core's `sort_queue_in_graph`
+/// order) FIRST, then the remaining open issues, then the recent-closed batch.
+/// Every row is filtered by the assignee union ([`blocked::assignee_union_keep`]),
+/// so with no configured login the default hides assigned issues. Each row carries
+/// `{number,title,state,reason,labels,assignees,blocked_by,created,updated}`;
+/// `labels[]` is the repo's `{name,color}` vocabulary for chip rendering.
 fn render_board_json(
-    view: &QueueView,
-    meta: &[ralphy_core::github::IssueMeta],
+    ready_order: &[u64],
+    open: &[github::BoardIssue],
+    closed: &[github::BoardIssue],
+    login: Option<&str>,
     repo_labels: &[(String, String)],
 ) -> Result<String> {
-    let rows: Vec<Value> = view
-        .issues
-        .iter()
-        .map(|iv| -> Result<Value> {
-            let mut obj = serde_json::to_value(iv)?
-                .as_object()
-                .cloned()
-                .unwrap_or_default();
-            let m = meta.iter().find(|m| m.number == iv.number);
-            obj.insert(
-                "assignees".to_string(),
-                serde_json::json!(m.map(|m| m.assignees.clone()).unwrap_or_default()),
-            );
-            obj.insert(
-                "state_reason".to_string(),
-                serde_json::json!(m.and_then(|m| m.state_reason.clone())),
-            );
-            Ok(Value::Object(obj))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let ready_set: std::collections::BTreeSet<u64> = ready_order.iter().copied().collect();
+    let keep = |b: &github::BoardIssue| blocked::assignee_union_keep(&b.assignees, login);
+    let mut rows: Vec<Value> = Vec::new();
+    // Ready-labeled open issues first, preserving the core's graph order — this is
+    // what makes board-order == core-queue-order true by construction.
+    for n in ready_order {
+        if let Some(b) = open.iter().find(|b| b.number == *n) {
+            if keep(b) {
+                rows.push(serde_json::to_value(b)?);
+            }
+        }
+    }
+    // Remaining open issues, then the closed batch — natural read order.
+    for b in open {
+        if !ready_set.contains(&b.number) && keep(b) {
+            rows.push(serde_json::to_value(b)?);
+        }
+    }
+    for b in closed {
+        if keep(b) {
+            rows.push(serde_json::to_value(b)?);
+        }
+    }
     let labels: Vec<Value> = repo_labels
         .iter()
         .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
