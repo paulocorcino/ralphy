@@ -89,3 +89,33 @@ until the platform proves the need.
   additive, per the evolution rules in [docs/events.md](../events.md).
 - The platform never needs a GitHub token; its entire ingest surface is the
   ADR-0019 event stream.
+
+## Amendment (2026-07-13): comments and the Kanban board fold (#188)
+
+Two gaps ADR-0036 §Consequences named against this surface:
+
+- **`ralphy issues show <n> --format json` now carries `comments[]`** — the
+  full raw comment thread, in order, alongside the existing first-class
+  `consolidated_spec`. No new `gh` call: the comments were already fetched for
+  `consolidated_spec` extraction, just not surfaced on the wire.
+- **`ralphy issues --board --format json`** emits a Kanban-shaped fold instead
+  of the flat `issues[]` array:
+  `{issues[] (each IssueView + assignees[], state_reason), labels[]
+  ({name,color} repo label vocabulary)}`. `assignees`/`state_reason` come from
+  a new batched core fn, `list_issue_meta` — one `gh issue list
+  --json number,assignees,stateReason` spawn per queue label (never per
+  issue), unioned/deduped by number, mirroring `list_queue`'s spawn shape —
+  plus `list_repo_labels` (one `gh label list` call) for the color vocabulary.
+  `--board` is list-only and JSON-only (`show`/`--push`/`--format text` bail
+  with a clear message) and does not widen the default `IssueView[]` array,
+  which stays the stable, already-consumed shape.
+- Deliberately NOT added to the domain `Issue` or the shared `IssueView`: both
+  feed `resolve_queue_view` → the ADR-0020 `queue.built`/`queue.snapshot`
+  CloudEvent payload (`docs/events.md`), and growing that struct would
+  silently mutate the event contract. `assignees`/`state_reason` are folded in
+  at the CLI's JSON-rendering layer only.
+- No live consumer yet: the daemon Query verb that reads `--board` output is
+  later work (ADR-0036). The shape is pinned by CLI tests
+  (`ralphy-cli/src/issues/tests.rs`:
+  `render_board_json_folds_assignees_state_reason_and_label_colors`,
+  `show_view_json_includes_comments`).
