@@ -182,8 +182,12 @@ function shell() {
       try {
         const reply = await window.WBDaemon.observe("branch.list", { repo: slug });
         if (!reply || reply.status !== "ok" || this.branchModal.slug !== slug) return;
-        if (Array.isArray(reply.branches)) this.branchModal.branches = reply.branches;
-        if (reply.current) this.branchModal.current = reply.current;
+        // The daemon nests the CLI's `{current, branches:[]}` JSON under the
+        // `branches` field (lib.rs Query reply), same as `reply.board.*` /
+        // `reply.issue.*` — read one level deeper, not the top level.
+        const data = reply.branches || {};
+        if (Array.isArray(data.branches)) this.branchModal.branches = data.branches;
+        if (data.current) this.branchModal.current = data.current;
       } catch {
         // No daemon reachable (static shell) or a transport error — keep the seed.
       }

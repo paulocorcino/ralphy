@@ -382,6 +382,7 @@ pub fn label_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError>
     let label = payload
         .get("label")
         .and_then(|v| v.as_str())
+        .map(str::trim)
         .filter(|l| !l.is_empty())
         .ok_or(ArgvError::BadParam("label"))?;
     let op = match payload.get("op").and_then(|v| v.as_str()) {

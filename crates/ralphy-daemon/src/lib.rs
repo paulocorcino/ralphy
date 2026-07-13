@@ -978,7 +978,7 @@ async fn command_ws(
         let payload = match argv_result {
             Err(e) => {
                 tracing::warn!(error = %e, "refused a mutation with invalid params");
-                serde_json::json!({ "status": "error", "message": "invalid config options" })
+                serde_json::json!({ "status": "error", "message": "invalid mutation options" })
             }
             Ok(argv) => {
                 match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
@@ -990,7 +990,7 @@ async fn command_ws(
                         serde_json::json!({ "status": "error", "message": msg })
                     }
                     None => {
-                        serde_json::json!({ "status": "error", "message": "config write failed" })
+                        serde_json::json!({ "status": "error", "message": "mutation write failed" })
                     }
                 }
             }
