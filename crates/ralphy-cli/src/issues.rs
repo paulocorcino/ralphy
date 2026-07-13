@@ -61,8 +61,9 @@ pub struct IssuesArgs {
 
     /// Emit the Kanban board fold instead of the flat queue array: `{issues[]
     /// (per-issue + assignees[], state_reason), labels[] ({name,color} repo
-    /// vocabulary)}`. List + `--format json` only.
-    #[arg(long)]
+    /// vocabulary)}`. List + `--format json` only. Mutually exclusive with
+    /// `--push` (both are queue-level, but only one output mode applies).
+    #[arg(long, conflicts_with = "push")]
     pub board: bool,
 }
 

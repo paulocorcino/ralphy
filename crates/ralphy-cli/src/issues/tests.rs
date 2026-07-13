@@ -268,6 +268,24 @@ fn render_board_json_folds_assignees_state_reason_and_label_colors() {
 }
 
 #[test]
+fn render_board_json_degrades_when_an_issue_has_no_meta_entry() {
+    // #7 carries no matching `IssueMeta` row (e.g. the batched fetch raced or
+    // the issue fell outside the scoped labels) — must degrade to empty
+    // assignees + null state_reason, never panic.
+    let queue = vec![issue(7, &["queue"], "")];
+    let tr = FakeTracker::default();
+    let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
+    let meta: Vec<ralphy_core::github::IssueMeta> = vec![];
+    let repo_labels: Vec<(String, String)> = vec![];
+
+    let json = render_board_json(&view, &meta, &repo_labels).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(val["issues"][0]["assignees"], serde_json::json!([]));
+    assert!(val["issues"][0]["state_reason"].is_null());
+}
+
+#[test]
 fn push_without_events_url_errors_naming_events_url() {
     // Criterion: `--push` with no `events.url` configured fails with a clear
     // message naming `events.url`. Point the events store at an empty temp dir
