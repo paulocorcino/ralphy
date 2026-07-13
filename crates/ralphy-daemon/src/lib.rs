@@ -863,6 +863,59 @@ async fn command_ws(
         return;
     }
 
+    // Write verbs (ADR-0036 Write amendment) perform a confined byte-op IN-DAEMON
+    // and answer on THIS `id` — they NEVER spawn and NEVER consult the run lock.
+    // Confinement (`fswrite`/`confine`) is the security boundary; a write-escape
+    // refusal surfaces verbatim as `refused` (unlike reads, which mask to a miss —
+    // a write-escape confirms nothing).
+    if verb.effect_class() == dispatch::EffectClass::Write {
+        let root = Path::new(&entry.path);
+        let rel = cmd
+            .payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let result = match verb {
+            dispatch::Verb::FileWrite => {
+                let content = cmd
+                    .payload
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                fswrite::write(root, rel, content)
+            }
+            dispatch::Verb::FileCreate => {
+                let dir = cmd
+                    .payload
+                    .get("dir")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                fswrite::create(root, rel, dir)
+            }
+            dispatch::Verb::FileRename => {
+                let to = cmd.payload.get("to").and_then(|v| v.as_str()).unwrap_or("");
+                fswrite::rename(root, rel, to)
+            }
+            dispatch::Verb::FileDelete => fswrite::delete(root, rel),
+            // Unreachable: only the four file.* verbs are Write verbs.
+            _ => Err(fswrite::WriteError::Io),
+        };
+        let payload = match result {
+            Ok(()) => serde_json::json!({ "status": "ok" }),
+            Err(e) => {
+                let reason = match e {
+                    fswrite::WriteError::Confined => "refused",
+                    fswrite::WriteError::Conflict => "exists",
+                    fswrite::WriteError::NotFound => "not found",
+                    fswrite::WriteError::Io => "io error",
+                };
+                serde_json::json!({ "status": "error", "reason": reason })
+            }
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
     // Query verbs (ADR-0036 §2) spawn-and-COLLECT a read-only CLI invocation
     // (`config get --json`) and answer ONCE on THIS id — no live stream. The
     // parsed config rides `config`; a non-JSON stdout falls back to a raw string.

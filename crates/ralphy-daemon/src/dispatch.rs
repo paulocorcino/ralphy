@@ -56,6 +56,10 @@ pub enum EffectClass {
     Query,
     Spawn,
     Mutate,
+    /// A byte-op on the confined workspace (ADR-0036 Write amendment): save,
+    /// create, rename, delete. Runs in-daemon (`crate::fswrite`), never spawns,
+    /// and does NOT consult the run lock.
+    Write,
 }
 
 /// The branch mode a run modal offers (ADR-0036 §1): a closed daemon-local enum
@@ -138,6 +142,14 @@ pub enum Verb {
     ConfigSet,
     /// Clear a config key (Mutate: `config unset`, run-lock-aware).
     ConfigUnset,
+    /// Write bytes to a repo file (Write: in-daemon, never spawns).
+    FileWrite,
+    /// Create a repo file or directory (Write: in-daemon, never spawns).
+    FileCreate,
+    /// Rename a repo path (Write: in-daemon, never spawns).
+    FileRename,
+    /// Delete a repo path (Write: in-daemon, never spawns).
+    FileDelete,
 }
 
 impl Verb {
@@ -154,6 +166,10 @@ impl Verb {
             "config.get" => Some(Verb::ConfigGet),
             "config.set" => Some(Verb::ConfigSet),
             "config.unset" => Some(Verb::ConfigUnset),
+            "file.write" => Some(Verb::FileWrite),
+            "file.create" => Some(Verb::FileCreate),
+            "file.rename" => Some(Verb::FileRename),
+            "file.delete" => Some(Verb::FileDelete),
             _ => None,
         }
     }
@@ -168,6 +184,10 @@ impl Verb {
         Verb::ConfigGet,
         Verb::ConfigSet,
         Verb::ConfigUnset,
+        Verb::FileWrite,
+        Verb::FileCreate,
+        Verb::FileRename,
+        Verb::FileDelete,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -179,6 +199,9 @@ impl Verb {
             Verb::TreeList | Verb::FileRead => EffectClass::Observe,
             Verb::ConfigGet => EffectClass::Query,
             Verb::ConfigSet | Verb::ConfigUnset => EffectClass::Mutate,
+            Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
+                EffectClass::Write
+            }
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
         }
     }
@@ -231,9 +254,15 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         // Non-Spawn verbs never reach the spawn path (the `command_ws`
         // Observe/Query/Mutate branches answer and return first); refuse an argv
         // defensively.
-        Verb::TreeList | Verb::FileRead | Verb::ConfigGet | Verb::ConfigSet | Verb::ConfigUnset => {
-            Err(ArgvError::BadParam("verb"))
-        }
+        Verb::TreeList
+        | Verb::FileRead
+        | Verb::ConfigGet
+        | Verb::ConfigSet
+        | Verb::ConfigUnset
+        | Verb::FileWrite
+        | Verb::FileCreate
+        | Verb::FileRename
+        | Verb::FileDelete => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -540,7 +569,11 @@ mod tests {
         assert_eq!(Verb::ConfigGet.effect_class(), EffectClass::Query);
         assert_eq!(Verb::ConfigSet.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ConfigUnset.effect_class(), EffectClass::Mutate);
-        assert_eq!(Verb::ALL.len(), 8, "the registry holds exactly eight verbs");
+        assert_eq!(Verb::FileWrite.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::FileCreate.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::FileRename.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::FileDelete.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::ALL.len(), 12, "the registry holds exactly twelve verbs");
     }
 
     #[test]
@@ -548,6 +581,10 @@ mod tests {
         assert_eq!(Verb::from_query("config.get"), Some(Verb::ConfigGet));
         assert_eq!(Verb::from_query("config.set"), Some(Verb::ConfigSet));
         assert_eq!(Verb::from_query("config.unset"), Some(Verb::ConfigUnset));
+        assert_eq!(Verb::from_query("file.write"), Some(Verb::FileWrite));
+        assert_eq!(Verb::from_query("file.create"), Some(Verb::FileCreate));
+        assert_eq!(Verb::from_query("file.rename"), Some(Verb::FileRename));
+        assert_eq!(Verb::from_query("file.delete"), Some(Verb::FileDelete));
     }
 
     #[test]
