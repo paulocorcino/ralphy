@@ -132,6 +132,12 @@ pub enum Verb {
     TreeList,
     /// Read a repo file's text (Observe: reads state, never spawns).
     FileRead,
+    /// Read the repo's resolved config as JSON (Query: `config get --json`).
+    ConfigGet,
+    /// Persist a config key (Mutate: `config set`, run-lock-aware).
+    ConfigSet,
+    /// Clear a config key (Mutate: `config unset`, run-lock-aware).
+    ConfigUnset,
 }
 
 impl Verb {
@@ -145,6 +151,9 @@ impl Verb {
             "push" => Some(Verb::PushQueue),
             "tree.list" => Some(Verb::TreeList),
             "file.read" => Some(Verb::FileRead),
+            "config.get" => Some(Verb::ConfigGet),
+            "config.set" => Some(Verb::ConfigSet),
+            "config.unset" => Some(Verb::ConfigUnset),
             _ => None,
         }
     }
@@ -156,14 +165,20 @@ impl Verb {
         Verb::PushQueue,
         Verb::TreeList,
         Verb::FileRead,
+        Verb::ConfigGet,
+        Verb::ConfigSet,
+        Verb::ConfigUnset,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
-    /// state in-daemon and never spawn; the three run verbs reach the CLI through
-    /// [`spawn_argv`].
+    /// state in-daemon and never spawn; `config.get` is a Query (spawn-and-collect
+    /// `config get --json`); `config.set`/`config.unset` are Mutate; the three run
+    /// verbs reach the CLI through [`spawn_argv`].
     pub fn effect_class(self) -> EffectClass {
         match self {
             Verb::TreeList | Verb::FileRead => EffectClass::Observe,
+            Verb::ConfigGet => EffectClass::Query,
+            Verb::ConfigSet | Verb::ConfigUnset => EffectClass::Mutate,
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
         }
     }
@@ -213,10 +228,88 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
             argv.push(mode.as_flag().to_string());
             Ok(argv)
         }
-        // Observe verbs never reach the spawn path (the `command_ws` Observe
-        // branch answers and returns first); refuse an argv defensively.
-        Verb::TreeList | Verb::FileRead => Err(ArgvError::BadParam("verb")),
+        // Non-Spawn verbs never reach the spawn path (the `command_ws`
+        // Observe/Query/Mutate branches answer and return first); refuse an argv
+        // defensively.
+        Verb::TreeList | Verb::FileRead | Verb::ConfigGet | Verb::ConfigSet | Verb::ConfigUnset => {
+            Err(ArgvError::BadParam("verb"))
+        }
     }
+}
+
+/// Whether `key` is a well-shaped config key (`^[a-z0-9_.]+$`): a closed
+/// character class, NOT a value allowlist (that lives in the CLI's
+/// `require_known_key`, ADR-0036 Decision). Argv-safety comes from no-shell
+/// `Command::args()`, not a closed key set; an unknown-but-well-shaped key is
+/// accepted here and rejected by `ralphy config set`, relayed as a Mutate error.
+fn well_shaped_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
+}
+
+/// Compose the blessed argv for a config Query/Mutate verb (ADR-0036 §2). The
+/// verb picks the static shape; `ConfigSet`/`ConfigUnset` read `key` (must match
+/// `^[a-z0-9_.]+$`) and — for `set` — a non-empty `value` from `payload`, each
+/// passed as a single argv token (never a shell string). Any absent/ill-shaped
+/// value yields [`ArgvError`] and NO argv. Runs in `cwd = <repo path>` with no
+/// `--repo` flag (defaults to `.`).
+pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let key = || -> Result<String, ArgvError> {
+        let key = payload
+            .get("key")
+            .and_then(|v| v.as_str())
+            .ok_or(ArgvError::BadParam("key"))?;
+        if well_shaped_key(key) {
+            Ok(key.to_string())
+        } else {
+            Err(ArgvError::BadParam("key"))
+        }
+    };
+    match verb {
+        Verb::ConfigGet => Ok(owned(&["config", "get", "--json"])),
+        Verb::ConfigSet => {
+            let key = key()?;
+            let value = payload
+                .get("value")
+                .and_then(|v| v.as_str())
+                .filter(|v| !v.is_empty())
+                .ok_or(ArgvError::BadParam("value"))?;
+            Ok(vec![
+                "config".to_string(),
+                "set".to_string(),
+                key,
+                value.to_string(),
+            ])
+        }
+        Verb::ConfigUnset => Ok(vec!["config".to_string(), "unset".to_string(), key()?]),
+        // Non-config verbs never route here (`command_ws` picks the branch by
+        // effect class); refuse an argv defensively.
+        _ => Err(ArgvError::BadParam("verb")),
+    }
+}
+
+/// Spawn a Query/Mutate child and COLLECT its output to EOF, returning its exit
+/// code and stdout+stderr bytes verbatim (distinct from the streaming Spawn path:
+/// a Query/Mutate answer is a single collected reply, not a live stream). Blocking
+/// (`wait` + a full read); the `command_ws` caller runs it in `spawn_blocking`.
+pub fn collect(
+    spawner: &dyn Spawner,
+    program: &OsStr,
+    argv: &[&str],
+    cwd: &Path,
+    daemon_id: Option<&str>,
+) -> Result<(Option<i32>, Vec<u8>)> {
+    use std::io::Read;
+    let mut child = spawner.spawn(program, argv, cwd, daemon_id)?;
+    let mut bytes = Vec::new();
+    if let Some(mut reader) = child.take_output() {
+        reader.read_to_end(&mut bytes)?;
+    }
+    let code = child.wait()?;
+    Ok((code, bytes))
 }
 
 /// A spawned child the dispatcher can await but NEVER kill (see the module
@@ -434,7 +527,113 @@ mod tests {
         assert_eq!(Verb::Run.effect_class(), EffectClass::Spawn);
         assert_eq!(Verb::Triage.effect_class(), EffectClass::Spawn);
         assert_eq!(Verb::PushQueue.effect_class(), EffectClass::Spawn);
-        assert_eq!(Verb::ALL.len(), 5, "the registry holds exactly five verbs");
+        assert_eq!(Verb::ConfigGet.effect_class(), EffectClass::Query);
+        assert_eq!(Verb::ConfigSet.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ConfigUnset.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ALL.len(), 8, "the registry holds exactly eight verbs");
+    }
+
+    #[test]
+    fn from_query_maps_config_verbs() {
+        assert_eq!(Verb::from_query("config.get"), Some(Verb::ConfigGet));
+        assert_eq!(Verb::from_query("config.set"), Some(Verb::ConfigSet));
+        assert_eq!(Verb::from_query("config.unset"), Some(Verb::ConfigUnset));
+    }
+
+    #[test]
+    fn config_argv_composes_exact_vectors() {
+        assert_eq!(
+            config_argv(Verb::ConfigGet, &serde_json::json!({})).unwrap(),
+            vec!["config", "get", "--json"]
+        );
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "branch_mode", "value": "new" })
+            )
+            .unwrap(),
+            vec!["config", "set", "branch_mode", "new"]
+        );
+        assert_eq!(
+            config_argv(
+                Verb::ConfigUnset,
+                &serde_json::json!({ "key": "branch_mode" })
+            )
+            .unwrap(),
+            vec!["config", "unset", "branch_mode"]
+        );
+    }
+
+    #[test]
+    fn config_argv_refuses_ill_shaped_key_and_empty_value() {
+        // An out-of-class or empty key never reaches argv.
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "bad key!", "value": "x" })
+            ),
+            Err(ArgvError::BadParam("key"))
+        );
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "", "value": "x" })
+            ),
+            Err(ArgvError::BadParam("key"))
+        );
+        assert_eq!(
+            config_argv(Verb::ConfigUnset, &serde_json::json!({ "key": "Bad.Key" })),
+            Err(ArgvError::BadParam("key"))
+        );
+        // An empty/absent value refuses `set`.
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "branch_mode", "value": "" })
+            ),
+            Err(ArgvError::BadParam("value"))
+        );
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "branch_mode" })
+            ),
+            Err(ArgvError::BadParam("value"))
+        );
+    }
+
+    #[test]
+    fn collect_returns_child_stdout_and_code() {
+        // A one-off spawner returns a FakeChild with known bytes + code so
+        // `collect` is asserted purely (no OS process touched).
+        struct OutSpawner;
+        impl Spawner for OutSpawner {
+            fn spawn(
+                &self,
+                _program: &OsStr,
+                _args: &[&str],
+                _cwd: &Path,
+                _daemon_id: Option<&str>,
+            ) -> Result<Box<dyn Child>> {
+                Ok(Box::new(FakeChild {
+                    code: 3,
+                    output: Some(b"{\"branch_mode\":\"new\"}".to_vec()),
+                }))
+            }
+        }
+        let (code, bytes) = collect(
+            &OutSpawner,
+            OsStr::new("ralphy"),
+            &["config", "get", "--json"],
+            Path::new("/work/repo"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(code, Some(3), "the fake's exit code comes back");
+        assert_eq!(
+            bytes, b"{\"branch_mode\":\"new\"}",
+            "the child's stdout bytes come back verbatim"
+        );
     }
 
     #[test]

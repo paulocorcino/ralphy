@@ -696,6 +696,30 @@ async fn send_command(socket: &mut WebSocket, id: u64, verb: &str, payload: serd
         .await;
 }
 
+/// Spawn-and-COLLECT a config CLI invocation (`config get|set|unset`) for a
+/// Query/Mutate verb off the tokio runtime (ADR-0036 §2): unlike the streaming
+/// Spawn path, a config verb yields ONE collected reply. `None` when the blocking
+/// join or the spawn itself failed. Runs in `cwd` with the dispatch `daemon_id`.
+async fn collect_config(
+    argv: Vec<String>,
+    cwd: PathBuf,
+    daemon_id: Option<String>,
+) -> Option<(Option<i32>, Vec<u8>)> {
+    tokio::task::spawn_blocking(move || {
+        let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+        dispatch::collect(
+            &dispatch::ProcessSpawner,
+            &dispatch::ralphy_exe(),
+            &argv_refs,
+            &cwd,
+            daemon_id.as_deref(),
+        )
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+}
+
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
 /// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
 /// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
@@ -796,6 +820,65 @@ async fn command_ws(
             },
             // Unreachable: only TreeList/FileRead are Observe verbs.
             _ => serde_json::json!({ "status": "error", "reason": "refused" }),
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
+    // Query verbs (ADR-0036 §2) spawn-and-COLLECT a read-only CLI invocation
+    // (`config get --json`) and answer ONCE on THIS id — no live stream. The
+    // parsed config rides `config`; a non-JSON stdout falls back to a raw string.
+    if verb.effect_class() == dispatch::EffectClass::Query {
+        let payload = match dispatch::config_argv(verb, &cmd.payload) {
+            Err(e) => {
+                tracing::warn!(error = %e, "refused a config query with invalid params");
+                serde_json::json!({ "status": "error", "message": "invalid config options" })
+            }
+            Ok(argv) => {
+                match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
+                    Some((Some(0), bytes)) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        let config: serde_json::Value = serde_json::from_str(text.trim())
+                            .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_string()));
+                        serde_json::json!({ "status": "ok", "config": config })
+                    }
+                    Some((_, bytes)) => serde_json::json!({
+                        "status": "error",
+                        "message": String::from_utf8_lossy(&bytes).trim(),
+                    }),
+                    None => {
+                        serde_json::json!({ "status": "error", "message": "config read failed" })
+                    }
+                }
+            }
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
+    // Mutate verbs (ADR-0036 §2/§6) spawn-and-collect a run-lock-aware write
+    // (`config set`/`config unset`) and answer once; a non-zero exit (the CLI's
+    // run-lock refusal or unknown-key error) relays as the trimmed stderr.
+    if verb.effect_class() == dispatch::EffectClass::Mutate {
+        let payload = match dispatch::config_argv(verb, &cmd.payload) {
+            Err(e) => {
+                tracing::warn!(error = %e, "refused a config mutation with invalid params");
+                serde_json::json!({ "status": "error", "message": "invalid config options" })
+            }
+            Ok(argv) => {
+                match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
+                    Some((Some(0), _)) => serde_json::json!({ "status": "ok" }),
+                    Some((_, bytes)) => {
+                        let msg = String::from_utf8_lossy(&bytes);
+                        let msg = msg.trim();
+                        let msg = if msg.is_empty() { "refused" } else { msg };
+                        serde_json::json!({ "status": "error", "message": msg })
+                    }
+                    None => {
+                        serde_json::json!({ "status": "error", "message": "config write failed" })
+                    }
+                }
+            }
         };
         send_command(&mut socket, id, &cmd.verb, payload).await;
         return;
