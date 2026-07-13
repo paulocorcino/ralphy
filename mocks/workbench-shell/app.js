@@ -666,6 +666,22 @@ function shell() {
     openSettings() {
       this.settingsOpen = true;
       this.avatarMenu = false;
+      // Load the open repo's REAL resolved config via the daemon Query verb
+      // (config.get). Merge each non-null key over the schema defaults so the
+      // panel shows reality; with no repo open the project groups are disabled
+      // (index.html `x-show="sec.scope === 'daemon' || openSlug"`).
+      if (this.openSlug) {
+        WBDaemon.observe("config.get", { repo: this.openSlug })
+          .then((reply) => {
+            const cfg = reply && reply.status === "ok" ? reply.config : null;
+            if (cfg && typeof cfg === "object") {
+              for (const k in cfg) {
+                if (cfg[k] !== null && k in this.settings) this.settings[k] = cfg[k];
+              }
+            }
+          })
+          .catch(() => {});
+      }
       this.$nextTick(() => window.lucide?.createIcons());
     },
     closeSettings() {
@@ -673,7 +689,18 @@ function shell() {
     },
     saveSetting(key, value) {
       this.settings[key] = value;
-      WB.emit("setting-change", { key, value });
+      // Persist through the run-lock-aware config Mutate verbs (config.set /
+      // config.unset). An empty/"unset" value clears the key. Only fired for the
+      // open repo — a config verb runs in that repo's cwd.
+      if (this.openSlug) {
+        const empty = value === "" || value === "unset" || value == null;
+        WBDaemon.spawn(
+          empty ? "config.unset" : "config.set",
+          { repo: this.openSlug, key, value: String(value) },
+          () => {},
+        );
+      }
+      WB.emit("setting-change", { project: this.openSlug, key, value });
     },
 
     // --- account menu + security -----------------------------------------
@@ -698,9 +725,22 @@ function shell() {
     // The stored password, kept in-memory purely so the mock login can check it.
     _passwordValue: "",
 
-    openSecurity() {
+    async openSecurity() {
       this.securityOpen = true;
       this.avatarMenu = false;
+      // Reflect the REAL daemon auth state (GET /api/security/state): access
+      // token presence, optional password, TOTP enrolment (require_login is
+      // derived from the seed server-side).
+      try {
+        const r = await fetch("/api/security/state");
+        if (r.ok) {
+          const s = await r.json();
+          this.security.tokenSet = s.token_set;
+          this.security.passwordSet = s.password_set;
+          this.security.totpEnrolled = s.totp_enrolled;
+          this.security.requireLogin = s.require_login;
+        }
+      } catch {}
       this.$nextTick(() => window.lucide?.createIcons());
     },
     closeSecurity() {
@@ -711,59 +751,64 @@ function shell() {
       this.security.qrHtml = "";
     },
 
-    // Base32 (no padding) — the on-disk form of a TOTP seed. 20 bytes → 32 chars.
-    _randomBase32(len = 32) {
-      const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-      let s = "";
-      const buf = new Uint8Array(len);
-      crypto.getRandomValues(buf);
-      for (let i = 0; i < len; i++) s += A[buf[i] & 31];
-      return s;
+    async enrollTotp() {
+      // POST /api/security/totp/enroll returns the REAL one-time provisioning
+      // URI (mint-once); the QR is rendered from THAT uri, not a client secret.
+      try {
+        const r = await fetch("/api/security/totp/enroll", { method: "POST" });
+        if (!r.ok) return;
+        const { uri } = await r.json();
+        this.security.totpEnrolled = true;
+        this.security.otpauthUri = uri;
+        this.security.secret = (uri.split("secret=")[1] || "").split("&")[0];
+        this.security.qrHtml = window.wbQr(uri);
+      } catch {}
     },
 
-    enrollTotp() {
-      const account = (this.openSlug || "daemon") + "@this-host";
-      const secret = this._randomBase32(32);
-      // exact provisioning-URI shape ralphy emits (RFC 6238 SHA1/6/30).
-      const uri =
-        "otpauth://totp/ralphy:" +
-        encodeURIComponent(account) +
-        "?secret=" +
-        secret +
-        "&issuer=ralphy&algorithm=SHA1&digits=6&period=30";
-      this.security.totpEnrolled = true;
-      this.security.secret = secret;
-      this.security.otpauthUri = uri;
-      this.security.qrHtml = window.wbQr(uri);
-      WB.emit("totp-enroll", { account });
-    },
-
-    revokeTotp() {
+    async revokeTotp() {
+      // POST /api/security/totp/revoke deletes the seed file (mint-once posture).
+      try {
+        await fetch("/api/security/totp/revoke", { method: "POST" });
+      } catch {}
       this.security.totpEnrolled = false;
       this.security.secret = "";
       this.security.otpauthUri = "";
       this.security.qrHtml = "";
       // revoking the seed removes the session factor → login can't be required
       this.security.requireLogin = false;
-      WB.emit("totp-revoke", {});
     },
 
-    savePassword() {
+    async savePassword() {
       const pw = this.security.passwordDraft.trim();
       if (!pw) return;
-      this._passwordValue = pw;
-      this.security.passwordSet = true;
+      try {
+        const r = await fetch("/api/security/password", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "password=" + encodeURIComponent(pw),
+        });
+        if (r.ok) this.security.passwordSet = (await r.json()).password_set;
+      } catch {}
+      this._passwordValue = pw; // mock login still checks locally
       this.security.passwordDraft = "";
-      WB.emit("password-set", {});
     },
-    clearPassword() {
+    async clearPassword() {
+      try {
+        await fetch("/api/security/password", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "password=",
+        });
+      } catch {}
       this._passwordValue = "";
       this.security.passwordSet = false;
       this.security.passwordDraft = "";
-      WB.emit("password-clear", {});
     },
-    remintToken() {
-      WB.emit("token-remint", {});
+    async remintToken() {
+      // POST /api/security/token/remint rotates the token (never echoed back).
+      try {
+        await fetch("/api/security/token/remint", { method: "POST" });
+      } catch {}
       // re-minting invalidates every live session cookie → force a re-login
       if (this.security.requireLogin) this.logOff();
     },
