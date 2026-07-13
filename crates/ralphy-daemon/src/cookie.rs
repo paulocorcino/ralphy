@@ -64,6 +64,13 @@ pub fn set_cookie_value(cookie: &str) -> String {
     format!("{COOKIE_NAME}={cookie}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_TTL_SECS}")
 }
 
+/// The `Set-Cookie` header value that CLEARS the session cookie: an empty value
+/// with `Max-Age=0` so the browser drops it immediately. Same attributes as
+/// [`set_cookie_value`] so the clear matches the original scope (issue #186).
+pub fn clear_cookie_value() -> String {
+    format!("{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+}
+
 /// Extract the `ralphy_session` value from a `Cookie:` request header, or `None`
 /// when absent. Handles a multi-cookie header (`a=1; ralphy_session=…; b=2`).
 pub fn from_cookie_header(header: Option<&str>) -> Option<String> {
@@ -128,6 +135,13 @@ mod tests {
             !h.contains("Secure"),
             "the cookie is deliberately not Secure"
         );
+    }
+
+    #[test]
+    fn clear_cookie_expires_immediately() {
+        let h = clear_cookie_value();
+        assert!(h.contains("ralphy_session=;"), "empty value: {h}");
+        assert!(h.contains("Max-Age=0"), "Max-Age=0: {h}");
     }
 
     #[test]

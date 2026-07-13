@@ -40,6 +40,12 @@ pub const DEFAULT_PORT: u16 = 7257;
 /// reads no files from disk at runtime (ADR-0032 §4).
 static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/ui");
 
+/// The workbench shell UI (PRD #185, issue #186): a SECOND embedded tree served
+/// at `/workbench/`, baked in at build time like [`UI`]. Kept as the single
+/// source of truth on the promotion path (#185 slice 8 prunes/promotes this same
+/// tree) rather than copied into `assets/`.
+static WORKBENCH: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../mocks/workbench-shell");
+
 /// What the composition root decides; everything else is the daemon's.
 pub struct DaemonConfig {
     /// TCP port for the listener.
@@ -309,6 +315,25 @@ pub fn router(
                 }
             }),
         )
+        .route(
+            "/api/session",
+            get({
+                let auth = login_auth.clone();
+                move |headers: axum::http::HeaderMap| {
+                    let auth = auth.clone();
+                    async move { session_state_route(auth, headers).await }
+                }
+            }),
+        )
+        .route("/api/logout", post(logout_route))
+        .route(
+            "/workbench",
+            get(|| async {
+                (StatusCode::FOUND, [(header::LOCATION, "/workbench/")]).into_response()
+            }),
+        )
+        .route("/workbench/", get(workbench_asset))
+        .route("/workbench/{*path}", get(workbench_asset))
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
@@ -319,7 +344,7 @@ pub fn router(
 /// Paths reachable WITHOUT a session cookie under a `Session` policy — the login
 /// screen and its form endpoint. Everything else falls through to the
 /// browser-redirect / `401` logic below.
-const LOGIN_ALLOWLIST: &[&str] = &["/login", "/api/login"];
+const LOGIN_ALLOWLIST: &[&str] = &["/login", "/api/login", "/api/session", "/api/logout"];
 
 /// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
 /// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a
@@ -350,6 +375,12 @@ async fn require_auth(
         }
         let path = req.uri().path();
         if LOGIN_ALLOWLIST.contains(&path) {
+            return next.run(req).await;
+        }
+        // The workbench shell is non-secret static bytes: served without a cookie
+        // so the SPA can render its own opaque login gate. Every DATA endpoint
+        // (`/api/*` except the allowlist, `/ws/*`) stays gated by the logic below.
+        if path == "/workbench" || path.starts_with("/workbench/") {
             return next.run(req).await;
         }
         // A top-level browser navigation (GET, not an /api or /ws call) gets a
@@ -1029,6 +1060,63 @@ async fn ui_asset(uri: Uri) -> Response {
     }
 }
 
+/// Serve a file from the embedded [`WORKBENCH`] tree at `/workbench/`; the base
+/// (`/workbench/`) means `index.html`. Mirrors [`ui_asset`]; the trailing-slash
+/// base is what resolves the mock's relative `vendor/…`/`app.js` refs.
+async fn workbench_asset(uri: Uri) -> Response {
+    let path = uri
+        .path()
+        .strip_prefix("/workbench/")
+        .unwrap_or("")
+        .trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+    match WORKBENCH.get_file(path) {
+        Some(file) => (
+            [(header::CONTENT_TYPE, content_type(path))],
+            file.contents(),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+/// `POST /api/logout`: emit a `Max-Age=0` clearing `Set-Cookie`. The session
+/// cookie is `HttpOnly`, so JS cannot clear it — the server must (issue #186).
+async fn logout_route() -> Response {
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie::clear_cookie_value())],
+    )
+        .into_response()
+}
+
+/// The SPA's auth-state oracle, reachable pre-login (allowlisted). Drives the
+/// workbench gate's `authed` flag and password-field visibility.
+#[derive(serde::Serialize)]
+struct SessionState {
+    authed: bool,
+    password: bool,
+}
+
+/// `GET /api/session`: report whether this request is authorized and whether a
+/// password factor is enrolled. `Localhost`/`Bearer` are always `authed`; under a
+/// `Session` policy `authed` reflects a valid `Bearer` OR session cookie.
+async fn session_state_route(auth: auth::AuthPolicy, headers: axum::http::HeaderMap) -> Response {
+    let bearer = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let authed = auth.authorizes(bearer)
+        || match &auth {
+            auth::AuthPolicy::Session(s) => {
+                let cookie_header = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
+                s.cookie_valid(cookie_header, now_unix())
+            }
+            _ => false,
+        };
+    let password = matches!(&auth, auth::AuthPolicy::Session(s) if s.password.is_some());
+    Json(SessionState { authed, password }).into_response()
+}
+
 fn content_type(path: &str) -> &'static str {
     match path.rsplit('.').next() {
         Some("html") => "text/html; charset=utf-8",
@@ -1036,6 +1124,11 @@ fn content_type(path: &str) -> &'static str {
         Some("js") => "text/javascript; charset=utf-8",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        Some("eot") => "application/vnd.ms-fontobject",
+        Some("json") => "application/json",
         _ => "application/octet-stream",
     }
 }
@@ -1873,6 +1966,164 @@ mod tests {
             resp.status(),
             StatusCode::OK,
             "Bearer authorizes under Session"
+        );
+    }
+
+    /// Read the body of a response as a lossy UTF-8 string.
+    async fn body_string(resp: Response) -> String {
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// GET a path on a Localhost router (the `get` helper above), returning the
+    /// response for further assertions.
+    async fn get_local(path: &str) -> Response {
+        get(path).await
+    }
+
+    #[tokio::test]
+    async fn workbench_route_serves_shell() {
+        let resp = get_local("/workbench/").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET /workbench/ → 200");
+        let body = body_string(resp).await;
+        assert!(
+            body.contains(r#"x-data="shell()""#),
+            "the workbench shell HTML must render; got: {}",
+            &body[..body.len().min(200)]
+        );
+        let resp = get_local("/workbench/app.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET /workbench/app.js → 200");
+    }
+
+    #[tokio::test]
+    async fn root_ui_untouched() {
+        let resp = get_local("/").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");
+        let body = body_string(resp).await;
+        assert!(body.contains(r#"id="sessions""#), "the old UI still serves");
+        assert!(
+            !body.contains("shell()"),
+            "the root must NOT be the workbench shell"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_serves_workbench_but_gates_data() {
+        // The shell bytes are served without a cookie…
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/workbench/")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "/workbench/ served pre-login (NOT redirected)"
+        );
+
+        // …but every DATA endpoint stays 401 under a no-cookie Session.
+        for uri in [
+            "/api/identity",
+            "/ws/session?repo=x&agent=claude",
+            "/ws/command",
+        ] {
+            let resp = session_router("tok")
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "{uri} must be 401 with no cookie"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn session_state_reports_authed() {
+        // Localhost is always authed.
+        let body = body_string(get_local("/api/session").await).await;
+        assert!(body.contains(r#""authed":true"#), "localhost authed: {body}");
+
+        // Session, no cookie → not authed.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = body_string(resp).await;
+        assert!(
+            body.contains(r#""authed":false"#),
+            "no-cookie session not authed: {body}"
+        );
+
+        // Session + a valid minted cookie → authed.
+        let now = now_unix();
+        let code = rfc_seed().code_at(now / 30);
+        let login = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(format!("code={code}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let set_cookie = login
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .expect("a Set-Cookie header")
+            .to_string();
+        let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session")
+                    .header(header::COOKIE, &cookie_pair)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = body_string(resp).await;
+        assert!(
+            body.contains(r#""authed":true"#),
+            "valid cookie authed: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn logout_clears_cookie() {
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/logout")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "POST /api/logout → 200");
+        let set_cookie = resp
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .expect("a Set-Cookie header");
+        assert!(
+            set_cookie.contains("ralphy_session=;") && set_cookie.contains("Max-Age=0"),
+            "cookie cleared: {set_cookie}"
         );
     }
 
