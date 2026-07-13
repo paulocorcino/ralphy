@@ -11,8 +11,9 @@ use regex::Regex;
 /// instead (D9). Anchored on limit-specific combos (`usage limit`, `rate limit`,
 /// `limit reached/exceeded`, `too many requests`, `quota exceeded/exhausted`), not
 /// a bare `"limit"`, so an ordinary error line (`limit not found`, a transient
-/// backend blip) is not misread as a quota cap. Compiled once per scan.
-fn usage_limit_regex() -> Regex {
+/// backend blip) is not misread as a quota cap. Compiled once per scan (or once per
+/// early-kill hook build in the execute path — [`OpenCodeAgent::execute`]).
+pub(crate) fn usage_limit_regex() -> Regex {
     Regex::new(
         r"(?i)usage limit|rate[ _]?limit|limit (?:reached|exceeded)|too many requests|quota (?:exceeded|exhausted)",
     )
