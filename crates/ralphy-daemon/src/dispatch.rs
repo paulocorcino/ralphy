@@ -128,28 +128,44 @@ pub enum Verb {
     Triage,
     /// Push the queue snapshot (`issues --push`).
     PushQueue,
+    /// List one directory level of a repo (Observe: reads state, never spawns).
+    TreeList,
+    /// Read a repo file's text (Observe: reads state, never spawns).
+    FileRead,
 }
 
 impl Verb {
-    /// Parse a remote verb string. Only `run`/`triage`/`push` map to a verb;
-    /// every other string — `kill`, `stop`, `issues`, `""` — yields `None`, so
-    /// the handler can reject it and spawn nothing.
+    /// Parse a remote verb string. `run`/`triage`/`push` map to Spawn verbs and
+    /// `tree.list`/`file.read` to Observe verbs; every other string — `kill`,
+    /// `stop`, `issues`, `""` — yields `None`, so the handler can reject it.
     pub fn from_query(value: &str) -> Option<Verb> {
         match value {
             "run" => Some(Verb::Run),
             "triage" => Some(Verb::Triage),
             "push" => Some(Verb::PushQueue),
+            "tree.list" => Some(Verb::TreeList),
+            "file.read" => Some(Verb::FileRead),
             _ => None,
         }
     }
 
     /// Every verb in the registry, for exhaustive round-trips.
-    pub const ALL: &'static [Verb] = &[Verb::Run, Verb::Triage, Verb::PushQueue];
+    pub const ALL: &'static [Verb] = &[
+        Verb::Run,
+        Verb::Triage,
+        Verb::PushQueue,
+        Verb::TreeList,
+        Verb::FileRead,
+    ];
 
-    /// The effect class of this verb (ADR-0036 §2). Every verb is `Spawn` today —
-    /// each reaches the CLI through [`spawn_argv`].
+    /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
+    /// state in-daemon and never spawn; the three run verbs reach the CLI through
+    /// [`spawn_argv`].
     pub fn effect_class(self) -> EffectClass {
-        EffectClass::Spawn
+        match self {
+            Verb::TreeList | Verb::FileRead => EffectClass::Observe,
+            Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
+        }
     }
 }
 
@@ -197,6 +213,9 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
             argv.push(mode.as_flag().to_string());
             Ok(argv)
         }
+        // Observe verbs never reach the spawn path (the `command_ws` Observe
+        // branch answers and returns first); refuse an argv defensively.
+        Verb::TreeList | Verb::FileRead => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -409,15 +428,13 @@ mod tests {
     }
 
     #[test]
-    fn every_verb_in_all_is_spawn() {
-        for &verb in Verb::ALL {
-            assert_eq!(
-                verb.effect_class(),
-                EffectClass::Spawn,
-                "{verb:?} must be a Spawn verb"
-            );
-        }
-        assert_eq!(Verb::ALL.len(), 3, "the registry holds exactly three verbs");
+    fn verb_effect_classes() {
+        assert_eq!(Verb::TreeList.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::FileRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::Run.effect_class(), EffectClass::Spawn);
+        assert_eq!(Verb::Triage.effect_class(), EffectClass::Spawn);
+        assert_eq!(Verb::PushQueue.effect_class(), EffectClass::Spawn);
+        assert_eq!(Verb::ALL.len(), 5, "the registry holds exactly five verbs");
     }
 
     #[test]
@@ -553,10 +570,12 @@ mod tests {
     }
 
     #[test]
-    fn from_query_accepts_only_the_three_blessed_verbs() {
+    fn from_query_accepts_only_the_blessed_verbs() {
         assert_eq!(Verb::from_query("run"), Some(Verb::Run));
         assert_eq!(Verb::from_query("triage"), Some(Verb::Triage));
         assert_eq!(Verb::from_query("push"), Some(Verb::PushQueue));
+        assert_eq!(Verb::from_query("tree.list"), Some(Verb::TreeList));
+        assert_eq!(Verb::from_query("file.read"), Some(Verb::FileRead));
         // No destructive verb, and no arbitrary composition, is reachable.
         for rejected in ["kill", "stop", "issues", "run --if-idle", "", "Run", "PUSH"] {
             assert_eq!(
