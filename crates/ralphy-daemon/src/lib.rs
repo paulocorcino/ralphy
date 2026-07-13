@@ -21,6 +21,7 @@ use include_dir::{include_dir, Dir};
 
 pub mod auth;
 pub mod autostart;
+pub mod confine;
 pub mod cookie;
 pub mod dispatch;
 pub mod identity;
@@ -29,6 +30,7 @@ pub mod protocol;
 pub mod registry;
 pub mod session;
 pub mod totp;
+pub mod tree;
 pub mod usage;
 
 use protocol::{Command, Frame, Presence};
@@ -764,6 +766,40 @@ async fn command_ws(
         .await;
         return;
     };
+
+    // Observe verbs (ADR-0036 §2) read repo state IN-DAEMON and answer on THIS
+    // `id` — they NEVER reach the spawn path below. The branch always sends
+    // exactly one reply (ok or error) and returns; confinement (`tree`/`confine`)
+    // is the security boundary, so an out-of-root read looks like a plain miss.
+    if verb.effect_class() == dispatch::EffectClass::Observe {
+        let root = Path::new(&entry.path);
+        let rel = cmd
+            .payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let payload = match verb {
+            dispatch::Verb::TreeList => match tree::list(root, rel) {
+                Ok(entries) => serde_json::json!({ "status": "ok", "entries": entries }),
+                Err(_) => serde_json::json!({ "status": "error", "reason": "not found" }),
+            },
+            dispatch::Verb::FileRead => match tree::read(root, rel) {
+                Ok(content) => serde_json::json!({ "status": "ok", "content": content }),
+                Err(e) => {
+                    let reason = match e {
+                        tree::ReadError::Binary => "binary",
+                        tree::ReadError::TooLarge => "too large",
+                        tree::ReadError::NotFound => "not found",
+                    };
+                    serde_json::json!({ "status": "error", "reason": reason })
+                }
+            },
+            // Unreachable: only TreeList/FileRead are Observe verbs.
+            _ => serde_json::json!({ "status": "error", "reason": "refused" }),
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
 
     // Compose the argv from the verb + closed-enum params (ADR-0036 §1). A
     // malformed/out-of-enum param refuses the run: one error frame, no spawn.

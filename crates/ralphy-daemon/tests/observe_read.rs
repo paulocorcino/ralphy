@@ -148,3 +148,23 @@ async fn file_read_refuses_binary() {
     let reason = reply["reason"].as_str().expect("a reason string");
     assert!(reason.contains("binary"), "reason={reason:?}");
 }
+
+#[tokio::test]
+async fn file_read_masks_traversal_as_not_found() {
+    // A `..` traversal over the wire must return a plain "not found", never
+    // leaking whether the out-of-root target exists (ADR-0036 §5).
+    let (url, slug) = serve_repo().await;
+    let (replies, spawned) = round_trip(
+        &url,
+        3,
+        "file.read",
+        serde_json::json!({ "repo": slug, "path": "../secret" }),
+    )
+    .await;
+
+    assert_eq!(replies.len(), 1, "exactly one reply on the id");
+    assert_eq!(spawned, 0, "a refused read must never spawn");
+    let reason = replies[0]["reason"].as_str().expect("a reason string");
+    assert_eq!(replies[0]["status"], "error");
+    assert!(reason.contains("not found"), "reason={reason:?}");
+}

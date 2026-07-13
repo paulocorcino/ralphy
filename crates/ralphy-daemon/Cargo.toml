@@ -45,6 +45,9 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.
 qrcode = { version = "0.14", default-features = false }
+# Gitignore-aware, never-descend-noise tree listing for the Observe read path
+# (ADR-0036 §4); ripgrep's walker.
+ignore = "0.4"
 
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.
