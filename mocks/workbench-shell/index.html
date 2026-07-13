@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ralphy · workbench shell (mock)</title>
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
+    <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />
+    <!-- CodeMirror 5: the source-code editor (highlight + edit + find) -->
+    <link rel="stylesheet" href="vendor/codemirror/codemirror.css" />
+    <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css" />
+    <link rel="stylesheet" href="vendor/codemirror/addon/search/matchesonscrollbar.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen }">
+    <!-- top bar. impl: brand+avatar = daemon identity (/api/identity); the
+         crumb tracks the open project; the stats (stars/msgs/bell) are
+         decorative placeholders — wire to real counts or drop. -->
+    <header class="topbar">
+      <span class="brand"><i data-lucide="bot"></i> ralphy</span>
+      <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
+      <span class="spacer"></span>
+      <span class="stat"><i data-lucide="star"></i> 145k</span>
+      <span class="stat"><i data-lucide="message-circle"></i> 24k</span>
+      <span class="stat"><i data-lucide="bell"></i></span>
+      <span class="avatar"></span>
+    </header>
+
+    <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
+         sidebar; Runs opens the right-hand run panel; Kanban is the tasks board
+         (stub for now). -->
+    <nav class="rail">
+      <button :class="{ active: sideOpen }" @click="toggleSide()" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
+      <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
+    </nav>
+
+    <!-- sidebar: project accordion. impl: `projects` comes from the daemon
+         (mirror of /api/repos) — slug, branch, state (reachability), remote
+         (github|local), and a file `tree`. Opening one lifts it to the top and
+         mounts its tree; only one open at a time. -->
+    <aside class="side">
+      <div class="side-head">
+        <span>Projects</span>
+        <!-- count of located projects, at a glance (projects.length) -->
+        <span class="count" x-text="projects.length" title="projects located"></span>
+        <span class="spacer"></span>
+        <i data-lucide="ellipsis"></i>
+      </div>
+      <!-- impl: filters the list client-side; "/" is the focus shortcut hint. -->
+      <div class="side-search">
+        <i data-lucide="search"></i>
+        <input placeholder="Search projects…  /" />
+      </div>
+
+      <ul class="projects" :class="{ 'has-open': openSlug }">
+        <template x-for="p in projects" :key="p.slug">
+          <li class="project" :class="{ open: openSlug === p.slug }">
+            <!-- click toggles the project open/closed (mounts/destroys tree) -->
+            <div class="project-head" @click="toggle(p.slug)">
+              <span class="chevron"><i data-lucide="chevron-right"></i></span>
+              <!-- status dot: the project's daemon-reachability *right now* —
+                   green = live (session/daemon active there), grey = idle
+                   (registered & reachable but stopped), red = offline
+                   (unreachable path). Orthogonal to the provenance icon beside
+                   it (GitHub vs local-only). A local-only repo can be live; a
+                   GitHub repo can be offline. -->
+              <span class="dot" :class="dotClass(p.state)" :title="p.state"></span>
+              <!-- provenance: a GitHub-backed repo vs one that lives only on
+                   this disk. Orthogonal to the daemon-reachability dot above. -->
+              <i
+                class="remote"
+                :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
+                :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
+              ></i>
+              <span class="project-slug" x-text="p.slug"></span>
+              <!-- current git branch (impl: from the daemon's repo info) -->
+              <span class="project-meta" x-text="p.branch"></span>
+            </div>
+            <!-- the file tree (Wunderbaum) mounts here when the project opens.
+                 impl: replace the in-memory `tree` with fetch of the repo tree
+                 and lazy-load subfolders; gestures already emit workbench:action. -->
+            <div class="wb-host" x-show="openSlug === p.slug"></div>
+          </li>
+        </template>
+      </ul>
+    </aside>
+
+    <!-- canvas -->
+    <main class="canvas">
+      <!-- tab strip: the first tab (Agents) is fixed and never closes; every
+           opened file rides in after it and can be closed. The console controls
+           live at the strip's right edge — kept above the workspace so a
+           floating console can never cover them. -->
+      <div class="tabbar">
+        <div class="tabstrip">
+          <!-- one tab per entry in `tabs`: index 0 is the fixed Agents tab
+               (not closable); the rest are opened files. Click activates,
+               middle-click / × closes. -->
+          <template x-for="t in tabs" :key="t.id">
+            <div
+              class="tab"
+              :class="{ active: active === t.id }"
+              @click="activate(t.id)"
+              @auxclick.prevent="t.closable && closeTab(t.id)"
+              :title="t.path || t.title"
+            >
+              <i class="tab-ic" :class="t.icon"></i>
+              <span class="tab-title" x-text="t.title"></span>
+              <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="close">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <!-- console controls, only meaningful on the Agents tab -->
+        <div class="canvas-tools" x-show="active === 'agents'">
+          <!-- New console: pick an agent → spawns a floating console for the
+               selected repo (openSlug), or the home dir if none. impl: this is
+               where a real session/PTY is launched (agent × repo), like the
+               daemon's /ws/session. -->
+          <div class="menu-wrap">
+            <button class="btn accent" @click.stop="agentMenu = !agentMenu">
+              <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>
+            </button>
+            <div class="dropdown" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
+              <!-- available agents (impl: could come from daemon capabilities) -->
+              <template x-for="a in agents" :key="a">
+                <button class="dropdown-item" @click="newConsole(a); agentMenu = false">
+                  <i class="bi bi-terminal"></i><span x-text="a"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+          <!-- Arrange: auto-tiles all open console windows into a grid -->
+          <button class="btn" @click="arrangeConsoles()" title="tile the open consoles">
+            <i data-lucide="layout-grid"></i> Arrange
+          </button>
+        </div>
+      </div>
+
+      <div class="stage">
+        <!-- Agents tab: the floating-console workspace. Consoles live here as
+             draggable windows over the dotted floor. -->
+        <section class="agents-tab" x-show="active === 'agents'">
+          <!-- floating console windows are appended here by wb-console.js. impl:
+               each window's body is a faux terminal (local echo) in the mock —
+               swap for a real xterm.js attached to a session over a WebSocket. -->
+          <div id="workspace"></div>
+
+          <!-- empty state until the first console is opened -->
+          <div class="canvas-empty" x-show="consoleCount === 0">
+            <div>
+              Open a console for <b x-text="openSlug ?? 'a repo'"></b> — pick an agent above.
+              <small>each console is a floating window; <b>Arrange</b> tiles them.</small>
+            </div>
+          </div>
+        </section>
+
+        <!-- file-viewer panes are appended here by wb-viewer.js, one per file
+             tab (code = CodeMirror, markdown = rendered+mermaid). impl: the mock
+             synthesises file bytes — fetch the real file; a Save emits a `save`
+             intent (workbench:action) carrying the new content to persist. -->
+        <div id="viewers"></div>
+      </div>
+
+      <!-- status strip. impl: Logs opens the daemon log; uptime from presence. -->
+      <div class="canvas-foot">
+        <span class="pill"><i data-lucide="scroll-text"></i> Logs</span>
+        <span class="pill"><i data-lucide="circle-dot"></i> daemon up 2h 14m</span>
+      </div>
+    </main>
+
+    <!-- right-hand run panel: toggled by the Runs rail button. The mock only
+         reveals an empty framed panel — its real contents (run history/detail)
+         come from a separate spec. Kept in the DOM always; the grid gives it a
+         0-width track until `runs-open`, so showing it is a pure layout flip. -->
+    <aside class="runs" x-show="runsOpen" aria-label="Runs">
+      <div class="runs-head">
+        <span>Runs</span>
+        <span class="spacer"></span>
+        <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
+      </div>
+      <div class="runs-empty">Run panel — contents TBD.</div>
+    </aside>
+
+    <!-- right-click menu, built per-node by app.js (open/rename/copy-path/
+         new/delete). Each item emits a workbench:action intent — no direct FS. -->
+    <div id="ctxmenu" class="ctxmenu"></div>
+
+    <!-- vendored, loaded locally (no CDN at runtime) -->
+    <script src="vendor/marked.min.js"></script>
+    <script src="vendor/dompurify.min.js"></script>
+    <script src="vendor/mermaid.min.js"></script>
+    <script src="vendor/codemirror/codemirror.js"></script>
+    <script src="vendor/codemirror/addon/mode/simple.js"></script>
+    <script src="vendor/codemirror/mode/xml.js"></script>
+    <script src="vendor/codemirror/mode/javascript.js"></script>
+    <script src="vendor/codemirror/mode/css.js"></script>
+    <script src="vendor/codemirror/mode/htmlmixed.js"></script>
+    <script src="vendor/codemirror/mode/rust.js"></script>
+    <script src="vendor/codemirror/mode/clike.js"></script>
+    <script src="vendor/codemirror/mode/markdown.js"></script>
+    <script src="vendor/codemirror/mode/python.js"></script>
+    <script src="vendor/codemirror/mode/toml.js"></script>
+    <script src="vendor/codemirror/mode/yaml.js"></script>
+    <script src="vendor/codemirror/mode/shell.js"></script>
+    <script src="vendor/codemirror/mode/sql.js"></script>
+    <script src="vendor/codemirror/mode/go.js"></script>
+    <script src="vendor/codemirror/addon/dialog/dialog.js"></script>
+    <script src="vendor/codemirror/addon/search/searchcursor.js"></script>
+    <script src="vendor/codemirror/addon/scroll/annotatescrollbar.js"></script>
+    <script src="vendor/codemirror/addon/search/matchesonscrollbar.js"></script>
+    <script src="vendor/codemirror/addon/search/search.js"></script>
+    <script src="vendor/codemirror/addon/search/jump-to-line.js"></script>
+    <script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
+    <script src="vendor/codemirror/addon/selection/active-line.js"></script>
+    <script src="vendor/codemirror/addon/display/placeholder.js"></script>
+    <script src="vendor/lucide.min.js"></script>
+    <script src="vendor/wunderbaum/wunderbaum.umd.min.js"></script>
+    <script src="wb-console.js"></script>
+    <script src="wb-viewer.js"></script>
+    <script src="app.js"></script>
+    <script defer src="vendor/alpine.min.js"></script>
+  </body>
+</html>

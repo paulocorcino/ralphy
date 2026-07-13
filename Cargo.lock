@@ -1405,6 +1405,7 @@ dependencies = [
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

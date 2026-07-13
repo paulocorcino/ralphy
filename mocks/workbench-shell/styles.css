@@ -1,0 +1,1167 @@
+/* ---------------------------------------------------------------------------
+   ralphy workbench shell — mock styles
+   Design tokens lifted from ADR-0035 (daemon UI visual language).
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #14110f;
+  /* Chrome (topbar/rail/sidebar) sits a touch above the canvas ground —
+     subtle but perceptible, so the dotted workspace reads as the "floor"
+     and the panels as framing around it. */
+  --chrome: #1b1714;
+  --surface: #241f1b;
+  --surface-hi: #322b25;
+  --log-bg: #1a1613;
+  --border: #3a332d;
+  --border-focus: #6b5f52;
+  --text: #e8e2d9;
+  --text-muted: #9b948a;
+  --danger: #c56b5c;
+  --console-text: #e8d9a8;
+  --console-bg: #2b2410;
+  --console-border: #5a4a1e;
+  --live: #7fae7f;
+  --radius: 4px;
+  --rail-w: 48px;
+  --side-w: 300px;
+  --runs-w: 340px;
+  --topbar-h: 46px;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  /* four columns: rail · sidebar · canvas · runs panel. The sidebar and runs
+     tracks collapse to 0 when hidden (toggled via body classes), so showing /
+     hiding a panel is a pure grid-template-columns flip — smoothly animated. */
+  grid-template-columns: var(--rail-w) var(--side-w) 1fr 0px;
+  grid-template-areas:
+    "topbar topbar topbar topbar"
+    "rail   side    canvas runs";
+  height: 100vh;
+  transition: grid-template-columns 0.2s ease;
+}
+/* Projects rail button hides the sidebar. */
+body.side-collapsed {
+  grid-template-columns: var(--rail-w) 0px 1fr 0px;
+}
+/* Runs rail button reveals the right-hand panel. */
+body.runs-open {
+  grid-template-columns: var(--rail-w) var(--side-w) 1fr var(--runs-w);
+}
+body.side-collapsed.runs-open {
+  grid-template-columns: var(--rail-w) 0px 1fr var(--runs-w);
+}
+/* collapsed tracks must clip their content so nothing bleeds at 0 width */
+.side,
+.runs {
+  overflow: hidden;
+}
+
+/* Lucide icons render as inline SVG; keep them sized to the text. */
+[data-lucide] {
+  width: 1.05em;
+  height: 1.05em;
+  stroke-width: 1.75;
+  vertical-align: -0.15em;
+}
+
+/* --- top bar --------------------------------------------------------------- */
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+}
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.crumb {
+  color: var(--text-muted);
+}
+.crumb b {
+  color: var(--text);
+  font-weight: 600;
+}
+.topbar .spacer {
+  flex: 1;
+}
+.stat {
+  color: var(--text-muted);
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--border-focus), var(--console-border));
+}
+
+/* --- left icon rail -------------------------------------------------------- */
+.rail {
+  grid-area: rail;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.6rem;
+  gap: 0.4rem;
+  background: var(--chrome);
+}
+.rail button {
+  all: unset;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rail button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.rail button.active {
+  background: var(--surface);
+  color: var(--console-text);
+}
+.rail [data-lucide] {
+  width: 18px;
+  height: 18px;
+}
+
+/* --- sidebar (project accordion) ------------------------------------------ */
+.side {
+  grid-area: side;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--chrome);
+}
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+.side-search {
+  margin: 0.6rem 0.8rem;
+  position: relative;
+}
+.side-search [data-lucide] {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+}
+.side-search input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem 0.35rem 1.6rem;
+}
+.side-search input::placeholder {
+  color: var(--text-muted);
+}
+.side-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.projects {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.6rem;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  /* flex column so the open project can flex:1 and give the virtualized tree
+     a real height to render into; `order` still drives the rise-to-top. */
+  display: flex;
+  flex-direction: column;
+}
+/* Each project is a collapsed row until opened. Opening lifts it — the open
+   project sorts to the top (flex order) and its tree fills the remaining
+   height; collapsing drops it back to its home position. */
+.project {
+  border-bottom: 1px solid var(--border);
+}
+.project.open {
+  order: -1; /* rises above the collapsed siblings */
+}
+/* When any project is open, the siblings step aside so the open one claims
+   the whole column. Clicking the open header returns to the full list. */
+.projects.has-open .project:not(.open) {
+  display: none;
+}
+.project-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+  user-select: none;
+}
+.project-head:hover {
+  background: var(--surface);
+}
+.project.open > .project-head {
+  background: var(--surface);
+  border-left: 2px solid var(--console-border);
+}
+.chevron {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  display: inline-flex;
+}
+.project.open .chevron {
+  transform: rotate(90deg);
+}
+.project-slug {
+  font-weight: 600;
+}
+.project-meta {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-focus);
+  flex-shrink: 0;
+}
+.dot.live {
+  background: var(--live);
+}
+.dot.offline {
+  background: var(--danger);
+}
+
+/* the file tree — a Wunderbaum instance mounts into .wb-host when the project
+   opens. It fills the remaining column height and scrolls internally. */
+.wb-host {
+  flex: 1;
+  min-height: 120px;
+  overflow: hidden; /* Wunderbaum scrolls its own viewport */
+  padding: 0.15rem 0 0.5rem;
+}
+.project.open {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Wunderbaum, themed to the warm-dark palette (ADR-0035) via its CSS vars,
+   tuned to read VS Code-like: compact rows, subtle hover, warm active row. */
+.wb-host.wunderbaum {
+  --wb-font-stack: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --wb-background-color: transparent;
+  --wb-node-text-color: var(--text);
+  --wb-border-color: transparent;
+  --wb-grid-color: transparent;
+  --wb-header-color: var(--text-muted);
+  --wb-hover-color: var(--surface);
+  --wb-active-color: var(--surface-hi);
+  --wb-active-border-color: var(--border-focus);
+  --wb-active-hover-color: var(--surface-hi);
+  --wb-focus-border-color: var(--border-focus);
+  --wb-hover-border-color: transparent;
+  --wb-dim-color: var(--text-muted);
+  --wb-row-outer-height: 22px;
+  --wb-row-inner-height: 22px;
+  font-size: 0.8rem;
+}
+/* the grid extension renders an (empty) header row — hide it, this is a plain tree */
+.wb-host.wunderbaum .wb-header {
+  display: none;
+}
+/* the disclosure chevron + Wunderbaum's own (bootstrap) folder icons */
+.wb-host.wunderbaum .wb-expander,
+.wb-host.wunderbaum .wb-icon {
+  color: var(--text-muted);
+}
+.wb-host.wunderbaum .wb-node.wb-folder > .wb-icon {
+  color: var(--console-text); /* folders read warmer, like VS Code's accent */
+}
+/* file-type glyphs whose brand colour is near-black inherit a light tone */
+.wb-host.wunderbaum .wb-icon.md-glyph {
+  color: var(--text);
+}
+.wb-host.wunderbaum .wb-icon.rs-glyph {
+  color: #dea584;
+}
+.wb-host.wunderbaum .wb-row.wb-active {
+  border-radius: var(--radius);
+}
+/* the inline rename input */
+.wb-host.wunderbaum input.wb-input-edit {
+  font: inherit;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+}
+
+/* --- right-hand runs panel ------------------------------------------------- */
+.runs {
+  grid-area: runs;
+  border-left: 1px solid var(--border);
+  background: var(--chrome);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.runs-head {
+  display: flex;
+  align-items: center;
+  /* match the canvas tab bar's 40px height so the two bottom borders line up */
+  min-height: 40px;
+  padding: 0 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+.runs-head .spacer {
+  flex: 1;
+}
+.runs-close {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.runs-close:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.runs-empty {
+  padding: 1rem 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* --- canvas ---------------------------------------------------------------- */
+.canvas {
+  grid-area: canvas;
+  position: relative;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: hidden;
+}
+.btn {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.btn:hover {
+  background: var(--surface-hi);
+}
+.btn.accent {
+  color: var(--console-text);
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+.canvas-empty small {
+  display: block;
+  margin-top: 0.4rem;
+  opacity: 0.7;
+}
+.canvas-foot {
+  position: absolute;
+  left: 0.8rem;
+  bottom: 0.8rem;
+  display: flex;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+.pill {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.6rem;
+  background: var(--log-bg);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* --- context menu ---------------------------------------------------------- */
+.ctxmenu {
+  display: none;
+  position: fixed;
+  z-index: 200;
+  min-width: 190px;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.ctx-item {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.ctx-item:hover {
+  background: var(--surface-hi);
+}
+.ctx-item .bi {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.ctx-item.danger {
+  color: var(--danger);
+}
+.ctx-item.danger .bi {
+  color: var(--danger);
+}
+.ctx-sep {
+  height: 1px;
+  margin: 0.25rem 0.3rem;
+  background: var(--border);
+}
+
+/* --- scrollbars ------------------------------------------------------------ */
+/* Themed to the warm-dark palette. Wunderbaum's own viewport scrolls inside
+   .wb-host, so it needs the treatment too (it lost the page default). */
+.projects,
+.wb-host,
+.wb-host * {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--border-focus) transparent;
+}
+.projects::-webkit-scrollbar,
+.wb-host ::-webkit-scrollbar,
+.wb-host::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.projects::-webkit-scrollbar-thumb,
+.wb-host ::-webkit-scrollbar-thumb,
+.wb-host::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+.projects::-webkit-scrollbar-thumb:hover,
+.wb-host ::-webkit-scrollbar-thumb:hover,
+.wb-host::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
+}
+.projects::-webkit-scrollbar-track,
+.wb-host ::-webkit-scrollbar-track,
+.wb-host::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --- sidebar: count badge + provenance icon ------------------------------- */
+.side-head .spacer {
+  flex: 1;
+}
+.side-head .count {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+/* provenance: GitHub-backed vs local-only. Sits before the project name,
+   distinct from the reachability dot. */
+.project-head .remote {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  width: 1em;
+  text-align: center;
+}
+.project-head .remote.bi-github {
+  color: var(--text);
+}
+.project-head .remote.bi-hdd {
+  color: var(--console-text);
+}
+
+/* --- canvas becomes a tabbed workspace ------------------------------------ */
+.canvas {
+  display: flex;
+  flex-direction: column;
+}
+.tabbar {
+  display: flex;
+  /* centre the tools; the tab strip stays full-height on its own (below) so the
+     active-tab fill still reaches the edges. */
+  align-items: center;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 40px;
+  /* visible, so the New-console dropdown isn't clipped — only the tab strip
+     itself scrolls (below). */
+  overflow: visible;
+}
+/* the tabs scroll here; the tools sit outside this overflow, pinned right. */
+.tabstrip {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.5rem 0 0.7rem;
+  max-width: 220px;
+  color: var(--text-muted);
+  background: var(--chrome);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.tab:hover {
+  background: var(--surface);
+}
+.tab.active {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--console-border);
+}
+.tab .tab-ic {
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+.tab .tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab .tab-close {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tab .tab-close:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+
+/* the stage is the dotted floor shared by the Agents workspace and viewers */
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: hidden;
+}
+.agents-tab {
+  position: absolute;
+  inset: 0;
+}
+#workspace {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+#viewers {
+  position: absolute;
+  inset: 0;
+}
+.canvas-tools {
+  display: flex;
+  align-items: center;
+  /* auto vertical margins centre the toolbar in the tab-bar flex line by exact
+     arithmetic — reliable where align-items left a few px of drift. */
+  margin-top: auto;
+  margin-bottom: auto;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding: 0 0.7rem 0 0.8rem;
+  border-left: 1px solid var(--border);
+}
+/* fixed, centred height so the buttons don't fill the bar edge-to-edge (which
+   read as clipped against the tab-bar borders). */
+.canvas-tools .btn {
+  height: 24px;
+  padding: 0 0.55rem;
+  font-size: 0.74rem;
+}
+
+/* the New-console dropdown */
+.menu-wrap {
+  position: relative;
+}
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  /* above the floating consoles (z-index ~60+), which extend up into this
+     dropdown's drop zone once tiled. */
+  z-index: 1000;
+}
+.dropdown-head {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.2rem;
+}
+.dropdown-item {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.dropdown-item:hover {
+  background: var(--surface-hi);
+}
+.dropdown-item .bi {
+  color: var(--console-text);
+}
+
+/* --- floating console windows (mirrors the daemon UI chrome) -------------- */
+.session-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: #0c0a08;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  min-width: 240px;
+  min-height: 150px;
+}
+.session-window.focused {
+  border-color: var(--border-focus);
+}
+.session-window.tiling {
+  transition: left 0.24s ease, top 0.24s ease, width 0.24s ease, height 0.24s ease;
+}
+.session-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0.55rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: move;
+  user-select: none;
+}
+.session-title {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.session-title .bi {
+  color: var(--console-text);
+}
+.session-actions button {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.45rem;
+  cursor: pointer;
+}
+.session-actions button:hover {
+  background: var(--surface-hi);
+}
+.session-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.session-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    var(--border-focus) 55%,
+    var(--border-focus) 63%,
+    transparent 63%,
+    transparent 74%,
+    var(--border-focus) 74%,
+    var(--border-focus) 82%,
+    transparent 82%
+  );
+}
+/* the faux terminal (no backend — local echo) */
+.term {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 0.5rem 0.6rem;
+  margin: 0;
+  color: var(--console-text);
+  background: #0c0a08;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+}
+.term-cursor {
+  animation: term-blink 1s steps(1) infinite;
+}
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* --- file viewers (code + markdown tabs) ---------------------------------- */
+.viewer {
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  background: var(--bg);
+}
+.viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.viewer-path {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.viewer-toolbar .spacer {
+  flex: 1;
+}
+.vbtn {
+  font: inherit;
+  font-size: 0.76rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.vbtn:hover {
+  background: var(--surface-hi);
+}
+.vbtn.save {
+  opacity: 0.55;
+}
+.vbtn.save.dirty {
+  opacity: 1;
+  color: var(--console-text);
+  border-color: var(--console-border);
+  background: var(--console-bg);
+}
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- CodeMirror, themed warm-dark (theme "wb") ---------------------------- */
+.cm-s-wb.CodeMirror {
+  height: 100%;
+  background: var(--log-bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+.cm-s-wb .CodeMirror-gutters {
+  background: var(--log-bg);
+  border-right: 1px solid var(--border);
+}
+.cm-s-wb .CodeMirror-linenumber {
+  color: var(--text-muted);
+}
+.cm-s-wb .CodeMirror-cursor {
+  border-left: 1px solid var(--text);
+}
+.cm-s-wb .CodeMirror-selected {
+  background: var(--surface-hi);
+}
+.cm-s-wb .CodeMirror-activeline-background {
+  background: rgba(255, 255, 255, 0.03);
+}
+.cm-s-wb .CodeMirror-matchingbracket {
+  color: var(--console-text) !important;
+  text-decoration: underline;
+}
+.cm-s-wb .cm-comment {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.cm-s-wb .cm-keyword {
+  color: #c98a7d;
+}
+.cm-s-wb .cm-atom,
+.cm-s-wb .cm-type {
+  color: #cba6c3;
+}
+.cm-s-wb .cm-number {
+  color: #d8a76a;
+}
+.cm-s-wb .cm-def {
+  color: var(--console-text);
+}
+.cm-s-wb .cm-variable-2 {
+  color: #9db7c9;
+}
+.cm-s-wb .cm-variable-3 {
+  color: #cba6c3;
+}
+.cm-s-wb .cm-property {
+  color: #cbb98a;
+}
+.cm-s-wb .cm-string,
+.cm-s-wb .cm-string-2 {
+  color: #9fb98a;
+}
+.cm-s-wb .cm-operator {
+  color: var(--text-muted);
+}
+.cm-s-wb .cm-meta {
+  color: var(--text-muted);
+}
+.cm-s-wb .cm-tag {
+  color: #c98a7d;
+}
+.cm-s-wb .cm-attribute {
+  color: var(--console-text);
+}
+.cm-s-wb .cm-link {
+  color: #9db7c9;
+}
+.cm-s-wb .cm-header {
+  color: var(--console-text);
+}
+.cm-s-wb span.CodeMirror-selectedtext {
+  color: var(--text);
+}
+.cm-s-wb .cm-searching {
+  background: rgba(232, 217, 168, 0.28);
+}
+/* CodeMirror's find dialog, themed */
+.cm-s-wb .CodeMirror-dialog {
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+.cm-s-wb .CodeMirror-dialog input {
+  font: inherit;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1rem 0.3rem;
+}
+
+/* --- markdown viewer ------------------------------------------------------ */
+.md-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.md-outline {
+  width: 190px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  padding: 0.5rem 0.3rem;
+  background: var(--chrome);
+}
+.outline-item {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outline-item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.outline-item.lvl-h2 {
+  padding-left: 0.9rem;
+}
+.outline-item.lvl-h3 {
+  padding-left: 1.4rem;
+  font-size: 0.72rem;
+}
+.outline-item.lvl-h4 {
+  padding-left: 1.9rem;
+  font-size: 0.72rem;
+}
+.outline-empty {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.3rem 0.4rem;
+}
+.md-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.md-editor {
+  flex: 1;
+  min-height: 0;
+}
+.md-editor .CodeMirror {
+  height: 100%;
+}
+.md-split.editing .md-outline,
+.md-split.editing .md-scroll {
+  display: none;
+}
+
+/* rendered markdown prose */
+.md-body {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 1.4rem 1.8rem 4rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.65;
+  color: var(--text);
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  color: #f2ede4;
+  line-height: 1.3;
+  margin: 1.6em 0 0.5em;
+}
+.md-body h1 {
+  font-size: 1.7rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+.md-body h2 {
+  font-size: 1.3rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25em;
+}
+.md-body h3 {
+  font-size: 1.1rem;
+}
+.md-body p,
+.md-body ul,
+.md-body ol {
+  margin: 0.7em 0;
+}
+.md-body a {
+  color: #9db7c9;
+}
+.md-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+.md-body pre {
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  overflow: auto;
+}
+.md-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--console-text);
+}
+.md-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--console-border);
+  color: var(--text-muted);
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  width: 100%;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.md-body th {
+  background: var(--surface);
+}
+.md-body .mermaid {
+  margin: 1em 0;
+  text-align: center;
+}
+.md-body .mermaid-error {
+  color: var(--danger);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+.md-body mark.find-hit {
+  background: rgba(232, 217, 168, 0.32);
+  color: inherit;
+  border-radius: 2px;
+}
+.md-body mark.find-hit.current {
+  background: var(--console-text);
+  color: #14110f;
+}
+
+/* the in-page find bar for markdown */
+.md-find {
+  display: none;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.md-find.open {
+  display: flex;
+}
+.md-find-input {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.45rem;
+  width: 220px;
+}
+.md-find-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.md-find-count {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  min-width: 3.5em;
+}
+
+/* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */
+[x-cloak] {
+  display: none !important;
+}
