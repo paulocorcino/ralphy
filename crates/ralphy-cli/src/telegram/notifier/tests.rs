@@ -303,6 +303,45 @@ fn render_card_and_footer_surface_needs_split() {
 }
 
 #[test]
+fn footer_marks_a_run_that_processed_nothing_as_stopped() {
+    // A run whose card reaches its terminal edge with zero issues finished,
+    // skipped, or parked was interrupted (killed/superseded/bailed at startup) —
+    // the footer must say so, not `🏁 … ✅ 0 done` which reads as a clean finish
+    // (FinCal, 2026-07-13: an aborted run's finished card sat above the next run's
+    // start card, reading "finished → started").
+    let mut state = RunState::new("repo · 12 issues", 12);
+    state.finished = true;
+    let footer = render_final_push(&state);
+    assert!(footer.contains("🛑"), "stopped marker: {footer}");
+    assert!(
+        footer.contains("stopped before any issue was processed"),
+        "stopped wording: {footer}"
+    );
+    assert!(!footer.contains("🏁"), "no finish flag: {footer}");
+    assert!(
+        !footer.contains("✅ 0 done"),
+        "no zero-done claim: {footer}"
+    );
+
+    // One issue done flips it back to the normal `🏁` completion footer.
+    state.apply(RunEvent::IssueStarted {
+        number: 1,
+        title: "first".into(),
+    });
+    state.apply(RunEvent::IssueClosed {
+        number: 1,
+        tokens: 0,
+        usage: UsageLite::default(),
+    });
+    let done_footer = render_final_push(&state);
+    assert!(done_footer.contains("🏁"), "finish flag: {done_footer}");
+    assert!(
+        done_footer.contains("✅ 1 done"),
+        "done count: {done_footer}"
+    );
+}
+
+#[test]
 fn render_card_has_header_counters_and_blank_line_grouping() {
     let mut state = RunState::new("ocs-inventory · 2 issues [AFK]", 2);
     state.apply(RunEvent::IssueStarted {
@@ -799,8 +838,10 @@ fn worker_swallows_edit_error_and_finishes_cleanly() {
 fn worker_terminal_edit_adds_footer_as_the_last_call() {
     // With no state-changing events the idle loop makes no edit (an identical
     // body would be rejected as "message is not modified"). The one terminal
-    // edit is the `finished` flip growing the `🏁` footer — a genuine change —
-    // and it is the LAST call: there is no final push after it.
+    // edit is the `finished` flip growing the footer — a genuine change — and it
+    // is the LAST call: there is no final push after it. A run with no folded
+    // issue processed nothing, so that footer is the `🛑` stopped marker (never
+    // the celebratory `🏁 … ✅ 0 done`).
     let transport = RecordingTransport::new();
     let calls = transport.calls.clone();
     let client = BotClient::new(transport);
@@ -822,8 +863,9 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     assert_eq!(edits.len(), 1, "exactly one terminal footer edit: {m:?}");
     let edited_text = edits[0]["text"].as_str().unwrap_or("");
     assert!(
-        edited_text.contains("🏁") && edited_text.contains("run finished"),
-        "terminal edit must carry the footer: {edited_text}"
+        edited_text.contains("🛑")
+            && edited_text.contains("stopped before any issue was processed"),
+        "terminal edit must carry the stopped footer: {edited_text}"
     );
 }
 

@@ -206,6 +206,24 @@ pub fn render_card(state: &RunState, now_epoch: i64) -> String {
 /// an over-long `--title` cannot make Telegram reject the edit.
 pub fn render_final_push(state: &RunState) -> String {
     let c = state.counts();
+    // A run that reaches its terminal edge without a single issue finishing,
+    // skipping, or parking never actually did any work — it was interrupted
+    // (killed, superseded, or bailed at startup before the first `IssueStarted`).
+    // The celebratory `🏁 … ✅ 0 done` footer misreads that as a clean completion:
+    // an aborted run's card then sits above the next run's fresh card and reads
+    // "finished → started" (FinCal, 2026-07-13). Render a distinct stopped footer so
+    // a no-op run never masquerades as a completed one.
+    let processed =
+        c.done + c.skipped + c.blocked + c.infeasible + c.non_green + c.needs_split + c.hitl;
+    if processed == 0 {
+        return truncate_chars(
+            format!(
+                "🛑 {} — stopped before any issue was processed",
+                state.title
+            ),
+            TELEGRAM_LIMIT,
+        );
+    }
     let head = state
         .final_summary
         .clone()

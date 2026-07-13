@@ -9,13 +9,16 @@ use regex::Regex;
 /// Kimi, OpenAI-compatible, …) whose quota wording differs, so keying on any one
 /// vendor's exact phrase misses the next one — this matches the shared shape
 /// instead (D9). Anchored on limit-specific combos (`usage limit`, `rate limit`,
-/// `limit reached/exceeded`, `too many requests`, `quota exceeded/exhausted`), not
-/// a bare `"limit"`, so an ordinary error line (`limit not found`, a transient
-/// backend blip) is not misread as a quota cap. Compiled once per scan (or once per
-/// early-kill hook build in the execute path — [`OpenCodeAgent::execute`]).
+/// `limit reached/exceeded/exhausted`, `too many requests`, `quota
+/// exceeded/exhausted`), not a bare `"limit"`, so an ordinary error line (`limit not
+/// found`, a transient backend blip) is not misread as a quota cap. `exhausted` sits
+/// in the limit-verb group so Z.ai's weekly/monthly wording (`Limit Exhausted`, which
+/// carries no `quota` prefix — FinCal #77, 2026-07-13) is caught. Compiled once per
+/// scan (or once per early-kill hook build in the execute path —
+/// [`OpenCodeAgent::execute`]).
 pub(crate) fn usage_limit_regex() -> Regex {
     Regex::new(
-        r"(?i)usage limit|rate[ _]?limit|limit (?:reached|exceeded)|too many requests|quota (?:exceeded|exhausted)",
+        r"(?i)usage limit|rate[ _]?limit|limit (?:reached|exceeded|exhausted)|too many requests|quota (?:exceeded|exhausted)",
     )
     .expect("valid usage-limit regex")
 }
@@ -436,6 +439,25 @@ mod tests {
         assert_eq!(
             parse_opencode_log_limit(log),
             Some(Some("2026-07-11 22:14:08".into())),
+        );
+    }
+
+    #[test]
+    fn log_limit_detects_zai_weekly_limit_exhausted_wording() {
+        // Z.ai's weekly/monthly block reads `Limit Exhausted`, not the 5h cap's
+        // `Usage limit reached` — captured live 2026-07-13 (FinCal #77). The verb
+        // `exhausted` sits directly after `Limit` with no `quota` prefix, so the
+        // matcher must carry `limit exhausted` or this slips through and the child
+        // burns the full wall budget in silent backoff instead of early-killing.
+        let log = concat!(
+            "timestamp=2026-07-13T17:06:04.998Z level=ERROR run=d9a3c1f7 ",
+            "message=\"stream error\" providerID=zai-coding-plan modelID=glm-5.2 ",
+            "session.id=ses_x error.error=\"AI_APICallError: Weekly/Monthly Limit ",
+            "Exhausted. Your limit will reset at 2026-07-18 11:26:07\"",
+        );
+        assert_eq!(
+            parse_opencode_log_limit(log),
+            Some(Some("2026-07-18 11:26:07".into())),
         );
     }
 
