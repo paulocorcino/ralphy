@@ -232,9 +232,28 @@ planner). As you complete each step, update the matching ledger line:
    actually failed (probe the environment first, e.g. `docker info`, network
    reachability, then run the named command) and record the literal
    probe/command error under `## Notes & decisions` — "would require X" with
-   no attempt is NOT a valid downgrade. A line legitimately stays
+   no attempt is NOT a valid downgrade. A tool's absence from
+   `environment.md` is NOT a probe result: that file lists only what the
+   runner samples, so run the tool's own version command and cite its literal
+   failure before claiming a tool is missing. A line legitimately stays
    `[review-only]` only when it needs human judgment (visual, UX, subjective)
-   or the recorded attempt failed.
+   or the recorded attempt failed. For browser-facing criteria, human
+   judgment means VISUAL judgment (layout, clipping, look-and-feel):
+   behavior a script can assert from the DOM or an HTTP API — routing, data
+   appearing, state surviving a reload — is machine-verifiable whenever a
+   headless-browser driver (Playwright or equivalent) is available.
+   Probe for one; if none is present, install it
+   (`pip install playwright && playwright install chromium`), then attempt
+   a throwaway smoke script. Only a recorded, failed install attempt
+   (offline host, no package manager) justifies settling for
+   `[review-only]` — put the literal error in `## Residue` with the
+   install command a human should run.
+   Every browser-driven verification MUST leave evidence: capture a
+   screenshot at the asserting moment, save it as
+   `docs/screenshots/<YYYY-MM-DD>-issue-<N>-<slug>.png`, commit it with the
+   work it proves, and cite the path + commit hash in the ledger evidence
+   line (the runner publishes the ledger on the issue; the image renders in
+   the PR). A DOM assertion without its screenshot is half the evidence.
 
 **The ledger does NOT gate `RALPHY_DONE_EXIT`.** The green gate stays keyed to
 the plan's machine-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT`

@@ -42,8 +42,13 @@ const HEADER: &str = "\
 You are working on the machine below. Adapt every command — build steps, \
 `## Verify`, smoke scripts — to this OS and the project's needs. These are the \
 tools confirmed present; the machine may have others, but never assume a tool \
-exists because it is common — verify it before a command depends on it. Don't \
-install new tools unless the task explicitly asks.
+exists because it is common — verify it before a command depends on it. \
+Equally, this list is a lead, not an inventory: a tool missing from it may \
+still be installed, so never cite its absence here as proof it is unavailable \
+— the only valid evidence of absence is a probe you ran that failed (e.g. \
+`tool --version`). Don't install new tools unless the task explicitly asks — \
+with one standing exception: a headless-browser driver (e.g. Playwright) \
+needed to verify a browser-facing acceptance criterion.
 ";
 
 /// One probed toolchain: the label shown to the agent and the argument that makes
@@ -56,13 +61,18 @@ struct Tool {
 }
 
 /// The probe list: common language runtimes, package managers, and the shell
-/// tools agents reach for in verify/smoke steps. Curated for signal over
+/// tools agents reach for in verify/smoke steps (`gh` included — Ralphy's own
+/// workflow is GitHub-driven, and its omission once read as "not installed"). Curated for signal over
 /// coverage — niche toolchains (JVM, .NET) are intentionally omitted to keep the
 /// brief short; only tools found on this machine appear in the output. `python`
 /// and `python3` are both probed because the canonical name differs by OS.
 const TOOLS: &[Tool] = &[
     Tool {
         name: "git",
+        version_arg: "--version",
+    },
+    Tool {
+        name: "gh",
         version_arg: "--version",
     },
     Tool {
@@ -119,6 +129,10 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "make",
+        version_arg: "--version",
+    },
+    Tool {
+        name: "playwright",
         version_arg: "--version",
     },
 ];
@@ -327,6 +341,11 @@ mod tests {
         );
         assert!(md.starts_with("# ⚠️ Build environment"));
         assert!(md.contains("never assume a tool exists because it is common"));
+        // The inverse trap — treating omission from the list as proof of
+        // absence — must be closed explicitly (an executor once left a
+        // criterion review-only citing "no gh per environment.md" on a host
+        // that had gh).
+        assert!(md.contains("the only valid evidence of absence is a probe you ran"));
         assert!(md.contains("## ⛔ DO NOT KILL the orchestrator"));
         assert!(md.contains("- OS: Windows 11 · x86_64\n"));
         assert!(md.contains("- git 2.44.0\n"));
