@@ -2005,7 +2005,10 @@ mod tests {
         );
         let resp = get_local("/workbench/vendor/xterm.css").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.css → 200");
-        assert_eq!(resp.headers()[header::CONTENT_TYPE], "text/css; charset=utf-8");
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/css; charset=utf-8"
+        );
 
         let shell = body_string(get_local("/workbench/").await).await;
         assert!(

@@ -229,6 +229,9 @@ window.WBConsole = (function () {
           return;
         }
       }
+      // Session ended server-side (or takeover declined): stop observing so a
+      // dead-ws terminal doesn't keep firing fit() until the window is closed.
+      ro.disconnect();
       term.write("\r\n[session closed]\r\n");
     };
 
