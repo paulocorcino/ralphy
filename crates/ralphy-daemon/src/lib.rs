@@ -24,6 +24,7 @@ pub mod autostart;
 pub mod confine;
 pub mod cookie;
 pub mod dispatch;
+pub mod fswrite;
 pub mod identity;
 pub mod password;
 pub mod protocol;
