@@ -1996,6 +1996,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workbench_serves_vendored_xterm() {
+        let resp = get_local("/workbench/vendor/xterm.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.js → 200");
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        let resp = get_local("/workbench/vendor/xterm.css").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.css → 200");
+        assert_eq!(resp.headers()[header::CONTENT_TYPE], "text/css; charset=utf-8");
+
+        let shell = body_string(get_local("/workbench/").await).await;
+        assert!(
+            shell.contains("vendor/xterm.js"),
+            "the shell HTML must load the vendored xterm"
+        );
+
+        let console = body_string(get_local("/workbench/wb-console.js").await).await;
+        assert!(
+            console.contains("new Terminal("),
+            "wb-console.js must construct a real xterm terminal"
+        );
+        assert!(
+            console.contains("/ws/session"),
+            "wb-console.js must open the session WebSocket"
+        );
+    }
+
+    #[tokio::test]
     async fn root_ui_untouched() {
         let resp = get_local("/").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");

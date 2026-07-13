@@ -2,14 +2,15 @@
    ralphy workbench shell — floating consoles (the Agents tab)
 
    The canvas is a workspace where consoles live as draggable, resizable windows
-   over the dotted floor. This mirrors the real daemon UI window chrome
-   (crates/ralphy-daemon/assets/ui/index.html): a titlebar drag-handle, a body,
-   and a bottom-right resize grip. There the body is a live xterm.js attached to
-   a PTY over a WebSocket; here — a throwaway mock with no backend — the body is
-   a faux terminal that echoes locally so the layout/behaviour can be felt.
+   over the dotted floor. This mock contributes the window chrome (workspace-
+   relative drag/clampAll/tiling); the terminal body is the REAL thing, a live
+   xterm.js attached to a PTY over the daemon's `/ws/session` WebSocket —
+   transplanted verbatim from crates/ralphy-daemon/assets/ui/index.html
+   (index.html contributes the truth, the mock contributes the chrome).
 
-   Opening/closing a console is an intent on the `workbench:action` seam; a real
-   backend would spawn/attach the agent session.
+   Opening/closing a console spawns/closes a daemon-owned session; on page load
+   the live sessions are re-opened as windows so a reload reattaches with
+   scrollback.
 --------------------------------------------------------------------------- */
 window.WBConsole = (function () {
   const workspace = () => document.getElementById("workspace");
@@ -113,54 +114,145 @@ window.WBConsole = (function () {
     });
   }
 
-  // A tiny local-echo terminal so a console *feels* live without a backend.
-  function fauxTerminal(body, repo, agent) {
-    const term = document.createElement("div");
-    term.className = "term";
-    term.tabIndex = 0;
-    const printed = [
-      ` ${agent} · ${repo || "~"}  (mock console — local echo only)`,
-      `type freely; a real daemon would attach a PTY here.`,
-      "",
-    ];
-    let input = "";
-    const prompt = `${repo || "~"} λ `;
+  // The workbench session codec, mirrored from src/protocol.rs. A terminal frame
+  // is [0x01][session u64 BE][raw bytes]; a resize rides a command frame [0x02]
+  // [JSON {id, verb:"resize", payload:{rows, cols}}]. One session per socket in
+  // this slice, so the session id is always 1.
+  const TAG_TERMINAL = 0x01;
+  const TAG_COMMAND = 0x02;
+  const SESSION_ID = 1;
 
-    function render() {
-      term.textContent = printed.join("\n") + "\n" + prompt + input;
-      const cur = document.createElement("span");
-      cur.className = "term-cursor";
-      cur.textContent = "█";
-      term.append(cur);
-      term.scrollTop = term.scrollHeight;
-    }
-    term.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        printed.push(prompt + input);
-        if (input.trim()) printed.push(`  ↳ (mock) '${input.trim()}' would run in ${repo || "home"}`);
-        input = "";
-      } else if (e.key === "Backspace") {
-        input = input.slice(0, -1);
-      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-        input += e.key;
-      } else {
-        return;
-      }
-      e.preventDefault();
-      render();
-    });
-    body.append(term);
-    render();
-    // focus the terminal when the window is first shown
-    setTimeout(() => term.focus(), 0);
+  function encodeTerminal(str) {
+    const data = new TextEncoder().encode(str);
+    const out = new Uint8Array(1 + 8 + data.length);
+    out[0] = TAG_TERMINAL;
+    out[8] = SESSION_ID;
+    out.set(data, 9);
+    return out;
   }
 
-  // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
-  // is no agent — a normal shell in the repo dir, labelled "console" (mirrors the
-  // daemon's per-repo console tile). The emitted intent carries `plain` so a
-  // backend spawns a bare PTY instead of an agent session.
-  function open({ repo, agent, plain }) {
-    const label = agent || "console";
+  function encodeResize(rows, cols) {
+    const json = JSON.stringify({ id: 0, verb: "resize", payload: { rows, cols } });
+    const body = new TextEncoder().encode(json);
+    const out = new Uint8Array(1 + body.length);
+    out[0] = TAG_COMMAND;
+    out.set(body, 1);
+    return out;
+  }
+
+  // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
+  // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
+  // (a NEW free-console launch — home dir when `repo` absent), or {id[, takeover]}
+  // (a REATTACH to a daemon-owned session). Transplanted from index.html launch().
+  // Returns a handle so the window chrome can refit and close it.
+  function attachTerminal(body, opts) {
+    const term = new Terminal({ convertEol: false });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(body);
+    // GPU glyph rendering with a DOM fallback: if WebGL is unavailable (headless,
+    // no GPU) or the context is lost, dispose the addon and xterm falls back to
+    // DOM without dropping the session.
+    try {
+      const webgl = new WebglAddon.WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {}
+    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    fit.fit();
+    // Refit whenever THIS window's body changes size (drag-resize, clampAll, a
+    // panel toggle). Per-window, so one window's resize never disturbs another.
+    const ro = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {}
+    });
+    ro.observe(body);
+
+    let currentSessionId = opts.id ?? null;
+    let leaving = false;
+
+    let url = "ws://" + location.host + "/ws/session?";
+    if (opts.id != null) {
+      url += "id=" + encodeURIComponent(opts.id);
+      if (opts.takeover) url += "&takeover=1";
+    } else if (opts.console) {
+      url += "console=1";
+      if (opts.repo) url += "&repo=" + encodeURIComponent(opts.repo);
+    } else {
+      url +=
+        "repo=" +
+        encodeURIComponent(opts.repo) +
+        "&agent=" +
+        encodeURIComponent(opts.agent);
+    }
+    const ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
+    let opened = false;
+    ws.onopen = () => {
+      opened = true;
+      fit.fit();
+      ws.send(encodeResize(term.rows, term.cols));
+    };
+    ws.onmessage = (ev) => {
+      const a = new Uint8Array(ev.data);
+      if (a[0] === TAG_TERMINAL) {
+        if (currentSessionId == null) {
+          currentSessionId = Number(
+            new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
+          );
+        }
+        term.write(a.subarray(9));
+      }
+    };
+    term.onData((d) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
+    });
+    term.onResize(({ rows, cols }) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(encodeResize(rows, cols));
+    });
+    ws.onclose = () => {
+      if (leaving) return;
+      // A reattach that closes WITHOUT ever opening is the server refusing a busy
+      // session (a single writer is attached). Offer an explicit takeover, once.
+      if (
+        opts.id != null &&
+        !opened &&
+        !opts.takeover &&
+        typeof opts.onRefused === "function"
+      ) {
+        if (confirm("session busy — take over?")) {
+          leaving = true;
+          ro.disconnect();
+          term.dispose();
+          opts.onRefused();
+          return;
+        }
+      }
+      term.write("\r\n[session closed]\r\n");
+    };
+
+    return {
+      term,
+      fit,
+      ws,
+      get sessionId() {
+        return currentSessionId;
+      },
+      dispose() {
+        leaving = true;
+        ro.disconnect();
+        if (ws.readyState <= 1) ws.close();
+        term.dispose();
+      },
+    };
+  }
+
+  // Build the floating-window chrome and attach a live terminal into it. Shared
+  // by `open()` (a new console) and the load-time reattach (one window per live
+  // session). Keeps the mock's workspace-relative drag/tiling; `termOpts` is the
+  // `attachTerminal` opts, `label`/`repo` drive the titlebar.
+  function spawnWindow(termOpts, label, repo) {
     const win = document.createElement("div");
     win.className = "session-window";
     cascade = (cascade + 1) % 8;
@@ -193,18 +285,78 @@ window.WBConsole = (function () {
     makeDraggable(win, titlebar);
     makeResizable(win, grip);
     focusWin(win);
-    fauxTerminal(body, repo, label);
+
+    const t = attachTerminal(body, {
+      ...termOpts,
+      // Busy-reattach → tear THIS window down and relaunch as a takeover, so no
+      // dead empty window lingers.
+      onRefused: () => {
+        t.dispose();
+        win.remove();
+        wins.delete(win);
+        changed();
+        spawnWindow({ id: termOpts.id, takeover: true }, label, repo);
+      },
+    });
+    win._term = t;
 
     closeBtn.onclick = () => {
-      win.remove();
-      wins.delete(win);
-      WB.emit("console-close", { repo: repo || null, agent: agent || null, plain: !!plain });
-      changed();
+      const id = t.sessionId;
+      const finish = () => {
+        t.dispose();
+        win.remove();
+        wins.delete(win);
+        WB.emit("console-close", { repo: repo || null, agent: label });
+        changed();
+      };
+      // End the daemon-owned session first (existing close endpoint), then drop
+      // the window — mirrors index.html's closeBtn.
+      if (id != null) {
+        fetch(`/api/sessions/close?id=${id}`, { method: "POST" }).then(finish, finish);
+      } else {
+        finish();
+      }
     };
 
     wins.add(win);
-    WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
     changed();
+    return win;
+  }
+
+  // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
+  // is no agent — a normal shell in the repo dir, labelled "console".
+  function open({ repo, agent, plain }) {
+    const label = agent || "console";
+    spawnWindow(plain ? { console: true, repo } : { repo, agent }, label, repo);
+    WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
+  }
+
+  // Reattach every live daemon session as its own floating window, so reopening
+  // the browser restores the running consoles (with replayed scrollback).
+  function reattachLive() {
+    fetch("/api/sessions")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((sessions) => {
+        for (const s of sessions) {
+          spawnWindow({ id: s.id }, s.agent || "console", s.repo);
+        }
+      })
+      .catch(() => {});
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", reattachLive);
+  } else {
+    reattachLive();
+  }
+
+  // Refit every open console. Called when the Agents tab returns to view: a
+  // terminal opened/reattached while the tab was display:none measured 0×0.
+  function refitAll() {
+    for (const win of wins) {
+      try {
+        win._term?.fit.fit();
+      } catch {}
+    }
   }
 
   // Tile every open console into a grid that fills the workspace — the "heavy
@@ -238,5 +390,5 @@ window.WBConsole = (function () {
     return wins.size;
   }
 
-  return { open, arrange, count };
+  return { open, arrange, count, refitAll };
 })();

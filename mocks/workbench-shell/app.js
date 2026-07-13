@@ -1099,6 +1099,9 @@ function shell() {
       this.$nextTick(() => {
         WBViewer.setActive(this.active === "agents" ? null : this.active);
         window.lucide?.createIcons();
+        // A console opened/reattached while another tab was active measured 0×0
+        // (its tab was display:none); refit now that the Agents tab is visible.
+        if (id === "agents") window.WBConsole?.refitAll?.();
       });
     },
 
