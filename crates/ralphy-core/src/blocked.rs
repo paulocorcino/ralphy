@@ -170,6 +170,15 @@ pub fn referenced_issues(body: &str, self_number: u64) -> Vec<u64> {
     out
 }
 
+/// The board fold's assignee-union scope (ADR-0036 Implementation Decisions):
+/// keep an issue iff it is UNASSIGNED, or a `queue.assignee` login is configured
+/// AND that login is among the issue's assignees. `gh --assignee` cannot express
+/// "unassigned OR login" (it excludes unassigned), so the union is applied here,
+/// over an UNFILTERED read. With no configured login the default is unassigned-only.
+pub fn assignee_union_keep(assignees: &[String], configured: Option<&str>) -> bool {
+    assignees.is_empty() || configured.is_some_and(|c| assignees.iter().any(|a| a == c))
+}
+
 /// Order a queue so every issue comes after the issues it depends on, with
 /// ascending number as the tie-break — the sequence shown to the user IS the
 /// sequence executed. Edges are derived from bodies already in hand (no tracker
@@ -457,6 +466,79 @@ mod tests {
 
     fn numbers(queue: &[Issue]) -> Vec<u64> {
         queue.iter().map(|i| i.number).collect()
+    }
+
+    #[test]
+    fn assignee_union_default_hides_assigned() {
+        // No configured login ⇒ only unassigned issues survive.
+        assert!(assignee_union_keep(&[], None));
+        assert!(!assignee_union_keep(&["octo".to_string()], None));
+    }
+
+    #[test]
+    fn assignee_union_keeps_unassigned_or_login() {
+        // Configured login `octo`: unassigned survives, an `octo`-assigned issue
+        // survives, anything assigned only to others is dropped.
+        assert!(assignee_union_keep(&[], Some("octo")));
+        assert!(assignee_union_keep(
+            &["octo".to_string(), "other".to_string()],
+            Some("octo")
+        ));
+        assert!(!assignee_union_keep(&["other".to_string()], Some("octo")));
+    }
+
+    #[test]
+    fn board_order_matches_shared_fixture() {
+        // The machine-verified parity spine (issue #198): the board fold's Ready
+        // order MUST equal the core's queue order. Load the shared fixture the JS
+        // `orderGraph` port cross-checks against, derive the queue as the issues
+        // named in `expectedOrder` (open = all `issues`), run the same sort, and
+        // assert the numbers equal `expectedOrder` verbatim. Diverging the fixture
+        // or the sort reds this test.
+        #[derive(serde::Deserialize)]
+        struct FixtureIssue {
+            number: u64,
+            #[serde(default, rename = "blockedBy")]
+            blocked_by: Vec<u64>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            issues: Vec<FixtureIssue>,
+            #[serde(rename = "expectedOrder")]
+            expected_order: Vec<u64>,
+        }
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mocks/workbench-shell/fixtures/graph-parity.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+        let fixture: Fixture = serde_json::from_str(&raw).expect("valid parity fixture JSON");
+
+        // Synthesize each body as a `## Blocked by` bullet list so `parse_blocked_by`
+        // reconstructs the edges the fixture declares.
+        let body_of = |blocked_by: &[u64]| -> String {
+            let mut b = String::from("## Blocked by\n");
+            for n in blocked_by {
+                b.push_str(&format!("- #{n}\n"));
+            }
+            b
+        };
+        let open: Vec<Issue> = fixture
+            .issues
+            .iter()
+            .map(|fi| issue(fi.number, &body_of(&fi.blocked_by)))
+            .collect();
+        let queue: Vec<Issue> = open
+            .iter()
+            .filter(|i| fixture.expected_order.contains(&i.number))
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            numbers(&sort_queue_in_graph(queue, &open)),
+            fixture.expected_order,
+            "board fold order must equal the core queue order (fixture parity)"
+        );
     }
 
     #[test]

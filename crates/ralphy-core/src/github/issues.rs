@@ -38,6 +38,129 @@ pub struct IssueMeta {
     pub state_reason: Option<String>,
 }
 
+/// The `gh issue list --json` shape the whole-tracker board reads fetch. All
+/// fields are `#[serde(default)]` so one struct deserializes BOTH the open read
+/// (carries `body`, no `stateReason`) and the closed read (carries `stateReason`,
+/// no `body`) — the caller stamps `state` and the parse half fills the rest.
+#[derive(Deserialize)]
+struct GhBoardIssue {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    labels: Vec<GhLabel>,
+    #[serde(default)]
+    assignees: Vec<GhAssignee>,
+    #[serde(default, rename = "stateReason")]
+    state_reason: Option<String>,
+    #[serde(default, rename = "createdAt")]
+    created_at: String,
+    #[serde(default, rename = "updatedAt")]
+    updated_at: String,
+}
+
+/// One whole-tracker row the Kanban board fold emits (ADR-0036 slice 6): every
+/// open issue plus a bounded recent-closed batch, each carrying the columns the
+/// four board lanes and the drawer need. `state` is `"open"`/`"closed"`; `reason`
+/// is the lowercased `stateReason` (populated only for closed issues); `blocked_by`
+/// is parsed from the body's `## Blocked by` section (empty for the body-less
+/// closed read). Snake_case on the wire, matching the project's JSON convention.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BoardIssue {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub reason: Option<String>,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+    pub blocked_by: Vec<u64>,
+    pub created: String,
+    pub updated: String,
+}
+
+impl GhBoardIssue {
+    /// Fold a raw `gh` row into a [`BoardIssue`], stamping the given `state` and
+    /// lowercasing `stateReason` into `reason`. `blocked_by` is parsed from the
+    /// body (empty when the body-less closed read is folded).
+    fn into_board(self, state: &str) -> BoardIssue {
+        BoardIssue {
+            number: self.number,
+            title: self.title,
+            state: state.to_string(),
+            reason: self.state_reason.map(|s| s.to_lowercase()),
+            labels: self.labels.into_iter().map(|l| l.name).collect(),
+            assignees: self.assignees.into_iter().map(|a| a.login).collect(),
+            blocked_by: crate::blocked::parse_blocked_by(&self.body),
+            created: self.created_at,
+            updated: self.updated_at,
+        }
+    }
+}
+
+/// Parse the open-issue board read (`gh issue list --state open --json
+/// number,title,labels,assignees,createdAt,updatedAt,body`) into [`BoardIssue`]s,
+/// each stamped `state="open"` with `blocked_by` derived from its body.
+pub fn parse_all_open_meta(json: &str) -> Result<Vec<BoardIssue>> {
+    let raw: Vec<GhBoardIssue> =
+        serde_json::from_str(json).context("parsing `gh issue list --state open` board JSON")?;
+    Ok(raw.into_iter().map(|g| g.into_board("open")).collect())
+}
+
+/// Parse the closed-issue board read (`gh issue list --state closed --json
+/// number,title,labels,assignees,stateReason,createdAt,updatedAt`) into
+/// [`BoardIssue`]s, each stamped `state="closed"` with `reason` lowercased from
+/// `stateReason` (`COMPLETED`→`completed`, `NOT_PLANNED`→`not_planned`).
+pub fn parse_closed_board(json: &str) -> Result<Vec<BoardIssue>> {
+    let raw: Vec<GhBoardIssue> =
+        serde_json::from_str(json).context("parsing `gh issue list --state closed` board JSON")?;
+    Ok(raw.into_iter().map(|g| g.into_board("closed")).collect())
+}
+
+/// List EVERY open issue (no label filter) with the columns the board fold needs
+/// (assignees, dates, body for blocked-by). The union fold applies the assignee
+/// scope later, so this read is deliberately UNFILTERED — unassigned issues must
+/// be present to union over. Bounded at 200 (the whole-tracker lens, not a queue).
+pub fn list_all_open_meta(repo_root: &Path) -> Result<Vec<BoardIssue>> {
+    let out = gh_output("gh issue list --state open (board)", || {
+        let mut cmd = gh(repo_root);
+        cmd.args([
+            "issue",
+            "list",
+            "--state",
+            "open",
+            "--json",
+            "number,title,labels,assignees,createdAt,updatedAt,body",
+            "--limit",
+            "200",
+        ]);
+        cmd
+    })?;
+    parse_all_open_meta(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// List a bounded batch of recently-closed issues for the board's Closed column.
+/// Bounded at 50 (the read-only Closed lens; the runner's queue never includes
+/// closed issues, so a very old closed issue simply not appearing is acceptable).
+/// No `body` is fetched (the drawer's `issues show` fills it on demand).
+pub fn list_closed_board(repo_root: &Path) -> Result<Vec<BoardIssue>> {
+    let out = gh_output("gh issue list --state closed (board)", || {
+        let mut cmd = gh(repo_root);
+        cmd.args([
+            "issue",
+            "list",
+            "--state",
+            "closed",
+            "--json",
+            "number,title,labels,assignees,stateReason,createdAt,updatedAt",
+            "--limit",
+            "50",
+        ]);
+        cmd
+    })?;
+    parse_closed_board(&String::from_utf8_lossy(&out.stdout))
+}
+
 #[derive(Deserialize)]
 struct GhIssue {
     number: u64,
@@ -604,6 +727,38 @@ mod tests {
         );
         assert_eq!(meta[0].state_reason, None);
         assert_eq!(meta[1].state_reason.as_deref(), Some("COMPLETED"));
+    }
+
+    #[test]
+    fn parse_all_open_meta_reads_dates_and_assignees() {
+        // The open board read: dates + assignees + a body-derived blocked_by,
+        // state stamped "open", reason absent (gh leaves stateReason null on open).
+        let json = r###"[{"number":7,"title":"t7","labels":[{"name":"ready-for-agent"}],"assignees":[{"login":"octo"}],"createdAt":"2026-07-01T08:00:00Z","updatedAt":"2026-07-02T09:00:00Z","body":"## Blocked by\n- #3\n- #4\n"}]"###;
+        let rows = parse_all_open_meta(json).unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!(r.number, 7);
+        assert_eq!(r.title, "t7");
+        assert_eq!(r.state, "open");
+        assert_eq!(r.reason, None);
+        assert_eq!(r.labels, vec!["ready-for-agent".to_string()]);
+        assert_eq!(r.assignees, vec!["octo".to_string()]);
+        assert_eq!(r.blocked_by, vec![3, 4]);
+        assert_eq!(r.created, "2026-07-01T08:00:00Z");
+        assert_eq!(r.updated, "2026-07-02T09:00:00Z");
+    }
+
+    #[test]
+    fn parse_closed_board_lowercases_state_reason() {
+        // The closed board read: stateReason lowercased into reason, state
+        // stamped "closed", no body → empty blocked_by.
+        let json = r#"[{"number":8,"title":"done","labels":[],"assignees":[],"stateReason":"COMPLETED","createdAt":"2026-06-01T08:00:00Z","updatedAt":"2026-06-02T09:00:00Z"},{"number":9,"title":"nope","labels":[],"assignees":[],"stateReason":"NOT_PLANNED","createdAt":"2026-06-03T08:00:00Z","updatedAt":"2026-06-04T09:00:00Z"}]"#;
+        let rows = parse_closed_board(json).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].state, "closed");
+        assert_eq!(rows[0].reason.as_deref(), Some("completed"));
+        assert!(rows[0].blocked_by.is_empty());
+        assert_eq!(rows[1].reason.as_deref(), Some("not_planned"));
     }
 
     #[test]
