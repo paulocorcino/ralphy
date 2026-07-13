@@ -11,24 +11,7 @@ use std::path::PathBuf;
 use clap::{Args, Subcommand};
 
 use crate::runlock;
-
-/// Refuses `verb` when a run currently holds the repo's lock; every other
-/// state (free, stale, corrupt) is safe to proceed — a dead PID or an
-/// unreadable lock is not a live run.
-fn guard_run_lock(
-    ws: &ralphy_core::Workspace,
-    verb: &str,
-    is_alive: impl Fn(u32) -> bool,
-) -> anyhow::Result<()> {
-    if let runlock::LockState::HeldAlive(info) = runlock::inspect(&ws.run_lock_path(), is_alive) {
-        anyhow::bail!(
-            "refusing to {verb}: a run holds this repo's lock (pid {}, since {}) — wait for it to finish or stop it",
-            info.pid,
-            info.started_at
-        );
-    }
-    Ok(())
-}
+use crate::runlock::guard_run_lock;
 
 /// `label set` requires at least one `--add`/`--remove`; an invocation with
 /// neither is a no-op that would otherwise silently succeed.

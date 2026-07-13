@@ -16,6 +16,8 @@ use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
+use crate::runlock;
+
 #[derive(Args)]
 pub struct ConfigArgs {
     /// Any path inside the target repo; resolved to its git toplevel.
@@ -46,7 +48,12 @@ pub enum ConfigCommand {
         key: String,
     },
     /// Print all persisted config values.
-    Get,
+    Get {
+        /// Emit a single JSON object mapping every key to its resolved value
+        /// (or JSON `null`); the daemon's config Query verb reads this.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Dispatch a `config` subcommand.
@@ -54,9 +61,16 @@ pub fn run(args: ConfigArgs) -> Result<()> {
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let ws = Workspace::new(&repo_root);
     match args.command {
-        ConfigCommand::Set { key, value } => set(&ws, &key, &value),
-        ConfigCommand::Unset { key } => unset(&ws, &key),
-        ConfigCommand::Get => get(&ws),
+        ConfigCommand::Set { key, value } => {
+            // Mutate (ADR-0036 §2/§6): refuse while a run holds this repo's lock.
+            runlock::guard_run_lock(&ws, "config set", runlock::pid_is_alive)?;
+            set(&ws, &key, &value)
+        }
+        ConfigCommand::Unset { key } => {
+            runlock::guard_run_lock(&ws, "config unset", runlock::pid_is_alive)?;
+            unset(&ws, &key)
+        }
+        ConfigCommand::Get { json } => get(&ws, json),
     }
 }
 
@@ -231,7 +245,11 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn get(ws: &Workspace) -> Result<()> {
+pub fn get(ws: &Workspace, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string(&config_json(ws)?)?);
+        return Ok(());
+    }
     let s = Settings::load(ws)?;
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
@@ -270,6 +288,38 @@ pub fn get(ws: &Workspace) -> Result<()> {
         None => println!("events.token: not set"),
     }
     Ok(())
+}
+
+/// Build the resolved-config JSON object the daemon's config Query verb reads:
+/// every supported key mapped to its resolved value or JSON `null`. `events.token`
+/// is MASKED (never echoed in full), mirroring the human `get`. Keys match
+/// [`SUPPORTED_KEYS`]; the daemon parses this verbatim.
+fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
+    let s = Settings::load(ws)?;
+    let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
+    let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    let slug = git::project_slug(ws.repo_root());
+    let events = crate::events::config::EventsStore::load().unwrap_or_default();
+    let entry = events.entry(&slug);
+    let masked_token = entry
+        .and_then(|e| e.token.as_deref())
+        .map(crate::telegram::config::masked_token);
+    Ok(serde_json::json!({
+        "opencode.model": opencode.model,
+        "base_branch": s.base_branch,
+        "branch_mode": s.branch_mode,
+        "remote_control": s.remote_control,
+        "queue.assignee": s.queue.assignee,
+        "verify.command": s.verify.command,
+        "verify.require_verify_gate": s.verify.require_verify_gate,
+        "events.url": entry.and_then(|e| e.url.clone()),
+        "events.token": masked_token,
+        "claude.plan_model": claude.plan_model,
+        "claude.plan_effort": claude.plan_effort,
+        "claude.default_exec_model": claude.default_exec_model,
+        "claude.exec_effort": claude.exec_effort,
+        "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
+    }))
 }
 
 /// Print one `key = value` / `key: not set` line for an optional string knob,
@@ -675,6 +725,47 @@ mod tests {
     }
 
     #[test]
+    fn get_json_round_trips() {
+        let (ws, dir) = tmp_ws("get-json");
+        set(&ws, "branch_mode", "new").unwrap();
+
+        let v = config_json(&ws).unwrap();
+        assert_eq!(v["branch_mode"], "new", "the set value round-trips: {v}");
+        // Every supported key is present; an unset one is JSON null, not missing.
+        assert!(
+            v.get("opencode.model").map(|x| x.is_null()) == Some(true),
+            "opencode.model present as null: {v}"
+        );
+        // The object parses as a plain map (the daemon Query verb re-parses it).
+        assert!(v.is_object());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn config_set_refuses_under_held_lock() {
+        // `config set`/`config unset` are Mutate verbs (ADR-0036 §2/§6): `run()`
+        // guards them with the shared run-lock guard before touching settings.
+        // A held-alive lock refuses with the verb in the message.
+        let (ws, dir) = tmp_ws("config-lock");
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+        let stored = crate::runlock::LockInfo {
+            pid: 4_000_000,
+            started_at: "2026-07-13T10:00:00-03:00".into(),
+        };
+        fs::write(ws.run_lock_path(), serde_json::to_string(&stored).unwrap()).unwrap();
+
+        for verb in ["config set", "config unset"] {
+            let err = crate::runlock::guard_run_lock(&ws, verb, |pid| pid == 4_000_000)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(&format!("refusing to {verb}")), "got: {err}");
+        }
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn help_notes_claude_only() {
         assert!(supported_keys_help().contains("Claude-only today"));
     }
@@ -739,7 +830,8 @@ mod tests {
             );
             set(&ws, k, sample(k)).unwrap_or_else(|e| panic!("set {k}: {e}"));
         }
-        get(&ws).unwrap();
+        get(&ws, false).unwrap();
+        get(&ws, true).unwrap();
         for k in SUPPORTED_KEYS {
             unset(&ws, k).unwrap_or_else(|e| panic!("unset {k}: {e}"));
         }
