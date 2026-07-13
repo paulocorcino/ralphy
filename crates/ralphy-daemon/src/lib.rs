@@ -908,13 +908,16 @@ async fn command_ws(
 /// `GET /api/repos`: the registered repos as JSON, each with its live
 /// reachability. Read FRESH from disk on every request so a separate `ralphy
 /// run` process's write shows up on the next page refresh. A load error yields
-/// an empty list with `200` (logged) rather than failing the page.
+/// an empty list with `200` (logged) rather than failing the page. `branch` is
+/// likewise read fresh from `<path>/.git/HEAD`, `None` when it cannot be
+/// determined (detached HEAD, unreachable repo, worktree gitdir pointer).
 async fn repos_route(registry_path: PathBuf) -> Response {
     #[derive(serde::Serialize)]
     struct RepoView {
         slug: String,
         path: String,
         reachable: bool,
+        branch: Option<String>,
     }
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -930,6 +933,7 @@ async fn repos_route(registry_path: PathBuf) -> Response {
             slug: slug.clone(),
             path: entry.path.clone(),
             reachable: entry.reachable(),
+            branch: entry.head_branch(),
         })
         .collect();
     Json(views).into_response()
@@ -1340,6 +1344,55 @@ mod tests {
         assert!(
             body.contains("\"reachable\":false"),
             "the bogus-path entry must be unreachable; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_repos_reports_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(
+            dir.path().join(".git").join("HEAD"),
+            "ref: refs/heads/feat/mini-ide\n",
+        )
+        .unwrap();
+        let registry_path = dir.path().join("repos.toml");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/here", &dir.path().to_string_lossy());
+        store.upsert("owner/gone", "/no/such/path/exists");
+        registry::save_to(&store, &registry_path).unwrap();
+
+        let resp = router(
+            None,
+            registry_path,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/repos")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"branch\":\"feat/mini-ide\""),
+            "the reachable repo's branch must be reported; got: {body}"
+        );
+        assert!(
+            body.contains("\"branch\":null"),
+            "the unreachable repo's branch must be null; got: {body}"
         );
     }
 

@@ -28,6 +28,18 @@ impl RepoEntry {
     pub fn reachable(&self) -> bool {
         Path::new(&self.path).is_dir()
     }
+
+    /// The current branch name, read fresh from `<path>/.git/HEAD`. `None` for
+    /// a detached HEAD (raw commit sha), a missing/unreadable `.git/HEAD` (no
+    /// repo, or a worktree/submodule gitdir-pointer file), or any other
+    /// non-`ref:` content.
+    pub fn head_branch(&self) -> Option<String> {
+        let head = Path::new(&self.path).join(".git").join("HEAD");
+        let s = std::fs::read_to_string(head).ok()?;
+        s.trim()
+            .strip_prefix("ref: refs/heads/")
+            .map(str::to_string)
+    }
 }
 
 /// The persisted registry: slug → entry. The slug carries a `/`, so TOML quotes
@@ -151,6 +163,42 @@ mod tests {
         );
         assert!(!back.entry("owner/gone").unwrap().reachable());
         assert!(back.entry("owner/here").unwrap().reachable());
+    }
+
+    #[test]
+    fn head_branch_reads_ref() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(
+            dir.path().join(".git").join("HEAD"),
+            "ref: refs/heads/feat/x\n",
+        )
+        .unwrap();
+        let entry = RepoEntry {
+            path: dir.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.head_branch(), Some("feat/x".to_string()));
+    }
+
+    #[test]
+    fn head_branch_none_when_detached_or_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(
+            dir.path().join(".git").join("HEAD"),
+            "1234567890abcdef1234567890abcdef12345678\n",
+        )
+        .unwrap();
+        let entry = RepoEntry {
+            path: dir.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.head_branch(), None, "detached HEAD yields None");
+
+        let no_git = tempfile::tempdir().unwrap();
+        let entry = RepoEntry {
+            path: no_git.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.head_branch(), None, "missing .git yields None");
     }
 
     #[test]
