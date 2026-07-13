@@ -226,6 +226,48 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
 }
 
 #[test]
+fn show_view_json_includes_comments() {
+    let issue = issue(7, &["queue"], "the issue body");
+    let comments = vec!["a comment".to_string()];
+    let tr = FakeTracker::default();
+    let view = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
+    let json = render_show_json(&view, None).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(val["body"], "the issue body");
+    assert_eq!(val["comments"], serde_json::json!(["a comment"]));
+}
+
+#[test]
+fn render_board_json_folds_assignees_state_reason_and_label_colors() {
+    let queue = vec![issue(7, &["ready-for-agent"], "")];
+    let tr = FakeTracker::default();
+    let view = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
+    let meta = vec![ralphy_core::github::IssueMeta {
+        number: 7,
+        assignees: vec!["alice".to_string()],
+        state_reason: None,
+    }];
+    let repo_labels = vec![
+        ("queue".to_string(), "ededed".to_string()),
+        ("ready-for-agent".to_string(), "0e8a16".to_string()),
+    ];
+    let json = render_board_json(&view, &meta, &repo_labels).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(val["issues"][0]["number"], 7);
+    assert_eq!(val["issues"][0]["assignees"], serde_json::json!(["alice"]));
+    assert!(val["issues"][0]["state_reason"].is_null());
+    assert_eq!(val["issues"][0]["queue_status"], "eligible");
+    assert!(
+        val["labels"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!({"name":"ready-for-agent","color":"0e8a16"})),
+        "labels must carry the repo vocabulary with colors: {val}"
+    );
+}
+
+#[test]
 fn push_without_events_url_errors_naming_events_url() {
     // Criterion: `--push` with no `events.url` configured fails with a clear
     // message naming `events.url`. Point the events store at an empty temp dir

@@ -58,6 +58,12 @@ pub struct IssuesArgs {
     /// Mutually exclusive with `--assignee`.
     #[arg(long = "no-assignee", conflicts_with = "assignee")]
     pub no_assignee: bool,
+
+    /// Emit the Kanban board fold instead of the flat queue array: `{issues[]
+    /// (per-issue + assignees[], state_reason), labels[] ({name,color} repo
+    /// vocabulary)}`. List + `--format json` only.
+    #[arg(long)]
+    pub board: bool,
 }
 
 /// The output format `--format` selects.
@@ -91,6 +97,9 @@ struct ShowView {
     number: u64,
     title: String,
     body: String,
+    /// The issue's full comment thread, in order (raw, unlike
+    /// `consolidated_spec` which extracts just the marked comment).
+    comments: Vec<String>,
     labels: Vec<String>,
     /// The authoritative consolidated-spec comment (ADR-0017), surfaced
     /// first-class when a marked comment exists; `None` otherwise.
@@ -119,6 +128,27 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         args.no_assignee,
         settings.queue.assignee.as_deref(),
     );
+
+    // `--board` emits the Kanban fold (ADR-0036) instead of the flat queue
+    // array; JSON-only, list-only, so it cannot combine with `show <n>` or a
+    // non-JSON format.
+    if args.board {
+        if args.show.is_some() {
+            anyhow::bail!(
+                "`--board` emits the whole board fold and cannot be combined with `show <n>`"
+            );
+        }
+        if args.format != Format::Json {
+            anyhow::bail!("`--board` requires `--format json`");
+        }
+        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
+        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
+        let labels = github::resolve_queue_labels(&[], &repo_root);
+        let meta = github::list_issue_meta(&labels, assignee.as_deref(), &repo_root)?;
+        let repo_labels = github::list_repo_labels(&repo_root)?;
+        println!("{}", render_board_json(&view, &meta, &repo_labels)?);
+        return Ok(());
+    }
 
     // `--push` emits the whole judged queue as a snapshot event rather than
     // printing it — the on-demand twin of the runner's enriched `queue.built`.
@@ -299,6 +329,7 @@ fn show_view(
         number: iv.number,
         title: iv.title,
         body: issue.body.clone(),
+        comments: comments.to_vec(),
         labels: iv.labels,
         consolidated_spec,
         queue_status: iv.queue_status,
@@ -355,6 +386,44 @@ fn render_json(view: &QueueView, fields: Option<&[String]>) -> Result<String> {
 fn render_show_json(view: &ShowView, fields: Option<&[String]>) -> Result<String> {
     let full = serde_json::to_value(view)?;
     Ok(serde_json::to_string_pretty(&select_fields(full, fields))?)
+}
+
+/// Render the Kanban board fold: the judged queue's `IssueView`s enriched with
+/// per-issue `assignees`/`state_reason` (from a batched [`ralphy_core::github::IssueMeta`]
+/// lookup, not a per-issue `gh` call) plus the repo's `labels[]` name→color
+/// vocabulary — the shape ADR-0036 names for the daemon Query verb.
+fn render_board_json(
+    view: &QueueView,
+    meta: &[ralphy_core::github::IssueMeta],
+    repo_labels: &[(String, String)],
+) -> Result<String> {
+    let rows: Vec<Value> = view
+        .issues
+        .iter()
+        .map(|iv| -> Result<Value> {
+            let mut obj = serde_json::to_value(iv)?
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            let m = meta.iter().find(|m| m.number == iv.number);
+            obj.insert(
+                "assignees".to_string(),
+                serde_json::json!(m.map(|m| m.assignees.clone()).unwrap_or_default()),
+            );
+            obj.insert(
+                "state_reason".to_string(),
+                serde_json::json!(m.and_then(|m| m.state_reason.clone())),
+            );
+            Ok(Value::Object(obj))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let labels: Vec<Value> = repo_labels
+        .iter()
+        .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
+        .collect();
+    Ok(serde_json::to_string_pretty(
+        &serde_json::json!({"issues": rows, "labels": labels}),
+    )?)
 }
 
 /// The wire word for a queue status, matching the ADR-0020 columns.
