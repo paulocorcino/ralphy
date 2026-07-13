@@ -238,3 +238,57 @@ from `ralphy:run-event`) is **deferred to the events platform** (ADR-0019, Phase
   (a future ADR revisiting 0032 §1's "launcher, not scheduler" — its robustness
   and missed-run/catch-up trade-offs are real and unowned). Phase 1 keeps
   `ralphy schedule`'s OS timers and the daemon-as-trigger, unchanged.
+
+## Amendment (2026-07-13): the Write effect class — workspace byte-writes
+
+The mock emits four gestures no §2 class covers: `save`, `create`, `rename`,
+`delete` — writes of **working-tree OS bytes**. Observe is read-only by
+definition; Mutate is *repo semantics* routed through a `ralphy` subcommand
+(config, branch, label). An editor save is neither: it carries no repo meaning
+the daemon would have to understand — it is the same species of operation as an
+Observe read, pointed the other way. This amendment is **additive**; no frozen
+section is reopened.
+
+### The class
+
+**Write** — a write of working-tree bytes: save a file's contents, create a
+file/folder, rename, delete. The daemon performs it **directly**, under the
+**same confinement as Observe** (§5: canonicalize + repo-root prefix, on *every*
+path involved — a rename checks both source and destination). The §2 division
+rule is extended by one word:
+
+> if a verb needs to *understand* the repo, it is a `ralphy` invocation; if it
+> only **reads or writes OS bytes** or the daemon's own state, the daemon does
+> it directly.
+
+§3's boundary sentence is refined accordingly: "interpret or mutate the repo"
+means *repo semantics* — git state, issues, labels, config, plan.md meaning.
+Writing a file's bytes inside the confined root is not that; it is what every
+IDE does to an open working tree.
+
+### Write does not consult the run lock
+
+A byte-write proceeds regardless of `.ralphy/run.lock`. The lock guards
+**repo-semantic transitions** that corrupt a run's assumptions wholesale — a
+branch switch under a run's feet (§6) — not ordinary edits. An operator saving
+a file from the workbench during a run is exactly an operator saving from VS
+Code during a run: visible to the run, owned by the operator, and this is a
+**single-operator** tool. Gating every save on the lock would make the editor
+unusable for the duration of every run, for no corruption it actually prevents.
+
+**Rejected: routing byte-writes through new `ralphy` file-op subcommands.** It
+would spend a process cold-start per save, force `ralphy` to grow verbs with no
+repo semantics (pure plumbing, against §2's whole point), and buy nothing: the
+run-lock question is answered above, and confinement is enforced at the daemon
+either way.
+
+### Consequences of the amendment
+
+- The verb registry gains the Write rows (`file.write`, `file.create`,
+  `file.rename`, `file.delete`); like Observe, they answer on the requesting
+  `Command` id and never spawn.
+- The confinement module is the shared kernel of Observe **and** Write; its
+  test suite covers write-escape attempts (traversal, symlink, rename-across
+  the boundary) as exhaustively as reads.
+- Deletion stays a plain confined unlink/rmdir; any confirmation UX is the
+  browser's job, not a daemon semantic.
