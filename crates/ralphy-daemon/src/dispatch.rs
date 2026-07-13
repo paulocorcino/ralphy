@@ -573,7 +573,11 @@ mod tests {
         assert_eq!(Verb::FileCreate.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileRename.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileDelete.effect_class(), EffectClass::Write);
-        assert_eq!(Verb::ALL.len(), 12, "the registry holds exactly twelve verbs");
+        assert_eq!(
+            Verb::ALL.len(),
+            12,
+            "the registry holds exactly twelve verbs"
+        );
     }
 
     #[test]

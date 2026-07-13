@@ -117,7 +117,10 @@ mod tests {
     fn write_creates_and_overwrites() {
         let root = tempfile::tempdir().unwrap();
         write(root.path(), "note.txt", "hi").unwrap();
-        assert_eq!(fs::read_to_string(root.path().join("note.txt")).unwrap(), "hi");
+        assert_eq!(
+            fs::read_to_string(root.path().join("note.txt")).unwrap(),
+            "hi"
+        );
         write(root.path(), "note.txt", "bye").unwrap();
         assert_eq!(
             fs::read_to_string(root.path().join("note.txt")).unwrap(),
@@ -130,9 +133,15 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         create(root.path(), "newdir", true).unwrap();
         assert!(root.path().join("newdir").is_dir());
-        assert_eq!(create(root.path(), "newdir", true), Err(WriteError::Conflict));
+        assert_eq!(
+            create(root.path(), "newdir", true),
+            Err(WriteError::Conflict)
+        );
         create(root.path(), "f.txt", false).unwrap();
-        assert_eq!(create(root.path(), "f.txt", false), Err(WriteError::Conflict));
+        assert_eq!(
+            create(root.path(), "f.txt", false),
+            Err(WriteError::Conflict)
+        );
     }
 
     #[test]

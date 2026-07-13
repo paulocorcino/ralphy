@@ -206,7 +206,10 @@ mod tests {
             confine_write(root.path(), "link/x"),
             Err(ConfineError::Escape)
         );
-        assert_eq!(confine_write(root.path(), "link"), Err(ConfineError::Escape));
+        assert_eq!(
+            confine_write(root.path(), "link"),
+            Err(ConfineError::Escape)
+        );
     }
 
     #[cfg(windows)]

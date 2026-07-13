@@ -190,7 +190,10 @@ async fn write_escape_refused() {
     assert_eq!(replies.len(), 1);
     assert_eq!(spawned, 0, "a refused write must never spawn");
     assert_eq!(replies[0]["status"], "error");
-    assert_eq!(replies[0]["reason"], "refused", "surfaced verbatim, not masked");
+    assert_eq!(
+        replies[0]["reason"], "refused",
+        "surfaced verbatim, not masked"
+    );
     assert!(
         !root.parent().unwrap().join("evil").exists(),
         "nothing written outside the root"
