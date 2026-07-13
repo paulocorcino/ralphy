@@ -128,6 +128,8 @@ function shell() {
       this.kanbanOpen = !this.kanbanOpen;
       if (this.kanbanOpen) {
         this.kanbanSel = null;
+        // Lazy-load the tracker for the open project when the board opens.
+        this.loadBoard();
         this.$nextTick(() => window.lucide?.createIcons());
       }
       WB.emit("kanban-toggle", { open: this.kanbanOpen });
@@ -529,14 +531,61 @@ function shell() {
     // that moves a card between columns; everything else opens on GitHub. Data
     // is project-scoped like the Runs panel.
     KANBAN: window.WBKanban,
+    // Live board data, project-scoped, fed by the daemon's `board.list` Query verb
+    // (issue #198). `boardIssues[slug]` = the whole-tracker fold rows adapted to the
+    // mock issue shape; `boardLabels[slug]` = the repo's name→color label map. Both
+    // stay empty until `loadBoard()` resolves (or when no daemon answers — no throw).
+    boardIssues: {},
+    boardLabels: {},
     kanbanSel: null, // the selected issue number → opens the detail drawer
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
     kanbanSort: "num-desc", // Backlog sort (Ready columns keep graph order)
 
-    // The open project's issues (empty when no project / none seeded).
+    // The open project's issues — the live board fold (issue #198), project-scoped.
+    // Empty until `loadBoard()` populates it (or when no daemon answers).
     projectIssues() {
-      return window.WB_KANBAN[this.openSlug] || [];
+      return this.boardIssues[this.openSlug] || [];
+    },
+
+    // Fetch the whole-tracker board fold for the open project via the daemon's
+    // `board.list` Query verb, adapt each row to the mock issue shape, and cache the
+    // rows + the repo label colors under the slug. A no-daemon (static demo) or
+    // transport error leaves the board empty (no throw), degrading gracefully.
+    async loadBoard() {
+      const slug = this.openSlug;
+      if (!slug) return;
+      try {
+        const reply = await window.WBDaemon.observe("board.list", { repo: slug });
+        if (!reply || reply.status !== "ok") return;
+        const board = reply.board || {};
+        this.boardIssues[slug] = (board.issues || []).map((r) => this.boardRowToIssue(r));
+        const colors = {};
+        for (const l of board.labels || []) colors[l.name] = "#" + String(l.color || "").replace(/^#/, "");
+        this.boardLabels[slug] = colors;
+      } catch {
+        // No daemon reachable (static shell) or a transport error — leave it empty.
+      }
+    },
+
+    // Bridge a CLI fold row (snake_case `blocked_by`, lowercased `reason`) to the
+    // mock issue shape (`blockedBy`, `reason`) `wb-kanban.js` expects. Body +
+    // comments are absent from the board fold — the drawer's `issue.show` fills
+    // them on open — so seed them empty here.
+    boardRowToIssue(row) {
+      return {
+        number: row.number,
+        title: row.title || "",
+        state: row.state || "open",
+        reason: row.reason ?? row.state_reason ?? null,
+        labels: row.labels || [],
+        assignees: row.assignees || [],
+        blockedBy: row.blocked_by || row.blockedBy || [],
+        created: row.created || "",
+        updated: row.updated || "",
+        body: "",
+        comments: [],
+      };
     },
 
     // The four columns after search + label filter, each ordered for its kind:
@@ -550,8 +599,14 @@ function shell() {
       for (const i of shown) bucket[K.columnOf(i)].push(i);
       return {
         backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
-        agent: K.orderGraph(bucket.agent, all),
-        human: K.orderGraph(bucket.human, all),
+        // The Ready columns keep the SERVER's graph order (issue #198): the fold
+        // already emitted the Ready subset in `sort_queue_in_graph` order, and
+        // bucketing preserves encounter order — so board order == core queue order
+        // by construction. A client re-sort (`K.orderGraph`) would diverge (it
+        // lacks the full open-set + `## Parent` context) — `orderGraph` stays in
+        // wb-kanban.js only for the seed/demo and the parity cross-check.
+        agent: bucket.agent,
+        human: bucket.human,
         closed: bucket.closed.sort((a, b) => (b.updated || "").localeCompare(a.updated || "")),
       };
     },
@@ -577,7 +632,9 @@ function shell() {
       return window.WBKanban.columnOf(i);
     },
     labelColor(l) {
-      return window.WBKanban.labelColor(l);
+      // Prefer the repo's real label hex (from the board fold's `labels[]`), then
+      // fall back to the seed vocabulary for an unknown label.
+      return this.boardLabels[this.openSlug]?.[l] || window.WBKanban.labelColor(l);
     },
     labelInk(l) {
       return window.WBKanban.labelInk(l);
@@ -608,6 +665,27 @@ function shell() {
     openIssue(number) {
       this.kanbanSel = number;
       this.$nextTick(() => window.lucide?.createIcons());
+      // Fetch the drawer detail (body + comments + blockers) via the `issue.show`
+      // Query verb and merge it into the cached board row — the fold omits body +
+      // comments, so this is what makes `renderIssueMd`/`issueBlockers` show real
+      // content. No-daemon / error ⇒ the drawer keeps the row's empty body.
+      this.loadIssueDetail(number);
+    },
+
+    async loadIssueDetail(number) {
+      const slug = this.openSlug;
+      try {
+        const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
+        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") return;
+        const detail = reply.issue;
+        const iss = (this.boardIssues[slug] || []).find((i) => i.number === number);
+        if (!iss) return;
+        if (typeof detail.body === "string") iss.body = detail.body;
+        if (Array.isArray(detail.comments)) iss.comments = detail.comments;
+        if (Array.isArray(detail.blocked_by)) iss.blockedBy = detail.blocked_by;
+      } catch {
+        // Leave the board row's empty body on any failure.
+      }
     },
     closeIssue() {
       this.kanbanSel = null;
@@ -1024,6 +1102,9 @@ function shell() {
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();
+        // Refresh the board fold for the newly-open project (issue #198) so the
+        // Kanban + drawer read this project's live tracker, not a stale slug.
+        if (this.openSlug) this.loadBoard();
         // point the Runs panel at this project's first run + its first section
         this.currentRunId = this.projectRuns()[0]?.runid || null;
         this.planSection = this.planHeadings(this.currentRun())[0] || "";
