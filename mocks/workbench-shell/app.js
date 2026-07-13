@@ -1464,6 +1464,62 @@ window.addEventListener("message", (e) => {
   }
 });
 
+// --- Write byte-ops (#197): route the workspace-mutating seam actions to the
+// daemon's confined `file.*` verbs. Daemon-backed only (a `file://` standalone
+// mock keeps its synthesised behaviour); a confinement/conflict refusal comes
+// back as `{status:"error",reason}` and is flashed. The browser composes the
+// full rel path from the tree node — the daemon verbs take a complete rel path.
+(function wireWriteVerbs() {
+  const daemonBacked = () => location.protocol !== "file:" && !!window.WBDaemon?.write;
+  const flash = (msg) => getShell()?._flashAction?.(msg);
+  const parentOf = (rel) => {
+    const i = rel.lastIndexOf("/");
+    return i < 0 ? "" : rel.slice(0, i);
+  };
+  const call = (verb, payload, okMsg) => {
+    WBDaemon.write(verb, payload)
+      .then((reply) => {
+        if (reply.status === "error") flash(reply.reason || "refused");
+        else if (okMsg) flash(okMsg);
+      })
+      .catch(() => flash("write failed"));
+  };
+
+  document.addEventListener("workbench:action", (e) => {
+    if (!daemonBacked()) return;
+    const d = e.detail || {};
+    const repo = d.project;
+    if (!repo) return;
+    switch (d.action) {
+      case "save":
+        call("file.write", { repo, path: d.path, content: d.content || "" });
+        break;
+      case "create": {
+        // The tree emits `create` on the parent folder with no name; prompt for
+        // it and compose the full rel path the daemon verb expects.
+        const name = window.prompt(d.kind === "folder" ? "New folder name" : "New file name");
+        if (!name) return;
+        const path = d.path ? `${d.path}/${name}` : name;
+        call("file.create", { repo, path, dir: d.kind === "folder" }, `created ${name}`);
+        break;
+      }
+      case "rename": {
+        // The tree emits leaf `from`/`to`; compose both against the node's parent.
+        const parent = parentOf(d.path);
+        const from = parent ? `${parent}/${d.from}` : d.from;
+        const to = parent ? `${parent}/${d.to}` : d.to;
+        call("file.rename", { repo, path: from, to });
+        break;
+      }
+      case "delete":
+        call("file.delete", { repo, path: d.path }, "deleted");
+        break;
+      default:
+        break;
+    }
+  });
+})();
+
 // Dismiss the context menu on any outside interaction.
 document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"));
 document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"), true);

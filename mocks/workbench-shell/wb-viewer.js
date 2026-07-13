@@ -116,10 +116,21 @@
     return { project: rec.project, path: rec.path, ftype: rec.kind, content: contentOf(rec) };
   }
 
-  // Reload discards local edits and reloads from source. impl: re-fetch the
-  // real file; the mock regenerates its synthesised bytes.
+  // Reload discards local edits and reloads from source. Daemon-backed repos
+  // re-read the REAL file via `file.read` (#197); the `file://` mock regenerates
+  // its synthesised bytes. The apply step is shared via `applyFresh`.
   function reloadFile(rec) {
-    const fresh = fakeContent(rec.path, rec.kind);
+    const daemonBacked = location.protocol !== "file:" && !!window.WBDaemon?.observe;
+    if (daemonBacked) {
+      WBDaemon.observe("file.read", { repo: rec.project, path: rec.path })
+        .then((reply) => applyFresh(rec, reply.status === "ok" ? reply.content : fakeContent(rec.path, rec.kind)))
+        .catch(() => applyFresh(rec, fakeContent(rec.path, rec.kind)));
+    } else {
+      applyFresh(rec, fakeContent(rec.path, rec.kind));
+    }
+  }
+
+  function applyFresh(rec, fresh) {
     rec.content = fresh;
     // setValue fires CodeMirror's change event, so clear the dirty flag *after*
     // updating content, not before.
