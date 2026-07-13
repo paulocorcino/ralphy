@@ -7,7 +7,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use ralphy_adapter_support::{
-    run_headless, run_headless_logged, run_init_session, run_text_session, JsonSession, TextSession,
+    run_headless, run_headless_logged, run_headless_logged_watched, run_init_session,
+    run_text_session, JsonSession, TextSession,
 };
 
 // These mirror the constants in `src/bin/headless_test_child.rs`. Kept in sync by
@@ -15,6 +16,7 @@ use ralphy_adapter_support::{
 const CLEAN_STDOUT: &str = "hello-from-stdout";
 const CLEAN_STDERR: &str = "hello-from-stderr";
 const LARGE_LEN: usize = 200_000;
+const STDERR_MARKER: &str = "quota-marker: usage limit reached";
 
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/
 /// stderr piped exactly as the adapters do before handing the command off.
@@ -144,6 +146,62 @@ fn run_headless_logged_reports_timeout_and_not_clean() {
         !r.exited_cleanly,
         "a killed child did not exit cleanly (exit == None)"
     );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_headless_logged_watched_early_kills_on_matching_stderr_line() {
+    let log_path = temp_log("early-kill");
+    let _ = std::fs::remove_file(&log_path);
+
+    let started = Instant::now();
+    let r = run_headless_logged_watched(
+        child_cmd("stderr-then-sleep"),
+        "ignored prompt",
+        // A generous wall timeout the child would otherwise sleep out entirely, so a
+        // prompt return can only mean the early-kill switch fired on the marker.
+        Duration::from_secs(60),
+        &log_path,
+        |line| line.contains(STDERR_MARKER),
+    )
+    .expect("a watched run should not error");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "the switch reaped the child on the stderr marker, not on the 60s timeout (took {elapsed:?})"
+    );
+    assert!(
+        !r.timed_out,
+        "an early-kill is an explicit signal, not a timeout"
+    );
+    assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
+    assert!(
+        r.log.contains(STDERR_MARKER),
+        "the matched stderr line is captured in the log"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_headless_logged_watched_without_a_match_times_out_normally() {
+    // A non-matching predicate leaves the switch inert: the sleep child runs to the
+    // wall timeout exactly like the unwatched path, proving the switch only ever
+    // shortens the run when it actually fires.
+    let log_path = temp_log("watched-timeout");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = run_headless_logged_watched(
+        child_cmd("sleep"),
+        "ignored prompt",
+        Duration::from_millis(300),
+        &log_path,
+        |_line| false,
+    )
+    .expect("a watched run should not error when killing on timeout");
+
+    assert!(r.timed_out, "no match → the wall timeout still fires");
+    assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
     let _ = std::fs::remove_file(&log_path);
 }
 
