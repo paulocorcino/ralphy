@@ -927,7 +927,8 @@ async fn command_ws(
             dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
             dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
             dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
-            // Unreachable: only the three Query verbs reach this branch.
+            dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
+            // Unreachable: only the four Query verbs reach this branch.
             _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
         };
         let payload = match argv_result {
@@ -964,9 +965,19 @@ async fn command_ws(
     // (`config set`/`config unset`) and answer once; a non-zero exit (the CLI's
     // run-lock refusal or unknown-key error) relays as the trimmed stderr.
     if verb.effect_class() == dispatch::EffectClass::Mutate {
-        let payload = match dispatch::config_argv(verb, &cmd.payload) {
+        let argv_result = match verb {
+            dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {
+                dispatch::config_argv(verb, &cmd.payload)
+            }
+            dispatch::Verb::BranchSwitch | dispatch::Verb::BranchCreate => {
+                dispatch::branch_argv(verb, &cmd.payload)
+            }
+            dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
+            _ => Err(dispatch::ArgvError::BadParam("verb")),
+        };
+        let payload = match argv_result {
             Err(e) => {
-                tracing::warn!(error = %e, "refused a config mutation with invalid params");
+                tracing::warn!(error = %e, "refused a mutation with invalid params");
                 serde_json::json!({ "status": "error", "message": "invalid config options" })
             }
             Ok(argv) => {

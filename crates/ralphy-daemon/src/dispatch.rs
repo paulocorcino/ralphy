@@ -156,6 +156,14 @@ pub enum Verb {
     FileRename,
     /// Delete a repo path (Write: in-daemon, never spawns).
     FileDelete,
+    /// List the repo's local branches (Query: `branch list --format json`).
+    BranchList,
+    /// Check out a branch (Mutate: `branch switch -- <name>`, run-lock-aware).
+    BranchSwitch,
+    /// Create a branch from HEAD (Mutate: `branch create -- <name>`, run-lock-aware).
+    BranchCreate,
+    /// Add/remove a label on an issue (Mutate: `label set <n> --{op}=<label>`).
+    LabelSet,
 }
 
 impl Verb {
@@ -178,6 +186,10 @@ impl Verb {
             "file.create" => Some(Verb::FileCreate),
             "file.rename" => Some(Verb::FileRename),
             "file.delete" => Some(Verb::FileDelete),
+            "branch.list" => Some(Verb::BranchList),
+            "branch.switch" => Some(Verb::BranchSwitch),
+            "branch.create" => Some(Verb::BranchCreate),
+            "label.set" => Some(Verb::LabelSet),
             _ => None,
         }
     }
@@ -198,6 +210,10 @@ impl Verb {
         Verb::FileCreate,
         Verb::FileRename,
         Verb::FileDelete,
+        Verb::BranchList,
+        Verb::BranchSwitch,
+        Verb::BranchCreate,
+        Verb::LabelSet,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -207,8 +223,14 @@ impl Verb {
     pub fn effect_class(self) -> EffectClass {
         match self {
             Verb::TreeList | Verb::FileRead => EffectClass::Observe,
-            Verb::ConfigGet | Verb::BoardList | Verb::IssueShow => EffectClass::Query,
-            Verb::ConfigSet | Verb::ConfigUnset => EffectClass::Mutate,
+            Verb::ConfigGet | Verb::BoardList | Verb::IssueShow | Verb::BranchList => {
+                EffectClass::Query
+            }
+            Verb::ConfigSet
+            | Verb::ConfigUnset
+            | Verb::BranchSwitch
+            | Verb::BranchCreate
+            | Verb::LabelSet => EffectClass::Mutate,
             Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
                 EffectClass::Write
             }
@@ -274,7 +296,11 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::FileWrite
         | Verb::FileCreate
         | Verb::FileRename
-        | Verb::FileDelete => Err(ArgvError::BadParam("verb")),
+        | Verb::FileDelete
+        | Verb::BranchList
+        | Verb::BranchSwitch
+        | Verb::BranchCreate
+        | Verb::LabelSet => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -304,6 +330,70 @@ pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvE
         n.to_string(),
         "--format".to_string(),
         "json".to_string(),
+    ])
+}
+
+/// The static argv for the branch-list Query verb: `branch list --format json`
+/// (issue #199). Takes no client input; the verb alone fixes the command line, so
+/// listing branches for the switcher can never be widened by remote input.
+pub fn branch_list_argv() -> Vec<String> {
+    ["branch", "list", "--format", "json"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Compose the argv for a branch Mutate verb: `branch switch -- <name>` /
+/// `branch create -- <name>` (issue #199). `<name>` is the sole client input,
+/// read from `payload.name`; empty/whitespace-only names yield [`ArgvError`] and
+/// NO argv. The `--` guard ends option parsing so a name is never mis-parsed as a
+/// flag (mirrors [`config_argv`]'s guard).
+pub fn branch_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let sub = match verb {
+        Verb::BranchSwitch => "switch",
+        Verb::BranchCreate => "create",
+        _ => return Err(ArgvError::BadParam("verb")),
+    };
+    let name = payload
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .ok_or(ArgvError::BadParam("name"))?;
+    Ok(vec![
+        "branch".to_string(),
+        sub.to_string(),
+        "--".to_string(),
+        name.to_string(),
+    ])
+}
+
+/// Compose the argv for the label Mutate verb: `label set <n> --{op}=<label>`
+/// (issue #199). Validates `number` (positive `u64`), `label` (non-empty), and
+/// `op` (∈ {`add`,`remove`}); any bad field yields [`ArgvError`] and NO argv. The
+/// single-token `--add=<label>`/`--remove=<label>` form is dash-safe: a label
+/// starting with `-` passed as a separate token would be parsed by clap as a flag.
+pub fn label_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let number = payload
+        .get("number")
+        .and_then(|v| v.as_u64())
+        .filter(|&n| n > 0)
+        .ok_or(ArgvError::BadParam("number"))?;
+    let label = payload
+        .get("label")
+        .and_then(|v| v.as_str())
+        .filter(|l| !l.is_empty())
+        .ok_or(ArgvError::BadParam("label"))?;
+    let op = match payload.get("op").and_then(|v| v.as_str()) {
+        Some("add") => "add",
+        Some("remove") => "remove",
+        _ => return Err(ArgvError::BadParam("op")),
+    };
+    Ok(vec![
+        "label".to_string(),
+        "set".to_string(),
+        number.to_string(),
+        format!("--{op}={label}"),
     ])
 }
 
@@ -616,10 +706,14 @@ mod tests {
         assert_eq!(Verb::FileCreate.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileRename.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileDelete.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::BranchList.effect_class(), EffectClass::Query);
+        assert_eq!(Verb::BranchSwitch.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::BranchCreate.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::LabelSet.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            14,
-            "the registry holds exactly fourteen verbs"
+            18,
+            "the registry holds exactly eighteen verbs"
         );
     }
 
@@ -634,6 +728,70 @@ mod tests {
         assert_eq!(Verb::from_query("file.create"), Some(Verb::FileCreate));
         assert_eq!(Verb::from_query("file.rename"), Some(Verb::FileRename));
         assert_eq!(Verb::from_query("file.delete"), Some(Verb::FileDelete));
+        assert_eq!(Verb::from_query("branch.list"), Some(Verb::BranchList));
+        assert_eq!(Verb::from_query("branch.switch"), Some(Verb::BranchSwitch));
+        assert_eq!(Verb::from_query("branch.create"), Some(Verb::BranchCreate));
+        assert_eq!(Verb::from_query("label.set"), Some(Verb::LabelSet));
+    }
+
+    #[test]
+    fn branch_list_argv_is_static() {
+        assert_eq!(
+            branch_list_argv(),
+            vec!["branch", "list", "--format", "json"],
+            "the branch-list verb takes no client input"
+        );
+    }
+
+    #[test]
+    fn branch_argv_composes_guarded_vectors() {
+        assert_eq!(
+            branch_argv(Verb::BranchSwitch, &serde_json::json!({ "name": "feat/x" })).unwrap(),
+            vec!["branch", "switch", "--", "feat/x"]
+        );
+        assert_eq!(
+            branch_argv(Verb::BranchCreate, &serde_json::json!({ "name": "feat/x" })).unwrap(),
+            vec!["branch", "create", "--", "feat/x"]
+        );
+        // Empty / whitespace-only / absent name never reaches argv.
+        assert_eq!(
+            branch_argv(Verb::BranchSwitch, &serde_json::json!({ "name": "" })),
+            Err(ArgvError::BadParam("name"))
+        );
+        assert_eq!(
+            branch_argv(Verb::BranchSwitch, &serde_json::json!({ "name": "   " })),
+            Err(ArgvError::BadParam("name"))
+        );
+        assert_eq!(
+            branch_argv(Verb::BranchCreate, &serde_json::json!({})),
+            Err(ArgvError::BadParam("name"))
+        );
+    }
+
+    #[test]
+    fn label_argv_composes_single_token_op() {
+        assert_eq!(
+            label_argv(&serde_json::json!({ "number": 7, "label": "AFK", "op": "add" })).unwrap(),
+            vec!["label", "set", "7", "--add=AFK"]
+        );
+        assert_eq!(
+            label_argv(&serde_json::json!({ "number": 7, "label": "AFK", "op": "remove" }))
+                .unwrap(),
+            vec!["label", "set", "7", "--remove=AFK"]
+        );
+        // Zero/absent number, empty label, and out-of-enum op are all refused.
+        assert_eq!(
+            label_argv(&serde_json::json!({ "number": 0, "label": "AFK", "op": "add" })),
+            Err(ArgvError::BadParam("number"))
+        );
+        assert_eq!(
+            label_argv(&serde_json::json!({ "number": 7, "label": "", "op": "add" })),
+            Err(ArgvError::BadParam("label"))
+        );
+        assert_eq!(
+            label_argv(&serde_json::json!({ "number": 7, "label": "AFK", "op": "toggle" })),
+            Err(ArgvError::BadParam("op"))
+        );
     }
 
     #[test]
