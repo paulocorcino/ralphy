@@ -116,6 +116,13 @@ body.side-collapsed.runs-open {
   gap: 0.3rem;
   align-items: center;
 }
+/* daemon uptime in the topbar: a live-green dot signals the daemon is alive */
+.topbar .uptime {
+  font-size: 0.78rem;
+}
+.topbar .uptime [data-lucide] {
+  color: var(--live);
+}
 .avatar {
   width: 22px;
   height: 22px;
@@ -170,7 +177,9 @@ body.side-collapsed.runs-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.6rem 0.8rem;
+  /* match the 40px tab bar / runs header so all three bottom borders line up */
+  min-height: 40px;
+  padding: 0 0.8rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -307,6 +316,13 @@ body.side-collapsed.runs-open {
   --wb-active-color: var(--surface-hi);
   --wb-active-border-color: var(--border-focus);
   --wb-active-hover-color: var(--surface-hi);
+  /* Wunderbaum swaps to these "*-grayscale" vars when the tree is NOT focused;
+     its defaults are a near-white (#f0f0f0), which flashed the selected row
+     white on blur. Keep the SAME warm tone so focus/blur look consistent. */
+  --wb-active-color-grayscale: var(--surface-hi);
+  --wb-active-hover-color-grayscale: var(--surface-hi);
+  --wb-active-border-color-grayscale: var(--border);
+  --wb-active-cell-color-grayscale: var(--surface-hi);
   --wb-focus-border-color: var(--border-focus);
   --wb-hover-border-color: transparent;
   --wb-dim-color: var(--text-muted);
@@ -1084,6 +1100,50 @@ body.side-collapsed.runs-open {
 .run-preview::-webkit-scrollbar-track {
   background: transparent;
 }
+/* File viewers: the rendered markdown pane, its outline, and CodeMirror's own
+   scroll surfaces (code editor + markdown source editor) — all lose the page
+   default, so they get the same warm-dark treatment. */
+.md-scroll,
+.md-outline,
+.viewer-body,
+.CodeMirror-vscrollbar,
+.CodeMirror-hscrollbar {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--border) transparent;
+}
+.md-scroll::-webkit-scrollbar,
+.md-outline::-webkit-scrollbar,
+.viewer-body ::-webkit-scrollbar,
+.CodeMirror-vscrollbar::-webkit-scrollbar,
+.CodeMirror-hscrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.md-scroll::-webkit-scrollbar-thumb,
+.md-outline::-webkit-scrollbar-thumb,
+.viewer-body ::-webkit-scrollbar-thumb,
+.CodeMirror-vscrollbar::-webkit-scrollbar-thumb,
+.CodeMirror-hscrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+.md-scroll::-webkit-scrollbar-thumb:hover,
+.md-outline::-webkit-scrollbar-thumb:hover,
+.viewer-body ::-webkit-scrollbar-thumb:hover,
+.CodeMirror-vscrollbar::-webkit-scrollbar-thumb:hover,
+.CodeMirror-hscrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
+}
+.md-scroll::-webkit-scrollbar-track,
+.md-outline::-webkit-scrollbar-track,
+.viewer-body ::-webkit-scrollbar-track,
+.CodeMirror-vscrollbar::-webkit-scrollbar-track,
+.CodeMirror-hscrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 /* --- sidebar: count badge + provenance icon ------------------------------- */
 .side-head .spacer {
@@ -1273,6 +1333,25 @@ body.side-collapsed.runs-open {
 }
 .dropdown-item .bi {
   color: var(--console-text);
+}
+/* keyboard-accelerator hint, right-aligned in the row */
+.dropdown-item .kbd {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.02rem 0.34rem;
+  white-space: nowrap;
+}
+/* the plain console is the last option, set apart from the agent rows */
+.dropdown-item.is-console {
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 
 /* --- floating console windows (mirrors the daemon UI chrome) -------------- */
@@ -2425,6 +2504,649 @@ body.locked .runs {
   text-align: center;
   color: var(--text-muted);
   font-size: 0.78rem;
+}
+
+/* ===========================================================================
+   Kanban board — an overlay over the canvas (toggled by the Kanban rail button).
+   Four columns (Backlog · Ready for agent · Ready for human · Closed) fill the
+   canvas; a detail drawer slides in from the right when a card is clicked.
+   ======================================================================== */
+.kanban {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* toolbar row */
+.kanban-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.7rem;
+  height: 42px;
+  flex: none;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+.kanban-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.kanban-scope {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.kanban-head .spacer {
+  flex: 1;
+}
+.kanban-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.kanban-search [data-lucide] {
+  position: absolute;
+  left: 0.5rem;
+  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+}
+.kanban-search input {
+  font: inherit;
+  font-size: 0.78rem;
+  width: 240px;
+  padding: 0.32rem 0.5rem 0.32rem 1.7rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.kanban-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.kanban-select,
+.kanban-sort {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.28rem 0.4rem;
+}
+.kanban-select:focus,
+.kanban-sort:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.kanban-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kanban-close:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.kanban-empty {
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* the four columns */
+.kanban-cols {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  overflow-x: auto;
+}
+.kanban-col {
+  flex: 1 1 0;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--chrome);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.kanban-col-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.kanban-col-head [data-lucide] {
+  width: 15px;
+  height: 15px;
+}
+.kanban-col-title {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.kanban-col-count {
+  min-width: 18px;
+  padding: 0 0.35rem;
+  text-align: center;
+  font-size: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+.kanban-col-head .spacer {
+  flex: 1;
+}
+.kanban-col-note {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+}
+/* accent each column's top edge so the four read apart at a glance */
+.kanban-col.col-agent {
+  border-top: 2px solid var(--live);
+}
+.kanban-col.col-human {
+  border-top: 2px solid var(--info);
+}
+.kanban-col.col-closed {
+  border-top: 2px solid var(--border-focus);
+}
+.kanban-col.col-backlog {
+  border-top: 2px solid var(--console-border);
+}
+.kanban-col-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.kanban-col-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0.8rem 0;
+  font-size: 0.8rem;
+}
+
+/* a card */
+.kanban-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 5px;
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.kanban-card:hover {
+  border-color: var(--border-focus);
+  background: var(--surface-hi);
+}
+.kanban-card.sel {
+  border-color: var(--border-focus);
+  border-left-color: var(--text-muted);
+  background: var(--surface-hi);
+}
+.kanban-card.running {
+  border-left-color: var(--live);
+}
+.kanban-card.closed {
+  opacity: 0.72;
+}
+.kc-top {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+.kc-num {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.kc-blocked {
+  color: var(--danger);
+  display: inline-flex;
+}
+.kc-blocked .bi {
+  font-size: 0.7rem;
+}
+.kc-top .spacer {
+  flex: 1;
+}
+.kc-close {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.03rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.kc-close.completed {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, transparent);
+}
+.kc-close.not_planned {
+  color: var(--text-muted);
+}
+.kc-assignee {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.kc-title {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text);
+}
+.kc-run {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
+  border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--text);
+}
+.kc-run-txt {
+  color: var(--text-muted);
+}
+.kc-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+.kc-label {
+  font-size: 0.64rem;
+  line-height: 1.5;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+}
+
+/* the detail drawer */
+.kanban-detail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 48%);
+  z-index: 40;
+  background: var(--chrome);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  overflow: hidden;
+}
+.kanban-detail.open {
+  transform: none;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
+}
+.kd-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0.8rem 0.9rem 1.2rem;
+}
+.kd-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.kd-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.kd-state.open {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, transparent);
+}
+.kd-state.completed {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+}
+.kd-state.not_planned {
+  color: var(--text-muted);
+}
+.kd-head .spacer {
+  flex: 1;
+}
+.kd-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--info);
+  text-decoration: none;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.kd-gh:hover {
+  border-color: var(--border-focus);
+  background: var(--surface);
+}
+.kd-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kd-x:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.kd-title {
+  margin: 0.2rem 0 0.6rem;
+  font-family: var(--font-ui);
+  font-size: 1.02rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.kd-title .kd-num {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  margin-right: 0.4rem;
+}
+.kd-run {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
+  border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
+  border-radius: 5px;
+  font-size: 0.76rem;
+}
+.kd-run-face {
+  font-size: 0.95rem;
+}
+.kd-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.kd-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.kd-k {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.kd-v {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+.kd-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+.kd-blockers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.kd-blocker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  text-decoration: none;
+  color: var(--text-muted);
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.kd-blocker.open {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.kd-blocker:hover {
+  border-color: var(--border-focus);
+}
+.kd-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+.kd-label {
+  font-size: 0.68rem;
+  padding: 0.06rem 0.5rem;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+}
+.kd-nolabel {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.kd-label-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+.kd-label-edit:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+.kd-label-edit [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.kd-label-menu {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.kd-label-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.kd-label-optname {
+  flex: 1;
+}
+.kd-label-opt .bi-check2 {
+  color: var(--live);
+}
+.kd-label-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: none;
+}
+/* rendered issue body + comments (mirrors the plan-md prose treatment) */
+.kd-body,
+.kd-comment-body {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+.kd-body :where(h1, h2, h3, h4) {
+  font-size: 0.86rem;
+  margin: 0.7rem 0 0.3rem;
+}
+.kd-body p,
+.kd-comment-body p {
+  margin: 0.35rem 0;
+}
+.kd-body ul,
+.kd-body ol,
+.kd-comment-body ul {
+  margin: 0.35rem 0;
+  padding-left: 1.1rem;
+}
+.kd-body li {
+  margin: 0.15rem 0;
+}
+.kd-body code,
+.kd-comment-body code {
+  font-family: var(--font-mono);
+  background: var(--log-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.kd-body pre,
+.kd-comment-body pre {
+  font-family: var(--font-mono);
+  background: var(--log-bg);
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  overflow: auto;
+}
+.kd-body pre code,
+.kd-comment-body pre code {
+  background: none;
+  padding: 0;
+}
+.kd-body a,
+.kd-comment-body a {
+  color: var(--info);
+}
+.kd-body blockquote,
+.kd-comment-body blockquote {
+  margin: 0.4rem 0;
+  padding: 0.1rem 0.7rem;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+.kd-comments {
+  margin-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+.kd-comments-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.kd-comment {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+.kd-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.76rem;
+}
+.kd-comment-at {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.kd-comment-body {
+  padding: 0.2rem 0.6rem 0.4rem;
+}
+.kd-foot {
+  margin-top: 0.8rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.kd-foot code {
+  font-family: var(--font-mono);
+}
+/* thin warm-dark scrollbars for the board's scroll surfaces */
+.kanban-col-body,
+.kanban-cols,
+.kd-inner,
+.kd-label-menu {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.kanban-col-body::-webkit-scrollbar,
+.kanban-cols::-webkit-scrollbar,
+.kd-inner::-webkit-scrollbar,
+.kd-label-menu::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.kanban-col-body::-webkit-scrollbar-thumb,
+.kanban-cols::-webkit-scrollbar-thumb,
+.kd-inner::-webkit-scrollbar-thumb,
+.kd-label-menu::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+.kanban-col-body::-webkit-scrollbar-thumb:hover,
+.kanban-cols::-webkit-scrollbar-thumb:hover,
+.kd-inner::-webkit-scrollbar-thumb:hover,
+.kd-label-menu::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
 }
 
 /* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */

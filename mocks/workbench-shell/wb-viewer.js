@@ -225,9 +225,10 @@
       xsel.append(o);
     });
     xsel.value = rec.xlate.target;
+    // no on-device Translator API → the control is hidden entirely, not disabled
     if (!WBTranslate.supported()) {
-      xbtn.disabled = true;
-      xbtn.title = "translation needs Chrome/Edge 138+ (built-in Translator API)";
+      xbtn.style.display = "none";
+      xsel.style.display = "none";
     }
     xbtn.onclick = () => toggleMdXlate(rec);
     xsel.onchange = () => {
@@ -255,12 +256,15 @@
     const n = rec.el.querySelector('[data-role="xlate-note"]');
     if (n) n.textContent = msg || "";
   }
-  // hide the translate controls while editing (translation is a preview concern)
+  // hide the translate controls while editing (translation is a preview concern);
+  // also stay hidden where the API is absent, so returning to preview never
+  // re-reveals a control that can't work.
   function setMdXlateControls(rec, visible) {
+    const show = visible && WBTranslate.supported();
     const xbtn = rec.el.querySelector('[data-act="xlate"]');
     const xsel = rec.el.querySelector('[data-act="xlate-target"]');
-    if (xbtn) xbtn.style.display = visible ? "" : "none";
-    if (xsel) xsel.style.display = visible && rec.xlate.on ? "" : "none";
+    if (xbtn) xbtn.style.display = show ? "" : "none";
+    if (xsel) xsel.style.display = show && rec.xlate.on ? "" : "none";
     if (!visible) setMdXlateNote(rec, "");
   }
 

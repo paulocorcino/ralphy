@@ -15,15 +15,13 @@
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
     <!-- top bar. impl: brand+avatar = daemon identity (/api/identity); the
-         crumb tracks the open project; the stats (stars/msgs/bell) are
-         decorative placeholders — wire to real counts or drop. -->
+         crumb tracks the open project; the uptime is the daemon's live presence
+         (from the WS heartbeat), moved here from the canvas footer. -->
     <header class="topbar">
       <span class="brand"><i data-lucide="bot"></i> ralphy</span>
       <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
       <span class="spacer"></span>
-      <span class="stat"><i data-lucide="star"></i> 145k</span>
-      <span class="stat"><i data-lucide="message-circle"></i> 24k</span>
-      <span class="stat"><i data-lucide="bell"></i></span>
+      <span class="stat uptime"><i data-lucide="circle-dot"></i> daemon up 2h 14m</span>
       <!-- account menu: security (password + TOTP) and log off. impl: the
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
       <div class="menu-wrap">
@@ -43,8 +41,8 @@
     </header>
 
     <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
-         sidebar; Runs opens the right-hand run panel; Kanban is the tasks board
-         (stub for now). -->
+         sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
+         board as a canvas overlay (wb-kanban.js). -->
     <nav class="rail">
       <button :class="{ active: sideOpen }" @click="toggleSide()" title="Projects"><i data-lucide="folder-tree"></i></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
@@ -161,10 +159,13 @@
             </button>
             <div class="dropdown" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
               <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
-              <!-- available agents (impl: could come from daemon capabilities) -->
-              <template x-for="a in agents" :key="a">
-                <button class="dropdown-item" @click="newConsole(a); agentMenu = false">
-                  <i class="bi bi-terminal"></i><span x-text="a"></span>
+              <!-- agents (impl: could come from daemon capabilities), then a plain
+                   console last. Each row carries its Alt+Shift+<digit> accelerator. -->
+              <template x-for="it in consoleItems()" :key="it.kind">
+                <button class="dropdown-item" :class="{ 'is-console': it.plain }" @click="openConsoleItem(it)">
+                  <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
+                  <span x-text="it.label"></span>
+                  <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
                 </button>
               </template>
             </div>
@@ -193,11 +194,189 @@
         <div id="viewers"></div>
       </div>
 
-      <!-- status strip. impl: Logs opens the daemon log; uptime from presence. -->
-      <div class="canvas-foot">
-        <span class="pill"><i data-lucide="scroll-text"></i> Logs</span>
-        <span class="pill"><i data-lucide="circle-dot"></i> daemon up 2h 14m</span>
-      </div>
+      <!-- ===================================================================
+           Kanban board — an overlay over the canvas, toggled by the Kanban rail
+           button. The open project's issues (WB_KANBAN) placed in four columns
+           by ralphy's own judgment (wb-kanban.js): Backlog · Ready for agent ·
+           Ready for human · Closed. The two Ready columns are ordered by the
+           dependency graph (Kahn, blocked.rs); Backlog is a flat filtered list.
+           Read-only except labels; clicking a card opens the detail drawer.
+      ==================================================================== -->
+      <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
+        <div class="kanban-head">
+          <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
+          <span class="kanban-scope" x-text="openSlug ?? 'no project'"></span>
+          <span class="spacer"></span>
+          <!-- board-wide search + label filter (apply to every column) -->
+          <div class="kanban-search">
+            <i data-lucide="search"></i>
+            <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
+          </div>
+          <select class="kanban-select" x-model="kanbanLabel" title="filter by label">
+            <option value="__all">all labels</option>
+            <option value="__none">— no label</option>
+            <template x-for="l in kanbanLabelOptions()" :key="l">
+              <option :value="l" x-text="l"></option>
+            </template>
+          </select>
+          <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
+        <div class="kanban-empty" x-show="openSlug && projectIssues().length === 0">
+          No issues in <b x-text="openSlug"></b>.
+        </div>
+
+        <div class="kanban-cols" x-show="openSlug && projectIssues().length">
+          <template x-for="col in KANBAN.COLUMNS" :key="col.id">
+            <section class="kanban-col" :class="'col-' + col.id">
+              <div class="kanban-col-head">
+                <i :data-lucide="col.lucide"></i>
+                <span class="kanban-col-title" x-text="col.title"></span>
+                <span class="kanban-col-count" x-text="kanbanCount(col.id)"></span>
+                <span class="spacer"></span>
+                <!-- Backlog gets a sort control; the Ready columns are graph-ordered -->
+                <select class="kanban-sort" x-show="col.id === 'backlog'" x-model="kanbanSort" title="sort backlog">
+                  <template x-for="s in KANBAN.SORTS" :key="s.id">
+                    <option :value="s.id" x-text="s.label"></option>
+                  </template>
+                </select>
+                <span class="kanban-col-note" x-show="col.id === 'agent' || col.id === 'human'"
+                      title="ordered by the dependency graph (## Blocked by)">graph order</span>
+              </div>
+              <div class="kanban-col-body">
+                <template x-for="iss in kanbanColumns()[col.id]" :key="iss.number">
+                  <article class="kanban-card"
+                           :class="{ sel: kanbanSel === iss.number, running: !!issueRunning(iss.number), closed: iss.state === 'closed' }"
+                           @click="openIssue(iss.number)">
+                    <div class="kc-top">
+                      <span class="kc-num" x-text="'#' + iss.number"></span>
+                      <span class="kc-blocked" x-show="issueBlockers(iss).some((b) => b.open)" title="has an open blocker">
+                        <i class="bi bi-lock-fill"></i>
+                      </span>
+                      <span class="spacer"></span>
+                      <span class="kc-close" x-show="iss.state === 'closed'" :class="iss.reason" x-text="closeLabel(iss)"></span>
+                      <span class="kc-assignee" x-show="iss.assignees && iss.assignees.length"
+                            :title="(iss.assignees || []).join(', ')"><i class="bi bi-person-fill"></i></span>
+                    </div>
+                    <div class="kc-title" x-text="iss.title"></div>
+                    <!-- run pill: the actively-worked issue of a live run -->
+                    <div class="kc-run" x-show="issueRunning(iss.number)">
+                      <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
+                      <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
+                      <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
+                    </div>
+                    <div class="kc-labels" x-show="(iss.labels || []).length">
+                      <template x-for="l in iss.labels" :key="l">
+                        <span class="kc-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="labelShort(l)"></span>
+                      </template>
+                    </div>
+                  </article>
+                </template>
+                <div class="kanban-col-empty" x-show="kanbanColumns()[col.id].length === 0">—</div>
+              </div>
+            </section>
+          </template>
+        </div>
+
+        <!-- detail drawer: GitHub-style read-only view + the label editor -->
+        <aside class="kanban-detail" :class="{ open: kanbanSel !== null && !!selectedIssue() }" aria-label="Issue detail">
+          <template x-if="selectedIssue()">
+            <div class="kd-inner">
+              <div class="kd-head">
+                <span class="kd-state" :class="selectedIssue().state === 'closed' ? (selectedIssue().reason || 'completed') : 'open'">
+                  <i class="bi" :class="selectedIssue().state === 'closed'
+                    ? (selectedIssue().reason === 'not_planned' ? 'bi-slash-circle' : 'bi-check-circle-fill')
+                    : 'bi-record-circle'"></i>
+                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'open'"></span>
+                </span>
+                <span class="spacer"></span>
+                <a class="kd-gh" :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
+                   title="open on GitHub to edit (this board is read-only)">
+                  <i class="bi bi-github"></i> Open on GitHub
+                </a>
+                <button class="kd-x" @click="closeIssue()" title="close"><i class="bi bi-x-lg"></i></button>
+              </div>
+
+              <h2 class="kd-title">
+                <span class="kd-num" x-text="'#' + selectedIssue().number"></span>
+                <span x-text="selectedIssue().title"></span>
+              </h2>
+
+              <!-- running banner -->
+              <div class="kd-run" x-show="issueRunning(selectedIssue().number)">
+                <span class="kd-run-face" x-text="issueRunning(selectedIssue().number)?.face"></span>
+                <span x-text="issueRunning(selectedIssue().number)?.glyph"></span>
+                <span x-text="'running · ' + (issueRunning(selectedIssue().number)?.state || '') + ' (' + (issueRunning(selectedIssue().number)?.agent || '') + ')'"></span>
+              </div>
+
+              <!-- meta -->
+              <div class="kd-meta">
+                <div class="kd-meta-row"><span class="kd-k">Column</span><span class="kd-v" x-text="kanbanColumnTitle(selectedIssue())"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Assignees</span><span class="kd-v" x-text="(selectedIssue().assignees || []).join(', ') || '—'"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Opened</span><span class="kd-v" x-text="kfmtDate(selectedIssue().created)"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Updated</span><span class="kd-v" x-text="kfmtDate(selectedIssue().updated)"></span></div>
+              </div>
+
+              <!-- blocked by -->
+              <div class="kd-row" x-show="issueBlockers(selectedIssue()).length">
+                <span class="kd-k">Blocked by</span>
+                <div class="kd-blockers">
+                  <template x-for="b in issueBlockers(selectedIssue())" :key="b.number">
+                    <a class="kd-blocker" :class="{ open: b.open }" :href="githubUrl(b.number)" target="_blank" rel="noopener" :title="b.title">
+                      <i class="bi" :class="b.open ? 'bi-lock-fill' : 'bi-unlock'"></i><span x-text="'#' + b.number"></span>
+                    </a>
+                  </template>
+                </div>
+              </div>
+
+              <!-- labels — the one editable field -->
+              <div class="kd-row">
+                <span class="kd-k">Labels</span>
+                <div class="kd-labels">
+                  <template x-for="l in selectedIssue().labels" :key="l">
+                    <span class="kd-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="l"></span>
+                  </template>
+                  <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">no labels</span>
+                  <div class="menu-wrap">
+                    <button class="kd-label-edit" @click.stop="labelMenuOpen = !labelMenuOpen"><i data-lucide="tag"></i> edit</button>
+                    <div class="dropdown kd-label-menu" x-show="labelMenuOpen" @click.outside="labelMenuOpen = false" x-cloak>
+                      <div class="dropdown-head">toggle a label — the daemon runs the <code>gh</code> call</div>
+                      <template x-for="l in KANBAN_LABELS" :key="'opt-' + l">
+                        <button class="dropdown-item kd-label-opt" @click="toggleLabel(selectedIssue(), l)">
+                          <span class="kd-label-swatch" :style="`background:${labelColor(l)}`"></span>
+                          <span class="kd-label-optname" x-text="l"></span>
+                          <i class="bi bi-check2" x-show="hasLabel(selectedIssue(), l)"></i>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- body -->
+              <div class="kd-body md" x-html="renderIssueMd(selectedIssue().body)"></div>
+
+              <!-- comments -->
+              <div class="kd-comments" x-show="(selectedIssue().comments || []).length">
+                <div class="kd-comments-head"
+                     x-text="selectedIssue().comments.length + ' comment' + (selectedIssue().comments.length === 1 ? '' : 's')"></div>
+                <template x-for="(c, idx) in selectedIssue().comments" :key="idx">
+                  <div class="kd-comment">
+                    <div class="kd-comment-head"><b x-text="c.author"></b><span class="kd-comment-at" x-text="kfmtDate(c.at)"></span></div>
+                    <div class="kd-comment-body md" x-html="renderIssueMd(c.body)"></div>
+                  </div>
+                </template>
+              </div>
+
+              <div class="kd-foot">
+                Read-only mock — only labels change here (emits <code>issue-label-change</code>); edit on GitHub.
+              </div>
+            </div>
+          </template>
+        </aside>
+      </section>
+
     </main>
 
     <!-- right-hand run panel: toggled by the Runs rail button. The mock only
@@ -303,9 +482,11 @@
                 <span class="plan-xlate-note" x-show="xlate.on.steps && (xlate.err.steps || xlate.note.steps)"
                       x-text="xlate.err.steps || xlate.note.steps"></span>
                 <span class="plan-issue" x-show="currentRun()?.active != null" x-text="'#' + currentRun()?.active"></span>
-                <!-- on-device translate toggle (browser Translator API) -->
-                <button class="plan-xlate" :class="{ on: xlate.on.steps, busy: xlate.busy.steps }"
-                        :disabled="!xlateSupported()" @click="toggleXlate('steps', 'Steps')" :title="xlateTitle()">
+                <!-- on-device translate toggle (browser Translator API) —
+                     hidden entirely where the API is absent -->
+                <button class="plan-xlate" x-show="xlateSupported()"
+                        :class="{ on: xlate.on.steps, busy: xlate.busy.steps }"
+                        @click="toggleXlate('steps', 'Steps')" :title="xlateTitle()">
                   <i data-lucide="languages"></i>
                 </button>
                 <!-- target language, shown while this block is translating -->
@@ -328,8 +509,8 @@
                 </select>
                 <span class="plan-xlate-note" x-show="xlate.on.more && (xlate.err.more || xlate.note.more)"
                       x-text="xlate.err.more || xlate.note.more"></span>
-                <button class="plan-xlate" :class="{ on: xlate.on.more, busy: xlate.busy.more }"
-                        :disabled="!xlateSupported()"
+                <button class="plan-xlate" x-show="xlateSupported()"
+                        :class="{ on: xlate.on.more, busy: xlate.busy.more }"
                         @click="toggleXlate('more', planSection || planHeadings(currentRun())[0])" :title="xlateTitle()">
                   <i data-lucide="languages"></i>
                 </button>
@@ -893,6 +1074,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>
     <script src="wb-runs.js"></script>
+    <script src="wb-kanban.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

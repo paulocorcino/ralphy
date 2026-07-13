@@ -81,9 +81,14 @@ function shell() {
       if (this.runsOpen) this.$nextTick(() => window.lucide?.createIcons());
     },
     toggleKanban() {
-      // No board yet — announce the intent so a backend/next iteration can wire
-      // the tasks view. Marks the button active as a visible affordance.
+      // The tasks board: the open project's issues placed in four columns by
+      // ralphy's own judgment (see wb-kanban.js). A pure overlay flip over the
+      // canvas; the intent still fires so a backend can lazy-load the tracker.
       this.kanbanOpen = !this.kanbanOpen;
+      if (this.kanbanOpen) {
+        this.kanbanSel = null;
+        this.$nextTick(() => window.lucide?.createIcons());
+      }
       WB.emit("kanban-toggle", { open: this.kanbanOpen });
     },
 
@@ -474,6 +479,136 @@ function shell() {
       }
     },
 
+    // --- Kanban board -----------------------------------------------------
+    // The backlog as a board: the open project's issues (WB_KANBAN, a backend
+    // replaces it from the tracker) placed in four columns by ralphy's own
+    // judgment (window.WBKanban). Read-only except labels — the one mutation
+    // that moves a card between columns; everything else opens on GitHub. Data
+    // is project-scoped like the Runs panel.
+    KANBAN: window.WBKanban,
+    kanbanSel: null, // the selected issue number → opens the detail drawer
+    kanbanFilter: "", // search box (title / #num / body / label)
+    kanbanLabel: "__all", // label filter: __all | __none | <label>
+    kanbanSort: "num-desc", // Backlog sort (Ready columns keep graph order)
+
+    // The open project's issues (empty when no project / none seeded).
+    projectIssues() {
+      return window.WB_KANBAN[this.openSlug] || [];
+    },
+
+    // The four columns after search + label filter, each ordered for its kind:
+    // Backlog by the chosen sort; the two Ready columns by the dependency graph
+    // (Kahn); Closed newest-first, grouped later by close reason in the view.
+    kanbanColumns() {
+      const all = this.projectIssues();
+      const K = window.WBKanban;
+      const shown = all.filter((i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
+      const bucket = { backlog: [], agent: [], human: [], closed: [] };
+      for (const i of shown) bucket[K.columnOf(i)].push(i);
+      return {
+        backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
+        agent: K.orderGraph(bucket.agent, all),
+        human: K.orderGraph(bucket.human, all),
+        closed: bucket.closed.sort((a, b) => (b.updated || "").localeCompare(a.updated || "")),
+      };
+    },
+    // Per-column live count (post-filter), for the column header badge.
+    kanbanCount(colId) {
+      return this.kanbanColumns()[colId].length;
+    },
+    // The label set present in the project, for the filter dropdown.
+    kanbanLabelOptions() {
+      const seen = new Set();
+      for (const i of this.projectIssues()) for (const l of i.labels || []) seen.add(l);
+      return [...seen].sort();
+    },
+
+    // The run pill descriptor for a card (the actively-worked issue of a live
+    // run), or null. Cross-refs the Runs seed via window.WBRun.
+    issueRunning(number) {
+      return window.WBKanban.runningFor(number, this.projectRuns());
+    },
+
+    // Thin delegations to the faithful helpers (used in the template).
+    kanbanColumnOf(i) {
+      return window.WBKanban.columnOf(i);
+    },
+    labelColor(l) {
+      return window.WBKanban.labelColor(l);
+    },
+    labelInk(l) {
+      return window.WBKanban.labelInk(l);
+    },
+    labelShort(l) {
+      return window.WBKanban.labelMeta(l).short;
+    },
+    closeLabel(i) {
+      return window.WBKanban.closeLabel(i);
+    },
+    kanbanColumnTitle(i) {
+      const id = window.WBKanban.columnOf(i);
+      return (window.WBKanban.COLUMNS.find((c) => c.id === id) || {}).title || id;
+    },
+    kfmtDate(iso) {
+      return window.WBKanban.fmtDate(iso);
+    },
+
+    // --- detail drawer ----------------------------------------------------
+    // Clicking a card opens a right-hand drawer with the GitHub-style detail:
+    // meta, labels (editable), assignees, blocked-by, body + comments, and an
+    // Open-on-GitHub link. Selection is by number so a label move (which can
+    // change the card's column) keeps the drawer pointed at the same issue.
+    selectedIssue() {
+      if (this.kanbanSel == null) return null;
+      return this.projectIssues().find((i) => i.number === this.kanbanSel) || null;
+    },
+    openIssue(number) {
+      this.kanbanSel = number;
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeIssue() {
+      this.kanbanSel = null;
+    },
+    // The real GitHub URL — the drawer's editing door. Read-only here; edits
+    // happen on GitHub. (Repo is fixed for the mock's demo projects.)
+    githubUrl(number) {
+      return `https://github.com/paulocorcino/ralphy/issues/${number}`;
+    },
+
+    // The open blockers of the selected issue (for the drawer's Blocked-by row),
+    // each with its live open/closed state in this project.
+    issueBlockers(iss) {
+      if (!iss || !iss.blockedBy?.length) return [];
+      const all = this.projectIssues();
+      return iss.blockedBy.map((n) => {
+        const b = all.find((x) => x.number === n);
+        return { number: n, open: b ? b.state === "open" : false, known: !!b, title: b?.title || "" };
+      });
+    },
+
+    // Render an issue body / comment as sanitized markdown (marked + DOMPurify,
+    // already loaded for the file viewers and the Runs plan).
+    renderIssueMd(src) {
+      return DOMPurify.sanitize(marked.parse(src || "_(empty)_"));
+    },
+
+    // --- the one allowed mutation: labels ---------------------------------
+    // Toggling a label is the sole write the board permits — it can move the
+    // card to another column. Faithful to the mock's ethos: emit an intent
+    // (`issue-label-change`), the daemon does the real `gh` label call; we
+    // reflect it optimistically. Everything else is read-only + Open on GitHub.
+    KANBAN_LABELS: Object.keys(window.WBKanban.LABELS),
+    labelMenuOpen: false,
+    hasLabel(iss, label) {
+      return !!iss && (iss.labels || []).includes(label);
+    },
+    toggleLabel(iss, label) {
+      if (!iss) return;
+      const has = this.hasLabel(iss, label);
+      iss.labels = has ? iss.labels.filter((l) => l !== label) : [...(iss.labels || []), label];
+      WB.emit("issue-label-change", { project: this.openSlug, number: iss.number, label, op: has ? "remove" : "add" });
+    },
+
     // --- settings modal ---------------------------------------------------
     // A data-driven config panel (schema in wb-settings.js). Values are held in
     // `settings` and every change is an intent on the seam — the mock persists
@@ -751,6 +886,10 @@ function shell() {
     // --- accordion --------------------------------------------------------
     toggle(slug) {
       this.openSlug = this.openSlug === slug ? null : slug;
+      // a selected issue belongs to the project that was open — closing or
+      // switching projects must drop the Kanban detail drawer (its selection is
+      // now stale/absent), else the empty drawer lingers on the right.
+      this.kanbanSel = null;
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();
@@ -936,9 +1075,52 @@ function shell() {
     },
 
     // --- consoles (the Agents tab) ----------------------------------------
+    // The "New console" menu: an agent adapter per row, plus a plain console
+    // (no agent — a shell in the repo dir) pinned LAST, mirroring the daemon UI.
+    // Each has an Alt+Shift+<digit> accelerator: Alt+Shift lives outside the
+    // browser's reserved combos on Windows/Linux/macOS, and the digits are
+    // matched by physical key (e.code), so they fire regardless of layout or the
+    // glyph macOS' Option produces. Console is Alt+Shift+0 (last, the "zero").
+    consoleItems() {
+      return [
+        { kind: "claude", label: "claude", plain: false, digit: "1" },
+        { kind: "codex", label: "codex", plain: false, digit: "2" },
+        { kind: "opencode", label: "opencode", plain: false, digit: "3" },
+        { kind: "console", label: "console", plain: true, digit: "0" },
+      ];
+    },
+    isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
+    shortcutLabel(digit) {
+      return this.isMac ? `⌥⇧${digit}` : `Alt+Shift+${digit}`;
+    },
+    openConsoleItem(item) {
+      if (item.plain) this.newPlainConsole();
+      else this.newConsole(item.kind);
+      this.agentMenu = false;
+    },
+
     newConsole(agent) {
+      if (this.active !== "agents") this.activate("agents");
       WBConsole.open({ repo: this.openSlug, agent });
       this.consoleCount = WBConsole.count();
+    },
+    // a bare shell in the repo dir (no agent) — the daemon's per-repo console
+    newPlainConsole() {
+      if (this.active !== "agents") this.activate("agents");
+      WBConsole.open({ repo: this.openSlug, plain: true });
+      this.consoleCount = WBConsole.count();
+    },
+
+    // The Alt+Shift+digit accelerators are ignored while typing, or when a modal
+    // or the login gate is up, so they never fight a text field or a dialog.
+    consoleShortcutsBlocked() {
+      if (!this.authed) return true;
+      if (this.settingsOpen || this.securityOpen || this.runOpen || this.branchOpen) return true;
+      const el = document.activeElement;
+      return !!(
+        el &&
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".CodeMirror"))
+      );
     },
 
     arrangeConsoles() {
@@ -1064,6 +1246,21 @@ document.addEventListener("click", () => document.getElementById("ctxmenu") && (
 document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"), true);
 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
+
+// Alt+Shift+<digit> → open a console: 1 claude · 2 codex · 3 opencode · 0 plain
+// console. Matched on the physical key (e.code) so layout / macOS Option glyphs
+// don't matter; guarded so it never hijacks a text field, modal, or the login.
+document.addEventListener("keydown", (e) => {
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit0: "__plain" };
+  const kind = map[e.code];
+  if (!kind) return;
+  const c = getShell();
+  if (!c || c.consoleShortcutsBlocked()) return;
+  e.preventDefault();
+  if (kind === "__plain") c.newPlainConsole();
+  else c.newConsole(kind);
+});
 
 // Inbound run events (the backend seam): a live CloudEvents feed dispatches
 // `ralphy:run-event` with a `{ type, runid, data }` detail; the shell folds it

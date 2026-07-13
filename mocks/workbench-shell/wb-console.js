@@ -155,7 +155,12 @@ window.WBConsole = (function () {
     setTimeout(() => term.focus(), 0);
   }
 
-  function open({ repo, agent }) {
+  // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
+  // is no agent — a normal shell in the repo dir, labelled "console" (mirrors the
+  // daemon's per-repo console tile). The emitted intent carries `plain` so a
+  // backend spawns a bare PTY instead of an agent session.
+  function open({ repo, agent, plain }) {
+    const label = agent || "console";
     const win = document.createElement("div");
     win.className = "session-window";
     cascade = (cascade + 1) % 8;
@@ -168,7 +173,7 @@ window.WBConsole = (function () {
     titlebar.className = "session-titlebar";
     const title = document.createElement("span");
     title.className = "session-title";
-    title.innerHTML = `<i class="bi bi-terminal"></i> ${agent} · ${repo || "home"}`;
+    title.innerHTML = `<i class="bi bi-terminal"></i> ${label} · ${repo || "home"}`;
     const actions = document.createElement("span");
     actions.className = "session-actions";
     const closeBtn = document.createElement("button");
@@ -188,17 +193,17 @@ window.WBConsole = (function () {
     makeDraggable(win, titlebar);
     makeResizable(win, grip);
     focusWin(win);
-    fauxTerminal(body, repo, agent);
+    fauxTerminal(body, repo, label);
 
     closeBtn.onclick = () => {
       win.remove();
       wins.delete(win);
-      WB.emit("console-close", { repo: repo || null, agent });
+      WB.emit("console-close", { repo: repo || null, agent: agent || null, plain: !!plain });
       changed();
     };
 
     wins.add(win);
-    WB.emit("console-open", { repo: repo || null, agent });
+    WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
     changed();
   }
 
