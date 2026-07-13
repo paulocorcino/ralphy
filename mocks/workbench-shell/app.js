@@ -55,6 +55,7 @@ function shell() {
   return {
     openSlug: null,
     _tree: null, // the live Wunderbaum instance, if any
+    _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
 
     // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
     // plan <script> blocks) is present.
@@ -1112,12 +1113,28 @@ function shell() {
             return true; // let the tree reflect it optimistically
           },
         },
+        // Live watch-set (#196): watch a folder's dir when it expands, unwatch on
+        // collapse, so the daemon watches only what is on screen (the expanded set).
+        expand: (e) => {
+          if (!this.isFolder(e.node)) return;
+          const rel = this.relPath(e.node);
+          if (e.flag) this._treeSub?.watch(rel);
+          else this._treeSub?.unwatch(rel);
+        },
         // Double-click / Enter on a leaf = "open this file".
         dblclick: (e) => {
           if (!this.isFolder(e.node)) this.openFile(e.node);
           return false;
         },
       });
+
+      // One `/ws/tree` subscription per open project; the root is always watched
+      // (the top level is visible whenever a project is open). A `tree.dirty` push
+      // refetches only the affected, still-expanded subtree (see `onTreeDirty`).
+      if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
+        this._treeSub = WBDaemon.subscribeTree(this.openSlug, (rel) => this.onTreeDirty(rel));
+        this._treeSub.watch("");
+      }
 
       // Right-click anywhere in the tree → our own context menu.
       host.addEventListener("contextmenu", (ev) => {
@@ -1165,7 +1182,31 @@ function shell() {
         .catch(() => fakeContent(path, ftype));
     },
 
+    // A `tree.dirty` nudge for `rel`: refetch that one directory level IF it is
+    // currently on screen (the root, or an expanded folder). A nudge for a
+    // collapsed/absent dir is DROPPED — the change is invisible, so re-listing it
+    // would be wasted traffic (ADR-0036 §4).
+    onTreeDirty(rel) {
+      const tree = this._tree;
+      if (!tree) return;
+      const node = rel === "" ? tree.root : this.findFolderByRel(rel);
+      if (!node) return; // not in the tree → invisible, drop
+      if (rel !== "" && !node.expanded) return; // collapsed → invisible, drop
+      // Re-list just this level from the daemon and reconcile its children.
+      node.load(this.loadTreeLevel(rel));
+    },
+
+    // The expanded folder node whose rel path is `rel`, or `null` if none is
+    // mounted (so a nudge for an off-screen dir drops).
+    findFolderByRel(rel) {
+      return this._tree?.findFirst((n) => this.isFolder(n) && this.relPath(n) === rel) || null;
+    },
+
     destroyTree() {
+      try {
+        this._treeSub?.close();
+      } catch {}
+      this._treeSub = null;
       try {
         this._tree?.destroy?.();
       } catch {}

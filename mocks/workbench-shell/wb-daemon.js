@@ -76,6 +76,47 @@ window.WBDaemon = (function () {
     });
   }
 
+  // Open ONE persistent `/ws/tree` subscription for a project (#196, ADR-0036 §4):
+  // `watch`/`unwatch` a rel dir as the tree expands/collapses, and invoke
+  // `onDirty(relPath)` for each `tree.dirty` push. Returns the control handle; the
+  // caller closes it when the project closes (the daemon tears the watcher down on
+  // the last release). Commands sent before the socket opens are queued.
+  function subscribeTree(repo, onDirty) {
+    const ws = new WebSocket("ws://" + location.host + "/ws/tree");
+    ws.binaryType = "arraybuffer";
+    let open = false;
+    const pending = [];
+    const send = (verb, path) => {
+      const frame = encodeCommand({ id: 0, verb, payload: { repo, path: path || "" } });
+      if (open) ws.send(frame);
+      else pending.push(frame);
+    };
+    ws.onopen = () => {
+      open = true;
+      while (pending.length) ws.send(pending.shift());
+    };
+    ws.onmessage = (ev) => {
+      const a = new Uint8Array(ev.data);
+      if (a[0] !== TAG_COMMAND) return;
+      let frame;
+      try {
+        frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+      } catch {
+        return;
+      }
+      if (frame.verb === "tree.dirty") onDirty((frame.payload && frame.payload.path) || "");
+    };
+    return {
+      watch: (path) => send("watch", path),
+      unwatch: (path) => send("unwatch", path),
+      close: () => {
+        try {
+          ws.close();
+        } catch {}
+      },
+    };
+  }
+
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
   // values the daemon validates.
@@ -93,5 +134,14 @@ window.WBDaemon = (function () {
     });
   });
 
-  return { spawn, observe, encodeCommand, ACTION_TO_VERB, TAG_TERMINAL, TAG_COMMAND, TAG_PRESENCE };
+  return {
+    spawn,
+    observe,
+    subscribeTree,
+    encodeCommand,
+    ACTION_TO_VERB,
+    TAG_TERMINAL,
+    TAG_COMMAND,
+    TAG_PRESENCE,
+  };
 })();
