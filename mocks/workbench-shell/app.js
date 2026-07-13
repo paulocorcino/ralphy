@@ -63,6 +63,7 @@ function shell() {
       this.currentRunId = this.projectRuns()[0]?.runid || null;
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
       this.probeSession();
+      this.loadRepos();
     },
 
     // Ask the daemon whether this browser is authorized. A thrown fetch (file://
@@ -75,6 +76,30 @@ function shell() {
           const s = await r.json();
           this.authed = s.authed;
           this.login.passwordRequired = s.password;
+        }
+      } catch {}
+    },
+
+    // Hydrate the accordion from the daemon's real repo registry. A thrown
+    // fetch (file:// standalone, no daemon) is swallowed so `projects` keeps
+    // its seed — same offline-navigable contract as `probeSession()`. `state`
+    // maps only to idle/offline this slice ("live" means an active session,
+    // not yet tracked here); `remote` is inferred from the slug shape
+    // (`git::project_slug`'s only `path-<hash>` fallback is a remoteless repo).
+    async loadRepos() {
+      try {
+        const r = await fetch("/api/repos");
+        if (r.ok) {
+          const repos = await r.json();
+          this.projects = repos.map((x) => ({
+            slug: x.slug,
+            branch: x.branch || "",
+            branches: x.branch ? [x.branch] : [],
+            dirty: false,
+            state: x.reachable ? "idle" : "offline",
+            remote: x.slug.startsWith("path-") ? "local" : "github",
+            tree: [],
+          }));
         }
       } catch {}
     },
@@ -828,7 +853,9 @@ function shell() {
     // Projects carry a *nested* file tree (folder → children), the shape a
     // backend would deliver as JSON. `state` is daemon reachability (the dot);
     // `remote` is provenance — a GitHub-backed repo vs one that lives only on
-    // this disk. Icons are resolved at mount time.
+    // this disk. Icons are resolved at mount time. `loadRepos()` overwrites
+    // this seed with the real registry at init; it survives only as the
+    // file:// standalone fallback (no daemon to fetch from).
     projects: [
       {
         slug: "lingopilot",
