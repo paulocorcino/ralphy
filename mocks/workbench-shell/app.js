@@ -561,7 +561,12 @@ function shell() {
         const board = reply.board || {};
         this.boardIssues[slug] = (board.issues || []).map((r) => this.boardRowToIssue(r));
         const colors = {};
-        for (const l of board.labels || []) colors[l.name] = "#" + String(l.color || "").replace(/^#/, "");
+        // Skip a blank color so `labelColor`'s seed-vocabulary fallback engages —
+        // a bare "#" would be truthy and mask it.
+        for (const l of board.labels || []) {
+          if (!l.color) continue;
+          colors[l.name] = "#" + String(l.color).replace(/^#/, "");
+        }
         this.boardLabels[slug] = colors;
       } catch {
         // No daemon reachable (static shell) or a transport error — leave it empty.

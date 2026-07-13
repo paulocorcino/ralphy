@@ -259,14 +259,26 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
             }
         };
 
-    // A ready chain (#7 blocked by #8) → the graph order the fold must preserve.
-    let ready_q = vec![issue(7, &[], "## Blocked by\n- #8\n"), issue(8, &[], "")];
+    // A ready chain (#7 blocked by #8) + a ready issue (#50) DELIBERATELY absent
+    // from the open read below (simulating a queue-labeled issue older than the
+    // open read's limit) → the graph order the fold must preserve, with #50 kept
+    // via a degraded synthesized row (M1 fix).
+    let ready_q = vec![
+        issue(7, &[], "## Blocked by\n- #8\n"),
+        issue(8, &[], ""),
+        issue(50, &[], ""),
+    ];
     let ready_sorted = sort_queue_in_graph(ready_q.clone(), &ready_q);
     let ready_order: Vec<u64> = ready_sorted.iter().map(|i| i.number).collect();
-    assert_eq!(ready_order, vec![8, 7], "#8 (root) precedes #7");
+    assert_eq!(
+        ready_order,
+        vec![8, 7, 50],
+        "#8 (root) precedes #7, then #50"
+    );
 
     // Whole open tracker: the two ready issues + a backlog issue + one assigned to
-    // someone-else + one assigned to `octo`. One recent-closed row.
+    // someone-else + one assigned to `octo`. #50 is NOT here (proves the fallback).
+    // One recent-closed row.
     let open = vec![
         bi(7, "open", &[], &[8], None),
         bi(8, "open", &[], &[], None),
@@ -286,15 +298,16 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
             .collect()
     };
 
-    // (a)+(b) default (login=None): Ready subset first in graph order, then the
-    // remaining UNASSIGNED open (#30), then closed (#99). The someone-else (#31)
-    // and octo (#32) rows are dropped — only empty-assignees rows survive.
-    let json = render_board_json(&ready_order, &open, &closed, None, &repo_labels).unwrap();
+    // (a)+(b) default (login=None): Ready subset first in graph order (incl. the
+    // synthesized #50), then the remaining UNASSIGNED open (#30), then closed
+    // (#99). The someone-else (#31) and octo (#32) rows are dropped — only
+    // empty-assignees rows survive.
+    let json = render_board_json(&ready_sorted, &open, &closed, None, &repo_labels).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
     assert_eq!(
         nums(&val),
-        vec![8, 7, 30, 99],
-        "default hides assigned: {val}"
+        vec![8, 7, 50, 30, 99],
+        "default hides assigned; #50 kept via degraded row: {val}"
     );
 
     // (d) the closed row carries state + lowercased reason.
@@ -319,7 +332,7 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
     // (c) a configured login keeps unassigned OR that-login (#32 survives), while
     // an issue assigned only to someone-else (#31) stays dropped.
     let json2 =
-        render_board_json(&ready_order, &open, &closed, Some("octo"), &repo_labels).unwrap();
+        render_board_json(&ready_sorted, &open, &closed, Some("octo"), &repo_labels).unwrap();
     let val2: Value = serde_json::from_str(&json2).unwrap();
     let n2 = nums(&val2);
     assert!(
@@ -327,7 +340,7 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
         "octo-assigned survives under login: {val2}"
     );
     assert!(!n2.contains(&31), "someone-else stays dropped: {val2}");
-    assert_eq!(n2, vec![8, 7, 30, 32, 99]);
+    assert_eq!(n2, vec![8, 7, 50, 30, 32, 99]);
 }
 
 #[test]

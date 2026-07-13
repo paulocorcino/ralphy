@@ -144,11 +144,10 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         }
         // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
         // union applies later in the fold, so unassigned issues are present to
-        // union over) and graph-ordered by the same resolver the runner uses; the
+        // union over) and graph-ordered by the same resolver the runner uses
+        // (`build_list_queue` already sorts via `sort_queue_in_graph`); the
         // open+closed reads feed the Backlog/Closed columns.
         let queue = build_list_queue(&repo_root, None)?;
-        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        let ready_order: Vec<u64> = view.issues.iter().map(|iv| iv.number).collect();
         let open = github::list_all_open_meta(&repo_root)?;
         let closed = github::list_closed_board(&repo_root)?;
         let repo_labels = github::list_repo_labels(&repo_root)?;
@@ -159,7 +158,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         };
         println!(
             "{}",
-            render_board_json(&ready_order, &open, &closed, login.as_deref(), &repo_labels)?
+            render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
         );
         return Ok(());
     }
@@ -402,30 +401,56 @@ fn render_show_json(view: &ShowView, fields: Option<&[String]>) -> Result<String
     Ok(serde_json::to_string_pretty(&select_fields(full, fields))?)
 }
 
+/// A degraded board row synthesized from a queue [`ralphy_core::Issue`] when the
+/// open read did not carry it (e.g. a queue-labeled issue older than the open
+/// read's `--limit`). Preserves the parity invariant — a Ready row the runner
+/// would execute never silently vanishes — at the cost of the richer meta
+/// (assignees empty ⇒ kept by the union, dates blank) the drawer's `issue.show`
+/// backfills anyway.
+fn degraded_board_issue(iss: &ralphy_core::Issue) -> github::BoardIssue {
+    github::BoardIssue {
+        number: iss.number,
+        title: iss.title.clone(),
+        state: "open".to_string(),
+        reason: None,
+        labels: iss.labels.clone(),
+        assignees: Vec::new(),
+        blocked_by: blocked::parse_blocked_by(&iss.body),
+        created: String::new(),
+        updated: String::new(),
+    }
+}
+
 /// Render the whole-tracker Kanban board fold (ADR-0036 slice 6): the Ready
-/// subset (queue-labeled open, in `ready_order` — the core's `sort_queue_in_graph`
-/// order) FIRST, then the remaining open issues, then the recent-closed batch.
-/// Every row is filtered by the assignee union ([`blocked::assignee_union_keep`]),
-/// so with no configured login the default hides assigned issues. Each row carries
+/// subset (`ready`, already in the core's `sort_queue_in_graph` order) FIRST,
+/// then the remaining open issues, then the recent-closed batch. Every row is
+/// filtered by the assignee union ([`blocked::assignee_union_keep`]), so with no
+/// configured login the default hides assigned issues. A Ready issue absent from
+/// the `open` read is emitted from a synthesized [`degraded_board_issue`] rather
+/// than dropped — board-order == core-queue-order stays true even when the open
+/// read's limit does not cover the whole queue. Each row carries
 /// `{number,title,state,reason,labels,assignees,blocked_by,created,updated}`;
 /// `labels[]` is the repo's `{name,color}` vocabulary for chip rendering.
 fn render_board_json(
-    ready_order: &[u64],
+    ready: &[ralphy_core::Issue],
     open: &[github::BoardIssue],
     closed: &[github::BoardIssue],
     login: Option<&str>,
     repo_labels: &[(String, String)],
 ) -> Result<String> {
-    let ready_set: std::collections::BTreeSet<u64> = ready_order.iter().copied().collect();
+    let ready_set: std::collections::BTreeSet<u64> = ready.iter().map(|i| i.number).collect();
     let keep = |b: &github::BoardIssue| blocked::assignee_union_keep(&b.assignees, login);
     let mut rows: Vec<Value> = Vec::new();
-    // Ready-labeled open issues first, preserving the core's graph order — this is
-    // what makes board-order == core-queue-order true by construction.
-    for n in ready_order {
-        if let Some(b) = open.iter().find(|b| b.number == *n) {
-            if keep(b) {
-                rows.push(serde_json::to_value(b)?);
-            }
+    // Ready issues first, preserving the core's graph order — this is what makes
+    // board-order == core-queue-order true by construction. A row missing from the
+    // open read is synthesized so it is never silently dropped.
+    for iss in ready {
+        let b = match open.iter().find(|b| b.number == iss.number) {
+            Some(b) => b.clone(),
+            None => degraded_board_issue(iss),
+        };
+        if keep(&b) {
+            rows.push(serde_json::to_value(&b)?);
         }
     }
     // Remaining open issues, then the closed batch — natural read order.
