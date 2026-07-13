@@ -441,7 +441,14 @@ mod tests {
                 &serde_json::json!({ "agent": "claude", "branchMode": "new" })
             )
             .unwrap(),
-            vec!["run", "--if-idle", "--agent", "claude", "--branch-mode", "new"]
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "claude",
+                "--branch-mode",
+                "new"
+            ]
         );
         // Split planner + current branch.
         assert_eq!(
@@ -473,7 +480,14 @@ mod tests {
                 &serde_json::json!({ "agent": "claude", "planAgent": null, "branchMode": "new" })
             )
             .unwrap(),
-            vec!["run", "--if-idle", "--agent", "claude", "--branch-mode", "new"]
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "claude",
+                "--branch-mode",
+                "new"
+            ]
         );
     }
 

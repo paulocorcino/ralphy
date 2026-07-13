@@ -58,11 +58,13 @@ async fn run_command_argv_reaches_the_child() {
         .expect("connecting to /ws/command");
 
     // The modal's chosen params ride the payload; the daemon composes the argv.
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(Command {
-        id: 1,
-        verb: "run".to_string(),
-        payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
-    }))))
+    ws.send(Message::Binary(protocol::encode(&Frame::Command(
+        Command {
+            id: 1,
+            verb: "run".to_string(),
+            payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
+        },
+    ))))
     .await
     .unwrap();
 
