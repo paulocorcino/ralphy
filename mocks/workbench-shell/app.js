@@ -1036,7 +1036,14 @@ function shell() {
       this._tree = new mar10.Wunderbaum({
         element: host,
         header: false,
-        source: this.withIcons(project.tree),
+        // Served over a daemon: seed the root level from `tree.list` (folders
+        // marked `lazy` so expanding fetches their children on demand) and fall
+        // back to the static seed if the read fails. Under `file://` (no
+        // backend) keep the static tree.
+        source: this.useDaemonTree()
+          ? this.loadTreeLevel("").catch(() => this.withIcons(project.tree))
+          : this.withIcons(project.tree),
+        lazyLoad: (e) => this.loadTreeLevel(this.relPath(e.node)),
         edit: {
           trigger: ["F2", "macEnter"],
           // A committed rename is an intent, not a mutation done here.
@@ -1060,6 +1067,42 @@ function shell() {
         node.setActive();
         this.showMenu(ev.clientX, ev.clientY, node);
       });
+    },
+
+    // A real daemon backs the tree only when NOT loaded from `file://` (the
+    // static-mock case, which has no `/ws/command` to talk to).
+    useDaemonTree() {
+      return location.protocol !== "file:" && !!window.WBDaemon?.observe;
+    },
+
+    // One directory level from the daemon (`tree.list`), mapped to Wunderbaum
+    // node shape: folders lazy so they fetch their own children on expand.
+    loadTreeLevel(rel) {
+      return WBDaemon.observe("tree.list", { repo: this.openSlug, path: rel }).then((reply) => {
+        if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) return [];
+        return reply.entries.map((en) =>
+          en.dir
+            ? { title: en.name, folder: true, lazy: true }
+            : { title: en.name, icon: this.fileIcon(en.name) },
+        );
+      });
+    },
+
+    // Fetch a file's real bytes via `file.read`; on refusal surface the daemon's
+    // reason (binary / too large / not found) and close the just-opened tab.
+    // Returns `null` when refused so the caller skips the viewer.
+    fetchContent(project, path, ftype) {
+      if (!this.useDaemonTree()) return Promise.resolve(fakeContent(path, ftype));
+      return WBDaemon.observe("file.read", { repo: project, path })
+        .then((reply) => {
+          if (reply && reply.status === "ok") return reply.content;
+          const reason = (reply && reply.reason) || "refused";
+          WB.emit("open-refused", { project, path, reason });
+          this._flashAction?.(reason);
+          this.closeTab(`file:${project}:${path}`);
+          return null;
+        })
+        .catch(() => fakeContent(path, ftype));
     },
 
     destroyTree() {
@@ -1097,9 +1140,15 @@ function shell() {
       this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true });
       this.active = id;
       this.$nextTick(() => {
-        WBViewer.open({ id, project, path, ftype, content: content ?? fakeContent(path, ftype) });
-        WBViewer.setActive(id);
-        window.lucide?.createIcons();
+        // A re-attach passes its (possibly edited) bytes in; a fresh open fetches
+        // the real file via the daemon (`file.read`), falling back to the mock.
+        const bytes = content != null ? Promise.resolve(content) : this.fetchContent(project, path, ftype);
+        bytes.then((body) => {
+          if (body == null) return; // refused: fetchContent surfaced the reason
+          WBViewer.open({ id, project, path, ftype, content: body });
+          WBViewer.setActive(id);
+          window.lucide?.createIcons();
+        });
       });
     },
 

@@ -53,6 +53,29 @@ window.WBDaemon = (function () {
     return id;
   }
 
+  // Fire an Observe read (`tree.list`/`file.read`) and resolve with the single
+  // reply payload — the daemon answers ONE frame on the same id and returns (no
+  // spawn/stream). One socket per read, mirroring `spawn`'s per-call shape.
+  function observe(verb, payload) {
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      const ws = new WebSocket("ws://" + location.host + "/ws/command");
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] !== TAG_COMMAND) return;
+        try {
+          resolve(JSON.parse(new TextDecoder().decode(a.subarray(1))).payload);
+        } catch (err) {
+          reject(err);
+        }
+        ws.close();
+      };
+      ws.onerror = (err) => reject(err);
+    });
+  }
+
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
   // values the daemon validates.
@@ -70,5 +93,5 @@ window.WBDaemon = (function () {
     });
   });
 
-  return { spawn, encodeCommand, ACTION_TO_VERB, TAG_TERMINAL, TAG_COMMAND, TAG_PRESENCE };
+  return { spawn, observe, encodeCommand, ACTION_TO_VERB, TAG_TERMINAL, TAG_COMMAND, TAG_PRESENCE };
 })();
