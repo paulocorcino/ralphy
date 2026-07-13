@@ -22,8 +22,8 @@ pub use comments::{
 };
 pub use issues::{
     add_label, build_queue, close_issue, create_issue, edit_issue_body, fetch_issue,
-    issue_is_closed, issue_labels, list_open_issues, list_queue, parse_issue, queue_list_args,
-    remove_label, resolve_login,
+    issue_is_closed, issue_labels, list_issue_meta, list_open_issues, list_queue, parse_issue,
+    parse_issue_meta_list, queue_list_args, remove_label, resolve_login, IssueMeta,
 };
 pub use labels::{
     apply_label_actions, format_label_plan, human_return_labels, list_repo_labels,

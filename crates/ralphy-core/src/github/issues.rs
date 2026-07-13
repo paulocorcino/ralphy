@@ -16,6 +16,29 @@ struct GhLabel {
 }
 
 #[derive(Deserialize)]
+struct GhAssignee {
+    login: String,
+}
+
+#[derive(Deserialize)]
+struct GhIssueMeta {
+    number: u64,
+    #[serde(default)]
+    assignees: Vec<GhAssignee>,
+    #[serde(default, rename = "stateReason")]
+    state_reason: Option<String>,
+}
+
+/// Per-issue metadata the board fold needs (assignees, close reason) that the
+/// domain [`Issue`] does not carry — see [`list_issue_meta`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct IssueMeta {
+    pub number: u64,
+    pub assignees: Vec<String>,
+    pub state_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct GhIssue {
     number: u64,
     title: String,
@@ -50,6 +73,22 @@ fn parse_issue_list(json: &str) -> Result<Vec<Issue>> {
     let raw: Vec<GhIssue> =
         serde_json::from_str(json).context("parsing `gh issue list` JSON array")?;
     Ok(raw.into_iter().map(Issue::from).collect())
+}
+
+/// Parse `gh issue list --json number,assignees,stateReason` output (a JSON
+/// array) into [`IssueMeta`]. `stateReason` is `null` for OPEN issues (gh only
+/// populates it on CLOSED); kept as `Option<String>` rather than assumed absent.
+pub fn parse_issue_meta_list(json: &str) -> Result<Vec<IssueMeta>> {
+    let raw: Vec<GhIssueMeta> =
+        serde_json::from_str(json).context("parsing `gh issue list` meta JSON array")?;
+    Ok(raw
+        .into_iter()
+        .map(|g| IssueMeta {
+            number: g.number,
+            assignees: g.assignees.into_iter().map(|a| a.login).collect(),
+            state_reason: g.state_reason,
+        })
+        .collect())
 }
 
 /// Flatten per-label issue batches into one queue: union all batches, dedupe by
@@ -132,6 +171,46 @@ pub fn list_queue(
         batches.push(parse_issue_list(&String::from_utf8_lossy(&out.stdout))?);
     }
     Ok(build_queue(batches))
+}
+
+/// Build the run queue's per-issue metadata (assignees, stateReason) that the
+/// board fold needs but [`Issue`] does not carry. Mirrors [`list_queue`]: one
+/// batched `gh issue list` spawn per label (never per-issue), union-deduped by
+/// number so an issue carrying several queue labels appears once.
+pub fn list_issue_meta(
+    labels: &[String],
+    assignee: Option<&str>,
+    repo_root: &Path,
+) -> Result<Vec<IssueMeta>> {
+    let mut by_number: BTreeMap<u64, IssueMeta> = BTreeMap::new();
+    for label in labels {
+        let mut args = vec![
+            "issue".to_string(),
+            "list".to_string(),
+            "--label".to_string(),
+            label.to_string(),
+            "--state".to_string(),
+            "open".to_string(),
+            "--json".to_string(),
+            "number,assignees,stateReason".to_string(),
+            "--limit".to_string(),
+            "100".to_string(),
+        ];
+        if let Some(a) = assignee {
+            args.push("--assignee".to_string());
+            args.push(a.to_string());
+        }
+        let out = gh_output(&format!("gh issue list --label {label} (meta)"), || {
+            let mut cmd = gh(repo_root);
+            cmd.args(&args);
+            cmd
+        })?;
+        let batch = parse_issue_meta_list(&String::from_utf8_lossy(&out.stdout))?;
+        for meta in batch {
+            by_number.entry(meta.number).or_insert(meta);
+        }
+    }
+    Ok(by_number.into_values().collect())
 }
 
 /// Resolve an assignee filter value to the concrete GitHub login it scopes the
@@ -513,6 +592,18 @@ mod tests {
         assert_eq!(list[0].number, 2);
         assert_eq!(list[0].labels, vec!["AFK"]);
         assert_eq!(list[1].number, 1);
+    }
+
+    #[test]
+    fn parse_issue_meta_list_reads_assignees_and_state_reason() {
+        let json = r#"[{"number":7,"assignees":[{"login":"alice"},{"login":"bob"}],"stateReason":null},{"number":8,"assignees":[],"stateReason":"COMPLETED"}]"#;
+        let meta = parse_issue_meta_list(json).unwrap();
+        assert_eq!(
+            meta[0].assignees,
+            vec!["alice".to_string(), "bob".to_string()]
+        );
+        assert_eq!(meta[0].state_reason, None);
+        assert_eq!(meta[1].state_reason.as_deref(), Some("COMPLETED"));
     }
 
     #[test]
