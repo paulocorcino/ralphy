@@ -28,6 +28,20 @@ pub(crate) enum BranchCommand {
     Switch(BranchArgs),
     /// Create a branch from the current HEAD (refuses under a held run.lock).
     Create(BranchArgs),
+    /// List the repo's local branches (read-only; never consults the run.lock).
+    List(BranchListArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct BranchListArgs {
+    /// Any path inside the target repo; resolved to its git toplevel.
+    #[arg(long, default_value = ".")]
+    pub(crate) repo: PathBuf,
+
+    /// Output format: `json` emits `{current, branches}`; omitted prints one
+    /// branch per line (current prefixed `* `).
+    #[arg(long)]
+    pub(crate) format: Option<String>,
 }
 
 #[derive(Args)]
@@ -71,6 +85,8 @@ pub(crate) fn branch(cmd: BranchCommand) -> anyhow::Result<()> {
     let (args, verb, is_create) = match cmd {
         BranchCommand::Switch(a) => (a, "branch switch", false),
         BranchCommand::Create(a) => (a, "branch create", true),
+        // A read never blocks on the run lock, so `List` skips `guard_run_lock`.
+        BranchCommand::List(a) => return branch_list(a),
     };
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let ws = ralphy_core::Workspace::new(&repo_root);
@@ -82,6 +98,27 @@ pub(crate) fn branch(cmd: BranchCommand) -> anyhow::Result<()> {
     } else {
         ralphy_core::git::checkout(&repo_root, &args.name)?;
         println!("Switched to branch '{}'.", args.name);
+    }
+    Ok(())
+}
+
+/// `ralphy branch list [--format json]`. Read-only: no run-lock guard.
+fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
+    let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
+    let current = ralphy_core::git::current_branch(&repo_root)?;
+    let branches = ralphy_core::git::local_branches(&repo_root)?;
+
+    if args.format.as_deref() == Some("json") {
+        let out = serde_json::json!({ "current": current, "branches": branches });
+        println!("{out}");
+    } else {
+        for b in &branches {
+            if *b == current {
+                println!("* {b}");
+            } else {
+                println!("  {b}");
+            }
+        }
     }
     Ok(())
 }

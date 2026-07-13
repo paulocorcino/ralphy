@@ -596,6 +596,13 @@ mod tests {
             panic!("expected `branch create`");
         };
         assert_eq!(a.name, "feat");
+
+        let cli = Cli::try_parse_from(["ralphy", "branch", "list", "--format", "json"])
+            .expect("branch list must parse");
+        let Command::Branch(mutate::BranchCommand::List(a)) = cli.command else {
+            panic!("expected `branch list`");
+        };
+        assert_eq!(a.format.as_deref(), Some("json"));
     }
 
     #[test]

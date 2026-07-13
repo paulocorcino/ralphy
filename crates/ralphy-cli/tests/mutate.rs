@@ -62,6 +62,93 @@ fn branch_create_makes_branch_when_lock_free() {
 }
 
 #[test]
+fn branch_list_reports_current_and_branches() {
+    let repo = init_repo();
+    run_git(repo.path(), &["branch", "other"]);
+    let current = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args([
+            "branch",
+            "list",
+            "--format",
+            "json",
+            "--repo",
+            &repo.path().to_string_lossy(),
+        ])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "branch list must succeed");
+
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("branch list emits JSON");
+    assert_eq!(
+        v["current"], current,
+        "current must be the checked-out branch"
+    );
+    let branches: Vec<String> = v["branches"]
+        .as_array()
+        .expect("branches array")
+        .iter()
+        .map(|b| b.as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        branches.contains(&current),
+        "branches must contain the current branch, got: {branches:?}"
+    );
+    assert!(
+        branches.iter().any(|b| b == "other"),
+        "branches must contain the created branch, got: {branches:?}"
+    );
+}
+
+#[test]
+fn branch_switch_under_held_lock_leaves_head() {
+    let repo = init_repo();
+    run_git(repo.path(), &["branch", "other"]);
+    let head_before = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
+        .spawn()
+        .expect("spawning runlock_test_child");
+
+    let lock_dir = repo.path().join(".ralphy");
+    std::fs::create_dir_all(&lock_dir).unwrap();
+    std::fs::write(
+        lock_dir.join("run.lock"),
+        serde_json::json!({
+            "pid": child.id(),
+            "started_at": "2026-07-13T10:00:00-03:00",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args([
+            "branch",
+            "switch",
+            "other",
+            "--repo",
+            &repo.path().to_string_lossy(),
+        ])
+        .output()
+        .expect("spawning ralphy");
+
+    child.kill().ok();
+    child.wait().ok();
+
+    assert!(
+        !out.status.success(),
+        "branch switch must refuse under a held run.lock"
+    );
+    let head_after = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert_eq!(
+        head_after, head_before,
+        "the working tree must be untouched under a held lock"
+    );
+}
+
+#[test]
 fn branch_switch_refuses_under_held_run_lock() {
     let repo = init_repo();
 
