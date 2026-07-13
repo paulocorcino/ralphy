@@ -167,10 +167,26 @@ function shell() {
         dirty: !!p.dirty,
       };
       this.branchOpen = true;
+      this.loadBranches(p.slug);
       this.$nextTick(() => {
         window.lucide?.createIcons();
         this.$refs.branchFilter?.focus();
       });
+    },
+
+    // Replace the seed branch list with the repo's real local branches (#199),
+    // served read-only via the `branch.list` Query verb. Graceful on throw (no
+    // daemon reachable in a static shell) — the modal keeps its seed, mirroring
+    // `loadBoard`.
+    async loadBranches(slug) {
+      try {
+        const reply = await window.WBDaemon.observe("branch.list", { repo: slug });
+        if (!reply || reply.status !== "ok" || this.branchModal.slug !== slug) return;
+        if (Array.isArray(reply.branches)) this.branchModal.branches = reply.branches;
+        if (reply.current) this.branchModal.current = reply.current;
+      } catch {
+        // No daemon reachable (static shell) or a transport error — keep the seed.
+      }
     },
     closeBranchModal() {
       this.branchOpen = false;
@@ -201,9 +217,16 @@ function shell() {
 
     switchBranch(name) {
       if (name !== this.branchModal.current) {
-        const p = this.projects.find((x) => x.slug === this.branchModal.slug);
+        const slug = this.branchModal.slug;
+        const p = this.projects.find((x) => x.slug === slug);
+        const prev = p ? p.branch : null;
         if (p) p.branch = name; // optimistic — the chip updates immediately
-        WB.emit("branch-switch", { project: this.branchModal.slug, branch: name });
+        WB.emit("branch-switch", { project: slug, branch: name });
+        // Route through the run-lock-aware `branch.switch` Mutate verb (#199); a
+        // held-lock refusal comes back `{status:"error",message}` → revert + flash.
+        this._mutateBranch("branch.switch", slug, name, () => {
+          if (p) p.branch = prev;
+        });
       }
       this.closeBranchModal();
     },
@@ -212,13 +235,37 @@ function shell() {
       if (!this.canCreateBranch()) return;
       const name = this.branchModal.filter.trim();
       const from = this.branchModal.current;
-      const p = this.projects.find((x) => x.slug === this.branchModal.slug);
+      const slug = this.branchModal.slug;
+      const p = this.projects.find((x) => x.slug === slug);
+      const prevBranch = p ? p.branch : null;
+      const prevBranches = p ? [...(p.branches || [])] : null;
       if (p) {
         p.branches = [...(p.branches || []), name];
         p.branch = name; // a fresh branch is checked out onto
       }
-      WB.emit("branch-create", { project: this.branchModal.slug, name, from });
+      WB.emit("branch-create", { project: slug, name, from });
+      this._mutateBranch("branch.create", slug, name, () => {
+        if (p) {
+          p.branch = prevBranch;
+          p.branches = prevBranches;
+        }
+      });
       this.closeBranchModal();
+    },
+
+    // Await a `branch.switch`/`branch.create` Mutate; on a `{status:"error"}`
+    // refusal (a held run.lock, per ADR-0036 §6) run `revert` and flash the
+    // verb's verbatim message. Silent on a transport throw (static shell).
+    async _mutateBranch(verb, slug, name, revert) {
+      try {
+        const reply = await window.WBDaemon.observe(verb, { repo: slug, name });
+        if (reply && reply.status === "error") {
+          revert();
+          this._flashAction(reply.message || "branch change refused");
+        }
+      } catch {
+        // No daemon reachable — leave the optimistic update in place.
+      }
     },
 
     // --- Runs panel -------------------------------------------------------
@@ -731,8 +778,30 @@ function shell() {
     toggleLabel(iss, label) {
       if (!iss) return;
       const has = this.hasLabel(iss, label);
+      const op = has ? "remove" : "add";
+      const prev = [...(iss.labels || [])];
       iss.labels = has ? iss.labels.filter((l) => l !== label) : [...(iss.labels || []), label];
-      WB.emit("issue-label-change", { project: this.openSlug, number: iss.number, label, op: has ? "remove" : "add" });
+      const slug = this.openSlug;
+      WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
+      // Persist via the run-lock-aware `label.set` Mutate verb (#199). Selection
+      // stays `kanbanSel` (by number), so the drawer follows the card across a
+      // re-column. On a `{status:"error"}` refusal, revert + flash.
+      (async () => {
+        try {
+          const reply = await window.WBDaemon.observe("label.set", {
+            repo: slug,
+            number: iss.number,
+            label,
+            op,
+          });
+          if (reply && reply.status === "error") {
+            iss.labels = prev;
+            this._flashAction(reply.message || "label change refused");
+          }
+        } catch {
+          // No daemon reachable — leave the optimistic edit in place.
+        }
+      })();
     },
 
     // --- settings modal ---------------------------------------------------
