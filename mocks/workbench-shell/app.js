@@ -361,6 +361,8 @@ function shell() {
     // (optional planner), --branch-mode new|current.
     runOpen: false,
     runsActionMsg: "",
+    // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.js).
+    rawFeed: "",
     runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
 
     openRunModal() {
@@ -1314,5 +1316,11 @@ document.addEventListener("ralphy:run-event", (e) => getShell()?.applyRunEvent(e
 window.WBRuns = {
   emit(evt) {
     document.dispatchEvent(new CustomEvent("ralphy:run-event", { detail: evt }));
+  },
+  // Phase 1: append a raw output chunk from a daemon-spawned run into the panel,
+  // capping the buffer so a long run never grows the DOM unbounded.
+  output(text) {
+    const c = getShell();
+    if (c) c.rawFeed = (c.rawFeed + text).slice(-8000);
   },
 };

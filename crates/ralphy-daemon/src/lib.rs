@@ -2045,6 +2045,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workbench_serves_wb_daemon() {
+        let resp = get_local("/workbench/wb-daemon.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET wb-daemon.js → 200");
+        let daemon = body_string(resp).await;
+        assert!(
+            daemon.contains("ACTION_TO_VERB"),
+            "wb-daemon.js must ship the action→verb map"
+        );
+        assert!(
+            daemon.contains("/ws/command"),
+            "wb-daemon.js must open the command WebSocket"
+        );
+
+        let shell = body_string(get_local("/workbench/").await).await;
+        assert!(
+            shell.contains("wb-daemon.js"),
+            "the shell HTML must load the daemon adapter"
+        );
+    }
+
+    #[tokio::test]
     async fn root_ui_untouched() {
         let resp = get_local("/").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");

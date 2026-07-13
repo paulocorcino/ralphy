@@ -414,6 +414,11 @@
         <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
       </div>
 
+      <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
+           run streams here live (wb-daemon.js → WBRuns.output). The structured
+           event fold stays on the ⚡ demo button. -->
+      <pre class="runs-raw" x-show="rawFeed" x-text="rawFeed"></pre>
+
       <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
       <div class="runs-empty" x-show="openSlug && projectRuns().length === 0">
         No active runs in <b x-text="openSlug"></b> — <b>run</b> to start one.
@@ -1080,6 +1085,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="wb-settings.js"></script>
     <script src="wb-runs.js"></script>
     <script src="wb-kanban.js"></script>
+    <script src="wb-daemon.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>
