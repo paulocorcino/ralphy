@@ -6,10 +6,16 @@
 //! - A remote request names a [`Verb`] by string; [`Verb::from_query`] rejects
 //!   everything outside `run`/`triage`/`push`, so no `kill`/`stop` verb — and no
 //!   free-text — is reachable. The verb, not the client, chooses the argv.
-//! - `blessed_args` returns a `&'static` argv per verb; the client never
-//!   composes arguments. The program is always the resolved `ralphy` exe run via
+//! - [`spawn_argv`] composes the argv from the verb plus CLOSED-ENUM params only
+//!   (`agent`/`planAgent` via [`crate::session::Agent::from_query`], `branchMode`
+//!   via [`BranchMode::from_query`]); any out-of-enum or free-text value yields
+//!   [`ArgvError`] and the caller spawns nothing. The client never contributes a
+//!   raw argument. The program is always the resolved `ralphy` exe run via
 //!   `Command::new(exe).args(argv)` — never a shell string, so nothing the client
 //!   sends is interpreted by `sh`/`cmd`.
+//!
+//! REGISTRY (ADR-0036 §1–2): each [`Verb`] carries an [`EffectClass`]; only
+//! `Spawn` verbs reach the CLI, and [`spawn_argv`] is their argv table.
 //!
 //! TEARDOWN INVARIANT (the inverse of `session`'s): a dispatched run keeps its
 //! OWN lifecycle — the daemon must NEVER kill it on shutdown or client
@@ -31,9 +37,84 @@
 //! records the argv and returns a preset exit code without touching the OS.
 
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::path::Path;
 
 use anyhow::Result;
+
+use crate::session::Agent;
+
+/// The effect class of a verb (ADR-0036 §2). The registry's shape: `Native` runs
+/// in-daemon, `Observe`/`Query` read state, `Spawn` launches a detached `ralphy`
+/// child, `Mutate` writes daemon-owned state. Only `Spawn` is constructed today;
+/// the other variants are declared so the registry is the full model and adding a
+/// consumer later touches no enum. Public + reachable, so `dead_code` stays quiet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectClass {
+    Native,
+    Observe,
+    Query,
+    Spawn,
+    Mutate,
+}
+
+/// The branch mode a run modal offers (ADR-0036 §1): a closed daemon-local enum
+/// so the modal's choice reaches `--branch-mode` without a free-text value ever
+/// touching the argv.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchMode {
+    New,
+    Current,
+}
+
+impl BranchMode {
+    /// Parse the `branchMode` payload value; anything outside `new`/`current`
+    /// yields `None` so [`spawn_argv`] refuses the run.
+    pub fn from_query(value: &str) -> Option<BranchMode> {
+        match value {
+            "new" => Some(BranchMode::New),
+            "current" => Some(BranchMode::Current),
+            _ => None,
+        }
+    }
+
+    /// The `--branch-mode` flag value.
+    fn as_flag(self) -> &'static str {
+        match self {
+            BranchMode::New => "new",
+            BranchMode::Current => "current",
+        }
+    }
+}
+
+/// The `--agent`/`--plan-agent` CLI flag value for an [`Agent`]. Owned here rather
+/// than widening `session::Agent`'s public API (`program_name` is private and
+/// PATH-named); the CLI-flag mapping belongs to the dispatch registry.
+fn agent_flag(a: Agent) -> &'static str {
+    match a {
+        Agent::Claude => "claude",
+        Agent::Codex => "codex",
+        Agent::OpenCode => "opencode",
+    }
+}
+
+/// A run's params failed closed-enum validation (ADR-0036 §1): the named field
+/// was absent or carried an out-of-enum / free-text value. The caller sends one
+/// refusal frame and spawns nothing — no partial argv reaches the CLI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgvError {
+    BadParam(&'static str),
+}
+
+impl fmt::Display for ArgvError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArgvError::BadParam(field) => write!(f, "invalid run param: {field}"),
+        }
+    }
+}
+
+impl std::error::Error for ArgvError {}
 
 /// The closed set of remotely-triggerable verbs. Forge-neutral Ralphy vocabulary
 /// (never gh/GitHub terms): `push` names the queue-snapshot verb. Anything else —
@@ -62,14 +143,59 @@ impl Verb {
         }
     }
 
-    /// The one blessed argv for this verb. `&'static` on purpose: the client
-    /// never contributes an argument, so remote input can never widen the
-    /// command line.
-    fn blessed_args(self) -> &'static [&'static str] {
-        match self {
-            Verb::Run => &["run", "--if-idle"],
-            Verb::Triage => &["triage", "--if-idle", "--yes"],
-            Verb::PushQueue => &["issues", "--push"],
+    /// Every verb in the registry, for exhaustive round-trips.
+    pub const ALL: &'static [Verb] = &[Verb::Run, Verb::Triage, Verb::PushQueue];
+
+    /// The effect class of this verb (ADR-0036 §2). Every verb is `Spawn` today —
+    /// each reaches the CLI through [`spawn_argv`].
+    pub fn effect_class(self) -> EffectClass {
+        EffectClass::Spawn
+    }
+}
+
+/// Compose the blessed argv for `verb` from its closed-enum params (ADR-0036 §1).
+/// The verb picks the static shape; `Run` reads `agent` (required), `planAgent`
+/// (optional), and `branchMode` (required) from `payload`, each validated against
+/// a closed enum. Any absent-required or out-of-enum value yields [`ArgvError`]
+/// and NO argv — the client never contributes a raw argument, so remote input can
+/// never widen the command line.
+pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    match verb {
+        Verb::Triage => Ok(owned(&["triage", "--if-idle", "--yes"])),
+        Verb::PushQueue => Ok(owned(&["issues", "--push"])),
+        Verb::Run => {
+            let agent = payload
+                .get("agent")
+                .and_then(|v| v.as_str())
+                .and_then(Agent::from_query)
+                .ok_or(ArgvError::BadParam("agent"))?;
+            // `--if-idle` is the daemon-spawn overlap-skip semantics (kept, not
+            // weakened); the modal's live preview omits it — that string is human-
+            // facing, this argv is the wire contract.
+            let mut argv = owned(&["run", "--if-idle", "--agent", agent_flag(agent)]);
+            // Optional planner: absent or JSON `null` ⇒ omit; a present non-null
+            // value MUST be a known agent, else refuse (no free-text planner).
+            match payload.get("planAgent") {
+                None => {}
+                Some(v) if v.is_null() => {}
+                Some(v) => {
+                    let plan = v
+                        .as_str()
+                        .and_then(Agent::from_query)
+                        .ok_or(ArgvError::BadParam("planAgent"))?;
+                    argv.push("--plan-agent".to_string());
+                    argv.push(agent_flag(plan).to_string());
+                }
+            }
+            let mode = payload
+                .get("branchMode")
+                .and_then(|v| v.as_str())
+                .and_then(BranchMode::from_query)
+                .ok_or(ArgvError::BadParam("branchMode"))?;
+            argv.push("--branch-mode".to_string());
+            argv.push(mode.as_flag().to_string());
+            Ok(argv)
         }
     }
 }
@@ -104,17 +230,17 @@ pub trait Spawner: Send + Sync + 'static {
     ) -> Result<Box<dyn Child>>;
 }
 
-/// Spawn the blessed child for `verb`: `program` (the resolved `ralphy` exe) with
-/// `verb`'s `&'static` argv, in `cwd`. The verb — not any client input — chooses
-/// the argv, and `program` is a real exe run without a shell.
+/// Spawn a blessed child: `program` (the resolved `ralphy` exe) with `argv`, in
+/// `cwd`. `argv` is composed by [`spawn_argv`] from the verb + closed-enum params
+/// — never client free-text — and `program` is a real exe run without a shell.
 pub fn dispatch(
     spawner: &dyn Spawner,
     program: &OsStr,
-    verb: Verb,
+    argv: &[&str],
     cwd: &Path,
     daemon_id: Option<&str>,
 ) -> Result<Box<dyn Child>> {
-    spawner.spawn(program, verb.blessed_args(), cwd, daemon_id)
+    spawner.spawn(program, argv, cwd, daemon_id)
 }
 
 /// Test seam pointing the dispatcher at a stand-in exe: `RALPHY_EXE_OVERRIDE`
@@ -283,30 +409,107 @@ mod tests {
     }
 
     #[test]
-    fn each_verb_maps_to_its_blessed_argv() {
-        let exe = OsString::from("/opt/ralphy/bin/ralphy");
-        let cwd = Path::new("/work/repo");
-        let cases = [
-            (Verb::Run, vec!["run", "--if-idle"]),
-            (Verb::Triage, vec!["triage", "--if-idle", "--yes"]),
-            (Verb::PushQueue, vec!["issues", "--push"]),
-        ];
-        for (verb, expected) in cases {
-            let spawner = FakeSpawner::default();
-            let mut child = dispatch(&spawner, &exe, verb, cwd, None).unwrap();
-            let calls = spawner.calls.lock().unwrap();
-            assert_eq!(calls.len(), 1, "{verb:?} must spawn exactly once");
-            let (program, args, seen_cwd, _daemon_id) = &calls[0];
-            assert_eq!(args, &expected, "{verb:?} argv");
-            assert_eq!(program, &exe, "program must be the passed exe");
-            // The program is a resolved exe, never a shell — remote input can
-            // never be interpreted by a shell.
-            assert_ne!(program, OsStr::new("sh"));
-            assert_ne!(program, OsStr::new("cmd"));
-            assert_ne!(program, OsStr::new("cmd.exe"));
-            assert_eq!(seen_cwd, cwd);
-            assert_eq!(child.wait().unwrap(), Some(7));
+    fn every_verb_in_all_is_spawn() {
+        for &verb in Verb::ALL {
+            assert_eq!(
+                verb.effect_class(),
+                EffectClass::Spawn,
+                "{verb:?} must be a Spawn verb"
+            );
         }
+        assert_eq!(Verb::ALL.len(), 3, "the registry holds exactly three verbs");
+    }
+
+    #[test]
+    fn spawn_argv_static_verbs() {
+        assert_eq!(
+            spawn_argv(Verb::Triage, &serde_json::json!({})).unwrap(),
+            vec!["triage", "--if-idle", "--yes"]
+        );
+        assert_eq!(
+            spawn_argv(Verb::PushQueue, &serde_json::json!({})).unwrap(),
+            vec!["issues", "--push"]
+        );
+    }
+
+    #[test]
+    fn spawn_argv_run_composes_validated_flags() {
+        // Executor-only, new branch.
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "claude", "branchMode": "new" })
+            )
+            .unwrap(),
+            vec!["run", "--if-idle", "--agent", "claude", "--branch-mode", "new"]
+        );
+        // Split planner + current branch.
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({
+                    "agent": "opencode",
+                    "planAgent": "claude",
+                    "branchMode": "current"
+                })
+            )
+            .unwrap(),
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "opencode",
+                "--plan-agent",
+                "claude",
+                "--branch-mode",
+                "current"
+            ]
+        );
+        // A JSON-null planAgent is omitted, not refused (the modal sends null when
+        // not split).
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "claude", "planAgent": null, "branchMode": "new" })
+            )
+            .unwrap(),
+            vec!["run", "--if-idle", "--agent", "claude", "--branch-mode", "new"]
+        );
+    }
+
+    #[test]
+    fn spawn_argv_refuses_out_of_enum_params() {
+        // Out-of-enum or free-text (a shell injection attempt) never reaches argv.
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "bogus", "branchMode": "new" })
+            ),
+            Err(ArgvError::BadParam("agent"))
+        );
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "claude", "branchMode": "sideways" })
+            ),
+            Err(ArgvError::BadParam("branchMode"))
+        );
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "claude", "planAgent": "x;rm", "branchMode": "new" })
+            ),
+            Err(ArgvError::BadParam("planAgent"))
+        );
+        // Absent required params are refused too.
+        assert_eq!(
+            spawn_argv(Verb::Run, &serde_json::json!({ "branchMode": "new" })),
+            Err(ArgvError::BadParam("agent"))
+        );
+        assert_eq!(
+            spawn_argv(Verb::Run, &serde_json::json!({ "agent": "claude" })),
+            Err(ArgvError::BadParam("branchMode"))
+        );
     }
 
     #[test]
@@ -314,20 +517,25 @@ mod tests {
         let spawner = FakeSpawner::default();
         let exe = OsString::from("/opt/ralphy/bin/ralphy");
         let cwd = Path::new("/work/repo");
+        let argv = ["run", "--if-idle"];
         dispatch(
             &spawner,
             &exe,
-            Verb::Run,
+            &argv,
             cwd,
             Some("01FWD00000000000000000000"),
         )
         .unwrap();
         let calls = spawner.calls.lock().unwrap();
+        assert_eq!(calls[0].1, argv, "the composed argv must reach the spawner");
         assert_eq!(
             calls[0].3,
             Some("01FWD00000000000000000000".to_string()),
             "the daemon_id must reach the spawner"
         );
+        // The program is a resolved exe, never a shell.
+        assert_ne!(calls[0].0, OsStr::new("sh"));
+        assert_ne!(calls[0].0, OsStr::new("cmd.exe"));
     }
 
     #[test]

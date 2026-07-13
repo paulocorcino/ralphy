@@ -765,10 +765,27 @@ async fn command_ws(
         return;
     };
 
+    // Compose the argv from the verb + closed-enum params (ADR-0036 §1). A
+    // malformed/out-of-enum param refuses the run: one error frame, no spawn.
+    let argv = match dispatch::spawn_argv(verb, &cmd.payload) {
+        Ok(argv) => argv,
+        Err(e) => {
+            tracing::warn!(error = %e, "refused a run with invalid params");
+            send_command(
+                &mut socket,
+                id,
+                &cmd.verb,
+                serde_json::json!({ "status": "error", "message": "invalid run options" }),
+            )
+            .await;
+            return;
+        }
+    };
+    let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let mut child = match dispatch::dispatch(
         &dispatch::ProcessSpawner,
         &dispatch::ralphy_exe(),
-        verb,
+        &argv_refs,
         Path::new(&entry.path),
         daemon_id.as_deref(),
     ) {
