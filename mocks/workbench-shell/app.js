@@ -676,6 +676,9 @@ function shell() {
             const cfg = reply && reply.status === "ok" ? reply.config : null;
             if (cfg && typeof cfg === "object") {
               for (const k in cfg) {
+                // Never round-trip the MASKED secret back into the editable model —
+                // a later save would persist the mask over the real token.
+                if (k === "events.token") continue;
                 if (cfg[k] !== null && k in this.settings) this.settings[k] = cfg[k];
               }
             }
@@ -805,23 +808,35 @@ function shell() {
       this.security.passwordDraft = "";
     },
     async remintToken() {
-      // POST /api/security/token/remint rotates the token (never echoed back).
+      // POST /api/security/token/remint rotates the on-disk token. The live
+      // AuthPolicy is captured at boot (ADR-0032 §4), so the rotation takes effect
+      // on the next daemon restart — it does NOT invalidate the current cookie in
+      // this process. Log off locally so the operator re-authenticates once it does.
       try {
         await fetch("/api/security/token/remint", { method: "POST" });
       } catch {}
-      // re-minting invalidates every live session cookie → force a re-login
       if (this.security.requireLogin) this.logOff();
     },
 
-    toggleRequireLogin(ev) {
+    async toggleRequireLogin(ev) {
       // Requiring login is only meaningful once TOTP is enrolled (the session
-      // factor). Keep the mock honest about that dependency.
-      if (!this.security.totpEnrolled) {
+      // factor). Hit the server-side gate (POST /api/security/require-login), which
+      // refuses (400) an enable with no seed — the authoritative AC4 check; the
+      // client guard just avoids a doomed round-trip.
+      const want = !this.security.requireLogin;
+      if (want && !this.security.totpEnrolled) {
         this.security.requireLogin = false;
-        WB.emit("require-login-blocked", { reason: "totp not enrolled" });
       } else {
-        this.security.requireLogin = !this.security.requireLogin;
-        WB.emit("require-login", { on: this.security.requireLogin });
+        try {
+          const r = await fetch("/api/security/require-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: "enable=" + want,
+          });
+          this.security.requireLogin = r.ok ? want : false;
+        } catch {
+          this.security.requireLogin = false;
+        }
       }
       // The checkbox's :checked binding won't re-sync when the bound value
       // didn't actually change (blocked case), so force the DOM to match state.

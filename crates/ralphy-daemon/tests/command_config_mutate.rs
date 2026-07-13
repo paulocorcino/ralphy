@@ -93,7 +93,7 @@ async fn config_set_argv_reaches_the_child_and_nonzero_relays() {
     assert_eq!(reply["status"], "error", "a non-zero exit relays as error");
     let msg = reply["message"].as_str().expect("an error message string");
     assert!(
-        msg.contains("config set branch_mode new"),
+        msg.contains("config set -- branch_mode new"),
         "the config set argv must reach the child; got: {msg:?}"
     );
 }

@@ -270,6 +270,10 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
     };
     match verb {
         Verb::ConfigGet => Ok(owned(&["config", "get", "--json"])),
+        // `--` ends option parsing: without it a value like `--help`/`-V` is
+        // consumed by clap as a flag (help exits 0 → silent false-success), and a
+        // legit dash-leading value can't be stored. The key is `^[a-z0-9_.]+$`, so
+        // it is never a flag; `--` protects the free-text value.
         Verb::ConfigSet => {
             let key = key()?;
             let value = payload
@@ -280,11 +284,17 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
             Ok(vec![
                 "config".to_string(),
                 "set".to_string(),
+                "--".to_string(),
                 key,
                 value.to_string(),
             ])
         }
-        Verb::ConfigUnset => Ok(vec!["config".to_string(), "unset".to_string(), key()?]),
+        Verb::ConfigUnset => Ok(vec![
+            "config".to_string(),
+            "unset".to_string(),
+            "--".to_string(),
+            key()?,
+        ]),
         // Non-config verbs never route here (`command_ws` picks the branch by
         // effect class); refuse an argv defensively.
         _ => Err(ArgvError::BadParam("verb")),
@@ -552,7 +562,7 @@ mod tests {
                 &serde_json::json!({ "key": "branch_mode", "value": "new" })
             )
             .unwrap(),
-            vec!["config", "set", "branch_mode", "new"]
+            vec!["config", "set", "--", "branch_mode", "new"]
         );
         assert_eq!(
             config_argv(
@@ -560,7 +570,16 @@ mod tests {
                 &serde_json::json!({ "key": "branch_mode" })
             )
             .unwrap(),
-            vec!["config", "unset", "branch_mode"]
+            vec!["config", "unset", "--", "branch_mode"]
+        );
+        // A dash-leading value is stored, not parsed as a flag (the `--` guard).
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "opencode.model", "value": "--weird" })
+            )
+            .unwrap(),
+            vec!["config", "set", "--", "opencode.model", "--weird"]
         );
     }
 

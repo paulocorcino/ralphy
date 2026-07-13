@@ -743,6 +743,29 @@ mod tests {
     }
 
     #[test]
+    fn config_json_masks_events_token() {
+        // `events.token` must be MASKED in the JSON the daemon Query verb serves —
+        // never the full secret. Serialize with the events-store tests (global env).
+        let _g = crate::events::config::ENV_LOCK.lock().unwrap();
+        let (ws, dir) = tmp_ws("json-mask");
+        let store_dir = dir.join("store");
+        std::env::set_var("RALPHY_EVENTS_DIR", &store_dir);
+
+        set(&ws, "events.token", "supersecrettoken").unwrap();
+        let v = config_json(&ws).unwrap();
+        let tok = v["events.token"].as_str().expect("masked token string");
+        assert_ne!(tok, "supersecrettoken", "the full token must not leak");
+        assert_eq!(
+            tok,
+            crate::telegram::config::masked_token("supersecrettoken"),
+            "the JSON carries the masked form"
+        );
+
+        std::env::remove_var("RALPHY_EVENTS_DIR");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn config_set_refuses_under_held_lock() {
         // `config set`/`config unset` are Mutate verbs (ADR-0036 §2/§6): `run()`
         // guards them with the shared run-lock guard before touching settings.
