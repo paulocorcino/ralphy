@@ -244,17 +244,20 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
 
     // Board row factory: a whole-tracker BoardIssue with the given state,
     // assignees, blocked_by, and (closed) reason.
-    let bi = |number: u64, state: &str, assignees: &[&str], blocked_by: &[u64], reason: Option<&str>| BoardIssue {
-        number,
-        title: format!("issue {number}"),
-        state: state.to_string(),
-        reason: reason.map(str::to_string),
-        labels: vec!["ready-for-agent".to_string()],
-        assignees: assignees.iter().map(|s| s.to_string()).collect(),
-        blocked_by: blocked_by.to_vec(),
-        created: "2026-07-01T00:00:00Z".to_string(),
-        updated: "2026-07-02T00:00:00Z".to_string(),
-    };
+    let bi =
+        |number: u64, state: &str, assignees: &[&str], blocked_by: &[u64], reason: Option<&str>| {
+            BoardIssue {
+                number,
+                title: format!("issue {number}"),
+                state: state.to_string(),
+                reason: reason.map(str::to_string),
+                labels: vec!["ready-for-agent".to_string()],
+                assignees: assignees.iter().map(|s| s.to_string()).collect(),
+                blocked_by: blocked_by.to_vec(),
+                created: "2026-07-01T00:00:00Z".to_string(),
+                updated: "2026-07-02T00:00:00Z".to_string(),
+            }
+        };
 
     // A ready chain (#7 blocked by #8) → the graph order the fold must preserve.
     let ready_q = vec![issue(7, &[], "## Blocked by\n- #8\n"), issue(8, &[], "")];
@@ -288,7 +291,11 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
     // and octo (#32) rows are dropped — only empty-assignees rows survive.
     let json = render_board_json(&ready_order, &open, &closed, None, &repo_labels).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(nums(&val), vec![8, 7, 30, 99], "default hides assigned: {val}");
+    assert_eq!(
+        nums(&val),
+        vec![8, 7, 30, 99],
+        "default hides assigned: {val}"
+    );
 
     // (d) the closed row carries state + lowercased reason.
     let closed_row = val["issues"]
@@ -311,10 +318,14 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
 
     // (c) a configured login keeps unassigned OR that-login (#32 survives), while
     // an issue assigned only to someone-else (#31) stays dropped.
-    let json2 = render_board_json(&ready_order, &open, &closed, Some("octo"), &repo_labels).unwrap();
+    let json2 =
+        render_board_json(&ready_order, &open, &closed, Some("octo"), &repo_labels).unwrap();
     let val2: Value = serde_json::from_str(&json2).unwrap();
     let n2 = nums(&val2);
-    assert!(n2.contains(&32), "octo-assigned survives under login: {val2}");
+    assert!(
+        n2.contains(&32),
+        "octo-assigned survives under login: {val2}"
+    );
     assert!(!n2.contains(&31), "someone-else stays dropped: {val2}");
     assert_eq!(n2, vec![8, 7, 30, 32, 99]);
 }
