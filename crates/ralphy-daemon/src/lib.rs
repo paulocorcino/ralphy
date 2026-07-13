@@ -916,29 +916,42 @@ async fn command_ws(
         return;
     }
 
-    // Query verbs (ADR-0036 §2) spawn-and-COLLECT a read-only CLI invocation
-    // (`config get --json`) and answer ONCE on THIS id — no live stream. The
-    // parsed config rides `config`; a non-JSON stdout falls back to a raw string.
+    // Query verbs (ADR-0036 §2) spawn-and-COLLECT a read-only CLI invocation and
+    // answer ONCE on THIS id — no live stream. The verb picks BOTH the argv and
+    // the reply field: `config.get`→`config get --json`/`config`,
+    // `board.list`→`issues --format json --board`/`board`,
+    // `issue.show`→`issues show <n> --format json`/`issue`. The parsed JSON rides
+    // that field; a non-JSON stdout falls back to a raw string.
     if verb.effect_class() == dispatch::EffectClass::Query {
-        let payload = match dispatch::config_argv(verb, &cmd.payload) {
+        let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb {
+            dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
+            dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
+            dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
+            // Unreachable: only the three Query verbs reach this branch.
+            _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
+        };
+        let payload = match argv_result {
             Err(e) => {
-                tracing::warn!(error = %e, "refused a config query with invalid params");
-                serde_json::json!({ "status": "error", "message": "invalid config options" })
+                tracing::warn!(error = %e, "refused a query with invalid params");
+                serde_json::json!({ "status": "error", "message": "invalid query options" })
             }
             Ok(argv) => {
                 match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
                     Some((Some(0), bytes)) => {
                         let text = String::from_utf8_lossy(&bytes);
-                        let config: serde_json::Value = serde_json::from_str(text.trim())
+                        let parsed: serde_json::Value = serde_json::from_str(text.trim())
                             .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_string()));
-                        serde_json::json!({ "status": "ok", "config": config })
+                        let mut obj = serde_json::Map::new();
+                        obj.insert("status".to_string(), serde_json::json!("ok"));
+                        obj.insert(field.to_string(), parsed);
+                        serde_json::Value::Object(obj)
                     }
                     Some((_, bytes)) => serde_json::json!({
                         "status": "error",
                         "message": String::from_utf8_lossy(&bytes).trim(),
                     }),
                     None => {
-                        serde_json::json!({ "status": "error", "message": "config read failed" })
+                        serde_json::json!({ "status": "error", "message": "query read failed" })
                     }
                 }
             }

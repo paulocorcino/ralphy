@@ -138,6 +138,12 @@ pub enum Verb {
     FileRead,
     /// Read the repo's resolved config as JSON (Query: `config get --json`).
     ConfigGet,
+    /// Read the whole-tracker Kanban board fold (Query: `issues --format json
+    /// --board`).
+    BoardList,
+    /// Read one issue's detail — body, comments, blockers (Query: `issues show
+    /// <n> --format json`).
+    IssueShow,
     /// Persist a config key (Mutate: `config set`, run-lock-aware).
     ConfigSet,
     /// Clear a config key (Mutate: `config unset`, run-lock-aware).
@@ -164,6 +170,8 @@ impl Verb {
             "tree.list" => Some(Verb::TreeList),
             "file.read" => Some(Verb::FileRead),
             "config.get" => Some(Verb::ConfigGet),
+            "board.list" => Some(Verb::BoardList),
+            "issue.show" => Some(Verb::IssueShow),
             "config.set" => Some(Verb::ConfigSet),
             "config.unset" => Some(Verb::ConfigUnset),
             "file.write" => Some(Verb::FileWrite),
@@ -182,6 +190,8 @@ impl Verb {
         Verb::TreeList,
         Verb::FileRead,
         Verb::ConfigGet,
+        Verb::BoardList,
+        Verb::IssueShow,
         Verb::ConfigSet,
         Verb::ConfigUnset,
         Verb::FileWrite,
@@ -197,7 +207,7 @@ impl Verb {
     pub fn effect_class(self) -> EffectClass {
         match self {
             Verb::TreeList | Verb::FileRead => EffectClass::Observe,
-            Verb::ConfigGet => EffectClass::Query,
+            Verb::ConfigGet | Verb::BoardList | Verb::IssueShow => EffectClass::Query,
             Verb::ConfigSet | Verb::ConfigUnset => EffectClass::Mutate,
             Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
                 EffectClass::Write
@@ -257,6 +267,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         Verb::TreeList
         | Verb::FileRead
         | Verb::ConfigGet
+        | Verb::BoardList
+        | Verb::IssueShow
         | Verb::ConfigSet
         | Verb::ConfigUnset
         | Verb::FileWrite
@@ -264,6 +276,35 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::FileRename
         | Verb::FileDelete => Err(ArgvError::BadParam("verb")),
     }
+}
+
+/// The static argv for the board Query verb: `issues --format json --board` —
+/// the whole-tracker Kanban fold (ADR-0036 slice 6). Takes no client input; the
+/// verb alone fixes the command line.
+pub fn board_argv() -> Vec<String> {
+    ["issues", "--format", "json", "--board"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Compose the argv for the issue-detail Query verb: `issues show <n> --format
+/// json`. `<n>` is a validated positive `u64` read from `payload.number` (the sole
+/// client input) — anything absent, zero, or non-integer yields [`ArgvError`] and
+/// NO argv, so remote input can never widen the command line.
+pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let n = payload
+        .get("number")
+        .and_then(|v| v.as_u64())
+        .filter(|&n| n > 0)
+        .ok_or(ArgvError::BadParam("number"))?;
+    Ok(vec![
+        "issues".to_string(),
+        "show".to_string(),
+        n.to_string(),
+        "--format".to_string(),
+        "json".to_string(),
+    ])
 }
 
 /// Whether `key` is a well-shaped config key (`^[a-z0-9_.]+$`): a closed
@@ -567,6 +608,8 @@ mod tests {
         assert_eq!(Verb::Triage.effect_class(), EffectClass::Spawn);
         assert_eq!(Verb::PushQueue.effect_class(), EffectClass::Spawn);
         assert_eq!(Verb::ConfigGet.effect_class(), EffectClass::Query);
+        assert_eq!(Verb::BoardList.effect_class(), EffectClass::Query);
+        assert_eq!(Verb::IssueShow.effect_class(), EffectClass::Query);
         assert_eq!(Verb::ConfigSet.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ConfigUnset.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::FileWrite.effect_class(), EffectClass::Write);
@@ -575,14 +618,16 @@ mod tests {
         assert_eq!(Verb::FileDelete.effect_class(), EffectClass::Write);
         assert_eq!(
             Verb::ALL.len(),
-            12,
-            "the registry holds exactly twelve verbs"
+            14,
+            "the registry holds exactly fourteen verbs"
         );
     }
 
     #[test]
     fn from_query_maps_config_verbs() {
         assert_eq!(Verb::from_query("config.get"), Some(Verb::ConfigGet));
+        assert_eq!(Verb::from_query("board.list"), Some(Verb::BoardList));
+        assert_eq!(Verb::from_query("issue.show"), Some(Verb::IssueShow));
         assert_eq!(Verb::from_query("config.set"), Some(Verb::ConfigSet));
         assert_eq!(Verb::from_query("config.unset"), Some(Verb::ConfigUnset));
         assert_eq!(Verb::from_query("file.write"), Some(Verb::FileWrite));
@@ -659,6 +704,37 @@ mod tests {
                 &serde_json::json!({ "key": "branch_mode" })
             ),
             Err(ArgvError::BadParam("value"))
+        );
+    }
+
+    #[test]
+    fn board_argv_is_static() {
+        assert_eq!(
+            board_argv(),
+            vec!["issues", "--format", "json", "--board"],
+            "the board verb takes no client input"
+        );
+    }
+
+    #[test]
+    fn issue_show_argv_validates_number() {
+        // A positive integer composes the detail argv.
+        assert_eq!(
+            issue_show_argv(&serde_json::json!({ "number": 42 })).unwrap(),
+            vec!["issues", "show", "42", "--format", "json"]
+        );
+        // Zero, missing, and non-integer are all refused — no argv reaches the CLI.
+        assert_eq!(
+            issue_show_argv(&serde_json::json!({ "number": 0 })),
+            Err(ArgvError::BadParam("number"))
+        );
+        assert_eq!(
+            issue_show_argv(&serde_json::json!({})),
+            Err(ArgvError::BadParam("number"))
+        );
+        assert_eq!(
+            issue_show_argv(&serde_json::json!({ "number": "12" })),
+            Err(ArgvError::BadParam("number"))
         );
     }
 
