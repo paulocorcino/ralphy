@@ -187,4 +187,23 @@ mod tests {
     fn require_some_label_accepts_add() {
         assert!(require_some_label(&["x".to_string()], &[]).is_ok());
     }
+
+    #[test]
+    fn label_set_rejects_empty_labels_before_touching_repo() {
+        // A nonexistent --repo would fail `resolve_toplevel` with "not a git
+        // repository"; the arg-validation error must win, proving
+        // `require_some_label` runs BEFORE `resolve_toplevel`.
+        let err = label(LabelCommand::Set(LabelSetArgs {
+            repo: PathBuf::from("/definitely-not-a-repo-xyz"),
+            issue: 1,
+            add: vec![],
+            remove: vec![],
+        }))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("pass at least one --add"),
+            "expected the label-arg error, got: {err}"
+        );
+    }
 }
