@@ -2047,7 +2047,10 @@ mod tests {
     async fn session_state_reports_authed() {
         // Localhost is always authed.
         let body = body_string(get_local("/api/session").await).await;
-        assert!(body.contains(r#""authed":true"#), "localhost authed: {body}");
+        assert!(
+            body.contains(r#""authed":true"#),
+            "localhost authed: {body}"
+        );
 
         // Session, no cookie → not authed.
         let resp = session_router("tok")
