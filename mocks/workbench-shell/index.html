@@ -904,7 +904,7 @@
           <input class="login-input" x-model="login.code" inputmode="numeric" pattern="[0-9]*"
                  maxlength="6" required autofocus placeholder="000000" />
         </label>
-        <label class="login-label" x-show="security.passwordSet">
+        <label class="login-label" x-show="security.passwordSet || login.passwordRequired">
           Password
           <input class="login-input" type="password" x-model="login.password" autocomplete="current-password" />
         </label>

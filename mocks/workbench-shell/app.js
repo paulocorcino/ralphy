@@ -62,6 +62,21 @@ function shell() {
       this.initRuns();
       this.currentRunId = this.projectRuns()[0]?.runid || null;
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      this.probeSession();
+    },
+
+    // Ask the daemon whether this browser is authorized. A thrown fetch (file://
+    // standalone, no daemon) is swallowed so `authed` keeps its mock default —
+    // the shell stays navigable offline; only a real /api/session response gates.
+    async probeSession() {
+      try {
+        const r = await fetch("/api/session");
+        if (r.ok) {
+          const s = await r.json();
+          this.authed = s.authed;
+          this.login.passwordRequired = s.password;
+        }
+      } catch {}
     },
 
     // --- chrome panels ----------------------------------------------------
@@ -746,20 +761,46 @@ function shell() {
     // readable — the real daemon simply never renders the app until /api/login
     // succeeds. Here we blank the chrome too (body.locked) to make the point.
     authed: true,
-    login: { code: "", password: "", error: "" },
+    login: { code: "", password: "", error: "", passwordRequired: false },
 
-    logOff() {
+    async logOff() {
       this.avatarMenu = false;
       this.securityOpen = false;
       this.settingsOpen = false;
+      // The session cookie is HttpOnly — only the server can clear it.
+      try {
+        await fetch("/api/logout", { method: "POST" });
+      } catch {}
       this.authed = false;
-      this.login = { code: "", password: "", error: "" };
+      this.login = { code: "", password: "", error: "", passwordRequired: this.login.passwordRequired };
       WB.emit("logoff", {});
       this.$nextTick(() => window.lucide?.createIcons());
     },
 
-    submitLogin() {
+    async submitLogin() {
       const code = (this.login.code || "").trim();
+      try {
+        const body = new URLSearchParams({ code });
+        if (this.login.passwordRequired || this.security.passwordSet) {
+          body.set("password", this.login.password || "");
+        }
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        if (res.ok) {
+          this.login.error = "";
+          this.authed = true;
+          WB.emit("login", {});
+          this.$nextTick(() => window.lucide?.createIcons());
+        } else {
+          this.login.error = "Invalid code or password.";
+        }
+        return;
+      } catch {
+        // No daemon (file:// standalone) — fall back to the local mock check.
+      }
       if (!/^[0-9]{6}$/.test(code)) {
         this.login.error = "Invalid code or password.";
         return;
