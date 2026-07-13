@@ -328,6 +328,24 @@ pub fn router(
             }),
         )
         .route("/api/logout", post(logout_route))
+        .route("/api/security/state", get(security_state_route))
+        .route(
+            "/api/security/totp/enroll",
+            post(security_totp_enroll_route),
+        )
+        .route(
+            "/api/security/totp/revoke",
+            post(security_totp_revoke_route),
+        )
+        .route("/api/security/password", post(security_password_route))
+        .route(
+            "/api/security/token/remint",
+            post(security_token_remint_route),
+        )
+        .route(
+            "/api/security/require-login",
+            post(security_require_login_route),
+        )
         .route(
             "/workbench",
             get(|| async {
@@ -1257,6 +1275,170 @@ async fn session_state_route(auth: auth::AuthPolicy, headers: axum::http::Header
     Json(SessionState { authed, password }).into_response()
 }
 
+/// The daemon's auth-state surface for the Security modal (issue #195): which
+/// factors are enrolled in the REAL stores. `require_login` is DERIVED from TOTP
+/// enrolment (a network bind with a seed already forces `Session`; localhost
+/// never requires login), so there is no separate flag file (ADR-0032 §4).
+#[derive(serde::Serialize)]
+struct SecurityState {
+    token_set: bool,
+    password_set: bool,
+    totp_enrolled: bool,
+    require_login: bool,
+}
+
+/// Read the real store FILES under `dir` and report enrolment. Path-explicit (no
+/// env reads) so tests pass a tempdir. `require_login == totp_enrolled`.
+fn security_state_at(dir: &Path) -> SecurityState {
+    let totp_enrolled = totp::load_seed_from(&totp::seed_path_in(dir))
+        .ok()
+        .flatten()
+        .is_some();
+    SecurityState {
+        token_set: auth::load_token_from(&auth::token_path_in(dir))
+            .ok()
+            .flatten()
+            .is_some(),
+        password_set: password::load_from(&password::password_path_in(dir))
+            .ok()
+            .flatten()
+            .is_some(),
+        totp_enrolled,
+        require_login: totp_enrolled,
+    }
+}
+
+/// Enroll (mint-once) a TOTP seed under `dir`; return its `otpauth://` URI and
+/// whether it was newly minted. The URI is shown once (QR + base32); a second
+/// enrol returns the SAME secret with `newly_minted=false`.
+fn enroll_totp_at(dir: &Path) -> Result<(String, bool)> {
+    let (seed, newly_minted) = totp::ensure_seed_at(&totp::seed_path_in(dir))?;
+    Ok((seed.otpauth_uri("ralphy", "daemon"), newly_minted))
+}
+
+/// Set (non-empty) or clear (empty/absent) the optional password under `dir`;
+/// return whether a password is now enrolled.
+fn set_password_at(dir: &Path, password: Option<&str>) -> Result<bool> {
+    let path = password::password_path_in(dir);
+    match password.filter(|p| !p.is_empty()) {
+        Some(pw) => {
+            password::save_to(&password::Hash::hash_password(pw), &path)?;
+            Ok(true)
+        }
+        None => {
+            password::clear_at(&path)?;
+            Ok(false)
+        }
+    }
+}
+
+/// Remint the access token under `dir`, overwriting any prior. The token is
+/// never echoed — only its rotation is reported.
+fn remint_token_at(dir: &Path) -> Result<()> {
+    auth::save_token_to(&auth::generate_token(), &auth::token_path_in(dir))
+}
+
+/// The require-login gate: enabling require-login demands an enrolled TOTP seed
+/// (localhost stays frictionless; a network bind with a seed already forces
+/// `Session`). `Err("totp not enrolled")` when enabling with no seed; else `Ok`
+/// — state is derived from the seed, so this validates rather than stores a flag.
+fn require_login_at(dir: &Path, enable: bool) -> Result<()> {
+    if enable
+        && totp::load_seed_from(&totp::seed_path_in(dir))
+            .ok()
+            .flatten()
+            .is_none()
+    {
+        anyhow::bail!("totp not enrolled");
+    }
+    Ok(())
+}
+
+/// `GET /api/security/state`: the real enrolment state (gated by `require_auth`;
+/// not in the login allowlist).
+async fn security_state_route() -> Response {
+    match auth::store_dir() {
+        Ok(dir) => Json(security_state_at(&dir)).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to resolve the daemon store for security state");
+            (StatusCode::INTERNAL_SERVER_ERROR, "store unavailable").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/totp/enroll`: mint-once the seed and return the one-time
+/// `otpauth://` URI + `newly_minted`.
+async fn security_totp_enroll_route() -> Response {
+    match auth::store_dir().and_then(|dir| enroll_totp_at(&dir)) {
+        Ok((uri, newly_minted)) => {
+            Json(serde_json::json!({ "uri": uri, "newly_minted": newly_minted })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to enroll a TOTP seed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "enroll failed").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/totp/revoke`: delete the seed (mint-once posture — a later
+/// enrol mints a fresh one).
+async fn security_totp_revoke_route() -> Response {
+    match auth::store_dir().and_then(|dir| totp::revoke_seed_at(&totp::seed_path_in(&dir))) {
+        Ok(()) => Json(serde_json::json!({ "revoked": true })).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to revoke the TOTP seed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "revoke failed").into_response()
+        }
+    }
+}
+
+/// The `POST /api/security/password` body: a non-empty `password` sets it, an
+/// empty/absent one clears it.
+#[derive(serde::Deserialize)]
+struct PasswordForm {
+    password: Option<String>,
+}
+
+/// `POST /api/security/password`: set or clear the optional password factor.
+async fn security_password_route(Form(form): Form<PasswordForm>) -> Response {
+    match auth::store_dir().and_then(|dir| set_password_at(&dir, form.password.as_deref())) {
+        Ok(password_set) => {
+            Json(serde_json::json!({ "password_set": password_set })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to update the password");
+            (StatusCode::INTERNAL_SERVER_ERROR, "password update failed").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/token/remint`: rotate the access token (never echoed).
+async fn security_token_remint_route() -> Response {
+    match auth::store_dir().and_then(|dir| remint_token_at(&dir)) {
+        Ok(()) => Json(serde_json::json!({ "reminted": true })).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to remint the access token");
+            (StatusCode::INTERNAL_SERVER_ERROR, "remint failed").into_response()
+        }
+    }
+}
+
+/// The `POST /api/security/require-login` body: the desired toggle state.
+#[derive(serde::Deserialize)]
+struct RequireLoginForm {
+    enable: bool,
+}
+
+/// `POST /api/security/require-login`: the server-side gate for AC4 — enabling
+/// require-login without an enrolled TOTP seed is refused (`400`). Enabling with a
+/// seed (or disabling) is `Ok`; the state itself stays derived from the seed.
+async fn security_require_login_route(Form(form): Form<RequireLoginForm>) -> Response {
+    match auth::store_dir().and_then(|dir| require_login_at(&dir, form.enable)) {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
 fn content_type(path: &str) -> &'static str {
     match path.rsplit('.').next() {
         Some("html") => "text/html; charset=utf-8",
@@ -1315,6 +1497,87 @@ mod tests {
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await
         .unwrap()
+    }
+
+    #[test]
+    fn security_state_reflects_the_stores() {
+        let dir = tempfile::tempdir().unwrap();
+        // Empty store → every factor unset.
+        let s = security_state_at(dir.path());
+        assert!(!s.token_set && !s.password_set && !s.totp_enrolled && !s.require_login);
+        // Writing a seed flips totp_enrolled AND the derived require_login.
+        totp::save_seed_to(&totp::generate_seed(), &totp::seed_path_in(dir.path())).unwrap();
+        let s = security_state_at(dir.path());
+        assert!(
+            s.totp_enrolled && s.require_login,
+            "seed → enrolled + require"
+        );
+        assert!(!s.token_set && !s.password_set, "other factors still unset");
+    }
+
+    #[test]
+    fn enroll_totp_is_mint_once_with_ralphy_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let (uri, minted) = enroll_totp_at(dir.path()).unwrap();
+        assert!(minted, "first enrol mints");
+        assert!(
+            uri.starts_with("otpauth://totp/ralphy:"),
+            "the real provisioning URI; got {uri}"
+        );
+        let secret_of = |u: &str| {
+            u.split("secret=")
+                .nth(1)
+                .and_then(|s| s.split('&').next())
+                .unwrap()
+                .to_string()
+        };
+        let (uri2, minted2) = enroll_totp_at(dir.path()).unwrap();
+        assert!(!minted2, "second enrol does not re-mint");
+        assert_eq!(secret_of(&uri), secret_of(&uri2), "same secret returned");
+    }
+
+    #[test]
+    fn set_password_round_trips_set_then_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            set_password_at(dir.path(), Some("pw")).unwrap(),
+            "set → true"
+        );
+        assert!(
+            security_state_at(dir.path()).password_set,
+            "state reflects the set"
+        );
+        assert!(!set_password_at(dir.path(), None).unwrap(), "clear → false");
+        assert!(
+            !security_state_at(dir.path()).password_set,
+            "state reflects the clear"
+        );
+    }
+
+    #[test]
+    fn remint_token_yields_a_new_distinct_token() {
+        let dir = tempfile::tempdir().unwrap();
+        remint_token_at(dir.path()).unwrap();
+        let first = auth::load_token_from(&auth::token_path_in(dir.path()))
+            .unwrap()
+            .expect("token written");
+        assert_eq!(first.len(), 64, "64-hex token");
+        remint_token_at(dir.path()).unwrap();
+        let second = auth::load_token_from(&auth::token_path_in(dir.path()))
+            .unwrap()
+            .unwrap();
+        assert_ne!(first, second, "remint rotates the token");
+    }
+
+    #[test]
+    fn require_login_gate_needs_an_enrolled_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        // Enabling with no seed is refused; disabling is always Ok.
+        assert!(require_login_at(dir.path(), true).is_err());
+        assert!(require_login_at(dir.path(), false).is_ok());
+        // With a seed enrolled, enabling is Ok.
+        totp::save_seed_to(&totp::generate_seed(), &totp::seed_path_in(dir.path())).unwrap();
+        assert!(require_login_at(dir.path(), true).is_ok());
     }
 
     #[tokio::test]

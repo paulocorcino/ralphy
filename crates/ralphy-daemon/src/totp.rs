@@ -90,17 +90,26 @@ pub fn generate_seed() -> Seed {
     Seed(bytes)
 }
 
-/// The production path of `daemon-totp`: `$RALPHY_DAEMON_DIR` when set (tests
-/// point it at a temp dir), else `<home>/.ralphy/daemon-totp`. Mirrors
-/// [`auth::token_path`].
+/// The `daemon-totp` seed path inside `dir`. Path-explicit so the security
+/// routes/tests point it at a temp dir without touching the env.
+pub fn seed_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-totp")
+}
+
+/// The production path of `daemon-totp`. Mirrors [`auth::token_path`].
 pub fn seed_path() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
-        return Ok(PathBuf::from(dir).join("daemon-totp"));
+    Ok(seed_path_in(&auth::store_dir()?))
+}
+
+/// Remove the seed file at `path` (revoke enrolment); mint-once means a fresh
+/// enrol mints a NEW seed afterwards. `Ok(())` when already absent — revocation
+/// is idempotent.
+pub fn revoke_seed_at(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
     }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon TOTP store")?;
-    Ok(PathBuf::from(home).join(".ralphy").join("daemon-totp"))
 }
 
 /// Load a seed from `path` (base32 text), or `Ok(None)` when the file does not
@@ -210,6 +219,18 @@ mod tests {
             second.secret_base32(),
             "the same seed is returned"
         );
+    }
+
+    #[test]
+    fn revoke_seed_at_deletes_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = seed_path_in(dir.path());
+        save_seed_to(&generate_seed(), &path).unwrap();
+        assert!(path.exists(), "seed written");
+        revoke_seed_at(&path).unwrap();
+        assert!(!path.exists(), "revoke removes the seed file");
+        // Idempotent: revoking an absent seed is Ok, not an error.
+        revoke_seed_at(&path).unwrap();
     }
 
     #[test]

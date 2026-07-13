@@ -27,18 +27,29 @@ use crate::{cookie, password, totp};
 /// `RALPHY_EVENTS_TOKEN`, ADR-0019).
 pub const TOKEN_ENV: &str = "RALPHY_DAEMON_TOKEN";
 
-/// The production path of `daemon-token`: `$RALPHY_DAEMON_DIR` when set (tests
-/// point it at a temp dir), else `<home>/.ralphy/daemon-token` — the same global
-/// store root as `daemon.toml`, never a repo-local `.ralphy/`. Mirrors
-/// [`identity::daemon_toml_path`].
-pub fn token_path() -> Result<PathBuf> {
+/// The global daemon store root: `$RALPHY_DAEMON_DIR` when set (tests point it at
+/// a temp dir), else `<home>/.ralphy` — the same root as `daemon.toml`, never a
+/// repo-local `.ralphy/`. The one env-reading resolver the token/seed/password
+/// paths and the security routes share.
+pub fn store_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
-        return Ok(PathBuf::from(dir).join("daemon-token"));
+        return Ok(PathBuf::from(dir));
     }
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon token store")?;
-    Ok(PathBuf::from(home).join(".ralphy").join("daemon-token"))
+        .context("could not resolve a home directory for the daemon store")?;
+    Ok(PathBuf::from(home).join(".ralphy"))
+}
+
+/// The `daemon-token` path inside `dir`. Path-explicit so the security routes and
+/// tests can point it at a temp dir without touching the process-global env.
+pub fn token_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-token")
+}
+
+/// The production path of `daemon-token`. Mirrors [`identity::daemon_toml_path`].
+pub fn token_path() -> Result<PathBuf> {
+    Ok(token_path_in(&store_dir()?))
 }
 
 /// Load the token from `path`, or `Ok(None)` when the file does not exist yet

@@ -109,16 +109,25 @@ impl FromStr for Hash {
     }
 }
 
-/// The production path of `daemon-password`: `$RALPHY_DAEMON_DIR` when set, else
-/// `<home>/.ralphy/daemon-password`. Mirrors [`auth::token_path`].
+/// The `daemon-password` path inside `dir`. Path-explicit so the security
+/// routes/tests point it at a temp dir without touching the env.
+pub fn password_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-password")
+}
+
+/// The production path of `daemon-password`. Mirrors [`auth::token_path`].
 pub fn password_path() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
-        return Ok(PathBuf::from(dir).join("daemon-password"));
+    Ok(password_path_in(&auth::store_dir()?))
+}
+
+/// Remove the password file at `path` (clear the optional factor). `Ok(())` when
+/// already absent — clearing is idempotent.
+pub fn clear_at(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
     }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon password store")?;
-    Ok(PathBuf::from(home).join(".ralphy").join("daemon-password"))
 }
 
 /// Load a password hash from `path`, or `Ok(None)` when unset (no password
@@ -189,6 +198,19 @@ mod tests {
         save_to(&h, &path).unwrap();
         let loaded = load_from(&path).unwrap().expect("just saved");
         assert!(loaded.verify("s3cret"));
+    }
+
+    #[test]
+    fn clear_at_deletes_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = password_path_in(dir.path());
+        save_to(&Hash::hash_password("pw"), &path).unwrap();
+        assert!(path.exists(), "password written");
+        clear_at(&path).unwrap();
+        assert!(!path.exists(), "clear removes the password file");
+        // Idempotent: clearing an absent password is Ok.
+        clear_at(&path).unwrap();
+        assert!(load_from(&path).unwrap().is_none(), "cleared → unset");
     }
 
     #[test]
