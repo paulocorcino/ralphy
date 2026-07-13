@@ -11,7 +11,9 @@ use crate::confine::{self, ConfineError};
 
 /// Directory-listing hard-exclude: noise dirs never surfaced in the tree. Some
 /// are NOT gitignored (`.git`), so `WalkBuilder`'s git filters alone miss them.
-const HARD_EXCLUDE: &[&str] = &["node_modules", "target", ".git", ".ralphy"];
+/// `pub(crate)` so the watcher pump ([`crate::watch`]) drops the same noise dirs
+/// a `NonRecursive` root watch still fires on.
+pub(crate) const HARD_EXCLUDE: &[&str] = &["node_modules", "target", ".git", ".ralphy"];
 
 /// One tree entry: a child of the listed directory.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

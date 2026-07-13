@@ -32,6 +32,7 @@ pub mod session;
 pub mod totp;
 pub mod tree;
 pub mod usage;
+pub mod watch;
 
 use protocol::{Command, Frame, Presence};
 
