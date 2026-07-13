@@ -56,6 +56,14 @@ function shell() {
     openSlug: null,
     _tree: null, // the live Wunderbaum instance, if any
 
+    // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
+    // plan <script> blocks) is present.
+    init() {
+      this.initRuns();
+      this.currentRunId = this.projectRuns()[0]?.runid || null;
+      this.planSection = this.planHeadings(this.currentRun())[0] || "";
+    },
+
     // --- chrome panels ----------------------------------------------------
     // Projects sidebar visibility (rail Projects button), the right-hand Runs
     // panel (rail Runs button), and the Kanban/tasks board (rail Kanban button,
@@ -69,12 +77,401 @@ function shell() {
     },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
+      // the panel's lucide icons mount on open (they live inside x-if)
+      if (this.runsOpen) this.$nextTick(() => window.lucide?.createIcons());
     },
     toggleKanban() {
       // No board yet — announce the intent so a backend/next iteration can wire
       // the tasks view. Marks the button active as a visible affordance.
       this.kanbanOpen = !this.kanbanOpen;
       WB.emit("kanban-toggle", { open: this.kanbanOpen });
+    },
+
+    // --- branch switcher --------------------------------------------------
+    // Clicking a project's branch chip opens a filtered picker. The mock holds
+    // the branch list per project (a backend would deliver it, e.g. `git
+    // branch`); switching or creating emits an intent on the seam and the
+    // daemon runs the real `git checkout` / `checkout -b`. The header reflects
+    // the pick optimistically (like the tree's optimistic rename).
+    branchOpen: false,
+    branchModal: { slug: null, filter: "", branches: [], current: "", dirty: false },
+
+    // Switching is possible only when the daemon can reach the repo on disk.
+    // NOT gated on `remote`: a local-only repo (no GitHub) is still a git
+    // checkout with branches — it's an *unreachable* path (state offline) the
+    // daemon can't run `git branch`/`checkout` against.
+    canSwitchBranch(p) {
+      return p.state !== "offline";
+    },
+
+    branchChipTitle(p) {
+      if (!this.canSwitchBranch(p)) return "repo unreachable — branch switching unavailable";
+      return (p.dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + p.branch;
+    },
+
+    openBranchModal(p) {
+      if (!this.canSwitchBranch(p)) return;
+      this.branchModal = {
+        slug: p.slug,
+        filter: "",
+        branches: [...(p.branches || [p.branch])],
+        current: p.branch,
+        dirty: !!p.dirty,
+      };
+      this.branchOpen = true;
+      this.$nextTick(() => {
+        window.lucide?.createIcons();
+        this.$refs.branchFilter?.focus();
+      });
+    },
+    closeBranchModal() {
+      this.branchOpen = false;
+    },
+
+    // Filtered (case-insensitive substring), current pinned to the top.
+    branchList() {
+      const q = this.branchModal.filter.trim().toLowerCase();
+      const all = this.branchModal.branches;
+      const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
+      const cur = this.branchModal.current;
+      return hit.sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)));
+    },
+
+    // The create row shows only when the typed name matches no existing branch.
+    canCreateBranch() {
+      const name = this.branchModal.filter.trim();
+      if (!name) return false;
+      return !this.branchModal.branches.some((b) => b.toLowerCase() === name.toLowerCase());
+    },
+
+    // Enter = act on the top match, else create the typed branch (quick-pick).
+    branchEnter() {
+      const list = this.branchList();
+      if (list.length) this.switchBranch(list[0]);
+      else if (this.canCreateBranch()) this.createBranch();
+    },
+
+    switchBranch(name) {
+      if (name !== this.branchModal.current) {
+        const p = this.projects.find((x) => x.slug === this.branchModal.slug);
+        if (p) p.branch = name; // optimistic — the chip updates immediately
+        WB.emit("branch-switch", { project: this.branchModal.slug, branch: name });
+      }
+      this.closeBranchModal();
+    },
+
+    createBranch() {
+      if (!this.canCreateBranch()) return;
+      const name = this.branchModal.filter.trim();
+      const from = this.branchModal.current;
+      const p = this.projects.find((x) => x.slug === this.branchModal.slug);
+      if (p) {
+        p.branches = [...(p.branches || []), name];
+        p.branch = name; // a fresh branch is checked out onto
+      }
+      WB.emit("branch-create", { project: this.branchModal.slug, name, from });
+      this.closeBranchModal();
+    },
+
+    // --- Runs panel -------------------------------------------------------
+    // What's running in ralphy for the open project. Data mirrors the fold of
+    // the CloudEvents bus (ADR-0019): one entry per `runid`, with the ordered
+    // issue queue + per-issue status, the live phase, and the current issue's
+    // plan.md. A project can host several concurrent runs → a run picker. See
+    // wb-runs.js for the seed + the status/glyph/plan helpers (window.WBRun).
+    runsByProject: {},
+    currentRunId: null,
+    runMenu: false,
+    planSection: "",
+
+    // On-device translation of a plan block via the browser's built-in
+    // Translator API (Chrome/Edge 138+), with LanguageDetector for the source.
+    // No network, no key. Per-block toggle; results cached by run/section/target.
+    // Degrades to a disabled button where the API is absent.
+    xlate: {
+      on: {}, // block id ("steps" | "more") -> translating?
+      busy: {}, // block id -> in-flight?
+      err: {}, // block id -> last error message
+      note: {}, // block id -> hint (e.g. "already PT")
+      target: window.WBTranslate.browserLang(),
+      cache: {}, // `${runid}::${name}::${target}` -> translated markdown
+    },
+    xlateLangs: window.WBTranslate.LANGS,
+
+    // Hydrate runs from the seed: copy each run's plan.md out of its hidden
+    // <script> block into a live, mutable `planMd` the fold can update.
+    initRuns() {
+      const src = window.WB_RUNS || {};
+      const out = {};
+      for (const [proj, runs] of Object.entries(src)) {
+        out[proj] = runs.map((r) => ({
+          ...r,
+          planMd: (document.getElementById(r.planEl)?.textContent || "").trim(),
+        }));
+      }
+      this.runsByProject = out;
+    },
+
+    // The open project's runs (the panel is project-scoped).
+    projectRuns() {
+      return this.runsByProject[this.openSlug] || [];
+    },
+    // The selected run, falling back to the first when the id is stale (e.g. the
+    // project changed).
+    currentRun() {
+      const runs = this.projectRuns();
+      return runs.find((r) => r.runid === this.currentRunId) || runs[0] || null;
+    },
+    selectRun(runid) {
+      this.currentRunId = runid;
+      // reset the section dropdown to the new run's first non-Steps heading
+      this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+
+    // Thin delegations to the faithful helpers in wb-runs.js.
+    runPhaseLabel(run) {
+      return run ? window.WBRun.runPhaseLabel(run) : "";
+    },
+    issueState(run, iss) {
+      return window.WBRun.issueState(run, iss);
+    },
+    issueGlyph(run, iss) {
+      return window.WBRun.glyph(run, iss);
+    },
+    sleepLabel(run) {
+      return window.WBRun.sleepText(run?.sleep);
+    },
+    nodeTitle(run, iss) {
+      if (!run || !iss) return "";
+      const st = window.WBRun.issueState(run, iss);
+      let t = `#${iss.number} — ${iss.title} · ${window.WBRun.LABEL[st] || st}`;
+      if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
+      return t;
+    },
+    // Clicking an issue node is a read intent — a backend could scroll its log or
+    // surface that issue's plan; the mock only announces it.
+    focusIssue(number) {
+      WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
+    },
+
+    // --- plan viewer ------------------------------------------------------
+    // Every `##` section except Steps (which is pinned in its own block above).
+    planHeadings(run) {
+      return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
+    },
+    // Render one `##` section as sanitized HTML. When the block is toggled to
+    // translate, the cached translation is shown once ready (original until then).
+    // Steps render as glyph bullets so the checkbox state survives sanitising.
+    renderPlanSection(run, name, block) {
+      if (!run || !name) return "";
+      let body = window.WBRun.section(run.planMd, name);
+      if (block && this.xlate.on[block]) {
+        const hit = this.xlate.cache[this.xlateKey(run, name)];
+        if (hit != null) body = hit;
+      }
+      if (name.toLowerCase() === "steps") body = window.WBRun.stepsToGlyphs(body);
+      return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
+    },
+
+    // --- on-device translation (shared helper: window.WBTranslate) --------
+    xlateSupported() {
+      return window.WBTranslate.supported();
+    },
+    xlateTitle() {
+      return this.xlateSupported()
+        ? "translate this block on-device (browser Translator API)"
+        : "translation needs Chrome/Edge 138+ (built-in Translator API)";
+    },
+    xlateKey(run, name) {
+      return `${run.runid}::${name}::${this.xlate.target}`;
+    },
+    toggleXlate(block, name) {
+      if (!this.xlateSupported()) return;
+      this.xlate.on = { ...this.xlate.on, [block]: !this.xlate.on[block] };
+      if (this.xlate.on[block]) this.ensureXlate(block, name);
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    // the section dropdown changed → re-translate that block if it's on
+    onSectionChange() {
+      if (this.xlate.on.more) {
+        this.ensureXlate("more", this.planSection || this.planHeadings(this.currentRun())[0]);
+      }
+    },
+    // target language changed → refresh every active block
+    retranslate() {
+      if (this.xlate.on.steps) this.ensureXlate("steps", "Steps");
+      if (this.xlate.on.more) {
+        this.ensureXlate("more", this.planSection || this.planHeadings(this.currentRun())[0]);
+      }
+    },
+    // Fetch (and cache) the translation for one block. Detects the source
+    // language, then runs the on-device Translator; a same-language target is a
+    // clean no-op. Reverts the toggle on failure so the UI stays honest.
+    async ensureXlate(block, name) {
+      const run = this.currentRun();
+      if (!run || !name || !this.xlateSupported()) return;
+      const src = window.WBRun.section(run.planMd, name);
+      if (!src) return;
+      const key = this.xlateKey(run, name);
+      if (this.xlate.cache[key] != null) return; // already translated
+      this.xlate.busy = { ...this.xlate.busy, [block]: true };
+      this.xlate.err = { ...this.xlate.err, [block]: "" };
+      this.xlate.note = { ...this.xlate.note, [block]: "" };
+      try {
+        const res = await window.WBTranslate.translate(src, this.xlate.target);
+        this.xlate.cache = { ...this.xlate.cache, [key]: res.text };
+        // a same-language target changes nothing — say so, so it doesn't look broken
+        if (res.same) {
+          this.xlate.note = { ...this.xlate.note, [block]: `already ${this.xlate.target.toUpperCase()}` };
+        }
+      } catch (e) {
+        this.xlate.err = { ...this.xlate.err, [block]: e?.message || "translate failed" };
+        this.xlate.on = { ...this.xlate.on, [block]: false }; // revert on failure
+      } finally {
+        this.xlate.busy = { ...this.xlate.busy, [block]: false };
+      }
+    },
+
+    // --- run / triage / push (the daemon verbs) ---------------------------
+    // The three remote-trigger verbs (ralphy-daemon dispatch.rs), scoped to the
+    // open project. `triage`/`push` are blessed no-arg invocations fired straight
+    // onto the seam; `run` opens a modal to enrich it with the agent(s) + branch
+    // mode. Faithful flags: --agent (executor, default claude), --plan-agent
+    // (optional planner), --branch-mode new|current.
+    runOpen: false,
+    runsActionMsg: "",
+    runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
+
+    openRunModal() {
+      // seed the planner to mirror the executor so an un-split run is coherent
+      this.runCfg = { agent: "claude", split: false, planAgent: "claude", branchMode: "new" };
+      this.runOpen = true;
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeRunModal() {
+      this.runOpen = false;
+    },
+    // The current git branch of the open project (for the "current" mode blurb).
+    openProjectBranch() {
+      return this.projects.find((p) => p.slug === this.openSlug)?.branch || "current";
+    },
+    // The faithful `ralphy run …` line the chosen options map to.
+    runCommandPreview() {
+      const c = this.runCfg;
+      let s = `run --agent ${c.agent}`;
+      if (c.split && c.planAgent !== c.agent) s += ` --plan-agent ${c.planAgent}`;
+      s += ` --branch-mode ${c.branchMode}`;
+      return s;
+    },
+    startRun() {
+      const c = this.runCfg;
+      const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
+      WB.emit("run-start", {
+        project: this.openSlug,
+        agent: c.agent,
+        planAgent,
+        branchMode: c.branchMode,
+        command: this.runCommandPreview(),
+      });
+      this._flashAction("run started");
+      this.closeRunModal();
+    },
+    // triage / push: no params — the verb name is the whole intent (the client
+    // never composes a command line, mirroring the daemon).
+    fireVerb(verb) {
+      WB.emit("command", { project: this.openSlug, verb });
+      this._flashAction(`${verb} requested`);
+    },
+    _flashAction(msg) {
+      this.runsActionMsg = msg;
+      clearTimeout(this._actionTimer);
+      this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
+    },
+
+    // --- inbound event fold (the backend seam) ----------------------------
+    // A backend WebSocket would call this per CloudEvent to advance the panel
+    // live. Handles the load-bearing types; unknown types are ignored (lossy bus
+    // tolerance). Dispatched via `ralphy:run-event` (see the listener below).
+    applyRunEvent(ev) {
+      if (!ev || !ev.runid) return;
+      let run = null;
+      for (const arr of Object.values(this.runsByProject)) {
+        const f = arr.find((r) => r.runid === ev.runid);
+        if (f) {
+          run = f;
+          break;
+        }
+      }
+      if (!run) return;
+      const d = ev.data || {};
+      switch (ev.type) {
+        case "dev.ralphy.plan.step":
+          // tick the next open checkbox (mock: the panel just advances a step)
+          run.planMd = run.planMd.replace(/-\s+\[ \]/, "- [x]");
+          break;
+        case "dev.ralphy.issue.closed": {
+          const iss = run.issues.find((x) => x.number === d.number);
+          if (iss) iss.status = "done";
+          this._recount(run);
+          break;
+        }
+        case "dev.ralphy.issue.skipped": {
+          const iss = run.issues.find((x) => x.number === d.number);
+          if (iss) {
+            iss.status = "skipped";
+            iss.blockedBy = d.blocked_by || [];
+          }
+          this._recount(run);
+          break;
+        }
+        case "dev.ralphy.issue.started": {
+          const iss = run.issues.find((x) => x.number === d.number);
+          if (iss) iss.status = "executing";
+          run.active = d.number;
+          run.phase = "executing";
+          break;
+        }
+        case "dev.ralphy.run.sleep_started":
+          run.phase = "sleeping";
+          run.sleep = { reset: d.reset || null, target_epoch: d.target_epoch || 0 };
+          break;
+        case "dev.ralphy.run.sleep_ended":
+          run.phase = "executing";
+          run.sleep = null;
+          break;
+        case "dev.ralphy.run.heartbeat":
+          if (d.phase) run.phase = d.phase;
+          if (typeof d.queue_done === "number") run.completed = d.queue_done;
+          if (d.issue) run.active = d.issue.number;
+          break;
+      }
+    },
+    _recount(run) {
+      run.completed = run.issues.filter((x) => window.WBRun.TERMINAL.has(x.status)).length;
+    },
+
+    // Demo: walk the selected run forward by synthesizing the next plausible
+    // event — tick a step while the active issue has open ones, else close it and
+    // start the next pending issue. Proves the live-update seam end to end.
+    demoTick() {
+      const r = this.currentRun();
+      if (!r) return;
+      if ((r.planMd || "").match(/-\s+\[ \]/)) {
+        this.applyRunEvent({ type: "dev.ralphy.plan.step", runid: r.runid, data: { status: "checked" } });
+        return;
+      }
+      if (r.active != null) {
+        this.applyRunEvent({ type: "dev.ralphy.issue.closed", runid: r.runid, data: { number: r.active } });
+      }
+      const next = r.issues.find((x) => x.status === "pending");
+      if (next) {
+        this.applyRunEvent({ type: "dev.ralphy.issue.started", runid: r.runid, data: { number: next.number } });
+        r.planMd = "## Steps\n- [ ] plan for #" + next.number + " (planner writing…)\n";
+      } else {
+        r.active = null;
+        r.phase = "consolidating";
+      }
     },
 
     // --- settings modal ---------------------------------------------------
@@ -258,6 +655,19 @@ function shell() {
       {
         slug: "lingopilot",
         branch: "main",
+        // local branches the picker offers (impl: `git branch`, current marked)
+        branches: [
+          "main",
+          "feat/xterm-v6-webgl",
+          "feat/chat-streaming",
+          "feat/onboarding-flow",
+          "fix/auth-redirect",
+          "fix/db-pool-leak",
+          "chore/deps-bump",
+          "chore/ci-cache",
+          "experiment/rag-eval",
+        ],
+        dirty: true, // uncommitted changes → the modal warns before checkout
         state: "live",
         remote: "github",
         tree: [
@@ -282,6 +692,8 @@ function shell() {
       {
         slug: "fincal",
         branch: "feat/triage",
+        branches: ["main", "feat/triage", "feat/reconcile", "fix/csv-import"],
+        dirty: false,
         state: "idle",
         remote: "github",
         tree: [
@@ -302,6 +714,8 @@ function shell() {
       {
         slug: "ralphy",
         branch: "feat/xterm-v6-webgl",
+        branches: ["main", "feat/xterm-v6-webgl", "feat/daemon-mode", "feat/assignee-filter"],
+        dirty: false,
         state: "idle",
         remote: "github",
         tree: [
@@ -321,6 +735,8 @@ function shell() {
       {
         slug: "bioledger",
         branch: "main",
+        branches: ["main", "wip/ocr-tuning"],
+        dirty: false,
         state: "offline",
         remote: "local", // never pushed anywhere — lives only on this disk
         tree: [
@@ -338,6 +754,9 @@ function shell() {
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();
+        // point the Runs panel at this project's first run + its first section
+        this.currentRunId = this.projectRuns()[0]?.runid || null;
+        this.planSection = this.planHeadings(this.currentRun())[0] || "";
         window.lucide?.createIcons();
       });
     },
@@ -645,3 +1064,14 @@ document.addEventListener("click", () => document.getElementById("ctxmenu") && (
 document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"), true);
 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
+
+// Inbound run events (the backend seam): a live CloudEvents feed dispatches
+// `ralphy:run-event` with a `{ type, runid, data }` detail; the shell folds it
+// into the Runs panel. `window.WBRuns.emit(evt)` is the same door for console
+// testing, e.g. WBRuns.emit({ type: "dev.ralphy.issue.closed", runid, data }).
+document.addEventListener("ralphy:run-event", (e) => getShell()?.applyRunEvent(e.detail));
+window.WBRuns = {
+  emit(evt) {
+    document.dispatchEvent(new CustomEvent("ralphy:run-event", { detail: evt }));
+  },
+};

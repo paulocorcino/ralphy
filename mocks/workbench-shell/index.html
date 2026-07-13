@@ -93,8 +93,24 @@
                 :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
               ></i>
               <span class="project-slug" x-text="p.slug"></span>
-              <!-- current git branch (impl: from the daemon's repo info) -->
-              <span class="project-meta" x-text="p.branch"></span>
+              <!-- current git branch → click to switch (opens the branch
+                   picker). @click.stop so it doesn't also toggle the accordion.
+                   impl: current branch + the pickable list come from the
+                   daemon's repo info; a switch/create emits an intent. -->
+              <!-- switching is gated on reachability, not on remote: a
+                   local-only repo is still a git checkout with branches, but an
+                   *unreachable* one can't be touched (no `git branch`/checkout),
+                   so the chip goes inert and informational. -->
+              <button
+                class="branch-chip"
+                :class="{ dirty: p.dirty, disabled: !canSwitchBranch(p) }"
+                @click.stop="canSwitchBranch(p) ? openBranchModal(p) : null"
+                :title="branchChipTitle(p)"
+              >
+                <i data-lucide="git-branch"></i>
+                <span class="branch-chip-name" x-text="p.branch"></span>
+                <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
+              </button>
             </div>
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
@@ -168,14 +184,6 @@
                each window's body is a faux terminal (local echo) in the mock —
                swap for a real xterm.js attached to a session over a WebSocket. -->
           <div id="workspace"></div>
-
-          <!-- empty state until the first console is opened -->
-          <div class="canvas-empty" x-show="consoleCount === 0">
-            <div>
-              Open a console for <b x-text="openSlug ?? 'a repo'"></b> — pick an agent above.
-              <small>each console is a floating window; <b>Arrange</b> tiles them.</small>
-            </div>
-          </div>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file
@@ -199,10 +207,144 @@
     <aside class="runs" x-show="runsOpen" aria-label="Runs">
       <div class="runs-head">
         <span>Runs</span>
+        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="active runs"></span>
         <span class="spacer"></span>
+        <!-- demo affordance: synthesize the next run event so the panel visibly
+             advances (a stand-in for the live CloudEvents feed). -->
+        <button class="runs-demo" x-show="openSlug && projectRuns().length" @click="demoTick()"
+                title="advance — simulate the next run event"><i class="bi bi-lightning-charge"></i></button>
         <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
       </div>
-      <div class="runs-empty">Run panel — contents TBD.</div>
+
+      <!-- action toolbar: the three daemon verbs (dispatch.rs) scoped to the open
+           project. `run` opens a modal to pick agent(s) + branch mode; `triage`
+           and `push` are blessed no-arg invocations, fired straight onto the
+           seam (the client never composes a command line). -->
+      <div class="runs-actions" x-show="openSlug">
+        <button class="run-verb accent" @click="openRunModal()" title="start a run — choose agent & branch">
+          <i data-lucide="play"></i> run
+        </button>
+        <button class="run-verb" @click="fireVerb('triage')" title="triage the backlog — label + plan open issues (if idle)">
+          <i data-lucide="stethoscope"></i> triage
+        </button>
+        <button class="run-verb" @click="fireVerb('push')" title="push the queue snapshot to the events sink">
+          <i data-lucide="cloud-upload"></i> push
+        </button>
+        <span class="spacer"></span>
+        <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
+      </div>
+
+      <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
+      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0">
+        No active runs in <b x-text="openSlug"></b> — <b>run</b> to start one.
+      </div>
+
+      <!-- the panel proper renders only when the open project has a live run -->
+      <template x-if="openSlug && projectRuns().length">
+        <div class="runs-body">
+          <!-- ZONE 1 · run picker — a project can host several concurrent runs
+               (one per `runid`); pick which to inspect. -->
+          <div class="menu-wrap run-select">
+            <button class="run-select-btn" @click.stop="runMenu = !runMenu">
+              <span class="run-face" x-text="currentRun()?.face"></span>
+              <span class="run-select-main">
+                <span class="run-select-title" x-text="currentRun()?.agent"></span>
+                <span class="run-select-sub" x-text="runPhaseLabel(currentRun())"></span>
+              </span>
+              <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
+              <i data-lucide="chevron-down"></i>
+            </button>
+            <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="'active runs · ' + openSlug"></div>
+              <template x-for="r in projectRuns()" :key="r.runid">
+                <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
+                        @click="selectRun(r.runid); runMenu = false">
+                  <span class="run-face" x-text="r.face"></span>
+                  <span class="run-menu-name">
+                    <b x-text="r.agent"></b>
+                    <small x-text="runPhaseLabel(r)"></small>
+                  </span>
+                  <span class="run-prog" x-text="r.completed + '/' + r.queueTotal"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- ZONE 2 · the issue trail — the run's ordered queue, each node
+               glyph-coded by IssueStatus; the active node carries the live phase
+               (or 🌙 when the whole run is parked on a usage-limit reset). -->
+          <div class="trail-wrap">
+            <div class="trail-head">
+              <span class="trail-branch"><i data-lucide="git-branch"></i><span x-text="currentRun()?.branch"></span></span>
+              <span class="spacer"></span>
+              <span class="trail-sleep" x-show="currentRun()?.phase === 'sleeping'">
+                🌙 <span x-text="sleepLabel(currentRun())"></span>
+              </span>
+            </div>
+            <ol class="trail">
+              <template x-for="iss in (currentRun()?.issues || [])" :key="iss.number">
+                <li class="trail-node" :class="'st-' + issueState(currentRun(), iss)"
+                    :title="nodeTitle(currentRun(), iss)" @click="focusIssue(iss.number)">
+                  <span class="trail-ic" x-text="issueGlyph(currentRun(), iss)"></span>
+                  <span class="trail-n" x-text="'#' + iss.number"></span>
+                </li>
+              </template>
+            </ol>
+          </div>
+
+          <!-- ZONE 3 · plan viewer (Cursor-style) — `## Steps` pinned on top,
+               fully rendered; a dropdown below reads any other `##` section. The
+               backend updates plan.md live (plan.step / plan.opened events). -->
+          <div class="plan-wrap">
+            <div class="plan-block plan-block-steps">
+              <div class="plan-block-head">
+                <i data-lucide="list-checks"></i><span>Steps</span>
+                <span class="spacer"></span>
+                <span class="plan-xlate-note" x-show="xlate.on.steps && (xlate.err.steps || xlate.note.steps)"
+                      x-text="xlate.err.steps || xlate.note.steps"></span>
+                <span class="plan-issue" x-show="currentRun()?.active != null" x-text="'#' + currentRun()?.active"></span>
+                <!-- on-device translate toggle (browser Translator API) -->
+                <button class="plan-xlate" :class="{ on: xlate.on.steps, busy: xlate.busy.steps }"
+                        :disabled="!xlateSupported()" @click="toggleXlate('steps', 'Steps')" :title="xlateTitle()">
+                  <i data-lucide="languages"></i>
+                </button>
+                <!-- target language, shown while this block is translating -->
+                <select class="plan-xlate-target" x-show="xlate.on.steps"
+                        x-model="xlate.target" @change="retranslate()" title="translate to">
+                  <template x-for="l in xlateLangs" :key="l.code">
+                    <option :value="l.code" x-text="l.label"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), 'Steps', 'steps')"></div>
+            </div>
+            <div class="plan-block plan-block-more">
+              <div class="plan-block-head">
+                <i data-lucide="book-open"></i>
+                <select class="plan-picker" x-model="planSection" @change="onSectionChange()">
+                  <template x-for="h in planHeadings(currentRun())" :key="h">
+                    <option :value="h" x-text="h"></option>
+                  </template>
+                </select>
+                <span class="plan-xlate-note" x-show="xlate.on.more && (xlate.err.more || xlate.note.more)"
+                      x-text="xlate.err.more || xlate.note.more"></span>
+                <button class="plan-xlate" :class="{ on: xlate.on.more, busy: xlate.busy.more }"
+                        :disabled="!xlateSupported()"
+                        @click="toggleXlate('more', planSection || planHeadings(currentRun())[0])" :title="xlateTitle()">
+                  <i data-lucide="languages"></i>
+                </button>
+                <select class="plan-xlate-target" x-show="xlate.on.more"
+                        x-model="xlate.target" @change="retranslate()" title="translate to">
+                  <template x-for="l in xlateLangs" :key="'m-' + l.code">
+                    <option :value="l.code" x-text="l.label"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0], 'more')"></div>
+            </div>
+          </div>
+        </div>
+      </template>
     </aside>
 
     <!-- right-click menu, built per-node by app.js (open/rename/copy-path/
@@ -426,6 +568,148 @@
     </div>
 
     <!-- ===================================================================
+         Branch switcher — click the branch chip on a project to open. A
+         filtered list (current pinned + ticked) with a create-from-current
+         affordance when the typed name is new. Switching/creating emits an
+         intent (`branch-switch` / `branch-create`); the daemon runs the real
+         `git checkout`. The mock reflects the new branch optimistically.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
+      <div
+        class="modal branch-modal"
+        role="dialog"
+        aria-label="Switch branch"
+        @keydown.escape.window="branchOpen && closeBranchModal()"
+      >
+        <div class="modal-head">
+          <i data-lucide="git-branch"></i>
+          <span class="modal-title">Switch branch</span>
+          <span class="modal-sub" x-text="branchModal.slug"></span>
+          <span class="sec-badge off" x-show="branchModal.dirty"
+                title="the working tree has uncommitted changes">uncommitted</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeBranchModal()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="branch-body">
+          <!-- filter box doubles as the create field -->
+          <div class="branch-search">
+            <i data-lucide="search"></i>
+            <input
+              x-ref="branchFilter"
+              x-model="branchModal.filter"
+              placeholder="Find or create a branch…"
+              @keydown.enter.prevent="branchEnter()"
+            />
+          </div>
+          <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
+               can fail against uncommitted files. -->
+          <p class="branch-dirty-note" x-show="branchModal.dirty">
+            <i class="bi bi-exclamation-triangle"></i>
+            Uncommitted changes here — ralphy aborts a run on a dirty tree and a checkout may fail. Commit or stash first.
+          </p>
+          <ul class="branch-list">
+            <template x-for="b in branchList()" :key="b">
+              <li
+                class="branch-item"
+                :class="{ current: b === branchModal.current }"
+                @click="switchBranch(b)"
+              >
+                <i class="bi" :class="b === branchModal.current ? 'bi-check2' : 'bi-git'"></i>
+                <span class="branch-name" x-text="b"></span>
+                <span class="branch-tag" x-show="b === branchModal.current">current</span>
+              </li>
+            </template>
+            <!-- create-from-current, shown only when the typed name is new -->
+            <li class="branch-item create" x-show="canCreateBranch()" @click="createBranch()">
+              <i class="bi bi-plus-lg"></i>
+              <span class="branch-name">Create branch “<span x-text="branchModal.filter.trim()"></span>”</span>
+              <span class="branch-tag">from <span x-text="branchModal.current"></span></span>
+            </li>
+            <li class="branch-empty" x-show="branchList().length === 0 && !canCreateBranch()">No branches match.</li>
+          </ul>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
+          <button class="btn" @click="closeBranchModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Run modal — the `run` verb, enriched. Pick the agent (executor); a
+         checkbox reveals a second picker to plan with a different agent
+         (`--agent` executor + `--plan-agent` planner); choose the branch mode.
+         Emits a `run-start` intent carrying the faithful flags; the daemon
+         spawns `ralphy run …`. Kept deliberately minimal.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="runOpen" x-cloak @click.self="closeRunModal()">
+      <div class="modal run-modal" role="dialog" aria-label="Start a run"
+           @keydown.escape.window="runOpen && closeRunModal()">
+        <div class="modal-head">
+          <i data-lucide="play"></i>
+          <span class="modal-title">Start a run</span>
+          <span class="modal-sub" x-text="openSlug"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeRunModal()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body">
+          <!-- agent (executor; also the planner unless a split is chosen) -->
+          <div class="run-field">
+            <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
+            <p class="run-help">
+              Which adapter drives the work<span x-show="!runCfg.split"> — planning and execution both</span>.
+            </p>
+            <div class="seg">
+              <template x-for="a in agents" :key="a">
+                <button class="seg-btn" :class="{ on: runCfg.agent === a }" @click="runCfg.agent = a" x-text="a"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- the split toggle: progressive disclosure of a second picker -->
+          <label class="run-check">
+            <input type="checkbox" x-model="runCfg.split" />
+            <span>Plan with a different agent</span>
+          </label>
+
+          <!-- plan agent, only when splitting -->
+          <div class="run-field" x-show="runCfg.split" x-cloak>
+            <label class="run-label">Plan agent</label>
+            <p class="run-help">Plans each issue; the execute agent carries the plan out (<code>--plan-agent</code>).</p>
+            <div class="seg">
+              <template x-for="a in agents" :key="'plan-' + a">
+                <button class="seg-btn" :class="{ on: runCfg.planAgent === a }" @click="runCfg.planAgent = a" x-text="a"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- branch mode -->
+          <div class="run-field">
+            <label class="run-label">Branch</label>
+            <div class="seg">
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">new</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">current</button>
+            </div>
+            <p class="run-help" x-text="runCfg.branchMode === 'new'
+              ? 'Cut a fresh afk/run-… branch off the base — commits land there.'
+              : ('Commit onto the branch the repo is already on (' + openProjectBranch() + ').')"></p>
+          </div>
+
+          <!-- live command preview -->
+          <div class="run-preview">
+            <span class="run-preview-tag">ralphy</span>
+            <code x-text="runCommandPreview()"></code>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — emits a <code>run-start</code> intent; the daemon spawns the run.</span>
+          <button class="btn" @click="closeRunModal()">Cancel</button>
+          <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
          Login gate — a fully-opaque overlay shown when `!authed`. Because it's
          solid (not just dimmed) and the chrome is blanked (body.locked), there's
          nothing behind to read: the real daemon never renders the app until
@@ -448,6 +732,130 @@
         <div class="login-hint">mock — any 6-digit code works<span x-show="security.passwordSet"> (password must match)</span></div>
       </form>
     </div>
+
+    <!-- ===================================================================
+         Seed plan.md blocks for the Runs panel. Kept as inert <script> text so
+         the markdown (backticks, ${}) needs no JS escaping; app.js hydrates each
+         run's live `planMd` from these at init. A backend replaces them with the
+         real plan.opened / plan.closed payloads off the event bus.
+    ==================================================================== -->
+    <script type="text/markdown" id="seed-plan-fincal-71">
+# Plan for #71: Walking skeleton: casca deployável ponta a ponta
+
+## Feasible: yes
+Greenfield repo. The spec is concrete: scaffold Next.js App Router + Prisma + SQLite + Auth.js, render the UI shell (sidebar with 6 destinations + topbar) behind a protected route, single `Dockerfile`. Machine-verifiable via lint + render tests + `prisma migrate deploy` + `next build` + `docker build`.
+
+## Done when
+- `npx prisma migrate deploy` exits 0 applying the init migration on a fresh `dev.db`.
+- `npm run test` passes `sidebar.test.tsx` (6 destinations in `ui-ux.md` order) and `empty-state.test.tsx`.
+- `npm run build` exits 0 end to end; `docker build -t fincal-skeleton .` exits 0.
+- `.env.example` carries the four placeholders `DATABASE_URL`, `AUTH_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
+
+## Verify
+```
+npm run lint
+npm run test
+npx prisma migrate deploy
+npm run build
+docker build -t fincal-skeleton .
+```
+
+## Decisions
+- Auth.js v5 infra wired now (config + Prisma adapter models + proxy + minimal `/login`), NOT full auth UX (that is slice 02).
+- "schema base" = Auth.js adapter models only (`User`, `Account`, `Session`, `VerificationToken`); domain entities arrive later.
+- Scaffold via `create-next-app` into a temp dir, then merge into repo root preserving `docs/`, `.env`, `CONTEXT.md`.
+
+## Caveats
+- `.env` holds REAL secrets and is gitignored — the executor never overwrites, commits, or logs it.
+- "Sem scroll horizontal até ~360px" is visual — machine-verifiable only via Playwright (arrives slice 14); tagged [review-only].
+
+## Steps
+- [x] Scaffold Next.js num diretório temporário e mover os arquivos gerados para a raiz do repo, preservando `docs/`, `.env`, `CONTEXT.md`. Mergear `.gitignore`.
+- [x] Inicializar shadcn/ui e adicionar primitivos: `button`, `card`, `input`, `sheet`, `dropdown-menu`, `separator`, `tooltip`, `avatar`. Tema claro único.
+- [x] Adicionar Prisma: `schema.prisma` com os models do adapter Auth.js, `src/lib/prisma.ts` singleton, `prisma migrate dev --name init`.
+- [ ] Wire Auth.js v5: edge-split (`auth.config.ts` + `auth.ts`), proxy, route, seed. Confirmar `npm run build` verde.
+- [ ] Construir a casca de UI: `nav.ts`, `sidebar.tsx`, `topbar.tsx`, `app-shell.tsx`.
+- [ ] Rotas protegidas + `EmptyState` + login.
+- [ ] Build config + Docker: `next.config.ts` standalone, `Dockerfile` multi-stage, `.dockerignore`.
+- [ ] Adicionar Vitest + testes de renderização (`sidebar.test.tsx`, `empty-state.test.tsx`).
+- [ ] Provar ambiente + gate local: lint, test, migrate, build, docker build — todos exit 0.
+- [ ] Self-review via subagent; resolver MEDIUMs.
+
+## Notes & decisions
+- Pinned Prisma to `^6` (v6 keeps `url = env("DATABASE_URL")`, no driver adapter for SQLite).
+- Next.js 16 renamed `middleware.ts` to `proxy.ts` (same API).
+
+## Handoff
+- Delivered so far: repo scaffolded, shadcn primitives, Prisma schema + init migration. Next: Auth.js edge-split and the UI shell.
+- Traps: `@vitejs/plugin-react@6` conflicts with shadcn's babel chain — install test deps with `--legacy-peer-deps`.
+
+<!-- ralphy-plan: issue=71 -->
+    </script>
+
+    <script type="text/markdown" id="seed-plan-b">
+# Plan for #92: Reconcile — UI de conferência
+
+## Feasible: yes
+The OFX parser (#90) lands normalized transactions; this slice renders the side-by-side conferência table and the accept/reject actions. Machine-verifiable via component tests.
+
+## Done when
+- `npm run test` passes `reconcile-table.test.tsx` (renders matched pairs + unmatched buckets).
+- Accepting a match writes a `Lançamento` linked to the imported row.
+
+## Steps
+- [x] Tabela de conferência: colunas extrato × lançamentos, agrupada por status de match.
+- [ ] Ações aceitar/rejeitar por linha, com atalhos de teclado.
+- [ ] Persistir a decisão (link `ImportedRow` → `Lançamento`).
+- [ ] Testes de render + fluxo de aceite.
+
+## Decisions
+- Reuse a heurística de matching de #91 (bloqueada por #200) apenas em modo read-only até desbloquear.
+
+## Handoff
+- Waiting on a provider usage-limit reset before resuming execution.
+    </script>
+
+    <script type="text/markdown" id="seed-plan-c">
+# Plan for #13: xterm v6 — cores do tema
+
+## Feasible: yes
+The webgl addon (#10) is in; this maps the ADR-0035 warm-dark palette onto xterm's 16-color + ANSI bright set and the cursor/selection colors.
+
+## Done when
+- The terminal theme object matches the palette tokens; a snapshot test pins the 16 colors.
+
+## Steps
+- [x] Extrair os tokens de cor do ADR-0035 para um objeto `ITheme`.
+- [ ] Mapear ANSI 0–15 + cursor + selection + background.
+- [ ] Snapshot test do tema aplicado.
+
+## Decisions
+- Bright variants derived by a fixed lightness bump, not hand-picked, to stay consistent.
+
+## Handoff
+- #11 (sessão multiplexada) needs a human split; #12 (reflow) is waiting on a human gate.
+    </script>
+
+    <script type="text/markdown" id="seed-plan-d">
+# Plan for #43: Streaming — UI incremental
+
+## Feasible: yes
+SSE transport (#40) delivers token deltas; this renders them incrementally with a stable layout and a stop control. Planner is still writing the step list.
+
+## Done when
+- Deltas append without layout shift; the stop button aborts the stream cleanly.
+
+## Steps
+- [ ] Assinar o stream SSE e acumular deltas num buffer reativo.
+- [ ] Render incremental sem reflow (medir com Playwright).
+- [ ] Botão parar → aborta o fetch e marca a mensagem como interrompida.
+
+## Decisions
+- #41 (token counter) veio infeasible — 0 steps; #42 (cancelamento) está bloqueada.
+
+## Handoff
+- Planning in progress.
+    </script>
 
     <!-- vendored, loaded locally (no CDN at runtime) -->
     <script src="vendor/marked.min.js"></script>
@@ -480,9 +888,11 @@
     <script src="vendor/lucide.min.js"></script>
     <script src="vendor/wunderbaum/wunderbaum.umd.min.js"></script>
     <script src="vendor/qrcode.js"></script>
+    <script src="wb-translate.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>
+    <script src="wb-runs.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

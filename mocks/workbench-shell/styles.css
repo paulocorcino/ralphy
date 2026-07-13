@@ -20,10 +20,16 @@
   --console-bg: #2b2410;
   --console-border: #5a4a1e;
   --live: #7fae7f;
+  /* cool accent for planning / sleep states in the Runs trail */
+  --info: #6f9fc0;
+  /* the chrome is monospace (terminal feel), but rendered prose (plan.md in the
+     Runs panel) reads better in a UI sans — code/pre stay mono. */
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 4px;
   --rail-w: 48px;
   --side-w: 300px;
-  --runs-w: 340px;
+  --runs-w: 400px;
   --topbar-h: 46px;
 }
 
@@ -383,6 +389,526 @@ body.side-collapsed.runs-open {
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+/* count + demo/close controls in the runs header */
+.runs-count {
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.runs-demo {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--console-text);
+  cursor: pointer;
+  margin-right: 0.2rem;
+}
+.runs-demo:hover {
+  background: var(--surface);
+}
+
+/* the panel body: picker (fixed) · trail (fixed) · plan (grows) */
+.runs-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* --- ZONE 1 · run picker --- */
+.run-select {
+  margin: 0.6rem 0.6rem 0;
+}
+.run-select-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+}
+.run-select-btn:hover {
+  border-color: var(--border-focus);
+}
+.run-face {
+  font-size: 1rem;
+  line-height: 1;
+}
+.run-select-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+.run-select-title {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.run-select-sub {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.run-prog {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+/* the picker dropdown spans the panel width */
+.run-menu {
+  left: 0.6rem;
+  right: 0.6rem;
+  width: auto;
+}
+.run-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.run-menu-item.active {
+  background: var(--surface-hi);
+}
+.run-menu-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.run-menu-name small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+/* --- ZONE 2 · the issue trail --- */
+.trail-wrap {
+  padding: 0.55rem 0.6rem 0.3rem;
+}
+.trail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.trail-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trail-branch [data-lucide] {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.trail-sleep {
+  color: var(--info);
+  white-space: nowrap;
+}
+/* the connected line of issue nodes; wraps within the panel */
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0;
+}
+.trail-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* dash connector between consecutive nodes → "#71 — #72 — #73" */
+.trail-node + .trail-node::before {
+  content: "—";
+  color: var(--border-focus);
+  margin: 0 0.35rem 0 0.05rem;
+}
+.trail-ic {
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.trail-node:hover {
+  border-color: var(--border-focus);
+}
+/* per-status colouring (faithful to the sink glyph vocabulary) */
+.trail-node.st-done {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 40%, var(--border));
+}
+.trail-node.st-executing {
+  color: var(--console-text);
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+.trail-node.st-planning,
+.trail-node.st-sleep {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 45%, var(--border));
+}
+.trail-node.st-skipped {
+  opacity: 0.75;
+  text-decoration: line-through;
+  text-decoration-color: var(--border-focus);
+}
+.trail-node.st-blocked,
+.trail-node.st-non_green {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.trail-node.st-needs_split,
+.trail-node.st-hitl {
+  color: var(--console-text);
+  border-color: var(--console-border);
+}
+.trail-node.st-infeasible {
+  color: var(--text-muted);
+}
+.trail-node.st-pending {
+  opacity: 0.55;
+}
+/* the active node (executing/planning/sleep) gets a soft pulse */
+.trail-node.st-executing,
+.trail-node.st-planning,
+.trail-node.st-sleep {
+  animation: trailPulse 2s ease-in-out infinite;
+}
+@keyframes trailPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 26%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent);
+  }
+}
+
+/* --- ZONE 3 · plan viewer --- */
+.plan-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem 0.6rem;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.plan-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+/* Steps is the star: give it the larger share, but both scroll */
+.plan-block-steps {
+  flex: 3 1 0;
+}
+.plan-block-more {
+  flex: 2 1 0;
+}
+.plan-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.plan-block-head [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.plan-block-head .spacer {
+  flex: 1;
+}
+.plan-issue {
+  color: var(--console-text);
+  font-variant-numeric: tabular-nums;
+}
+/* on-device translate toggle + target picker */
+.plan-xlate {
+  all: unset;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+.plan-xlate:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+.plan-xlate.on {
+  color: var(--info);
+}
+.plan-xlate.busy {
+  animation: xlatePulse 1s ease-in-out infinite;
+}
+.plan-xlate:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.plan-xlate [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+@keyframes xlatePulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+.plan-xlate-target {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+}
+.plan-xlate-target:hover {
+  color: var(--text);
+}
+.plan-xlate-target option {
+  background: var(--chrome);
+  color: var(--text);
+}
+/* a compact hint next to a plan block's translate toggle ("already PT" / error) */
+.plan-xlate-note {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
+}
+.plan-picker {
+  all: unset;
+  flex: 1;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.plan-picker option {
+  background: var(--chrome);
+  color: var(--text);
+}
+.plan-md {
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
+  /* rendered prose in a UI sans — more legible than the chrome's monospace */
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+/* but keep code spans/blocks monospace */
+.plan-md code,
+.plan-md pre {
+  font-family: var(--font-mono);
+}
+/* scoped markdown rendering inside the plan blocks */
+.plan-md :where(h1, h2, h3, h4) {
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0.3rem;
+  color: var(--text);
+}
+.plan-md p {
+  margin: 0.3rem 0;
+}
+.plan-md ul,
+.plan-md ol {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+}
+.plan-md li {
+  margin: 0.15rem 0;
+}
+.plan-md code {
+  background: var(--log-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+.plan-md pre {
+  background: var(--log-bg);
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  overflow: auto;
+}
+.plan-md pre code {
+  background: none;
+  padding: 0;
+}
+.plan-md a {
+  color: var(--info);
+}
+
+/* --- run / triage / push action toolbar --- */
+.runs-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.run-verb {
+  font: inherit;
+  font-size: 0.76rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+}
+.run-verb:hover {
+  background: var(--surface-hi);
+}
+.run-verb.accent {
+  color: var(--console-text);
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+.run-verb [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.runs-action-status {
+  color: var(--live);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* --- run modal --- */
+.run-modal {
+  width: min(440px, 96vw);
+}
+.run-body {
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.run-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.run-label {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.run-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+.run-help code {
+  background: var(--log-bg);
+  padding: 0.02rem 0.28rem;
+  border-radius: 3px;
+}
+/* segmented control (native radios styled as pills) */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--log-bg);
+  align-self: flex-start;
+}
+.seg-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 0.22rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.seg-btn:hover {
+  color: var(--text);
+}
+.seg-btn.on {
+  color: var(--console-text);
+  background: var(--console-bg);
+  box-shadow: inset 0 0 0 1px var(--console-border);
+}
+.run-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.run-check input {
+  accent-color: var(--console-border);
+  cursor: pointer;
+}
+/* the live command preview */
+.run-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.run-preview-tag {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  flex-shrink: 0;
+}
+.run-preview code {
+  color: var(--console-text);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
 
 /* --- canvas ---------------------------------------------------------------- */
 .canvas {
@@ -523,6 +1049,39 @@ body.side-collapsed.runs-open {
 .projects::-webkit-scrollbar-track,
 .wb-host ::-webkit-scrollbar-track,
 .wb-host::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* Runs panel scroll areas: the same warm-dark treatment, a touch thinner so the
+   plan blocks read as quiet, integrated panels. */
+.plan-md,
+.branch-list,
+.run-preview {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--border) transparent;
+}
+.plan-md::-webkit-scrollbar,
+.branch-list::-webkit-scrollbar,
+.run-preview::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.plan-md::-webkit-scrollbar-thumb,
+.branch-list::-webkit-scrollbar-thumb,
+.run-preview::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+.plan-md::-webkit-scrollbar-thumb:hover,
+.branch-list::-webkit-scrollbar-thumb:hover,
+.run-preview::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
+}
+.plan-md::-webkit-scrollbar-track,
+.branch-list::-webkit-scrollbar-track,
+.run-preview::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -865,6 +1424,26 @@ body.side-collapsed.runs-open {
   color: var(--console-text);
   border-color: var(--console-border);
   background: var(--console-bg);
+}
+/* translate toggle in the markdown toolbar */
+.vbtn.on {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 45%, var(--border));
+}
+.vbtn.busy {
+  animation: xlatePulse 1s ease-in-out infinite;
+}
+.md-xlate-target {
+  padding: 0.2rem 0.35rem;
+}
+.md-xlate-target option {
+  background: var(--chrome);
+  color: var(--text);
+}
+.md-xlate-note {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 .viewer-body {
   flex: 1;
@@ -1678,6 +2257,174 @@ body.locked .runs {
   color: var(--text-muted);
   font-size: 0.72rem;
   opacity: 0.8;
+}
+
+/* ---------------------------------------------------------------------------
+   Branch chip (in the project row) + the branch switcher modal.
+--------------------------------------------------------------------------- */
+/* the clickable current-branch pill; replaces the old static .project-meta */
+.branch-chip {
+  all: unset;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 48%;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.branch-chip:hover {
+  background: var(--surface-hi);
+  border-color: var(--border);
+  color: var(--text);
+}
+.branch-chip [data-lucide] {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.branch-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* unreachable repo: the chip is inert, informational only (no switch) */
+.branch-chip.disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.branch-chip.disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+/* a small amber dot flags an uncommitted working tree */
+.branch-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--console-text);
+}
+
+.branch-modal {
+  width: min(460px, 96vw);
+}
+.branch-body {
+  padding: 0.8rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: hidden;
+}
+/* filter/create field — mirrors the sidebar search */
+.branch-search {
+  position: relative;
+}
+.branch-search [data-lucide] {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+}
+.branch-search input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.55rem 0.4rem 1.6rem;
+}
+.branch-search input::placeholder {
+  color: var(--text-muted);
+}
+.branch-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.branch-dirty-note {
+  margin: 0;
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  color: var(--console-text);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+.branch-dirty-note .bi {
+  margin-top: 0.1rem;
+}
+.branch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: min(46vh, 340px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.branch-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.branch-item:last-child {
+  border-bottom: none;
+}
+.branch-item:hover {
+  background: var(--surface-hi);
+}
+.branch-item .bi {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.branch-item.current .bi {
+  color: var(--live);
+}
+.branch-item.current .branch-name {
+  color: var(--text);
+  font-weight: 600;
+}
+.branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-tag {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+.branch-item.current .branch-tag {
+  color: var(--live);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.branch-item.create .bi {
+  color: var(--console-text);
+}
+.branch-item.create .branch-name b {
+  color: var(--text);
+}
+.branch-empty {
+  padding: 0.6rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 /* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */

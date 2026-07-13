@@ -126,8 +126,10 @@
     if (rec.kind === "code" || rec.editing) {
       rec.cm.setValue(fresh);
     } else {
+      if (rec.xlate) rec.xlate.cache = {}; // fresh bytes invalidate translations
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
+      if (rec.xlate?.on) ensureMdXlate(rec);
     }
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
@@ -163,6 +165,10 @@
         <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
         <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
         <button class="vbtn" data-act="toggle"><i class="bi bi-pencil"></i> Edit</button>
+        <!-- on-device translation of the rendered preview (not the editor) -->
+        <button class="vbtn" data-act="xlate" title="translate the preview on-device"><i class="bi bi-translate"></i> Translate</button>
+        <select class="vbtn md-xlate-target" data-act="xlate-target" title="translate to" style="display:none"></select>
+        <span class="md-xlate-note" data-role="xlate-note"></span>
         <button class="vbtn save" data-act="save"><i class="bi bi-save"></i> Save</button>
         ${detachBtnHtml(rec)}
       </div>
@@ -208,12 +214,107 @@
     el.querySelector('[data-find="prev"]').onclick = () => mdSearchStep(rec, -1);
     el.querySelector('[data-find="close"]').onclick = () => mdSearchClose(rec);
 
+    // translate control — preview only; a shared on-device helper (WBTranslate).
+    rec.xlate = { on: false, target: WBTranslate.browserLang(), busy: false, cache: {} };
+    const xbtn = el.querySelector('[data-act="xlate"]');
+    const xsel = el.querySelector('[data-act="xlate-target"]');
+    WBTranslate.LANGS.forEach((l) => {
+      const o = document.createElement("option");
+      o.value = l.code;
+      o.textContent = l.label;
+      xsel.append(o);
+    });
+    xsel.value = rec.xlate.target;
+    if (!WBTranslate.supported()) {
+      xbtn.disabled = true;
+      xbtn.title = "translation needs Chrome/Edge 138+ (built-in Translator API)";
+    }
+    xbtn.onclick = () => toggleMdXlate(rec);
+    xsel.onchange = () => {
+      rec.xlate.target = xsel.value;
+      rec.xlate.cache = {}; // a new target is a fresh translation
+      ensureMdXlate(rec);
+    };
+
     renderMarkdown(rec);
+  }
+
+  // --- markdown translation (rendered preview) ---------------------------
+  // The source to render: the cached translation when the toggle is on and
+  // ready, else the original markdown. Editing always shows the raw source in
+  // the editor, so translation never touches what you edit.
+  function mdSourceForRender(rec) {
+    if (rec.xlate?.on) {
+      const t = rec.xlate.cache[rec.xlate.target];
+      if (t != null) return t;
+    }
+    return rec.content;
+  }
+
+  function setMdXlateNote(rec, msg) {
+    const n = rec.el.querySelector('[data-role="xlate-note"]');
+    if (n) n.textContent = msg || "";
+  }
+  // hide the translate controls while editing (translation is a preview concern)
+  function setMdXlateControls(rec, visible) {
+    const xbtn = rec.el.querySelector('[data-act="xlate"]');
+    const xsel = rec.el.querySelector('[data-act="xlate-target"]');
+    if (xbtn) xbtn.style.display = visible ? "" : "none";
+    if (xsel) xsel.style.display = visible && rec.xlate.on ? "" : "none";
+    if (!visible) setMdXlateNote(rec, "");
+  }
+
+  function toggleMdXlate(rec) {
+    if (!WBTranslate.supported() || rec.editing) return;
+    rec.xlate.on = !rec.xlate.on;
+    const xbtn = rec.el.querySelector('[data-act="xlate"]');
+    const xsel = rec.el.querySelector('[data-act="xlate-target"]');
+    xbtn.classList.toggle("on", rec.xlate.on);
+    xsel.style.display = rec.xlate.on ? "" : "none";
+    setMdXlateNote(rec, "");
+    if (rec.xlate.on) {
+      ensureMdXlate(rec);
+    } else {
+      renderMarkdown(rec); // back to the original
+      if (rec.visible) drawMermaid(rec);
+    }
+  }
+
+  // Translate the current markdown into the chosen target and re-render. A
+  // same-language target is surfaced ("already X") so it never looks broken;
+  // a failure reverts the toggle honestly.
+  async function ensureMdXlate(rec) {
+    const t = rec.xlate.target;
+    const xbtn = rec.el.querySelector('[data-act="xlate"]');
+    if (rec.xlate.cache[t] != null) {
+      renderMarkdown(rec);
+      if (rec.visible) drawMermaid(rec);
+      return;
+    }
+    rec.xlate.busy = true;
+    xbtn.classList.add("busy");
+    setMdXlateNote(rec, "translating…");
+    try {
+      const res = await WBTranslate.translate(rec.content, t);
+      rec.xlate.cache[t] = res.text;
+      renderMarkdown(rec);
+      if (rec.visible) drawMermaid(rec);
+      setMdXlateNote(rec, res.same ? `already ${t.toUpperCase()}` : "");
+    } catch (e) {
+      rec.xlate.on = false;
+      xbtn.classList.remove("on");
+      rec.el.querySelector('[data-act="xlate-target"]').style.display = "none";
+      renderMarkdown(rec);
+      setMdXlateNote(rec, e?.message || "translate failed");
+    } finally {
+      rec.xlate.busy = false;
+      xbtn.classList.remove("busy");
+    }
   }
 
   function renderMarkdown(rec) {
     const article = rec.el.querySelector(".md-body");
-    const html = DOMPurify.sanitize(marked.parse(rec.content));
+    const html = DOMPurify.sanitize(marked.parse(mdSourceForRender(rec)));
     article.innerHTML = html;
 
     // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
@@ -368,14 +469,18 @@
         rec.cm.setValue(rec.content);
       }
       toggle.innerHTML = '<i class="bi bi-eye"></i> Preview';
+      setMdXlateControls(rec, false); // translation is preview-only
       setTimeout(() => rec.cm.refresh(), 0);
     } else {
       rec.content = rec.cm.getValue();
       split.classList.remove("editing");
       editor.style.display = "none";
       toggle.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+      if (rec.xlate) rec.xlate.cache = {}; // edits invalidate any translation
+      setMdXlateControls(rec, true);
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
+      if (rec.xlate?.on) ensureMdXlate(rec); // re-translate the edited content
     }
   }
 
