@@ -1080,15 +1080,17 @@ async fn tree_ws(
 ) {
     // Fan-in: one forwarder task per subscribed repo pipes that repo's broadcast
     // into this shared channel, so the select! loop watches ONE receiver regardless
-    // of how many repos/dirs the connection holds.
+    // of how many repos/dirs the connection holds. Keyed by repo so it is torn down
+    // when this connection releases the repo's LAST dir — and re-spawned (on the
+    // fresh broadcast the manager rebuilds) if the same repo is watched again.
     let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
-    let mut forwarders: Vec<tokio::task::JoinHandle<()>> = Vec::new();
-    // Repos that already have a forwarder — a second `watch` of the same repo bumps
-    // the manager refcount but must NOT spawn a duplicate forwarder (double pushes).
-    let mut subscribed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    // The (repo, rel) dirs THIS connection holds, in normalized form: both the
-    // teardown release list AND the per-connection push filter (the broadcast
-    // carries every dir of the repo, including ones other connections watch).
+    let mut forwarders: std::collections::BTreeMap<String, tokio::task::JoinHandle<()>> =
+        std::collections::BTreeMap::new();
+    // The (repo, rel) dirs THIS connection holds, in normalized form — held at most
+    // once each (a duplicate `watch` is a no-op, so the manager refcount this
+    // connection contributes stays 1 per dir and teardown releases it exactly once).
+    // Doubles as the per-connection push filter (a repo's broadcast carries every
+    // dir, including ones other connections watch).
     let mut watched: Vec<(String, String)> = Vec::new();
 
     loop {
@@ -1113,6 +1115,12 @@ async fn tree_ws(
                             if repo.is_empty() {
                                 continue;
                             }
+                            // Idempotent per connection: a repeat watch must NOT take a
+                            // second manager refcount this teardown would never release.
+                            let key = (repo.clone(), rel.clone());
+                            if watched.contains(&key) {
+                                continue;
+                            }
                             let root = match registry::load_from(&registry_path) {
                                 Ok(store) => store.entry(&repo).map(|e| PathBuf::from(&e.path)),
                                 Err(e) => {
@@ -1123,20 +1131,30 @@ async fn tree_ws(
                             let Some(root) = root else { continue };
                             match watchers.watch(&repo, &root, &rel) {
                                 Ok(rx) => {
-                                    if subscribed.insert(repo.clone()) {
-                                        forwarders.push(spawn_nudge_forwarder(rx, nudge_tx.clone()));
-                                    }
-                                    let key = (repo.clone(), rel.clone());
-                                    if !watched.contains(&key) {
-                                        watched.push(key);
-                                    }
+                                    // First dir for this repo on this connection → spawn its
+                                    // forwarder on the rx the manager just handed us.
+                                    forwarders
+                                        .entry(repo.clone())
+                                        .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
+                                    watched.push(key);
                                 }
                                 Err(e) => tracing::warn!(error = %e, "tree watch failed"),
                             }
                         }
                         "unwatch" => {
+                            let key = (repo.clone(), rel.clone());
+                            if !watched.contains(&key) {
+                                continue; // not held → nothing to release (no double-unwatch)
+                            }
                             watchers.unwatch(&repo, &rel);
-                            watched.retain(|(r, p)| !(r == &repo && p == &rel));
+                            watched.retain(|k| k != &key);
+                            // Last dir of this repo released → stop its forwarder so a later
+                            // re-watch re-subscribes to the rebuilt broadcast.
+                            if !watched.iter().any(|(r, _)| r == &repo) {
+                                if let Some(f) = forwarders.remove(&repo) {
+                                    f.abort();
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -1169,7 +1187,7 @@ async fn tree_ws(
     for (repo, rel) in &watched {
         watchers.unwatch(repo, rel);
     }
-    for forwarder in forwarders {
+    for (_repo, forwarder) in forwarders {
         forwarder.abort();
     }
 }

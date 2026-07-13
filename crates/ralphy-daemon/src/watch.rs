@@ -186,6 +186,13 @@ impl WatcherManager {
     /// event paths (which notify reports canonicalized) compare cleanly.
     pub fn watch(&self, repo: &str, root: &Path, rel: &str) -> Result<DirtyRx> {
         let rel = norm_rel(rel);
+        // Reject traversal LEXICALLY (like `confine`): a `..` component would make
+        // `root.join(rel)` establish an OS watch OUTSIDE the repo root. Nudges for
+        // such paths are dropped downstream, but the out-of-root watch itself is
+        // resource abuse — refuse it before touching the debouncer.
+        if rel.split('/').any(|c| c == "..") {
+            anyhow::bail!("watch path escapes the repo root: {rel}");
+        }
         let canon_root = std::fs::canonicalize(root)
             .with_context(|| format!("canonicalizing watch root {}", root.display()))?;
         let mut repos = self.repos.lock().unwrap();
@@ -462,6 +469,20 @@ mod tests {
         assert!(
             !mgr.repo_active("owner/repo"),
             "the last release tears the repo watcher down"
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_rejects_parent_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = WatcherManager::new(MAX_WATCHES);
+        assert!(
+            mgr.watch("owner/repo", dir.path(), "../escape").is_err(),
+            "a `..` path must be refused, never watched out-of-root"
+        );
+        assert!(
+            !mgr.repo_active("owner/repo"),
+            "a rejected watch creates no repo watcher"
         );
     }
 
