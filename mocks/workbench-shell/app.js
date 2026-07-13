@@ -77,6 +77,171 @@ function shell() {
       WB.emit("kanban-toggle", { open: this.kanbanOpen });
     },
 
+    // --- settings modal ---------------------------------------------------
+    // A data-driven config panel (schema in wb-settings.js). Values are held in
+    // `settings` and every change is an intent on the seam — the mock persists
+    // nothing itself.
+    SETTINGS: window.WB_SETTINGS,
+    TRISTATE: window.WB_TRISTATE,
+    settingsOpen: false,
+    // land on the daemon (machine-wide) group first; the per-project sections
+    // follow, scoped to whichever repo is open.
+    settingsSection: "daemon",
+    settings: window.wbSettingsDefaults(),
+
+    openSettings() {
+      this.settingsOpen = true;
+      this.avatarMenu = false;
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeSettings() {
+      this.settingsOpen = false;
+    },
+    saveSetting(key, value) {
+      this.settings[key] = value;
+      WB.emit("setting-change", { key, value });
+    },
+
+    // --- account menu + security -----------------------------------------
+    // The avatar dropdown (Security / Log off) and the Security modal, which
+    // mirrors ralphy's real daemon auth model (ADR-0032): an opt-in access
+    // token, an optional password (PBKDF2), and TOTP 2FA whose secret is shown
+    // exactly once. "Revoke" here = the real "delete the daemon-totp file".
+    avatarMenu: false,
+    securityOpen: false,
+    security: {
+      tokenSet: true, // a networked daemon always has one; localhost needs none
+      passwordSet: false,
+      passwordDraft: "",
+      totpEnrolled: false,
+      // set only in the one moment after enrolling — the real daemon prints the
+      // secret/QR a single time and never again.
+      secret: "",
+      otpauthUri: "",
+      qrHtml: "",
+      requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
+    },
+    // The stored password, kept in-memory purely so the mock login can check it.
+    _passwordValue: "",
+
+    openSecurity() {
+      this.securityOpen = true;
+      this.avatarMenu = false;
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeSecurity() {
+      this.securityOpen = false;
+      // drop the one-time secret when leaving, like the daemon never re-showing it
+      this.security.secret = "";
+      this.security.otpauthUri = "";
+      this.security.qrHtml = "";
+    },
+
+    // Base32 (no padding) — the on-disk form of a TOTP seed. 20 bytes → 32 chars.
+    _randomBase32(len = 32) {
+      const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      let s = "";
+      const buf = new Uint8Array(len);
+      crypto.getRandomValues(buf);
+      for (let i = 0; i < len; i++) s += A[buf[i] & 31];
+      return s;
+    },
+
+    enrollTotp() {
+      const account = (this.openSlug || "daemon") + "@this-host";
+      const secret = this._randomBase32(32);
+      // exact provisioning-URI shape ralphy emits (RFC 6238 SHA1/6/30).
+      const uri =
+        "otpauth://totp/ralphy:" +
+        encodeURIComponent(account) +
+        "?secret=" +
+        secret +
+        "&issuer=ralphy&algorithm=SHA1&digits=6&period=30";
+      this.security.totpEnrolled = true;
+      this.security.secret = secret;
+      this.security.otpauthUri = uri;
+      this.security.qrHtml = window.wbQr(uri);
+      WB.emit("totp-enroll", { account });
+    },
+
+    revokeTotp() {
+      this.security.totpEnrolled = false;
+      this.security.secret = "";
+      this.security.otpauthUri = "";
+      this.security.qrHtml = "";
+      // revoking the seed removes the session factor → login can't be required
+      this.security.requireLogin = false;
+      WB.emit("totp-revoke", {});
+    },
+
+    savePassword() {
+      const pw = this.security.passwordDraft.trim();
+      if (!pw) return;
+      this._passwordValue = pw;
+      this.security.passwordSet = true;
+      this.security.passwordDraft = "";
+      WB.emit("password-set", {});
+    },
+    clearPassword() {
+      this._passwordValue = "";
+      this.security.passwordSet = false;
+      this.security.passwordDraft = "";
+      WB.emit("password-clear", {});
+    },
+    remintToken() {
+      WB.emit("token-remint", {});
+      // re-minting invalidates every live session cookie → force a re-login
+      if (this.security.requireLogin) this.logOff();
+    },
+
+    toggleRequireLogin(ev) {
+      // Requiring login is only meaningful once TOTP is enrolled (the session
+      // factor). Keep the mock honest about that dependency.
+      if (!this.security.totpEnrolled) {
+        this.security.requireLogin = false;
+        WB.emit("require-login-blocked", { reason: "totp not enrolled" });
+      } else {
+        this.security.requireLogin = !this.security.requireLogin;
+        WB.emit("require-login", { on: this.security.requireLogin });
+      }
+      // The checkbox's :checked binding won't re-sync when the bound value
+      // didn't actually change (blocked case), so force the DOM to match state.
+      if (ev?.target) ev.target.checked = this.security.requireLogin;
+    },
+
+    // --- login gate -------------------------------------------------------
+    // When locked, a fully-opaque overlay covers the shell so nothing behind is
+    // readable — the real daemon simply never renders the app until /api/login
+    // succeeds. Here we blank the chrome too (body.locked) to make the point.
+    authed: true,
+    login: { code: "", password: "", error: "" },
+
+    logOff() {
+      this.avatarMenu = false;
+      this.securityOpen = false;
+      this.settingsOpen = false;
+      this.authed = false;
+      this.login = { code: "", password: "", error: "" };
+      WB.emit("logoff", {});
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+
+    submitLogin() {
+      const code = (this.login.code || "").trim();
+      if (!/^[0-9]{6}$/.test(code)) {
+        this.login.error = "Invalid code or password.";
+        return;
+      }
+      if (this.security.passwordSet && this.login.password !== this._passwordValue) {
+        this.login.error = "Invalid code or password.";
+        return;
+      }
+      this.login.error = "";
+      this.authed = true;
+      WB.emit("login", {});
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+
     // --- canvas tabs ------------------------------------------------------
     // The Agents tab is permanent; file tabs are appended and closable.
     agents: ["claude", "codex", "opencode"],

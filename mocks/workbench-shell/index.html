@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="vendor/codemirror/addon/search/matchesonscrollbar.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen }">
+  <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
     <!-- top bar. impl: brand+avatar = daemon identity (/api/identity); the
          crumb tracks the open project; the stats (stars/msgs/bell) are
          decorative placeholders — wire to real counts or drop. -->
@@ -24,7 +24,22 @@
       <span class="stat"><i data-lucide="star"></i> 145k</span>
       <span class="stat"><i data-lucide="message-circle"></i> 24k</span>
       <span class="stat"><i data-lucide="bell"></i></span>
-      <span class="avatar"></span>
+      <!-- account menu: security (password + TOTP) and log off. impl: the
+           daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
+      <div class="menu-wrap">
+        <button class="avatar-btn" @click.stop="avatarMenu = !avatarMenu" title="account">
+          <span class="avatar"></span>
+        </button>
+        <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
+          <div class="dropdown-head">signed in · daemon</div>
+          <button class="dropdown-item" @click="openSecurity()">
+            <i class="bi bi-shield-lock"></i><span>Security settings</span>
+          </button>
+          <button class="dropdown-item" @click="logOff()">
+            <i class="bi bi-box-arrow-right"></i><span>Log off</span>
+          </button>
+        </div>
+      </div>
     </header>
 
     <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
@@ -34,6 +49,9 @@
       <button :class="{ active: sideOpen }" @click="toggleSide()" title="Projects"><i data-lucide="folder-tree"></i></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
       <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
+      <!-- spacer pushes the settings gear to the bottom of the rail -->
+      <span class="rail-spacer"></span>
+      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
     </nav>
 
     <!-- sidebar: project accordion. impl: `projects` comes from the daemon
@@ -191,6 +209,246 @@
          new/delete). Each item emits a workbench:action intent — no direct FS. -->
     <div id="ctxmenu" class="ctxmenu"></div>
 
+    <!-- ===================================================================
+         Settings modal — data-driven from WB_SETTINGS (wb-settings.js). Left
+         rail = sections; right = the knobs for the active section, each with a
+         plain-English blurb. Changing a value emits `setting-change`; the mock
+         stores nothing.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="settingsOpen" x-cloak @click.self="closeSettings()">
+      <div class="modal settings-modal" role="dialog" aria-label="Settings">
+        <div class="modal-head">
+          <i data-lucide="settings"></i>
+          <span class="modal-title">Settings</span>
+          <span class="modal-sub">daemon settings are machine-wide · everything below is saved per project</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeSettings()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="settings-body">
+          <nav class="settings-nav">
+            <!-- daemon group: machine-wide, one for every project -->
+            <div class="settings-navgroup"><i class="bi bi-hdd-network"></i> Daemon · this machine</div>
+            <template x-for="sec in SETTINGS.filter((s) => s.scope === 'daemon')" :key="sec.id">
+              <button
+                class="settings-navitem"
+                :class="{ active: settingsSection === sec.id }"
+                @click="settingsSection = sec.id"
+              >
+                <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
+              </button>
+            </template>
+            <!-- project group: these settings belong to the open repo, persisted
+                 in <repo>/.ralphy/settings.json -->
+            <div class="settings-navgroup project">
+              <i class="bi" :class="openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
+              <span x-text="openSlug ? ('Project · ' + openSlug) : 'Project · none open'"></span>
+            </div>
+            <template x-for="sec in SETTINGS.filter((s) => s.scope === 'project')" :key="sec.id">
+              <button
+                class="settings-navitem"
+                :class="{ active: settingsSection === sec.id }"
+                @click="settingsSection = sec.id"
+                :disabled="!openSlug"
+                :title="!openSlug ? 'open a project to edit its settings' : ''"
+              >
+                <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
+              </button>
+            </template>
+          </nav>
+          <div class="settings-content">
+            <template x-for="sec in SETTINGS" :key="sec.id">
+              <section x-show="settingsSection === sec.id">
+                <div class="settings-h2row">
+                  <h2 class="settings-h2" x-text="sec.title"></h2>
+                  <span class="scope-chip" :class="sec.scope"
+                        x-text="sec.scope === 'daemon' ? 'daemon · all projects' : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
+                </div>
+                <p class="settings-blurb" x-text="sec.blurb"></p>
+                <!-- per-project sections need an open repo to write into -->
+                <p class="settings-noproject" x-show="sec.scope === 'project' && !openSlug">
+                  <i class="bi bi-info-circle"></i> Open a project to edit its settings — these are stored per repo in
+                  <code>&lt;repo&gt;/.ralphy/settings.json</code>.
+                </p>
+                <template x-for="it in sec.items" :key="it.key">
+                  <div class="set-row" x-show="sec.scope === 'daemon' || openSlug">
+                    <div class="set-main">
+                      <label class="set-label" x-text="it.label"></label>
+                      <!-- control, chosen by type -->
+                      <template x-if="it.type === 'select'">
+                        <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
+                          <template x-for="o in it.options" :key="o">
+                            <option :value="o" :selected="settings[it.key] === o" x-text="o"></option>
+                          </template>
+                        </select>
+                      </template>
+                      <template x-if="it.type === 'tristate'">
+                        <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
+                          <template x-for="o in TRISTATE" :key="o">
+                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'default (unset)' : o"></option>
+                          </template>
+                        </select>
+                      </template>
+                      <template x-if="it.type === 'text'">
+                        <input class="set-input" type="text" :placeholder="it.placeholder || ''"
+                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                      </template>
+                      <template x-if="it.type === 'password'">
+                        <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
+                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                      </template>
+                      <template x-if="it.type === 'number'">
+                        <input class="set-input set-num" type="number" :min="it.min" :max="it.max"
+                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                      </template>
+                    </div>
+                    <p class="set-help" x-text="it.help"></p>
+                  </div>
+                </template>
+              </section>
+            </template>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — settings emit a <code>setting-change</code> intent; nothing is written to disk.</span>
+          <button class="btn" @click="closeSettings()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Security modal — mirrors ralphy's daemon auth model (ADR-0032):
+         access token, optional password (PBKDF2), and TOTP 2FA whose secret is
+         shown exactly once. "Revoke" is the real "delete the daemon-totp file".
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="securityOpen" x-cloak @click.self="closeSecurity()">
+      <div class="modal security-modal" role="dialog" aria-label="Security settings">
+        <div class="modal-head">
+          <i data-lucide="shield"></i>
+          <span class="modal-title">Security</span>
+          <span class="modal-sub">opt-in — the daemon is open on localhost and locks down only when you ask</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="security-body">
+          <!-- Access token -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-key"></i> Access token</span>
+              <span class="sec-badge" :class="security.tokenSet ? 'on' : 'off'"
+                    x-text="security.tokenSet ? 'set' : 'not set'"></span>
+            </div>
+            <p class="sec-note">
+              A machine credential for reaching the daemon over the network. It also signs your
+              browser session. Re-minting it logs every session out — including this one.
+            </p>
+            <div class="sec-actions">
+              <button class="btn" @click="remintToken()">Re-mint token</button>
+            </div>
+          </section>
+
+          <!-- Password -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-asterisk"></i> Login password</span>
+              <span class="sec-badge" :class="security.passwordSet ? 'on' : 'off'"
+                    x-text="security.passwordSet ? 'set' : 'not set'"></span>
+            </div>
+            <p class="sec-note">
+              An optional extra factor on top of 2FA (PBKDF2, 600k iterations). Leave it off, or
+              set one below. Saving a new value replaces the old.
+            </p>
+            <div class="sec-actions">
+              <input class="set-input" type="password" placeholder="new password"
+                     x-model="security.passwordDraft" @keydown.enter="savePassword()" />
+              <button class="btn accent" @click="savePassword()" :disabled="!security.passwordDraft.trim()">Save</button>
+              <button class="btn" @click="clearPassword()" x-show="security.passwordSet">Remove</button>
+            </div>
+          </section>
+
+          <!-- TOTP -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-phone"></i> Two-factor (TOTP)</span>
+              <span class="sec-badge" :class="security.totpEnrolled ? 'on' : 'off'"
+                    x-text="security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
+            </div>
+            <p class="sec-note">
+              Time-based codes from any authenticator app (SHA1 · 6 digits · 30s). Enroll once,
+              scan the QR, and codes are required at login. The secret is shown a single time —
+              scan it now.
+            </p>
+
+            <!-- not enrolled → enroll button -->
+            <div class="sec-actions" x-show="!security.totpEnrolled">
+              <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll &amp; show QR</button>
+            </div>
+
+            <!-- the one-time reveal, present only right after enrolling -->
+            <div class="totp-reveal" x-show="security.totpEnrolled && security.secret">
+              <div class="totp-qr" x-html="security.qrHtml"></div>
+              <div class="totp-meta">
+                <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown once — scan or copy it now.</div>
+                <label class="set-label">Secret</label>
+                <input class="set-input mono" type="text" :value="security.secret" readonly onclick="this.select()" />
+                <label class="set-label">otpauth URI</label>
+                <input class="set-input mono" type="text" :value="security.otpauthUri" readonly onclick="this.select()" />
+              </div>
+            </div>
+
+            <!-- enrolled (secret already dismissed) → revoke -->
+            <div class="sec-actions" x-show="security.totpEnrolled && !security.secret">
+              <span class="sec-note" style="margin:0;flex:1">Enrolled. The secret can't be shown again — revoke to start over.</span>
+              <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
+            </div>
+          </section>
+
+          <!-- Require login -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
+              <label class="switch">
+                <input type="checkbox" :checked="security.requireLogin" @change="toggleRequireLogin($event)" />
+                <span class="switch-track"></span>
+              </label>
+            </div>
+            <p class="sec-note">
+              Gate the browser UI behind a login screen (session auth). Needs 2FA enrolled first —
+              this is the same posture the daemon adopts automatically when bound to a non-local
+              address. With it on, <b>Log off</b> drops you to the login screen.
+            </p>
+          </section>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — actions emit intents (token / password / totp); no secrets are stored for real.</span>
+          <button class="btn" @click="closeSecurity()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Login gate — a fully-opaque overlay shown when `!authed`. Because it's
+         solid (not just dimmed) and the chrome is blanked (body.locked), there's
+         nothing behind to read: the real daemon never renders the app until
+         /api/login succeeds, so there's nothing to peek at.
+    ==================================================================== -->
+    <div class="login-gate" x-show="!authed" x-cloak>
+      <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
+        <div class="login-brand"><i data-lucide="bot"></i> ralphy daemon</div>
+        <label class="login-label">
+          Authenticator code
+          <input class="login-input" x-model="login.code" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="6" required autofocus placeholder="000000" />
+        </label>
+        <label class="login-label" x-show="security.passwordSet">
+          Password
+          <input class="login-input" type="password" x-model="login.password" autocomplete="current-password" />
+        </label>
+        <button class="login-btn" type="submit">Log in</button>
+        <div class="login-err" x-text="login.error"></div>
+        <div class="login-hint">mock — any 6-digit code works<span x-show="security.passwordSet"> (password must match)</span></div>
+      </form>
+    </div>
+
     <!-- vendored, loaded locally (no CDN at runtime) -->
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
@@ -221,8 +479,10 @@
     <script src="vendor/codemirror/addon/display/placeholder.js"></script>
     <script src="vendor/lucide.min.js"></script>
     <script src="vendor/wunderbaum/wunderbaum.umd.min.js"></script>
+    <script src="vendor/qrcode.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-viewer.js"></script>
+    <script src="wb-settings.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

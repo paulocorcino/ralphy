@@ -1161,6 +1161,525 @@ body.side-collapsed.runs-open {
   min-width: 3.5em;
 }
 
+/* --- rail: settings gear pinned to the bottom ----------------------------- */
+.rail-spacer {
+  flex: 1;
+}
+.rail button:last-child {
+  margin-bottom: 0.6rem;
+}
+
+/* --- account menu (topbar avatar) ----------------------------------------- */
+.avatar-btn {
+  all: unset;
+  display: inline-flex;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.avatar-btn:hover .avatar {
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+.account-menu {
+  top: calc(100% + 6px);
+  min-width: 190px;
+}
+
+/* --- modal scaffold (settings + security) --------------------------------- */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  padding: 3vh 2vw;
+  background: rgba(8, 6, 5, 0.62);
+  backdrop-filter: blur(2px);
+}
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 96vw);
+  max-height: 92vh;
+  background: var(--chrome);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.modal-head [data-lucide] {
+  color: var(--console-text);
+}
+.modal-title {
+  font-weight: 600;
+}
+.modal-sub {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+.modal-head .spacer {
+  flex: 1;
+}
+.modal-x {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.modal-x:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.modal-foot .foot-note {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.foot-note code {
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.25em;
+}
+
+/* --- settings modal body -------------------------------------------------- */
+.settings-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.settings-nav {
+  width: 190px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 0.5rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* group headers: "Daemon · this machine" and "Project · <repo>" */
+.settings-navgroup {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.55rem 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.settings-navgroup:not(:first-child) {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+.settings-navgroup.project {
+  color: var(--console-text);
+}
+.settings-navgroup.project .bi {
+  color: var(--console-text);
+}
+.settings-navitem {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.settings-navitem[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings-navitem[disabled]:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+.settings-navitem:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.settings-navitem.active {
+  background: var(--surface-hi);
+  color: var(--console-text);
+}
+.settings-navitem .bi {
+  width: 1.1em;
+  text-align: center;
+}
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 1rem 1.3rem 1.6rem;
+}
+.settings-h2row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.settings-h2 {
+  margin: 0.2rem 0 0.2rem;
+  font-size: 1.05rem;
+  color: #f2ede4;
+}
+.scope-chip {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--log-bg);
+}
+.scope-chip.project {
+  color: var(--console-text);
+  border-color: var(--console-border);
+}
+.settings-noproject {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+.settings-noproject .bi {
+  color: var(--console-text);
+  margin-right: 0.3rem;
+}
+.settings-noproject code {
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.25em;
+}
+.settings-blurb {
+  margin: 0 0 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.set-row {
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+}
+.set-main {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.set-label {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.set-input {
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.5rem;
+  min-width: 220px;
+}
+.set-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.set-input.set-num {
+  min-width: 100px;
+  width: 100px;
+}
+.set-input.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  width: 100%;
+  min-width: 0;
+}
+.set-help {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+/* --- security modal ------------------------------------------------------- */
+.security-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.security-modal {
+  width: min(560px, 96vw);
+}
+.sec-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0.8rem 0.9rem;
+}
+.sec-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+.sec-card-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.sec-card-title .bi {
+  color: var(--console-text);
+}
+.sec-badge {
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--log-bg);
+}
+.sec-badge.on {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, var(--border));
+}
+.sec-badge.off {
+  color: var(--text-muted);
+}
+.sec-note {
+  margin: 0 0 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.sec-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.sec-actions .set-input {
+  min-width: 0;
+  flex: 1;
+}
+.btn.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* the one-time TOTP reveal (QR + secret) */
+.totp-reveal {
+  display: flex;
+  gap: 1rem;
+  padding: 0.8rem;
+  margin-top: 0.4rem;
+  background: var(--log-bg);
+  border: 1px solid var(--console-border);
+  border-radius: 8px;
+}
+.totp-qr {
+  flex-shrink: 0;
+  background: #fff;
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 0;
+}
+.totp-qr img {
+  display: block;
+  width: 148px;
+  height: 148px;
+  image-rendering: pixelated;
+}
+.totp-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.totp-warn {
+  color: var(--console-text);
+  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.qr-fail {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+/* a small toggle switch */
+.switch {
+  margin-left: auto;
+  position: relative;
+  width: 38px;
+  height: 20px;
+  cursor: pointer;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+.switch-track::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.switch input:checked + .switch-track {
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+.switch input:checked + .switch-track::before {
+  transform: translate(18px, -50%);
+  background: var(--console-text);
+}
+
+/* --- login gate (fully opaque; nothing behind is readable) ---------------- */
+/* Blank the chrome when locked so there's genuinely nothing to peek at. */
+body.locked .topbar,
+body.locked .rail,
+body.locked .side,
+body.locked .canvas,
+body.locked .runs {
+  visibility: hidden;
+}
+.login-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  /* solid — deliberately not translucent */
+  background: var(--bg);
+}
+.login-card {
+  width: 100%;
+  max-width: 21rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  background: var(--chrome);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.4rem;
+}
+.login-brand {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.login-brand [data-lucide] {
+  color: var(--console-text);
+}
+.login-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.login-input {
+  font: inherit;
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.login-btn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--console-text);
+  background: var(--console-bg);
+  border: 1px solid var(--console-border);
+  border-radius: 8px;
+  padding: 0.6rem;
+  cursor: pointer;
+}
+.login-btn:hover {
+  background: var(--surface-hi);
+}
+.login-err {
+  min-height: 1.1em;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.login-hint {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
 /* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */
 [x-cloak] {
   display: none !important;
