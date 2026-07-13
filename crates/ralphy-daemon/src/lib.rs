@@ -205,6 +205,13 @@ pub fn router(
     // shutdown (it detaches, never closing the session).
     let session_shutdown = shutdown.clone();
     let session_registry = registry_path.clone();
+    // The live file-tree watcher (#196) is shared across every `/ws/tree`
+    // connection for this router's lifetime — same ownership model as `sessions`,
+    // constructed here (NOT a `router` param) so the ~20-call-site signature holds.
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let tree_watchers = watchers.clone();
+    let tree_registry = registry_path.clone();
+    let tree_shutdown = shutdown.clone();
     // A dispatched run must survive daemon shutdown (inverse of the session
     // invariant), but the handler still watches `shutdown` to stop serving the
     // socket — it just never kills the child. Clone one for that route.
@@ -304,6 +311,17 @@ pub fn router(
                     ws.on_upgrade(move |socket| {
                         command_ws(socket, registry_path, shutdown, daemon_id)
                     })
+                }
+            }),
+        )
+        .route(
+            "/ws/tree",
+            get(move |ws: WebSocketUpgrade| {
+                let watchers = tree_watchers.clone();
+                let registry_path = tree_registry.clone();
+                let shutdown = tree_shutdown.clone();
+                async move {
+                    ws.on_upgrade(move |socket| tree_ws(socket, watchers, registry_path, shutdown))
                 }
             }),
         )
@@ -1041,6 +1059,141 @@ async fn command_ws(
             }
         }
     }
+}
+
+/// `GET /ws/tree`: the persistent live-tree subscription socket (#196, ADR-0036
+/// §4). A client `Frame::Command{verb:"watch", payload:{repo,path}}` starts
+/// watching that repo dir (subscribing to the repo's nudge broadcast on the first
+/// watch); `verb:"unwatch"` releases it. A settled change on a watched dir is
+/// pushed back as `Frame::Command{verb:"tree.dirty", payload:{repo,path}}`, and
+/// the browser re-reads that subtree via the Observe `tree.list` path.
+///
+/// TEARDOWN INVARIANT: on EVERY exit path — daemon shutdown OR client close/error
+/// — the connection releases EVERY dir it watched (tracked in `watched`) so the
+/// last release tears the repo watcher down, and aborts its forwarder tasks. A
+/// leaked watch would keep an OS watcher (and its debouncer thread) alive forever.
+async fn tree_ws(
+    mut socket: WebSocket,
+    watchers: Arc<watch::WatcherManager>,
+    registry_path: PathBuf,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    // Fan-in: one forwarder task per subscribed repo pipes that repo's broadcast
+    // into this shared channel, so the select! loop watches ONE receiver regardless
+    // of how many repos/dirs the connection holds.
+    let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+    let mut forwarders: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+    // Repos that already have a forwarder — a second `watch` of the same repo bumps
+    // the manager refcount but must NOT spawn a duplicate forwarder (double pushes).
+    let mut subscribed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // The (repo, rel) dirs THIS connection holds, in normalized form: both the
+    // teardown release list AND the per-connection push filter (the broadcast
+    // carries every dir of the repo, including ones other connections watch).
+    let mut watched: Vec<(String, String)> = Vec::new();
+
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Binary(bytes))) => {
+                    let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
+                        continue;
+                    };
+                    let repo = cmd
+                        .payload
+                        .get("repo")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let rel = watch::norm_rel(
+                        cmd.payload.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+                    );
+                    match cmd.verb.as_str() {
+                        "watch" => {
+                            if repo.is_empty() {
+                                continue;
+                            }
+                            let root = match registry::load_from(&registry_path) {
+                                Ok(store) => store.entry(&repo).map(|e| PathBuf::from(&e.path)),
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "tree watch: registry unreadable");
+                                    None
+                                }
+                            };
+                            let Some(root) = root else { continue };
+                            match watchers.watch(&repo, &root, &rel) {
+                                Ok(rx) => {
+                                    if subscribed.insert(repo.clone()) {
+                                        forwarders.push(spawn_nudge_forwarder(rx, nudge_tx.clone()));
+                                    }
+                                    let key = (repo.clone(), rel.clone());
+                                    if !watched.contains(&key) {
+                                        watched.push(key);
+                                    }
+                                }
+                                Err(e) => tracing::warn!(error = %e, "tree watch failed"),
+                            }
+                        }
+                        "unwatch" => {
+                            watchers.unwatch(&repo, &rel);
+                            watched.retain(|(r, p)| !(r == &repo && p == &rel));
+                        }
+                        _ => {}
+                    }
+                }
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(_)) => {}
+                Some(Err(_)) => break,
+            },
+            nudge = nudge_rx.recv() => {
+                // A repo's broadcast carries every watched dir; push only the ones
+                // THIS connection subscribed to.
+                if let Some((repo, rel)) = nudge {
+                    if watched.iter().any(|(r, p)| r == &repo && p == &rel) {
+                        send_command(
+                            &mut socket,
+                            0,
+                            "tree.dirty",
+                            serde_json::json!({ "repo": repo, "path": rel }),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
+    }
+
+    // TEARDOWN: release every held dir (the last release tears the watcher down)
+    // and abort the forwarders (their broadcast receivers may otherwise outlive us
+    // if another connection keeps the repo alive).
+    for (repo, rel) in &watched {
+        watchers.unwatch(repo, rel);
+    }
+    for forwarder in forwarders {
+        forwarder.abort();
+    }
+}
+
+/// Pipe one repo's `tree.dirty` broadcast into the connection's fan-in channel.
+/// A lag just skips ahead (the browser re-reads idempotently); a closed broadcast
+/// (the repo watcher torn down) or a dropped fan-in ends the task.
+fn spawn_nudge_forwarder(
+    mut rx: watch::DirtyRx,
+    tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(item) => {
+                    if tx.send(item).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    })
 }
 
 /// `GET /api/repos`: the registered repos as JSON, each with its live

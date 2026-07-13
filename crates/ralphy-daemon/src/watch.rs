@@ -366,8 +366,10 @@ fn rel_to_slug(rel: &Path) -> String {
 }
 
 /// Normalize an incoming rel dir to the watch-set form: `/`-separated, no leading
-/// or trailing slash; `""` stays the root.
-fn norm_rel(rel: &str) -> String {
+/// or trailing slash; `""` stays the root. Public so the `/ws/tree` handler stores
+/// a connection's watched dirs in the SAME form the nudges carry, so its
+/// per-connection filter matches.
+pub fn norm_rel(rel: &str) -> String {
     rel.replace('\\', "/").trim_matches('/').to_string()
 }
 
