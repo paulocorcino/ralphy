@@ -433,12 +433,98 @@ for intent + the real ralphy sources it mirrors:
 
 ---
 
+## Backend integration: the daemon protocol
+
+The contract between this shell and the daemon is frozen in
+[ADR-0036](../../docs/adr/0036-workbench-daemon-integration-protocol.md) (which
+extends [ADR-0032](../../docs/adr/0032-daemon-mode-supervised-launcher.md) §6).
+The one rule that makes it navigable: **capabilities are table rows, not routes.**
+Every gesture is a `Command { id, verb, payload }` over the daemon's tagged-frame
+codec (`protocol.rs`), and each verb has an **effect class** that alone decides
+whether the daemon acts directly or delegates to `ralphy`.
+
+### Effect classes (the whole model)
+
+| Class | What it does | Mechanism | Examples |
+|---|---|---|---|
+| **Native** | daemon's own state | daemon-internal | `sessions.list/close`, identity, presence |
+| **Observe** | read working tree as **OS bytes** (no repo semantics) | daemon walks/reads/watches **directly** (confined) | `tree.list`, read a file |
+| **Query** | read that needs `ralphy`'s **judgment** | spawn `ralphy … --json`, answer on the same `id` | `issues.list`, `queue`, `config.get` |
+| **Spawn** | trigger a run | detached blessed `ralphy` child (own lifecycle) | `run`, `triage`, `push` |
+| **Mutate** | **write** repo state | a **new `ralphy` subcommand**, run-lock-aware | `config.set`, `branch.switch`, `label.set` |
+
+The division rule: **if a verb needs to *understand* or *write* the repo, it is a
+`ralphy` invocation; if it only reads OS bytes or the daemon's own state, the
+daemon does it directly** (ADR-0036 §2–§3). This is why the file tree is fast (no
+spawn per click) and why `branch.switch` is safe (a run-aware `ralphy` verb, never
+a blind `git checkout` — ADR-0036 §6 supersedes the older "the daemon runs the
+real git checkout" note in the branch-switcher section above).
+
+### The two seams, wired
+
+The mock already centralizes both directions; the backend is *one adapter each*:
+
+- **Out** — `workbench:action` → a verb. A single `ACTION_TO_VERB` map routes each
+  emitted `action` (grep `WB.emit(` for the live catalogue) to its verb; the
+  daemon's registry dispatches by effect class.
+- **In** — daemon frames → the UI. `Terminal` → xterm; `Presence` → the account/
+  status chrome; a `Command` reply resolves its pending `id`; an unsolicited
+  `Command` push (run output, `tree.dirty`) folds into `WBRuns.emit` / the tree.
+
+The whole client cola is a ~40-line `wb-daemon.js`:
+
+```js
+// one call door (request/response by id) + one frame router
+class Daemon {
+  call(verb, payload) {                       // Native/Observe/Query/Spawn/Mutate
+    const id = ++this.seq;
+    this.ws.send(encodeCommand({ id, verb, payload }));
+    return new Promise(r => this.pending.set(id, r));
+  }
+  onFrame(f) {
+    if (f.tag === TERMINAL) term.write(f.session, f.data);
+    if (f.tag === PRESENCE) presence.update(f);
+    if (f.tag === COMMAND)
+      this.pending.has(f.id) ? this.pending.get(f.id)(f.payload)   // a reply
+                             : route(f.payload);                    // a push
+  }
+}
+document.addEventListener("workbench:action", e =>
+  daemon.call(ACTION_TO_VERB[e.detail.action], e.detail));
+```
+
+### File tree: observe, don't own (ADR-0036 §4–§5)
+
+The tree is **Observe** — the daemon reads and watches it directly, but never
+interprets it. Live updates use `notify` + `notify-debouncer-full` + `ignore`,
+kept cheap by four levers: **watch only expanded dirs** (matched to Wunderbaum's
+lazy-load; unwatch on collapse), **gitignore-filter** the walk/watch, **debounce**
+the event storm, and **push a minimal `tree.dirty {repo,path}` nudge, pull the
+subtree only if visible**. One watcher per (repo × open dirs), fanned out to all
+clients (not per-connection). Security is **confinement** (canonicalize + repo-root
+prefix — blocks traversal and symlink escape) **+ the existing login**; an
+authenticated operator reads the whole repo, secrets included, like any IDE. The
+`.gitignore` filter is UX cleanliness, **not** a security boundary.
+
+### What Phase 1 does and doesn't feed
+
+The Runs panel is fed by the **raw output** a daemon-spawned run already streams
+(`status:"output"`). The **structured** feed (`ralphy:run-event` — issue trail,
+plan viewer) is the events platform's job (Phase 2); the ⚡ demo button stands in
+until then. No CloudEvents relay is built in the daemon now.
+
+---
+
 ## Starting points for the real build
 
 1. **Stand up the seam listener** — subscribe to `workbench:action`, route each
-   `action` to a daemon call. This unlocks everything else incrementally.
+   `action` through `ACTION_TO_VERB` to a daemon `call`. This unlocks everything
+   else incrementally.
 2. **Feed real data** — replace the seeded `projects` and file `tree` with
-   `/api/repos` + a repo-tree endpoint (lazy-loaded).
-3. **Promote hardened decisions to ADRs** — e.g. "canvas is a tabbed workspace,
-   Agents tab fixed", "branch switching gated on reachability not remote" — and
-   link them back here.
+   `/api/repos` + `tree.list` (Observe, lazy-loaded), then wire `tree.dirty`.
+3. **Generalize the verb registry** — turn `dispatch::Verb` into the effect-class
+   table (ADR-0036 §1); the three git Mutate subcommands (`branch switch/create`,
+   `label set`) are the only new CLI surface.
+4. **Promote hardened decisions to ADRs** — e.g. "canvas is a tabbed workspace,
+   Agents tab fixed" — and link them back here. The daemon protocol itself is
+   already frozen in [ADR-0036](../../docs/adr/0036-workbench-daemon-integration-protocol.md).
