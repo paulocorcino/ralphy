@@ -120,11 +120,18 @@
   // re-read the REAL file via `file.read` (#197); the `file://` mock regenerates
   // its synthesised bytes. The apply step is shared via `applyFresh`.
   function reloadFile(rec) {
-    const daemonBacked = location.protocol !== "file:" && !!window.WBDaemon?.observe;
+    const daemonBacked = window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
     if (daemonBacked) {
+      // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
+      // synthetic bytes (C1) — flash the failure and close the tab, mirroring
+      // the initial-open refusal path in app.js `fetchContent`.
+      const fail = () => {
+        getShell()?._flashAction?.("reload failed");
+        getShell()?.closeTab(`file:${rec.project}:${rec.path}`);
+      };
       WBDaemon.observe("file.read", { repo: rec.project, path: rec.path })
-        .then((reply) => applyFresh(rec, reply.status === "ok" ? reply.content : fakeContent(rec.path, rec.kind)))
-        .catch(() => applyFresh(rec, fakeContent(rec.path, rec.kind)));
+        .then((reply) => (reply && reply.status === "ok" ? applyFresh(rec, reply.content) : fail()))
+        .catch(fail);
     } else {
       applyFresh(rec, fakeContent(rec.path, rec.kind));
     }

@@ -54,6 +54,12 @@ function classify(name) {
 function shell() {
   return {
     openSlug: null,
+    // True only on the static `file://` demo bundle; drives the topbar "demo"
+    // badge and keeps seeds/mocks confined to demo (#202).
+    isDemo: window.WBMode.isDemo(),
+    // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
+    // instead of the seed projects. Empty when repos loaded (or in demo).
+    reposError: "",
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
 
@@ -101,8 +107,20 @@ function shell() {
             remote: x.slug.startsWith("path-") ? "local" : "github",
             tree: [],
           }));
+          this.reposError = "";
+        } else if (window.WBMode.isDaemon()) {
+          // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
+          // clear them and show the error.
+          this.projects = [];
+          this.reposError = "could not load projects from the daemon";
         }
-      } catch {}
+      } catch {
+        if (window.WBMode.isDaemon()) {
+          this.projects = [];
+          this.reposError = "could not load projects from the daemon";
+        }
+        // Demo (file://): keep the seed — the shell stays navigable offline.
+      }
     },
 
     // --- chrome panels ----------------------------------------------------
@@ -181,7 +199,15 @@ function shell() {
     async loadBranches(slug) {
       try {
         const reply = await window.WBDaemon.observe("branch.list", { repo: slug });
-        if (!reply || reply.status !== "ok" || this.branchModal.slug !== slug) return;
+        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
+        if (!reply || reply.status !== "ok") {
+          // Daemon mode: a failed `branch.list` must NOT keep the seed (M5).
+          if (window.WBMode.isDaemon()) {
+            this.branchModal.branches = [];
+            this._flashAction?.("could not load branches");
+          }
+          return;
+        }
         // The daemon nests the CLI's `{current, branches:[]}` JSON under the
         // `branches` field (lib.rs Query reply), same as `reply.board.*` /
         // `reply.issue.*` — read one level deeper, not the top level.
@@ -189,7 +215,12 @@ function shell() {
         if (Array.isArray(data.branches)) this.branchModal.branches = data.branches;
         if (data.current) this.branchModal.current = data.current;
       } catch {
-        // No daemon reachable (static shell) or a transport error — keep the seed.
+        // Daemon mode: transport error → honest empty list, not the seed (M5).
+        if (this.branchModal.slug === slug && window.WBMode.isDaemon()) {
+          this.branchModal.branches = [];
+          this._flashAction?.("could not load branches");
+        }
+        // Demo (static shell): keep the seed.
       }
     },
     closeBranchModal() {
@@ -608,7 +639,12 @@ function shell() {
       if (!slug) return;
       try {
         const reply = await window.WBDaemon.observe("board.list", { repo: slug });
-        if (!reply || reply.status !== "ok") return;
+        if (!reply || reply.status !== "ok") {
+          // Daemon mode: flash the failure (board has no seed to mask — the
+          // distinct error-state UI is audit C2, out of scope; M5).
+          if (window.WBMode.isDaemon()) this._flashAction?.(reply?.message || "could not load board");
+          return;
+        }
         const board = reply.board || {};
         this.boardIssues[slug] = (board.issues || []).map((r) => this.boardRowToIssue(r));
         const colors = {};
@@ -620,7 +656,9 @@ function shell() {
         }
         this.boardLabels[slug] = colors;
       } catch {
-        // No daemon reachable (static shell) or a transport error — leave it empty.
+        // Daemon mode: transport error → flash; board stays empty (no seed).
+        if (window.WBMode.isDaemon()) this._flashAction?.("could not load board");
+        // Demo (static shell): leave it empty, no throw.
       }
     },
 
@@ -1043,7 +1081,14 @@ function shell() {
         }
         return;
       } catch {
-        // No daemon (file:// standalone) — fall back to the local mock check.
+        // Daemon mode: a thrown fetch must NOT authenticate via the local
+        // 6-digit fallback (M4) — that fallback exists only for the `file://`
+        // demo. In daemon mode, surface the failure and stop.
+        if (!window.WBMode.isDemo()) {
+          this.login.error = "Daemon unreachable — cannot verify.";
+          return;
+        }
+        // Demo (file:// standalone) — fall back to the local mock check.
       }
       if (!/^[0-9]{6}$/.test(code)) {
         this.login.error = "Invalid code or password.";
@@ -1308,7 +1353,7 @@ function shell() {
     // A real daemon backs the tree only when NOT loaded from `file://` (the
     // static-mock case, which has no `/ws/command` to talk to).
     useDaemonTree() {
-      return location.protocol !== "file:" && !!window.WBDaemon?.observe;
+      return window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
     },
 
     // One directory level from the daemon (`tree.list`), mapped to Wunderbaum
@@ -1338,7 +1383,14 @@ function shell() {
           this.closeTab(`file:${project}:${path}`);
           return null;
         })
-        .catch(() => fakeContent(path, ftype));
+        .catch(() => {
+          // Daemon mode: a transport drop must NOT fall back to `fakeContent`
+          // (C1) — surface the failure and close the tab, mirroring refusal.
+          WB.emit("open-refused", { project, path, reason: "transport" });
+          this._flashAction?.("read failed");
+          this.closeTab(`file:${project}:${path}`);
+          return null;
+        });
     },
 
     // A `tree.dirty` nudge for `rel`: refetch that one directory level IF it is
@@ -1629,7 +1681,7 @@ window.addEventListener("message", (e) => {
 // back as `{status:"error",reason}` and is flashed. The browser composes the
 // full rel path from the tree node — the daemon verbs take a complete rel path.
 (function wireWriteVerbs() {
-  const daemonBacked = () => location.protocol !== "file:" && !!window.WBDaemon?.write;
+  const daemonBacked = () => window.WBMode.isDaemon() && !!window.WBDaemon?.write;
   const flash = (msg) => getShell()?._flashAction?.(msg);
   const parentOf = (rel) => {
     const i = rel.lastIndexOf("/");

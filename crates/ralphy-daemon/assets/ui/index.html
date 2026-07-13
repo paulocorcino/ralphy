@@ -23,6 +23,9 @@
       <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
       <span class="spacer"></span>
       <span class="stat uptime"><i data-lucide="circle-dot"></i> daemon up 2h 14m</span>
+      <!-- demo badge: only present on the static `file://` bundle, where seeds
+           are honest mocks; absent in daemon mode (WBMode.isDemo(), #202). -->
+      <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
       <!-- account menu: security (password + TOTP) and log off. impl: the
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
       <div class="menu-wrap">
@@ -65,6 +68,8 @@
         <span class="spacer"></span>
         <i data-lucide="ellipsis"></i>
       </div>
+      <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
+      <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
       <!-- impl: filters the list client-side; "/" is the focus shortcut hint. -->
       <div class="side-search">
         <i data-lucide="search"></i>
@@ -1079,6 +1084,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="vendor/xterm-addon-fit.js"></script>
     <script src="vendor/xterm-addon-webgl.js"></script>
     <script src="vendor/xterm-addon-web-links.js"></script>
+    <script src="wb-mode.js"></script>
     <script src="wb-translate.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-viewer.js"></script>

@@ -123,6 +123,25 @@ body.side-collapsed.runs-open {
 .topbar .uptime [data-lucide] {
   color: var(--live);
 }
+/* demo badge (#202): only present on the static `file://` bundle, an accent
+   pill making the seed/mock world explicit. */
+.demo-badge {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--surface);
+  background: var(--live);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+}
+/* daemon-mode repos-load failure (#202): a small honest warning row in the
+   sidebar in place of the seed projects. */
+.side-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
 .avatar {
   width: 22px;
   height: 22px;

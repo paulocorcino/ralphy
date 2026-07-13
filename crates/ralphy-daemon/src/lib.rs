@@ -2686,6 +2686,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn root_serves_wb_mode() {
+        let resp = get_local("/wb-mode.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET wb-mode.js → 200");
+        let mode = body_string(resp).await;
+        assert!(
+            mode.contains("function modeFor"),
+            "wb-mode.js must ship the pure mode predicate"
+        );
+
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            shell.contains("wb-mode.js"),
+            "the shell HTML must load the mode module"
+        );
+    }
+
+    #[tokio::test]
     async fn session_serves_shell_but_gates_data() {
         // The shell bytes are served without a cookie…
         let resp = session_router("tok")
