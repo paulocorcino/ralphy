@@ -175,7 +175,7 @@ window.WBDaemon = (function () {
         : { repo: d.project };
     spawn(verb, payload, (s) => {
       if (s.status === "output") window.WBRuns?.output?.(s.chunk || "");
-      else if (s.status === "error") getShell()?._flashAction?.(s.message || "refused");
+      else if (window.WBFail.isError(s)) getShell()?._flashAction?.(window.WBFail.message(s, "refused"));
     });
   });
 

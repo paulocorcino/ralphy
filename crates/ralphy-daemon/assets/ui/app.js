@@ -367,9 +367,9 @@ function shell() {
     async _mutateBranch(verb, slug, name, revert) {
       try {
         const reply = await window.WBDaemon.observe(verb, { repo: slug, name });
-        if (reply && reply.status === "error") {
+        if (window.WBFail.isError(reply)) {
           revert();
-          this._flashAction(reply.message || "branch change refused");
+          this._flashAction(window.WBFail.message(reply, "branch change refused"));
         }
       } catch {
         // No daemon reachable — leave the optimistic update in place.
@@ -933,9 +933,9 @@ function shell() {
             label,
             op,
           });
-          if (reply && reply.status === "error") {
+          if (window.WBFail.isError(reply)) {
             iss.labels = prev;
-            this._flashAction(reply.message || "label change refused");
+            this._flashAction(window.WBFail.message(reply, "label change refused"));
           }
         } catch {
           // No daemon reachable — leave the optimistic edit in place.
@@ -1519,8 +1519,8 @@ function shell() {
       if (!this.useDaemonTree()) return Promise.resolve(fakeContent(path, ftype));
       return WBDaemon.observe("file.read", { repo: project, path })
         .then((reply) => {
-          if (reply && reply.status === "ok") return reply.content;
-          const reason = (reply && reply.reason) || "refused";
+          if (!window.WBFail.isError(reply)) return reply.content;
+          const reason = window.WBFail.message(reply, "refused");
           WB.emit("open-refused", { project, path, reason });
           this._flashAction?.(reason);
           this.closeTab(`file:${project}:${path}`);
@@ -1932,7 +1932,7 @@ window.addEventListener("message", (e) => {
   const call = (verb, payload, okMsg) => {
     WBDaemon.write(verb, payload)
       .then((reply) => {
-        if (reply.status === "error") flash(reply.reason || "refused");
+        if (window.WBFail.isError(reply)) flash(window.WBFail.message(reply, "refused"));
         else if (okMsg) flash(okMsg);
       })
       .catch(() => flash("write failed"));
