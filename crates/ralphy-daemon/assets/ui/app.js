@@ -1405,8 +1405,13 @@ function shell() {
       if (rel !== "" && !node.expanded) return; // collapsed → invisible, drop
       // Reconcile this level in place (no duplication), then freshen any open
       // tabs that live in this directory (A6). Returns the promise so callers
-      // that need to sequence after a settled tree (tests) can await it.
-      return this.reconcileLevel(node, rel).then(() => this.refreshOpenViewers(rel));
+      // that need to sequence after a settled tree (tests) can await it. A
+      // reconcile failure (e.g. a transport-dropped `tree.list`) must NOT strand
+      // open viewers stale nor surface an unhandled rejection — swallow it and
+      // still refresh.
+      return this.reconcileLevel(node, rel)
+        .catch(() => {})
+        .then(() => this.refreshOpenViewers(rel));
     },
 
     // Re-list one directory level and reconcile its children WITHOUT duplicating
