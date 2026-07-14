@@ -1323,6 +1323,16 @@ function shell() {
       this.$nextTick(() => window.lucide?.createIcons());
     },
 
+    // After a successful login the data endpoints that returned 401 while the UI
+    // was gated must be re-fetched — nothing else re-runs them (issue: content
+    // didn't refresh after login under require-login). The presence socket
+    // self-reconnects on its own 3s backoff, so it's not re-run here.
+    rehydrateAfterAuth() {
+      this.reposError = "";
+      this.loadRepos();
+      this.loadIdentity();
+    },
+
     async submitLogin() {
       const code = (this.login.code || "").trim();
       try {
@@ -1338,6 +1348,7 @@ function shell() {
         if (res.ok) {
           this.login.error = "";
           this.authed = true;
+          this.rehydrateAfterAuth();
           WB.emit("login", {});
           this.$nextTick(() => window.lucide?.createIcons());
         } else {
@@ -1364,6 +1375,7 @@ function shell() {
       }
       this.login.error = "";
       this.authed = true;
+      this.rehydrateAfterAuth();
       WB.emit("login", {});
       this.$nextTick(() => window.lucide?.createIcons());
     },
