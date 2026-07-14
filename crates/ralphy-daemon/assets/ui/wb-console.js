@@ -14,6 +14,10 @@
 --------------------------------------------------------------------------- */
 window.WBConsole = (function () {
   const workspace = () => document.getElementById("workspace");
+  // Scheme-match the session socket to the page (see wb-daemon.js WS_ORIGIN):
+  // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
+  const WS_ORIGIN =
+    (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
   const wins = new Set();
   let z = 60;
   let cascade = 0;
@@ -172,7 +176,7 @@ window.WBConsole = (function () {
     let currentSessionId = opts.id ?? null;
     let leaving = false;
 
-    let url = "ws://" + location.host + "/ws/session?";
+    let url = WS_ORIGIN + "/ws/session?";
     if (opts.id != null) {
       url += "id=" + encodeURIComponent(opts.id);
       if (opts.takeover) url += "&takeover=1";

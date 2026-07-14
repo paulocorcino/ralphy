@@ -16,6 +16,13 @@ window.WBDaemon = (function () {
   const TAG_COMMAND = 0x02;
   const TAG_PRESENCE = 0x03;
 
+  // The WebSocket origin, scheme-matched to the page: `wss://` when the workbench
+  // is served over TLS (a dev-tunnel/reverse-proxy reaching a loopback daemon),
+  // else `ws://` for a plain-http localhost bind. Hardcoding `ws://` would trip
+  // the browser's mixed-content block on an https origin and kill every socket.
+  const WS_ORIGIN =
+    (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
+
   // Which `workbench:action`s reach the daemon, and as which verb. The generic
   // `command` action carries its verb in the event detail (triage/push).
   const ACTION_TO_VERB = { "run-start": "run" };
@@ -34,7 +41,7 @@ window.WBDaemon = (function () {
   // (which carries `status`) to `onStatus`; close on the terminal `exited`/`error`.
   function spawn(verb, payload, onStatus) {
     const id = nextId++;
-    const ws = new WebSocket("ws://" + location.host + "/ws/command");
+    const ws = new WebSocket(WS_ORIGIN + "/ws/command");
     ws.binaryType = "arraybuffer";
     ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
     ws.onmessage = (ev) => {
@@ -59,7 +66,7 @@ window.WBDaemon = (function () {
   function observe(verb, payload) {
     return new Promise((resolve, reject) => {
       const id = nextId++;
-      const ws = new WebSocket("ws://" + location.host + "/ws/command");
+      const ws = new WebSocket(WS_ORIGIN + "/ws/command");
       ws.binaryType = "arraybuffer";
       ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
       ws.onmessage = (ev) => {
@@ -90,7 +97,7 @@ window.WBDaemon = (function () {
   // caller closes it when the project closes (the daemon tears the watcher down on
   // the last release). Commands sent before the socket opens are queued.
   function subscribeTree(repo, onDirty) {
-    const ws = new WebSocket("ws://" + location.host + "/ws/tree");
+    const ws = new WebSocket(WS_ORIGIN + "/ws/tree");
     ws.binaryType = "arraybuffer";
     let open = false;
     const pending = [];
@@ -135,7 +142,7 @@ window.WBDaemon = (function () {
     let ws = null;
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket("ws://" + location.host + "/ws");
+      ws = new WebSocket(WS_ORIGIN + "/ws");
       ws.binaryType = "arraybuffer";
       ws.onmessage = (ev) => {
         const a = new Uint8Array(ev.data);
