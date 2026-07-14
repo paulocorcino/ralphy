@@ -1291,6 +1291,10 @@ async fn repos_route(registry_path: PathBuf) -> Response {
         path: String,
         reachable: bool,
         branch: Option<String>,
+        // Additive (#204): the real working-tree state and origin URL. Both spawn
+        // `git`, so the whole `Vec` is built inside `spawn_blocking` below.
+        dirty: bool,
+        remote: Option<String>,
     }
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -1299,16 +1303,24 @@ async fn repos_route(registry_path: PathBuf) -> Response {
             registry::RegistryStore::default()
         }
     };
-    let views: Vec<RepoView> = store
-        .repos
-        .iter()
-        .map(|(slug, entry)| RepoView {
-            slug: slug.clone(),
-            path: entry.path.clone(),
-            reachable: entry.reachable(),
-            branch: entry.head_branch(),
-        })
-        .collect();
+    // `dirty`/`remote` each spawn a `git` subprocess per repo — that must not
+    // block the async reactor, so the whole map runs on a blocking thread.
+    let views = tokio::task::spawn_blocking(move || {
+        store
+            .repos
+            .iter()
+            .map(|(slug, entry)| RepoView {
+                slug: slug.clone(),
+                path: entry.path.clone(),
+                reachable: entry.reachable(),
+                branch: entry.head_branch(),
+                dirty: entry.dirty(),
+                remote: entry.remote(),
+            })
+            .collect::<Vec<RepoView>>()
+    })
+    .await
+    .unwrap_or_default();
     Json(views).into_response()
 }
 
@@ -1978,6 +1990,78 @@ mod tests {
         assert!(
             body.contains("\"branch\":null"),
             "the unreachable repo's branch must be null; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_repos_reports_dirty_and_remote() {
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git (CI and the build machine have git)");
+        }
+
+        // (a) a dirty repo (untracked file) WITH an origin remote.
+        let dirty = tempfile::tempdir().unwrap();
+        git(dirty.path(), &["init"]);
+        git(
+            dirty.path(),
+            &["remote", "add", "origin", "https://github.com/o/r.git"],
+        );
+        std::fs::write(dirty.path().join("untracked.txt"), "x").unwrap();
+        // (b) a clean repo with NO remote.
+        let clean = tempfile::tempdir().unwrap();
+        git(clean.path(), &["init"]);
+
+        let reg = tempfile::tempdir().unwrap();
+        let registry_path = reg.path().join("repos.toml");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/dirty", &dirty.path().to_string_lossy());
+        store.upsert("owner/clean", &clean.path().to_string_lossy());
+        registry::save_to(&store, &registry_path).unwrap();
+
+        let resp = router(
+            None,
+            registry_path,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Localhost,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/repos")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"dirty\":true"),
+            "the untracked-file repo must be dirty; got: {body}"
+        );
+        assert!(
+            body.contains("\"dirty\":false"),
+            "the clean repo must not be dirty; got: {body}"
+        );
+        assert!(
+            body.contains("\"remote\":\"https://github.com/o/r.git\""),
+            "the origin url must be reported; got: {body}"
+        );
+        assert!(
+            body.contains("\"remote\":null"),
+            "the remoteless repo must report null; got: {body}"
         );
     }
 
