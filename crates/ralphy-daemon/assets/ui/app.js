@@ -60,6 +60,11 @@ function shell() {
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
     // instead of the seed projects. Empty when repos loaded (or in demo).
     reposError: "",
+    // True while a manual/initial repo refresh is in flight — spins the sidebar
+    // refresh button and disables it. The list does NOT auto-refresh (only the
+    // live dots do, via the presence heartbeat), so the button is the way to pick
+    // up a newly-registered repo or a branch/dirty change without a page reload.
+    reposLoading: false,
     // Live presence + identity (#204): the topbar uptime is the `/ws` heartbeat's
     // age, and the brand/avatar are `/api/identity`. Empty until the first tick /
     // a baptized daemon; `_lastHeartbeat` (epoch ms) drives the stale indicator.
@@ -77,6 +82,10 @@ function shell() {
       this.currentRunId = this.projectRuns()[0]?.runid || null;
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
       this.probeSession();
+      // In daemon mode the `projects` literal is demo seed (lingopilot &c.) — drop
+      // it BEFORE the async loadRepos so it never flashes on screen; the real
+      // registry replaces it. Demo (file://) keeps the seed. Mirrors initRuns.
+      if (!window.WBMode.seedAllowed()) this.projects = [];
       this.loadRepos();
       this.subscribePresence();
       this.loadIdentity();
@@ -145,6 +154,7 @@ function shell() {
     // not yet tracked here); `remote` is inferred from the slug shape
     // (`git::project_slug`'s only `path-<hash>` fallback is a remoteless repo).
     async loadRepos() {
+      this.reposLoading = true;
       try {
         const r = await fetch("/api/repos");
         if (r.ok) {
@@ -176,6 +186,8 @@ function shell() {
           this.reposError = "could not load projects from the daemon";
         }
         // Demo (file://): keep the seed — the shell stays navigable offline.
+      } finally {
+        this.reposLoading = false;
       }
     },
 
@@ -1060,6 +1072,51 @@ function shell() {
       return (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
     },
 
+    // --- about (read-only) ------------------------------------------------
+    // The daemon's product card from `/api/about`: the git-published version
+    // (embedded at build time, so it tracks the release tag), the description,
+    // and the license / source / creator facts. Opened from the account
+    // dropdown; a single fetch, no writes. On the static `file://` bundle (no
+    // daemon to answer) the seed below stands in so the card is never empty.
+    aboutOpen: false,
+    about: {
+      name: "ralphy",
+      version: "",
+      description: "",
+      license: "GPL-3.0-or-later",
+      repository: "https://github.com/paulocorcino/ralphy",
+      creator: "Paulo Corcino",
+      error: "",
+    },
+    async openAbout() {
+      this.avatarMenu = false;
+      this.aboutOpen = true;
+      this.about.error = "";
+      try {
+        const r = await fetch("/api/about");
+        if (r.ok) {
+          const data = await r.json();
+          // Merge onto the seed so any missing field keeps its fallback.
+          this.about = { ...this.about, ...data, error: "" };
+        } else if (window.WBMode.isDaemon()) {
+          this.about.error = "could not load about info from the daemon";
+        }
+      } catch {
+        // No daemon reachable (static demo): keep the seed, no error noise.
+        if (window.WBMode.isDaemon()) {
+          this.about.error = "could not load about info from the daemon";
+        }
+      }
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeAbout() {
+      this.aboutOpen = false;
+    },
+    // The current year for the copyright line (client clock is fine here).
+    aboutYear() {
+      return new Date().getFullYear();
+    },
+
     async saveSetting(key, value) {
       this.settings[key] = value;
       // Persist through the run-lock-aware config Mutate verbs (config.set /
@@ -1385,6 +1442,17 @@ function shell() {
     agents: ["claude", "codex", "opencode"],
     agentMenu: false,
     consoleCount: 0,
+    // The design-system confirm dialog (replaces window.confirm). `askConfirm`
+    // opens it and returns a promise resolved by the operator's choice.
+    confirmModal: {
+      open: false,
+      title: "",
+      message: "",
+      confirmLabel: "Confirm",
+      cancelLabel: "Cancel",
+      danger: false,
+    },
+    _confirmResolve: null,
     tabs: [{ id: "agents", kind: "agents", title: "Agents", icon: "bi bi-robot", closable: false }],
     active: "agents",
 
@@ -2018,6 +2086,31 @@ function shell() {
         ...extra,
       });
     },
+
+    // Open the confirm dialog and resolve `true`/`false` on the operator's
+    // choice. A pending dialog is settled `false` first so a second call never
+    // strands the prior promise. Options override the label/danger defaults.
+    askConfirm(opts = {}) {
+      if (this._confirmResolve) this.confirmRespond(false);
+      this.confirmModal = {
+        open: true,
+        title: opts.title || "Confirm",
+        message: opts.message || "",
+        confirmLabel: opts.confirmLabel || "Confirm",
+        cancelLabel: opts.cancelLabel || "Cancel",
+        danger: opts.danger || false,
+      };
+      return new Promise((resolve) => {
+        this._confirmResolve = resolve;
+      });
+    },
+    // Close the dialog and settle its promise with the choice.
+    confirmRespond(ok) {
+      this.confirmModal.open = false;
+      const resolve = this._confirmResolve;
+      this._confirmResolve = null;
+      if (resolve) resolve(ok);
+    },
   };
 }
 
@@ -2081,7 +2174,7 @@ window.addEventListener("message", (e) => {
       .catch(() => flash("write failed"));
   };
 
-  document.addEventListener("workbench:action", (e) => {
+  document.addEventListener("workbench:action", async (e) => {
     if (!daemonBacked()) return;
     const d = e.detail || {};
     const repo = d.project;
@@ -2109,12 +2202,17 @@ window.addEventListener("message", (e) => {
       }
       case "delete": {
         // Deleting is irreversible (a folder removes recursively, server-side);
-        // confirm before the verb ever leaves the browser, like `create` prompts.
+        // confirm through the design-system dialog before the verb leaves the
+        // browser. Fall back to the native confirm if the shell is unreachable.
         const name = d.title || d.path.split("/").pop() || d.path;
-        const warn = d.isFolder
-          ? `Delete folder "${name}" and everything inside it? This cannot be undone.`
-          : `Delete "${name}"? This cannot be undone.`;
-        if (!window.confirm(warn)) return;
+        const message = d.isFolder
+          ? `Delete folder “${name}” and everything inside it? This cannot be undone.`
+          : `Delete “${name}”? This cannot be undone.`;
+        const c = getShell();
+        const ok = c
+          ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
+          : window.confirm(message);
+        if (!ok) return;
         call("file.delete", { repo, path: d.path }, "deleted");
         break;
       }

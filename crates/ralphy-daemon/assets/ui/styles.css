@@ -1173,6 +1173,9 @@ body.side-collapsed.runs-open {
 .side-head .spacer {
   flex: 1;
 }
+.side-head {
+  gap: 0.35rem;
+}
 .side-head .count {
   background: var(--surface);
   color: var(--text-muted);
@@ -1181,6 +1184,37 @@ body.side-collapsed.runs-open {
   padding: 0 0.4rem;
   font-size: 0.68rem;
   line-height: 1.4;
+}
+/* manual project-list refresh — a quiet icon button (mirrors .modal-x), spinning
+   while a reload is in flight. */
+.side-refresh {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.side-refresh:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+.side-refresh:disabled {
+  cursor: default;
+}
+.side-refresh svg {
+  width: 15px;
+  height: 15px;
+}
+.side-refresh.spinning svg {
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+@keyframes side-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* provenance: GitHub-backed vs local-only. Sits before the project name,
    distinct from the reachability dot. */
@@ -1948,6 +1982,138 @@ body.side-collapsed.runs-open {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 0.25em;
+}
+
+/* --- confirm dialog — a compact, focused variant of the shared modal ------- */
+.modal.confirm-modal {
+  width: min(440px, 92vw);
+}
+.confirm-body {
+  margin: 0;
+  padding: 1.05rem 0.95rem 1.15rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+/* no foot-note here, so right-align the Cancel / confirm buttons */
+.confirm-modal .modal-foot {
+  justify-content: flex-end;
+}
+
+/* --- about modal ---------------------------------------------------------- */
+/* A compact product card, so it reads as a dialog rather than a full panel. */
+.about-modal {
+  width: min(440px, 96vw);
+}
+.about-body {
+  padding: 1.1rem 1.1rem 1rem;
+  overflow: auto;
+}
+.about-error {
+  margin: 0 0 0.8rem;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+/* hero: the mark beside the name + version */
+.about-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.about-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  color: var(--console-text);
+}
+.about-mark [data-lucide] {
+  width: 26px;
+  height: 26px;
+}
+.about-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.about-name {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+/* the git-published version: a subtle pill, links to the releases page */
+.about-version {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--console-text);
+  background: var(--console-bg);
+  border: 1px solid var(--console-border);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  text-decoration: none;
+}
+.about-version:hover {
+  border-color: var(--border-focus);
+}
+.about-tagline {
+  margin: 0.9rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+/* fact rows: label on the left, value on the right */
+.about-facts {
+  margin: 1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.about-fact {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--surface);
+}
+.about-fact dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 108px;
+  flex-shrink: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.about-fact dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+.about-fact dd a {
+  color: var(--info);
+  text-decoration: none;
+}
+.about-fact dd a:hover {
+  text-decoration: underline;
+}
+.about-copyright {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
 }
 
 /* --- settings modal body -------------------------------------------------- */

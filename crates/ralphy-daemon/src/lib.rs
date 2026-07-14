@@ -229,6 +229,7 @@ pub fn router(
     let sec_auth = auth.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
+        .route("/api/about", get(about_route))
         .route(
             "/api/repos",
             get({
@@ -1456,6 +1457,34 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
     }
 }
 
+/// `GET /api/about`: the daemon's static product facts for the workbench About
+/// panel — the git-published version (embedded at build time, so it tracks the
+/// release tag), the product description, and the license/creator/source facts
+/// pulled straight from the workspace manifest. Read-only, no secrets.
+async fn about_route() -> Response {
+    #[derive(serde::Serialize)]
+    struct AboutView {
+        name: &'static str,
+        version: &'static str,
+        description: &'static str,
+        license: &'static str,
+        repository: &'static str,
+        creator: &'static str,
+    }
+    Json(AboutView {
+        name: "ralphy",
+        // Embedded by build.rs from `git describe --tags` (falls back to the
+        // Cargo manifest version off a tarball).
+        version: env!("RALPHY_VERSION"),
+        description: env!("CARGO_PKG_DESCRIPTION"),
+        // From the workspace manifest (`license`/`repository` are inherited).
+        license: env!("CARGO_PKG_LICENSE"),
+        repository: env!("CARGO_PKG_REPOSITORY"),
+        creator: "Paulo Corcino",
+    })
+    .into_response()
+}
+
 /// The `POST /api/login` form: the current TOTP `code` and, when a password is
 /// enrolled, the operator's `password`. `password` is `Option` so a bind with no
 /// password enrolled accepts a form carrying only `code`.
@@ -2113,6 +2142,27 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn api_about_route_reports_version_and_facts() {
+        let resp = get("/api/about").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        // The build-embedded version string (git tag or Cargo fallback) — never empty.
+        assert!(
+            body.contains("\"version\":\"") && !body.contains("\"version\":\"\""),
+            "about must carry a non-empty version; got: {body}"
+        );
+        assert!(
+            body.contains("GPL-3.0"),
+            "about must carry the license; got: {body}"
+        );
+        assert!(
+            body.contains("Paulo Corcino"),
+            "about must carry the creator; got: {body}"
+        );
     }
 
     #[tokio::test]

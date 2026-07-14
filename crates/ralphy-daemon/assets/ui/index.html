@@ -46,6 +46,9 @@
           <button class="dropdown-item" @click="openSecurity()">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
+          <button class="dropdown-item" @click="openAbout()">
+            <i class="bi bi-info-circle"></i><span>About</span>
+          </button>
           <button class="dropdown-item" @click="logOff()">
             <i class="bi bi-box-arrow-right"></i><span>Log off</span>
           </button>
@@ -72,6 +75,19 @@
     <aside class="side">
       <div class="side-head">
         <span>Projects</span>
+        <span class="spacer"></span>
+        <!-- manual refresh: the list does not auto-update (only the live dots do),
+             so this re-reads /api/repos to pick up new repos / branch changes. -->
+        <button
+          class="side-refresh"
+          :class="{ spinning: reposLoading }"
+          :disabled="reposLoading"
+          @click="loadRepos()"
+          title="Refresh projects"
+          aria-label="Refresh projects"
+        >
+          <i data-lucide="refresh-cw"></i>
+        </button>
         <!-- count of located projects, at a glance (projects.length) -->
         <span class="count" x-text="projects.length" title="projects located"></span>
       </div>
@@ -865,6 +881,67 @@
     </div>
 
     <!-- ===================================================================
+         About — the daemon's product card: the git-published version (tracks
+         the release tag), the one-line description, and the license / source /
+         creator facts. All read from `/api/about`; a single fetch, no writes.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="aboutOpen" x-cloak @click.self="closeAbout()">
+      <div class="modal about-modal" role="dialog" aria-label="About ralphy"
+           @keydown.escape.window="aboutOpen && closeAbout()">
+        <div class="modal-head">
+          <i data-lucide="info"></i>
+          <span class="modal-title">About</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeAbout()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="about-body">
+          <p class="about-error" x-show="about.error" x-text="about.error"></p>
+
+          <!-- hero: the loop-R mark, the product name + version -->
+          <div class="about-hero">
+            <div class="about-mark"><i data-lucide="bot"></i></div>
+            <div class="about-headline">
+              <div class="about-name" x-text="about.name || 'ralphy'"></div>
+              <a class="about-version" x-show="about.version"
+                 :href="about.repository ? about.repository + '/releases' : null"
+                 target="_blank" rel="noopener"
+                 x-text="about.version" title="the git-published version"></a>
+            </div>
+          </div>
+
+          <p class="about-tagline" x-show="about.description" x-text="about.description"></p>
+
+          <!-- fact rows: license · source · creator -->
+          <dl class="about-facts">
+            <div class="about-fact">
+              <dt><i class="bi bi-file-earmark-text"></i> License</dt>
+              <dd x-text="about.license || '—'"></dd>
+            </div>
+            <div class="about-fact">
+              <dt><i class="bi bi-github"></i> Source</dt>
+              <dd>
+                <a x-show="about.repository" :href="about.repository" target="_blank" rel="noopener"
+                   x-text="about.repository"></a>
+                <span x-show="!about.repository">—</span>
+              </dd>
+            </div>
+            <div class="about-fact">
+              <dt><i class="bi bi-person-badge"></i> Created by</dt>
+              <dd x-text="about.creator || '—'"></dd>
+            </div>
+          </dl>
+
+          <p class="about-copyright" x-show="about.creator"
+             x-text="'© ' + aboutYear() + ' ' + about.creator + ' · free software, no warranty (GPLv3).'"></p>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Version tracks the released git tag; facts from <code>/api/about</code>.</span>
+          <button class="btn" @click="closeAbout()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
          Branch switcher — click the branch chip on a project to open. A
          filtered list (current pinned + ticked) with a create-from-current
          affordance when the typed name is new. Switching/creating emits an
@@ -928,6 +1005,41 @@
         <div class="modal-foot">
           <span class="foot-note">Emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
           <button class="btn" @click="closeBranchModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Confirm dialog — the design-system replacement for the native
+         window.confirm on destructive actions (delete). Driven by
+         `confirmModal` + `askConfirm()` (app.js): the scrim dims the canvas so
+         the choice has focus, Enter confirms, Escape/scrim/✕ cancels.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="confirmModal.open" x-cloak @click.self="confirmRespond(false)">
+      <div
+        class="modal confirm-modal"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="confirmModal.title"
+        @keydown.escape.window="confirmModal.open && confirmRespond(false)"
+        @keydown.enter.window="confirmModal.open && confirmRespond(true)"
+      >
+        <div class="modal-head">
+          <i class="bi bi-exclamation-triangle" x-show="confirmModal.danger" style="color: var(--danger)"></i>
+          <i class="bi bi-question-circle" x-show="!confirmModal.danger"></i>
+          <span class="modal-title" x-text="confirmModal.title"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="confirmRespond(false)" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <p class="confirm-body" x-text="confirmModal.message"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="confirmRespond(false)" x-text="confirmModal.cancelLabel"></button>
+          <button
+            class="btn"
+            :class="confirmModal.danger ? 'danger' : 'accent'"
+            @click="confirmRespond(true)"
+            x-text="confirmModal.confirmLabel"
+          ></button>
         </div>
       </div>
     </div>
