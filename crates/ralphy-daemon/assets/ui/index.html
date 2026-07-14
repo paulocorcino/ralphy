@@ -638,15 +638,15 @@
                       </template>
                       <template x-if="it.type === 'text'">
                         <input class="set-input" type="text" :placeholder="it.placeholder || ''"
-                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                               :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
-                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                               :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="it.type === 'number'">
                         <input class="set-input set-num" type="number" :min="it.min" :max="it.max"
-                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                               :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                     </div>
                     <p class="set-help" x-text="it.help"></p>

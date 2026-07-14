@@ -1022,18 +1022,27 @@ function shell() {
       return (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
     },
 
-    saveSetting(key, value) {
+    async saveSetting(key, value) {
       this.settings[key] = value;
       // Persist through the run-lock-aware config Mutate verbs (config.set /
       // config.unset). An empty/"unset" value clears the key. Only fired for the
-      // open repo — a config verb runs in that repo's cwd.
+      // open repo — a config verb runs in that repo's cwd. `observe` (not
+      // `spawn`) closes the socket after the one reply, so a run-lock refusal
+      // surfaces instead of being silently discarded (#207 / audit A3).
       if (this.openSlug) {
         const empty = value === "" || value === "unset" || value == null;
-        WBDaemon.spawn(
-          empty ? "config.unset" : "config.set",
-          { repo: this.openSlug, key, value: String(value) },
-          () => {},
-        );
+        try {
+          const reply = await window.WBDaemon.observe(empty ? "config.unset" : "config.set", {
+            repo: this.openSlug,
+            key,
+            value: String(value),
+          });
+          if (window.WBFail.isError(reply)) {
+            this._flashAction(window.WBFail.message(reply, "config change refused"));
+          }
+        } catch {
+          // No daemon reachable — leave the optimistic setting in place.
+        }
       }
       WB.emit("setting-change", { project: this.openSlug, key, value });
     },
