@@ -696,6 +696,10 @@ function shell() {
     // stay empty until `loadBoard()` resolves (or when no daemon answers — no throw).
     boardIssues: {},
     boardLabels: {},
+    // Distinct error state, project-scoped, for a `board.list` failure in daemon
+    // mode (issue #207 / audit C2) — kept apart from the empty-state "No issues"
+    // so a broken tracker connection never reads as "no work to do".
+    boardError: {},
     kanbanSel: null, // the selected issue number → opens the detail drawer
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
@@ -716,10 +720,13 @@ function shell() {
       if (!slug) return;
       try {
         const reply = await window.WBDaemon.observe("board.list", { repo: slug });
-        if (!reply || reply.status !== "ok") {
-          // Daemon mode: flash the failure (board has no seed to mask — the
-          // distinct error-state UI is audit C2, out of scope; M5).
-          if (window.WBMode.isDaemon()) this._flashAction?.(reply?.message || "could not load board");
+        if (window.WBFail.isError(reply)) {
+          // Daemon mode: distinct error state (audit C2) + flash the failure.
+          if (window.WBMode.isDaemon()) {
+            const msg = window.WBFail.message(reply, "could not load board");
+            this.boardError[slug] = msg;
+            this._flashAction?.(msg);
+          }
           return;
         }
         const board = reply.board || {};
@@ -732,9 +739,14 @@ function shell() {
           colors[l.name] = "#" + String(l.color).replace(/^#/, "");
         }
         this.boardLabels[slug] = colors;
+        this.boardError[slug] = null;
       } catch {
-        // Daemon mode: transport error → flash; board stays empty (no seed).
-        if (window.WBMode.isDaemon()) this._flashAction?.("could not load board");
+        // Daemon mode: transport error → distinct error state + flash; board
+        // stays empty (no seed).
+        if (window.WBMode.isDaemon()) {
+          this.boardError[slug] = "could not load board";
+          this._flashAction?.("could not load board");
+        }
         // Demo (static shell): leave it empty, no throw.
       }
     },

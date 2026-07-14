@@ -238,8 +238,11 @@
         </div>
 
         <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
-        <div class="kanban-empty" x-show="openSlug && projectIssues().length === 0">
+        <div class="kanban-empty" x-show="openSlug && !boardError[openSlug] && projectIssues().length === 0">
           No issues in <b x-text="openSlug"></b>.
+        </div>
+        <div class="kanban-error" x-show="openSlug && boardError[openSlug]">
+          <i data-lucide="alert-triangle"></i> <span x-text="boardError[openSlug]"></span>
         </div>
 
         <div class="kanban-cols" x-show="openSlug && projectIssues().length">
