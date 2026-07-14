@@ -27,6 +27,7 @@ fn drive_worker<T: Transport>(
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     run_delivery_worker(engine, queue, shutdown);
 }
@@ -888,6 +889,7 @@ fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     engine.on_start(); // card sent, id 100
 
@@ -946,6 +948,7 @@ fn progress_ping_is_suppressed_while_sleeping() {
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     engine.on_start();
     engine.on_event(RunEvent::SleepStarted {
@@ -960,6 +963,70 @@ fn progress_ping_is_suppressed_while_sleeping() {
             .any(|t| t.as_str() == "🔔"),
         "sleeping card edits do not ping"
     );
+}
+
+#[test]
+fn short_reason_collapses_the_multiline_network_chain() {
+    // The exact shape the run reported: a DNS failure whose anyhow chain repeats
+    // the OS message three times over two lines. It must collapse to one clause.
+    let dns = anyhow::anyhow!(
+        "editMessageText request failed: Dns Failed: resolve dns name \
+         'api.telegram.org:443': host not known (os error 11001): host not known \
+         (os error 11001)"
+    );
+    let r = short_reason(&dns);
+    assert_eq!(r, "network unreachable (DNS)", "got: {r}");
+    assert!(!r.contains('\n'), "reason must be one line: {r}");
+
+    // A connect timeout (os error 10060) is the other outage face.
+    let timeout = anyhow::anyhow!("sendMessage request failed: Network Error (os error 10060)");
+    assert_eq!(short_reason(&timeout), "network unreachable (timeout)");
+
+    // A genuine API rejection is NOT a network drop: keep it legible (first line),
+    // never silently reclassified as "unreachable".
+    let api = anyhow::anyhow!("sendMessage failed: Bad Request: chat not found");
+    assert_eq!(
+        short_reason(&api),
+        "sendMessage failed: Bad Request: chat not found"
+    );
+}
+
+#[test]
+fn gate_warns_once_then_resets_on_success() {
+    // A wedged network fails every edit; the gate must warn on the FIRST failure
+    // only (net_warned latches), and a later successful call clears the latch so a
+    // genuinely new drop warns again. Only edits fail here, so a successful send
+    // (the ping) is the recovery that resets the gate.
+    let mut transport = RecordingTransport::new();
+    transport.fail_edit = true;
+    let client = BotClient::new(transport);
+    let mut engine = TelegramEngine {
+        client,
+        chat_id: 7,
+        state: RunState::new("t", 1),
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
+        prev_sleeping: false,
+        prev_degraded: false,
+        net_warned: false,
+    };
+    engine.on_start(); // send ok → gate clear
+    assert!(!engine.net_warned);
+
+    // A failing edit latches the gate.
+    engine.on_event(RunEvent::IssueStarted {
+        number: 1,
+        title: "a".into(),
+    });
+    engine.on_tick(true);
+    assert!(engine.net_warned, "first edit failure latches the gate");
+
+    // A successful send (the ping) clears it — recovery re-arms the warning.
+    engine.fire_ping();
+    assert!(!engine.net_warned, "a success resets the gate");
 }
 
 #[test]
