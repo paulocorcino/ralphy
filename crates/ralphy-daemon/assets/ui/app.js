@@ -721,6 +721,9 @@ function shell() {
       try {
         const reply = await window.WBDaemon.observe("board.list", { repo: slug });
         if (window.WBFail.isError(reply)) {
+          // Drop any stale board from a prior successful load — else the error
+          // banner would sit above data that looks live but isn't (self-review).
+          this.boardIssues[slug] = [];
           // Daemon mode: distinct error state (audit C2) + flash the failure.
           if (window.WBMode.isDaemon()) {
             const msg = window.WBFail.message(reply, "could not load board");
@@ -741,8 +744,9 @@ function shell() {
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
       } catch {
-        // Daemon mode: transport error → distinct error state + flash; board
-        // stays empty (no seed).
+        // Daemon mode: transport error → distinct error state + flash; drop
+        // any stale board (see the isError branch above).
+        this.boardIssues[slug] = [];
         if (window.WBMode.isDaemon()) {
           this.boardError[slug] = "could not load board";
           this._flashAction?.("could not load board");
