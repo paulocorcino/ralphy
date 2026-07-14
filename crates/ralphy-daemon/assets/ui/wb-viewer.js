@@ -341,7 +341,7 @@
     xbtn.classList.add("busy");
     setMdXlateNote(rec, "translating…");
     try {
-      const res = await WBTranslate.translate(rec.content, t);
+      const res = await WBTranslate.translate(rec.content, t, (msg) => setMdXlateNote(rec, msg));
       rec.xlate.cache[t] = res.text;
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);

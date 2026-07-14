@@ -522,11 +522,15 @@ function shell() {
       this.xlate.err = { ...this.xlate.err, [block]: "" };
       this.xlate.note = { ...this.xlate.note, [block]: "" };
       try {
-        const res = await window.WBTranslate.translate(src, this.xlate.target);
+        const res = await window.WBTranslate.translate(src, this.xlate.target, (msg) => {
+          this.xlate.note = { ...this.xlate.note, [block]: msg };
+        });
         this.xlate.cache = { ...this.xlate.cache, [key]: res.text };
         // a same-language target changes nothing — say so, so it doesn't look broken
         if (res.same) {
           this.xlate.note = { ...this.xlate.note, [block]: `already ${this.xlate.target.toUpperCase()}` };
+        } else {
+          this.xlate.note = { ...this.xlate.note, [block]: "" }; // clear the download-progress note
         }
       } catch (e) {
         this.xlate.err = { ...this.xlate.err, [block]: e?.message || "translate failed" };
