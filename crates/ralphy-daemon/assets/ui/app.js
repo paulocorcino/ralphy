@@ -220,6 +220,14 @@ function shell() {
       );
     },
 
+    // Sidebar row label: just the repo name (last slug segment), UPPERCASED.
+    // The full `owner/repo` already shows in the top crumb, so trimming the
+    // owner here declutters the accordion. Falls back to the whole slug if it
+    // has no `/` (e.g. the remoteless `path-<hash>` fallback).
+    repoLabel(p) {
+      return (p.slug.split("/").pop() || p.slug).toUpperCase();
+    },
+
     // Opens the sidebar (if collapsed) and focuses the project search input —
     // the target of the global `/` shortcut.
     focusProjectSearch() {
@@ -422,7 +430,14 @@ function shell() {
 
     // Hydrate runs from the seed: copy each run's plan.md out of its hidden
     // <script> block into a live, mutable `planMd` the fold can update.
+    // Seed-gated (#202): in daemon mode the panel stays empty until real run
+    // events feed it (#210) — the seed is honest only in the `file://` demo, so
+    // synthetic runs never masquerade as live ones.
     initRuns() {
+      if (!window.WBMode.seedAllowed()) {
+        this.runsByProject = {};
+        return;
+      }
       const src = window.WB_RUNS || {};
       const out = {};
       for (const [proj, runs] of Object.entries(src)) {
@@ -1081,12 +1096,16 @@ function shell() {
       tokenSet: true, // a networked daemon always has one; localhost needs none
       passwordSet: false,
       passwordDraft: "",
+      passwordConfirm: "",
       totpEnrolled: false,
       // set only in the one moment after enrolling — the real daemon prints the
       // secret/QR a single time and never again.
       secret: "",
       otpauthUri: "",
       qrHtml: "",
+      pendingEnroll: false, // QR shown, awaiting the confirm code (ADR-0032 §C)
+      confirmCode: "",
+      totpError: "",
       requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
       policy: "session", // overwritten by probeSession(); demo default keeps login interactive
     },
@@ -1117,38 +1136,91 @@ function shell() {
       this.security.secret = "";
       this.security.otpauthUri = "";
       this.security.qrHtml = "";
+      // reset any in-flight enrolment UI; the pending seed survives server-side
+      // (mint-once) and re-appears on the next Enroll click.
+      this.security.pendingEnroll = false;
+      this.security.confirmCode = "";
+      this.security.totpError = "";
     },
 
     async enrollTotp() {
-      // POST /api/security/totp/enroll returns the REAL one-time provisioning
-      // URI (mint-once); the QR is rendered from THAT uri, not a client secret.
+      // POST /api/security/totp/enroll returns the REAL one-time provisioning URI
+      // for a PENDING seed (mint-once); the QR is rendered from THAT uri. The
+      // factor is NOT armed yet — confirmTotp() proves possession first.
       try {
         const r = await fetch("/api/security/totp/enroll", { method: "POST" });
         if (!r.ok) return;
         const { uri } = await r.json();
-        this.security.totpEnrolled = true;
+        this.security.pendingEnroll = true;
+        this.security.totpError = "";
+        this.security.confirmCode = "";
         this.security.otpauthUri = uri;
         this.security.secret = (uri.split("secret=")[1] || "").split("&")[0];
         this.security.qrHtml = window.wbQr(uri);
       } catch {}
     },
 
+    async confirmTotp() {
+      // POST /api/security/totp/confirm verifies the code against the pending
+      // seed and arms it on success (ADR-0032 §C). A wrong code prompts a retry.
+      const code = this.security.confirmCode.trim();
+      if (code.length !== 6) return;
+      try {
+        const r = await fetch("/api/security/totp/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "code=" + encodeURIComponent(code),
+        });
+        const ok = r.ok && (await r.json()).confirmed;
+        if (ok) {
+          this.security.totpEnrolled = true;
+          this.security.pendingEnroll = false;
+          this.security.secret = "";
+          this.security.otpauthUri = "";
+          this.security.qrHtml = "";
+          this.security.confirmCode = "";
+          this.security.totpError = "";
+        } else {
+          this.security.totpError = "That code didn't match — try the current one.";
+        }
+      } catch {
+        this.security.totpError = "Daemon unreachable — cannot verify.";
+      }
+    },
+
+    async cancelEnroll() {
+      // Abandon an in-flight enrolment: drop the pending seed server-side too.
+      try {
+        await fetch("/api/security/totp/revoke", { method: "POST" });
+      } catch {}
+      this.security.pendingEnroll = false;
+      this.security.secret = "";
+      this.security.otpauthUri = "";
+      this.security.qrHtml = "";
+      this.security.confirmCode = "";
+      this.security.totpError = "";
+    },
+
     async revokeTotp() {
-      // POST /api/security/totp/revoke deletes the seed file (mint-once posture).
+      // POST /api/security/totp/revoke deletes the live AND pending seeds.
       try {
         await fetch("/api/security/totp/revoke", { method: "POST" });
       } catch {}
       this.security.totpEnrolled = false;
+      this.security.pendingEnroll = false;
       this.security.secret = "";
       this.security.otpauthUri = "";
       this.security.qrHtml = "";
+      this.security.confirmCode = "";
+      this.security.totpError = "";
       // revoking the seed removes the session factor → login can't be required
       this.security.requireLogin = false;
     },
 
     async savePassword() {
       const pw = this.security.passwordDraft.trim();
-      if (!pw) return;
+      // Require a matching confirmation before the value ever leaves the field.
+      if (!pw || this.security.passwordDraft !== this.security.passwordConfirm) return;
       try {
         const r = await fetch("/api/security/password", {
           method: "POST",
@@ -1159,6 +1231,7 @@ function shell() {
       } catch {}
       this._passwordValue = pw; // demo login still checks locally
       this.security.passwordDraft = "";
+      this.security.passwordConfirm = "";
     },
     async clearPassword() {
       try {
@@ -1171,16 +1244,17 @@ function shell() {
       this._passwordValue = "";
       this.security.passwordSet = false;
       this.security.passwordDraft = "";
+      this.security.passwordConfirm = "";
     },
     async remintToken() {
-      // POST /api/security/token/remint rotates the on-disk token. The live
-      // AuthPolicy is captured at boot (ADR-0032 §4), so the rotation takes effect
-      // on the next daemon restart — it does NOT invalidate the current cookie in
-      // this process. Log off locally so the operator re-authenticates once it does.
+      // POST /api/security/token/remint rotates the token AND rebuilds the live
+      // policy + bumps the session epoch (ADR-0032 amendment §B), so every cookie
+      // — including this browser's — is invalidated IMMEDIATELY. Under a gated
+      // bind, drop to the login screen so the operator re-authenticates now.
       try {
         await fetch("/api/security/token/remint", { method: "POST" });
       } catch {}
-      if (this.security.requireLogin) this.logOff();
+      if (this.security.policy === "session") this.logOff();
     },
 
     async toggleRequireLogin(ev) {
@@ -1191,21 +1265,36 @@ function shell() {
       const want = !this.security.requireLogin;
       if (want && !this.security.totpEnrolled) {
         this.security.requireLogin = false;
-      } else {
-        try {
-          const r = await fetch("/api/security/require-login", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: "enable=" + want,
-          });
-          this.security.requireLogin = r.ok ? want : false;
-        } catch {
-          this.security.requireLogin = false;
-        }
+        if (ev?.target) ev.target.checked = false;
+        return;
       }
+      let ok = false;
+      try {
+        const r = await fetch("/api/security/require-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "enable=" + want,
+        });
+        ok = r.ok;
+      } catch {
+        ok = false;
+      }
+      if (ok) this.security.requireLogin = want;
       // The checkbox's :checked binding won't re-sync when the bound value
       // didn't actually change (blocked case), so force the DOM to match state.
       if (ev?.target) ev.target.checked = this.security.requireLogin;
+      if (!ok) return;
+      if (want) {
+        // The gate now applies to THIS bind — even loopback (ADR-0032 §A). The
+        // daemon swapped to the Session policy and invalidated sessions, so the
+        // browser is effectively logged out: drop to the login screen.
+        this.security.policy = "session";
+        this.closeSecurity();
+        this.logOff();
+      } else {
+        // Gate lifted — re-sync authed/policy from the server.
+        await this.probeSession();
+      }
     },
 
     // --- login gate -------------------------------------------------------

@@ -34,7 +34,7 @@ async fn malformed_run_is_refused_without_spawning() {
         std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

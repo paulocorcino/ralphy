@@ -1086,23 +1086,26 @@ body.side-collapsed.runs-open {
 .wb-host::-webkit-scrollbar-track {
   background: transparent;
 }
-/* Runs panel scroll areas: the same warm-dark treatment, a touch thinner so the
-   plan blocks read as quiet, integrated panels. */
+/* Runs panel scroll areas — plus the Security modal body: the same warm-dark
+   treatment, a touch thinner so the panels read as quiet and integrated. */
 .plan-md,
 .branch-list,
-.run-preview {
+.run-preview,
+.security-body {
   scrollbar-width: thin; /* Firefox */
   scrollbar-color: var(--border) transparent;
 }
 .plan-md::-webkit-scrollbar,
 .branch-list::-webkit-scrollbar,
-.run-preview::-webkit-scrollbar {
+.run-preview::-webkit-scrollbar,
+.security-body::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .plan-md::-webkit-scrollbar-thumb,
 .branch-list::-webkit-scrollbar-thumb,
-.run-preview::-webkit-scrollbar-thumb {
+.run-preview::-webkit-scrollbar-thumb,
+.security-body::-webkit-scrollbar-thumb {
   background: var(--border);
   border: 2px solid transparent;
   background-clip: content-box;
@@ -1110,13 +1113,15 @@ body.side-collapsed.runs-open {
 }
 .plan-md::-webkit-scrollbar-thumb:hover,
 .branch-list::-webkit-scrollbar-thumb:hover,
-.run-preview::-webkit-scrollbar-thumb:hover {
+.run-preview::-webkit-scrollbar-thumb:hover,
+.security-body::-webkit-scrollbar-thumb:hover {
   background: var(--border-focus);
   background-clip: content-box;
 }
 .plan-md::-webkit-scrollbar-track,
 .branch-list::-webkit-scrollbar-track,
-.run-preview::-webkit-scrollbar-track {
+.run-preview::-webkit-scrollbar-track,
+.security-body::-webkit-scrollbar-track {
   background: transparent;
 }
 /* File viewers: the rendered markdown pane, its outline, and CodeMirror's own

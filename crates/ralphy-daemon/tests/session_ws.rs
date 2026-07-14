@@ -56,7 +56,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
         std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

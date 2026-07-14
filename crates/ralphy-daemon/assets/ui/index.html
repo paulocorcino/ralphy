@@ -109,7 +109,7 @@
                 :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
                 :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
               ></i>
-              <span class="project-slug" x-text="p.slug"></span>
+              <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
               <!-- current git branch → click to switch (opens the branch
                    picker). @click.stop so it doesn't also toggle the accordion.
                    impl: current branch + the pickable list come from the
@@ -706,15 +706,22 @@
                     x-text="security.passwordSet ? 'set' : 'not set'"></span>
             </div>
             <p class="sec-note">
-              An optional extra factor on top of 2FA (PBKDF2, 600k iterations). Leave it off, or
-              set one below. Saving a new value replaces the old.
+              Optional extra factor on top of 2FA (PBKDF2). Enter it twice to save; a new value
+              replaces the old.
             </p>
             <div class="sec-actions">
-              <input class="set-input" type="password" placeholder="new password"
+              <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
                      x-model="security.passwordDraft" @keydown.enter="savePassword()" />
-              <button class="btn accent" @click="savePassword()" :disabled="!security.passwordDraft.trim()">Save</button>
+              <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
+                     x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
+              <button class="btn accent" @click="savePassword()"
+                      :disabled="!security.passwordDraft.trim() || security.passwordDraft !== security.passwordConfirm">Save</button>
               <button class="btn" @click="clearPassword()" x-show="security.passwordSet">Remove</button>
             </div>
+            <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)"
+               x-show="security.passwordConfirm && security.passwordDraft !== security.passwordConfirm">
+              Passwords don't match.
+            </p>
           </section>
 
           <!-- TOTP -->
@@ -725,30 +732,38 @@
                     x-text="security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
             </div>
             <p class="sec-note">
-              Time-based codes from any authenticator app (SHA1 · 6 digits · 30s). Enroll once,
-              scan the QR, and codes are required at login. The secret is shown a single time —
-              scan it now.
+              Codes from any authenticator app (SHA1 · 6 digits · 30s). Scan the QR, then enter a
+              code to confirm — enrolment only completes once you prove you scanned it.
             </p>
 
-            <!-- not enrolled → enroll button -->
-            <div class="sec-actions" x-show="!security.totpEnrolled">
+            <!-- not enrolled & nothing in flight → begin enrolment -->
+            <div class="sec-actions" x-show="!security.totpEnrolled && !security.pendingEnroll">
               <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll &amp; show QR</button>
             </div>
 
-            <!-- the one-time reveal, present only right after enrolling -->
-            <div class="totp-reveal" x-show="security.totpEnrolled && security.secret">
+            <!-- in-flight enrolment: QR + secret + the confirm-code step -->
+            <div class="totp-reveal" x-show="security.pendingEnroll">
               <div class="totp-qr" x-html="security.qrHtml"></div>
               <div class="totp-meta">
                 <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown once — scan or copy it now.</div>
                 <label class="set-label">Secret</label>
                 <input class="set-input mono" type="text" :value="security.secret" readonly onclick="this.select()" />
-                <label class="set-label">otpauth URI</label>
-                <input class="set-input mono" type="text" :value="security.otpauthUri" readonly onclick="this.select()" />
+                <label class="set-label">Enter the current 6-digit code to confirm</label>
+                <div class="sec-actions">
+                  <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                         placeholder="000000" x-model="security.confirmCode"
+                         @keydown.enter="confirmTotp()" />
+                  <button class="btn accent" @click="confirmTotp()"
+                          :disabled="security.confirmCode.trim().length !== 6">Confirm</button>
+                  <button class="btn" @click="cancelEnroll()">Cancel</button>
+                </div>
+                <p class="sec-note" style="margin:0;color:var(--danger)" x-show="security.totpError"
+                   x-text="security.totpError"></p>
               </div>
             </div>
 
-            <!-- enrolled (secret already dismissed) → revoke -->
-            <div class="sec-actions" x-show="security.totpEnrolled && !security.secret">
+            <!-- enrolled → revoke -->
+            <div class="sec-actions" x-show="security.totpEnrolled && !security.pendingEnroll">
               <span class="sec-note" style="margin:0;flex:1">Enrolled. The secret can't be shown again — revoke to start over.</span>
               <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
             </div>
@@ -758,17 +773,20 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
+              <span class="sec-badge" :class="security.requireLogin ? 'on' : 'off'"
+                    x-text="security.requireLogin ? 'active' : 'off'"></span>
               <label class="switch">
-                <input type="checkbox" :checked="security.requireLogin" :disabled="security.policy !== 'session'" @change="toggleRequireLogin($event)" />
+                <input type="checkbox" :checked="security.requireLogin" :disabled="!security.totpEnrolled" @change="toggleRequireLogin($event)" />
                 <span class="switch-track"></span>
               </label>
             </div>
             <p class="sec-note">
-              Gate the browser UI behind a login screen (session auth). Needs 2FA enrolled first —
-              this is the same posture the daemon adopts automatically when bound to a non-local
-              address. With it on, <b>Log off</b> drops you to the login screen.
+              Gate the browser UI behind a login screen. Needs 2FA enrolled first. With it on,
+              the daemon logs you off and stays locked until you log in.
             </p>
-            <p class="sec-note" x-show="security.policy !== 'session'">This bind is loopback — the login gate only applies to a network bind with TOTP.</p>
+            <p class="sec-note" style="margin:0.4rem 0 0" x-show="!security.totpEnrolled">
+              Enroll two-factor above to enable this.
+            </p>
           </section>
         </div>
         <div class="modal-foot">

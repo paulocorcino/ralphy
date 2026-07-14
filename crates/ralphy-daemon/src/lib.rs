@@ -24,6 +24,7 @@ pub mod autostart;
 pub mod confine;
 pub mod cookie;
 pub mod dispatch;
+pub mod epoch;
 pub mod fswrite;
 pub mod identity;
 pub mod password;
@@ -116,21 +117,19 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // token — the daemon must never begin serving an unauthenticated network
     // socket (ADR-0032 §4).
     let token = auth::effective_token()?;
-    // Capture the token as the cookie SIGNING KEY before `for_bind` consumes it and
-    // before it is stripped from the env — the Session policy owns this key for the
-    // process lifetime, same discipline as today's Bearer.
-    let token_for_key = token.clone();
-    let policy = auth::AuthPolicy::for_bind(addr.ip(), token)?;
-    // Opt-in browser-session hardening (issue #179): a network Bearer bind upgrades
-    // to Session ONLY when a TOTP seed is enrolled; with no seed it stays
-    // bearer-only, and Localhost is untouched.
-    let seed = totp::load_seed()?;
-    let pw = password::load()?;
-    let policy = auth::upgrade_with_session(policy, token_for_key, seed, pw);
+    // The live session epoch (ADR-0032 amendment §B): mixed into every cookie so a
+    // bump is an instant, total logout. Persisted beside the token.
+    let session_epoch = epoch::SessionEpoch::load(epoch::epoch_path()?)?;
+    // Boot the runtime auth state (amendment §A/§B): validates the
+    // network-bind-needs-a-token invariant, reads the on-disk seed / password /
+    // require-login flag, and computes the initial policy. The policy is now
+    // runtime-swappable — a security toggle rebuilds it in place, no restart.
+    let auth_state = auth::AuthState::boot(addr.ip(), token, session_epoch)?;
     // INVARIANT: strip the token from the process env on the boot path BEFORE any
     // child can be spawned, so every subsequent `dispatch`/`session` child
     // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
-    // ADR-0019). The policy already holds the effective token.
+    // ADR-0019). The auth state already holds the effective token as its
+    // signing-key fallback.
     auth::strip_token_from_env();
 
     // Resolve the registry path once and hand it to the router. `/api/repos`
@@ -156,7 +155,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             kimi_code_dir,
             start,
             shutdown_rx,
-            policy,
+            auth_state,
         ),
     )
     .with_graceful_shutdown(async move {
@@ -189,7 +188,7 @@ pub fn router(
     kimi_code_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
-    auth: auth::AuthPolicy,
+    auth: Arc<auth::AuthState>,
 ) -> Router {
     let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
@@ -222,11 +221,12 @@ pub fn router(
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
     let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
-    // The login form needs the auth policy (the `Session`'s TOTP/password/token)
-    // to validate a code and sign a cookie. Cloned here BEFORE `auth` is moved
-    // into the guard layer below; `Session` is `Arc`-cheap, `Bearer`/`Localhost`
-    // trivially so.
+    // The login and security routes need the runtime auth state: to read the
+    // CURRENT policy (validate a code, sign a cookie), rebuild it after a mutation,
+    // and bump the session epoch. Cloned (an `Arc`) BEFORE `auth` is moved into the
+    // guard layer below.
     let login_auth = auth.clone();
+    let sec_auth = auth.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -342,24 +342,52 @@ pub fn router(
                 }
             }),
         )
-        .route("/api/logout", post(logout_route))
+        .route(
+            "/api/logout",
+            post({
+                let auth = sec_auth.clone();
+                move || logout_route(auth.clone())
+            }),
+        )
         .route("/api/security/state", get(security_state_route))
         .route(
             "/api/security/totp/enroll",
             post(security_totp_enroll_route),
         )
         .route(
-            "/api/security/totp/revoke",
-            post(security_totp_revoke_route),
+            "/api/security/totp/confirm",
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<ConfirmForm>| security_totp_confirm_route(auth.clone(), form)
+            }),
         )
-        .route("/api/security/password", post(security_password_route))
+        .route(
+            "/api/security/totp/revoke",
+            post({
+                let auth = sec_auth.clone();
+                move || security_totp_revoke_route(auth.clone())
+            }),
+        )
+        .route(
+            "/api/security/password",
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<PasswordForm>| security_password_route(auth.clone(), form)
+            }),
+        )
         .route(
             "/api/security/token/remint",
-            post(security_token_remint_route),
+            post({
+                let auth = sec_auth.clone();
+                move || security_token_remint_route(auth.clone())
+            }),
         )
         .route(
             "/api/security/require-login",
-            post(security_require_login_route),
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<RequireLoginForm>| security_require_login_route(auth.clone(), form)
+            }),
         )
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
@@ -382,10 +410,14 @@ const LOGIN_ALLOWLIST: &[&str] = &["/api/login", "/api/session", "/api/logout"];
 /// anything else is `401`. `Localhost`/`Bearer` keep the plain `401`
 /// fall-through — fail closed.
 async fn require_auth(
-    State(policy): State<auth::AuthPolicy>,
+    State(state): State<Arc<auth::AuthState>>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    // Read the CURRENT policy: a security toggle may have swapped it since boot
+    // (ADR-0032 amendment §A). The clone is cheap (`Session` is `Arc`); the lock
+    // is released before any `.await`.
+    let policy = state.policy();
     let header = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -400,7 +432,19 @@ async fn require_auth(
             .and_then(|v| v.to_str().ok());
         let now = now_unix();
         if session.cookie_valid(cookie_header, now) {
-            return next.run(req).await;
+            // Idle-slide (amendment §D): re-issue the cookie with a later `exp`
+            // (same `iat`, so the absolute cap holds) when activity moved it far
+            // enough. The header must be owned before `req` is consumed by `next`.
+            let slid = session
+                .slide_cookie(cookie_header, now)
+                .map(|c| cookie::set_cookie_value(&c));
+            let mut resp = next.run(req).await;
+            if let Some(set_cookie) = slid {
+                if let Ok(v) = header::HeaderValue::from_str(&set_cookie) {
+                    resp.headers_mut().append(header::SET_COOKIE, v);
+                }
+            }
+            return resp;
         }
         let path = req.uri().path();
         if LOGIN_ALLOWLIST.contains(&path) {
@@ -1422,20 +1466,44 @@ struct LoginForm {
 }
 
 /// `POST /api/login`: validate the TOTP code (and password, if enrolled) against
-/// the `Session` policy. On success `200` + a `Set-Cookie: ralphy_session=…`
-/// header; on a bad credential `401`. Login is meaningless without a network
-/// `Session` policy, so any other policy returns `404`.
-async fn login_submit(auth: auth::AuthPolicy, Form(form): Form<LoginForm>) -> Response {
-    let auth::AuthPolicy::Session(session) = &auth else {
+/// the CURRENT `Session` policy. On success `200` + a `Set-Cookie: ralphy_session=…`
+/// header; on a bad credential `401`; while rate-limited `429` with a
+/// `Retry-After` (amendment §D). Login is meaningless without a `Session` policy,
+/// so any other policy returns `404`.
+async fn login_submit(state: Arc<auth::AuthState>, Form(form): Form<LoginForm>) -> Response {
+    // Throttle first: a 6-digit TOTP is otherwise online-brute-forceable.
+    if let Err(retry_after) = state.throttle_check() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, retry_after.to_string())],
+            "too many attempts — try again shortly",
+        )
+            .into_response();
+    }
+    let auth::AuthPolicy::Session(session) = state.policy() else {
         return (StatusCode::NOT_FOUND, "login not enabled").into_response();
     };
-    match session.login(&form.code, form.password.as_deref(), now_unix()) {
-        Some(cookie) => (
-            StatusCode::OK,
-            [(header::SET_COOKIE, cookie::set_cookie_value(&cookie))],
-        )
-            .into_response(),
-        None => (StatusCode::UNAUTHORIZED, "invalid credentials").into_response(),
+    let now = now_unix();
+    // The last consumed TOTP step gates anti-replay (amendment §D); the store lives
+    // on the AuthState (real store at boot, detached temp in tests).
+    let last_step = state.last_step();
+    match session.login_checked(&form.code, form.password.as_deref(), now, last_step) {
+        auth::LoginOutcome::Ok { cookie, step } => {
+            // Persist the consumed step so the same code can't be replayed.
+            state.record_step(step);
+            state.throttle_record(true);
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie::set_cookie_value(&cookie))],
+            )
+                .into_response()
+        }
+        // A replay and a bad credential are indistinguishable to the client (generic
+        // message) and both feed the throttle.
+        auth::LoginOutcome::BadCredential | auth::LoginOutcome::Replayed => {
+            state.throttle_record(false);
+            (StatusCode::UNAUTHORIZED, "invalid credentials").into_response()
+        }
     }
 }
 
@@ -1453,9 +1521,16 @@ async fn ui_asset(uri: Uri) -> Response {
     }
 }
 
-/// `POST /api/logout`: emit a `Max-Age=0` clearing `Set-Cookie`. The session
-/// cookie is `HttpOnly`, so JS cannot clear it — the server must (issue #186).
-async fn logout_route() -> Response {
+/// `POST /api/logout`: bump the session epoch so the cookie is invalidated
+/// SERVER-SIDE (amendment §B — not merely cleared client-side), then emit a
+/// `Max-Age=0` clearing `Set-Cookie`. The cookie is `HttpOnly`, so JS cannot
+/// clear it — the server must (issue #186).
+async fn logout_route(state: Arc<auth::AuthState>) -> Response {
+    if let Err(e) = state.invalidate_sessions() {
+        // A failed epoch bump must not strand the operator "logged in": clearing
+        // the cookie still drops this browser. Log and proceed.
+        tracing::warn!(error = %e, "failed to bump the session epoch on logout");
+    }
     (
         StatusCode::OK,
         [(header::SET_COOKIE, cookie::clear_cookie_value())],
@@ -1476,7 +1551,11 @@ struct SessionState {
 /// `GET /api/session`: report whether this request is authorized and whether a
 /// password factor is enrolled. `Localhost`/`Bearer` are always `authed`; under a
 /// `Session` policy `authed` reflects a valid `Bearer` OR session cookie.
-async fn session_state_route(auth: auth::AuthPolicy, headers: axum::http::HeaderMap) -> Response {
+async fn session_state_route(
+    state: Arc<auth::AuthState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let auth = state.policy();
     let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
@@ -1498,9 +1577,9 @@ async fn session_state_route(auth: auth::AuthPolicy, headers: axum::http::Header
 }
 
 /// The daemon's auth-state surface for the Security modal (issue #195): which
-/// factors are enrolled in the REAL stores. `require_login` is DERIVED from TOTP
-/// enrolment (a network bind with a seed already forces `Session`; localhost
-/// never requires login), so there is no separate flag file (ADR-0032 §4).
+/// factors are enrolled in the REAL stores. `require_login` is the PERSISTED
+/// `daemon-require-login` flag (ADR-0032 amendment §A): an operator opt-in that
+/// gates the browser UI even on a loopback bind, no longer derived from the seed.
 #[derive(serde::Serialize)]
 struct SecurityState {
     token_set: bool,
@@ -1510,7 +1589,8 @@ struct SecurityState {
 }
 
 /// Read the real store FILES under `dir` and report enrolment. Path-explicit (no
-/// env reads) so tests pass a tempdir. `require_login == totp_enrolled`.
+/// env reads) so tests pass a tempdir. `require_login` is now the PERSISTED flag
+/// (ADR-0032 amendment §A), no longer derived from the seed.
 fn security_state_at(dir: &Path) -> SecurityState {
     let totp_enrolled = totp::load_seed_from(&totp::seed_path_in(dir))
         .ok()
@@ -1526,16 +1606,38 @@ fn security_state_at(dir: &Path) -> SecurityState {
             .flatten()
             .is_some(),
         totp_enrolled,
-        require_login: totp_enrolled,
+        require_login: auth::require_login_enabled_in(dir),
     }
 }
 
-/// Enroll (mint-once) a TOTP seed under `dir`; return its `otpauth://` URI and
-/// whether it was newly minted. The URI is shown once (QR + base32); a second
-/// enrol returns the SAME secret with `newly_minted=false`.
+/// Begin enrolment: mint-once a PENDING TOTP seed under `dir` and return its
+/// `otpauth://` URI + whether it was newly minted. The seed is NOT armed — it
+/// gates nothing until [`confirm_totp_at`] verifies a code (ADR-0032 amendment
+/// §C). The URI is shown once (QR + base32); a re-enrol before confirming
+/// returns the SAME pending secret with `newly_minted=false`.
 fn enroll_totp_at(dir: &Path) -> Result<(String, bool)> {
-    let (seed, newly_minted) = totp::ensure_seed_at(&totp::seed_path_in(dir))?;
+    let (seed, newly_minted) = totp::ensure_seed_at(&totp::pending_seed_path_in(dir))?;
     Ok((seed.otpauth_uri("ralphy", "daemon"), newly_minted))
+}
+
+/// Confirm a pending enrolment: verify `code` against the pending seed and, on
+/// success, promote it to the live seed. Returns whether the code verified.
+fn confirm_totp_at(dir: &Path, code: &str, now: u64) -> Result<bool> {
+    totp::confirm_pending_at(
+        &totp::pending_seed_path_in(dir),
+        &totp::seed_path_in(dir),
+        code,
+        now,
+    )
+}
+
+/// Revoke enrolment: delete the live seed, any in-flight pending seed, and the
+/// anti-replay last-step marker, so an abandoned enrolment leaves nothing behind
+/// (ADR-0032 amendment §C/§D).
+fn revoke_totp_at(dir: &Path) -> Result<()> {
+    totp::revoke_seed_at(&totp::seed_path_in(dir))?;
+    totp::revoke_seed_at(&totp::pending_seed_path_in(dir))?;
+    totp::revoke_seed_at(&totp::last_step_path_in(dir))
 }
 
 /// Set (non-empty) or clear (empty/absent) the optional password under `dir`;
@@ -1560,20 +1662,25 @@ fn remint_token_at(dir: &Path) -> Result<()> {
     auth::save_token_to(&auth::generate_token(), &auth::token_path_in(dir))
 }
 
-/// The require-login gate: enabling require-login demands an enrolled TOTP seed
-/// (localhost stays frictionless; a network bind with a seed already forces
-/// `Session`). `Err("totp not enrolled")` when enabling with no seed; else `Ok`
-/// — state is derived from the seed, so this validates rather than stores a flag.
+/// The require-login gate (ADR-0032 amendment §A): persist the operator's choice
+/// as the `daemon-require-login` flag. Enabling demands an armed TOTP seed
+/// (`Err("totp not enrolled")` otherwise) and MINTS the access token if absent —
+/// gating a loopback bind needs a signing key, and machine clients then use it as
+/// a bearer. Disabling just clears the flag.
 fn require_login_at(dir: &Path, enable: bool) -> Result<()> {
-    if enable
-        && totp::load_seed_from(&totp::seed_path_in(dir))
+    if enable {
+        if totp::load_seed_from(&totp::seed_path_in(dir))
             .ok()
             .flatten()
             .is_none()
-    {
-        anyhow::bail!("totp not enrolled");
+        {
+            anyhow::bail!("totp not enrolled");
+        }
+        // Ensure a signing key exists (mint-once) so the gate can sign cookies —
+        // a loopback bind may never have minted one.
+        auth::ensure_token_at(&auth::token_path_in(dir))?;
     }
-    Ok(())
+    auth::set_require_login_in(dir, enable)
 }
 
 /// `GET /api/security/state`: the real enrolment state (gated by `require_auth`;
@@ -1602,11 +1709,46 @@ async fn security_totp_enroll_route() -> Response {
     }
 }
 
-/// `POST /api/security/totp/revoke`: delete the seed (mint-once posture — a later
-/// enrol mints a fresh one).
-async fn security_totp_revoke_route() -> Response {
-    match auth::store_dir().and_then(|dir| totp::revoke_seed_at(&totp::seed_path_in(&dir))) {
-        Ok(()) => Json(serde_json::json!({ "revoked": true })).into_response(),
+/// The `POST /api/security/totp/confirm` body: the live 6-digit code proving the
+/// operator scanned the pending QR.
+#[derive(serde::Deserialize)]
+struct ConfirmForm {
+    code: String,
+}
+
+/// `POST /api/security/totp/confirm`: verify `code` against the pending seed and
+/// arm it on success. `200 {confirmed}` either way; a wrong code is
+/// `confirmed:false` (not an error) so the UI can prompt a retry. On a successful
+/// arm the live policy is rebuilt (a promotion takes effect if require-login is
+/// already on).
+async fn security_totp_confirm_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<ConfirmForm>,
+) -> Response {
+    let now = now_unix();
+    match auth::store_dir().and_then(|dir| confirm_totp_at(&dir, &form.code, now)) {
+        Ok(confirmed) => {
+            if confirmed {
+                apply_auth_change(&state, false);
+            }
+            Json(serde_json::json!({ "confirmed": confirmed })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to confirm the TOTP enrolment");
+            (StatusCode::INTERNAL_SERVER_ERROR, "confirm failed").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/totp/revoke`: delete the live AND pending seeds (mint-once
+/// posture). Rebuilds the policy (demoting a gated bind) and invalidates live
+/// sessions — revoking the factor must drop anyone it authorized.
+async fn security_totp_revoke_route(state: Arc<auth::AuthState>) -> Response {
+    match auth::store_dir().and_then(|dir| revoke_totp_at(&dir)) {
+        Ok(()) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "revoked": true })).into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "failed to revoke the TOTP seed");
             (StatusCode::INTERNAL_SERVER_ERROR, "revoke failed").into_response()
@@ -1622,9 +1764,15 @@ struct PasswordForm {
 }
 
 /// `POST /api/security/password`: set or clear the optional password factor.
-async fn security_password_route(Form(form): Form<PasswordForm>) -> Response {
+/// Rebuilds the policy (the `Session` carries the new/absent password) and
+/// invalidates live sessions so they re-authenticate under the changed factor.
+async fn security_password_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<PasswordForm>,
+) -> Response {
     match auth::store_dir().and_then(|dir| set_password_at(&dir, form.password.as_deref())) {
         Ok(password_set) => {
+            apply_auth_change(&state, true);
             Json(serde_json::json!({ "password_set": password_set })).into_response()
         }
         Err(e) => {
@@ -1635,9 +1783,15 @@ async fn security_password_route(Form(form): Form<PasswordForm>) -> Response {
 }
 
 /// `POST /api/security/token/remint`: rotate the access token (never echoed).
-async fn security_token_remint_route() -> Response {
+/// The token is the cookie signing key, so rebuild the policy under the new key
+/// and invalidate live sessions — a re-mint logs everyone out (amendment §B),
+/// now IMMEDIATELY rather than at next restart.
+async fn security_token_remint_route(state: Arc<auth::AuthState>) -> Response {
     match auth::store_dir().and_then(|dir| remint_token_at(&dir)) {
-        Ok(()) => Json(serde_json::json!({ "reminted": true })).into_response(),
+        Ok(()) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "reminted": true })).into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "failed to remint the access token");
             (StatusCode::INTERNAL_SERVER_ERROR, "remint failed").into_response()
@@ -1651,13 +1805,37 @@ struct RequireLoginForm {
     enable: bool,
 }
 
-/// `POST /api/security/require-login`: the server-side gate for AC4 — enabling
-/// require-login without an enrolled TOTP seed is refused (`400`). Enabling with a
-/// seed (or disabling) is `Ok`; the state itself stays derived from the seed.
-async fn security_require_login_route(Form(form): Form<RequireLoginForm>) -> Response {
+/// `POST /api/security/require-login`: persist the operator's gate choice
+/// (amendment §A). Enabling without an armed TOTP seed is refused (`400`, AC4);
+/// enabling mints a signing token if absent. Either way the policy is rebuilt so
+/// the gate engages/lifts IMMEDIATELY, and live sessions are invalidated (turning
+/// the gate on logs the browser off; turning it off re-issues cleanly).
+async fn security_require_login_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<RequireLoginForm>,
+) -> Response {
     match auth::store_dir().and_then(|dir| require_login_at(&dir, form.enable)) {
-        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(()) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+/// Apply a security mutation to the LIVE auth state: rebuild the policy from disk
+/// so the change takes effect without a restart (amendment §A), and — when
+/// `invalidate` — bump the session epoch to drop outstanding cookies (§B).
+/// Failures are logged, never fatal to the request that triggered them (the store
+/// write already succeeded; a stale in-memory policy self-heals on restart).
+fn apply_auth_change(state: &auth::AuthState, invalidate: bool) {
+    if let Err(e) = state.rebuild() {
+        tracing::warn!(error = %e, "failed to rebuild the live auth policy");
+    }
+    if invalidate {
+        if let Err(e) = state.invalidate_sessions() {
+            tracing::warn!(error = %e, "failed to invalidate sessions");
+        }
     }
 }
 
@@ -1714,7 +1892,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await
@@ -1727,12 +1905,19 @@ mod tests {
         // Empty store → every factor unset.
         let s = security_state_at(dir.path());
         assert!(!s.token_set && !s.password_set && !s.totp_enrolled && !s.require_login);
-        // Writing a seed flips totp_enrolled AND the derived require_login.
+        // Writing a seed flips totp_enrolled — but require_login is now the
+        // PERSISTED opt-in flag (amendment §A), NOT derived from the seed.
         totp::save_seed_to(&totp::generate_seed(), &totp::seed_path_in(dir.path())).unwrap();
         let s = security_state_at(dir.path());
         assert!(
-            s.totp_enrolled && s.require_login,
-            "seed → enrolled + require"
+            s.totp_enrolled && !s.require_login,
+            "seed → enrolled, but require_login stays off until opted in"
+        );
+        // Setting the flag flips require_login on its own.
+        auth::set_require_login_in(dir.path(), true).unwrap();
+        assert!(
+            security_state_at(dir.path()).require_login,
+            "the flag drives require_login"
         );
         assert!(!s.token_set && !s.password_set, "other factors still unset");
     }
@@ -1756,6 +1941,34 @@ mod tests {
         let (uri2, minted2) = enroll_totp_at(dir.path()).unwrap();
         assert!(!minted2, "second enrol does not re-mint");
         assert_eq!(secret_of(&uri), secret_of(&uri2), "same secret returned");
+    }
+
+    #[test]
+    fn enroll_then_confirm_arms_the_live_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        // Seed the PENDING slot with the RFC vector so we know a valid code.
+        totp::save_seed_to(
+            &totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            &totp::pending_seed_path_in(dir.path()),
+        )
+        .unwrap();
+        // Pending enrolment does not count as enrolled yet.
+        assert!(
+            !security_state_at(dir.path()).totp_enrolled,
+            "a pending seed is not enrolled"
+        );
+        // A wrong code arms nothing.
+        assert!(!confirm_totp_at(dir.path(), "999999", 59).unwrap());
+        assert!(!security_state_at(dir.path()).totp_enrolled);
+        // The RFC vector code (T=59 → 287082) confirms and arms the live seed.
+        assert!(confirm_totp_at(dir.path(), "287082", 59).unwrap());
+        assert!(
+            security_state_at(dir.path()).totp_enrolled,
+            "confirming arms TOTP"
+        );
+        // Revoke clears both live and (already-consumed) pending.
+        revoke_totp_at(dir.path()).unwrap();
+        assert!(!security_state_at(dir.path()).totp_enrolled);
     }
 
     #[test]
@@ -1856,7 +2069,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1889,7 +2102,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1924,7 +2137,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1977,7 +2190,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2041,7 +2254,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2098,7 +2311,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2148,7 +2361,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2203,7 +2416,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2279,7 +2492,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2344,7 +2557,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2396,7 +2609,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2464,7 +2677,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -2496,7 +2712,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -2529,7 +2748,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -2558,7 +2777,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -2580,10 +2802,14 @@ mod tests {
     /// Build a router under a `Session` policy over `token` + the RFC seed, with a
     /// baptized identity so `/api/identity` answers `200` once authorized.
     fn session_router(token: &str) -> Router {
+        // One shared epoch: the `SessionAuth` signs/verifies cookies under it and
+        // the wrapping `AuthState` bumps the SAME counter on logout/invalidate.
+        let session_epoch = epoch::SessionEpoch::in_memory_detached();
         let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
             token: token.to_string(),
             totp: rfc_seed(),
             password: None,
+            epoch: session_epoch.clone(),
         }));
         let id = identity::Identity {
             id: ulid::Ulid::nil(),
@@ -2601,7 +2827,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            policy,
+            auth::AuthState::fixed(policy, session_epoch),
         )
     }
 
@@ -2980,7 +3206,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -2996,8 +3225,9 @@ mod tests {
     }
 
     /// The served shell no longer claims every 6-digit code works (that was
-    /// true of the pre-#205 mock login) and instead explains the loopback
-    /// login-gate exemption inline (issue #205, audit finding AC5).
+    /// true of the pre-#205 mock login) and explains the login gate inline
+    /// (issue #205, audit finding AC5; copy updated for the ADR-0032 amendment
+    /// where the gate can also apply to a loopback bind).
     #[tokio::test]
     async fn login_gate_drops_mock_hint() {
         let shell = body_string(get_local("/").await).await;
@@ -3006,8 +3236,8 @@ mod tests {
             "mock hint must be gone"
         );
         assert!(
-            shell.contains("the login gate only applies to a network bind with TOTP"),
-            "loopback explanation must be present"
+            shell.contains("Needs 2FA enrolled first"),
+            "require-login explanation must be present"
         );
     }
 
@@ -3078,7 +3308,10 @@ mod tests {
                 PathBuf::from("does-not-exist"),
                 Instant::now(),
                 idle_shutdown(),
-                auth::AuthPolicy::Bearer("tok".into()),
+                auth::AuthState::fixed(
+                    auth::AuthPolicy::Bearer("tok".into()),
+                    epoch::SessionEpoch::in_memory_detached(),
+                ),
             )
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await

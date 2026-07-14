@@ -43,7 +43,7 @@ async fn serve_repo() -> (String, String) {
         std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
     std::mem::forget(_tx);
@@ -105,7 +105,7 @@ async fn serve_git_repo() -> (String, String) {
         std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     std::mem::forget(_tx);
     tokio::spawn(async move {

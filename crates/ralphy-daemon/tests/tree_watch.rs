@@ -45,7 +45,7 @@ async fn serve_repo() -> (String, String, PathBuf) {
         PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
     std::mem::forget(tx);

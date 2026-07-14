@@ -261,3 +261,123 @@ Linux/WSL already has this property (#177).
   **Control-plane tunnel**), and **Emitter identity**'s "no persistent
   instance id" caveat is amended: the persistent key is the daemon's, run
   events stay keyed by `runid`.
+
+## Amendment: session gate on loopback, session epoch, and an OWASP ASVS L1 baseline
+
+Status: proposed (2026-07-14; #179 hardening follow-up, workbench Phase C).
+
+The §4 login/session model shipped correct but minimal: localhost was always
+frictionless, `require_login` was *derived* from "network bind + TOTP seed"
+(never a stored choice), enrollment committed the seed on "show QR" (no proof
+of possession), and a cookie could only be invalidated wholesale by re-minting
+the access token. This amendment fixes those four gaps and pins the login +
+session surface to **OWASP ASVS Level 1**, guided by the Authentication,
+Session Management, and MFA/TOTP cheat sheets — L1 is the honest target for a
+single-operator daemon on loopback/Tailscale with no TLS. The §4 posture
+("recommended default, operator's choice") is unchanged in spirit and *extended*:
+the operator may now also choose **more** hardening than the default, not only
+less.
+
+### A. The session gate is available on a loopback bind (opt-in)
+
+**Require login** becomes a real, operator-set control that gates the browser
+UI even on a `127.0.0.1` bind. When it is on **and** a TOTP seed is
+confirm-enrolled (§C), the bind is served under the `Session` policy — the same
+login screen a network bind shows — instead of `Localhost`. The default is
+unchanged: with the flag off, localhost stays frictionless (no login, no token).
+This is a *persisted* choice, so `require_login` is no longer derived: a marker
+file `daemon-require-login` lives in the global store (mode 0600), and enabling
+it still requires an enrolled seed (the server-side AC4 gate stays authoritative).
+
+Gating a loopback bind gates **browsers** (the cookie path); local **machine**
+clients (scripts, curl) must then present the access token as a bearer, exactly
+as on a network bind. Enabling the gate therefore mints the access token if one
+does not yet exist — locking down loopback is a deliberate act, and a locked
+daemon that silently kept a token-free local socket would be a lie.
+
+**The effective policy becomes swappable at runtime.** §4 captured the
+`AuthPolicy` once at boot (immutable). To make the toggle take effect
+immediately — turning Require login on logs the browser off *now* and the UI is
+locked *now*, without a restart — the daemon holds its effective policy behind a
+runtime-swappable cell (an `ArcSwap`/`RwLock`), which the auth middleware reads
+per request. Toggling Require login, revoking TOTP, and re-minting the token all
+swap the live policy. This supersedes the "re-mint takes effect on next restart"
+behavior.
+
+### B. Session epoch: server-side invalidation without a session store
+
+The stateless cookie (§4) could only be invalidated en masse by re-minting the
+token. Add a **session epoch**: a monotonic counter persisted in the store and
+mixed into the signed message, cookie format `1` → `2`
+(`2.<epoch>.<exp>.<HMAC-SHA1(token, "2|<epoch>|<exp>")>`). `verify` recomputes
+under the *current* epoch, so **bumping the epoch invalidates every outstanding
+cookie instantly**. Logout, token re-mint, TOTP revoke, and disabling Require
+login all bump it. This delivers OWASP-conformant logout (real server-side
+invalidation, not merely a client-cleared cookie) and makes "log off now" true —
+while staying stateless: the epoch is one integer, not a session table.
+
+### C. Two-phase TOTP enrollment: prove possession before it counts
+
+Enrollment no longer writes the live seed when the QR is shown. `enroll` mints a
+**pending** seed (`daemon-totp.pending`) and returns the `otpauth://` URI once;
+a new `POST /api/security/totp/confirm { code }` verifies a live code against the
+pending seed and only then promotes it to `daemon-totp`. A pending seed never
+counts as enrolled and never gates login; revoking or abandoning enrollment
+discards it. This closes the lockout hole (an operator could "enroll" without
+scanning and be locked out at the next network login) and matches OWASP MFA
+registration: possession is proven before the factor is armed.
+
+### D. OWASP ASVS L1 baseline for login + session
+
+- **Login throttling.** `POST /api/login` is rate-limited (in-memory per-daemon
+  backoff/lockout) and fails closed on the limiter. A 6-digit TOTP with ±1-step
+  skew is otherwise online-brute-forceable — this is the highest-value item.
+- **TOTP anti-replay.** The last accepted time-step is persisted and its reuse
+  within the same window rejected (a captured code cannot be replayed).
+- **Idle timeout.** Alongside the fixed 12h absolute TTL, a sliding idle window:
+  the cookie is re-issued on activity and idle beyond the window forces
+  re-login. The absolute cap is unchanged.
+- **Password KDF.** PBKDF2-HMAC-**SHA1** at 600k is below OWASP's SHA1-specific
+  guidance (~1.3M). New password records raise the iteration count to that floor;
+  the stored `scheme$iter$salt$hash` header carries the count, so existing hashes
+  verify under their recorded parameters and are upgraded on the next set. (Kept
+  on SHA1 rather than switching to SHA256 — the count bump satisfies OWASP with
+  zero new dependency and honors the module's stated no-overengineering non-goal;
+  the format already versions the scheme if SHA256 is ever wanted.)
+- **Already conformant, kept:** `HttpOnly; SameSite=Strict; Path=/`, generic
+  auth-failure messages, secrets at mode 0600, a high-entropy signing key,
+  session regeneration on login. **`Secure` stays omitted** (the daemon does no
+  TLS and rides loopback/Tailscale, §4) and is documented as such; if TLS ever
+  terminates at the daemon, the cookie gains `Secure` automatically.
+
+**Rejected: a server-side session table.** A stored session id per login would
+give per-session revocation, but it re-introduces the state §4 deliberately
+avoids for a single-operator daemon; the epoch (§B) buys the one property that
+mattered — instant invalidation — for one integer.
+
+### Consequences of this amendment
+
+- New store files (global store, mode 0600): `daemon-require-login` (the flag),
+  `daemon-totp.pending` (in-flight enrollment), plus persisted session-epoch and
+  TOTP last-step counters. All path-explicit and tempdir-testable like the
+  existing token/seed/password stores.
+- Cookie format is version-bumped `1` → `2` (epoch in the MAC); a `1.*` cookie
+  no longer verifies (outstanding sessions re-login once).
+- The effective `AuthPolicy` is runtime-swappable; the §4 "captured once at boot,
+  immutable" property and the "re-mint takes effect next restart" behavior are
+  superseded.
+- `require_login` is now a stored choice, not derived from bind + seed; the
+  `SecurityState { require_login }` surface reads the flag.
+- One new route (`/api/security/totp/confirm`); `/api/security/totp/enroll`
+  changes from "commit" to "begin (pending)".
+- Localhost is no longer unconditionally token-free: enabling the gate mints the
+  access token, and local machine clients then authenticate by bearer.
+
+**Implemented.** The full amendment lands in one slice: §A (persisted flag,
+loopback promotion + token mint, runtime-swappable policy), §B (session epoch,
+instant invalidation on logout/re-mint/revoke/toggle), §C (two-phase enrolment),
+and all of §D — login throttling, the PBKDF2 iteration bump, **TOTP anti-replay**
+(the last accepted time step is persisted in `daemon-totp-laststep`; a code whose
+step is not strictly newer is rejected), and the **sliding idle timeout** (cookie
+format carries `iat`; each authorized request slides `exp` to `now + 30 min`
+bounded by the `iat + 12h` absolute cap, re-issued at most once per minute).

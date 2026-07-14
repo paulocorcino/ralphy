@@ -64,10 +64,11 @@ impl Seed {
         format!("{:06}", bin % 1_000_000)
     }
 
-    /// Whether `code` is a valid TOTP for `unix_secs`, accepting `±skew_steps`
-    /// time steps of clock skew. Each candidate compares constant-time via
-    /// `auth::ct_eq` — no timing side-channel on the accepted code.
-    pub fn verify(&self, code: &str, unix_secs: u64, skew_steps: i64) -> bool {
+    /// The time step `code` matches for `unix_secs` within `±skew_steps` of clock
+    /// skew, or `None`. The step is the anti-replay key (amendment §D): a login
+    /// records it, and a later code whose step is not strictly greater is a replay.
+    /// Each candidate compares constant-time via `auth::ct_eq`.
+    pub fn matched_step(&self, code: &str, unix_secs: u64, skew_steps: i64) -> Option<u64> {
         let counter = (unix_secs / PERIOD) as i64;
         for s in -skew_steps..=skew_steps {
             let c = counter + s;
@@ -75,10 +76,16 @@ impl Seed {
                 continue;
             }
             if auth::ct_eq(self.code_at(c as u64).as_bytes(), code.as_bytes()) {
-                return true;
+                return Some(c as u64);
             }
         }
-        false
+        None
+    }
+
+    /// Whether `code` is a valid TOTP for `unix_secs`, accepting `±skew_steps`
+    /// time steps of clock skew (no anti-replay — see [`matched_step`](Self::matched_step)).
+    pub fn verify(&self, code: &str, unix_secs: u64, skew_steps: i64) -> bool {
+        self.matched_step(code, unix_secs, skew_steps).is_some()
     }
 }
 
@@ -99,6 +106,65 @@ pub fn seed_path_in(dir: &Path) -> PathBuf {
 /// The production path of `daemon-totp`. Mirrors [`auth::token_path`].
 pub fn seed_path() -> Result<PathBuf> {
     Ok(seed_path_in(&auth::store_dir()?))
+}
+
+/// The in-flight (pending) enrolment seed path inside `dir`
+/// (`daemon-totp.pending`). A seed here has NOT been confirmed: it never counts
+/// as enrolled and never gates login until [`confirm_pending_at`] promotes it
+/// (ADR-0032 amendment §C — prove possession before the factor is armed).
+pub fn pending_seed_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-totp.pending")
+}
+
+/// The `daemon-totp-laststep` path inside `dir`: the last TOTP step consumed by a
+/// successful login (anti-replay, amendment §D). Path-explicit like the seed.
+pub fn last_step_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-totp-laststep")
+}
+
+/// The last consumed step, or `None` when no login has happened yet / the file is
+/// absent or malformed (malformed → `None` is safe: it only means the next code
+/// is not treated as a replay).
+pub fn load_last_step_from(path: &Path) -> Result<Option<u64>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text.trim().parse().ok()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+/// Record `step` as the last consumed step, owner-only.
+pub fn save_last_step_to(step: u64, path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::write(path, step.to_string())
+        .with_context(|| format!("writing {}", path.display()))?;
+    auth::set_owner_only(path)?;
+    Ok(())
+}
+
+/// Confirm a pending enrolment: verify `code` (±1 step) against the seed at
+/// `pending_path` and, on success, promote it to `live_path` and delete the
+/// pending file. Returns whether the code verified. `Ok(false)` when no pending
+/// seed exists or the code is wrong — the pending seed is left in place on a
+/// wrong code so the operator can retry from the same QR.
+pub fn confirm_pending_at(
+    pending_path: &Path,
+    live_path: &Path,
+    code: &str,
+    now_unix: u64,
+) -> Result<bool> {
+    let Some(seed) = load_seed_from(pending_path)? else {
+        return Ok(false);
+    };
+    if !seed.verify(code, now_unix, 1) {
+        return Ok(false);
+    }
+    save_seed_to(&seed, live_path)?;
+    revoke_seed_at(pending_path)?;
+    Ok(true)
 }
 
 /// Remove the seed file at `path` (revoke enrolment); mint-once means a fresh
@@ -239,6 +305,66 @@ mod tests {
         assert!(load_seed_from(&dir.path().join("absent"))
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn confirm_pending_promotes_only_on_a_valid_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let pending = pending_seed_path_in(dir.path());
+        let live = seed_path_in(dir.path());
+        // Enrol into the PENDING slot with the RFC vector seed; live stays empty.
+        let seed = Seed::from_bytes(b"12345678901234567890".to_vec());
+        save_seed_to(&seed, &pending).unwrap();
+        assert!(
+            !live.exists(),
+            "pending enrolment does not arm the live seed"
+        );
+
+        // A wrong code leaves the pending seed in place and never arms live.
+        assert!(!confirm_pending_at(&pending, &live, "999999", 59).unwrap());
+        assert!(
+            pending.exists() && !live.exists(),
+            "wrong code changes nothing"
+        );
+
+        // The RFC vector code (T=59 → 287082) promotes pending → live.
+        assert!(confirm_pending_at(&pending, &live, "287082", 59).unwrap());
+        assert!(live.exists(), "a valid code arms the live seed");
+        assert!(!pending.exists(), "the pending seed is consumed");
+        assert_eq!(
+            load_seed_from(&live).unwrap().unwrap().secret_base32(),
+            seed.secret_base32(),
+            "the confirmed seed is exactly the pending one",
+        );
+    }
+
+    #[test]
+    fn matched_step_returns_the_counter() {
+        // RFC vector: T=59 → counter 1.
+        let seed = Seed::from_bytes(b"12345678901234567890".to_vec());
+        assert_eq!(seed.matched_step("287082", 59, 0), Some(1));
+        assert_eq!(seed.matched_step("999999", 59, 0), None);
+    }
+
+    #[test]
+    fn last_step_store_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = last_step_path_in(dir.path());
+        assert_eq!(load_last_step_from(&path).unwrap(), None, "absent → None");
+        save_last_step_to(42, &path).unwrap();
+        assert_eq!(load_last_step_from(&path).unwrap(), Some(42));
+    }
+
+    #[test]
+    fn confirm_pending_with_no_pending_is_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let pending = pending_seed_path_in(dir.path());
+        let live = seed_path_in(dir.path());
+        assert!(
+            !confirm_pending_at(&pending, &live, "287082", 59).unwrap(),
+            "nothing to confirm when no enrolment is in flight"
+        );
+        assert!(!live.exists());
     }
 
     #[cfg(unix)]

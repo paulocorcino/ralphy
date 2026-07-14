@@ -56,7 +56,7 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
         std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

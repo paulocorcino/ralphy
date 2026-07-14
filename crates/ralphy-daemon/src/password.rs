@@ -15,8 +15,12 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::auth;
 
-/// PBKDF2 iteration count. 600k is the current OWASP floor for PBKDF2-HMAC-SHA1.
-const ITERATIONS: u32 = 600_000;
+/// PBKDF2 iteration count for NEW records: OWASP's PBKDF2-HMAC-SHA1 floor
+/// (~1.3M; ADR-0032 amendment §D). Existing hashes carry their own count in the
+/// stored `scheme$iter$salt$hash` header and keep verifying under it, so raising
+/// this is a forward migration — an older 600k hash is re-hashed at this count on
+/// the next `set`, never silently rejected.
+const ITERATIONS: u32 = 1_300_000;
 /// Derived-key length in bytes (SHA-1 output size).
 const DK_LEN: usize = 20;
 /// Salt length in bytes.
@@ -184,7 +188,7 @@ mod tests {
     fn hash_round_trips_through_string() {
         let h = Hash::hash_password("hunter2");
         let s = h.to_string();
-        assert!(s.starts_with("pbkdf2-sha1$600000$"));
+        assert!(s.starts_with("pbkdf2-sha1$1300000$"));
         let parsed: Hash = s.parse().unwrap();
         assert!(parsed.verify("hunter2"), "a parsed hash still verifies");
         assert!(!parsed.verify("wrong"));
@@ -211,6 +215,21 @@ mod tests {
         // Idempotent: clearing an absent password is Ok.
         clear_at(&path).unwrap();
         assert!(load_from(&path).unwrap().is_none(), "cleared → unset");
+    }
+
+    #[test]
+    fn an_older_lower_iteration_hash_still_verifies() {
+        // A hash stored before the ADR-0032 §D bump carries its own count; it must
+        // keep verifying (forward migration, not a silent lockout).
+        let salt = [7u8; SALT_LEN];
+        let legacy = Hash {
+            salt,
+            iterations: 600_000,
+            dk: derive("hunter2", &salt, 600_000),
+        };
+        let round_tripped: Hash = legacy.to_string().parse().unwrap();
+        assert!(round_tripped.verify("hunter2"), "legacy 600k hash verifies");
+        assert!(!round_tripped.verify("wrong"));
     }
 
     #[test]
