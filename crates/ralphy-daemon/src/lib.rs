@@ -2794,6 +2794,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn root_serves_wb_fail() {
+        let resp = get_local("/wb-fail.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET wb-fail.js → 200");
+        let fail = body_string(resp).await;
+        assert!(
+            fail.contains("function message"),
+            "wb-fail.js must ship the message extractor"
+        );
+
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            shell.contains("wb-fail.js"),
+            "the shell HTML must load the failure presenter"
+        );
+    }
+
+    #[tokio::test]
     async fn session_serves_shell_but_gates_data() {
         // The shell bytes are served without a cookie…
         let resp = session_router("tok")
