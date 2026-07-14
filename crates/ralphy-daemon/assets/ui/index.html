@@ -19,10 +19,16 @@
          crumb tracks the open project; the uptime is the daemon's live presence
          (from the WS heartbeat), moved here from the canvas footer. -->
     <header class="topbar">
-      <span class="brand"><i data-lucide="bot"></i> ralphy</span>
+      <span class="brand">
+        <span class="brand-avatar" x-show="identityAvatar" x-text="identityAvatar" x-cloak></span>
+        <i data-lucide="bot" x-show="!identityAvatar"></i>
+        <span x-text="identityName || 'ralphy'"></span>
+      </span>
       <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
       <span class="spacer"></span>
-      <span class="stat uptime"><i data-lucide="circle-dot"></i> daemon up 2h 14m</span>
+      <span class="stat uptime" :class="{ stale: !_lastHeartbeat || (Date.now() - _lastHeartbeat > 6000) }">
+        <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
+      </span>
       <!-- demo badge: only present on the static `file://` bundle, where seeds
            are honest mocks; absent in daemon mode (WBMode.isDemo(), #202). -->
       <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
@@ -30,10 +36,13 @@
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
       <div class="menu-wrap">
         <button class="avatar-btn" @click.stop="avatarMenu = !avatarMenu" title="account">
-          <span class="avatar"></span>
+          <span class="avatar" x-text="identityAvatar"></span>
         </button>
         <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
           <div class="dropdown-head">signed in · daemon</div>
+          <button class="dropdown-item" @click="openUsage()">
+            <i class="bi bi-graph-up"></i><span>Usage</span>
+          </button>
           <button class="dropdown-item" @click="openSecurity()">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
@@ -297,7 +306,8 @@
                   <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'open'"></span>
                 </span>
                 <span class="spacer"></span>
-                <a class="kd-gh" :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
+                <a class="kd-gh" x-show="githubUrl(selectedIssue().number)"
+                   :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
                    title="open on GitHub to edit (this board is read-only)">
                   <i class="bi bi-github"></i> Open on GitHub
                 </a>
@@ -329,7 +339,8 @@
                 <span class="kd-k">Blocked by</span>
                 <div class="kd-blockers">
                   <template x-for="b in issueBlockers(selectedIssue())" :key="b.number">
-                    <a class="kd-blocker" :class="{ open: b.open }" :href="githubUrl(b.number)" target="_blank" rel="noopener" :title="b.title">
+                    <a class="kd-blocker" :class="{ open: b.open }" x-show="githubUrl(b.number)"
+                       :href="githubUrl(b.number)" target="_blank" rel="noopener" :title="b.title">
                       <i class="bi" :class="b.open ? 'bi-lock-fill' : 'bi-unlock'"></i><span x-text="'#' + b.number"></span>
                     </a>
                   </template>
@@ -755,6 +766,71 @@
         <div class="modal-foot">
           <span class="foot-note">Mock — actions emit intents (token / password / totp); no secrets are stored for real.</span>
           <button class="btn" @click="closeSecurity()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Usage — a read-only view of `/api/usage` (ADR-0033, #204): the run
+         token-ledger plus the interactive-session scan. Opened from the
+         account dropdown; a single fetch, no writes.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="usageOpen" x-cloak @click.self="closeUsage()">
+      <div class="modal usage-modal" role="dialog" aria-label="Usage">
+        <div class="modal-head">
+          <i data-lucide="bar-chart-3"></i>
+          <span class="modal-title">Usage</span>
+          <span class="modal-sub">token ledger of ralphy runs + interactive session scan (read-only)</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeUsage()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="usage-body">
+          <p class="usage-error" x-show="usage.error" x-text="usage.error"></p>
+
+          <section class="usage-section">
+            <h3 class="usage-h">Run records</h3>
+            <div class="usage-empty" x-show="!usage.records.length && !usage.error">no run records yet</div>
+            <table class="usage-table" x-show="usage.records.length">
+              <thead>
+                <tr><th>Project</th><th>Issue</th><th>Phase</th><th>Agent</th><th>Model</th><th>Tokens</th></tr>
+              </thead>
+              <tbody>
+                <template x-for="(rec, i) in usage.records" :key="'run-' + i">
+                  <tr class="usage-row">
+                    <td x-text="rec.project || '—'"></td>
+                    <td x-text="rec.issue != null ? '#' + rec.issue : '—'"></td>
+                    <td x-text="rec.phase || '—'"></td>
+                    <td x-text="rec.agent || '—'"></td>
+                    <td x-text="rec.model || '—'"></td>
+                    <td x-text="usageTokens(rec)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="usage-section">
+            <h3 class="usage-h">Interactive sessions</h3>
+            <div class="usage-empty" x-show="!usage.interactive.length">none scanned</div>
+            <table class="usage-table" x-show="usage.interactive.length">
+              <thead>
+                <tr><th>Agent</th><th>Model</th><th>Tokens</th></tr>
+              </thead>
+              <tbody>
+                <template x-for="(rec, i) in usage.interactive" :key="'int-' + i">
+                  <tr class="usage-row">
+                    <td x-text="rec.agent || '—'"></td>
+                    <td x-text="rec.model || '—'"></td>
+                    <td x-text="usageTokens(rec)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </section>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Read-only — fed live from <code>/api/usage</code>.</span>
+          <button class="btn" @click="closeUsage()">Done</button>
         </div>
       </div>
     </div>

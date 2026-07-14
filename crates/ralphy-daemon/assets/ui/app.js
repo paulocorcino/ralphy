@@ -60,6 +60,13 @@ function shell() {
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
     // instead of the seed projects. Empty when repos loaded (or in demo).
     reposError: "",
+    // Live presence + identity (#204): the topbar uptime is the `/ws` heartbeat's
+    // age, and the brand/avatar are `/api/identity`. Empty until the first tick /
+    // a baptized daemon; `_lastHeartbeat` (epoch ms) drives the stale indicator.
+    uptimeText: "",
+    identityName: "",
+    identityAvatar: "",
+    _lastHeartbeat: 0,
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
 
@@ -71,6 +78,49 @@ function shell() {
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
       this.probeSession();
       this.loadRepos();
+      this.subscribePresence();
+      this.loadIdentity();
+    },
+
+    // The daemon's real identity (name + avatar), shown in the topbar brand. A
+    // 404 (un-baptized daemon) or a thrown fetch (file:// demo) leaves the
+    // fields empty and the markup falls back to `ralphy` / no avatar.
+    async loadIdentity() {
+      try {
+        const r = await fetch("/api/identity");
+        if (r.ok) {
+          const id = await r.json();
+          this.identityName = id.name || "";
+          this.identityAvatar = id.avatar || "";
+        }
+      } catch {}
+    },
+
+    // Subscribe to the `/ws` presence heartbeat (daemon mode only). Each tick
+    // stamps `_lastHeartbeat` (the connection-liveness signal) and refreshes the
+    // topbar uptime; a baptized daemon also carries name/avatar. Every tick
+    // re-derives `live` so the sidebar dots track session open/close (~2s).
+    subscribePresence() {
+      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribePresence) return;
+      window.WBDaemon.subscribePresence((p) => {
+        this._lastHeartbeat = Date.now();
+        this.uptimeText = "up " + this.fmtUptime(p.uptime_secs);
+        if (p.name) this.identityName = p.name;
+        if (p.avatar) this.identityAvatar = p.avatar;
+        this.refreshLive();
+      });
+    },
+
+    // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
+    fmtUptime(secs) {
+      const s = Math.max(0, Math.floor(secs || 0));
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      if (d) return `${d}d ${h}h`;
+      if (h) return `${h}h ${m}m`;
+      if (m) return `${m}m`;
+      return `${s}s`;
     },
 
     // Ask the daemon whether this browser is authorized. A thrown fetch (file://
@@ -102,12 +152,17 @@ function shell() {
             slug: x.slug,
             branch: x.branch || "",
             branches: x.branch ? [x.branch] : [],
-            dirty: false,
+            // Real working-tree + remote from `/api/repos` (#204). `remote` keeps
+            // the existing github|local classification the dot binds to; the raw
+            // origin url rides in `remoteUrl` so `githubUrl()` can rebuild links.
+            dirty: !!x.dirty,
             state: x.reachable ? "idle" : "offline",
-            remote: x.slug.startsWith("path-") ? "local" : "github",
+            remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
+            remoteUrl: x.remote || "",
             tree: [],
           }));
           this.reposError = "";
+          this.refreshLive();
         } else if (window.WBMode.isDaemon()) {
           // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
           // clear them and show the error.
@@ -121,6 +176,23 @@ function shell() {
         }
         // Demo (file://): keep the seed — the shell stays navigable offline.
       }
+    },
+
+    // Derive each project's `live` dot from the daemon's live sessions (#204): a
+    // project is `live` when some `/api/sessions` entry's `repo` equals its slug.
+    // Never overrides `offline` (an unreachable repo can't host a session).
+    // Daemon-mode only; a transport throw leaves the current states untouched.
+    async refreshLive() {
+      if (!window.WBMode.isDaemon()) return;
+      try {
+        const r = await fetch("/api/sessions");
+        if (!r.ok) return;
+        const sessions = await r.json();
+        for (const p of this.projects) {
+          if (p.state === "offline") continue;
+          p.state = sessions.some((s) => s.repo === p.slug) ? "live" : "idle";
+        }
+      } catch {}
     },
 
     // --- chrome panels ----------------------------------------------------
@@ -784,10 +856,18 @@ function shell() {
     closeIssue() {
       this.kanbanSel = null;
     },
-    // The real GitHub URL — the drawer's editing door. Read-only here; edits
-    // happen on GitHub. (Repo is fixed for the mock's demo projects.)
+    // The real GitHub URL of an issue on the OPEN project — the drawer's editing
+    // door (read-only here; edits happen on GitHub). Rebuilt from the project's
+    // real `remoteUrl` (#204): parse `owner/repo` from an `https://github.com/o/r`
+    // or `git@github.com:o/r` origin (`.git` stripped). `null` when the open
+    // project has no GitHub remote, so the markup can hide the link.
     githubUrl(number) {
-      return `https://github.com/paulocorcino/ralphy/issues/${number}`;
+      const p = this.projects.find((x) => x.slug === this.openSlug);
+      const url = p && p.remoteUrl;
+      if (!url || !url.includes("github.com")) return null;
+      const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+      if (!m) return null;
+      return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
     },
 
     // The open blockers of the selected issue (for the drawer's Blocked-by row),
@@ -885,6 +965,46 @@ function shell() {
     closeSettings() {
       this.settingsOpen = false;
     },
+
+    // --- usage (read-only, #204) -----------------------------------------
+    // A read-only view of `/api/usage` (ADR-0033): the run-record token ledger
+    // plus the interactive-session scan. Opened from the account dropdown; a
+    // single fetch, no writes. A daemon-mode failure surfaces `usage.error`.
+    usageOpen: false,
+    usage: { records: [], interactive: [], error: "" },
+    async openUsage() {
+      this.avatarMenu = false;
+      this.usageOpen = true;
+      this.usage.error = "";
+      try {
+        const r = await fetch("/api/usage");
+        if (r.ok) {
+          const data = await r.json();
+          this.usage.records = Array.isArray(data.records) ? data.records : [];
+          this.usage.interactive = Array.isArray(data.interactive) ? data.interactive : [];
+        } else if (window.WBMode.isDaemon()) {
+          this.usage.records = [];
+          this.usage.interactive = [];
+          this.usage.error = "could not load usage from the daemon";
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) {
+          this.usage.records = [];
+          this.usage.interactive = [];
+          this.usage.error = "could not load usage from the daemon";
+        }
+      }
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeUsage() {
+      this.usageOpen = false;
+    },
+    // Sum a run record's token buckets into one total for the compact list.
+    usageTokens(rec) {
+      const t = (rec && rec.tokens) || {};
+      return (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
+    },
+
     saveSetting(key, value) {
       this.settings[key] = value;
       // Persist through the run-lock-aware config Mutate verbs (config.set /

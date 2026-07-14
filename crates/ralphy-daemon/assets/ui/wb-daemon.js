@@ -125,6 +125,43 @@ window.WBDaemon = (function () {
     };
   }
 
+  // Open ONE persistent `/ws` presence subscription (#204): the daemon pushes a
+  // `[0x03][JSON]` heartbeat every ~2s carrying `{name, avatar, uptime_secs}`.
+  // Invoke `onPresence(payload)` per tick; reconnect after a fixed 3s backoff on
+  // close/error so a daemon restart re-lights the topbar without a page reload.
+  // A single fixed backoff (no exponential storm) is deliberate — one socket.
+  function subscribePresence(onPresence) {
+    let closed = false;
+    let ws = null;
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket("ws://" + location.host + "/ws");
+      ws.binaryType = "arraybuffer";
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] !== TAG_PRESENCE) return;
+        try {
+          onPresence(JSON.parse(new TextDecoder().decode(a.subarray(1))));
+        } catch {}
+      };
+      // Reconnect on `close` ONLY — the spec guarantees `error` is always
+      // followed by `close`, so scheduling on both would double the backoff
+      // into a storm. One pending 3s timer per drop.
+      ws.onclose = () => {
+        if (!closed) setTimeout(connect, 3000);
+      };
+    };
+    connect();
+    return {
+      close: () => {
+        closed = true;
+        try {
+          ws && ws.close();
+        } catch {}
+      },
+    };
+  }
+
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
   // values the daemon validates.
@@ -147,6 +184,7 @@ window.WBDaemon = (function () {
     observe,
     write,
     subscribeTree,
+    subscribePresence,
     encodeCommand,
     ACTION_TO_VERB,
     TAG_TERMINAL,
