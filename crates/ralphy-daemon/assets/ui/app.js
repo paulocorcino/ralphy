@@ -1403,8 +1403,56 @@ function shell() {
       const node = rel === "" ? tree.root : this.findFolderByRel(rel);
       if (!node) return; // not in the tree → invisible, drop
       if (rel !== "" && !node.expanded) return; // collapsed → invisible, drop
-      // Re-list just this level from the daemon and reconcile its children.
-      node.load(this.loadTreeLevel(rel));
+      // Reconcile this level in place (no duplication), then freshen any open
+      // tabs that live in this directory (A6).
+      this.reconcileLevel(node, rel).then(() => this.refreshOpenViewers(rel));
+    },
+
+    // Re-list one directory level and reconcile its children WITHOUT duplicating
+    // nodes (A5) while preserving descendant expansion + the active selection
+    // (criterion 2). `node.load` appends, so we `removeChildren()` first — which
+    // also destroys descendant + active nodes — then explicitly re-expand and
+    // re-activate by captured rel-path after the reload (the re-expansion cascade
+    // re-triggers lazy loads).
+    async reconcileLevel(node, rel) {
+      const expandedRels = [];
+      node.visit((n) => {
+        if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
+      });
+      const activeRel = this.relPath(this._tree.getActiveNode?.() || null) || null;
+
+      node.removeChildren();
+      await node.load(this.loadTreeLevel(rel));
+
+      // Shallow-first so a parent exists before its child re-expands.
+      expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
+      for (const r of expandedRels) {
+        const f = this.findFolderByRel(r);
+        if (f && !f.expanded) await f.setExpanded(true);
+      }
+      if (activeRel) {
+        this._tree.findFirst((n) => this.relPath(n) === activeRel)?.setActive();
+      }
+    },
+
+    // After a directory nudge, re-read any open tab whose file lives in `rel` and
+    // push the fresh bytes to its viewer (A6). Daemon mode only; a non-ok or
+    // transport failure is dropped silently — the tab keeps its bytes (C1: no
+    // fabricated content).
+    refreshOpenViewers(rel) {
+      if (!this.useDaemonTree()) return;
+      const dirOf = (p) => {
+        const i = p.lastIndexOf("/");
+        return i < 0 ? "" : p.slice(0, i);
+      };
+      for (const t of this.tabs) {
+        if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
+        WBDaemon.observe("file.read", { repo: t.project, path: t.path })
+          .then((reply) => {
+            if (reply?.status === "ok") WBViewer.externalChange(t.id, reply.content);
+          })
+          .catch(() => {});
+      }
     },
 
     // The expanded folder node whose rel path is `rel`, or `null` if none is

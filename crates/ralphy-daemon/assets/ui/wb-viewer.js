@@ -57,6 +57,7 @@
         <span class="spacer"></span>
         <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
         <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"><i class="bi bi-exclamation-triangle"></i> changed on disk — reload</button>
         <button class="vbtn save" data-act="save"><i class="bi bi-save"></i> Save</button>
         ${detachBtnHtml(rec)}
       </div>
@@ -89,6 +90,10 @@
     };
     saveBtn.onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
+    el.querySelector('[data-act="disk"]').onclick = () => {
+      applyFresh(rec, rec.pendingDisk);
+      hideDiskBadge(rec);
+    };
     el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
@@ -99,6 +104,7 @@
     rec.content = content;
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
+    hideDiskBadge(rec);
     WB.emit("save", { project: rec.project, path: rec.path, bytes: content.length, content });
     if (rec.kind === "markdown" && !rec.editing) renderMarkdown(rec); // keep preview fresh
   }
@@ -151,7 +157,20 @@
     }
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
+    hideDiskBadge(rec);
     WB.emit("reload", { project: rec.project, path: rec.path });
+  }
+
+  // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
+  // tab (never auto-applied — the operator's unsaved edits win until they click).
+  function showDiskBadge(rec) {
+    const b = rec.el?.querySelector(".viewer-disk-badge");
+    if (b) b.style.display = "";
+  }
+  function hideDiskBadge(rec) {
+    rec.pendingDisk = undefined;
+    const b = rec.el?.querySelector(".viewer-disk-badge");
+    if (b) b.style.display = "none";
   }
 
   // The Detach/Re-attach button. A file tab detaches into a standalone popup
@@ -187,6 +206,7 @@
         <button class="vbtn" data-act="xlate" title="translate the preview on-device"><i class="bi bi-translate"></i> Translate</button>
         <select class="vbtn md-xlate-target" data-act="xlate-target" title="translate to" style="display:none"></select>
         <span class="md-xlate-note" data-role="xlate-note"></span>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"><i class="bi bi-exclamation-triangle"></i> changed on disk — reload</button>
         <button class="vbtn save" data-act="save"><i class="bi bi-save"></i> Save</button>
         ${detachBtnHtml(rec)}
       </div>
@@ -214,6 +234,10 @@
       save(rec);
     };
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
+    el.querySelector('[data-act="disk"]').onclick = () => {
+      applyFresh(rec, rec.pendingDisk);
+      hideDiskBadge(rec);
+    };
     el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
     // in-page find over the rendered article
     const find = el.querySelector(".md-find");
@@ -536,6 +560,23 @@
       if (!rec) return;
       rec.el.remove();
       map.delete(id);
+    },
+
+    // An external write to this file's bytes landed (a directory nudge → re-read).
+    // A CLEAN tab auto-refreshes to the fresh bytes (criterion 3); a DIRTY tab
+    // stashes them and shows the "changed on disk" badge, NEVER clobbering the
+    // operator's unsaved edits (criterion 4). Equal bytes are a no-op (our own
+    // save round-trips through the same nudge — a badge there would be noise).
+    externalChange(id, content) {
+      const rec = map.get(id);
+      if (!rec) return;
+      if (content === rec.content) return;
+      if (!rec.dirty) {
+        applyFresh(rec, content);
+      } else {
+        rec.pendingDisk = content;
+        showDiskBadge(rec);
+      }
     },
   };
   window.WBViewer = API;
