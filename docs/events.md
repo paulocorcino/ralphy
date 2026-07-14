@@ -220,3 +220,5 @@ contract vintage):
 6. This document — the prose tables — **is** the contract for now; a
    machine-readable JSON Schema is deliberately deferred until the shapes
    stabilize against a real consumer.
+
+#teste
