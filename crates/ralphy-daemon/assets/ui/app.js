@@ -133,6 +133,7 @@ function shell() {
           const s = await r.json();
           this.authed = s.authed;
           this.login.passwordRequired = s.password;
+          this.security.policy = s.policy;
         }
       } catch {}
     },
@@ -1039,6 +1040,7 @@ function shell() {
       otpauthUri: "",
       qrHtml: "",
       requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
+      policy: "session", // overwritten by probeSession(); demo default keeps login interactive
     },
     // The stored password, kept in-memory purely so the mock login can check it.
     _passwordValue: "",
@@ -1173,8 +1175,13 @@ function shell() {
       try {
         await fetch("/api/logout", { method: "POST" });
       } catch {}
-      this.authed = false;
-      this.login = { code: "", password: "", error: "", passwordRequired: this.login.passwordRequired };
+      // Localhost/Bearer have no login gate to drop to — dropping `authed`
+      // there strands the operator behind a form that posts to a dead end
+      // (issue #205, audit finding C3).
+      if (this.security.policy === "session") {
+        this.authed = false;
+        this.login = { code: "", password: "", error: "", passwordRequired: this.login.passwordRequired };
+      }
       WB.emit("logoff", {});
       this.$nextTick(() => window.lucide?.createIcons());
     },

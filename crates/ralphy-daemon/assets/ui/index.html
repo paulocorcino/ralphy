@@ -752,7 +752,7 @@
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
               <label class="switch">
-                <input type="checkbox" :checked="security.requireLogin" @change="toggleRequireLogin($event)" />
+                <input type="checkbox" :checked="security.requireLogin" :disabled="security.policy !== 'session'" @change="toggleRequireLogin($event)" />
                 <span class="switch-track"></span>
               </label>
             </div>
@@ -761,6 +761,7 @@
               this is the same posture the daemon adopts automatically when bound to a non-local
               address. With it on, <b>Log off</b> drops you to the login screen.
             </p>
+            <p class="sec-note" x-show="security.policy !== 'session'">This bind is loopback — the login gate only applies to a network bind with TOTP.</p>
           </section>
         </div>
         <div class="modal-foot">
@@ -997,7 +998,6 @@
         </label>
         <button class="login-btn" type="submit">Log in</button>
         <div class="login-err" x-text="login.error"></div>
-        <div class="login-hint">mock — any 6-digit code works<span x-show="security.passwordSet"> (password must match)</span></div>
       </form>
     </div>
 

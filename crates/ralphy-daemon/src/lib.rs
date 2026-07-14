@@ -2941,6 +2941,22 @@ mod tests {
         assert!(body.contains(r#""policy":"bearer""#), "bearer: {body}");
     }
 
+    /// The served shell no longer claims every 6-digit code works (that was
+    /// true of the pre-#205 mock login) and instead explains the loopback
+    /// login-gate exemption inline (issue #205, audit finding AC5).
+    #[tokio::test]
+    async fn login_gate_drops_mock_hint() {
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            !shell.contains("any 6-digit code works"),
+            "mock hint must be gone"
+        );
+        assert!(
+            shell.contains("the login gate only applies to a network bind with TOTP"),
+            "loopback explanation must be present"
+        );
+    }
+
     #[tokio::test]
     async fn logout_clears_cookie() {
         let resp = session_router("tok")
