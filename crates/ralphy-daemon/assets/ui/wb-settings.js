@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — settings schema + security helpers (mock)
+   ralphy workbench shell — settings schema + security helpers
 
    Two things live here, kept out of app.js so the Alpine component stays small:
 
@@ -22,8 +22,10 @@
    2. wbQr() — turns a TOTP otpauth:// URI into an <img> QR, using the vendored
       qrcode-generator (no runtime CDN). Used by the Security panel.
 
-   NB: nothing here persists or authenticates for real — the mock only reflects
-   the shape of the settings and emits intents on the workbench:action seam.
+   NB: in daemon mode, changes persist and authenticate for real via the
+   daemon's `config.set`/`config.unset` and auth verbs; this module only
+   describes the shape of the settings and emits intents on the
+   workbench:action seam.
 --------------------------------------------------------------------------- */
 
 // Reusable option sets.

@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — mock styles
+   ralphy workbench shell — styles
    Design tokens lifted from ADR-0035 (daemon UI visual language).
 --------------------------------------------------------------------------- */
 :root {
@@ -124,7 +124,7 @@ body.side-collapsed.runs-open {
   color: var(--live);
 }
 /* demo badge (#202): only present on the static `file://` bundle, an accent
-   pill making the seed/mock world explicit. */
+   pill making the seed world explicit. */
 .demo-badge {
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -1275,6 +1275,7 @@ body.side-collapsed.runs-open {
   background-image: radial-gradient(var(--border) 1px, transparent 1px);
   background-size: 22px 22px;
   overflow: hidden;
+  isolation: isolate;
 }
 .agents-tab {
   position: absolute;

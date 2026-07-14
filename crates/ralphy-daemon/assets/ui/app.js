@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — mock behaviour
+   ralphy workbench shell — shell behaviour
 
    The sidebar is a project accordion (Alpine). The file tree inside the open
    project is a real Wunderbaum instance (mar10/wunderbaum) — a mature,
@@ -55,7 +55,7 @@ function shell() {
   return {
     openSlug: null,
     // True only on the static `file://` demo bundle; drives the topbar "demo"
-    // badge and keeps seeds/mocks confined to demo (#202).
+    // badge and keeps seeds confined to demo (#202).
     isDemo: window.WBMode.isDemo(),
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
     // instead of the seed projects. Empty when repos loaded (or in demo).
@@ -124,7 +124,7 @@ function shell() {
     },
 
     // Ask the daemon whether this browser is authorized. A thrown fetch (file://
-    // standalone, no daemon) is swallowed so `authed` keeps its mock default —
+    // standalone, no daemon) is swallowed so `authed` keeps its seed default —
     // the shell stays navigable offline; only a real /api/session response gates.
     async probeSession() {
       try {
@@ -227,7 +227,7 @@ function shell() {
     },
 
     // --- branch switcher --------------------------------------------------
-    // Clicking a project's branch chip opens a filtered picker. The mock holds
+    // Clicking a project's branch chip opens a filtered picker. The seed holds
     // the branch list per project (a backend would deliver it, e.g. `git
     // branch`); switching or creating emits an intent on the seam and the
     // daemon runs the real `git checkout` / `checkout -b`. The header reflects
@@ -453,7 +453,7 @@ function shell() {
       return t;
     },
     // Clicking an issue node is a read intent — a backend could scroll its log or
-    // surface that issue's plan; the mock only announces it.
+    // surface that issue's plan; today it only announces it.
     focusIssue(number) {
       WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
     },
@@ -616,7 +616,7 @@ function shell() {
       const d = ev.data || {};
       switch (ev.type) {
         case "dev.ralphy.plan.step":
-          // tick the next open checkbox (mock: the panel just advances a step)
+          // tick the next open checkbox (the panel just advances a step)
           run.planMd = run.planMd.replace(/-\s+\[ \]/, "- [x]");
           break;
         case "dev.ralphy.issue.closed": {
@@ -692,7 +692,7 @@ function shell() {
     KANBAN: window.WBKanban,
     // Live board data, project-scoped, fed by the daemon's `board.list` Query verb
     // (issue #198). `boardIssues[slug]` = the whole-tracker fold rows adapted to the
-    // mock issue shape; `boardLabels[slug]` = the repo's name→color label map. Both
+    // adapted issue shape; `boardLabels[slug]` = the repo's name→color label map. Both
     // stay empty until `loadBoard()` resolves (or when no daemon answers — no throw).
     boardIssues: {},
     boardLabels: {},
@@ -712,7 +712,7 @@ function shell() {
     },
 
     // Fetch the whole-tracker board fold for the open project via the daemon's
-    // `board.list` Query verb, adapt each row to the mock issue shape, and cache the
+    // `board.list` Query verb, adapt each row to the issue shape, and cache the
     // rows + the repo label colors under the slug. A no-daemon (static demo) or
     // transport error leaves the board empty (no throw), degrading gracefully.
     async loadBoard() {
@@ -756,7 +756,7 @@ function shell() {
     },
 
     // Bridge a CLI fold row (snake_case `blocked_by`, lowercased `reason`) to the
-    // mock issue shape (`blockedBy`, `reason`) `wb-kanban.js` expects. Body +
+    // issue shape (`blockedBy`, `reason`) `wb-kanban.js` expects. Body +
     // comments are absent from the board fold — the drawer's `issue.show` fills
     // them on open — so seed them empty here.
     boardRowToIssue(row) {
@@ -910,7 +910,7 @@ function shell() {
 
     // --- the one allowed mutation: labels ---------------------------------
     // Toggling a label is the sole write the board permits — it can move the
-    // card to another column. Faithful to the mock's ethos: emit an intent
+    // card to another column. Faithful to the shell's ethos: emit an intent
     // (`issue-label-change`), the daemon does the real `gh` label call; we
     // reflect it optimistically. Everything else is read-only + Open on GitHub.
     KANBAN_LABELS: Object.keys(window.WBKanban.LABELS),
@@ -949,8 +949,8 @@ function shell() {
 
     // --- settings modal ---------------------------------------------------
     // A data-driven config panel (schema in wb-settings.js). Values are held in
-    // `settings` and every change is an intent on the seam — the mock persists
-    // nothing itself.
+    // `settings` and every change is an intent on the seam — the daemon persists
+    // it via `config.set`/`config.unset`.
     SETTINGS: window.WB_SETTINGS,
     TRISTATE: window.WB_TRISTATE,
     settingsOpen: false,
@@ -1071,7 +1071,7 @@ function shell() {
       requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
       policy: "session", // overwritten by probeSession(); demo default keeps login interactive
     },
-    // The stored password, kept in-memory purely so the mock login can check it.
+    // The stored password, kept in-memory purely so the demo login can check it.
     _passwordValue: "",
 
     async openSecurity() {
@@ -1138,7 +1138,7 @@ function shell() {
         });
         if (r.ok) this.security.passwordSet = (await r.json()).password_set;
       } catch {}
-      this._passwordValue = pw; // mock login still checks locally
+      this._passwordValue = pw; // demo login still checks locally
       this.security.passwordDraft = "";
     },
     async clearPassword() {
@@ -1244,7 +1244,7 @@ function shell() {
           this.login.error = "Daemon unreachable — cannot verify.";
           return;
         }
-        // Demo (file:// standalone) — fall back to the local mock check.
+        // Demo (file:// standalone) — fall back to the local seed check.
       }
       if (!/^[0-9]{6}$/.test(code)) {
         this.login.error = "Invalid code or password.";
@@ -1507,7 +1507,7 @@ function shell() {
     },
 
     // A real daemon backs the tree only when NOT loaded from `file://` (the
-    // static-mock case, which has no `/ws/command` to talk to).
+    // static-demo case, which has no `/ws/command` to talk to).
     useDaemonTree() {
       return window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
     },
@@ -1708,7 +1708,7 @@ function shell() {
       this.active = id;
       this.$nextTick(() => {
         // A re-attach passes its (possibly edited) bytes in; a fresh open fetches
-        // the real file via the daemon (`file.read`), falling back to the mock.
+        // the real file via the daemon (`file.read`), falling back to the seed.
         const bytes = content != null ? Promise.resolve(content) : this.fetchContent(project, path, ftype);
         bytes.then((body) => {
           if (body == null) return; // refused: fetchContent surfaced the reason
@@ -1932,7 +1932,7 @@ window.addEventListener("message", (e) => {
 
 // --- Write byte-ops (#197): route the workspace-mutating seam actions to the
 // daemon's confined `file.*` verbs. Daemon-backed only (a `file://` standalone
-// mock keeps its synthesised behaviour); a confinement/conflict refusal comes
+// demo keeps its synthesised behaviour); a confinement/conflict refusal comes
 // back as `{status:"error",reason}` and is flashed. The browser composes the
 // full rel path from the tree node — the daemon verbs take a complete rel path.
 (function wireWriteVerbs() {

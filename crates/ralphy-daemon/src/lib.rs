@@ -2794,6 +2794,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn served_ui_copy_has_no_mock_or_false_claims() {
+        const FILES: &[&str] = &[
+            "/index.html",
+            "/detached.html",
+            "/app.js",
+            "/styles.css",
+            "/wb-console.js",
+            "/wb-daemon.js",
+            "/wb-fail.js",
+            "/wb-kanban.js",
+            "/wb-mode.js",
+            "/wb-runs.js",
+            "/wb-settings.js",
+            "/wb-translate.js",
+            "/wb-viewer.js",
+        ];
+        for path in FILES {
+            let resp = get_local(path).await;
+            assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
+            let lc = body_string(resp).await.to_ascii_lowercase();
+            assert!(!lc.contains("mock"), "{path} still contains \"mock\"");
+            assert!(
+                !lc.contains("nothing is written to disk"),
+                "{path} still claims \"nothing is written to disk\""
+            );
+            assert!(
+                !lc.contains("no secrets are stored"),
+                "{path} still claims \"no secrets are stored\""
+            );
+            assert!(
+                !lc.contains("any 6-digit code"),
+                "{path} still claims \"any 6-digit code\""
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn root_serves_wb_fail() {
         let resp = get_local("/wb-fail.js").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET wb-fail.js → 200");

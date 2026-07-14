@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — Kanban model (mock)
+   ralphy workbench shell — Kanban model
 
    The Kanban is the backlog as a board: every GitHub issue of the open project,
    placed in one of four columns by the SAME judgment ralphy uses. It is a

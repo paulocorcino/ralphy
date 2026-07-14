@@ -2,11 +2,11 @@
    ralphy workbench shell — floating consoles (the Agents tab)
 
    The canvas is a workspace where consoles live as draggable, resizable windows
-   over the dotted floor. This mock contributes the window chrome (workspace-
+   over the dotted floor. This module contributes the window chrome (workspace-
    relative drag/clampAll/tiling); the terminal body is the REAL thing, a live
    xterm.js attached to a PTY over the daemon's `/ws/session` WebSocket —
    transplanted verbatim from crates/ralphy-daemon/assets/ui/index.html
-   (index.html contributes the truth, the mock contributes the chrome).
+   (index.html contributes the truth, this module contributes the chrome).
 
    Opening/closing a console spawns/closes a daemon-owned session; on page load
    the live sessions are re-opened as windows so a reload reattaches with
@@ -253,7 +253,7 @@ window.WBConsole = (function () {
 
   // Build the floating-window chrome and attach a live terminal into it. Shared
   // by `open()` (a new console) and the load-time reattach (one window per live
-  // session). Keeps the mock's workspace-relative drag/tiling; `termOpts` is the
+  // session). Keeps the shared workspace-relative drag/tiling; `termOpts` is the
   // `attachTerminal` opts, `label`/`repo` drive the titlebar.
   function spawnWindow(termOpts, label, repo) {
     const win = document.createElement("div");

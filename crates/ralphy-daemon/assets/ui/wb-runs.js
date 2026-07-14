@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — Runs model (mock)
+   ralphy workbench shell — Runs model
 
    The Runs panel shows what's *running* in ralphy for the open project. Its data
    is exactly what a backend would fold from the CloudEvents bus (ADR-0019): one

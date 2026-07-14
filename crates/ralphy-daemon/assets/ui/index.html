@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ralphy · workbench shell (mock)</title>
+    <title>ralphy · workbench shell</title>
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
     <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />
@@ -30,7 +30,7 @@
         <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
       </span>
       <!-- demo badge: only present on the static `file://` bundle, where seeds
-           are honest mocks; absent in daemon mode (WBMode.isDemo(), #202). -->
+           are honest seeds; absent in daemon mode (WBMode.isDemo(), #202). -->
       <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
       <!-- account menu: security (password + TOTP) and log off. impl: the
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
@@ -197,13 +197,13 @@
              draggable windows over the dotted floor. -->
         <section class="agents-tab" x-show="active === 'agents'">
           <!-- floating console windows are appended here by wb-console.js. impl:
-               each window's body is a faux terminal (local echo) in the mock —
+               each window's body is a faux terminal (local echo) as a seed —
                swap for a real xterm.js attached to a session over a WebSocket. -->
           <div id="workspace"></div>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file
-             tab (code = CodeMirror, markdown = rendered+mermaid). impl: the mock
+             tab (code = CodeMirror, markdown = rendered+mermaid). impl: a seed
              synthesises file bytes — fetch the real file; a Save emits a `save`
              intent (workbench:action) carrying the new content to persist. -->
         <div id="viewers"></div>
@@ -390,7 +390,7 @@
               </div>
 
               <div class="kd-foot">
-                Read-only mock — only labels change here (emits <code>issue-label-change</code>); edit on GitHub.
+                Read-only — only labels change here (emits <code>issue-label-change</code>); edit on GitHub.
               </div>
             </div>
           </template>
@@ -399,7 +399,7 @@
 
     </main>
 
-    <!-- right-hand run panel: toggled by the Runs rail button. The mock only
+    <!-- right-hand run panel: toggled by the Runs rail button. It currently
          reveals an empty framed panel — its real contents (run history/detail)
          come from a separate spec. Kept in the DOM always; the grid gives it a
          0-width track until `runs-open`, so showing it is a pure layout flip. -->
@@ -560,8 +560,8 @@
     <!-- ===================================================================
          Settings modal — data-driven from WB_SETTINGS (wb-settings.js). Left
          rail = sections; right = the knobs for the active section, each with a
-         plain-English blurb. Changing a value emits `setting-change`; the mock
-         stores nothing.
+         plain-English blurb. Changing a value emits `setting-change`; the
+         daemon persists it via `config.set`/`config.unset`.
     ==================================================================== -->
     <div class="modal-scrim" x-show="settingsOpen" x-cloak @click.self="closeSettings()">
       <div class="modal settings-modal" role="dialog" aria-label="Settings">
@@ -657,7 +657,7 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Mock — settings emit a <code>setting-change</code> intent; nothing is written to disk.</span>
+          <span class="foot-note">Settings persist via the daemon (<code>config.set</code>/<code>config.unset</code>).</span>
           <button class="btn" @click="closeSettings()">Done</button>
         </div>
       </div>
@@ -768,7 +768,7 @@
           </section>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Mock — actions emit intents (token / password / totp); no secrets are stored for real.</span>
+          <span class="foot-note">Password / TOTP / token are stored and validated by the daemon.</span>
           <button class="btn" @click="closeSecurity()">Done</button>
         </div>
       </div>
@@ -844,7 +844,7 @@
          filtered list (current pinned + ticked) with a create-from-current
          affordance when the typed name is new. Switching/creating emits an
          intent (`branch-switch` / `branch-create`); the daemon runs the real
-         `git checkout`. The mock reflects the new branch optimistically.
+         `git checkout`. The UI reflects the new branch optimistically.
     ==================================================================== -->
     <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
       <div
@@ -901,7 +901,7 @@
           </ul>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Mock — emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
+          <span class="foot-note">Emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
           <button class="btn" @click="closeBranchModal()">Cancel</button>
         </div>
       </div>
@@ -974,7 +974,7 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Mock — emits a <code>run-start</code> intent; the daemon spawns the run.</span>
+          <span class="foot-note">Emits a <code>run-start</code> intent; the daemon spawns the run.</span>
           <button class="btn" @click="closeRunModal()">Cancel</button>
           <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
         </div>

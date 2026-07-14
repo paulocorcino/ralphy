@@ -123,7 +123,7 @@
   }
 
   // Reload discards local edits and reloads from source. Daemon-backed repos
-  // re-read the REAL file via `file.read` (#197); the `file://` mock regenerates
+  // re-read the REAL file via `file.read` (#197); the `file://` demo regenerates
   // its synthesised bytes. The apply step is shared via `applyFresh`.
   function reloadFile(rec) {
     const daemonBacked = window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
@@ -583,9 +583,9 @@
 })();
 
 /* ---------------------------------------------------------------------------
-   Fake file contents — this is a mock with no backend, so a file's "bytes" are
-   synthesised from its name so every viewer feature is demonstrable. A real
-   build fetches the actual file instead.
+   Seed file contents — used only in the static demo with no backend, so a
+   file's "bytes" are synthesised from its name so every viewer feature is
+   demonstrable. A daemon-backed build fetches the actual file instead.
 --------------------------------------------------------------------------- */
 function fakeContent(path, ftype) {
   const base = path.split("/").pop();
@@ -596,7 +596,7 @@ function fakeContent(path, ftype) {
     rs: fakeRs, json: fakeJson, css: fakeCss, toml: fakeToml,
     prisma: fakePrisma, py: fakePy,
   }[e];
-  return gen ? gen(base) : `// ${path}\n// (mock) source for ${base}\n\nexport const answer = 42;\n`;
+  return gen ? gen(base) : `// ${path}\n// (demo) source for ${base}\n\nexport const answer = 42;\n`;
 }
 
 function fakeMarkdown(name) {
@@ -647,7 +647,7 @@ export function greet(name: string) {
 }
 \`\`\`
 
-> Editing here emits a \`save\` intent — the mock never writes to disk.
+> Editing here emits a \`save\` intent — the demo never writes to disk.
 `;
 }
 
