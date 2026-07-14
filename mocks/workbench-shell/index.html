@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ralphy · workbench shell (mock)</title>
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
+    <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />
+    <!-- CodeMirror 5: the source-code editor (highlight + edit + find) -->
+    <link rel="stylesheet" href="vendor/codemirror/codemirror.css" />
+    <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css" />
+    <link rel="stylesheet" href="vendor/codemirror/addon/search/matchesonscrollbar.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
+    <!-- top bar. impl: brand+avatar = daemon identity (/api/identity); the
+         crumb tracks the open project; the uptime is the daemon's live presence
+         (from the WS heartbeat), moved here from the canvas footer. -->
+    <header class="topbar">
+      <span class="brand"><i data-lucide="bot"></i> ralphy</span>
+      <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
+      <span class="spacer"></span>
+      <span class="stat uptime"><i data-lucide="circle-dot"></i> daemon up 2h 14m</span>
+      <!-- account menu: security (password + TOTP) and log off. impl: the
+           daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
+      <div class="menu-wrap">
+        <button class="avatar-btn" @click.stop="avatarMenu = !avatarMenu" title="account">
+          <span class="avatar"></span>
+        </button>
+        <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
+          <div class="dropdown-head">signed in · daemon</div>
+          <button class="dropdown-item" @click="openSecurity()">
+            <i class="bi bi-shield-lock"></i><span>Security settings</span>
+          </button>
+          <button class="dropdown-item" @click="logOff()">
+            <i class="bi bi-box-arrow-right"></i><span>Log off</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
+         sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
+         board as a canvas overlay (wb-kanban.js). -->
+    <nav class="rail">
+      <button :class="{ active: sideOpen }" @click="toggleSide()" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
+      <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
+      <!-- spacer pushes the settings gear to the bottom of the rail -->
+      <span class="rail-spacer"></span>
+      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
+    </nav>
+
+    <!-- sidebar: project accordion. impl: `projects` comes from the daemon
+         (mirror of /api/repos) — slug, branch, state (reachability), remote
+         (github|local), and a file `tree`. Opening one lifts it to the top and
+         mounts its tree; only one open at a time. -->
+    <aside class="side">
+      <div class="side-head">
+        <span>Projects</span>
+        <!-- count of located projects, at a glance (projects.length) -->
+        <span class="count" x-text="projects.length" title="projects located"></span>
+        <span class="spacer"></span>
+        <i data-lucide="ellipsis"></i>
+      </div>
+      <!-- impl: filters the list client-side; "/" is the focus shortcut hint. -->
+      <div class="side-search">
+        <i data-lucide="search"></i>
+        <input placeholder="Search projects…  /" />
+      </div>
+
+      <ul class="projects" :class="{ 'has-open': openSlug }">
+        <template x-for="p in projects" :key="p.slug">
+          <li class="project" :class="{ open: openSlug === p.slug }">
+            <!-- click toggles the project open/closed (mounts/destroys tree) -->
+            <div class="project-head" @click="toggle(p.slug)">
+              <span class="chevron"><i data-lucide="chevron-right"></i></span>
+              <!-- status dot: the project's daemon-reachability *right now* —
+                   green = live (session/daemon active there), grey = idle
+                   (registered & reachable but stopped), red = offline
+                   (unreachable path). Orthogonal to the provenance icon beside
+                   it (GitHub vs local-only). A local-only repo can be live; a
+                   GitHub repo can be offline. -->
+              <span class="dot" :class="dotClass(p.state)" :title="p.state"></span>
+              <!-- provenance: a GitHub-backed repo vs one that lives only on
+                   this disk. Orthogonal to the daemon-reachability dot above. -->
+              <i
+                class="remote"
+                :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
+                :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
+              ></i>
+              <span class="project-slug" x-text="p.slug"></span>
+              <!-- current git branch → click to switch (opens the branch
+                   picker). @click.stop so it doesn't also toggle the accordion.
+                   impl: current branch + the pickable list come from the
+                   daemon's repo info; a switch/create emits an intent. -->
+              <!-- switching is gated on reachability, not on remote: a
+                   local-only repo is still a git checkout with branches, but an
+                   *unreachable* one can't be touched (no `git branch`/checkout),
+                   so the chip goes inert and informational. -->
+              <button
+                class="branch-chip"
+                :class="{ dirty: p.dirty, disabled: !canSwitchBranch(p) }"
+                @click.stop="canSwitchBranch(p) ? openBranchModal(p) : null"
+                :title="branchChipTitle(p)"
+              >
+                <i data-lucide="git-branch"></i>
+                <span class="branch-chip-name" x-text="p.branch"></span>
+                <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
+              </button>
+            </div>
+            <!-- the file tree (Wunderbaum) mounts here when the project opens.
+                 impl: replace the in-memory `tree` with fetch of the repo tree
+                 and lazy-load subfolders; gestures already emit workbench:action. -->
+            <div class="wb-host" x-show="openSlug === p.slug"></div>
+          </li>
+        </template>
+      </ul>
+    </aside>
+
+    <!-- canvas -->
+    <main class="canvas">
+      <!-- tab strip: the first tab (Agents) is fixed and never closes; every
+           opened file rides in after it and can be closed. The console controls
+           live at the strip's right edge — kept above the workspace so a
+           floating console can never cover them. -->
+      <div class="tabbar">
+        <div class="tabstrip">
+          <!-- one tab per entry in `tabs`: index 0 is the fixed Agents tab
+               (not closable); the rest are opened files. Click activates,
+               middle-click / × closes. -->
+          <template x-for="t in tabs" :key="t.id">
+            <div
+              class="tab"
+              :class="{ active: active === t.id }"
+              @click="activate(t.id)"
+              @auxclick.prevent="t.closable && closeTab(t.id)"
+              :title="t.path || t.title"
+            >
+              <i class="tab-ic" :class="t.icon"></i>
+              <span class="tab-title" x-text="t.title"></span>
+              <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="close">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <!-- console controls, only meaningful on the Agents tab -->
+        <div class="canvas-tools" x-show="active === 'agents'">
+          <!-- New console: pick an agent → spawns a floating console for the
+               selected repo (openSlug), or the home dir if none. impl: this is
+               where a real session/PTY is launched (agent × repo), like the
+               daemon's /ws/session. -->
+          <div class="menu-wrap">
+            <button class="btn accent" @click.stop="agentMenu = !agentMenu">
+              <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>
+            </button>
+            <div class="dropdown" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
+              <!-- agents (impl: could come from daemon capabilities), then a plain
+                   console last. Each row carries its Alt+Shift+<digit> accelerator. -->
+              <template x-for="it in consoleItems()" :key="it.kind">
+                <button class="dropdown-item" :class="{ 'is-console': it.plain }" @click="openConsoleItem(it)">
+                  <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
+                  <span x-text="it.label"></span>
+                  <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
+                </button>
+              </template>
+            </div>
+          </div>
+          <!-- Arrange: auto-tiles all open console windows into a grid -->
+          <button class="btn" @click="arrangeConsoles()" title="tile the open consoles">
+            <i data-lucide="layout-grid"></i> Arrange
+          </button>
+        </div>
+      </div>
+
+      <div class="stage">
+        <!-- Agents tab: the floating-console workspace. Consoles live here as
+             draggable windows over the dotted floor. -->
+        <section class="agents-tab" x-show="active === 'agents'">
+          <!-- floating console windows are appended here by wb-console.js. impl:
+               each window's body is a faux terminal (local echo) in the mock —
+               swap for a real xterm.js attached to a session over a WebSocket. -->
+          <div id="workspace"></div>
+        </section>
+
+        <!-- file-viewer panes are appended here by wb-viewer.js, one per file
+             tab (code = CodeMirror, markdown = rendered+mermaid). impl: the mock
+             synthesises file bytes — fetch the real file; a Save emits a `save`
+             intent (workbench:action) carrying the new content to persist. -->
+        <div id="viewers"></div>
+      </div>
+
+      <!-- ===================================================================
+           Kanban board — an overlay over the canvas, toggled by the Kanban rail
+           button. The open project's issues (WB_KANBAN) placed in four columns
+           by ralphy's own judgment (wb-kanban.js): Backlog · Ready for agent ·
+           Ready for human · Closed. The two Ready columns are ordered by the
+           dependency graph (Kahn, blocked.rs); Backlog is a flat filtered list.
+           Read-only except labels; clicking a card opens the detail drawer.
+      ==================================================================== -->
+      <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
+        <div class="kanban-head">
+          <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
+          <span class="kanban-scope" x-text="openSlug ?? 'no project'"></span>
+          <span class="spacer"></span>
+          <!-- board-wide search + label filter (apply to every column) -->
+          <div class="kanban-search">
+            <i data-lucide="search"></i>
+            <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
+          </div>
+          <select class="kanban-select" x-model="kanbanLabel" title="filter by label">
+            <option value="__all">all labels</option>
+            <option value="__none">— no label</option>
+            <template x-for="l in kanbanLabelOptions()" :key="l">
+              <option :value="l" x-text="l"></option>
+            </template>
+          </select>
+          <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
+        <div class="kanban-empty" x-show="openSlug && projectIssues().length === 0">
+          No issues in <b x-text="openSlug"></b>.
+        </div>
+
+        <div class="kanban-cols" x-show="openSlug && projectIssues().length">
+          <template x-for="col in KANBAN.COLUMNS" :key="col.id">
+            <section class="kanban-col" :class="'col-' + col.id">
+              <div class="kanban-col-head">
+                <i :data-lucide="col.lucide"></i>
+                <span class="kanban-col-title" x-text="col.title"></span>
+                <span class="kanban-col-count" x-text="kanbanCount(col.id)"></span>
+                <span class="spacer"></span>
+                <!-- Backlog gets a sort control; the Ready columns are graph-ordered -->
+                <select class="kanban-sort" x-show="col.id === 'backlog'" x-model="kanbanSort" title="sort backlog">
+                  <template x-for="s in KANBAN.SORTS" :key="s.id">
+                    <option :value="s.id" x-text="s.label"></option>
+                  </template>
+                </select>
+                <span class="kanban-col-note" x-show="col.id === 'agent' || col.id === 'human'"
+                      title="ordered by the dependency graph (## Blocked by)">graph order</span>
+              </div>
+              <div class="kanban-col-body">
+                <template x-for="iss in kanbanColumns()[col.id]" :key="iss.number">
+                  <article class="kanban-card"
+                           :class="{ sel: kanbanSel === iss.number, running: !!issueRunning(iss.number), closed: iss.state === 'closed' }"
+                           @click="openIssue(iss.number)">
+                    <div class="kc-top">
+                      <span class="kc-num" x-text="'#' + iss.number"></span>
+                      <span class="kc-blocked" x-show="issueBlockers(iss).some((b) => b.open)" title="has an open blocker">
+                        <i class="bi bi-lock-fill"></i>
+                      </span>
+                      <span class="spacer"></span>
+                      <span class="kc-close" x-show="iss.state === 'closed'" :class="iss.reason" x-text="closeLabel(iss)"></span>
+                      <span class="kc-assignee" x-show="iss.assignees && iss.assignees.length"
+                            :title="(iss.assignees || []).join(', ')"><i class="bi bi-person-fill"></i></span>
+                    </div>
+                    <div class="kc-title" x-text="iss.title"></div>
+                    <!-- run pill: the actively-worked issue of a live run -->
+                    <div class="kc-run" x-show="issueRunning(iss.number)">
+                      <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
+                      <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
+                      <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
+                    </div>
+                    <div class="kc-labels" x-show="(iss.labels || []).length">
+                      <template x-for="l in iss.labels" :key="l">
+                        <span class="kc-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="labelShort(l)"></span>
+                      </template>
+                    </div>
+                  </article>
+                </template>
+                <div class="kanban-col-empty" x-show="kanbanColumns()[col.id].length === 0">—</div>
+              </div>
+            </section>
+          </template>
+        </div>
+
+        <!-- detail drawer: GitHub-style read-only view + the label editor -->
+        <aside class="kanban-detail" :class="{ open: kanbanSel !== null && !!selectedIssue() }" aria-label="Issue detail">
+          <template x-if="selectedIssue()">
+            <div class="kd-inner">
+              <div class="kd-head">
+                <span class="kd-state" :class="selectedIssue().state === 'closed' ? (selectedIssue().reason || 'completed') : 'open'">
+                  <i class="bi" :class="selectedIssue().state === 'closed'
+                    ? (selectedIssue().reason === 'not_planned' ? 'bi-slash-circle' : 'bi-check-circle-fill')
+                    : 'bi-record-circle'"></i>
+                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'open'"></span>
+                </span>
+                <span class="spacer"></span>
+                <a class="kd-gh" :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
+                   title="open on GitHub to edit (this board is read-only)">
+                  <i class="bi bi-github"></i> Open on GitHub
+                </a>
+                <button class="kd-x" @click="closeIssue()" title="close"><i class="bi bi-x-lg"></i></button>
+              </div>
+
+              <h2 class="kd-title">
+                <span class="kd-num" x-text="'#' + selectedIssue().number"></span>
+                <span x-text="selectedIssue().title"></span>
+              </h2>
+
+              <!-- running banner -->
+              <div class="kd-run" x-show="issueRunning(selectedIssue().number)">
+                <span class="kd-run-face" x-text="issueRunning(selectedIssue().number)?.face"></span>
+                <span x-text="issueRunning(selectedIssue().number)?.glyph"></span>
+                <span x-text="'running · ' + (issueRunning(selectedIssue().number)?.state || '') + ' (' + (issueRunning(selectedIssue().number)?.agent || '') + ')'"></span>
+              </div>
+
+              <!-- meta -->
+              <div class="kd-meta">
+                <div class="kd-meta-row"><span class="kd-k">Column</span><span class="kd-v" x-text="kanbanColumnTitle(selectedIssue())"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Assignees</span><span class="kd-v" x-text="(selectedIssue().assignees || []).join(', ') || '—'"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Opened</span><span class="kd-v" x-text="kfmtDate(selectedIssue().created)"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Updated</span><span class="kd-v" x-text="kfmtDate(selectedIssue().updated)"></span></div>
+              </div>
+
+              <!-- blocked by -->
+              <div class="kd-row" x-show="issueBlockers(selectedIssue()).length">
+                <span class="kd-k">Blocked by</span>
+                <div class="kd-blockers">
+                  <template x-for="b in issueBlockers(selectedIssue())" :key="b.number">
+                    <a class="kd-blocker" :class="{ open: b.open }" :href="githubUrl(b.number)" target="_blank" rel="noopener" :title="b.title">
+                      <i class="bi" :class="b.open ? 'bi-lock-fill' : 'bi-unlock'"></i><span x-text="'#' + b.number"></span>
+                    </a>
+                  </template>
+                </div>
+              </div>
+
+              <!-- labels — the one editable field -->
+              <div class="kd-row">
+                <span class="kd-k">Labels</span>
+                <div class="kd-labels">
+                  <template x-for="l in selectedIssue().labels" :key="l">
+                    <span class="kd-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="l"></span>
+                  </template>
+                  <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">no labels</span>
+                  <div class="menu-wrap">
+                    <button class="kd-label-edit" @click.stop="labelMenuOpen = !labelMenuOpen"><i data-lucide="tag"></i> edit</button>
+                    <div class="dropdown kd-label-menu" x-show="labelMenuOpen" @click.outside="labelMenuOpen = false" x-cloak>
+                      <div class="dropdown-head">toggle a label — the daemon runs the <code>gh</code> call</div>
+                      <template x-for="l in KANBAN_LABELS" :key="'opt-' + l">
+                        <button class="dropdown-item kd-label-opt" @click="toggleLabel(selectedIssue(), l)">
+                          <span class="kd-label-swatch" :style="`background:${labelColor(l)}`"></span>
+                          <span class="kd-label-optname" x-text="l"></span>
+                          <i class="bi bi-check2" x-show="hasLabel(selectedIssue(), l)"></i>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- body -->
+              <div class="kd-body md" x-html="renderIssueMd(selectedIssue().body)"></div>
+
+              <!-- comments -->
+              <div class="kd-comments" x-show="(selectedIssue().comments || []).length">
+                <div class="kd-comments-head"
+                     x-text="selectedIssue().comments.length + ' comment' + (selectedIssue().comments.length === 1 ? '' : 's')"></div>
+                <template x-for="(c, idx) in selectedIssue().comments" :key="idx">
+                  <div class="kd-comment">
+                    <div class="kd-comment-head"><b x-text="c.author"></b><span class="kd-comment-at" x-text="kfmtDate(c.at)"></span></div>
+                    <div class="kd-comment-body md" x-html="renderIssueMd(c.body)"></div>
+                  </div>
+                </template>
+              </div>
+
+              <div class="kd-foot">
+                Read-only mock — only labels change here (emits <code>issue-label-change</code>); edit on GitHub.
+              </div>
+            </div>
+          </template>
+        </aside>
+      </section>
+
+    </main>
+
+    <!-- right-hand run panel: toggled by the Runs rail button. The mock only
+         reveals an empty framed panel — its real contents (run history/detail)
+         come from a separate spec. Kept in the DOM always; the grid gives it a
+         0-width track until `runs-open`, so showing it is a pure layout flip. -->
+    <aside class="runs" x-show="runsOpen" aria-label="Runs">
+      <div class="runs-head">
+        <span>Runs</span>
+        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="active runs"></span>
+        <span class="spacer"></span>
+        <!-- demo affordance: synthesize the next run event so the panel visibly
+             advances (a stand-in for the live CloudEvents feed). -->
+        <button class="runs-demo" x-show="openSlug && projectRuns().length" @click="demoTick()"
+                title="advance — simulate the next run event"><i class="bi bi-lightning-charge"></i></button>
+        <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
+      </div>
+
+      <!-- action toolbar: the three daemon verbs (dispatch.rs) scoped to the open
+           project. `run` opens a modal to pick agent(s) + branch mode; `triage`
+           and `push` are blessed no-arg invocations, fired straight onto the
+           seam (the client never composes a command line). -->
+      <div class="runs-actions" x-show="openSlug">
+        <button class="run-verb accent" @click="openRunModal()" title="start a run — choose agent & branch">
+          <i data-lucide="play"></i> run
+        </button>
+        <button class="run-verb" @click="fireVerb('triage')" title="triage the backlog — label + plan open issues (if idle)">
+          <i data-lucide="stethoscope"></i> triage
+        </button>
+        <button class="run-verb" @click="fireVerb('push')" title="push the queue snapshot to the events sink">
+          <i data-lucide="cloud-upload"></i> push
+        </button>
+        <span class="spacer"></span>
+        <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
+      </div>
+
+      <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
+      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0">
+        No active runs in <b x-text="openSlug"></b> — <b>run</b> to start one.
+      </div>
+
+      <!-- the panel proper renders only when the open project has a live run -->
+      <template x-if="openSlug && projectRuns().length">
+        <div class="runs-body">
+          <!-- ZONE 1 · run picker — a project can host several concurrent runs
+               (one per `runid`); pick which to inspect. -->
+          <div class="menu-wrap run-select">
+            <button class="run-select-btn" @click.stop="runMenu = !runMenu">
+              <span class="run-face" x-text="currentRun()?.face"></span>
+              <span class="run-select-main">
+                <span class="run-select-title" x-text="currentRun()?.agent"></span>
+                <span class="run-select-sub" x-text="runPhaseLabel(currentRun())"></span>
+              </span>
+              <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
+              <i data-lucide="chevron-down"></i>
+            </button>
+            <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="'active runs · ' + openSlug"></div>
+              <template x-for="r in projectRuns()" :key="r.runid">
+                <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
+                        @click="selectRun(r.runid); runMenu = false">
+                  <span class="run-face" x-text="r.face"></span>
+                  <span class="run-menu-name">
+                    <b x-text="r.agent"></b>
+                    <small x-text="runPhaseLabel(r)"></small>
+                  </span>
+                  <span class="run-prog" x-text="r.completed + '/' + r.queueTotal"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- ZONE 2 · the issue trail — the run's ordered queue, each node
+               glyph-coded by IssueStatus; the active node carries the live phase
+               (or 🌙 when the whole run is parked on a usage-limit reset). -->
+          <div class="trail-wrap">
+            <div class="trail-head">
+              <span class="trail-branch"><i data-lucide="git-branch"></i><span x-text="currentRun()?.branch"></span></span>
+              <span class="spacer"></span>
+              <span class="trail-sleep" x-show="currentRun()?.phase === 'sleeping'">
+                🌙 <span x-text="sleepLabel(currentRun())"></span>
+              </span>
+            </div>
+            <ol class="trail">
+              <template x-for="iss in (currentRun()?.issues || [])" :key="iss.number">
+                <li class="trail-node" :class="'st-' + issueState(currentRun(), iss)"
+                    :title="nodeTitle(currentRun(), iss)" @click="focusIssue(iss.number)">
+                  <span class="trail-ic" x-text="issueGlyph(currentRun(), iss)"></span>
+                  <span class="trail-n" x-text="'#' + iss.number"></span>
+                </li>
+              </template>
+            </ol>
+          </div>
+
+          <!-- ZONE 3 · plan viewer (Cursor-style) — `## Steps` pinned on top,
+               fully rendered; a dropdown below reads any other `##` section. The
+               backend updates plan.md live (plan.step / plan.opened events). -->
+          <div class="plan-wrap">
+            <div class="plan-block plan-block-steps">
+              <div class="plan-block-head">
+                <i data-lucide="list-checks"></i><span>Steps</span>
+                <span class="spacer"></span>
+                <span class="plan-xlate-note" x-show="xlate.on.steps && (xlate.err.steps || xlate.note.steps)"
+                      x-text="xlate.err.steps || xlate.note.steps"></span>
+                <span class="plan-issue" x-show="currentRun()?.active != null" x-text="'#' + currentRun()?.active"></span>
+                <!-- on-device translate toggle (browser Translator API) —
+                     hidden entirely where the API is absent -->
+                <button class="plan-xlate" x-show="xlateSupported()"
+                        :class="{ on: xlate.on.steps, busy: xlate.busy.steps }"
+                        @click="toggleXlate('steps', 'Steps')" :title="xlateTitle()">
+                  <i data-lucide="languages"></i>
+                </button>
+                <!-- target language, shown while this block is translating -->
+                <select class="plan-xlate-target" x-show="xlate.on.steps"
+                        x-model="xlate.target" @change="retranslate()" title="translate to">
+                  <template x-for="l in xlateLangs" :key="l.code">
+                    <option :value="l.code" x-text="l.label"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), 'Steps', 'steps')"></div>
+            </div>
+            <div class="plan-block plan-block-more">
+              <div class="plan-block-head">
+                <i data-lucide="book-open"></i>
+                <select class="plan-picker" x-model="planSection" @change="onSectionChange()">
+                  <template x-for="h in planHeadings(currentRun())" :key="h">
+                    <option :value="h" x-text="h"></option>
+                  </template>
+                </select>
+                <span class="plan-xlate-note" x-show="xlate.on.more && (xlate.err.more || xlate.note.more)"
+                      x-text="xlate.err.more || xlate.note.more"></span>
+                <button class="plan-xlate" x-show="xlateSupported()"
+                        :class="{ on: xlate.on.more, busy: xlate.busy.more }"
+                        @click="toggleXlate('more', planSection || planHeadings(currentRun())[0])" :title="xlateTitle()">
+                  <i data-lucide="languages"></i>
+                </button>
+                <select class="plan-xlate-target" x-show="xlate.on.more"
+                        x-model="xlate.target" @change="retranslate()" title="translate to">
+                  <template x-for="l in xlateLangs" :key="'m-' + l.code">
+                    <option :value="l.code" x-text="l.label"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0], 'more')"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </aside>
+
+    <!-- right-click menu, built per-node by app.js (open/rename/copy-path/
+         new/delete). Each item emits a workbench:action intent — no direct FS. -->
+    <div id="ctxmenu" class="ctxmenu"></div>
+
+    <!-- ===================================================================
+         Settings modal — data-driven from WB_SETTINGS (wb-settings.js). Left
+         rail = sections; right = the knobs for the active section, each with a
+         plain-English blurb. Changing a value emits `setting-change`; the mock
+         stores nothing.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="settingsOpen" x-cloak @click.self="closeSettings()">
+      <div class="modal settings-modal" role="dialog" aria-label="Settings">
+        <div class="modal-head">
+          <i data-lucide="settings"></i>
+          <span class="modal-title">Settings</span>
+          <span class="modal-sub">daemon settings are machine-wide · everything below is saved per project</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeSettings()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="settings-body">
+          <nav class="settings-nav">
+            <!-- daemon group: machine-wide, one for every project -->
+            <div class="settings-navgroup"><i class="bi bi-hdd-network"></i> Daemon · this machine</div>
+            <template x-for="sec in SETTINGS.filter((s) => s.scope === 'daemon')" :key="sec.id">
+              <button
+                class="settings-navitem"
+                :class="{ active: settingsSection === sec.id }"
+                @click="settingsSection = sec.id"
+              >
+                <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
+              </button>
+            </template>
+            <!-- project group: these settings belong to the open repo, persisted
+                 in <repo>/.ralphy/settings.json -->
+            <div class="settings-navgroup project">
+              <i class="bi" :class="openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
+              <span x-text="openSlug ? ('Project · ' + openSlug) : 'Project · none open'"></span>
+            </div>
+            <template x-for="sec in SETTINGS.filter((s) => s.scope === 'project')" :key="sec.id">
+              <button
+                class="settings-navitem"
+                :class="{ active: settingsSection === sec.id }"
+                @click="settingsSection = sec.id"
+                :disabled="!openSlug"
+                :title="!openSlug ? 'open a project to edit its settings' : ''"
+              >
+                <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
+              </button>
+            </template>
+          </nav>
+          <div class="settings-content">
+            <template x-for="sec in SETTINGS" :key="sec.id">
+              <section x-show="settingsSection === sec.id">
+                <div class="settings-h2row">
+                  <h2 class="settings-h2" x-text="sec.title"></h2>
+                  <span class="scope-chip" :class="sec.scope"
+                        x-text="sec.scope === 'daemon' ? 'daemon · all projects' : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
+                </div>
+                <p class="settings-blurb" x-text="sec.blurb"></p>
+                <!-- per-project sections need an open repo to write into -->
+                <p class="settings-noproject" x-show="sec.scope === 'project' && !openSlug">
+                  <i class="bi bi-info-circle"></i> Open a project to edit its settings — these are stored per repo in
+                  <code>&lt;repo&gt;/.ralphy/settings.json</code>.
+                </p>
+                <template x-for="it in sec.items" :key="it.key">
+                  <div class="set-row" x-show="sec.scope === 'daemon' || openSlug">
+                    <div class="set-main">
+                      <label class="set-label" x-text="it.label"></label>
+                      <!-- control, chosen by type -->
+                      <template x-if="it.type === 'select'">
+                        <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
+                          <template x-for="o in it.options" :key="o">
+                            <option :value="o" :selected="settings[it.key] === o" x-text="o"></option>
+                          </template>
+                        </select>
+                      </template>
+                      <template x-if="it.type === 'tristate'">
+                        <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
+                          <template x-for="o in TRISTATE" :key="o">
+                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'default (unset)' : o"></option>
+                          </template>
+                        </select>
+                      </template>
+                      <template x-if="it.type === 'text'">
+                        <input class="set-input" type="text" :placeholder="it.placeholder || ''"
+                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                      </template>
+                      <template x-if="it.type === 'password'">
+                        <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
+                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                      </template>
+                      <template x-if="it.type === 'number'">
+                        <input class="set-input set-num" type="number" :min="it.min" :max="it.max"
+                               :value="settings[it.key]" @input="saveSetting(it.key, $event.target.value)" />
+                      </template>
+                    </div>
+                    <p class="set-help" x-text="it.help"></p>
+                  </div>
+                </template>
+              </section>
+            </template>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — settings emit a <code>setting-change</code> intent; nothing is written to disk.</span>
+          <button class="btn" @click="closeSettings()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Security modal — mirrors ralphy's daemon auth model (ADR-0032):
+         access token, optional password (PBKDF2), and TOTP 2FA whose secret is
+         shown exactly once. "Revoke" is the real "delete the daemon-totp file".
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="securityOpen" x-cloak @click.self="closeSecurity()">
+      <div class="modal security-modal" role="dialog" aria-label="Security settings">
+        <div class="modal-head">
+          <i data-lucide="shield"></i>
+          <span class="modal-title">Security</span>
+          <span class="modal-sub">opt-in — the daemon is open on localhost and locks down only when you ask</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="security-body">
+          <!-- Access token -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-key"></i> Access token</span>
+              <span class="sec-badge" :class="security.tokenSet ? 'on' : 'off'"
+                    x-text="security.tokenSet ? 'set' : 'not set'"></span>
+            </div>
+            <p class="sec-note">
+              A machine credential for reaching the daemon over the network. It also signs your
+              browser session. Re-minting it logs every session out — including this one.
+            </p>
+            <div class="sec-actions">
+              <button class="btn" @click="remintToken()">Re-mint token</button>
+            </div>
+          </section>
+
+          <!-- Password -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-asterisk"></i> Login password</span>
+              <span class="sec-badge" :class="security.passwordSet ? 'on' : 'off'"
+                    x-text="security.passwordSet ? 'set' : 'not set'"></span>
+            </div>
+            <p class="sec-note">
+              An optional extra factor on top of 2FA (PBKDF2, 600k iterations). Leave it off, or
+              set one below. Saving a new value replaces the old.
+            </p>
+            <div class="sec-actions">
+              <input class="set-input" type="password" placeholder="new password"
+                     x-model="security.passwordDraft" @keydown.enter="savePassword()" />
+              <button class="btn accent" @click="savePassword()" :disabled="!security.passwordDraft.trim()">Save</button>
+              <button class="btn" @click="clearPassword()" x-show="security.passwordSet">Remove</button>
+            </div>
+          </section>
+
+          <!-- TOTP -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-phone"></i> Two-factor (TOTP)</span>
+              <span class="sec-badge" :class="security.totpEnrolled ? 'on' : 'off'"
+                    x-text="security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
+            </div>
+            <p class="sec-note">
+              Time-based codes from any authenticator app (SHA1 · 6 digits · 30s). Enroll once,
+              scan the QR, and codes are required at login. The secret is shown a single time —
+              scan it now.
+            </p>
+
+            <!-- not enrolled → enroll button -->
+            <div class="sec-actions" x-show="!security.totpEnrolled">
+              <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll &amp; show QR</button>
+            </div>
+
+            <!-- the one-time reveal, present only right after enrolling -->
+            <div class="totp-reveal" x-show="security.totpEnrolled && security.secret">
+              <div class="totp-qr" x-html="security.qrHtml"></div>
+              <div class="totp-meta">
+                <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown once — scan or copy it now.</div>
+                <label class="set-label">Secret</label>
+                <input class="set-input mono" type="text" :value="security.secret" readonly onclick="this.select()" />
+                <label class="set-label">otpauth URI</label>
+                <input class="set-input mono" type="text" :value="security.otpauthUri" readonly onclick="this.select()" />
+              </div>
+            </div>
+
+            <!-- enrolled (secret already dismissed) → revoke -->
+            <div class="sec-actions" x-show="security.totpEnrolled && !security.secret">
+              <span class="sec-note" style="margin:0;flex:1">Enrolled. The secret can't be shown again — revoke to start over.</span>
+              <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
+            </div>
+          </section>
+
+          <!-- Require login -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
+              <label class="switch">
+                <input type="checkbox" :checked="security.requireLogin" @change="toggleRequireLogin($event)" />
+                <span class="switch-track"></span>
+              </label>
+            </div>
+            <p class="sec-note">
+              Gate the browser UI behind a login screen (session auth). Needs 2FA enrolled first —
+              this is the same posture the daemon adopts automatically when bound to a non-local
+              address. With it on, <b>Log off</b> drops you to the login screen.
+            </p>
+          </section>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — actions emit intents (token / password / totp); no secrets are stored for real.</span>
+          <button class="btn" @click="closeSecurity()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Branch switcher — click the branch chip on a project to open. A
+         filtered list (current pinned + ticked) with a create-from-current
+         affordance when the typed name is new. Switching/creating emits an
+         intent (`branch-switch` / `branch-create`); the daemon runs the real
+         `git checkout`. The mock reflects the new branch optimistically.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
+      <div
+        class="modal branch-modal"
+        role="dialog"
+        aria-label="Switch branch"
+        @keydown.escape.window="branchOpen && closeBranchModal()"
+      >
+        <div class="modal-head">
+          <i data-lucide="git-branch"></i>
+          <span class="modal-title">Switch branch</span>
+          <span class="modal-sub" x-text="branchModal.slug"></span>
+          <span class="sec-badge off" x-show="branchModal.dirty"
+                title="the working tree has uncommitted changes">uncommitted</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeBranchModal()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="branch-body">
+          <!-- filter box doubles as the create field -->
+          <div class="branch-search">
+            <i data-lucide="search"></i>
+            <input
+              x-ref="branchFilter"
+              x-model="branchModal.filter"
+              placeholder="Find or create a branch…"
+              @keydown.enter.prevent="branchEnter()"
+            />
+          </div>
+          <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
+               can fail against uncommitted files. -->
+          <p class="branch-dirty-note" x-show="branchModal.dirty">
+            <i class="bi bi-exclamation-triangle"></i>
+            Uncommitted changes here — ralphy aborts a run on a dirty tree and a checkout may fail. Commit or stash first.
+          </p>
+          <ul class="branch-list">
+            <template x-for="b in branchList()" :key="b">
+              <li
+                class="branch-item"
+                :class="{ current: b === branchModal.current }"
+                @click="switchBranch(b)"
+              >
+                <i class="bi" :class="b === branchModal.current ? 'bi-check2' : 'bi-git'"></i>
+                <span class="branch-name" x-text="b"></span>
+                <span class="branch-tag" x-show="b === branchModal.current">current</span>
+              </li>
+            </template>
+            <!-- create-from-current, shown only when the typed name is new -->
+            <li class="branch-item create" x-show="canCreateBranch()" @click="createBranch()">
+              <i class="bi bi-plus-lg"></i>
+              <span class="branch-name">Create branch “<span x-text="branchModal.filter.trim()"></span>”</span>
+              <span class="branch-tag">from <span x-text="branchModal.current"></span></span>
+            </li>
+            <li class="branch-empty" x-show="branchList().length === 0 && !canCreateBranch()">No branches match.</li>
+          </ul>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
+          <button class="btn" @click="closeBranchModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Run modal — the `run` verb, enriched. Pick the agent (executor); a
+         checkbox reveals a second picker to plan with a different agent
+         (`--agent` executor + `--plan-agent` planner); choose the branch mode.
+         Emits a `run-start` intent carrying the faithful flags; the daemon
+         spawns `ralphy run …`. Kept deliberately minimal.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="runOpen" x-cloak @click.self="closeRunModal()">
+      <div class="modal run-modal" role="dialog" aria-label="Start a run"
+           @keydown.escape.window="runOpen && closeRunModal()">
+        <div class="modal-head">
+          <i data-lucide="play"></i>
+          <span class="modal-title">Start a run</span>
+          <span class="modal-sub" x-text="openSlug"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeRunModal()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body">
+          <!-- agent (executor; also the planner unless a split is chosen) -->
+          <div class="run-field">
+            <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
+            <p class="run-help">
+              Which adapter drives the work<span x-show="!runCfg.split"> — planning and execution both</span>.
+            </p>
+            <div class="seg">
+              <template x-for="a in agents" :key="a">
+                <button class="seg-btn" :class="{ on: runCfg.agent === a }" @click="runCfg.agent = a" x-text="a"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- the split toggle: progressive disclosure of a second picker -->
+          <label class="run-check">
+            <input type="checkbox" x-model="runCfg.split" />
+            <span>Plan with a different agent</span>
+          </label>
+
+          <!-- plan agent, only when splitting -->
+          <div class="run-field" x-show="runCfg.split" x-cloak>
+            <label class="run-label">Plan agent</label>
+            <p class="run-help">Plans each issue; the execute agent carries the plan out (<code>--plan-agent</code>).</p>
+            <div class="seg">
+              <template x-for="a in agents" :key="'plan-' + a">
+                <button class="seg-btn" :class="{ on: runCfg.planAgent === a }" @click="runCfg.planAgent = a" x-text="a"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- branch mode -->
+          <div class="run-field">
+            <label class="run-label">Branch</label>
+            <div class="seg">
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">new</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">current</button>
+            </div>
+            <p class="run-help" x-text="runCfg.branchMode === 'new'
+              ? 'Cut a fresh afk/run-… branch off the base — commits land there.'
+              : ('Commit onto the branch the repo is already on (' + openProjectBranch() + ').')"></p>
+          </div>
+
+          <!-- live command preview -->
+          <div class="run-preview">
+            <span class="run-preview-tag">ralphy</span>
+            <code x-text="runCommandPreview()"></code>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">Mock — emits a <code>run-start</code> intent; the daemon spawns the run.</span>
+          <button class="btn" @click="closeRunModal()">Cancel</button>
+          <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Login gate — a fully-opaque overlay shown when `!authed`. Because it's
+         solid (not just dimmed) and the chrome is blanked (body.locked), there's
+         nothing behind to read: the real daemon never renders the app until
+         /api/login succeeds, so there's nothing to peek at.
+    ==================================================================== -->
+    <div class="login-gate" x-show="!authed" x-cloak>
+      <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
+        <div class="login-brand"><i data-lucide="bot"></i> ralphy daemon</div>
+        <label class="login-label">
+          Authenticator code
+          <input class="login-input" x-model="login.code" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="6" required autofocus placeholder="000000" />
+        </label>
+        <label class="login-label" x-show="security.passwordSet">
+          Password
+          <input class="login-input" type="password" x-model="login.password" autocomplete="current-password" />
+        </label>
+        <button class="login-btn" type="submit">Log in</button>
+        <div class="login-err" x-text="login.error"></div>
+        <div class="login-hint">mock — any 6-digit code works<span x-show="security.passwordSet"> (password must match)</span></div>
+      </form>
+    </div>
+
+    <!-- ===================================================================
+         Seed plan.md blocks for the Runs panel. Kept as inert <script> text so
+         the markdown (backticks, ${}) needs no JS escaping; app.js hydrates each
+         run's live `planMd` from these at init. A backend replaces them with the
+         real plan.opened / plan.closed payloads off the event bus.
+    ==================================================================== -->
+    <script type="text/markdown" id="seed-plan-fincal-71">
+# Plan for #71: Walking skeleton: casca deployável ponta a ponta
+
+## Feasible: yes
+Greenfield repo. The spec is concrete: scaffold Next.js App Router + Prisma + SQLite + Auth.js, render the UI shell (sidebar with 6 destinations + topbar) behind a protected route, single `Dockerfile`. Machine-verifiable via lint + render tests + `prisma migrate deploy` + `next build` + `docker build`.
+
+## Done when
+- `npx prisma migrate deploy` exits 0 applying the init migration on a fresh `dev.db`.
+- `npm run test` passes `sidebar.test.tsx` (6 destinations in `ui-ux.md` order) and `empty-state.test.tsx`.
+- `npm run build` exits 0 end to end; `docker build -t fincal-skeleton .` exits 0.
+- `.env.example` carries the four placeholders `DATABASE_URL`, `AUTH_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
+
+## Verify
+```
+npm run lint
+npm run test
+npx prisma migrate deploy
+npm run build
+docker build -t fincal-skeleton .
+```
+
+## Decisions
+- Auth.js v5 infra wired now (config + Prisma adapter models + proxy + minimal `/login`), NOT full auth UX (that is slice 02).
+- "schema base" = Auth.js adapter models only (`User`, `Account`, `Session`, `VerificationToken`); domain entities arrive later.
+- Scaffold via `create-next-app` into a temp dir, then merge into repo root preserving `docs/`, `.env`, `CONTEXT.md`.
+
+## Caveats
+- `.env` holds REAL secrets and is gitignored — the executor never overwrites, commits, or logs it.
+- "Sem scroll horizontal até ~360px" is visual — machine-verifiable only via Playwright (arrives slice 14); tagged [review-only].
+
+## Steps
+- [x] Scaffold Next.js num diretório temporário e mover os arquivos gerados para a raiz do repo, preservando `docs/`, `.env`, `CONTEXT.md`. Mergear `.gitignore`.
+- [x] Inicializar shadcn/ui e adicionar primitivos: `button`, `card`, `input`, `sheet`, `dropdown-menu`, `separator`, `tooltip`, `avatar`. Tema claro único.
+- [x] Adicionar Prisma: `schema.prisma` com os models do adapter Auth.js, `src/lib/prisma.ts` singleton, `prisma migrate dev --name init`.
+- [ ] Wire Auth.js v5: edge-split (`auth.config.ts` + `auth.ts`), proxy, route, seed. Confirmar `npm run build` verde.
+- [ ] Construir a casca de UI: `nav.ts`, `sidebar.tsx`, `topbar.tsx`, `app-shell.tsx`.
+- [ ] Rotas protegidas + `EmptyState` + login.
+- [ ] Build config + Docker: `next.config.ts` standalone, `Dockerfile` multi-stage, `.dockerignore`.
+- [ ] Adicionar Vitest + testes de renderização (`sidebar.test.tsx`, `empty-state.test.tsx`).
+- [ ] Provar ambiente + gate local: lint, test, migrate, build, docker build — todos exit 0.
+- [ ] Self-review via subagent; resolver MEDIUMs.
+
+## Notes & decisions
+- Pinned Prisma to `^6` (v6 keeps `url = env("DATABASE_URL")`, no driver adapter for SQLite).
+- Next.js 16 renamed `middleware.ts` to `proxy.ts` (same API).
+
+## Handoff
+- Delivered so far: repo scaffolded, shadcn primitives, Prisma schema + init migration. Next: Auth.js edge-split and the UI shell.
+- Traps: `@vitejs/plugin-react@6` conflicts with shadcn's babel chain — install test deps with `--legacy-peer-deps`.
+
+<!-- ralphy-plan: issue=71 -->
+    </script>
+
+    <script type="text/markdown" id="seed-plan-b">
+# Plan for #92: Reconcile — UI de conferência
+
+## Feasible: yes
+The OFX parser (#90) lands normalized transactions; this slice renders the side-by-side conferência table and the accept/reject actions. Machine-verifiable via component tests.
+
+## Done when
+- `npm run test` passes `reconcile-table.test.tsx` (renders matched pairs + unmatched buckets).
+- Accepting a match writes a `Lançamento` linked to the imported row.
+
+## Steps
+- [x] Tabela de conferência: colunas extrato × lançamentos, agrupada por status de match.
+- [ ] Ações aceitar/rejeitar por linha, com atalhos de teclado.
+- [ ] Persistir a decisão (link `ImportedRow` → `Lançamento`).
+- [ ] Testes de render + fluxo de aceite.
+
+## Decisions
+- Reuse a heurística de matching de #91 (bloqueada por #200) apenas em modo read-only até desbloquear.
+
+## Handoff
+- Waiting on a provider usage-limit reset before resuming execution.
+    </script>
+
+    <script type="text/markdown" id="seed-plan-c">
+# Plan for #13: xterm v6 — cores do tema
+
+## Feasible: yes
+The webgl addon (#10) is in; this maps the ADR-0035 warm-dark palette onto xterm's 16-color + ANSI bright set and the cursor/selection colors.
+
+## Done when
+- The terminal theme object matches the palette tokens; a snapshot test pins the 16 colors.
+
+## Steps
+- [x] Extrair os tokens de cor do ADR-0035 para um objeto `ITheme`.
+- [ ] Mapear ANSI 0–15 + cursor + selection + background.
+- [ ] Snapshot test do tema aplicado.
+
+## Decisions
+- Bright variants derived by a fixed lightness bump, not hand-picked, to stay consistent.
+
+## Handoff
+- #11 (sessão multiplexada) needs a human split; #12 (reflow) is waiting on a human gate.
+    </script>
+
+    <script type="text/markdown" id="seed-plan-d">
+# Plan for #43: Streaming — UI incremental
+
+## Feasible: yes
+SSE transport (#40) delivers token deltas; this renders them incrementally with a stable layout and a stop control. Planner is still writing the step list.
+
+## Done when
+- Deltas append without layout shift; the stop button aborts the stream cleanly.
+
+## Steps
+- [ ] Assinar o stream SSE e acumular deltas num buffer reativo.
+- [ ] Render incremental sem reflow (medir com Playwright).
+- [ ] Botão parar → aborta o fetch e marca a mensagem como interrompida.
+
+## Decisions
+- #41 (token counter) veio infeasible — 0 steps; #42 (cancelamento) está bloqueada.
+
+## Handoff
+- Planning in progress.
+    </script>
+
+    <!-- vendored, loaded locally (no CDN at runtime) -->
+    <script src="vendor/marked.min.js"></script>
+    <script src="vendor/dompurify.min.js"></script>
+    <script src="vendor/mermaid.min.js"></script>
+    <script src="vendor/codemirror/codemirror.js"></script>
+    <script src="vendor/codemirror/addon/mode/simple.js"></script>
+    <script src="vendor/codemirror/mode/xml.js"></script>
+    <script src="vendor/codemirror/mode/javascript.js"></script>
+    <script src="vendor/codemirror/mode/css.js"></script>
+    <script src="vendor/codemirror/mode/htmlmixed.js"></script>
+    <script src="vendor/codemirror/mode/rust.js"></script>
+    <script src="vendor/codemirror/mode/clike.js"></script>
+    <script src="vendor/codemirror/mode/markdown.js"></script>
+    <script src="vendor/codemirror/mode/python.js"></script>
+    <script src="vendor/codemirror/mode/toml.js"></script>
+    <script src="vendor/codemirror/mode/yaml.js"></script>
+    <script src="vendor/codemirror/mode/shell.js"></script>
+    <script src="vendor/codemirror/mode/sql.js"></script>
+    <script src="vendor/codemirror/mode/go.js"></script>
+    <script src="vendor/codemirror/addon/dialog/dialog.js"></script>
+    <script src="vendor/codemirror/addon/search/searchcursor.js"></script>
+    <script src="vendor/codemirror/addon/scroll/annotatescrollbar.js"></script>
+    <script src="vendor/codemirror/addon/search/matchesonscrollbar.js"></script>
+    <script src="vendor/codemirror/addon/search/search.js"></script>
+    <script src="vendor/codemirror/addon/search/jump-to-line.js"></script>
+    <script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
+    <script src="vendor/codemirror/addon/selection/active-line.js"></script>
+    <script src="vendor/codemirror/addon/display/placeholder.js"></script>
+    <script src="vendor/lucide.min.js"></script>
+    <script src="vendor/wunderbaum/wunderbaum.umd.min.js"></script>
+    <script src="vendor/qrcode.js"></script>
+    <script src="wb-translate.js"></script>
+    <script src="wb-console.js"></script>
+    <script src="wb-viewer.js"></script>
+    <script src="wb-settings.js"></script>
+    <script src="wb-runs.js"></script>
+    <script src="wb-kanban.js"></script>
+    <script src="app.js"></script>
+    <script defer src="vendor/alpine.min.js"></script>
+  </body>
+</html>
