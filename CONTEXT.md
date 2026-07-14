@@ -456,6 +456,16 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
   and shell-script children are not portable to Windows CI; plans that test
   child-process behavior should follow this pattern.
+- **A Python smoke script reading a Rust child's stdout on Windows must decode
+  it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
+  Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not
+  UTF-8 — a non-ASCII byte the Rust side emitted (e.g. the `→` in `ralphy
+  daemon add`'s "registered X → path") comes back mangled with no exception,
+  so a downstream `str.split`/`in` match silently fails. Pass
+  `encoding="utf-8"` to `subprocess.run`, and call
+  `sys.stdout.reconfigure(encoding="utf-8")` once at the top of the script if
+  it will itself `print()` a non-ASCII string (e.g. one echoed back from that
+  output) — the default stdout write raises `UnicodeEncodeError` otherwise.
 
 ## Refactoring conventions
 
