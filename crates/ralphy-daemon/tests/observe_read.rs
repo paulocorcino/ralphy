@@ -56,6 +56,67 @@ async fn serve_repo() -> (String, String) {
     )
 }
 
+/// Bind a daemon over a temp *git* repo seeded with committed dot-folders
+/// (`.github`, `.ralphy/plan.md`), noise dirs (`node_modules`, `target`), a
+/// gitignored `.secret/`, and a `visible.txt`. `git init` is required because
+/// the `ignore` crate honors `.gitignore` only inside a real git repo
+/// (`WalkBuilder::require_git` defaults true). Returns the `ws://…/ws/command`
+/// URL and the repo slug.
+async fn serve_git_repo() -> (String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
+    std::fs::create_dir(dir.path().join(".github")).unwrap();
+    std::fs::write(dir.path().join(".github/config.yml"), b"x").unwrap();
+    std::fs::create_dir(dir.path().join(".ralphy")).unwrap();
+    std::fs::write(dir.path().join(".ralphy/plan.md"), b"# plan").unwrap();
+    std::fs::create_dir(dir.path().join("node_modules")).unwrap();
+    std::fs::write(dir.path().join("node_modules/junk"), b"x").unwrap();
+    std::fs::create_dir(dir.path().join("target")).unwrap();
+    std::fs::write(dir.path().join("target/out"), b"x").unwrap();
+    std::fs::create_dir(dir.path().join(".secret")).unwrap();
+    std::fs::write(dir.path().join(".secret/key"), b"x").unwrap();
+    std::fs::write(dir.path().join(".gitignore"), b".secret/\n").unwrap();
+
+    let status = std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .status()
+        .expect("git must be installed to run this test (see environment.md)");
+    assert!(status.success(), "git init failed in {:?}", dir.path());
+
+    let registry_path = dir.path().join("repos.toml");
+    let mut store = registry::RegistryStore::default();
+    let slug = "owner/gitobserve";
+    store.upsert(slug, &dir.path().to_string_lossy());
+    registry::save_to(&store, &registry_path).unwrap();
+    std::mem::forget(dir);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let app = router(
+        None,
+        registry_path,
+        std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
+        Instant::now(),
+        rx,
+        ralphy_daemon::auth::AuthPolicy::Localhost,
+    );
+    std::mem::forget(_tx);
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (
+        format!("ws://127.0.0.1:{port}/ws/command"),
+        slug.to_string(),
+    )
+}
+
 /// Send one `Command` and collect every reply frame on `id` until the socket
 /// closes, returning `(replies, spawned_count)`.
 async fn round_trip(
@@ -128,6 +189,44 @@ async fn tree_list_answers_on_id_without_spawn() {
         !names.contains(&"node_modules"),
         "noise filtered: {names:?}"
     );
+}
+
+#[tokio::test]
+async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
+    // A4 oracle (issue #203): `tree.list` at the repo root surfaces committed
+    // dot-folders (`.github`) and `.ralphy`, while still dropping `.git`, the
+    // noise dirs (`node_modules`, `target`), and gitignored entries (`.secret`).
+    let (url, slug) = serve_git_repo().await;
+    let (replies, spawned) = round_trip(
+        &url,
+        4,
+        "tree.list",
+        serde_json::json!({ "repo": slug, "path": "" }),
+    )
+    .await;
+
+    assert_eq!(replies.len(), 1, "exactly one reply on the id");
+    assert_eq!(spawned, 0, "an Observe read must never spawn");
+    let reply = &replies[0];
+    assert_eq!(reply["status"], "ok");
+    let names: Vec<&str> = reply["entries"]
+        .as_array()
+        .expect("entries array")
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&".github"),
+        "committed dot-folder: {names:?}"
+    );
+    assert!(names.contains(&".ralphy"), "`.ralphy` surfaced: {names:?}");
+    assert!(!names.contains(&".git"), "`.git` dropped: {names:?}");
+    assert!(
+        !names.contains(&"node_modules"),
+        "noise filtered: {names:?}"
+    );
+    assert!(!names.contains(&"target"), "noise filtered: {names:?}");
+    assert!(!names.contains(&".secret"), "gitignored dropped: {names:?}");
 }
 
 #[tokio::test]
