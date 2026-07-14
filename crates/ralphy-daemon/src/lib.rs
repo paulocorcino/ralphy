@@ -1464,11 +1464,13 @@ async fn logout_route() -> Response {
 }
 
 /// The SPA's auth-state oracle, reachable pre-login (allowlisted). Drives the
-/// workbench gate's `authed` flag and password-field visibility.
+/// workbench gate's `authed` flag, password-field visibility, and the Security
+/// modal's policy-aware affordances (issue #205).
 #[derive(serde::Serialize)]
 struct SessionState {
     authed: bool,
     password: bool,
+    policy: &'static str,
 }
 
 /// `GET /api/session`: report whether this request is authorized and whether a
@@ -1487,7 +1489,12 @@ async fn session_state_route(auth: auth::AuthPolicy, headers: axum::http::Header
             _ => false,
         };
     let password = matches!(&auth, auth::AuthPolicy::Session(s) if s.password.is_some());
-    Json(SessionState { authed, password }).into_response()
+    Json(SessionState {
+        authed,
+        password,
+        policy: auth.name(),
+    })
+    .into_response()
 }
 
 /// The daemon's auth-state surface for the Security modal (issue #195): which
@@ -2878,6 +2885,60 @@ mod tests {
             body.contains(r#""authed":true"#),
             "valid cookie authed: {body}"
         );
+    }
+
+    /// `GET /api/session` reports the wire name of the ACTIVE policy under all
+    /// three binds (issue #205), so the Security modal can derive honest,
+    /// bind-specific affordances instead of always assuming `Session`.
+    #[tokio::test]
+    async fn session_state_reports_policy() {
+        // Localhost.
+        let body = body_string(get_local("/api/session").await).await;
+        assert!(
+            body.contains(r#""policy":"localhost""#),
+            "localhost: {body}"
+        );
+
+        // Session, no cookie — the route is allowlisted (200) even though
+        // `authed` is false.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "allowlisted: {resp:?}");
+        let body = body_string(resp).await;
+        assert!(body.contains(r#""policy":"session""#), "session: {body}");
+
+        // Bearer, with a matching Authorization header.
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthPolicy::Bearer("tok".into()),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/session")
+                .header(header::AUTHORIZATION, "Bearer tok")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let body = body_string(resp).await;
+        assert!(body.contains(r#""policy":"bearer""#), "bearer: {body}");
     }
 
     #[tokio::test]

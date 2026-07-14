@@ -202,6 +202,16 @@ impl AuthPolicy {
         }
     }
 
+    /// The wire name of this policy, as reported on `GET /api/session` so the
+    /// UI can render honest, bind-specific auth affordances.
+    pub fn name(&self) -> &'static str {
+        match self {
+            AuthPolicy::Localhost => "localhost",
+            AuthPolicy::Bearer(_) => "bearer",
+            AuthPolicy::Session(_) => "session",
+        }
+    }
+
     /// Whether the `Authorization` header authorizes this request. Localhost
     /// always passes; Bearer requires `Bearer <token>` matching the exact token
     /// via a constant-time compare (no timing side-channel on the secret).
