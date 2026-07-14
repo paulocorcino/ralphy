@@ -1353,8 +1353,14 @@ body.side-collapsed.runs-open {
   font-size: 0.82rem;
   cursor: pointer;
 }
-.dropdown-item:hover {
+.dropdown-item:not(:disabled):hover {
   background: var(--surface-hi);
+}
+/* an agent row with no repo selected: it needs a repo to work in, so it is
+   inert (the plain console, which falls back to the home dir, stays enabled). */
+.dropdown-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 .dropdown-item .bi {
   color: var(--console-text);

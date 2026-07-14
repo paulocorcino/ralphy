@@ -181,7 +181,10 @@
               <!-- agents (impl: could come from daemon capabilities), then a plain
                    console last. Each row carries its Alt+Shift+<digit> accelerator. -->
               <template x-for="it in consoleItems()" :key="it.kind">
-                <button class="dropdown-item" :class="{ 'is-console': it.plain }" @click="openConsoleItem(it)">
+                <button class="dropdown-item" :class="{ 'is-console': it.plain }"
+                        :disabled="consoleItemDisabled(it)"
+                        :title="consoleItemDisabled(it) ? 'select a repo first — an agent needs one to work in' : ''"
+                        @click="openConsoleItem(it)">
                   <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
                   <span x-text="it.label"></span>
                   <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>

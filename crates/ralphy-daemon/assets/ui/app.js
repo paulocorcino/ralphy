@@ -1902,13 +1902,23 @@ function shell() {
     shortcutLabel(digit) {
       return this.isMac ? `⌥⇧${digit}` : `Alt+Shift+${digit}`;
     },
+    // An agent console needs a repo to work in; a plain console falls back to the
+    // home dir, so only the agent rows gate on a selected repo (openSlug). The
+    // dropdown greys these out and the accelerators skip them.
+    consoleItemDisabled(item) {
+      return !item.plain && !this.openSlug;
+    },
     openConsoleItem(item) {
+      if (this.consoleItemDisabled(item)) return;
       if (item.plain) this.newPlainConsole();
       else this.newConsole(item.kind);
       this.agentMenu = false;
     },
 
     newConsole(agent) {
+      // Defense-in-depth: the accelerator path calls this directly, so refuse an
+      // agent launch with no repo here too (the dropdown already disables it).
+      if (!this.openSlug) return;
       if (this.active !== "agents") this.activate("agents");
       WBConsole.open({ repo: this.openSlug, agent });
       this.consoleCount = WBConsole.count();
@@ -2097,9 +2107,17 @@ window.addEventListener("message", (e) => {
         call("file.rename", { repo, path: from, to });
         break;
       }
-      case "delete":
+      case "delete": {
+        // Deleting is irreversible (a folder removes recursively, server-side);
+        // confirm before the verb ever leaves the browser, like `create` prompts.
+        const name = d.title || d.path.split("/").pop() || d.path;
+        const warn = d.isFolder
+          ? `Delete folder "${name}" and everything inside it? This cannot be undone.`
+          : `Delete "${name}"? This cannot be undone.`;
+        if (!window.confirm(warn)) return;
         call("file.delete", { repo, path: d.path }, "deleted");
         break;
+      }
       default:
         break;
     }
@@ -2122,6 +2140,9 @@ document.addEventListener("keydown", (e) => {
   if (!kind) return;
   const c = getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
+  // An agent accelerator with no repo selected is inert (mirrors the disabled
+  // dropdown row); don't swallow the key so nothing else is starved of it.
+  if (kind !== "__plain" && !c.openSlug) return;
   e.preventDefault();
   if (kind === "__plain") c.newPlainConsole();
   else c.newConsole(kind);
