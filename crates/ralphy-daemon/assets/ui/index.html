@@ -1014,8 +1014,11 @@
         <div class="login-brand"><i data-lucide="bot"></i> ralphy daemon</div>
         <label class="login-label">
           Authenticator code
+          <!-- one-time-code: tells the browser this is an OTP, not a username, so
+               it stops capturing the TOTP code as a bogus saved username. -->
           <input class="login-input" x-model="login.code" inputmode="numeric" pattern="[0-9]*"
-                 maxlength="6" required autofocus placeholder="000000" />
+                 maxlength="6" required autofocus placeholder="000000"
+                 name="one-time-code" autocomplete="one-time-code" />
         </label>
         <label class="login-label" x-show="security.passwordSet || login.passwordRequired">
           Password

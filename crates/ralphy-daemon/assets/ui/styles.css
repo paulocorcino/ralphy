@@ -2339,6 +2339,15 @@ body.locked .runs {
   outline: none;
   border-color: var(--border-focus);
 }
+/* Edge/IE draw a native reveal ("eye") + clear button inside password inputs;
+   both render black and disappear on the warm-dark theme. Invert them to a
+   light, muted glyph so the reveal is visible and on-theme. */
+.login-input::-ms-reveal,
+.login-input::-ms-clear,
+.set-input::-ms-reveal,
+.set-input::-ms-clear {
+  filter: invert(1) opacity(0.7);
+}
 .login-btn {
   font: inherit;
   font-weight: 600;
