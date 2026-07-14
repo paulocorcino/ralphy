@@ -1404,8 +1404,9 @@ function shell() {
       if (!node) return; // not in the tree → invisible, drop
       if (rel !== "" && !node.expanded) return; // collapsed → invisible, drop
       // Reconcile this level in place (no duplication), then freshen any open
-      // tabs that live in this directory (A6).
-      this.reconcileLevel(node, rel).then(() => this.refreshOpenViewers(rel));
+      // tabs that live in this directory (A6). Returns the promise so callers
+      // that need to sequence after a settled tree (tests) can await it.
+      return this.reconcileLevel(node, rel).then(() => this.refreshOpenViewers(rel));
     },
 
     // Re-list one directory level and reconcile its children WITHOUT duplicating
@@ -1415,19 +1416,57 @@ function shell() {
     // re-activate by captured rel-path after the reload (the re-expansion cascade
     // re-triggers lazy loads).
     async reconcileLevel(node, rel) {
+      // Reentrancy guard: two nudges for the same dir (the watcher plus a rapid
+      // second write) must NOT run overlapping removeChildren()+load() passes —
+      // `load` appends, so concurrent passes double the children. Coalesce: if a
+      // pass is in flight for `rel`, mark it pending and let the running pass
+      // re-run once when it finishes.
+      this._reconciling ||= new Set();
+      this._reconcilePending ||= new Set();
+      if (this._reconciling.has(rel)) {
+        this._reconcilePending.add(rel);
+        return;
+      }
+      this._reconciling.add(rel);
+      try {
+        await this._reconcileOnce(node, rel);
+      } finally {
+        this._reconciling.delete(rel);
+      }
+      if (this._reconcilePending.delete(rel)) {
+        const again = rel === "" ? this._tree?.root : this.findFolderByRel(rel);
+        if (again) await this.reconcileLevel(again, rel);
+      }
+    },
+
+    async _reconcileOnce(node, rel) {
       const expandedRels = [];
       node.visit((n) => {
         if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
       });
       const activeRel = this.relPath(this._tree.getActiveNode?.() || null) || null;
 
+      // Resolve the fresh level BEFORE touching the tree: `node.load` given a
+      // PROMISE leaves stale children in place and appends (children double on a
+      // second nudge — Wunderbaum quirk); loading a resolved ARRAY after
+      // `removeChildren()` replaces cleanly and avoids an empty-tree flicker
+      // during the fetch.
+      const source = await this.loadTreeLevel(rel);
       node.removeChildren();
-      await node.load(this.loadTreeLevel(rel));
+      await node.load(source);
+      // A non-root reconcile targets an EXPANDED folder (onTreeDirty only calls
+      // us for one), but `load` leaves the reloaded node collapsed — leaving it
+      // so would make the NEXT nudge for this dir hit the `!expanded` drop guard
+      // and silently stop refreshing. Re-expand the node itself.
+      if (rel !== "" && !node.expanded) await node.setExpanded(true);
 
-      // Shallow-first so a parent exists before its child re-expands.
+      // Shallow-first so a parent exists before its child re-expands. Match by
+      // rel path (NOT findFolderByRel): a freshly reloaded folder is collapsed
+      // and lazy, so it has neither `folder` nor loaded `children` yet — the
+      // isFolder() filter would miss it.
       expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
       for (const r of expandedRels) {
-        const f = this.findFolderByRel(r);
+        const f = this._tree.findFirst((n) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
       if (activeRel) {
@@ -1440,19 +1479,26 @@ function shell() {
     // transport failure is dropped silently — the tab keeps its bytes (C1: no
     // fabricated content).
     refreshOpenViewers(rel) {
-      if (!this.useDaemonTree()) return;
+      if (!this.useDaemonTree()) return Promise.resolve();
       const dirOf = (p) => {
+        if (typeof p !== "string") return null;
         const i = p.lastIndexOf("/");
         return i < 0 ? "" : p.slice(0, i);
       };
+      const reads = [];
       for (const t of this.tabs) {
         if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
-        WBDaemon.observe("file.read", { repo: t.project, path: t.path })
-          .then((reply) => {
-            if (reply?.status === "ok") WBViewer.externalChange(t.id, reply.content);
-          })
-          .catch(() => {});
+        reads.push(
+          WBDaemon.observe("file.read", { repo: t.project, path: t.path })
+            .then((reply) => {
+              if (reply?.status === "ok") WBViewer.externalChange(t.id, reply.content);
+            })
+            .catch(() => {}),
+        );
       }
+      // Return the settled batch so a caller (a test, a chained nudge) can await
+      // a fully-refreshed set of viewers rather than racing the reads.
+      return Promise.all(reads);
     },
 
     // The expanded folder node whose rel path is `rel`, or `null` if none is
