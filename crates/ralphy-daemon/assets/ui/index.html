@@ -74,19 +74,23 @@
         <span>Projects</span>
         <!-- count of located projects, at a glance (projects.length) -->
         <span class="count" x-text="projects.length" title="projects located"></span>
-        <span class="spacer"></span>
-        <i data-lucide="ellipsis"></i>
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
-      <!-- impl: filters the list client-side; "/" is the focus shortcut hint. -->
+      <!-- filters the list client-side on slug/branch; "/" (global shortcut)
+           focuses this input; Escape clears it. -->
       <div class="side-search">
         <i data-lucide="search"></i>
-        <input placeholder="Search projects…  /" />
+        <input
+          placeholder="Search projects…  /"
+          x-model="projectQuery"
+          x-ref="projectSearch"
+          @keydown.escape="projectQuery = ''"
+        />
       </div>
 
       <ul class="projects" :class="{ 'has-open': openSlug }">
-        <template x-for="p in projects" :key="p.slug">
+        <template x-for="p in filteredProjects()" :key="p.slug">
           <li class="project" :class="{ open: openSlug === p.slug }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
             <div class="project-head" @click="toggle(p.slug)">

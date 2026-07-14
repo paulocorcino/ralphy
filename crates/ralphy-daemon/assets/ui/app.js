@@ -203,9 +203,28 @@ function shell() {
     sideOpen: true,
     runsOpen: false,
     kanbanOpen: false,
+    projectQuery: "",
 
     toggleSide() {
       this.sideOpen = !this.sideOpen;
+    },
+
+    // Case-insensitive slug/branch filter over the sidebar project list. The
+    // sidebar count keeps showing `projects.length` (total located) — the
+    // filter is a view concern, not a change to what's located.
+    filteredProjects() {
+      const q = this.projectQuery.trim().toLowerCase();
+      if (!q) return this.projects;
+      return this.projects.filter(
+        (p) => p.slug.toLowerCase().includes(q) || p.branch.toLowerCase().includes(q)
+      );
+    },
+
+    // Opens the sidebar (if collapsed) and focuses the project search input —
+    // the target of the global `/` shortcut.
+    focusProjectSearch() {
+      this.sideOpen = true;
+      this.$nextTick(() => this.$refs.projectSearch?.focus());
     },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
@@ -2005,6 +2024,16 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (kind === "__plain") c.newPlainConsole();
   else c.newConsole(kind);
+});
+
+// `/` → focus the project search (reuses consoleShortcutsBlocked so it never
+// hijacks a text field, modal, or the login).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const c = getShell();
+  if (!c || c.consoleShortcutsBlocked()) return;
+  e.preventDefault();
+  c.focusProjectSearch();
 });
 
 // Inbound run events (the backend seam): a live CloudEvents feed dispatches
