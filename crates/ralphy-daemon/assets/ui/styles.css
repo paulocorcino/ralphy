@@ -62,13 +62,9 @@ body {
 body.side-collapsed {
   grid-template-columns: var(--rail-w) 0px 1fr 0px;
 }
-/* Runs rail button reveals the right-hand panel. */
-body.runs-open {
-  grid-template-columns: var(--rail-w) var(--side-w) 1fr var(--runs-w);
-}
-body.side-collapsed.runs-open {
-  grid-template-columns: var(--rail-w) 0px 1fr var(--runs-w);
-}
+/* The Runs rail button reveals the right-hand panel. It is NOT a grid track
+   any more: it floats over the canvas (see `.runs` below) so revealing it never
+   shrinks the workspace and never disturbs the floating consoles' positions. */
 /* collapsed tracks must clip their content so nothing bleeds at 0 width */
 .side,
 .runs {
@@ -382,13 +378,31 @@ body.side-collapsed.runs-open {
 
 /* --- right-hand runs panel ------------------------------------------------- */
 .runs {
-  grid-area: runs;
+  /* Floats over the canvas's right edge instead of occupying a grid track, so
+     opening it slides the panel in on top of the workspace rather than squeezing
+     the canvas — the floating consoles keep their exact positions. Anchored below
+     the top bar; hidden off-screen to the right until `.runs-open`. */
+  position: fixed;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  width: var(--runs-w);
+  max-width: 100vw;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  /* above the floating consoles (capped at ~120 in wb-console.js) so the panel
+     overlays them, but below the context menu / modals / login gate / tabbar. */
+  z-index: 150;
   border-left: 1px solid var(--border);
   background: var(--chrome);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+}
+body.runs-open .runs {
+  transform: translateX(0);
 }
 .runs-head {
   display: flex;
@@ -1438,6 +1452,21 @@ body.side-collapsed.runs-open {
 .session-window.tiling {
   transition: left 0.24s ease, top 0.24s ease, width 0.24s ease, height 0.24s ease;
 }
+/* A maximized console fills the whole workspace. The window keeps its inline
+   left/top/width/height (the pre-maximize rect) so the restore button — and a
+   reload — snap it straight back to where it was; `!important` lets the class win
+   over those inline styles while maximized, and clampAll skips maximized windows
+   so a workspace resize can't peel it off the full-bleed. */
+.session-window.maximized {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0;
+}
+.session-window.maximized .session-resize {
+  display: none;
+}
 .session-titlebar {
   display: flex;
   justify-content: space-between;
@@ -1459,18 +1488,41 @@ body.side-collapsed.runs-open {
 .session-title .bi {
   color: var(--console-text);
 }
-.session-actions button {
-  font: inherit;
-  font-size: 0.75rem;
-  color: var(--danger);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.05rem 0.45rem;
-  cursor: pointer;
+.session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
 }
-.session-actions button:hover {
+/* Titlebar controls are square, borderless icon buttons — neutral at rest, each
+   tinting to its own accent on hover so the chrome stays quiet until touched. */
+.session-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.session-actions button .bi {
+  display: block;
+}
+/* neutral hover for the maximize/restore toggle */
+.session-actions .session-max:hover {
+  color: var(--text);
   background: var(--surface-hi);
+}
+/* close tints red on hover, matching the danger accent */
+.session-actions .session-close:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 .session-body {
   flex: 1 1 auto;

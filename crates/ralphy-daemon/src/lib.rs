@@ -701,10 +701,32 @@ async fn session_ws(
             return;
         }
     }
+    // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
+    // bytes, so a NAT/proxy idle-timeout (or a lossy path with nothing to
+    // retransmit) silently drops it. A periodic WS ping — which the browser
+    // auto-pongs — keeps intermediaries alive and surfaces a truly dead peer as a
+    // send error that tears the bridge down (detach-only; the child survives for a
+    // reattach). 20s is well under common 30–60s proxy idle windows.
+    let mut ping = tokio::time::interval(Duration::from_secs(20));
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    ping.tick().await; // consume the immediate first tick — no ping on connect
+
+    // A DELIBERATE end (daemon shutdown, takeover/child-exit eviction, or the
+    // broadcast sender closing) gets an explicit Close frame after the loop so the
+    // client sees a CLEAN close and does NOT reconnect. A network drop, by
+    // contrast, tears the loop down without this flag → the client sees an abnormal
+    // close (code 1006) and reconnects. This is what lets the console recover from
+    // a flaky link without hammering reconnects at a session that genuinely ended.
+    let mut clean = false;
     loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
-            _ = &mut notified => break, // taken over, or the child exited
+            _ = shutdown.changed() => { clean = true; break; }
+            _ = &mut notified => { clean = true; break; } // taken over, or the child exited
+            _ = ping.tick() => {
+                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                    break;
+                }
+            }
             recv = attach.rx.recv() => match recv {
                 Ok(bytes) => {
                     let frame = Frame::Terminal { session: id, data: bytes };
@@ -719,7 +741,7 @@ async fn session_ws(
                 // A burst outran this slow attach; scrollback already replayed and
                 // xterm.js tolerates a gap, so keep streaming.
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => { clean = true; break; }
             },
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
@@ -746,6 +768,11 @@ async fn session_ws(
                 Some(Err(_)) => break,
             },
         }
+    }
+    // Signal a deliberate end so the client stops instead of reconnecting; on a
+    // network drop the socket is already gone and this send is a harmless no-op.
+    if clean {
+        let _ = socket.send(Message::Close(None)).await;
     }
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.

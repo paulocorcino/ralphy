@@ -19,11 +19,92 @@ window.WBConsole = (function () {
   const WS_ORIGIN =
     (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
   const wins = new Set();
-  let z = 60;
+  // Focus stacking. `z` climbs each time a window is raised; when it reaches the
+  // ceiling the whole stack is renormalized back down (preserving order) so the
+  // console z-index never overtakes the runs overlay (z 150) or the tabbar.
+  const Z_BASE = 60;
+  const Z_CEIL = 120;
+  let z = Z_BASE;
   let cascade = 0;
 
   function changed() {
     document.dispatchEvent(new CustomEvent("workbench:consoles-changed", { detail: { count: wins.size } }));
+  }
+
+  // ---- window-geometry persistence --------------------------------------------
+  // Each console's rect (and maximized flag) is stored locally, keyed by its
+  // daemon session id, so a reload / re-login restores every window to exactly
+  // where the operator left it instead of re-cascading from scratch. Entries
+  // carry a timestamp and the map is capped (oldest dropped) so it can't grow
+  // without bound as sessions come and go.
+  const GEO_KEY = "wb.console.geometry.v1";
+  const GEO_MAX = 60;
+
+  function loadGeo() {
+    try {
+      return JSON.parse(localStorage.getItem(GEO_KEY)) || {};
+    } catch {
+      return {};
+    }
+  }
+  function saveGeo(map) {
+    // Cap the map: keep the most-recently-touched GEO_MAX entries.
+    const keys = Object.keys(map);
+    if (keys.length > GEO_MAX) {
+      keys
+        .sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0))
+        .slice(0, keys.length - GEO_MAX)
+        .forEach((k) => delete map[k]);
+    }
+    try {
+      localStorage.setItem(GEO_KEY, JSON.stringify(map));
+    } catch {}
+  }
+  // Snapshot a window's placement. A maximized window reports its *pre-maximize*
+  // inline rect (the class drives the full-bleed via CSS), so `max` restores the
+  // full-screen state while the stored rect still restores the underlying box.
+  function persistWin(win) {
+    const id = win._term?.sessionId;
+    if (id == null) return;
+    const map = loadGeo();
+    map[String(id)] = {
+      left: win.offsetLeft,
+      top: win.offsetTop,
+      // While maximized the inline width/height still hold the restore rect, but
+      // offsetWidth/Height report the full-bleed size — read the inline values so
+      // we persist the box to restore to, not the screen.
+      width: win.classList.contains("maximized")
+        ? parseInt(win.style.width, 10) || win.offsetWidth
+        : win.offsetWidth,
+      height: win.classList.contains("maximized")
+        ? parseInt(win.style.height, 10) || win.offsetHeight
+        : win.offsetHeight,
+      max: win.classList.contains("maximized"),
+      ts: Date.now(),
+    };
+    saveGeo(map);
+  }
+  function forgetWin(id) {
+    if (id == null) return;
+    const map = loadGeo();
+    delete map[String(id)];
+    saveGeo(map);
+  }
+
+  // Toggle a console between its floating rect and full-workspace bleed. The
+  // pre-maximize rect stays in the inline styles (drag/resize are inert while
+  // maximized), so restoring is just dropping the class.
+  function toggleMax(win, btn) {
+    const maxed = win.classList.toggle("maximized");
+    btn.title = maxed ? "restore" : "maximize";
+    btn.innerHTML = maxed
+      ? '<i class="bi bi-fullscreen-exit"></i>'
+      : '<i class="bi bi-fullscreen"></i>';
+    focusWin(win);
+    try {
+      win._term?.fit.fit();
+    } catch {}
+    persistWin(win);
   }
 
   // Keep every window fully inside the workspace box. When a chrome panel toggles
@@ -38,6 +119,9 @@ window.WBConsole = (function () {
     const H = ws.clientHeight;
     if (!W || !H) return;
     for (const win of wins) {
+      // A maximized window is pinned to the full workspace by CSS; leave its
+      // stored restore-rect untouched so it re-inflates correctly on restore.
+      if (win.classList.contains("maximized")) continue;
       const w = Math.min(win.offsetWidth, W);
       const h = Math.min(win.offsetHeight, H);
       const left = Math.min(Math.max(0, win.offsetLeft), Math.max(0, W - w));
@@ -63,6 +147,20 @@ window.WBConsole = (function () {
 
   function focusWin(win) {
     z += 1;
+    if (z > Z_CEIL) {
+      // Renormalize: re-stack the existing windows by their current z, resetting
+      // the counter so focus never pushes a console over the overlay/tabbar tier.
+      const ordered = [...workspace().querySelectorAll(".session-window")].sort(
+        (a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0),
+      );
+      z = Z_BASE;
+      for (const w of ordered) {
+        if (w === win) continue;
+        z += 1;
+        w.style.zIndex = z;
+      }
+      z += 1;
+    }
     win.style.zIndex = z;
     for (const w of workspace().querySelectorAll(".session-window.focused")) {
       if (w !== win) w.classList.remove("focused");
@@ -76,6 +174,8 @@ window.WBConsole = (function () {
     handle.addEventListener("mousedown", (e) => {
       if (e.target.closest("button")) return;
       focusWin(win);
+      // Maximized windows don't drag — the titlebar double-click still restores.
+      if (win.classList.contains("maximized")) return;
       const ws = workspace().getBoundingClientRect();
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
@@ -89,6 +189,7 @@ window.WBConsole = (function () {
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        persistWin(win);
       };
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
@@ -99,6 +200,7 @@ window.WBConsole = (function () {
   function makeResizable(win, handle) {
     handle.addEventListener("mousedown", (e) => {
       focusWin(win);
+      if (win.classList.contains("maximized")) return;
       const rect = win.getBoundingClientRect();
       const startX = e.clientX;
       const startY = e.clientY;
@@ -111,6 +213,7 @@ window.WBConsole = (function () {
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        persistWin(win);
       };
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
@@ -176,80 +279,168 @@ window.WBConsole = (function () {
     let currentSessionId = opts.id ?? null;
     let leaving = false;
 
-    let url = WS_ORIGIN + "/ws/session?";
-    if (opts.id != null) {
-      url += "id=" + encodeURIComponent(opts.id);
-      if (opts.takeover) url += "&takeover=1";
-    } else if (opts.console) {
-      url += "console=1";
-      if (opts.repo) url += "&repo=" + encodeURIComponent(opts.repo);
-    } else {
-      url +=
-        "repo=" +
-        encodeURIComponent(opts.repo) +
-        "&agent=" +
-        encodeURIComponent(opts.agent);
+    // Resilience on low-quality links. A dropped socket does NOT end the session:
+    // the daemon keeps the child alive across a disconnect (see session_ws's
+    // teardown invariant), so an unexpected close is recovered by reconnecting and
+    // reattaching to the SAME session by id (with takeover=1 to reclaim the writer
+    // slot the orphaned bridge still holds). The daemon replays scrollback on
+    // reattach, so we reset the terminal on a reconnecting open to repaint cleanly
+    // instead of appending a duplicate of the history. Backoff is exponential with
+    // jitter, capped; we give up only after a bounded run of failed re-opens (e.g.
+    // the daemon is actually down) or on a CLEAN server close (session genuinely
+    // ended: child exited, taken over, or daemon shutdown).
+    const RECONNECT_BASE = 1000;
+    const RECONNECT_MAX = 15000;
+    const MAX_FAILED_REOPENS = 10;
+    let ws = null;
+    let opened = false; // has the CURRENT socket opened
+    let firstConnect = true;
+    let retryDelay = 0;
+    let retryTimer = null;
+    let failedReopens = 0;
+
+    function buildUrl(o) {
+      let url = WS_ORIGIN + "/ws/session?";
+      if (o.id != null) {
+        url += "id=" + encodeURIComponent(o.id);
+        if (o.takeover) url += "&takeover=1";
+      } else if (o.console) {
+        url += "console=1";
+        if (o.repo) url += "&repo=" + encodeURIComponent(o.repo);
+      } else {
+        url +=
+          "repo=" +
+          encodeURIComponent(o.repo) +
+          "&agent=" +
+          encodeURIComponent(o.agent);
+      }
+      return url;
     }
-    const ws = new WebSocket(url);
-    ws.binaryType = "arraybuffer";
-    let opened = false;
-    ws.onopen = () => {
-      opened = true;
-      fit.fit();
-      ws.send(encodeResize(term.rows, term.cols));
-    };
-    ws.onmessage = (ev) => {
-      const a = new Uint8Array(ev.data);
-      if (a[0] === TAG_TERMINAL) {
-        if (currentSessionId == null) {
-          currentSessionId = Number(
-            new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
-          );
-        }
-        term.write(a.subarray(9));
-      }
-    };
-    term.onData((d) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
-    });
-    term.onResize(({ rows, cols }) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(encodeResize(rows, cols));
-    });
-    ws.onclose = () => {
-      if (leaving) return;
-      // A reattach that closes WITHOUT ever opening is the server refusing a busy
-      // session (a single writer is attached). Offer an explicit takeover, once.
-      if (
-        opts.id != null &&
-        !opened &&
-        !opts.takeover &&
-        typeof opts.onRefused === "function"
-      ) {
-        if (confirm("session busy — take over?")) {
-          leaving = true;
-          ro.disconnect();
-          term.dispose();
-          opts.onRefused();
-          return;
-        }
-      }
-      // Session ended server-side (or takeover declined): stop observing so a
-      // dead-ws terminal doesn't keep firing fit() until the window is closed.
+
+    function giveUp() {
+      // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
+      // window is closed.
       ro.disconnect();
       term.write("\r\n[session closed]\r\n");
-    };
+    }
+
+    function scheduleReconnect() {
+      retryDelay = Math.min(
+        retryDelay ? retryDelay * 2 : RECONNECT_BASE,
+        RECONNECT_MAX,
+      );
+      const wait = retryDelay + Math.random() * 0.3 * retryDelay; // jitter
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect({ id: currentSessionId, takeover: true });
+      }, wait);
+    }
+
+    function connect(connOpts) {
+      opened = false;
+      ws = new WebSocket(buildUrl(connOpts));
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => {
+        opened = true;
+        retryDelay = 0;
+        failedReopens = 0;
+        // A reconnect reattaches and the daemon replays the whole backlog; clear
+        // what's on screen first so the replay repaints instead of duplicating.
+        if (!firstConnect) term.reset();
+        firstConnect = false;
+        fit.fit();
+        ws.send(encodeResize(term.rows, term.cols));
+      };
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] === TAG_TERMINAL) {
+          if (currentSessionId == null) {
+            currentSessionId = Number(
+              new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
+            );
+            // The id a fresh launch is assigned is only known now; let the chrome
+            // record the window's geometry under it so it persists from the start.
+            if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
+          }
+          term.write(a.subarray(9));
+        }
+      };
+      // Swallow the error event; onclose drives recovery in every case.
+      ws.onerror = () => {};
+      ws.onclose = (event) => {
+        if (leaving) return;
+        // A reattach that closes WITHOUT ever opening is the server refusing a
+        // busy session (a single writer is attached). Offer an explicit takeover,
+        // once — this only applies to the initial, non-takeover attach.
+        if (
+          connOpts.id != null &&
+          !opened &&
+          !connOpts.takeover &&
+          typeof opts.onRefused === "function"
+        ) {
+          if (confirm("session busy — take over?")) {
+            leaving = true;
+            ro.disconnect();
+            term.dispose();
+            opts.onRefused();
+            return;
+          }
+          giveUp();
+          return;
+        }
+        // A CLEAN close is a deliberate server-side end (child exited, taken over,
+        // or daemon shutdown): the session is gone, do not reconnect.
+        if (event && event.wasClean) {
+          giveUp();
+          return;
+        }
+        // Can't resume a session we never learned the id of (a fresh launch that
+        // dropped before its first frame).
+        if (currentSessionId == null) {
+          giveUp();
+          return;
+        }
+        // Abnormal drop → treat as a flaky link and reconnect, but stop if we
+        // can't re-open after a bounded run of tries (the daemon is likely down).
+        if (!opened) failedReopens += 1;
+        if (failedReopens > MAX_FAILED_REOPENS) {
+          giveUp();
+          return;
+        }
+        if (retryDelay === 0) {
+          term.write("\r\n[connection lost — reconnecting…]\r\n");
+        }
+        scheduleReconnect();
+      };
+    }
+
+    term.onData((d) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
+    });
+    term.onResize(({ rows, cols }) => {
+      if (ws && ws.readyState === WebSocket.OPEN)
+        ws.send(encodeResize(rows, cols));
+    });
+
+    connect(opts);
 
     return {
       term,
       fit,
-      ws,
+      get ws() {
+        return ws;
+      },
       get sessionId() {
         return currentSessionId;
       },
       dispose() {
         leaving = true;
+        if (retryTimer) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
         ro.disconnect();
-        if (ws.readyState <= 1) ws.close();
+        if (ws && ws.readyState <= 1) ws.close();
         term.dispose();
       },
     };
@@ -259,14 +450,22 @@ window.WBConsole = (function () {
   // by `open()` (a new console) and the load-time reattach (one window per live
   // session). Keeps the shared workspace-relative drag/tiling; `termOpts` is the
   // `attachTerminal` opts, `label`/`repo` drive the titlebar.
-  function spawnWindow(termOpts, label, repo) {
+  function spawnWindow(termOpts, label, repo, geo) {
     const win = document.createElement("div");
     win.className = "session-window";
-    cascade = (cascade + 1) % 8;
-    win.style.left = 30 + cascade * 24 + "px";
-    win.style.top = 20 + cascade * 24 + "px";
-    win.style.width = "min(560px, 62%)";
-    win.style.height = "min(340px, 60%)";
+    // Restore a saved rect if we have one for this session; otherwise cascade.
+    if (geo) {
+      win.style.left = geo.left + "px";
+      win.style.top = geo.top + "px";
+      win.style.width = geo.width + "px";
+      win.style.height = geo.height + "px";
+    } else {
+      cascade = (cascade + 1) % 8;
+      win.style.left = 30 + cascade * 24 + "px";
+      win.style.top = 20 + cascade * 24 + "px";
+      win.style.width = "min(560px, 62%)";
+      win.style.height = "min(340px, 60%)";
+    }
 
     const titlebar = document.createElement("div");
     titlebar.className = "session-titlebar";
@@ -275,10 +474,15 @@ window.WBConsole = (function () {
     title.innerHTML = `<i class="bi bi-terminal"></i> ${label} · ${repo || "home"}`;
     const actions = document.createElement("span");
     actions.className = "session-actions";
+    const maxBtn = document.createElement("button");
+    maxBtn.className = "session-max";
+    maxBtn.title = "maximize";
+    maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
     const closeBtn = document.createElement("button");
     closeBtn.className = "session-close";
-    closeBtn.textContent = "close";
-    actions.append(closeBtn);
+    closeBtn.title = "close";
+    closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    actions.append(maxBtn, closeBtn);
     titlebar.append(title, actions);
 
     const body = document.createElement("div");
@@ -291,10 +495,25 @@ window.WBConsole = (function () {
     win.addEventListener("mousedown", () => focusWin(win));
     makeDraggable(win, titlebar);
     makeResizable(win, grip);
+    // Maximize/restore: the button, or a double-click on the titlebar.
+    maxBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMax(win, maxBtn);
+    });
+    titlebar.addEventListener("dblclick", (e) => {
+      if (e.target.closest("button")) return;
+      toggleMax(win, maxBtn);
+    });
+    // Re-apply a persisted maximized state (the inline rect above is the box it
+    // restores to).
+    if (geo && geo.max) toggleMax(win, maxBtn);
     focusWin(win);
 
     const t = attachTerminal(body, {
       ...termOpts,
+      // Once the daemon assigns/echoes this window's session id, snapshot its
+      // placement so it survives a reload even if the operator never moves it.
+      onSession: () => persistWin(win),
       // Busy-reattach → tear THIS window down and relaunch as a takeover, so no
       // dead empty window lingers.
       onRefused: () => {
@@ -311,6 +530,7 @@ window.WBConsole = (function () {
       const id = t.sessionId;
       const finish = () => {
         t.dispose();
+        forgetWin(id);
         win.remove();
         wins.delete(win);
         WB.emit("console-close", { repo: repo || null, agent: label });
@@ -344,8 +564,11 @@ window.WBConsole = (function () {
     fetch("/api/sessions")
       .then((r) => (r.ok ? r.json() : []))
       .then((sessions) => {
+        const geo = loadGeo();
         for (const s of sessions) {
-          spawnWindow({ id: s.id }, s.agent || "console", s.repo);
+          // Restore each live session to its saved rect (position + maximized
+          // state), so a reload / re-login reopens the exact same workspace.
+          spawnWindow({ id: s.id }, s.agent || "console", s.repo, geo[String(s.id)]);
         }
       })
       .catch(() => {});
