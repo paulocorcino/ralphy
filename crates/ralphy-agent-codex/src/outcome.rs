@@ -15,16 +15,20 @@ use crate::CodexAgent;
 /// The headless **degraded-line** matcher, handed to the shared runner's
 /// `degraded_line` seam. Conservative, keyed on codex's transient-error
 /// vocabulary `(indicative — refine against a captured degraded run)`: a stream
-/// hiccup or reconnect the CLI retries internally. Terminal auth/limit lines are
-/// explicitly excluded (the logged-out log carries `Reconnecting...` alongside its
-/// 401, so the auth guard must win) — a false positive that reaped healthy work is
-/// the only unsafe failure mode, so narrowness is the design goal; a miss is safe.
+/// hiccup the CLI retries internally. Terminal auth/limit lines are excluded via
+/// the guard below. Deliberately does NOT key on `reconnecting`: the runner feeds
+/// the predicate ONE line at a time, and a logged-out codex run prints its
+/// `Reconnecting... 5/5` retries on lines SEPARATE from the `401 Unauthorized` —
+/// so a `reconnecting` token would read those auth-retry lines as degraded even
+/// though the auth guard (which only sees the 401 line) can't reach them. A false
+/// positive that reaped healthy work is the only unsafe failure mode, so narrowness
+/// is the design goal; a miss is safe.
 fn is_codex_api_degraded(line: &str) -> bool {
     if is_codex_auth_error(line) || is_codex_limit_text(line) {
         return false;
     }
     let l = line.to_ascii_lowercase();
-    l.contains("stream error") || l.contains("server error") || l.contains("reconnecting")
+    l.contains("stream error") || l.contains("server error")
 }
 
 /// Extract Codex's [`CompletionSignals`] from a call's raw end state and delegate
@@ -164,12 +168,15 @@ mod tests {
         assert!(!is_codex_api_degraded(
             "all steps green\nRALPHY_DONE_EXIT\n"
         ));
-        // The logged-out log carries `Reconnecting...` next to its 401 — the auth
-        // guard must win so a real auth failure is not papered over as degraded.
+        // Per-line, as the runner delivers them: a logged-out run prints the 401 and
+        // its `Reconnecting...` retries on SEPARATE lines. The 401 line is caught by
+        // the auth guard; the reconnect line must ALSO not read as degraded (the
+        // matcher deliberately does not key on `reconnecting`).
         assert!(!is_codex_api_degraded(
             "ERROR: unexpected status 401 Unauthorized: Missing bearer or basic \
-             authentication in header\nERROR: Reconnecting... 5/5"
+             authentication in header"
         ));
+        assert!(!is_codex_api_degraded("ERROR: Reconnecting... 5/5"));
         // A usage limit is terminal, not degraded.
         assert!(!is_codex_api_degraded(
             "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."

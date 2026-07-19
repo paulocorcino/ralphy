@@ -62,18 +62,42 @@ struct KillSwitch {
     pred: LinePredicate,
 }
 
-/// A shared **degraded-state** signal. Both reader threads flip `active` per line
-/// — `true` when a line matches the vendor's degraded predicate, `false` on the
-/// next healthy line — and the poll loop samples it to advance a [`DegradedWatch`]
-/// clock. Unlike [`KillSwitch`] the predicate runs against **both** streams: a
-/// vendor's retry/degraded banner can surface on stdout (the JSON event stream) or
-/// stderr (`--print-logs`), and a failure banner is not progress on either. A
-/// matched line also skips the idle beacon, so a child emitting *only* degraded
-/// lines is still reaped by the idle watchdog rather than kept alive by its own
-/// retry noise.
+/// A shared **degraded-state** signal. Each reader thread flips ITS OWN stream's
+/// bool per line — `true` when a line matches the vendor's degraded predicate,
+/// `false` on the next healthy line — and the poll loop samples the OR of the two
+/// ([`any_active`](Self::any_active)) to advance a [`DegradedWatch`] clock. Unlike
+/// [`KillSwitch`] the predicate runs against **both** streams: a vendor's
+/// retry/degraded banner can surface on stdout (the JSON event stream) or stderr
+/// (`--print-logs`), and a failure banner is not progress on either. A matched line
+/// also skips the idle beacon, so a child emitting *only* degraded lines is still
+/// reaped by the idle watchdog rather than kept alive by its own retry noise.
+///
+/// The state is kept PER STREAM (not one shared bool) so a healthy companion
+/// stream cannot reset the clock: an opencode child that shows a stall on stdout
+/// while its `--print-logs` stderr keeps heartbeating would otherwise store `false`
+/// on every stderr line and the degraded stretch would never reach the 3-min ping.
 struct DegradedSwitch {
-    active: AtomicBool,
+    stdout_active: AtomicBool,
+    stderr_active: AtomicBool,
     pred: LinePredicate,
+}
+
+impl DegradedSwitch {
+    /// Record this stream's latest degraded-ness (one stream never clobbers the
+    /// other's — see the struct doc).
+    fn store(&self, on_stderr: bool, degraded: bool) {
+        let slot = if on_stderr {
+            &self.stderr_active
+        } else {
+            &self.stdout_active
+        };
+        slot.store(degraded, Ordering::Release);
+    }
+
+    /// Whether EITHER stream's most recent line was degraded.
+    fn any_active(&self) -> bool {
+        self.stdout_active.load(Ordering::Acquire) || self.stderr_active.load(Ordering::Acquire)
+    }
 }
 
 /// Spawn one reader thread that drains `reader` line by line: it accumulates the
@@ -90,6 +114,7 @@ fn spawn_reader<R: Read + Send + 'static>(
     switch: Option<Arc<KillSwitch>>,
     beat: Option<Arc<ProgressBeat>>,
     degraded: Option<Arc<DegradedSwitch>>,
+    on_stderr: bool,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut br = BufReader::new(reader);
@@ -109,7 +134,7 @@ fn spawn_reader<R: Read + Send + 'static>(
                 .as_ref()
                 .is_some_and(|d| (d.pred)(&String::from_utf8_lossy(&line)));
             if let Some(d) = &degraded {
-                d.active.store(is_degraded, Ordering::Release);
+                d.store(on_stderr, is_degraded);
             }
             // Any output at all is the headless progress signal: a child still
             // talking is a child still working. Both streams feed the same beacon
@@ -208,7 +233,9 @@ fn drive_headless(
     // The early-kill switch watches stderr only (see `KillSwitch`); stdout is teed
     // to the same log but never trips the switch.
     // The degraded switch watches BOTH streams (see `DegradedSwitch`): the same
-    // Arc is handed to each reader so a match on either stream feeds one clock.
+    // Arc is handed to each reader, but each writes its OWN stream's slot (the
+    // `false`/`true` on_stderr flag) so a healthy companion stream can't reset the
+    // clock the other stream's degraded stretch is accumulating.
     let out_handle = spawn_reader(
         stdout,
         tx_out,
@@ -216,6 +243,7 @@ fn drive_headless(
         None,
         beat.clone(),
         degraded.clone(),
+        false,
     );
     let err_handle = spawn_reader(
         stderr,
@@ -224,6 +252,7 @@ fn drive_headless(
         switch.clone(),
         beat.clone(),
         degraded.clone(),
+        true,
     );
 
     // A broken pipe here means the child exited before draining stdin — its own
@@ -286,7 +315,7 @@ fn drive_headless(
         // shared degraded/recovered events, so the operator sees the same signal
         // the PTY path surfaces. Advisory only — never kills the child.
         if let (Some(sw), Some(w)) = (&degraded, &mut degraded_watch) {
-            match w.poll(Instant::now(), sw.active.load(Ordering::Acquire)) {
+            match w.poll(Instant::now(), sw.any_active()) {
                 DegradedAction::Degraded => tracing::info!("{}", crate::degraded::API_DEGRADED_MSG),
                 DegradedAction::Recovered => {
                     tracing::info!("{}", crate::degraded::API_RECOVERED_MSG)
@@ -485,7 +514,8 @@ fn run_headless_logged_impl(
     });
     let degraded = degraded_line.map(|pred| {
         Arc::new(DegradedSwitch {
-            active: AtomicBool::new(false),
+            stdout_active: AtomicBool::new(false),
+            stderr_active: AtomicBool::new(false),
             pred,
         })
     });
