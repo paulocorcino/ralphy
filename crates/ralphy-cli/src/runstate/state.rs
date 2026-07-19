@@ -12,6 +12,10 @@ use super::SkipKind;
 pub enum IssueStatus {
     Planning,
     Executing,
+    /// A plan-only pass superseded by the next `issue started` (a dry run): the
+    /// issue got a plan and never executed, so it is terminal without a lifecycle
+    /// outcome of its own.
+    Planned,
     Done,
     Skipped,
     Blocked,
@@ -29,7 +33,8 @@ impl IssueStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            IssueStatus::Done
+            IssueStatus::Planned
+                | IssueStatus::Done
                 | IssueStatus::Skipped
                 | IssueStatus::Blocked
                 | IssueStatus::Infeasible
@@ -40,11 +45,12 @@ impl IssueStatus {
     }
 
     /// The wire name for the `run.finished.issues` rollup `status` field (#96):
-    /// `Some(name)` for a terminal status (one of `done|skipped|blocked|infeasible|
-    /// needs_split|non_green|hitl`), `None` for the non-terminal `Planning`/
-    /// `Executing` — the rollup includes only terminal entries.
+    /// `Some(name)` for a terminal status (one of `planned|done|skipped|blocked|
+    /// infeasible|needs_split|non_green|hitl`), `None` for the non-terminal
+    /// `Planning`/`Executing` — the rollup includes only terminal entries.
     pub fn status_wire(&self) -> Option<&'static str> {
         match self {
+            IssueStatus::Planned => Some("planned"),
             IssueStatus::Done => Some("done"),
             IssueStatus::Skipped => Some("skipped"),
             IssueStatus::Blocked => Some("blocked"),
@@ -95,6 +101,8 @@ pub struct QueueRef {
 /// A tally of issues by terminal/active status, for the card's counter line.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Counts {
+    /// Plan-only passes superseded by the next issue (a dry run).
+    pub planned: usize,
     pub done: usize,
     pub skipped: usize,
     pub blocked: usize,
@@ -224,6 +232,15 @@ impl RunState {
                 }
             }
             RunEvent::IssueStarted { number, title } => {
+                // A new active issue supersedes a still-non-terminal prior one: it
+                // emitted no lifecycle outcome (a plan-only dry run, or an execution
+                // whose outcome never arrived), so it is done as far as the run goes.
+                if let Some(prev) = self.active.filter(|p| *p != number) {
+                    let e = self.entry_mut(prev);
+                    if !e.status.is_terminal() {
+                        e.status = IssueStatus::Planned;
+                    }
+                }
                 self.active = Some(number);
                 let e = self.entry_mut(number);
                 e.title = title;
@@ -376,6 +393,7 @@ impl RunState {
         let mut c = Counts::default();
         for e in &self.issues {
             match e.status {
+                IssueStatus::Planned => c.planned += 1,
                 IssueStatus::Done => c.done += 1,
                 IssueStatus::Skipped => c.skipped += 1,
                 IssueStatus::Blocked => c.blocked += 1,
@@ -848,6 +866,37 @@ mod tests {
             effort: None,
         });
         assert_eq!(state.cur_model, None);
+    }
+
+    #[test]
+    fn issue_started_supersedes_a_non_terminal_prior_issue() {
+        // The dry-run bug: a plan-only pass left the prior issue perenially
+        // "planning". The next `issue started` is the fold's supersede edge.
+        let mut state = RunState::new("t", 2);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "one".into(),
+        });
+        state.apply(RunEvent::PlanWritten {
+            number: 1,
+            open_steps: 3,
+            usage: UsageLite::default(),
+            steps: vec![],
+        });
+        state.apply(RunEvent::IssueStarted {
+            number: 2,
+            title: "two".into(),
+        });
+        assert_eq!(state.issues[0].status, IssueStatus::Planned);
+        let c = state.counts();
+        assert_eq!(c.planned, 1);
+        assert_eq!(c.planning, 1, "only the new issue is still planning");
+    }
+
+    #[test]
+    fn planned_status_wire_is_additive() {
+        assert_eq!(IssueStatus::Planned.status_wire(), Some("planned"));
+        assert!(IssueStatus::Planned.is_terminal());
     }
 
     #[test]

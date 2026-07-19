@@ -51,6 +51,7 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
     match status {
         IssueStatus::Planning => "🧠",
         IssueStatus::Executing => "⚙️",
+        IssueStatus::Planned => "📝",
         IssueStatus::Done => "✅",
         IssueStatus::Skipped => "⏭️",
         IssueStatus::Blocked => "⛔",
@@ -96,6 +97,11 @@ fn counters_line(state: &RunState) -> String {
     );
     if c.needs_split > 0 {
         line.push_str(&format!(" · 🧩 {}", c.needs_split));
+    }
+    // A `📝 N` counter appears only on a plan-only (dry-run) pass, so the common
+    // card stays unchanged but a dry run is visibly not a stalled one.
+    if c.planned > 0 {
+        line.push_str(&format!(" · 📝 {}", c.planned));
     }
     // A `🙋 N` counter appears only when a chain is parked on a human gate
     // (ADR-0014) — the common card stays unchanged, but a run waiting on a
@@ -213,8 +219,14 @@ pub fn render_final_push(state: &RunState) -> String {
     // an aborted run's card then sits above the next run's fresh card and reads
     // "finished → started" (FinCal, 2026-07-13). Render a distinct stopped footer so
     // a no-op run never masquerades as a completed one.
-    let processed =
-        c.done + c.skipped + c.blocked + c.infeasible + c.non_green + c.needs_split + c.hitl;
+    let processed = c.done
+        + c.skipped
+        + c.blocked
+        + c.infeasible
+        + c.non_green
+        + c.needs_split
+        + c.hitl
+        + c.planned;
     if processed == 0 {
         // A run border that folded its OWN summary (a `--if-idle` deferral, #222)
         // knows why it processed nothing — say that instead of the generic stop,

@@ -467,6 +467,30 @@ mod tests {
     }
 
     #[test]
+    fn heartbeat_queue_done_counts_a_superseded_issue() {
+        // The dry-run fix reaches the wire with no per-sink code: the fold's
+        // supersede makes the plan-only issue terminal, so `queue_done` advances.
+        let mut state = RunState::new("t", 2);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "one".into(),
+        });
+        state.apply(RunEvent::PlanWritten {
+            number: 1,
+            open_steps: 3,
+            usage: UsageLite::default(),
+            steps: vec![],
+        });
+        state.apply(RunEvent::IssueStarted {
+            number: 2,
+            title: "two".into(),
+        });
+        let v = heartbeat(&test_ctx(), &state, Totals::default(), 60);
+        assert_eq!(v["data"]["queue_done"], 1);
+        assert_eq!(v["data"]["phase"], "planning");
+    }
+
+    #[test]
     fn phase_sleeping_wins_over_executing_issue() {
         // Even with an executing issue, an active usage-limit sleep reports sleeping.
         let mut state = RunState::new("t", 1);
