@@ -413,23 +413,49 @@ mod tests {
         }
     }
 
+    /// The source text of the `info!(…)` invocation that emits `message` — from
+    /// the nearest preceding `info!(` to the message literal.
+    ///
+    /// Scoping to the invocation, not the whole file, is what makes a fragment pin
+    /// discriminate: two emitters in one file (codex's `planning with codex exec`
+    /// and `executing with codex exec`) share the `model = %model` fragment, so a
+    /// file-wide `contains` would let either one satisfy both rows.
+    /// Every candidate site: the message literal occurs in prose comments too
+    /// (`run.rs` names `info!("queue built")` twice in doc text), so a row matches
+    /// when ANY candidate carries all its fragments. A comment's candidate is an
+    /// empty/short slice that carries none, so this never launders a real drift.
+    fn emit_sites<'a>(src: &'a str, message: &str) -> Vec<&'a str> {
+        let literal = format!("\"{message}\"");
+        let mut sites = Vec::new();
+        let mut from = 0usize;
+        while let Some(rel) = src[from..].find(&literal) {
+            let end = from + rel;
+            if let Some(start) = src[..end].rfind("info!(") {
+                sites.push(&src[start..end]);
+            }
+            from = end + literal.len();
+        }
+        sites
+    }
+
     #[test]
     fn emitter_sites_are_pinned() {
         for (message, file, fragments) in EMITTER_SITES {
             let path = repo_root().join(file);
             let src = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("reading emitter {file} for `{message}`: {e}"));
+            let sites = emit_sites(&src, message);
             assert!(
-                src.contains(&format!("\"{message}\"")),
-                "`{message}` must be emitted as a literal in {file}"
+                !sites.is_empty(),
+                "`{message}` must be an `info!` message literal in {file}"
             );
-            for fragment in *fragments {
-                assert!(
-                    src.contains(fragment),
-                    "`{message}` ({file}) must still emit `{fragment}` — \
-                     an emitter field or its %/? encoding drifted"
-                );
-            }
+            assert!(
+                sites
+                    .iter()
+                    .any(|site| fragments.iter().all(|f| site.contains(f))),
+                "no `info!` site in {file} emits `{message}` with all of {fragments:?} — \
+                 an emitter field or its %/? encoding drifted. Candidates:\n{sites:#?}"
+            );
         }
     }
 }
