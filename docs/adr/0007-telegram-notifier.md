@@ -170,6 +170,35 @@ Rendering keeps the card within Telegram's 4096-char message limit: a large queu
 collapses to counters plus the active issue and the most recently finished ones,
 rather than one line per issue unbounded.
 
+## Amendment (#223) — the presenter folds `RunState`; supersede is a concern of the fold
+
+D6 promised the ADR-0006 presenter would render from the *same* model. It did
+not: the console kept its own parallel reducer (`ui::QueueState` plus a
+presenter-local `ActiveIssue`), so the queue bar, the active line and the card
+were three progress rules over one event stream. The dry-run defect proved the
+cost — a plan-only pass advanced the console bar (`QueueState::supersede`) but
+left the card and the CloudEvents heartbeat perenially "planning".
+
+- The console reducer is **deleted**. `ui::queue_bar_label(&RunState, RenderOpts)`
+  and `ui::active_phase(&IssueStatus)` derive the whole live region from the fold.
+- **Supersede is a concern of the fold**, not of any sink: an `issue started`
+  whose predecessor is still non-terminal moves that predecessor to the new
+  terminal status `IssueStatus::Planned` (wire `"planned"`, `📝`) — the terminal
+  status of a plan-only pass. Every sink inherits the fix with no per-sink code.
+- The bar's progress rule follows from that single definition: an issue advances
+  when its entry `is_terminal()`. An `infeasible`/`needs_split` issue therefore
+  advances at `plan written` instead of waiting for the next `issue started` —
+  the only intermediate-label change, pinned by
+  `ui::tests::golden_render_queue_bar_labels_over_a_fixed_event_sequence`.
+- The fold grew the facts the console needs: `RunState::{order, stop_before}` and
+  per-issue `IssueEntry::{model, effort, budget_min, plan_usage, exec_usage}`.
+  These are per-issue and reset on `issue started`, deliberately distinct from the
+  run-level `cur_model`/`cur_effort` (which never reset and degrade an empty exec
+  model to `None`) — merging them would change the `data.agent` block.
+- Wall-clock `Instant`s stay **presenter-local**: no event carries one, and a
+  duration is not a fact of the stream. The presenter keeps exactly one
+  `(number, Instant)` anchor.
+
 ## D7 — Dry runs do not notify; failures are loud at startup, best-effort at runtime
 
 A `--dry-run` only plans, makes no commits, and is typically local iteration; it
