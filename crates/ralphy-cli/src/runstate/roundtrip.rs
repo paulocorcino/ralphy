@@ -340,6 +340,49 @@ fn roundtrip_run_started() {
 }
 
 #[test]
+fn roundtrip_queue_built_folds_its_sentinels() {
+    // The two "absent" encodings the helper's scalar signature forces: `0` for
+    // "no stop-before in this queue" (issue numbers are ≥ 1) and `""` for "the
+    // queue was fetched unfiltered". Both must decode back to `None` — a helper
+    // that stopped emitting them, or a decoder that stopped folding them, would
+    // otherwise surface a phantom stop-before at #0 and a scope mark of "".
+    let ev = one(|| ralphy_core::emit::queue_built(1, "#1", 0, "not json", ""));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::QueueBuilt {
+            count: 1,
+            order: vec![1],
+            stop_before: None,
+            // An unparseable/absent snapshot degrades to `Null`, never a panic.
+            issues: serde_json::Value::Null,
+            assignee_filter: None,
+        })
+    );
+}
+
+#[test]
+fn roundtrip_run_started_folds_the_no_deadline_sentinel() {
+    // `0.0` is the "no `--deadline-hours`" sentinel the emitter writes; the
+    // decoder must fold it back to `None` rather than report a 0-hour budget.
+    let ev = one(|| {
+        ralphy_core::emit::run_started("o/r", "", "claude", "claude", "current", "main", 0.0)
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::RunStarted {
+            repo: "o/r".into(),
+            // An empty joined label string is an empty list, not `[""]`.
+            queue_labels: vec![],
+            agent: "claude".into(),
+            plan_agent: "claude".into(),
+            branch_mode: "current".into(),
+            branch: "main".into(),
+            deadline_hours: None,
+        })
+    );
+}
+
+#[test]
 fn roundtrip_run_finished() {
     let ev = one(|| ralphy_core::emit::run_finished("completed", 3, 1, 5, &usage(), 412));
     assert_eq!(

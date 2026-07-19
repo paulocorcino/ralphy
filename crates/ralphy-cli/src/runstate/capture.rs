@@ -346,9 +346,12 @@ mod tests {
             .join("..")
     }
 
-    /// The 20 messages `ralphy_core::emit` owns a helper for (ADR-0039 §1) — the
-    /// 15 emitted by the core runner plus the 5 the CLI emits through the same
-    /// module. Every one has a round-trip test in `super::super::roundtrip`; the
+    /// The 20 messages `ralphy_core::emit` owns a helper for AND that no other
+    /// pin covers (ADR-0039 §1) — the 15 emitted by the core runner plus the 5
+    /// the CLI emits through the same module. The 3 shared adapter constants
+    /// `emit` also owns are pinned separately (below), for 23 in total.
+    ///
+    /// Every one has a round-trip test in `super::super::roundtrip`; the
     /// 15 core ones additionally carry a characterization pin in
     /// `crates/ralphy-core/tests/queue.rs` (named in the trailing comment).
     ///
@@ -488,6 +491,11 @@ mod tests {
         "crates/ralphy-cli/src/run/report.rs",
         "crates/ralphy-adapter-support/src/headless.rs",
         "crates/ralphy-agent-claude/src/interactive.rs",
+        // The two files that USED to own the shared constants: they are now
+        // `pub use ralphy_core::emit::…` re-exports, and a re-introduced literal
+        // here would be the most natural way to undo ADR-0039 D4 by accident.
+        "crates/ralphy-adapter-support/src/idle.rs",
+        "crates/ralphy-adapter-support/src/degraded.rs",
     ];
 
     /// The machine proof of ADR-0039 §1's central claim: the vocabulary lives in
