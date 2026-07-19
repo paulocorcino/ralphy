@@ -21,7 +21,9 @@ use super::artifacts::{
 };
 use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
-use super::{synthetic_reset, IssueResult, QueueConfig, RunClock, RunLedger, WaitOutcome};
+use super::{
+    synthetic_reset, IssueResult, QueueConfig, ResultStatus, RunClock, RunLedger, WaitOutcome,
+};
 
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
@@ -310,8 +312,10 @@ pub(crate) enum PlanPhase {
     /// A feasible plan was written — proceed to execute.
     Planned(Plan),
     /// The planner judged the issue infeasible or a bundle; the verdict is
-    /// posted on the issue — skip to the next one.
-    Infeasible,
+    /// posted on the issue — skip to the next one. `needs_split` distinguishes
+    /// the bundle verdict (the `needs-split` label was applied) from a plain
+    /// infeasible one; the two are separate statuses on the wire.
+    Infeasible { needs_split: bool },
     /// A plan-time usage limit stops the run (configured `stop_on_limit_plan`, or a
     /// scheduled reset that hit the no-progress cap). A limit with no parseable reset
     /// no longer stops here — it parks a synthetic wait and re-plans (ADR-0030).
@@ -407,9 +411,11 @@ pub(crate) fn plan_phase(
     // planner's reasoning is posted on the issue so the verdict is
     // actionable instead of dying in the gitignored plan.md.
     if !plan.is_feasible() {
+        let mut needs_split = false;
         if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
             if let Some(reason) = handoff::infeasible_reason(&plan_md) {
                 if handoff::is_bundle_reason(&reason) {
+                    needs_split = true;
                     crate::emit::needs_split(issue.number);
                     // Best-effort: a label failure must not stop the run —
                     // the comment below still carries the verdict.
@@ -432,7 +438,7 @@ pub(crate) fn plan_phase(
                 }
             }
         }
-        return Ok(PlanPhase::Infeasible);
+        return Ok(PlanPhase::Infeasible { needs_split });
     }
 
     Ok(PlanPhase::Planned(plan))
@@ -938,6 +944,8 @@ pub(crate) fn close_and_record(
         closed: true,
         blocked_by: Vec::new(),
         human_blockers: Vec::new(),
+        status: ResultStatus::Done,
+        skip: None,
     });
 
     // Write acceptance evidence when the plan carries a ledger, and

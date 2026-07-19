@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn run_finished_triple_is_pinned() {
-        use ralphy_core::{IssueResult, Outcome, QueueReport, Usage};
+        use ralphy_core::{IssueResult, Outcome, QueueReport, ResultStatus, Usage};
 
         let report = QueueReport {
             branch: "ralphy/run".into(),
@@ -163,6 +163,8 @@ mod tests {
                 closed: true,
                 blocked_by: Vec::new(),
                 human_blockers: Vec::new(),
+                status: ResultStatus::Done,
+                skip: None,
             }],
             stop: None,
             commits: 1,

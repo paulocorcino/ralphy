@@ -31,7 +31,7 @@ pub(crate) use phases::{
     verify_gate, ExecPhase, IssueCtx, PlanPhase, Prepared, ProtocolGate, VerifyGate,
 };
 pub(crate) use types::RunLedger;
-pub use types::{IssueResult, QueueConfig, QueueReport, StopReason};
+pub use types::{IssueResult, QueueConfig, QueueReport, ResultStatus, SkipReason, StopReason};
 
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";
@@ -200,6 +200,8 @@ fn run_queue_with(
                 closed: false,
                 blocked_by: Vec::new(),
                 human_blockers: Vec::new(),
+                status: ResultStatus::Skipped,
+                skip: Some(SkipReason::HumanReturn),
             });
             continue;
         }
@@ -209,12 +211,21 @@ fn run_queue_with(
         let issue = match prepare_issue(&cx, issue) {
             Ok(Prepared::Ready(enriched)) => enriched,
             Ok(Prepared::Blocked { open, human }) => {
+                // Mirrors the emitter split in `prepare_issue`: a blocker that
+                // is a human gate parks the issue as HITL, not a plain skip.
+                let status = if human.is_empty() {
+                    ResultStatus::Skipped
+                } else {
+                    ResultStatus::Hitl
+                };
                 worked.push(IssueResult {
                     number: issue.number,
                     outcome: None,
                     closed: false,
                     blocked_by: open,
                     human_blockers: human,
+                    status,
+                    skip: (status == ResultStatus::Skipped).then_some(SkipReason::BlockedBy),
                 });
                 continue;
             }
@@ -228,13 +239,19 @@ fn run_queue_with(
         // Plan the issue; a non-limit planning failure restores and propagates.
         let plan = match plan_phase(&cx, issue, &mut ledger) {
             Ok(PlanPhase::Planned(plan)) => plan,
-            Ok(PlanPhase::Infeasible) => {
+            Ok(PlanPhase::Infeasible { needs_split }) => {
                 worked.push(IssueResult {
                     number: issue.number,
                     outcome: None,
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: if needs_split {
+                        ResultStatus::NeedsSplit
+                    } else {
+                        ResultStatus::Infeasible
+                    },
+                    skip: None,
                 });
                 continue;
             }
@@ -245,6 +262,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::NonGreen,
+                    skip: None,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -270,6 +289,8 @@ fn run_queue_with(
                 closed: false,
                 blocked_by: Vec::new(),
                 human_blockers: Vec::new(),
+                status: ResultStatus::Planned,
+                skip: None,
             });
             continue;
         }
@@ -290,6 +311,13 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    // Mirrors the fold's `outcome.starts_with("Blocked")` split.
+                    status: if matches!(outcome, Outcome::Blocked(_)) {
+                        ResultStatus::Blocked
+                    } else {
+                        ResultStatus::NonGreen
+                    },
+                    skip: None,
                 });
                 stop = Some(if deadline_cut {
                     StopReason::Deadline
@@ -321,6 +349,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::NonGreen,
+                    skip: None,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -342,6 +372,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::NonGreen,
+                    skip: None,
                 });
                 stop = Some(StopReason::Limit { number, reset });
                 break;
@@ -360,6 +392,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::Skipped,
+                    skip: Some(SkipReason::VerifyFailed),
                 });
                 continue;
             }
@@ -386,6 +420,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::Done,
+                    skip: None,
                 });
                 continue;
             }

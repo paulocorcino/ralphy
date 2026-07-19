@@ -115,8 +115,8 @@ pub use references::Reference;
 pub use repo::{GitRepo, Repo};
 pub use runner::{
     first_stop_before, human_return_label, run_queue, BranchMode, IssueResult, QueueConfig,
-    QueueReport, RunClock, StopReason, WaitOutcome, WallClock, STOP_BEFORE_LABEL,
-    TRIAGE_AGENT_LABEL,
+    QueueReport, ResultStatus, RunClock, SkipReason, StopReason, WaitOutcome, WallClock,
+    STOP_BEFORE_LABEL, TRIAGE_AGENT_LABEL,
 };
 pub use settings::{Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
