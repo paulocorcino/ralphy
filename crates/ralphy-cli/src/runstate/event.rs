@@ -1,6 +1,18 @@
 //! The semantic-event mapper: [`RunEvent`] plus [`event_to_runevent`], which lifts
 //! the raw `(target, message, fields)` triple into a typed lifecycle event
 //! (ADR-0007 D6).
+//!
+//! **The convention** (ADR-0039 §1/§2): every arm matches a `ralphy_core::emit`
+//! constant, never a message literal — the emitter and the decoder read the SAME
+//! `…_MSG`, so a renamed message cannot half-land. A new [`RunEvent`] variant
+//! without an `emit` helper AND a round-trip test in [`super::roundtrip`] is an
+//! incomplete change; `roundtrip::_every_variant_has_a_roundtrip` enforces it at
+//! compile time.
+//!
+//! The ONE remaining literal family is the nine per-adapter `planning with …` /
+//! `executing with …` strings: they are emitted by the vendor adapters and are
+//! Fase 1b's slice (ADR-0039 Decision 3 rewrites them to `planning`/`executing`
+//! plus a `cmd` field).
 
 use tracing::Level;
 
@@ -179,7 +191,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
     }
     let number = fields.number.unwrap_or(0);
     match message {
-        "queue built" => Some(RunEvent::QueueBuilt {
+        ralphy_core::emit::QUEUE_BUILT_MSG => Some(RunEvent::QueueBuilt {
             count: fields.count.unwrap_or(0),
             order: parse_order(fields.order.as_deref()),
             // 0 is the "no stop-before in this queue" sentinel (issue numbers are ≥1).
@@ -292,24 +304,24 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // headless #217): all timing gating happens in the adapter, so these fire
         // only on the real edges. The messages are shared constants so the two
         // emitters cannot drift into two different operator experiences.
-        ralphy_adapter_support::API_DEGRADED_MSG => Some(RunEvent::ApiDegraded),
-        ralphy_adapter_support::API_RECOVERED_MSG => Some(RunEvent::ApiRecovered),
+        ralphy_core::emit::API_DEGRADED_MSG => Some(RunEvent::ApiDegraded),
+        ralphy_core::emit::API_RECOVERED_MSG => Some(RunEvent::ApiRecovered),
         // The idle watchdog's reap, from either execution path — the message is
-        // one shared constant (`ralphy_adapter_support::IDLE_REAPED_MSG`) so the
+        // one shared constant (`ralphy_core::emit::IDLE_REAPED_MSG`) so the
         // two emitters cannot drift apart into two different operator experiences.
-        ralphy_adapter_support::IDLE_REAPED_MSG => Some(RunEvent::IdleReaped {
+        ralphy_core::emit::IDLE_REAPED_MSG => Some(RunEvent::IdleReaped {
             idle_minutes: fields.idle_minutes.unwrap_or(0),
         }),
         // The end-of-run knowledge consolidation trigger: both events reuse the
         // generic `count` field (notes in / notes archived).
-        "consolidating knowledge" => Some(RunEvent::KnowledgeConsolidating {
+        ralphy_core::emit::KNOWLEDGE_CONSOLIDATING_MSG => Some(RunEvent::KnowledgeConsolidating {
             notes: fields.count.unwrap_or(0),
         }),
-        "knowledge consolidated" => Some(RunEvent::KnowledgeConsolidated {
+        ralphy_core::emit::KNOWLEDGE_CONSOLIDATED_MSG => Some(RunEvent::KnowledgeConsolidated {
             archived: fields.count.unwrap_or(0),
         }),
         // The two ADR-0019 run-boundary emissions (from the CLI, not the core).
-        "run started" => Some(RunEvent::RunStarted {
+        ralphy_core::emit::RUN_STARTED_MSG => Some(RunEvent::RunStarted {
             repo: fields.repo.clone().unwrap_or_default(),
             queue_labels: split_labels(fields.queue_labels.as_deref()),
             agent: fields.agent.clone().unwrap_or_default(),
@@ -320,7 +332,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             // `--deadline-hours` becomes `0.0`), so filter it back to `None`.
             deadline_hours: fields.deadline_hours.filter(|&h| h > 0.0),
         }),
-        "run finished" => Some(RunEvent::RunFinished {
+        ralphy_core::emit::RUN_FINISHED_MSG => Some(RunEvent::RunFinished {
             outcome: fields.outcome.clone().unwrap_or_default(),
             issues_done: fields.issues_done.unwrap_or(0),
             issues_skipped: fields.issues_skipped.unwrap_or(0),

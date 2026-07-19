@@ -300,10 +300,8 @@ fn drive_headless(
         // which clock fired.
         if let Some(b) = &beat {
             if idle.expired(b, Instant::now()) {
-                tracing::info!(
-                    idle_minutes = idle.window().map(|w| w.as_secs() / 60).unwrap_or(0),
-                    "{}",
-                    crate::idle::IDLE_REAPED_MSG
+                ralphy_core::emit::idle_reaped(
+                    idle.window().map(|w| w.as_secs() / 60).unwrap_or(0),
                 );
                 ralphy_proc_util::kill_tree(&mut child);
                 timed_out = true;
@@ -316,10 +314,8 @@ fn drive_headless(
         // the PTY path surfaces. Advisory only — never kills the child.
         if let (Some(sw), Some(w)) = (&degraded, &mut degraded_watch) {
             match w.poll(Instant::now(), sw.any_active()) {
-                DegradedAction::Degraded => tracing::info!("{}", crate::degraded::API_DEGRADED_MSG),
-                DegradedAction::Recovered => {
-                    tracing::info!("{}", crate::degraded::API_RECOVERED_MSG)
-                }
+                DegradedAction::Degraded => ralphy_core::emit::api_degraded(),
+                DegradedAction::Recovered => ralphy_core::emit::api_recovered(),
                 DegradedAction::None => {}
             }
         }

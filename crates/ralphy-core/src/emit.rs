@@ -183,3 +183,135 @@ pub const RESET_REACHED_MSG: &str = "reset reached — resuming";
 pub fn reset_reached() {
     info!("{}", RESET_REACHED_MSG);
 }
+
+// ── Emitted by the adapters (ADR-0038, #149/#217) ────────────────────────────
+// Both execution paths (PTY and headless) emit these, which is exactly why the
+// vocabulary lives here: one constant, one shape, one operator experience
+// regardless of which child shape happened to be driving.
+
+/// See [`idle_reaped`].
+pub const IDLE_REAPED_MSG: &str = "idle watchdog — no progress, reaping the child";
+
+/// The idle watchdog reaped the active issue's child after `idle_minutes` with
+/// no progress (docs/adr/0038).
+pub fn idle_reaped(idle_minutes: u64) {
+    info!(idle_minutes, "{}", IDLE_REAPED_MSG);
+}
+
+/// See [`api_degraded`].
+pub const API_DEGRADED_MSG: &str = "api degraded — child retrying";
+
+/// A degraded stretch persisted past the ≥3-min gate: the child is retrying.
+pub fn api_degraded() {
+    info!("{}", API_DEGRADED_MSG);
+}
+
+/// See [`api_recovered`].
+pub const API_RECOVERED_MSG: &str = "api recovered — child resuming";
+
+/// The degraded state cleared after an [`api_degraded`] — always a matched pair.
+pub fn api_recovered() {
+    info!("{}", API_RECOVERED_MSG);
+}
+
+// ── Emitted by the CLI (ADR-0019/-0020/-0021), not by the core runner ────────
+// The vocabulary is owned here regardless of who emits it: one module, one set
+// of constants, one decoder to match against.
+
+/// See [`queue_built`].
+pub const QUEUE_BUILT_MSG: &str = "queue built";
+
+/// The queue was resolved (ADR-0020/-0021). `order` is the `#30 -> #31` render,
+/// `issues_json` the enriched per-issue snapshot, `assignee_filter` the resolved
+/// login the queue was scoped to (empty = unfiltered). `stop_before` is `0` when
+/// the queue carries no stop-before (issue numbers are ≥ 1).
+pub fn queue_built(
+    count: u64,
+    order: &str,
+    stop_before: u64,
+    issues_json: &str,
+    assignee_filter: &str,
+) {
+    info!(
+        count,
+        order = %order,
+        stop_before,
+        issues_json = %issues_json,
+        assignee_filter = %assignee_filter,
+        "{}",
+        QUEUE_BUILT_MSG
+    );
+}
+
+/// See [`run_started`].
+pub const RUN_STARTED_MSG: &str = "run started";
+
+/// The run began working a queue (ADR-0019 boundary event). `queue_labels` is
+/// the comma-joined label list; `deadline_hours` is `0.0` for "no deadline" (the
+/// sentinel the decoder folds back to `None`).
+#[allow(clippy::too_many_arguments)]
+pub fn run_started(
+    repo: &str,
+    queue_labels: &str,
+    agent: &str,
+    plan_agent: &str,
+    branch_mode: &str,
+    base: &str,
+    deadline_hours: f64,
+) {
+    info!(
+        repo = %repo,
+        queue_labels = %queue_labels,
+        agent,
+        plan_agent,
+        branch_mode,
+        base = %base,
+        deadline_hours,
+        "{}",
+        RUN_STARTED_MSG
+    );
+}
+
+/// See [`run_finished`].
+pub const RUN_FINISHED_MSG: &str = "run finished";
+
+/// The run ended cleanly (ADR-0019 boundary event). `usage` is the RUN total —
+/// note it emits `up/cr/cw/out` but deliberately NO `model`: a run spans models.
+pub fn run_finished(
+    outcome: &str,
+    issues_done: u64,
+    issues_skipped: u64,
+    issues_total: u64,
+    usage: &crate::Usage,
+    duration_s: u64,
+) {
+    info!(
+        outcome,
+        issues_done,
+        issues_skipped,
+        issues_total,
+        up = usage.input,
+        cr = usage.cache_read,
+        cw = usage.cache_creation,
+        out = usage.output,
+        duration_s,
+        "{}",
+        RUN_FINISHED_MSG
+    );
+}
+
+/// See [`knowledge_consolidating`].
+pub const KNOWLEDGE_CONSOLIDATING_MSG: &str = "consolidating knowledge";
+
+/// The end-of-run knowledge consolidation started over `count` loose notes.
+pub fn knowledge_consolidating(count: u64) {
+    info!(count, "{}", KNOWLEDGE_CONSOLIDATING_MSG);
+}
+
+/// See [`knowledge_consolidated`].
+pub const KNOWLEDGE_CONSOLIDATED_MSG: &str = "knowledge consolidated";
+
+/// Consolidation finished, archiving `count` notes into `knowledge/raw/`.
+pub fn knowledge_consolidated(count: u64) {
+    info!(count, "{}", KNOWLEDGE_CONSOLIDATED_MSG);
+}

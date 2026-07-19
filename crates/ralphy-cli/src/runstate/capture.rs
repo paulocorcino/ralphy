@@ -187,7 +187,10 @@ mod tests {
             .expect("a `run finished` event");
 
         assert_eq!(ev.level, Level::INFO);
-        assert_eq!(ev.target, "ralphy::run::report");
+        // The helper's module, not the caller's: tracing builds `Metadata` in a
+        // `static` callsite, so an `emit` helper cannot forward the emitting
+        // module's path (ADR-0039 §1). The decoder ignores `target`.
+        assert_eq!(ev.target, "ralphy_core::emit");
         let f = &ev.fields;
         assert_eq!(f.outcome.as_deref(), Some("completed"));
         assert_eq!(f.issues_done, Some(1));
@@ -251,9 +254,14 @@ mod tests {
     }
 
     /// The consumed messages whose emitter cannot be driven from a unit test (an
-    /// adapter that spawns a vendor CLI, `run started` inline in `run_cmd`,
-    /// `queue built` needing `gh`): `(message, repo-relative emitter file, source
-    /// fragments)`.
+    /// adapter that spawns a vendor CLI): `(message, repo-relative emitter file,
+    /// source fragments)`.
+    ///
+    /// Only the nine per-adapter `planning with …` / `executing with …` strings
+    /// remain: the four CLI rows this table used to carry (`queue built`,
+    /// `run started`, `consolidating knowledge`, `knowledge consolidated`) moved
+    /// to `ralphy_core::emit` in Fase 1a and are now proved by real round-trip
+    /// tests (`super::super::roundtrip`) rather than by source-text fragments.
     ///
     /// Each row asserts on SHORT fragments so `cargo fmt` rewrapping an `info!`
     /// cannot red it — but a changed message, a dropped field, or a flipped
@@ -271,40 +279,6 @@ mod tests {
     /// a `cmd` field in Fase 1 **on purpose** — a red here after that lands is the
     /// intended signal, not a regression.
     const EMITTER_SITES: &[(&str, &str, &[&str])] = &[
-        (
-            "queue built",
-            "crates/ralphy-cli/src/run.rs",
-            &[
-                "count = queue.len()",
-                "order = %order.join(\" -> \")",
-                "stop_before,",
-                "issues_json = %issues_json",
-                "assignee_filter = %assignee_filter",
-            ],
-        ),
-        (
-            "run started",
-            "crates/ralphy-cli/src/run.rs",
-            &[
-                "repo = %events_slug",
-                "queue_labels = %",
-                "agent = args.agent.cli_name()",
-                "plan_agent = plan_agent.cli_name()",
-                "branch_mode = branch_mode_str",
-                "base = %base_branch",
-                "deadline_hours =",
-            ],
-        ),
-        (
-            "consolidating knowledge",
-            "crates/ralphy-cli/src/run/report.rs",
-            &["info!(count = notes.len() as u64,"],
-        ),
-        (
-            "knowledge consolidated",
-            "crates/ralphy-cli/src/run/report.rs",
-            &["info!(count = archived as u64,"],
-        ),
         (
             "planning with claude -p",
             "crates/ralphy-agent-claude/src/lib.rs",
@@ -372,10 +346,16 @@ mod tests {
             .join("..")
     }
 
-    /// The 15 core-emitted messages, each pinned by a named test in
-    /// `crates/ralphy-core/tests/queue.rs` (that crate cannot see this module, so
-    /// the coverage closure below restates them as literals).
-    const CORE_PINNED_MESSAGES: &[&str] = &[
+    /// The 20 messages `ralphy_core::emit` owns a helper for (ADR-0039 §1) — the
+    /// 15 emitted by the core runner plus the 5 the CLI emits through the same
+    /// module. Every one has a round-trip test in `super::super::roundtrip`; the
+    /// 15 core ones additionally carry a characterization pin in
+    /// `crates/ralphy-core/tests/queue.rs` (named in the trailing comment).
+    ///
+    /// Restated as literals, not as the `…_MSG` constants, on purpose: this list
+    /// is the second witness. Naming the constants would make it agree with a
+    /// renamed message by construction and prove nothing.
+    const EMIT_OWNED_MESSAGES: &[&str] = &[
         "issue started",                                     // pins_green_run_vocabulary
         "plan written",                                      // pins_green_run_vocabulary
         "plan opened",                                       // pins_green_run_vocabulary
@@ -391,6 +371,11 @@ mod tests {
         "bundle plan — needs split",                         // pins_blocked_and_split_vocabulary
         "usage limit — waiting for reset",                   // pins_usage_limit_vocabulary
         "reset reached — resuming",                          // pins_usage_limit_vocabulary
+        "queue built",                                       // CLI — roundtrip_queue_built
+        "run started",                                       // CLI — roundtrip_run_started
+        "run finished",                                      // CLI — roundtrip_run_finished
+        "consolidating knowledge", // CLI — roundtrip_knowledge_consolidating
+        "knowledge consolidated",  // CLI — roundtrip_knowledge_consolidated
     ];
 
     /// How many messages `event_to_runevent`'s `match` consumes, read off the
@@ -410,8 +395,9 @@ mod tests {
             .count()
     }
 
-    /// Every message this issue pins, across both crates: the 13 `EMITTER_SITES`
-    /// rows, the 3 shared constants, `run finished`, and the 15 core messages.
+    /// Every message pinned across both crates: the 9 remaining `EMITTER_SITES`
+    /// rows (the per-adapter phase strings), the 3 shared adapter constants, and
+    /// the 20 `ralphy_core::emit`-owned messages — 32 in all.
     ///
     /// The closure this guards: each one must be genuinely CONSUMED vocabulary
     /// (`event_to_runevent` returns `Some`), and the count must match the decoder's
@@ -420,12 +406,14 @@ mod tests {
     #[test]
     fn every_decoder_arm_has_a_pin() {
         use super::super::event_to_runevent;
+        // Named through the `ralphy_adapter_support` re-export on purpose: the
+        // constants moved to `ralphy_core::emit` in Fase 1a, and this is what
+        // proves the historical import path still resolves (ADR-0039 D4).
         use ralphy_adapter_support::{API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG};
 
         let mut pinned: Vec<&str> = EMITTER_SITES.iter().map(|(m, _, _)| *m).collect();
         pinned.extend([API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG]);
-        pinned.push("run finished");
-        pinned.extend(CORE_PINNED_MESSAGES);
+        pinned.extend(EMIT_OWNED_MESSAGES);
 
         // Counted off the decoder's OWN source, not restated as a second constant:
         // an arm added to `event_to_runevent` without a pin reds HERE.
@@ -488,6 +476,71 @@ mod tests {
         let start = before.rfind("info!(")?;
         let body = &before[start + "info!(".len()..];
         (!body.contains(';') && !body.contains("!(")).then_some(&before[start..])
+    }
+
+    /// The sources that used to hold the vocabulary literals and must no longer:
+    /// every migrated emitter, across all four crates.
+    const MIGRATED_EMITTERS: &[&str] = &[
+        "crates/ralphy-core/src/runner.rs",
+        "crates/ralphy-core/src/runner/phases.rs",
+        "crates/ralphy-core/src/runner/clock.rs",
+        "crates/ralphy-cli/src/run.rs",
+        "crates/ralphy-cli/src/run/report.rs",
+        "crates/ralphy-adapter-support/src/headless.rs",
+        "crates/ralphy-agent-claude/src/interactive.rs",
+    ];
+
+    /// The machine proof of ADR-0039 §1's central claim: the vocabulary lives in
+    /// exactly ONE place. A quoted message literal anywhere in a migrated emitter
+    /// — an emit site, a leftover `info!`, or a prose doc comment naming the old
+    /// string — is a second source that can drift, so it reds here.
+    ///
+    /// Covers the constants' text, not the constants: an emitter that spells the
+    /// message out is precisely what this forbids, and only a literal comparison
+    /// can see it.
+    #[test]
+    fn no_vocabulary_literal_outside_emit() {
+        use ralphy_core::emit;
+
+        let vocabulary: &[&str] = &[
+            emit::ISSUE_STARTED_MSG,
+            emit::PLAN_WRITTEN_MSG,
+            emit::PLAN_OPENED_MSG,
+            emit::PLAN_CLOSED_MSG,
+            emit::ISSUE_CLOSED_MSG,
+            emit::NEEDS_SPLIT_MSG,
+            emit::BLOCKED_BY_OPEN_MSG,
+            emit::BLOCKED_WAITING_HUMAN_MSG,
+            emit::NON_GREEN_MSG,
+            emit::DEADLINE_PASSED_MSG,
+            emit::STOP_BEFORE_LABEL_MSG,
+            emit::HUMAN_RETURN_LABEL_MSG,
+            emit::VERIFY_GATE_FAILED_MSG,
+            emit::USAGE_LIMIT_WAITING_MSG,
+            emit::RESET_REACHED_MSG,
+            emit::IDLE_REAPED_MSG,
+            emit::API_DEGRADED_MSG,
+            emit::API_RECOVERED_MSG,
+            emit::QUEUE_BUILT_MSG,
+            emit::RUN_STARTED_MSG,
+            emit::RUN_FINISHED_MSG,
+            emit::KNOWLEDGE_CONSOLIDATING_MSG,
+            emit::KNOWLEDGE_CONSOLIDATED_MSG,
+        ];
+        assert_eq!(vocabulary.len(), 23, "every emit-owned message is scanned");
+
+        for file in MIGRATED_EMITTERS {
+            let src = std::fs::read_to_string(repo_root().join(file))
+                .unwrap_or_else(|e| panic!("reading migrated emitter {file}: {e}"));
+            for message in vocabulary {
+                assert!(
+                    !src.contains(&format!("\"{message}\"")),
+                    "{file} still spells out the vocabulary literal `{message}` — \
+                     `ralphy_core::emit` owns it; call the helper (or name the \
+                     `…_MSG` constant) instead"
+                );
+            }
+        }
     }
 
     #[test]

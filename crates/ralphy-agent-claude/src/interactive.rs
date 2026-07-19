@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{IdleWatch, ProgressBeat, IDLE_REAPED_MSG};
+use ralphy_adapter_support::{IdleWatch, ProgressBeat};
 use ralphy_core::{Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
@@ -237,12 +237,8 @@ impl ClaudeAgent {
                     idle_beat.beat(Instant::now());
                 }
                 match api_watch.poll(Instant::now(), advanced) {
-                    ApiWatchAction::Degraded => {
-                        info!("{}", ralphy_adapter_support::API_DEGRADED_MSG)
-                    }
-                    ApiWatchAction::Recovered => {
-                        info!("{}", ralphy_adapter_support::API_RECOVERED_MSG)
-                    }
+                    ApiWatchAction::Degraded => ralphy_core::emit::api_degraded(),
+                    ApiWatchAction::Recovered => ralphy_core::emit::api_recovered(),
                     ApiWatchAction::Respawn => return Ok(DriveEnd::Respawn),
                     ApiWatchAction::None => {}
                 }
@@ -251,12 +247,11 @@ impl ClaudeAgent {
                 // recover, whereas silence is evidence of nothing. End the drive as
                 // the timeout it already is rather than spend a respawn on a guess.
                 if idle_watch.expired(&idle_beat, Instant::now()) {
-                    // The same canonical message the headless path emits, so the
+                    // The same canonical helper the headless path calls, so the
                     // operator-facing event does not depend on which child shape
                     // happened to be driving (docs/adr/0038).
-                    info!(
-                        idle_minutes = idle_watch.window().map(|w| w.as_secs() / 60).unwrap_or(0),
-                        "{}", IDLE_REAPED_MSG
+                    ralphy_core::emit::idle_reaped(
+                        idle_watch.window().map(|w| w.as_secs() / 60).unwrap_or(0),
                     );
                     timed_out = true;
                     break;

@@ -17,14 +17,12 @@
 
 use std::time::{Duration, Instant};
 
-/// The tracing message emitted once a degraded stretch persists past the ping.
-/// Copied VERBATIM from the claude PTY emitter (`interactive.rs`) and the CLI
-/// decoder arm (`runstate/event.rs`) — one shared constant is what keeps the two
-/// execution paths from drifting into two different operator experiences.
-pub const API_DEGRADED_MSG: &str = "api degraded — child retrying";
-/// The matched recovery message, emitted when the degraded state clears after a
-/// [`API_DEGRADED_MSG`] was already emitted.
-pub const API_RECOVERED_MSG: &str = "api recovered — child resuming";
+/// The degraded/recovered messages, owned by [`ralphy_core::emit`] (ADR-0039 §1)
+/// and re-exported here so the historical `ralphy_adapter_support::…` paths keep
+/// resolving. Emit them through [`ralphy_core::emit::api_degraded`] /
+/// [`ralphy_core::emit::api_recovered`] — one helper per event is what keeps the
+/// two execution paths from drifting into two different operator experiences.
+pub use ralphy_core::emit::{API_DEGRADED_MSG, API_RECOVERED_MSG};
 
 /// How long the degraded state must persist *continuously* before the event
 /// fires — the criterion's ≥3-min gate. A shorter blip is a transient the child

@@ -54,6 +54,42 @@ fn decode(ev: &Captured) -> Option<RunEvent> {
     event_to_runevent(&ev.target, &ev.message, &ev.fields)
 }
 
+/// The coverage closure, enforced by the COMPILER rather than by a count: every
+/// [`RunEvent`] variant maps to the round-trip test that proves it. No wildcard
+/// arm — a variant added without one fails to compile until someone lists it,
+/// which is the ADR-0039 §2 convention made mechanical.
+#[allow(dead_code)]
+fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
+    match e {
+        RunEvent::QueueBuilt { .. } => "roundtrip_queue_built",
+        RunEvent::IssueStarted { .. } => "roundtrip_issue_started",
+        RunEvent::PlanWritten { .. } => "roundtrip_plan_written",
+        RunEvent::PlanOpened { .. } => "roundtrip_plan_opened",
+        RunEvent::PlanClosed { .. } => "roundtrip_plan_closed",
+        RunEvent::IssueClosed { .. } => "roundtrip_issue_closed",
+        RunEvent::NonGreen { .. } => "roundtrip_non_green",
+        RunEvent::NeedsSplit { .. } => "roundtrip_needs_split",
+        RunEvent::Skipped { .. } => {
+            "roundtrip_{blocked_by_open,stop_before_label,human_return_label,verify_gate_failed}"
+        }
+        RunEvent::HumanBlocked { .. } => "roundtrip_blocked_waiting_human",
+        RunEvent::DeadlinePassed { .. } => "roundtrip_deadline_passed",
+        RunEvent::SleepStarted { .. } => "roundtrip_usage_limit_waiting",
+        RunEvent::SleepEnded => "roundtrip_reset_reached",
+        RunEvent::IdleReaped { .. } => "roundtrip_idle_reaped",
+        RunEvent::ApiDegraded => "roundtrip_api_degraded",
+        RunEvent::ApiRecovered => "roundtrip_api_recovered",
+        RunEvent::KnowledgeConsolidating { .. } => "roundtrip_knowledge_consolidating",
+        RunEvent::KnowledgeConsolidated { .. } => "roundtrip_knowledge_consolidated",
+        RunEvent::RunStarted { .. } => "roundtrip_run_started",
+        RunEvent::RunFinished { .. } => "roundtrip_run_finished",
+        RunEvent::Notice { .. } => "roundtrip_level_wins_over_message",
+        RunEvent::Planning { .. } | RunEvent::Executing { .. } => {
+            "deferred to Fase 1b — the per-adapter phase strings still own these"
+        }
+    }
+}
+
 #[test]
 fn roundtrip_issue_started() {
     let ev = one(|| ralphy_core::emit::issue_started(7, "a title"));
@@ -233,6 +269,113 @@ fn roundtrip_usage_limit_waiting() {
 fn roundtrip_reset_reached() {
     let ev = one(ralphy_core::emit::reset_reached);
     assert_eq!(decode(&ev), Some(RunEvent::SleepEnded));
+}
+
+#[test]
+fn roundtrip_idle_reaped() {
+    let ev = one(|| ralphy_core::emit::idle_reaped(20));
+    assert_eq!(decode(&ev), Some(RunEvent::IdleReaped { idle_minutes: 20 }));
+}
+
+#[test]
+fn roundtrip_api_degraded() {
+    let ev = one(ralphy_core::emit::api_degraded);
+    assert_eq!(decode(&ev), Some(RunEvent::ApiDegraded));
+}
+
+#[test]
+fn roundtrip_api_recovered() {
+    let ev = one(ralphy_core::emit::api_recovered);
+    assert_eq!(decode(&ev), Some(RunEvent::ApiRecovered));
+}
+
+#[test]
+fn roundtrip_queue_built() {
+    let ev = one(|| {
+        ralphy_core::emit::queue_built(
+            3,
+            "#1 -> #2 -> #3",
+            2,
+            r#"[{"number":1,"queue_status":"eligible"}]"#,
+            "octocat",
+        )
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::QueueBuilt {
+            count: 3,
+            order: vec![1, 2, 3],
+            stop_before: Some(2),
+            issues: serde_json::json!([{"number":1,"queue_status":"eligible"}]),
+            assignee_filter: Some("octocat".into()),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_run_started() {
+    let ev = one(|| {
+        ralphy_core::emit::run_started(
+            "o/r",
+            "AFK,ready",
+            "claude",
+            "codex",
+            "new",
+            "origin/main",
+            6.0,
+        )
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::RunStarted {
+            repo: "o/r".into(),
+            queue_labels: vec!["AFK".into(), "ready".into()],
+            agent: "claude".into(),
+            plan_agent: "codex".into(),
+            branch_mode: "new".into(),
+            branch: "origin/main".into(),
+            deadline_hours: Some(6.0),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_run_finished() {
+    let ev = one(|| ralphy_core::emit::run_finished("completed", 3, 1, 5, &usage(), 412));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::RunFinished {
+            outcome: "completed".into(),
+            issues_done: 3,
+            issues_skipped: 1,
+            issues_total: 5,
+            up: 11,
+            cr: 22,
+            cw: 33,
+            out: 44,
+            duration_s: 412,
+        })
+    );
+    // A run spans models, so `run finished` deliberately carries no `model`.
+    assert_eq!(ev.fields.model, None);
+}
+
+#[test]
+fn roundtrip_knowledge_consolidating() {
+    let ev = one(|| ralphy_core::emit::knowledge_consolidating(4));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::KnowledgeConsolidating { notes: 4 })
+    );
+}
+
+#[test]
+fn roundtrip_knowledge_consolidated() {
+    let ev = one(|| ralphy_core::emit::knowledge_consolidated(4));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::KnowledgeConsolidated { archived: 4 })
+    );
 }
 
 #[test]

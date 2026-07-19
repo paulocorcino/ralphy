@@ -195,7 +195,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     // Emit the `queue built` telemetry (ADR-0020/-0021): the enriched per-issue
     // snapshot and the applied assignee scope, terminating in the single stable
-    // `info!("queue built")` the notifier/presenter consume. Positioned after the
+    // `emit::queue_built` the notifier/presenter consume. Positioned after the
     // header/info-line prints and before the notifier worker start, so the
     // buffered-ring drain order is unchanged.
     emit_queue_built(
@@ -327,15 +327,14 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         BranchMode::New => "new",
         BranchMode::Current => "current",
     };
-    info!(
-        repo = %events_slug,
-        queue_labels = %effective_labels.join(","),
-        agent = args.agent.cli_name(),
-        plan_agent = plan_agent.cli_name(),
-        branch_mode = branch_mode_str,
-        base = %base_branch,
-        deadline_hours = args.deadline_hours.unwrap_or(0.0),
-        "run started"
+    ralphy_core::emit::run_started(
+        &events_slug,
+        &effective_labels.join(","),
+        args.agent.cli_name(),
+        plan_agent.cli_name(),
+        branch_mode_str,
+        &base_branch,
+        args.deadline_hours.unwrap_or(0.0),
     );
     let resolved_claude = ResolvedClaude {
         plan_model: config::resolve_str(
@@ -562,7 +561,7 @@ fn install_observability(
 
 /// Emit the ADR-0020/-0021 `queue built` telemetry: enrich it with the per-issue
 /// snapshot the runner would judge (`data.issues[]`) and mark the applied assignee
-/// scope, terminating in the single stable `info!("queue built")` the notifier /
+/// scope, terminating in the single stable `emit::queue_built` the notifier /
 /// presenter consume. Both resolutions are best-effort telemetry — a `gh` blip warns
 /// and emits the legacy/unmarked shape rather than aborting the run. The caller
 /// positions this after the header/info-line prints and before the notifier worker
@@ -606,14 +605,12 @@ fn emit_queue_built(
         },
         None => None,
     };
-    // message consumed by the telegram notifier / presenter — keep stable
-    info!(
-        count = queue.len(),
-        order = %order.join(" -> "),
+    ralphy_core::emit::queue_built(
+        queue.len() as u64,
+        &order.join(" -> "),
         stop_before,
-        issues_json = %issues_json,
-        assignee_filter = %assignee_filter.as_deref().unwrap_or(""),
-        "queue built"
+        &issues_json,
+        assignee_filter.as_deref().unwrap_or(""),
     );
 }
 

@@ -6,7 +6,7 @@
 //! [`super::wiring`]).
 
 use ralphy_core::{git, BranchMode, Outcome, StopReason, Workspace};
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::{pricing, ui, CliAgent};
 
@@ -36,11 +36,11 @@ pub(crate) fn maybe_consolidate_knowledge(
     if run_ok && !dry_run {
         let notes = ralphy_core::knowledge::loose_notes(ws);
         if !notes.is_empty() {
-            info!(count = notes.len() as u64, "consolidating knowledge");
+            ralphy_core::emit::knowledge_consolidating(notes.len() as u64);
             let run_dir = ws.run_dir(stamp);
             let (model, effort) = crate::consolidate_defaults(agent);
             match crate::run_consolidation(agent, ws, &run_dir, model, effort, 30, &notes) {
-                Ok(archived) => info!(count = archived as u64, "knowledge consolidated"),
+                Ok(archived) => ralphy_core::emit::knowledge_consolidated(archived as u64),
                 Err(e) => {
                     warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry")
                 }
@@ -71,18 +71,13 @@ pub(crate) fn emit_run_finished(
         .iter()
         .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
         .count() as u64;
-    let u = &report.run_usage;
-    info!(
-        outcome = outcome_of(&report.stop),
+    ralphy_core::emit::run_finished(
+        outcome_of(&report.stop),
         issues_done,
         issues_skipped,
-        issues_total = queue_len as u64,
-        up = u.input,
-        cr = u.cache_read,
-        cw = u.cache_creation,
-        out = u.output,
-        duration_s = run_start.elapsed().as_secs(),
-        "run finished"
+        queue_len as u64,
+        &report.run_usage,
+        run_start.elapsed().as_secs(),
     );
 }
 

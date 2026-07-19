@@ -25,13 +25,11 @@ use std::time::{Duration, Instant};
 
 /// The canonical log message every path emits when the watchdog reaps a child.
 ///
-/// The CLI turns run events into `RunEvent`s by matching the tracing message
-/// verbatim, so this being one shared constant is what makes an idle reap look
-/// **identical** to the operator whether it happened over a PTY or over stdout:
-/// same event, same Telegram ping, same CloudEvent. Emit it at `INFO` — the
-/// decoder short-circuits `WARN`/`ERROR` into a generic notice, which would sink
-/// this back into per-path noise.
-pub const IDLE_REAPED_MSG: &str = "idle watchdog — no progress, reaping the child";
+/// Owned by [`ralphy_core::emit`] (ADR-0039 §1) and re-exported here so the
+/// historical `ralphy_adapter_support::IDLE_REAPED_MSG` path keeps resolving —
+/// emit it through [`ralphy_core::emit::idle_reaped`], which also pins the `INFO`
+/// level the decoder needs to keep the reap a first-class event.
+pub use ralphy_core::emit::IDLE_REAPED_MSG;
 
 /// A shared "something happened at T" beacon, written by whichever thread
 /// observes progress and read by the poll loop.
