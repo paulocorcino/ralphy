@@ -360,6 +360,178 @@ mod tests {
         }
     }
 
+    /// One row of [`ADAPTER_EMIT_SITES`]: `(repo-relative file, planning calls,
+    /// executing calls, planning args, executing args)`.
+    type AdapterEmitSite = (
+        &'static str,
+        usize,
+        usize,
+        &'static [&'static str],
+        &'static [&'static str],
+    );
+
+    /// The nine adapter call sites of `emit::planning`/`emit::executing`, pinned
+    /// per site.
+    ///
+    /// The round-trips in `super::super::roundtrip` prove the two HELPERS; they
+    /// cannot prove that each of the nine callers passes the right arguments —
+    /// there are 9 sites and only 2 helpers. Two drifts live in exactly that gap
+    /// and compile silently:
+    ///
+    /// * `model` and `effort` are ADJACENT `&str` parameters, so swapping them at
+    ///   one site labels that adapter's phase with its effort. Fragments are
+    ///   matched IN ORDER, which is what pins argument POSITION — the named
+    ///   `model = …` / `effort = …` bindings the pre-Fase-1b `info!`s carried.
+    /// * only the 2 claude sites pass a real `budget_min`; the other 7 pass `0`.
+    ///   Editing a claude site down to `0` — it then reads exactly like the codex
+    ///   line two files over — silently zeroes the per-issue countdown in the TUI
+    ///   and the Telegram card (both files carry a "keep stable" comment saying so).
+    ///
+    /// The call counts additionally pin PRESENCE: `no_vocabulary_literal_outside_emit`
+    /// is a negative scan, so an adapter that stops emitting altogether would make
+    /// it *more* satisfied while the run's phase never advances.
+    const ADAPTER_EMIT_SITES: &[AdapterEmitSite] = &[
+        (
+            "crates/ralphy-agent-claude/src/lib.rs",
+            1,
+            0,
+            &[
+                "\"claude -p --staged\"",
+                "\"claude -p\"",
+                "self.plan_model.as_deref().unwrap_or(\"\")",
+                "self.plan_effort.as_deref().unwrap_or(\"medium\")",
+            ],
+            &[],
+        ),
+        (
+            "crates/ralphy-agent-claude/src/interactive.rs",
+            0,
+            1,
+            &[],
+            &[
+                "interactive claude over the PTY",
+                "self.exec.max_minutes_per_issue",
+                "&exec_model",
+                "self.exec.exec_effort.as_deref().unwrap_or(\"medium\")",
+            ],
+        ),
+        (
+            "crates/ralphy-agent-claude/src/headless.rs",
+            0,
+            1,
+            &[],
+            &[
+                "headless claude -p loop --max-calls",
+                "self.exec.max_minutes_per_issue",
+                "&exec_model",
+                "self.exec.exec_effort.as_deref().unwrap_or(\"medium\")",
+            ],
+        ),
+        (
+            "crates/ralphy-agent-codex/src/lib.rs",
+            1,
+            1,
+            &["\"codex exec\"", "&model", "DEFAULT_CODEX_EFFORT"],
+            &["\"codex exec\"", "0", "&model", "effort"],
+        ),
+        (
+            "crates/ralphy-agent-kimi/src/lib.rs",
+            1,
+            1,
+            &["\"kimi --print\"", "&model", "\"\""],
+            &["\"kimi --print\"", "0", "&model", "\"\""],
+        ),
+        (
+            "crates/ralphy-agent-opencode/src/lib.rs",
+            1,
+            1,
+            &[
+                "\"opencode run\"",
+                "self.model.as_deref().unwrap_or(\"\")",
+                "self.variant.as_deref().unwrap_or(\"\")",
+            ],
+            &[
+                "\"opencode run\"",
+                "0",
+                "self.model.as_deref().unwrap_or(\"\")",
+                "self.variant.as_deref().unwrap_or(\"\")",
+            ],
+        ),
+    ];
+
+    /// Every `call(`-to-matching-`)` slice in `src`, so a fragment match is scoped
+    /// to ONE invocation. Paren-counted rather than `find(')')`: every one of these
+    /// call sites nests parens (`as_deref().unwrap_or("")`, `format!(…)`).
+    fn call_slices<'a>(src: &'a str, call: &str) -> Vec<&'a str> {
+        let mut out = Vec::new();
+        let mut from = 0usize;
+        while let Some(rel) = src[from..].find(call) {
+            let open = from + rel + call.len();
+            let mut depth = 1usize;
+            let mut end = open;
+            for (i, c) in src[open..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = open + i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            out.push(&src[open..end]);
+            from = open;
+        }
+        out
+    }
+
+    /// True when every fragment occurs in `slice` in the given ORDER — which is
+    /// what turns a containment check into an argument-POSITION check.
+    fn contains_in_order(slice: &str, fragments: &[&str]) -> bool {
+        let mut from = 0usize;
+        for f in fragments {
+            match slice[from..].find(f) {
+                Some(rel) => from += rel + f.len(),
+                None => return false,
+            }
+        }
+        true
+    }
+
+    #[test]
+    fn adapter_emit_sites_pass_the_right_arguments() {
+        for (file, n_plan, n_exec, plan_args, exec_args) in ADAPTER_EMIT_SITES {
+            let src = std::fs::read_to_string(repo_root().join(file))
+                .unwrap_or_else(|e| panic!("reading adapter emitter {file}: {e}"));
+            for (helper, want, args) in [
+                ("emit::planning(", *n_plan, *plan_args),
+                ("emit::executing(", *n_exec, *exec_args),
+            ] {
+                let sites = call_slices(&src, helper);
+                assert_eq!(
+                    sites.len(),
+                    want,
+                    "{file} has {} `{helper}` call(s), expected {want} — an adapter \
+                     that stops emitting leaves the run's phase stuck, and the \
+                     negative literal scan cannot see it",
+                    sites.len()
+                );
+                if want == 0 {
+                    continue;
+                }
+                assert!(
+                    sites.iter().any(|s| contains_in_order(s, args)),
+                    "no `{helper}` call in {file} passes {args:?} in that ORDER — \
+                     an argument was swapped, dropped, or rewritten. `model` and \
+                     `effort` are adjacent `&str`s, so a swap compiles. Candidates:\n{sites:#?}"
+                );
+            }
+        }
+    }
+
     /// The sources that used to hold the vocabulary literals and must no longer:
     /// every migrated emitter, across all four crates.
     const MIGRATED_EMITTERS: &[&str] = &[

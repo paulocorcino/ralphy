@@ -146,6 +146,24 @@ fn roundtrip_executing() {
     );
 }
 
+/// `Executing` decodes `model` through `unwrap_or_default()` rather than keeping
+/// the `Option`, so it needs its own absent-value proof: 4 of the 5 executing
+/// sites pass `""` for `effort`, and `budget_min = 0` is the "no budget reported"
+/// sentinel the other 3 adapters emit.
+#[test]
+fn roundtrip_executing_absent_model_and_effort() {
+    let ev = one(|| ralphy_core::emit::executing("kimi --print", 0, "", ""));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Executing {
+            number: 0,
+            budget_min: 0,
+            model: String::new(),
+            effort: None,
+        })
+    );
+}
+
 #[test]
 fn roundtrip_issue_started() {
     let ev = one(|| ralphy_core::emit::issue_started(7, "a title"));
