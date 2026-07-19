@@ -24,10 +24,12 @@ pub struct EventFields {
     pub order: Option<String>,
     /// The first `stop-before` issue number on a `queue built` event (0 = none).
     pub stop_before: Option<u64>,
-    /// The enriched per-issue snapshot on a `queue built` event (ADR-0020): the
-    /// JSON array string the CLI serializes from `resolve_queue_view`. Absent on a
-    /// legacy `queue built` with no snapshot; parsed back into a `Value` by the
-    /// decoder (`Value::Null` when absent or unparseable).
+    /// The per-issue JSON array string, carried by TWO events: the enriched
+    /// snapshot on `queue built` (ADR-0020, serialized from `resolve_queue_view`)
+    /// and the closing rollup on `run finished` (#224, serialized from
+    /// `RunSummary::issues_json`). Absent on a legacy emission of either; parsed
+    /// back into a `Value` by the decoder (`Value::Null` when absent or
+    /// unparseable).
     pub issues_json: Option<String>,
     pub outcome: Option<String>,
     pub reset: Option<String>,
