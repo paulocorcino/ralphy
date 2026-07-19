@@ -115,7 +115,16 @@ impl ClaudeAgent {
         };
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
-        info!(model = %exec_model, effort = self.exec.exec_effort.as_deref().unwrap_or("medium"), remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
+        ralphy_core::emit::executing(
+            if self.exec.remote_control {
+                "interactive claude over the PTY --remote-control"
+            } else {
+                "interactive claude over the PTY"
+            },
+            self.exec.max_minutes_per_issue,
+            &exec_model,
+            self.exec.exec_effort.as_deref().unwrap_or("medium"),
+        );
 
         let transcript_dir = self.transcript_dir(ws);
         let transcript_since = SystemTime::now()

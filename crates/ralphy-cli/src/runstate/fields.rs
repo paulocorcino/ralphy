@@ -37,6 +37,10 @@ pub struct EventFields {
     /// Reasoning effort label (`low`/`medium`/`high`); adapters also report it as
     /// `variant` (OpenCode), folded into the same slot.
     pub effort: Option<String>,
+    /// Readable child command on `planning` / `executing`. Decoder-inert: recorded
+    /// (and pinned by the round-trips) but never read by `event_to_runevent` — it
+    /// exists for `ralphy.log` and for downstream sinks that want the command.
+    pub cmd: Option<String>,
     /// Per-phase token breakdown carried on `plan written` / `green — issue
     /// closed`: `up` input, `cr` cache-read, `cw` cache-write, `out` output.
     pub up: Option<u64>,
@@ -108,6 +112,7 @@ impl Default for EventFields {
             model: None,
             tokens: None,
             effort: None,
+            cmd: None,
             up: None,
             cr: None,
             cw: None,
@@ -177,6 +182,7 @@ impl Visit for EventFields {
             "reset" => self.reset = Some(value.to_string()),
             "model" => self.model = clean_opt(value),
             "effort" | "variant" => self.effort = clean_opt(value),
+            "cmd" => self.cmd = clean_opt(value),
             "label" => self.label = clean_opt(value),
             "repo" => self.repo = Some(value.to_string()),
             "queue_labels" => self.queue_labels = Some(value.to_string()),
@@ -217,6 +223,7 @@ impl Visit for EventFields {
             // decoder never carries a literal `None` or `""` into a display label.
             "model" => self.model = clean_opt(&rendered),
             "effort" | "variant" => self.effort = clean_opt(&rendered),
+            "cmd" => self.cmd = clean_opt(&rendered),
             // The `%`-formatted (Display) run-boundary fields arrive here via
             // tracing's Display wrapper; store them raw (no quote stripping — these
             // are plain strings, not `Option`/`&str` Debug forms).

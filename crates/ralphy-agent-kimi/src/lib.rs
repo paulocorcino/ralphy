@@ -133,7 +133,7 @@ impl Agent for KimiAgent {
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
             let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            info!(model = %model, "planning with kimi --print");
+            ralphy_core::emit::planning("kimi --print", &model, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -199,7 +199,7 @@ impl Agent for KimiAgent {
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
             let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            info!(model = %model, "executing with kimi --print");
+            ralphy_core::emit::executing("kimi --print", 0, &model, "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
             let r = self.run_kimi(cmd, PROMPT_EXECUTE, timeout)?;

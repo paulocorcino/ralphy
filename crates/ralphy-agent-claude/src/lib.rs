@@ -24,7 +24,6 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use ralphy_adapter_support::{list_session_files, session_files_appeared};
 use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
-use tracing::info;
 
 mod api_watch;
 mod auth;
@@ -194,11 +193,14 @@ impl Agent for ClaudeAgent {
             args.push(e.clone());
         }
 
-        info!(
-            model = self.plan_model.as_deref().unwrap_or(""),
-            effort = self.plan_effort.as_deref().unwrap_or("medium"),
-            staged,
-            "planning with claude -p"
+        ralphy_core::emit::planning(
+            if staged {
+                "claude -p --staged"
+            } else {
+                "claude -p"
+            },
+            self.plan_model.as_deref().unwrap_or(""),
+            self.plan_effort.as_deref().unwrap_or("medium"),
         );
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)

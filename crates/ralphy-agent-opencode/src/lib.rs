@@ -170,7 +170,11 @@ impl Agent for OpenCodeAgent {
                 ws.repo_root(),
                 &skills_config,
             );
-            info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
+            ralphy_core::emit::planning(
+                "opencode run",
+                self.model.as_deref().unwrap_or(""),
+                self.variant.as_deref().unwrap_or(""),
+            );
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -244,7 +248,12 @@ impl Agent for OpenCodeAgent {
                 ws.repo_root(),
                 &skills_config,
             );
-            info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
+            ralphy_core::emit::executing(
+                "opencode run",
+                0,
+                self.model.as_deref().unwrap_or(""),
+                self.variant.as_deref().unwrap_or(""),
+            );
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);

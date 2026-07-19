@@ -91,12 +91,14 @@ impl ClaudeAgent {
         let deadline = self.issue_deadline();
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
-        info!(
-            model = %exec_model,
-            effort = self.exec.exec_effort.as_deref().unwrap_or("medium"),
-            max_calls = self.exec.max_exec_calls,
-            budget_min = self.exec.max_minutes_per_issue,
-            "executing with headless claude -p loop"
+        ralphy_core::emit::executing(
+            &format!(
+                "headless claude -p loop --max-calls {}",
+                self.exec.max_exec_calls
+            ),
+            self.exec.max_minutes_per_issue,
+            &exec_model,
+            self.exec.exec_effort.as_deref().unwrap_or("medium"),
         );
 
         let mut no_commit_streak = 0u32;

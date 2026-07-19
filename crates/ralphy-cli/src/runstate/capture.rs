@@ -253,91 +253,6 @@ mod tests {
         ));
     }
 
-    /// The consumed messages whose emitter cannot be driven from a unit test (an
-    /// adapter that spawns a vendor CLI): `(message, repo-relative emitter file,
-    /// source fragments)`.
-    ///
-    /// Only the nine per-adapter `planning with …` / `executing with …` strings
-    /// remain: the four CLI rows this table used to carry (`queue built`,
-    /// `run started`, `consolidating knowledge`, `knowledge consolidated`) moved
-    /// to `ralphy_core::emit` in Fase 1a and are now proved by real round-trip
-    /// tests (`super::super::roundtrip`) rather than by source-text fragments.
-    ///
-    /// Each row asserts on SHORT fragments so `cargo fmt` rewrapping an `info!`
-    /// cannot red it — but a changed message, a dropped field, or a flipped
-    /// `%`-vs-`?` sigil does. That sigil split is exactly the drift class
-    /// ADR-0039 §2 names: `%model` reaches the decoder as `x`, `?model` as
-    /// `Some("x")`.
-    ///
-    /// Deliberately absent: `crates/ralphy-agent-claude/src/interactive.rs`'s
-    /// `api degraded past kill — re-spawning child once against plan.md` has NO
-    /// decoder arm, so it is not consumed vocabulary and this issue does not pin
-    /// it.
-    ///
-    /// The nine `planning with …` / `executing with …` strings are pinned as they
-    /// stand today; ADR-0039 Decision 3 rewrites them to `planning`/`executing` +
-    /// a `cmd` field in Fase 1 **on purpose** — a red here after that lands is the
-    /// intended signal, not a regression.
-    const EMITTER_SITES: &[(&str, &str, &[&str])] = &[
-        (
-            "planning with claude -p",
-            "crates/ralphy-agent-claude/src/lib.rs",
-            &[
-                "model = self.plan_model.as_deref().unwrap_or(\"\")",
-                "effort = self.plan_effort.as_deref().unwrap_or(\"medium\")",
-                "staged,",
-            ],
-        ),
-        (
-            "planning with codex exec",
-            "crates/ralphy-agent-codex/src/lib.rs",
-            &["model = %model", "effort = DEFAULT_CODEX_EFFORT"],
-        ),
-        (
-            "planning with opencode run",
-            "crates/ralphy-agent-opencode/src/lib.rs",
-            &["model = ?self.model", "variant = ?self.variant"],
-        ),
-        (
-            "planning with kimi --print",
-            "crates/ralphy-agent-kimi/src/lib.rs",
-            &["model = %model"],
-        ),
-        (
-            "executing with interactive claude over the PTY",
-            "crates/ralphy-agent-claude/src/interactive.rs",
-            &[
-                "model = %exec_model",
-                "effort = self.exec.exec_effort.as_deref().unwrap_or(\"medium\")",
-                "budget_min = self.exec.max_minutes_per_issue",
-            ],
-        ),
-        (
-            "executing with headless claude -p loop",
-            "crates/ralphy-agent-claude/src/headless.rs",
-            &[
-                "model = %exec_model",
-                "effort = self.exec.exec_effort.as_deref().unwrap_or(\"medium\")",
-                "budget_min = self.exec.max_minutes_per_issue",
-            ],
-        ),
-        (
-            "executing with codex exec",
-            "crates/ralphy-agent-codex/src/lib.rs",
-            &["model = %model", "effort,"],
-        ),
-        (
-            "executing with opencode run",
-            "crates/ralphy-agent-opencode/src/lib.rs",
-            &["model = ?self.model", "variant = ?self.variant"],
-        ),
-        (
-            "executing with kimi --print",
-            "crates/ralphy-agent-kimi/src/lib.rs",
-            &["model = %model"],
-        ),
-    ];
-
     /// The workspace root, reached from this crate's manifest dir without a
     /// hard-coded separator (Windows + Linux both run this suite).
     fn repo_root() -> std::path::PathBuf {
@@ -346,10 +261,11 @@ mod tests {
             .join("..")
     }
 
-    /// The 20 messages `ralphy_core::emit` owns a helper for AND that no other
-    /// pin covers (ADR-0039 §1) — the 15 emitted by the core runner plus the 5
-    /// the CLI emits through the same module. The 3 shared adapter constants
-    /// `emit` also owns are pinned separately (below), for 23 in total.
+    /// The 22 messages `ralphy_core::emit` owns a helper for AND that no other
+    /// pin covers (ADR-0039 §1) — the 15 emitted by the core runner, the 5 the
+    /// CLI emits through the same module, and the 2 the vendor adapters emit.
+    /// The 3 shared adapter constants `emit` also owns are pinned separately
+    /// (below), for 25 in total.
     ///
     /// Every one has a round-trip test in `super::super::roundtrip`; the
     /// 15 core ones additionally carry a characterization pin in
@@ -379,6 +295,8 @@ mod tests {
         "run finished",                                      // CLI — roundtrip_run_finished
         "consolidating knowledge", // CLI — roundtrip_knowledge_consolidating
         "knowledge consolidated",  // CLI — roundtrip_knowledge_consolidated
+        "planning",                // adapters — roundtrip_planning
+        "executing",               // adapters — roundtrip_executing
     ];
 
     /// How many messages `event_to_runevent`'s `match` consumes, read off the
@@ -398,9 +316,10 @@ mod tests {
             .count()
     }
 
-    /// Every message pinned across both crates: the 9 remaining `EMITTER_SITES`
-    /// rows (the per-adapter phase strings), the 3 shared adapter constants, and
-    /// the 20 `ralphy_core::emit`-owned messages — 32 in all.
+    /// Every message pinned across both crates: the 3 shared adapter constants
+    /// and the 22 `ralphy_core::emit`-owned messages — 25 in all. No
+    /// source-fragment pins remain: every message now has a real emit helper, so
+    /// `super::super::roundtrip` proves the encoding by execution.
     ///
     /// The closure this guards: each one must be genuinely CONSUMED vocabulary
     /// (`event_to_runevent` returns `Some`), and the count must match the decoder's
@@ -414,9 +333,8 @@ mod tests {
         // proves the historical import path still resolves (ADR-0039 D4).
         use ralphy_adapter_support::{API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG};
 
-        let mut pinned: Vec<&str> = EMITTER_SITES.iter().map(|(m, _, _)| *m).collect();
+        let mut pinned: Vec<&str> = EMIT_OWNED_MESSAGES.to_vec();
         pinned.extend([API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG]);
-        pinned.extend(EMIT_OWNED_MESSAGES);
 
         // Counted off the decoder's OWN source, not restated as a second constant:
         // an arm added to `event_to_runevent` without a pin reds HERE.
@@ -442,45 +360,6 @@ mod tests {
         }
     }
 
-    /// The source text of the `info!(…)` invocation that emits `message` — from
-    /// the nearest preceding `info!(` to the message literal.
-    ///
-    /// Scoping to the invocation, not the whole file, is what makes a fragment pin
-    /// discriminate: two emitters in one file (codex's `planning with codex exec`
-    /// and `executing with codex exec`) share the `model = %model` fragment, so a
-    /// file-wide `contains` would let either one satisfy both rows.
-    /// Every candidate site: the message literal occurs in prose comments too
-    /// (`run.rs` names `info!("queue built")` twice in doc text), so a row matches
-    /// when ANY candidate carries all its fragments. A comment's candidate is an
-    /// empty/short slice that carries none, so this never launders a real drift.
-    fn emit_sites<'a>(src: &'a str, message: &str) -> Vec<&'a str> {
-        let literal = format!("\"{message}\"");
-        let mut sites = Vec::new();
-        let mut from = 0usize;
-        while let Some(rel) = src[from..].find(&literal) {
-            let end = from + rel;
-            if let Some(site) = enclosing_info_call(&src[..end]) {
-                sites.push(site);
-            }
-            from = end + literal.len();
-        }
-        sites
-    }
-
-    /// The `info!(`-to-here slice, but ONLY when `info!(` is the macro call the
-    /// literal actually sits in.
-    ///
-    /// A bare `rfind("info!(")` would skip backwards over an intervening
-    /// `warn!(`/`error!(` to an earlier, unrelated `info!(` — so flipping an
-    /// emitter's level (the drift that makes the decoder collapse it to a generic
-    /// `Notice`, `event.rs:173-179`) would leave the row green. Rejecting a
-    /// candidate that spans a `;` or another `!(` keeps the slice inside one call.
-    fn enclosing_info_call(before: &str) -> Option<&str> {
-        let start = before.rfind("info!(")?;
-        let body = &before[start + "info!(".len()..];
-        (!body.contains(';') && !body.contains("!(")).then_some(&before[start..])
-    }
-
     /// The sources that used to hold the vocabulary literals and must no longer:
     /// every migrated emitter, across all four crates.
     const MIGRATED_EMITTERS: &[&str] = &[
@@ -491,6 +370,13 @@ mod tests {
         "crates/ralphy-cli/src/run/report.rs",
         "crates/ralphy-adapter-support/src/headless.rs",
         "crates/ralphy-agent-claude/src/interactive.rs",
+        // The five adapter sources that owned the nine per-adapter phase strings
+        // until Fase 1b collapsed them into `emit::planning`/`emit::executing`.
+        "crates/ralphy-agent-claude/src/lib.rs",
+        "crates/ralphy-agent-claude/src/headless.rs",
+        "crates/ralphy-agent-codex/src/lib.rs",
+        "crates/ralphy-agent-kimi/src/lib.rs",
+        "crates/ralphy-agent-opencode/src/lib.rs",
         // The two files that USED to own the shared constants: they are now
         // `pub use ralphy_core::emit::…` re-exports, and a re-introduced literal
         // here would be the most natural way to undo ADR-0039 D4 by accident.
@@ -534,8 +420,10 @@ mod tests {
             emit::RUN_FINISHED_MSG,
             emit::KNOWLEDGE_CONSOLIDATING_MSG,
             emit::KNOWLEDGE_CONSOLIDATED_MSG,
+            emit::PLANNING_MSG,
+            emit::EXECUTING_MSG,
         ];
-        assert_eq!(vocabulary.len(), 23, "every emit-owned message is scanned");
+        assert_eq!(vocabulary.len(), 25, "every emit-owned message is scanned");
 
         for file in MIGRATED_EMITTERS {
             let src = std::fs::read_to_string(repo_root().join(file))
@@ -548,27 +436,6 @@ mod tests {
                      `…_MSG` constant) instead"
                 );
             }
-        }
-    }
-
-    #[test]
-    fn emitter_sites_are_pinned() {
-        for (message, file, fragments) in EMITTER_SITES {
-            let path = repo_root().join(file);
-            let src = std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("reading emitter {file} for `{message}`: {e}"));
-            let sites = emit_sites(&src, message);
-            assert!(
-                !sites.is_empty(),
-                "`{message}` must be an `info!` message literal in {file}"
-            );
-            assert!(
-                sites
-                    .iter()
-                    .any(|site| fragments.iter().all(|f| site.contains(f))),
-                "no `info!` site in {file} emits `{message}` with all of {fragments:?} — \
-                 an emitter field or its %/? encoding drifted. Candidates:\n{sites:#?}"
-            );
         }
     }
 }

@@ -84,10 +84,66 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
         RunEvent::RunStarted { .. } => "roundtrip_run_started",
         RunEvent::RunFinished { .. } => "roundtrip_run_finished",
         RunEvent::Notice { .. } => "roundtrip_level_wins_over_message",
-        RunEvent::Planning { .. } | RunEvent::Executing { .. } => {
-            "deferred to Fase 1b — the per-adapter phase strings still own these"
-        }
+        RunEvent::Planning { .. } => "roundtrip_planning",
+        RunEvent::Executing { .. } => "roundtrip_executing",
     }
+}
+
+#[test]
+fn roundtrip_planning() {
+    let ev = one(|| ralphy_core::emit::planning("codex exec", "gpt-5-codex", "medium"));
+    assert_eq!(
+        ev.fields.cmd,
+        Some("codex exec".to_string()),
+        "`cmd` must reach the bus even though no decoder arm reads it"
+    );
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Planning {
+            model: Some("gpt-5-codex".into()),
+            effort: Some("medium".into()),
+        })
+    );
+}
+
+/// The encoding-skew collapse: the empty-string form every adapter now uses for an
+/// absent model/effort decodes to `None` — the shape opencode's `?None` rendered.
+#[test]
+fn roundtrip_planning_absent_model_and_effort() {
+    let ev = one(|| ralphy_core::emit::planning("opencode run", "", ""));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Planning {
+            model: None,
+            effort: None,
+        })
+    );
+}
+
+#[test]
+fn roundtrip_executing() {
+    let ev = one(|| {
+        ralphy_core::emit::executing(
+            "interactive claude over the PTY",
+            45,
+            "claude-opus-4",
+            "medium",
+        )
+    });
+    assert_eq!(
+        ev.fields.cmd,
+        Some("interactive claude over the PTY".to_string()),
+        "`cmd` must reach the bus even though no decoder arm reads it"
+    );
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Executing {
+            number: 0,
+            budget_min: 45,
+            model: "claude-opus-4".into(),
+            effort: Some("medium".into()),
+        })
+    );
 }
 
 #[test]

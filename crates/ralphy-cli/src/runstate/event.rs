@@ -9,10 +9,9 @@
 //! incomplete change; `roundtrip::_every_variant_has_a_roundtrip` enforces it at
 //! compile time.
 //!
-//! The ONE remaining literal family is the nine per-adapter `planning with …` /
-//! `executing with …` strings: they are emitted by the vendor adapters and are
-//! Fase 1b's slice (ADR-0039 Decision 3 rewrites them to `planning`/`executing`
-//! plus a `cmd` field).
+//! No message literal remains: the vendor adapters' phase events collapsed into
+//! `emit::planning` / `emit::executing` plus a `cmd` field (ADR-0039 Decision 3),
+//! so every arm below reads a constant.
 
 use tracing::Level;
 
@@ -210,10 +209,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         }),
         // The adapter's planning events carry no issue number; the fold applies
         // the display model/effort to the active issue's planning spinner.
-        "planning with claude -p"
-        | "planning with codex exec"
-        | "planning with opencode run"
-        | "planning with kimi --print" => Some(RunEvent::Planning {
+        ralphy_core::emit::PLANNING_MSG => Some(RunEvent::Planning {
             model: fields.model.clone(),
             effort: fields.effort.clone(),
         }),
@@ -234,11 +230,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         }),
         // The adapter's execution events carry no issue number; the fold applies
         // this to the active issue.
-        "executing with interactive claude over the PTY"
-        | "executing with headless claude -p loop"
-        | "executing with codex exec"
-        | "executing with opencode run"
-        | "executing with kimi --print" => Some(RunEvent::Executing {
+        ralphy_core::emit::EXECUTING_MSG => Some(RunEvent::Executing {
             number,
             budget_min: fields.budget_min.unwrap_or(0),
             model: fields.model.clone().unwrap_or_default(),
@@ -607,7 +599,7 @@ mod tests {
         // The adapter's planning event seeds the planning spinner's model/effort.
         assert_eq!(
             decode(EventFields {
-                message: "planning with claude -p".into(),
+                message: ralphy_core::emit::PLANNING_MSG.into(),
                 model: Some("opus".into()),
                 effort: Some("high".into()),
                 ..Default::default()
@@ -619,7 +611,7 @@ mod tests {
         );
         assert_eq!(
             decode(EventFields {
-                message: "executing with interactive claude over the PTY".into(),
+                message: ralphy_core::emit::EXECUTING_MSG.into(),
                 budget_min: Some(45),
                 model: Some("claude-sonnet-4".into()),
                 effort: Some("medium".into()),
@@ -634,7 +626,7 @@ mod tests {
         );
         assert_eq!(
             decode(EventFields {
-                message: "executing with headless claude -p loop".into(),
+                message: ralphy_core::emit::EXECUTING_MSG.into(),
                 budget_min: Some(30),
                 ..Default::default()
             }),
@@ -742,7 +734,7 @@ mod tests {
         // Telegram card, and the heartbeat phase all stay stuck on "planning".
         assert_eq!(
             decode(EventFields {
-                message: "planning with kimi --print".into(),
+                message: ralphy_core::emit::PLANNING_MSG.into(),
                 model: Some("kimi-code".into()),
                 ..Default::default()
             }),
@@ -753,7 +745,7 @@ mod tests {
         );
         assert_eq!(
             decode(EventFields {
-                message: "executing with kimi --print".into(),
+                message: ralphy_core::emit::EXECUTING_MSG.into(),
                 budget_min: Some(30),
                 model: Some("kimi-code".into()),
                 ..Default::default()

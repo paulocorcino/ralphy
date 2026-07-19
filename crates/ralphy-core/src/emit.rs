@@ -214,6 +214,33 @@ pub fn api_recovered() {
     info!("{}", API_RECOVERED_MSG);
 }
 
+// ── Emitted by the vendor adapters (ADR-0039 Decision 3) ────────────────────
+// One message per phase for every adapter: the readable command rides in `cmd`,
+// so an adapter never adds a field the decoder must learn.
+
+/// See [`planning`].
+pub const PLANNING_MSG: &str = "planning";
+
+/// The adapter started the planning pass for the active issue.
+///
+/// `cmd` is the readable child command (log-only — no decoder arm reads it).
+/// An empty `model`/`effort` decodes to `None`: the CLI's `clean_opt` folds an
+/// empty string into an absent field.
+pub fn planning(cmd: &str, model: &str, effort: &str) {
+    info!(cmd = %cmd, model = %model, effort = %effort, "{}", PLANNING_MSG);
+}
+
+/// See [`executing`].
+pub const EXECUTING_MSG: &str = "executing";
+
+/// The adapter started the execution pass for the active issue.
+///
+/// `budget_min = 0` is the "no per-issue budget reported" sentinel the decoder's
+/// `unwrap_or(0)` already assumes; empty `model`/`effort` decode to `None`.
+pub fn executing(cmd: &str, budget_min: u64, model: &str, effort: &str) {
+    info!(cmd = %cmd, budget_min, model = %model, effort = %effort, "{}", EXECUTING_MSG);
+}
+
 // ── Emitted by the CLI (ADR-0019/-0020/-0021), not by the core runner ────────
 // The vocabulary is owned here regardless of who emits it: one module, one set
 // of constants, one decoder to match against.
