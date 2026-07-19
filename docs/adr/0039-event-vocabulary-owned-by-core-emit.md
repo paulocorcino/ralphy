@@ -159,3 +159,22 @@ generates both.
   the deliberate Decision-3 collapse, which the round-trip tests pin instead.
 - One decoder arm per concept remains the law; the per-adapter arm family was
   the only violation and this removes it.
+
+## Amendment (Fase 1a, #220): the `tracing` target collapses to `ralphy_core::emit`
+
+Discovered while migrating: a helper cannot forward its caller's module path.
+`tracing` builds each callsite's `Metadata` in a `static`, so `target:` must be
+a compile-time constant — every event emitted through an `emit` helper carries
+`target = "ralphy_core::emit"`, no matter which crate called it. A `run finished`
+emitted by the CLI no longer reads `ralphy::run::report`.
+
+Accepted, not worked around. It is safe because nothing routes on target: the
+decoder ignores it (`event.rs`, `let _ = target;`), the default filter carries no
+per-target directive (`run/wiring.rs`, `EnvFilter::new("info")`), and neither
+delivery loop-guard marker (`events::sink`, `telegram::notifier`) collides with
+it. The byte-identity claim above is over `(message, fields, level)` — that is
+preserved exactly, and the Fase-0 characterization pins assert it verbatim.
+
+Do NOT "fix" this by taking a `target` parameter: `tracing`'s macro will not
+accept a runtime value there. A future need for per-emitter targets means giving
+up the single-module design, not patching the helpers.
