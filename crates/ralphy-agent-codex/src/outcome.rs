@@ -161,7 +161,9 @@ mod tests {
 
     #[test]
     fn codex_degraded_ignores_healthy_and_terminal_lines() {
-        assert!(!is_codex_api_degraded("all steps green\nRALPHY_DONE_EXIT\n"));
+        assert!(!is_codex_api_degraded(
+            "all steps green\nRALPHY_DONE_EXIT\n"
+        ));
         // The logged-out log carries `Reconnecting...` next to its 401 — the auth
         // guard must win so a real auth failure is not papered over as degraded.
         assert!(!is_codex_api_degraded(

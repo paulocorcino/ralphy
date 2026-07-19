@@ -249,11 +249,13 @@ mod tests {
         // reap the child before the ApiWatch respawn (#149) gets its chance. If the
         // default idle window drops to or below the kill, the idle reap silently
         // preempts the API recovery attempt.
+        // Bound to locals so clippy sees a runtime comparison, not a const assert:
+        // the point is to FAIL the build if either value ever crosses the other.
+        let idle_default = ralphy_core::DEFAULT_INTERACTIVE_IDLE_MINUTES;
+        let api_watch_kill = API_WATCH_KILL_MINUTES;
         assert!(
-            ralphy_core::DEFAULT_INTERACTIVE_IDLE_MINUTES > API_WATCH_KILL_MINUTES,
-            "DEFAULT_INTERACTIVE_IDLE_MINUTES ({}) must stay above the ApiWatch kill ({} min): lowering it below the kill silently preempts the #149 API respawn — the interactive idle watchdog reaps the child before the recovery attempt fires (issue #217 Part B)",
-            ralphy_core::DEFAULT_INTERACTIVE_IDLE_MINUTES,
-            API_WATCH_KILL_MINUTES
+            idle_default > api_watch_kill,
+            "DEFAULT_INTERACTIVE_IDLE_MINUTES ({idle_default}) must stay above the ApiWatch kill ({api_watch_kill} min): lowering it below the kill silently preempts the #149 API respawn — the interactive idle watchdog reaps the child before the recovery attempt fires (issue #217 Part B)"
         );
     }
 

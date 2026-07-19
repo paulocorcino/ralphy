@@ -216,9 +216,7 @@ mod tests {
         // Terminal auth (`LLM not set`) and usage limit (`access_terminated_error`)
         // are excluded — they have their own handling.
         assert!(!is_kimi_api_degraded("Error: LLM not set"));
-        assert!(!is_kimi_api_degraded(
-            "'type': 'access_terminated_error'}}"
-        ));
+        assert!(!is_kimi_api_degraded("'type': 'access_terminated_error'}}"));
     }
 
     #[test]
