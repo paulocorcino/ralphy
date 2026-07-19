@@ -26,6 +26,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 ulid.workspace = true
 hostname.workspace = true
+# Ambiguous-width (East-Asian) worst-case measurement for the queue/active-line
+# fit (#226): already in Cargo.lock via console/indicatif, so a direct edge only.
+unicode-width = "0.2"
 ralphy-core.workspace = true
 ralphy-agent-claude.workspace = true
 ralphy-agent-codex.workspace = true
