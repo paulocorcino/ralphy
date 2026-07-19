@@ -463,7 +463,19 @@ fn roundtrip_run_started_folds_the_no_deadline_sentinel() {
 
 #[test]
 fn roundtrip_run_finished() {
-    let ev = one(|| ralphy_core::emit::run_finished("completed", 3, 1, 5, &usage(), 412));
+    let ev = one(|| {
+        ralphy_core::emit::run_finished(
+            "completed",
+            3,
+            1,
+            5,
+            1,
+            0,
+            r#"[{"number":7,"status":"done"}]"#,
+            &usage(),
+            412,
+        )
+    });
     assert_eq!(
         decode(&ev),
         Some(RunEvent::RunFinished {
@@ -471,6 +483,9 @@ fn roundtrip_run_finished() {
             issues_done: 3,
             issues_skipped: 1,
             issues_total: 5,
+            issues_blocked: 1,
+            issues_hitl: 0,
+            issues: serde_json::json!([{"number": 7, "status": "done"}]),
             up: 11,
             cr: 22,
             cw: 33,
@@ -487,7 +502,17 @@ fn roundtrip_run_finished() {
 #[test]
 fn roundtrip_run_finished_no_work() {
     let ev = one(|| {
-        ralphy_core::emit::run_finished("no_work", 0, 0, 0, &ralphy_core::Usage::default(), 0)
+        ralphy_core::emit::run_finished(
+            "no_work",
+            0,
+            0,
+            0,
+            0,
+            0,
+            "",
+            &ralphy_core::Usage::default(),
+            0,
+        )
     });
     assert_eq!(
         decode(&ev),
@@ -496,6 +521,10 @@ fn roundtrip_run_finished_no_work() {
             issues_done: 0,
             issues_skipped: 0,
             issues_total: 0,
+            issues_blocked: 0,
+            issues_hitl: 0,
+            // No rollup on an empty run — the envelope falls back to the fold.
+            issues: serde_json::Value::Null,
             up: 0,
             cr: 0,
             cw: 0,

@@ -159,6 +159,13 @@ pub enum RunEvent {
         issues_done: u64,
         issues_skipped: u64,
         issues_total: u64,
+        issues_blocked: u64,
+        issues_hitl: u64,
+        /// The run's OWN per-issue rollup (a JSON array of `{number, status,
+        /// kind?, blocked_by?}`), the same fold the scalars come from.
+        /// `Value::Null` when the emitter carried none — the envelope then falls
+        /// back to the folded [`super::RunState`].
+        issues: serde_json::Value,
         up: u64,
         cr: u64,
         cw: u64,
@@ -339,6 +346,9 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             issues_done: fields.issues_done.unwrap_or(0),
             issues_skipped: fields.issues_skipped.unwrap_or(0),
             issues_total: fields.issues_total.unwrap_or(0),
+            issues_blocked: fields.issues_blocked.unwrap_or(0),
+            issues_hitl: fields.issues_hitl.unwrap_or(0),
+            issues: parse_issues_snapshot(fields.issues_json.as_deref()),
             up: fields.up.unwrap_or(0),
             cr: fields.cr.unwrap_or(0),
             cw: fields.cw.unwrap_or(0),
@@ -989,6 +999,9 @@ mod tests {
                 issues_done: 3,
                 issues_skipped: 1,
                 issues_total: 5,
+                issues_blocked: 0,
+                issues_hitl: 0,
+                issues: serde_json::Value::Null,
                 up: 100,
                 cr: 200,
                 cw: 50,

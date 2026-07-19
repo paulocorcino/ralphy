@@ -308,11 +308,20 @@ pub const RUN_FINISHED_MSG: &str = "run finished";
 
 /// The run ended cleanly (ADR-0019 boundary event). `usage` is the RUN total —
 /// note it emits `up/cr/cw/out` but deliberately NO `model`: a run spans models.
+/// `issues_json` is the run's own per-issue rollup (a JSON array of
+/// `{number, status, kind?, blocked_by?}`), the SAME fold the four scalars come
+/// from — the CloudEvents envelope prefers it over the console's folded state,
+/// which a dropped event can starve. `""` means a legacy/no-work emission with no
+/// rollup; the envelope then falls back to the fold.
+#[allow(clippy::too_many_arguments)]
 pub fn run_finished(
     outcome: &str,
     issues_done: u64,
     issues_skipped: u64,
     issues_total: u64,
+    issues_blocked: u64,
+    issues_hitl: u64,
+    issues_json: &str,
     usage: &crate::Usage,
     duration_s: u64,
 ) {
@@ -321,6 +330,9 @@ pub fn run_finished(
         issues_done,
         issues_skipped,
         issues_total,
+        issues_blocked,
+        issues_hitl,
+        issues_json = %issues_json,
         up = usage.input,
         cr = usage.cache_read,
         cw = usage.cache_creation,

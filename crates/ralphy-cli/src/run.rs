@@ -19,6 +19,7 @@ use crate::{config, events, runlock, runstate, split_agent, telegram, ui};
 // `pub(crate)` only so `runstate::capture`'s #[cfg(test)] pins can drive the real
 // `emit_run_finished` (#219). Bin crate: no public surface is widened.
 pub(crate) mod report;
+pub(crate) mod summary;
 mod wiring;
 
 use report::{
@@ -447,6 +448,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 
+    // ONE fold of the report, read by both `run.finished` and the final panel.
+    let summary = result
+        .as_ref()
+        .ok()
+        .map(|r| summary::RunSummary::from_report(r, queue.len()));
+
     // Finalize the presenter, consolidate knowledge, emit `run finished`, and tear
     // down the notifier then the sink — in that exact order (ADR-0006/-0007/-0019).
     // Kept before the `?` propagation so a non-green result still finalizes and
@@ -458,15 +465,23 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.dry_run,
         &ws,
         &cfg.stamp,
-        queue.len(),
+        summary.as_ref(),
         run_start,
         notifier,
         events_handle,
     );
 
     let report = result?;
+    let summary = summary.expect("run_queue returned Ok, so the summary was built");
 
-    render_final_panel(presenter, report, branch_mode, args.dry_run, &cfg.repo_root);
+    render_final_panel(
+        presenter,
+        report,
+        &summary,
+        branch_mode,
+        args.dry_run,
+        &cfg.repo_root,
+    );
     Ok(())
 }
 
@@ -713,7 +728,7 @@ fn finalize_run(
     dry_run: bool,
     ws: &Workspace,
     stamp: &str,
-    queue_len: usize,
+    summary: Option<&summary::RunSummary>,
     run_start: std::time::Instant,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events_handle: Option<events::sink::EventsHandle>,
@@ -730,8 +745,8 @@ fn finalize_run(
     // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
     // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the
     // sink shutdown so the worker drains and POSTs it as the run's last event.
-    if let Ok(report) = result.as_ref() {
-        emit_run_finished(report, queue_len, run_start);
+    if let (Some(s), Ok(report)) = (summary, result.as_ref()) {
+        emit_run_finished(s, &report.run_usage, run_start);
     }
 
     // Tear down the notifier (ADR-0007 D4), then the CloudEvents sink: each worker

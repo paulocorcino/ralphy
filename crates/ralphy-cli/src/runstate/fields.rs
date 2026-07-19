@@ -80,6 +80,10 @@ pub struct EventFields {
     pub issues_skipped: Option<u64>,
     /// The queue size on a `run finished` event.
     pub issues_total: Option<u64>,
+    /// The non-green-issue count on a `run finished` event.
+    pub issues_blocked: Option<u64>,
+    /// The human-gate-parked issue count on a `run finished` event.
+    pub issues_hitl: Option<u64>,
     /// The run's wall-clock seconds on a `run finished` event.
     pub duration_s: Option<u64>,
     /// The serialized `[{text,status}]` steps on a `plan written` event (#96): the
@@ -135,6 +139,8 @@ impl Default for EventFields {
             issues_done: None,
             issues_skipped: None,
             issues_total: None,
+            issues_blocked: None,
+            issues_hitl: None,
             duration_s: None,
             steps_json: None,
             plan_md: None,
@@ -162,6 +168,8 @@ impl Visit for EventFields {
             "issues_done" => self.issues_done = Some(value),
             "issues_skipped" => self.issues_skipped = Some(value),
             "issues_total" => self.issues_total = Some(value),
+            "issues_blocked" => self.issues_blocked = Some(value),
+            "issues_hitl" => self.issues_hitl = Some(value),
             "duration_s" => self.duration_s = Some(value),
             _ => {}
         }

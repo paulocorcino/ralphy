@@ -5,9 +5,10 @@
 //! the run's tallies); none participate in run-config wiring (that lives in
 //! [`super::wiring`]).
 
-use ralphy_core::{git, BranchMode, Outcome, StopReason, Workspace};
+use ralphy_core::{git, BranchMode, StopReason, Workspace};
 use tracing::warn;
 
+use super::summary::RunSummary;
 use crate::{pricing, ui, CliAgent};
 
 /// Knowledge consolidation trigger: a non-dry run that finished (`run_ok`) and left
@@ -49,34 +50,24 @@ pub(crate) fn maybe_consolidate_knowledge(
     }
 }
 
-/// Emit the ADR-0019 `run finished` boundary event off a clean `QueueReport`: the
-/// done/skipped tallies (the generic skip bucket kept distinct from a non-green stop
-/// and a human-gate park, mirroring the console panel), the run-usage token split,
-/// and the run's wall-clock `duration_s` anchored on `run_start`.
+/// Emit the ADR-0019 `run finished` boundary event off the run's [`RunSummary`] —
+/// the SAME fold the final panel prints, so the event's tallies and the console's
+/// can never disagree. Carries the four bucket counts, the per-issue rollup, the
+/// run-usage token split, and the wall-clock `duration_s` anchored on `run_start`.
 pub(crate) fn emit_run_finished(
-    report: &ralphy_core::QueueReport,
-    queue_len: usize,
+    summary: &RunSummary,
+    run_usage: &ralphy_core::Usage,
     run_start: std::time::Instant,
 ) {
-    let issues_done = report
-        .worked
-        .iter()
-        .filter(|r| r.outcome == Some(Outcome::Done))
-        .count() as u64;
-    // The generic skip bucket (a dependency/stop-before/human-return/verify
-    // skip), kept distinct from a non-green stop and a human-gate park, mirrors
-    // the console panel's `skipped` tally.
-    let issues_skipped = report
-        .worked
-        .iter()
-        .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
-        .count() as u64;
     ralphy_core::emit::run_finished(
-        outcome_of(&report.stop),
-        issues_done,
-        issues_skipped,
-        queue_len as u64,
-        &report.run_usage,
+        summary.outcome,
+        summary.done,
+        summary.skipped,
+        summary.total,
+        summary.blocked,
+        summary.hitl,
+        &summary.issues_json(),
+        run_usage,
         run_start.elapsed().as_secs(),
     );
 }
@@ -93,48 +84,28 @@ pub(crate) fn emit_run_finished_no_work(run_start: std::time::Instant) {
         0,
         0,
         0,
+        0,
+        0,
+        "",
         &ralphy_core::Usage::default(),
         run_start.elapsed().as_secs(),
     );
 }
 
-/// Assemble and print the final run panel (ADR-0006/-0008): bucket the worked issues
-/// into the done/blocked/skipped/hitl triad, map the stop reason and branch mode into
-/// their panel shapes, compute the run + project token totals and their read-time USD
-/// (ADR-0008 D8/D11, priced per model), and hand the assembled `PanelData` to the
-/// presenter. Consumes `report` (its branch/commits/undo fields move into the panel).
+/// Assemble and print the final run panel (ADR-0006/-0008): read the
+/// done/blocked/skipped/hitl triad off the run's [`RunSummary`] (the same fold
+/// `run.finished` publishes), map the stop reason and branch mode into their panel
+/// shapes, compute the run + project token totals and their read-time USD (ADR-0008
+/// D8/D11, priced per model), and hand the assembled `PanelData` to the presenter.
+/// Consumes `report` (its branch/commits/undo fields move into the panel).
 pub(crate) fn render_final_panel(
     presenter: &ui::PresenterHandle,
     report: ralphy_core::QueueReport,
+    summary: &RunSummary,
     branch_mode: BranchMode,
     dry_run: bool,
     repo_root: &std::path::Path,
 ) {
-    // Bucket the worked issues into the three-way triad defined in the plan.
-    let done = report
-        .worked
-        .iter()
-        .filter(|r| r.outcome == Some(Outcome::Done))
-        .count() as u64;
-    let num_blocked = report
-        .worked
-        .iter()
-        .filter(|r| r.outcome.is_some() && r.outcome != Some(Outcome::Done))
-        .count() as u64;
-    // Issues stalled on a human gate in their path (ADR-0014) get their own
-    // bucket and are kept out of the generic skipped tally, mirroring how the
-    // live card gives them a distinct status.
-    let hitl = report
-        .worked
-        .iter()
-        .filter(|r| r.outcome.is_none() && !r.human_blockers.is_empty())
-        .count() as u64;
-    let skipped = report
-        .worked
-        .iter()
-        .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
-        .count() as u64;
-
     let panel_stop = report.stop.map(|s| match s {
         StopReason::Deadline => ui::PanelStop::Deadline,
         StopReason::NonGreen { number, outcome } => ui::PanelStop::NonGreen {
@@ -175,10 +146,10 @@ pub(crate) fn render_final_panel(
     let data = ui::PanelData {
         branch: report.branch,
         orig_branch: report.orig_branch,
-        done,
-        blocked: num_blocked,
-        skipped,
-        hitl,
+        done: summary.done,
+        blocked: summary.blocked,
+        skipped: summary.skipped,
+        hitl: summary.hitl,
         commits: report.commits,
         stop: panel_stop,
         branch_mode: panel_mode,
@@ -252,6 +223,7 @@ pub(crate) fn empty_queue_scope(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ralphy_core::Outcome;
 
     #[test]
     fn outcome_of_maps_every_stop_reason() {
