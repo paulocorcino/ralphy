@@ -899,11 +899,11 @@ mod tests {
             .collect();
         assert_eq!(phases, vec!["plan", "execute"]);
         assert_eq!(report.run_usage.total(), 8, "3 plan + 5 execute tokens");
-        // The plan usage carries its model straight through; the execute usage
-        // is an `add_tokens` accumulation, which by design never copies
-        // `model`, so its tokens key under `unknown` (pre-refactor behavior).
-        assert_eq!(report.run_usage_by_model["fake-model"].total(), 3);
-        assert_eq!(report.run_usage_by_model["unknown"].total(), 5);
+        // Both phases carry the same model: the plan usage straight through,
+        // and the execute usage via `Usage::fold_usage` over the resume loop's
+        // attempts (#225) — the exec phase no longer drops model to `unknown`.
+        assert_eq!(report.run_usage_by_model["fake-model"].total(), 8);
+        assert!(!report.run_usage_by_model.contains_key("unknown"));
 
         // Branch lifecycle: the run branch was cut, and the clean run
         // returned to the original branch.
