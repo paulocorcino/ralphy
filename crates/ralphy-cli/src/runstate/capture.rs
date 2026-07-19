@@ -354,6 +354,65 @@ mod tests {
             .join("..")
     }
 
+    /// The 16 core-emitted messages, each pinned by a named test in
+    /// `crates/ralphy-core/tests/queue.rs` (that crate cannot see this module, so
+    /// the coverage closure below restates them as literals).
+    const CORE_PINNED_MESSAGES: &[&str] = &[
+        "issue started",                                     // pins_green_run_vocabulary
+        "plan written",                                      // pins_green_run_vocabulary
+        "plan opened",                                       // pins_green_run_vocabulary
+        "plan closed",                                       // pins_green_run_vocabulary
+        "green — issue closed",                              // pins_green_run_vocabulary
+        "non-green — stopping run",                          // pins_skip_and_stop_vocabulary
+        "deadline passed — not starting issue",              // pins_skip_and_stop_vocabulary
+        "stop-before label — halting run before this issue", // pins_skip_and_stop_vocabulary
+        "human-return label — skipping issue",               // pins_skip_and_stop_vocabulary
+        "verify gate failed — skipping issue",               // pins_skip_and_stop_vocabulary
+        "blocked by open issue(s) — skipping",               // pins_blocked_and_split_vocabulary
+        "blocked — waiting on human",                        // pins_blocked_and_split_vocabulary
+        "bundle plan — needs split",                         // pins_blocked_and_split_vocabulary
+        "usage limit — waiting for reset",                   // pins_usage_limit_vocabulary
+        "reset reached — resuming",                          // pins_usage_limit_vocabulary
+    ];
+
+    /// Every message this issue pins, across both crates: the 13 `EMITTER_SITES`
+    /// rows, the 3 shared constants, `run finished`, and the 15 core messages.
+    ///
+    /// The closure this guards: each one must be genuinely CONSUMED vocabulary
+    /// (`event_to_runevent` returns `Some`), and the count must match the decoder's
+    /// arm count — so a NEW arm added without a pin reds here rather than shipping
+    /// unpinned.
+    #[test]
+    fn every_decoder_arm_has_a_pin() {
+        use super::super::event_to_runevent;
+        use ralphy_adapter_support::{API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG};
+
+        let mut pinned: Vec<&str> = EMITTER_SITES.iter().map(|(m, _, _)| *m).collect();
+        pinned.extend([API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG]);
+        pinned.push("run finished");
+        pinned.extend(CORE_PINNED_MESSAGES);
+
+        // 32 = the arm count of `event_to_runevent` (event.rs), counting each
+        // message of the two multi-message arms (4 `planning with …`, 5
+        // `executing with …`) separately.
+        assert_eq!(
+            pinned.len(),
+            32,
+            "pin count drifted from the decoder's arms"
+        );
+
+        let unique: std::collections::BTreeSet<&str> = pinned.iter().copied().collect();
+        assert_eq!(unique.len(), pinned.len(), "a message is pinned twice");
+
+        for message in &pinned {
+            assert!(
+                event_to_runevent("t", message, &info_fields(|_| {})).is_some(),
+                "`{message}` is pinned but the decoder ignores it — \
+                 either the pin or the decoder arm is stale"
+            );
+        }
+    }
+
     #[test]
     fn emitter_sites_are_pinned() {
         for (message, file, fragments) in EMITTER_SITES {
