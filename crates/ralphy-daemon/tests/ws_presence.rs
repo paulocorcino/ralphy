@@ -57,7 +57,7 @@ async fn ws_pushes_live_presence_heartbeat() {
         PathBuf::from("does-not-exist"),
         start,
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
@@ -103,7 +103,7 @@ async fn ws_loop_stops_on_shutdown() {
         PathBuf::from("does-not-exist"),
         start,
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

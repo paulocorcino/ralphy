@@ -16,7 +16,7 @@ use std::time::Duration;
 /// stays a valid, deliberate "no per-issue cap" sentinel, just no longer the
 /// default. The single source of truth for every adapter's default — keep
 /// adapter `Default` impls pointing here rather than re-spelling a literal.
-pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 60;
+pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 0;
 
 /// The finite window the runner-enforced verify gate (ADR-0011) borrows when the
 /// per-issue budget is disabled (`max_minutes_per_issue == 0`). The gate normally

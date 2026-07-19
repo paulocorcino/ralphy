@@ -7,7 +7,7 @@ browser must drive the resident **daemon** (ADR-0032), and the daemon must reach
 each repo's **run**, **config**, and forge state — always *through* `ralphy` in
 the repo's context, never by touching the repo itself. The mock already fixes the
 UI half of the seam (`workbench:action` out, `ralphy:run-event` in; see
-`mocks/workbench-shell/BUILD-GUIDE.md`) and the daemon already fixes the wire half
+`docs/WORKBENCH-BUILD-GUIDE.md`) and the daemon already fixes the wire half
 (the tagged-frame codec in `protocol.rs`, the closed dispatch vocabulary in
 `dispatch.rs`). This ADR fixes the *contract between them* before the
 implementation slices: one integration method, so adding a capability is a table
@@ -218,7 +218,7 @@ from `ralphy:run-event`) is **deferred to the events platform** (ADR-0019, Phase
   backend growth into data: one row (plus a `ralphy` subcommand for a new Mutate).
   The mock's `workbench:action` map and a ~40-line `wb-daemon.js` client are the
   whole browser-side integration; both are documented in
-  `mocks/workbench-shell/BUILD-GUIDE.md`.
+  `docs/WORKBENCH-BUILD-GUIDE.md`.
 - **New `ralphy` subcommands** are required by §6: `branch switch`, `branch
   create`, `label set` — each run-lock-aware. This is the one place the low-impact
   package spends new CLI surface.

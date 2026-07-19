@@ -15,8 +15,12 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::auth;
 
-/// PBKDF2 iteration count. 600k is the current OWASP floor for PBKDF2-HMAC-SHA1.
-const ITERATIONS: u32 = 600_000;
+/// PBKDF2 iteration count for NEW records: OWASP's PBKDF2-HMAC-SHA1 floor
+/// (~1.3M; ADR-0032 amendment §D). Existing hashes carry their own count in the
+/// stored `scheme$iter$salt$hash` header and keep verifying under it, so raising
+/// this is a forward migration — an older 600k hash is re-hashed at this count on
+/// the next `set`, never silently rejected.
+const ITERATIONS: u32 = 1_300_000;
 /// Derived-key length in bytes (SHA-1 output size).
 const DK_LEN: usize = 20;
 /// Salt length in bytes.
@@ -109,16 +113,25 @@ impl FromStr for Hash {
     }
 }
 
-/// The production path of `daemon-password`: `$RALPHY_DAEMON_DIR` when set, else
-/// `<home>/.ralphy/daemon-password`. Mirrors [`auth::token_path`].
+/// The `daemon-password` path inside `dir`. Path-explicit so the security
+/// routes/tests point it at a temp dir without touching the env.
+pub fn password_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-password")
+}
+
+/// The production path of `daemon-password`. Mirrors [`auth::token_path`].
 pub fn password_path() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
-        return Ok(PathBuf::from(dir).join("daemon-password"));
+    Ok(password_path_in(&auth::store_dir()?))
+}
+
+/// Remove the password file at `path` (clear the optional factor). `Ok(())` when
+/// already absent — clearing is idempotent.
+pub fn clear_at(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
     }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon password store")?;
-    Ok(PathBuf::from(home).join(".ralphy").join("daemon-password"))
 }
 
 /// Load a password hash from `path`, or `Ok(None)` when unset (no password
@@ -175,7 +188,7 @@ mod tests {
     fn hash_round_trips_through_string() {
         let h = Hash::hash_password("hunter2");
         let s = h.to_string();
-        assert!(s.starts_with("pbkdf2-sha1$600000$"));
+        assert!(s.starts_with("pbkdf2-sha1$1300000$"));
         let parsed: Hash = s.parse().unwrap();
         assert!(parsed.verify("hunter2"), "a parsed hash still verifies");
         assert!(!parsed.verify("wrong"));
@@ -189,6 +202,34 @@ mod tests {
         save_to(&h, &path).unwrap();
         let loaded = load_from(&path).unwrap().expect("just saved");
         assert!(loaded.verify("s3cret"));
+    }
+
+    #[test]
+    fn clear_at_deletes_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = password_path_in(dir.path());
+        save_to(&Hash::hash_password("pw"), &path).unwrap();
+        assert!(path.exists(), "password written");
+        clear_at(&path).unwrap();
+        assert!(!path.exists(), "clear removes the password file");
+        // Idempotent: clearing an absent password is Ok.
+        clear_at(&path).unwrap();
+        assert!(load_from(&path).unwrap().is_none(), "cleared → unset");
+    }
+
+    #[test]
+    fn an_older_lower_iteration_hash_still_verifies() {
+        // A hash stored before the ADR-0032 §D bump carries its own count; it must
+        // keep verifying (forward migration, not a silent lockout).
+        let salt = [7u8; SALT_LEN];
+        let legacy = Hash {
+            salt,
+            iterations: 600_000,
+            dk: derive("hunter2", &salt, 600_000),
+        };
+        let round_tripped: Hash = legacy.to_string().parse().unwrap();
+        assert!(round_tripped.verify("hunter2"), "legacy 600k hash verifies");
+        assert!(!round_tripped.verify("wrong"));
     }
 
     #[test]

@@ -15,11 +15,12 @@
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
-use crate::{cookie, password, totp};
+use crate::{cookie, epoch, password, totp};
 
 /// Env override for the access token: when set non-empty it wins over the
 /// on-disk token (a spawned daemon can be handed its token this way). Stripped
@@ -27,18 +28,29 @@ use crate::{cookie, password, totp};
 /// `RALPHY_EVENTS_TOKEN`, ADR-0019).
 pub const TOKEN_ENV: &str = "RALPHY_DAEMON_TOKEN";
 
-/// The production path of `daemon-token`: `$RALPHY_DAEMON_DIR` when set (tests
-/// point it at a temp dir), else `<home>/.ralphy/daemon-token` — the same global
-/// store root as `daemon.toml`, never a repo-local `.ralphy/`. Mirrors
-/// [`identity::daemon_toml_path`].
-pub fn token_path() -> Result<PathBuf> {
+/// The global daemon store root: `$RALPHY_DAEMON_DIR` when set (tests point it at
+/// a temp dir), else `<home>/.ralphy` — the same root as `daemon.toml`, never a
+/// repo-local `.ralphy/`. The one env-reading resolver the token/seed/password
+/// paths and the security routes share.
+pub fn store_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
-        return Ok(PathBuf::from(dir).join("daemon-token"));
+        return Ok(PathBuf::from(dir));
     }
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon token store")?;
-    Ok(PathBuf::from(home).join(".ralphy").join("daemon-token"))
+        .context("could not resolve a home directory for the daemon store")?;
+    Ok(PathBuf::from(home).join(".ralphy"))
+}
+
+/// The `daemon-token` path inside `dir`. Path-explicit so the security routes and
+/// tests can point it at a temp dir without touching the process-global env.
+pub fn token_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-token")
+}
+
+/// The production path of `daemon-token`. Mirrors [`identity::daemon_toml_path`].
+pub fn token_path() -> Result<PathBuf> {
+    Ok(token_path_in(&store_dir()?))
 }
 
 /// Load the token from `path`, or `Ok(None)` when the file does not exist yet
@@ -125,34 +137,94 @@ pub struct SessionAuth {
     /// An optional password (defense-in-depth); `None` when the operator did not
     /// enrol one.
     pub password: Option<password::Hash>,
+    /// The live session epoch mixed into every cookie (ADR-0032 amendment §B):
+    /// bumping it invalidates all outstanding cookies at once.
+    pub epoch: epoch::SessionEpoch,
 }
 
 impl SessionAuth {
     /// Whether a `Cookie:` header carries a valid, unexpired session cookie
-    /// signed by this daemon's token.
+    /// signed by this daemon's token AT THE CURRENT EPOCH.
     pub fn cookie_valid(&self, cookie_header: Option<&str>, now: u64) -> bool {
         match cookie::from_cookie_header(cookie_header) {
-            Some(value) => cookie::verify(&self.token, &value, now),
+            Some(value) => cookie::verify(&self.token, self.epoch.get(), &value, now),
             None => false,
         }
     }
 
-    /// Attempt a login: the TOTP `code` must verify (±1 step), AND — when a
-    /// password is enrolled — the supplied `password` must match. On success
-    /// returns a freshly signed cookie value; `None` on any failure (a missing
-    /// password when one is required is a failure).
-    pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
-        if !self.totp.verify(code, now, 1) {
-            return None;
+    /// Attempt a login with anti-replay (amendment §D). The TOTP `code` must match
+    /// a step (±1) that is STRICTLY newer than `last_step`, AND — when a password
+    /// is enrolled — `password` must match. Returns the outcome; on success the
+    /// caller persists `step` (the new last-consumed step) and sends `cookie`.
+    pub fn login_checked(
+        &self,
+        code: &str,
+        password: Option<&str>,
+        now: u64,
+        last_step: Option<u64>,
+    ) -> LoginOutcome {
+        let Some(step) = self.totp.matched_step(code, now, 1) else {
+            return LoginOutcome::BadCredential;
+        };
+        if let Some(last) = last_step {
+            if step <= last {
+                return LoginOutcome::Replayed;
+            }
         }
         if let Some(expected) = &self.password {
             match password {
                 Some(pw) if expected.verify(pw) => {}
-                _ => return None,
+                _ => return LoginOutcome::BadCredential,
             }
         }
-        Some(cookie::sign(&self.token, now + cookie::SESSION_TTL_SECS))
+        let iat = now;
+        let cookie = cookie::sign(
+            &self.token,
+            self.epoch.get(),
+            iat,
+            cookie::slide_exp(iat, now),
+        );
+        LoginOutcome::Ok { cookie, step }
     }
+
+    /// Credential-only login (no anti-replay): a thin wrapper over
+    /// [`login_checked`](Self::login_checked) returning just the cookie. Kept for
+    /// callers/tests that don't thread the last-step store.
+    pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
+        match self.login_checked(code, password, now, None) {
+            LoginOutcome::Ok { cookie, .. } => Some(cookie),
+            _ => None,
+        }
+    }
+
+    /// For an authorized session cookie, the re-issued cookie value when idle-slide
+    /// moves `exp` at least [`cookie::SLIDE_MIN_SECS`] forward (amendment §D), else
+    /// `None`. Preserves `iat`, so the absolute cap is never extended.
+    pub fn slide_cookie(&self, cookie_header: Option<&str>, now: u64) -> Option<String> {
+        let value = cookie::from_cookie_header(cookie_header)?;
+        let claims = cookie::verify_claims(&self.token, self.epoch.get(), &value, now)?;
+        let new_exp = cookie::slide_exp(claims.iat, now);
+        if new_exp.saturating_sub(claims.exp) < cookie::SLIDE_MIN_SECS {
+            return None;
+        }
+        Some(cookie::sign(
+            &self.token,
+            self.epoch.get(),
+            claims.iat,
+            new_exp,
+        ))
+    }
+}
+
+/// The outcome of a [`SessionAuth::login_checked`] attempt.
+pub enum LoginOutcome {
+    /// Credentials verified: send `cookie` and persist `step` as the new last
+    /// consumed TOTP step.
+    Ok { cookie: String, step: u64 },
+    /// The code/password did not verify.
+    BadCredential,
+    /// The code verified but its step was already consumed — a replay.
+    Replayed,
 }
 
 /// How a request is authorized for the daemon's bind. A loopback bind trusts the
@@ -188,6 +260,16 @@ impl AuthPolicy {
                 "a non-localhost bind ({ip}) requires an access token, but none is set — \
                  run `ralphy daemon setup` to mint one, or bind 127.0.0.1"
             ),
+        }
+    }
+
+    /// The wire name of this policy, as reported on `GET /api/session` so the
+    /// UI can render honest, bind-specific auth affordances.
+    pub fn name(&self) -> &'static str {
+        match self {
+            AuthPolicy::Localhost => "localhost",
+            AuthPolicy::Bearer(_) => "bearer",
+            AuthPolicy::Session(_) => "session",
         }
     }
 
@@ -227,6 +309,7 @@ pub fn upgrade_with_session(
     token: Option<String>,
     totp: Option<totp::Seed>,
     password: Option<password::Hash>,
+    epoch: epoch::SessionEpoch,
 ) -> AuthPolicy {
     match (policy, token, totp) {
         (AuthPolicy::Bearer(_), Some(key), Some(seed)) => {
@@ -234,9 +317,281 @@ pub fn upgrade_with_session(
                 token: key,
                 totp: seed,
                 password,
+                epoch,
             }))
         }
         (policy, _, _) => policy,
+    }
+}
+
+/// The `daemon-require-login` flag path inside `dir`. Its PRESENCE means the
+/// operator opted the browser UI behind a login gate — including on a loopback
+/// bind (ADR-0032 amendment §A). Path-explicit like the token/seed stores.
+pub fn require_login_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-require-login")
+}
+
+/// Whether the require-login flag is set under `dir` (the file exists).
+pub fn require_login_enabled_in(dir: &Path) -> bool {
+    require_login_path_in(dir).exists()
+}
+
+/// Set or clear the require-login flag under `dir`. Enabling writes the marker
+/// owner-only; disabling removes it (idempotent).
+pub fn set_require_login_in(dir: &Path, enable: bool) -> Result<()> {
+    let path = require_login_path_in(dir);
+    if enable {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        std::fs::write(&path, "1").with_context(|| format!("writing {}", path.display()))?;
+        set_owner_only(&path)?;
+        Ok(())
+    } else {
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
+        }
+    }
+}
+
+/// Compute the effective policy from the resolved inputs (ADR-0032 §4 +
+/// amendment §A). A loopback bind is `Localhost` UNLESS the operator opted into
+/// require-login AND a TOTP seed is armed AND a signing token exists, in which
+/// case it is gated (`Session`). A network bind keeps the §4 rule: `Bearer`, or
+/// `Session` once a seed is armed. Fails closed exactly where [`for_bind`] does
+/// (a network bind with no token).
+pub fn compute_policy(
+    bind_ip: IpAddr,
+    token: Option<String>,
+    seed: Option<totp::Seed>,
+    password: Option<password::Hash>,
+    require_login: bool,
+    epoch: epoch::SessionEpoch,
+) -> Result<AuthPolicy> {
+    match AuthPolicy::for_bind(bind_ip, token.clone())? {
+        AuthPolicy::Localhost => match (require_login, token, seed) {
+            (true, Some(key), Some(seed)) => Ok(AuthPolicy::Session(Arc::new(SessionAuth {
+                token: key,
+                totp: seed,
+                password,
+                epoch,
+            }))),
+            // Gate requested but no seed/token to enforce it → stay open (the
+            // enable route mints a token and refuses without a seed, so this is
+            // only the transient/invalid case). Fail OPEN here is safe: it is a
+            // loopback bind, the §4 default.
+            _ => Ok(AuthPolicy::Localhost),
+        },
+        bearer @ AuthPolicy::Bearer(_) => {
+            Ok(upgrade_with_session(bearer, token, seed, password, epoch))
+        }
+        session => Ok(session),
+    }
+}
+
+/// The daemon's live auth state (ADR-0032 amendment §A/§B): a runtime-swappable
+/// [`AuthPolicy`] plus the identity needed to recompute it (bind IP, signing
+/// token, session epoch). The middleware and the login/security routes hold an
+/// `Arc<AuthState>`; a security mutation calls [`AuthState::rebuild`] and the
+/// next request sees the new policy — no restart. This is the state §4 captured
+/// once at boot, now made mutable behind an `RwLock` (cheap: the policy clones
+/// via `Arc`, and the guard is never held across an `.await`).
+pub struct AuthState {
+    policy: RwLock<AuthPolicy>,
+    bind_ip: IpAddr,
+    /// The token captured at boot — the signing-key fallback when the on-disk
+    /// token is absent (e.g. handed via env then stripped). A re-mint writes disk,
+    /// which then wins in [`AuthState::rebuild`].
+    boot_token: Option<String>,
+    epoch: epoch::SessionEpoch,
+    /// The anti-replay last-step store path (amendment §D). The real store under
+    /// `boot`; a detached temp path for `localhost`/`fixed` so tests never touch
+    /// the global store.
+    last_step_path: PathBuf,
+    throttle: Mutex<LoginThrottle>,
+}
+
+impl AuthState {
+    /// Boot the auth state for a bind (the composition-root path). Reads the
+    /// on-disk seed/password/require-login flag and computes the initial policy;
+    /// fails closed exactly where [`for_bind`] does.
+    pub fn boot(
+        bind_ip: IpAddr,
+        token: Option<String>,
+        epoch: epoch::SessionEpoch,
+    ) -> Result<Arc<AuthState>> {
+        let last_step_path = totp::last_step_path_in(&store_dir()?);
+        let state = AuthState {
+            policy: RwLock::new(AuthPolicy::Localhost),
+            bind_ip,
+            boot_token: token,
+            epoch,
+            last_step_path,
+            throttle: Mutex::new(LoginThrottle::new()),
+        };
+        state.rebuild()?;
+        Ok(Arc::new(state))
+    }
+
+    /// A localhost auth state for tests and callers that want the frictionless
+    /// default (no token, no gate). Never fails.
+    pub fn localhost() -> Arc<AuthState> {
+        Arc::new(AuthState {
+            policy: RwLock::new(AuthPolicy::Localhost),
+            bind_ip: IpAddr::from([127, 0, 0, 1]),
+            boot_token: None,
+            epoch: epoch::SessionEpoch::in_memory_detached(),
+            last_step_path: detached_last_step_path(),
+            throttle: Mutex::new(LoginThrottle::new()),
+        })
+    }
+
+    /// Wrap a fixed, pre-built policy (tests that drive a specific `Session`/
+    /// `Bearer` policy through the router). Rebuild is a no-op relative to the
+    /// given policy — it is not recomputed from disk.
+    pub fn fixed(policy: AuthPolicy, epoch: epoch::SessionEpoch) -> Arc<AuthState> {
+        Arc::new(AuthState {
+            policy: RwLock::new(policy),
+            bind_ip: IpAddr::from([127, 0, 0, 1]),
+            boot_token: None,
+            epoch,
+            last_step_path: detached_last_step_path(),
+            throttle: Mutex::new(LoginThrottle::new()),
+        })
+    }
+
+    /// The last consumed TOTP step (anti-replay, amendment §D), or `None`.
+    pub fn last_step(&self) -> Option<u64> {
+        totp::load_last_step_from(&self.last_step_path)
+            .ok()
+            .flatten()
+    }
+
+    /// Record a consumed TOTP step. Best-effort: a failed write only weakens
+    /// anti-replay, never blocks a valid login.
+    pub fn record_step(&self, step: u64) {
+        if let Err(e) = totp::save_last_step_to(step, &self.last_step_path) {
+            tracing::warn!(error = %e, "failed to record the TOTP step for anti-replay");
+        }
+    }
+
+    /// The current policy (cheap clone under a short read lock).
+    pub fn policy(&self) -> AuthPolicy {
+        self.policy
+            .read()
+            .expect("auth policy lock poisoned")
+            .clone()
+    }
+
+    /// The live session epoch (shared with any `Session` policy inside).
+    pub fn epoch(&self) -> &epoch::SessionEpoch {
+        &self.epoch
+    }
+
+    /// Recompute the policy from disk (seed, password, require-login flag, token)
+    /// and swap it in. Called after any security mutation so the gate takes effect
+    /// immediately. The signing key is the on-disk token if present (so a re-mint
+    /// wins), else the boot token.
+    pub fn rebuild(&self) -> Result<()> {
+        let dir = store_dir()?;
+        let token = load_token_from(&token_path_in(&dir))?.or_else(|| self.boot_token.clone());
+        let seed = totp::load_seed_from(&totp::seed_path_in(&dir))?;
+        let pw = password::load_from(&password::password_path_in(&dir))?;
+        let require_login = require_login_enabled_in(&dir);
+        let next = compute_policy(
+            self.bind_ip,
+            token,
+            seed,
+            pw,
+            require_login,
+            self.epoch.clone(),
+        )?;
+        *self.policy.write().expect("auth policy lock poisoned") = next;
+        Ok(())
+    }
+
+    /// Invalidate every outstanding session cookie (bump the epoch). Real
+    /// server-side logout (amendment §B).
+    pub fn invalidate_sessions(&self) -> Result<()> {
+        self.epoch.bump().map(|_| ())
+    }
+
+    /// Consult the login throttle: `Err(retry_after_secs)` while locked out,
+    /// `Ok(())` when a login attempt may proceed (amendment §D).
+    pub fn throttle_check(&self) -> std::result::Result<(), u64> {
+        self.throttle
+            .lock()
+            .expect("throttle lock poisoned")
+            .check(Instant::now())
+    }
+
+    /// Record a failed login (grows the lockout) or a success (clears it).
+    pub fn throttle_record(&self, success: bool) {
+        let mut t = self.throttle.lock().expect("throttle lock poisoned");
+        if success {
+            t.reset();
+        } else {
+            t.record_failure(Instant::now());
+        }
+    }
+}
+
+/// A unique throwaway path for a detached auth state's anti-replay store, so
+/// tests and the frictionless `Localhost`/`fixed` states never write the real
+/// global store (mirrors [`epoch::SessionEpoch::in_memory_detached`]).
+fn detached_last_step_path() -> PathBuf {
+    std::env::temp_dir().join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
+}
+
+/// A simple global login throttle (amendment §D): a single-operator daemon does
+/// not need per-IP buckets, only a brake on online brute force of the 6-digit
+/// TOTP. After [`LOCKOUT_THRESHOLD`] consecutive failures it locks out for a
+/// window that doubles each further failure, capped at [`LOCKOUT_MAX_SECS`].
+struct LoginThrottle {
+    failures: u32,
+    locked_until: Option<Instant>,
+}
+
+/// Consecutive failures tolerated before the lockout engages.
+const LOCKOUT_THRESHOLD: u32 = 5;
+/// The base lockout window (doubles per failure past the threshold).
+const LOCKOUT_BASE_SECS: u64 = 5;
+/// The lockout ceiling — never brick the operator out permanently.
+const LOCKOUT_MAX_SECS: u64 = 300;
+
+impl LoginThrottle {
+    fn new() -> LoginThrottle {
+        LoginThrottle {
+            failures: 0,
+            locked_until: None,
+        }
+    }
+
+    /// `Err(secs)` with the remaining lockout, or `Ok(())` when a try may proceed.
+    fn check(&self, now: Instant) -> std::result::Result<(), u64> {
+        match self.locked_until {
+            Some(until) if until > now => Err((until - now).as_secs().max(1)),
+            _ => Ok(()),
+        }
+    }
+
+    fn record_failure(&mut self, now: Instant) {
+        self.failures = self.failures.saturating_add(1);
+        if self.failures >= LOCKOUT_THRESHOLD {
+            let over = self.failures - LOCKOUT_THRESHOLD;
+            let secs = LOCKOUT_BASE_SECS
+                .saturating_mul(1u64 << over.min(6))
+                .min(LOCKOUT_MAX_SECS);
+            self.locked_until = Some(now + Duration::from_secs(secs));
+        }
+    }
+
+    fn reset(&mut self) {
+        self.failures = 0;
+        self.locked_until = None;
     }
 }
 
@@ -289,11 +644,19 @@ mod tests {
         assert!(!policy.authorizes(Some("s3cret")));
     }
 
+    /// A throwaway in-memory epoch for tests (starts at 0; only bumps when a test
+    /// asks). Each call gets its own path so a bump never collides.
+    fn test_epoch() -> epoch::SessionEpoch {
+        let path = std::env::temp_dir().join(format!("ralphy-test-epoch-{}", ulid::Ulid::new()));
+        epoch::SessionEpoch::in_memory(0, path)
+    }
+
     fn session_over(token: &str) -> AuthPolicy {
         AuthPolicy::Session(Arc::new(SessionAuth {
             token: token.to_string(),
             totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
             password: None,
+            epoch: test_epoch(),
         }))
     }
 
@@ -313,6 +676,7 @@ mod tests {
             token: "tok".into(),
             totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
             password: None,
+            epoch: test_epoch(),
         };
         // T=59 → RFC vector code 287082 mints a cookie that then validates.
         let cookie = s
@@ -335,6 +699,7 @@ mod tests {
             token: "tok".into(),
             totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
             password: Some(password::Hash::hash_password("pw")),
+            epoch: test_epoch(),
         };
         assert!(
             s.login("287082", Some("pw"), 59).is_some(),
@@ -358,25 +723,199 @@ mod tests {
             Some("t".into()),
             Some(seed()),
             None,
+            test_epoch(),
         );
         assert!(
             matches!(promoted, AuthPolicy::Session(_)),
             "Bearer + seed → Session"
         );
 
-        let no_seed =
-            upgrade_with_session(AuthPolicy::Bearer("t".into()), Some("t".into()), None, None);
+        let no_seed = upgrade_with_session(
+            AuthPolicy::Bearer("t".into()),
+            Some("t".into()),
+            None,
+            None,
+            test_epoch(),
+        );
         assert!(
             matches!(no_seed, AuthPolicy::Bearer(_)),
             "Bearer + no seed stays Bearer"
         );
 
-        let local =
-            upgrade_with_session(AuthPolicy::Localhost, Some("t".into()), Some(seed()), None);
+        let local = upgrade_with_session(
+            AuthPolicy::Localhost,
+            Some("t".into()),
+            Some(seed()),
+            None,
+            test_epoch(),
+        );
         assert!(
             matches!(local, AuthPolicy::Localhost),
             "Localhost stays Localhost"
         );
+    }
+
+    #[test]
+    fn a_bumped_epoch_invalidates_a_live_session_cookie() {
+        // The end-to-end of amendment §B at the auth layer: a cookie minted at
+        // epoch N stops verifying once the SHARED epoch is bumped.
+        let dir = tempfile::tempdir().unwrap();
+        let ep = epoch::SessionEpoch::load(dir.path().join("epoch")).unwrap();
+        let s = SessionAuth {
+            token: "tok".into(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: None,
+            epoch: ep.clone(),
+        };
+        let cookie = s.login("287082", None, 59).expect("valid login");
+        let header = format!("{}={cookie}", cookie::COOKIE_NAME);
+        assert!(s.cookie_valid(Some(&header), 60), "fresh cookie authorizes");
+        ep.bump().unwrap();
+        assert!(
+            !s.cookie_valid(Some(&header), 60),
+            "a bumped epoch invalidates the live cookie"
+        );
+    }
+
+    #[test]
+    fn login_checked_rejects_a_replayed_step() {
+        let s = SessionAuth {
+            token: "tok".into(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: None,
+            epoch: test_epoch(),
+        };
+        // T=59 → step 1 (59/30), RFC code 287082.
+        let out = s.login_checked("287082", None, 59, None);
+        let step = match out {
+            LoginOutcome::Ok { step, .. } => step,
+            _ => panic!("first login must succeed"),
+        };
+        assert_eq!(step, 1);
+        // Replaying the same code with that step already consumed is rejected.
+        assert!(
+            matches!(
+                s.login_checked("287082", None, 59, Some(step)),
+                LoginOutcome::Replayed
+            ),
+            "a consumed step is a replay"
+        );
+        // An older last-step still lets the newer step through.
+        assert!(matches!(
+            s.login_checked("287082", None, 59, Some(0)),
+            LoginOutcome::Ok { .. }
+        ));
+    }
+
+    #[test]
+    fn slide_cookie_reissues_only_past_the_hysteresis() {
+        let s = SessionAuth {
+            token: "tok".into(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: None,
+            epoch: test_epoch(),
+        };
+        // Log in at T=59 to mint a real cookie (iat=59).
+        let cookie = s.login("287082", None, 59).expect("login");
+        let header = format!("{}={cookie}", cookie::COOKIE_NAME);
+        // Immediately: no meaningful slide yet → no re-issue.
+        assert!(
+            s.slide_cookie(Some(&header), 59).is_none(),
+            "no re-issue below the hysteresis"
+        );
+        // After the hysteresis window, exp has room to slide → re-issue.
+        let later = 59 + cookie::SLIDE_MIN_SECS;
+        assert!(
+            s.slide_cookie(Some(&header), later).is_some(),
+            "re-issue once activity moves exp forward enough"
+        );
+    }
+
+    #[test]
+    fn compute_policy_gates_loopback_only_when_opted_in() {
+        let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
+        let loop_ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        // Default loopback: no gate.
+        let p = compute_policy(loop_ip, None, None, None, false, test_epoch()).unwrap();
+        assert!(
+            matches!(p, AuthPolicy::Localhost),
+            "default loopback is open"
+        );
+
+        // Opted in + seed + token → gated Session even on loopback.
+        let p = compute_policy(
+            loop_ip,
+            Some("k".into()),
+            Some(seed()),
+            None,
+            true,
+            test_epoch(),
+        )
+        .unwrap();
+        assert!(
+            matches!(p, AuthPolicy::Session(_)),
+            "loopback gate engages with require-login + seed + token"
+        );
+
+        // Opted in but NO token to sign with → cannot gate, stays open (safe: it
+        // is loopback; the enable route mints a token so this is transient).
+        let p = compute_policy(loop_ip, None, Some(seed()), None, true, test_epoch()).unwrap();
+        assert!(
+            matches!(p, AuthPolicy::Localhost),
+            "no signing key → cannot gate loopback"
+        );
+    }
+
+    #[test]
+    fn compute_policy_keeps_network_rules() {
+        let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
+        let net_ip: IpAddr = "100.64.0.1".parse().unwrap();
+        // Network + no token → fail closed (the §4 invariant).
+        assert!(compute_policy(net_ip, None, None, None, false, test_epoch()).is_err());
+        // Network + token, no seed → Bearer.
+        let p = compute_policy(net_ip, Some("t".into()), None, None, false, test_epoch()).unwrap();
+        assert!(matches!(p, AuthPolicy::Bearer(_)));
+        // Network + token + seed → Session (unchanged §4 derived behavior).
+        let p = compute_policy(
+            net_ip,
+            Some("t".into()),
+            Some(seed()),
+            None,
+            false,
+            test_epoch(),
+        )
+        .unwrap();
+        assert!(matches!(p, AuthPolicy::Session(_)));
+    }
+
+    #[test]
+    fn require_login_flag_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!require_login_enabled_in(dir.path()), "unset by default");
+        set_require_login_in(dir.path(), true).unwrap();
+        assert!(require_login_enabled_in(dir.path()), "set → on");
+        set_require_login_in(dir.path(), false).unwrap();
+        assert!(!require_login_enabled_in(dir.path()), "cleared → off");
+        // Idempotent clear.
+        set_require_login_in(dir.path(), false).unwrap();
+    }
+
+    #[test]
+    fn login_throttle_locks_out_after_repeated_failures() {
+        let mut t = LoginThrottle::new();
+        let t0 = Instant::now();
+        // Under the threshold: still open.
+        for _ in 0..LOCKOUT_THRESHOLD - 1 {
+            t.record_failure(t0);
+        }
+        assert!(t.check(t0).is_ok(), "not yet locked below the threshold");
+        // Crossing the threshold locks out.
+        t.record_failure(t0);
+        assert!(t.check(t0).is_err(), "locked out after the threshold");
+        // A success clears the lockout.
+        t.reset();
+        assert!(t.check(t0).is_ok(), "reset re-opens");
     }
 
     #[test]

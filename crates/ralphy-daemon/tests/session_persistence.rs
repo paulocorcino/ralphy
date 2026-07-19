@@ -130,7 +130,7 @@ async fn session_survives_ws_drop_reattach_replays_then_streams_and_close_remove
         std::path::PathBuf::from("does-not-exist"),
         std::time::Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

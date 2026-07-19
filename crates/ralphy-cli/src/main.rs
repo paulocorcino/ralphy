@@ -20,6 +20,7 @@ mod init;
 mod install;
 mod issues;
 mod models;
+mod mutate;
 mod pricing;
 mod run;
 mod runlock;
@@ -55,6 +56,8 @@ fn main() -> Result<()> {
         Command::Issues(args) => issues::issues_cmd(args),
         Command::Schedule(cmd) => schedule::run(cmd),
         Command::Daemon(args) => daemon::run(&args),
+        Command::Branch(cmd) => mutate::branch(cmd),
+        Command::Label(cmd) => mutate::label(cmd),
     }
 }
 

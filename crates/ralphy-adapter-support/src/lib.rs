@@ -65,4 +65,6 @@ pub use ralphy_proc_util::{
 };
 
 mod headless;
-pub use headless::{run_headless, run_headless_logged, HeadlessOutput, HeadlessRun};
+pub use headless::{
+    run_headless, run_headless_logged, run_headless_logged_watched, HeadlessOutput, HeadlessRun,
+};

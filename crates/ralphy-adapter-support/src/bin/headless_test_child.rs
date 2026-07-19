@@ -13,6 +13,10 @@
 //!   reader blocked on the still-open pipe.
 //! - `large` — emit a large (>64KB) stream to stdout, then exit 0 (the
 //!   no-truncation case).
+//! - `stderr-then-sleep` — write a newline-terminated marker to stderr (so the
+//!   reader's `read_until` returns it at once), then sleep ~60s. Exercises the
+//!   early-kill switch: a watcher matching the marker must reap the child on the
+//!   line, not wait out the sleep.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless.rs` via the shared constants below.
@@ -27,6 +31,9 @@ pub const CLEAN_STDERR: &str = "hello-from-stderr";
 /// The byte count the `large` child emits to stdout — comfortably past the
 /// ~64KB pipe buffer so a truncating loop would be caught.
 pub const LARGE_LEN: usize = 200_000;
+/// The newline-terminated stderr line the `stderr-then-sleep` child emits before
+/// sleeping — the early-kill watcher matches on it.
+pub const STDERR_MARKER: &str = "quota-marker: usage limit reached";
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
@@ -47,6 +54,14 @@ fn main() {
             if let Ok(exe) = std::env::current_exe() {
                 let _ = std::process::Command::new(exe).arg("sleep").spawn();
             }
+            std::thread::sleep(Duration::from_secs(60));
+        }
+        "stderr-then-sleep" => {
+            // Emit the marker as a full LINE (newline + flush) so the reader's
+            // `read_until` returns it immediately, then sleep past any test's
+            // patience. The early-kill switch must reap us on the marker line.
+            eprintln!("{STDERR_MARKER}");
+            let _ = std::io::stderr().flush();
             std::thread::sleep(Duration::from_secs(60));
         }
         "large" => {

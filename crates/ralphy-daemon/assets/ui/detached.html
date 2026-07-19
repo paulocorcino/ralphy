@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ralphy · detached file</title>
+    <!-- same vendored styles as the shell, so the viewer looks identical -->
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
+    <link rel="stylesheet" href="vendor/codemirror/codemirror.css" />
+    <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css" />
+    <link rel="stylesheet" href="vendor/codemirror/addon/search/matchesonscrollbar.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* this window IS the viewer — fill it */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+      }
+      #viewers {
+        position: fixed;
+        inset: 0;
+      }
+      .detached-empty {
+        color: var(--danger);
+        font-family: ui-monospace, monospace;
+        padding: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- wb-viewer.js mounts the single file pane here (reused verbatim from the
+         shell); this popup runs its own CodeMirror / marked / mermaid. -->
+    <div id="viewers"></div>
+
+    <script src="vendor/marked.min.js"></script>
+    <script src="vendor/dompurify.min.js"></script>
+    <script src="vendor/mermaid.min.js"></script>
+    <script src="vendor/codemirror/codemirror.js"></script>
+    <script src="vendor/codemirror/addon/mode/simple.js"></script>
+    <script src="vendor/codemirror/mode/xml.js"></script>
+    <script src="vendor/codemirror/mode/javascript.js"></script>
+    <script src="vendor/codemirror/mode/css.js"></script>
+    <script src="vendor/codemirror/mode/htmlmixed.js"></script>
+    <script src="vendor/codemirror/mode/rust.js"></script>
+    <script src="vendor/codemirror/mode/clike.js"></script>
+    <script src="vendor/codemirror/mode/markdown.js"></script>
+    <script src="vendor/codemirror/mode/python.js"></script>
+    <script src="vendor/codemirror/mode/toml.js"></script>
+    <script src="vendor/codemirror/mode/yaml.js"></script>
+    <script src="vendor/codemirror/mode/shell.js"></script>
+    <script src="vendor/codemirror/mode/sql.js"></script>
+    <script src="vendor/codemirror/mode/go.js"></script>
+    <script src="vendor/codemirror/addon/dialog/dialog.js"></script>
+    <script src="vendor/codemirror/addon/search/searchcursor.js"></script>
+    <script src="vendor/codemirror/addon/scroll/annotatescrollbar.js"></script>
+    <script src="vendor/codemirror/addon/search/matchesonscrollbar.js"></script>
+    <script src="vendor/codemirror/addon/search/search.js"></script>
+    <script src="vendor/codemirror/addon/search/jump-to-line.js"></script>
+    <script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
+    <script src="vendor/codemirror/addon/selection/active-line.js"></script>
+    <script src="vendor/codemirror/addon/display/placeholder.js"></script>
+    <script src="wb-viewer.js"></script>
+    <script>
+      // The backend seam lives in the opener; forward every intent (save/reload)
+      // there over postMessage — file:// blocks reading shared globals across
+      // windows, but postMessage is always allowed — so a detached window is
+      // indistinguishable from an in-shell tab.
+      window.WB = {
+        emit(action, detail) {
+          if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, "*");
+          else console.log("[workbench:action]", { action, ...detail });
+        },
+      };
+
+      // Re-attach: hand the current descriptor back to the shell and close.
+      document.addEventListener("workbench:reattach-request", (e) => {
+        if (window.opener) window.opener.postMessage({ type: "wb-reattach", desc: e.detail }, "*");
+        window.close();
+      });
+
+      // Boot: the shell passed the file descriptor (incl. current content) in the
+      // URL hash.
+      (function () {
+        let desc = null;
+        try {
+          desc = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+        } catch {}
+        if (!desc) {
+          document.getElementById("viewers").innerHTML =
+            '<p class="detached-empty">nothing to show — no file descriptor.</p>';
+          return;
+        }
+        document.title = desc.path + " · ralphy";
+        WBViewer.open({
+          id: "detached",
+          project: desc.project,
+          path: desc.path,
+          ftype: desc.ftype,
+          content: desc.content,
+          detached: true,
+        });
+        WBViewer.setActive("detached");
+      })();
+    </script>
+  </body>
+</html>

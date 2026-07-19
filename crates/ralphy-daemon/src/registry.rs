@@ -28,6 +28,63 @@ impl RepoEntry {
     pub fn reachable(&self) -> bool {
         Path::new(&self.path).is_dir()
     }
+
+    /// The current branch name, read fresh from `<path>/.git/HEAD`. `None` for
+    /// a detached HEAD (raw commit sha), a missing/unreadable `.git/HEAD` (no
+    /// repo, or a worktree/submodule gitdir-pointer file), or any other
+    /// non-`ref:` content.
+    pub fn head_branch(&self) -> Option<String> {
+        let head = Path::new(&self.path).join(".git").join("HEAD");
+        let s = std::fs::read_to_string(head).ok()?;
+        s.trim()
+            .strip_prefix("ref: refs/heads/")
+            .map(str::to_string)
+    }
+
+    /// Whether the working tree has uncommitted changes, via `git -C <path>
+    /// status --porcelain` (dirty = non-empty stdout). `false` on a spawn error
+    /// or a non-git dir (no working-tree state to report). Spawns a subprocess,
+    /// so callers on the async reactor MUST run this in `spawn_blocking`.
+    pub fn dirty(&self) -> bool {
+        match git_output(&self.path, &["status", "--porcelain"]) {
+            Some((true, stdout)) => !stdout.trim().is_empty(),
+            _ => false,
+        }
+    }
+
+    /// The `origin` remote URL, via `git -C <path> remote get-url origin`.
+    /// `None` when there is no `origin` (non-zero exit), the URL is empty, or
+    /// git cannot be spawned. Spawns a subprocess — run in `spawn_blocking` off
+    /// the async reactor.
+    pub fn remote(&self) -> Option<String> {
+        match git_output(&self.path, &["remote", "get-url", "origin"]) {
+            Some((true, stdout)) => {
+                let url = stdout.trim();
+                (!url.is_empty()).then(|| url.to_string())
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Run `git -C <path> <args…>` with piped stdio (no console window on Windows;
+/// see `CREATE_NO_WINDOW`), returning `(status.success(), stdout)` or `None`
+/// when git cannot be spawned.
+fn git_output(path: &str, args: &[&str]) -> Option<(bool, String)> {
+    use std::process::Command;
+    let mut cmd = Command::new("git");
+    cmd.args(["-C", path]).args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().ok()?;
+    Some((
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    ))
 }
 
 /// The persisted registry: slug → entry. The slug carries a `/`, so TOML quotes
@@ -151,6 +208,113 @@ mod tests {
         );
         assert!(!back.entry("owner/gone").unwrap().reachable());
         assert!(back.entry("owner/here").unwrap().reachable());
+    }
+
+    #[test]
+    fn head_branch_reads_ref() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(
+            dir.path().join(".git").join("HEAD"),
+            "ref: refs/heads/feat/x\n",
+        )
+        .unwrap();
+        let entry = RepoEntry {
+            path: dir.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.head_branch(), Some("feat/x".to_string()));
+    }
+
+    #[test]
+    fn head_branch_none_when_detached_or_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(
+            dir.path().join(".git").join("HEAD"),
+            "1234567890abcdef1234567890abcdef12345678\n",
+        )
+        .unwrap();
+        let entry = RepoEntry {
+            path: dir.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.head_branch(), None, "detached HEAD yields None");
+
+        let no_git = tempfile::tempdir().unwrap();
+        let entry = RepoEntry {
+            path: no_git.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.head_branch(), None, "missing .git yields None");
+    }
+
+    fn git_init(dir: &Path) {
+        std::process::Command::new("git")
+            .args(["-C", &dir.to_string_lossy(), "init"])
+            .output()
+            .expect("git init (CI and the build machine have git)");
+    }
+
+    #[test]
+    fn dirty_true_on_untracked_false_on_clean() {
+        let clean = tempfile::tempdir().unwrap();
+        git_init(clean.path());
+        let clean_entry = RepoEntry {
+            path: clean.path().to_string_lossy().to_string(),
+        };
+        assert!(!clean_entry.dirty(), "a freshly git-inited repo is clean");
+
+        let dirty = tempfile::tempdir().unwrap();
+        git_init(dirty.path());
+        std::fs::write(dirty.path().join("untracked.txt"), "x").unwrap();
+        let dirty_entry = RepoEntry {
+            path: dirty.path().to_string_lossy().to_string(),
+        };
+        assert!(
+            dirty_entry.dirty(),
+            "an untracked file makes the tree dirty"
+        );
+
+        let no_git = tempfile::tempdir().unwrap();
+        let entry = RepoEntry {
+            path: no_git.path().to_string_lossy().to_string(),
+        };
+        assert!(!entry.dirty(), "a non-git dir reports not-dirty");
+    }
+
+    #[test]
+    fn remote_some_with_origin_none_without() {
+        let with = tempfile::tempdir().unwrap();
+        git_init(with.path());
+        std::process::Command::new("git")
+            .args([
+                "-C",
+                &with.path().to_string_lossy(),
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/o/r.git",
+            ])
+            .output()
+            .unwrap();
+        let with_entry = RepoEntry {
+            path: with.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(
+            with_entry.remote(),
+            Some("https://github.com/o/r.git".to_string())
+        );
+
+        let without = tempfile::tempdir().unwrap();
+        git_init(without.path());
+        let without_entry = RepoEntry {
+            path: without.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(without_entry.remote(), None, "no origin → None");
+
+        let no_git = tempfile::tempdir().unwrap();
+        let entry = RepoEntry {
+            path: no_git.path().to_string_lossy().to_string(),
+        };
+        assert_eq!(entry.remote(), None, "a non-git dir has no remote");
     }
 
     #[test]

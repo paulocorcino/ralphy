@@ -27,6 +27,7 @@ fn drive_worker<T: Transport>(
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     run_delivery_worker(engine, queue, shutdown);
 }
@@ -300,6 +301,45 @@ fn render_card_and_footer_surface_needs_split() {
     let clean = RunState::new("repo · 1 issues", 1);
     assert!(!render_card(&clean, 0).contains("🧩"));
     assert!(!render_final_push(&clean).contains("🧩"));
+}
+
+#[test]
+fn footer_marks_a_run_that_processed_nothing_as_stopped() {
+    // A run whose card reaches its terminal edge with zero issues finished,
+    // skipped, or parked was interrupted (killed/superseded/bailed at startup) —
+    // the footer must say so, not `🏁 … ✅ 0 done` which reads as a clean finish
+    // (FinCal, 2026-07-13: an aborted run's finished card sat above the next run's
+    // start card, reading "finished → started").
+    let mut state = RunState::new("repo · 12 issues", 12);
+    state.finished = true;
+    let footer = render_final_push(&state);
+    assert!(footer.contains("🛑"), "stopped marker: {footer}");
+    assert!(
+        footer.contains("stopped before any issue was processed"),
+        "stopped wording: {footer}"
+    );
+    assert!(!footer.contains("🏁"), "no finish flag: {footer}");
+    assert!(
+        !footer.contains("✅ 0 done"),
+        "no zero-done claim: {footer}"
+    );
+
+    // One issue done flips it back to the normal `🏁` completion footer.
+    state.apply(RunEvent::IssueStarted {
+        number: 1,
+        title: "first".into(),
+    });
+    state.apply(RunEvent::IssueClosed {
+        number: 1,
+        tokens: 0,
+        usage: UsageLite::default(),
+    });
+    let done_footer = render_final_push(&state);
+    assert!(done_footer.contains("🏁"), "finish flag: {done_footer}");
+    assert!(
+        done_footer.contains("✅ 1 done"),
+        "done count: {done_footer}"
+    );
 }
 
 #[test]
@@ -799,8 +839,10 @@ fn worker_swallows_edit_error_and_finishes_cleanly() {
 fn worker_terminal_edit_adds_footer_as_the_last_call() {
     // With no state-changing events the idle loop makes no edit (an identical
     // body would be rejected as "message is not modified"). The one terminal
-    // edit is the `finished` flip growing the `🏁` footer — a genuine change —
-    // and it is the LAST call: there is no final push after it.
+    // edit is the `finished` flip growing the footer — a genuine change — and it
+    // is the LAST call: there is no final push after it. A run with no folded
+    // issue processed nothing, so that footer is the `🛑` stopped marker (never
+    // the celebratory `🏁 … ✅ 0 done`).
     let transport = RecordingTransport::new();
     let calls = transport.calls.clone();
     let client = BotClient::new(transport);
@@ -822,8 +864,9 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     assert_eq!(edits.len(), 1, "exactly one terminal footer edit: {m:?}");
     let edited_text = edits[0]["text"].as_str().unwrap_or("");
     assert!(
-        edited_text.contains("🏁") && edited_text.contains("run finished"),
-        "terminal edit must carry the footer: {edited_text}"
+        edited_text.contains("🛑")
+            && edited_text.contains("stopped before any issue was processed"),
+        "terminal edit must carry the stopped footer: {edited_text}"
     );
 }
 
@@ -846,6 +889,7 @@ fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     engine.on_start(); // card sent, id 100
 
@@ -904,6 +948,7 @@ fn progress_ping_is_suppressed_while_sleeping() {
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     engine.on_start();
     engine.on_event(RunEvent::SleepStarted {
@@ -918,6 +963,70 @@ fn progress_ping_is_suppressed_while_sleeping() {
             .any(|t| t.as_str() == "🔔"),
         "sleeping card edits do not ping"
     );
+}
+
+#[test]
+fn short_reason_collapses_the_multiline_network_chain() {
+    // The exact shape the run reported: a DNS failure whose anyhow chain repeats
+    // the OS message three times over two lines. It must collapse to one clause.
+    let dns = anyhow::anyhow!(
+        "editMessageText request failed: Dns Failed: resolve dns name \
+         'api.telegram.org:443': host not known (os error 11001): host not known \
+         (os error 11001)"
+    );
+    let r = short_reason(&dns);
+    assert_eq!(r, "network unreachable (DNS)", "got: {r}");
+    assert!(!r.contains('\n'), "reason must be one line: {r}");
+
+    // A connect timeout (os error 10060) is the other outage face.
+    let timeout = anyhow::anyhow!("sendMessage request failed: Network Error (os error 10060)");
+    assert_eq!(short_reason(&timeout), "network unreachable (timeout)");
+
+    // A genuine API rejection is NOT a network drop: keep it legible (first line),
+    // never silently reclassified as "unreachable".
+    let api = anyhow::anyhow!("sendMessage failed: Bad Request: chat not found");
+    assert_eq!(
+        short_reason(&api),
+        "sendMessage failed: Bad Request: chat not found"
+    );
+}
+
+#[test]
+fn gate_warns_once_then_resets_on_success() {
+    // A wedged network fails every edit; the gate must warn on the FIRST failure
+    // only (net_warned latches), and a later successful call clears the latch so a
+    // genuinely new drop warns again. Only edits fail here, so a successful send
+    // (the ping) is the recovery that resets the gate.
+    let mut transport = RecordingTransport::new();
+    transport.fail_edit = true;
+    let client = BotClient::new(transport);
+    let mut engine = TelegramEngine {
+        client,
+        chat_id: 7,
+        state: RunState::new("t", 1),
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
+        prev_sleeping: false,
+        prev_degraded: false,
+        net_warned: false,
+    };
+    engine.on_start(); // send ok → gate clear
+    assert!(!engine.net_warned);
+
+    // A failing edit latches the gate.
+    engine.on_event(RunEvent::IssueStarted {
+        number: 1,
+        title: "a".into(),
+    });
+    engine.on_tick(true);
+    assert!(engine.net_warned, "first edit failure latches the gate");
+
+    // A successful send (the ping) clears it — recovery re-arms the warning.
+    engine.fire_ping();
+    assert!(!engine.net_warned, "a success resets the gate");
 }
 
 #[test]

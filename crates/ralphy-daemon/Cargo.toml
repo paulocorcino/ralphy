@@ -45,6 +45,14 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.
 qrcode = { version = "0.14", default-features = false }
+# Gitignore-aware, never-descend-noise tree listing for the Observe read path
+# (ADR-0036 §4); ripgrep's walker.
+ignore = "0.4"
+# The live file-tree watcher (ADR-0036 §4, issue #196): `notify` is the OS event
+# backend (inotify/FSEvents/ReadDirectoryChangesW) and `notify-debouncer-full` is
+# the coalescer that settles an event storm into few nudges.
+notify = "8"
+notify-debouncer-full = "0.5"
 
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.

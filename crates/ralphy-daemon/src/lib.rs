@@ -21,23 +21,30 @@ use include_dir::{include_dir, Dir};
 
 pub mod auth;
 pub mod autostart;
+pub mod confine;
 pub mod cookie;
 pub mod dispatch;
+pub mod epoch;
+pub mod fswrite;
 pub mod identity;
 pub mod password;
 pub mod protocol;
 pub mod registry;
 pub mod session;
 pub mod totp;
+pub mod tree;
 pub mod usage;
+pub mod watch;
 
 use protocol::{Command, Frame, Presence};
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
 pub const DEFAULT_PORT: u16 = 7257;
 
-/// The embedded UI, baked in at build time like `assets/prompts` — the daemon
-/// reads no files from disk at runtime (ADR-0032 §4).
+/// The embedded workbench UI, baked in at build time like `assets/prompts` — the
+/// daemon reads no files from disk at runtime (ADR-0032 §4). Promoted to the
+/// daemon's `/` in #200 (PRD #185); the SPA self-gates its login (see
+/// [`require_auth`]), so there is no separate server-rendered login page.
 static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/ui");
 
 /// What the composition root decides; everything else is the daemon's.
@@ -110,21 +117,19 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // token — the daemon must never begin serving an unauthenticated network
     // socket (ADR-0032 §4).
     let token = auth::effective_token()?;
-    // Capture the token as the cookie SIGNING KEY before `for_bind` consumes it and
-    // before it is stripped from the env — the Session policy owns this key for the
-    // process lifetime, same discipline as today's Bearer.
-    let token_for_key = token.clone();
-    let policy = auth::AuthPolicy::for_bind(addr.ip(), token)?;
-    // Opt-in browser-session hardening (issue #179): a network Bearer bind upgrades
-    // to Session ONLY when a TOTP seed is enrolled; with no seed it stays
-    // bearer-only, and Localhost is untouched.
-    let seed = totp::load_seed()?;
-    let pw = password::load()?;
-    let policy = auth::upgrade_with_session(policy, token_for_key, seed, pw);
+    // The live session epoch (ADR-0032 amendment §B): mixed into every cookie so a
+    // bump is an instant, total logout. Persisted beside the token.
+    let session_epoch = epoch::SessionEpoch::load(epoch::epoch_path()?)?;
+    // Boot the runtime auth state (amendment §A/§B): validates the
+    // network-bind-needs-a-token invariant, reads the on-disk seed / password /
+    // require-login flag, and computes the initial policy. The policy is now
+    // runtime-swappable — a security toggle rebuilds it in place, no restart.
+    let auth_state = auth::AuthState::boot(addr.ip(), token, session_epoch)?;
     // INVARIANT: strip the token from the process env on the boot path BEFORE any
     // child can be spawned, so every subsequent `dispatch`/`session` child
     // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
-    // ADR-0019). The policy already holds the effective token.
+    // ADR-0019). The auth state already holds the effective token as its
+    // signing-key fallback.
     auth::strip_token_from_env();
 
     // Resolve the registry path once and hand it to the router. `/api/repos`
@@ -150,7 +155,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             kimi_code_dir,
             start,
             shutdown_rx,
-            policy,
+            auth_state,
         ),
     )
     .with_graceful_shutdown(async move {
@@ -183,7 +188,7 @@ pub fn router(
     kimi_code_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
-    auth: auth::AuthPolicy,
+    auth: Arc<auth::AuthState>,
 ) -> Router {
     let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
@@ -196,6 +201,13 @@ pub fn router(
     // shutdown (it detaches, never closing the session).
     let session_shutdown = shutdown.clone();
     let session_registry = registry_path.clone();
+    // The live file-tree watcher (#196) is shared across every `/ws/tree`
+    // connection for this router's lifetime — same ownership model as `sessions`,
+    // constructed here (NOT a `router` param) so the ~20-call-site signature holds.
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let tree_watchers = watchers.clone();
+    let tree_registry = registry_path.clone();
+    let tree_shutdown = shutdown.clone();
     // A dispatched run must survive daemon shutdown (inverse of the session
     // invariant), but the handler still watches `shutdown` to stop serving the
     // socket — it just never kills the child. Clone one for that route.
@@ -209,13 +221,15 @@ pub fn router(
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
     let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
-    // The login form needs the auth policy (the `Session`'s TOTP/password/token)
-    // to validate a code and sign a cookie. Cloned here BEFORE `auth` is moved
-    // into the guard layer below; `Session` is `Arc`-cheap, `Bearer`/`Localhost`
-    // trivially so.
+    // The login and security routes need the runtime auth state: to read the
+    // CURRENT policy (validate a code, sign a cookie), rebuild it after a mutation,
+    // and bump the session epoch. Cloned (an `Arc`) BEFORE `auth` is moved into the
+    // guard layer below.
     let login_auth = auth.clone();
+    let sec_auth = auth.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
+        .route("/api/about", get(about_route))
         .route(
             "/api/repos",
             get({
@@ -298,7 +312,17 @@ pub fn router(
                 }
             }),
         )
-        .route("/login", get(login_page))
+        .route(
+            "/ws/tree",
+            get(move |ws: WebSocketUpgrade| {
+                let watchers = tree_watchers.clone();
+                let registry_path = tree_registry.clone();
+                let shutdown = tree_shutdown.clone();
+                async move {
+                    ws.on_upgrade(move |socket| tree_ws(socket, watchers, registry_path, shutdown))
+                }
+            }),
+        )
         .route(
             "/api/login",
             post({
@@ -309,6 +333,63 @@ pub fn router(
                 }
             }),
         )
+        .route(
+            "/api/session",
+            get({
+                let auth = login_auth.clone();
+                move |headers: axum::http::HeaderMap| {
+                    let auth = auth.clone();
+                    async move { session_state_route(auth, headers).await }
+                }
+            }),
+        )
+        .route(
+            "/api/logout",
+            post({
+                let auth = sec_auth.clone();
+                move || logout_route(auth.clone())
+            }),
+        )
+        .route("/api/security/state", get(security_state_route))
+        .route(
+            "/api/security/totp/enroll",
+            post(security_totp_enroll_route),
+        )
+        .route(
+            "/api/security/totp/confirm",
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<ConfirmForm>| security_totp_confirm_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/totp/revoke",
+            post({
+                let auth = sec_auth.clone();
+                move || security_totp_revoke_route(auth.clone())
+            }),
+        )
+        .route(
+            "/api/security/password",
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<PasswordForm>| security_password_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/token/remint",
+            post({
+                let auth = sec_auth.clone();
+                move || security_token_remint_route(auth.clone())
+            }),
+        )
+        .route(
+            "/api/security/require-login",
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<RequireLoginForm>| security_require_login_route(auth.clone(), form)
+            }),
+        )
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
@@ -316,22 +397,28 @@ pub fn router(
         .layer(axum::middleware::from_fn_with_state(auth, require_auth))
 }
 
-/// Paths reachable WITHOUT a session cookie under a `Session` policy — the login
-/// screen and its form endpoint. Everything else falls through to the
-/// browser-redirect / `401` logic below.
-const LOGIN_ALLOWLIST: &[&str] = &["/login", "/api/login"];
+/// API endpoints reachable WITHOUT a session cookie under a `Session` policy —
+/// the SPA's own login gate posts to these before it holds a cookie. Every other
+/// `/api/*` and `/ws/*` endpoint stays gated; static UI bytes are served ungated
+/// (see [`require_auth`]).
+const LOGIN_ALLOWLIST: &[&str] = &["/api/login", "/api/session", "/api/logout"];
 
 /// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
 /// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a
 /// correct `Bearer <token>`). Under a `Session` policy a request with no valid
 /// bearer is then checked for a browser session cookie; failing that, a top-level
-/// `GET` navigation is redirected to `/login` and anything else is `401`.
-/// `Localhost`/`Bearer` keep the plain `401` fall-through — fail closed.
+/// `GET` navigation serves the static SPA (which renders its own login gate) and
+/// anything else is `401`. `Localhost`/`Bearer` keep the plain `401`
+/// fall-through — fail closed.
 async fn require_auth(
-    State(policy): State<auth::AuthPolicy>,
+    State(state): State<Arc<auth::AuthState>>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    // Read the CURRENT policy: a security toggle may have swapped it since boot
+    // (ADR-0032 amendment §A). The clone is cheap (`Session` is `Arc`); the lock
+    // is released before any `.await`.
+    let policy = state.policy();
     let header = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -346,19 +433,34 @@ async fn require_auth(
             .and_then(|v| v.to_str().ok());
         let now = now_unix();
         if session.cookie_valid(cookie_header, now) {
-            return next.run(req).await;
+            // Idle-slide (amendment §D): re-issue the cookie with a later `exp`
+            // (same `iat`, so the absolute cap holds) when activity moved it far
+            // enough. The header must be owned before `req` is consumed by `next`.
+            let slid = session
+                .slide_cookie(cookie_header, now)
+                .map(|c| cookie::set_cookie_value(&c));
+            let mut resp = next.run(req).await;
+            if let Some(set_cookie) = slid {
+                if let Ok(v) = header::HeaderValue::from_str(&set_cookie) {
+                    resp.headers_mut().append(header::SET_COOKIE, v);
+                }
+            }
+            return resp;
         }
         let path = req.uri().path();
         if LOGIN_ALLOWLIST.contains(&path) {
             return next.run(req).await;
         }
-        // A top-level browser navigation (GET, not an /api or /ws call) gets a
-        // redirect to the login screen; API/WS/other verbs fail closed with 401.
+        // The workbench shell is non-secret static bytes: a GET for any non-`/api`,
+        // non-`/ws` path is served without a cookie so the SPA can render its own
+        // opaque login gate. Every DATA endpoint (`/api/*` except the allowlist,
+        // `/ws/*`) stays gated — the SPA can show nothing until `/api/login`
+        // succeeds. API/WS/other verbs fail closed with 401.
         if req.method() == axum::http::Method::GET
             && !path.starts_with("/api")
             && !path.starts_with("/ws")
         {
-            return (StatusCode::FOUND, [(header::LOCATION, "/login")]).into_response();
+            return next.run(req).await;
         }
         return (StatusCode::UNAUTHORIZED, "login required").into_response();
     }
@@ -599,10 +701,32 @@ async fn session_ws(
             return;
         }
     }
+    // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
+    // bytes, so a NAT/proxy idle-timeout (or a lossy path with nothing to
+    // retransmit) silently drops it. A periodic WS ping — which the browser
+    // auto-pongs — keeps intermediaries alive and surfaces a truly dead peer as a
+    // send error that tears the bridge down (detach-only; the child survives for a
+    // reattach). 20s is well under common 30–60s proxy idle windows.
+    let mut ping = tokio::time::interval(Duration::from_secs(20));
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    ping.tick().await; // consume the immediate first tick — no ping on connect
+
+    // A DELIBERATE end (daemon shutdown, takeover/child-exit eviction, or the
+    // broadcast sender closing) gets an explicit Close frame after the loop so the
+    // client sees a CLEAN close and does NOT reconnect. A network drop, by
+    // contrast, tears the loop down without this flag → the client sees an abnormal
+    // close (code 1006) and reconnects. This is what lets the console recover from
+    // a flaky link without hammering reconnects at a session that genuinely ended.
+    let mut clean = false;
     loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
-            _ = &mut notified => break, // taken over, or the child exited
+            _ = shutdown.changed() => { clean = true; break; }
+            _ = &mut notified => { clean = true; break; } // taken over, or the child exited
+            _ = ping.tick() => {
+                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                    break;
+                }
+            }
             recv = attach.rx.recv() => match recv {
                 Ok(bytes) => {
                     let frame = Frame::Terminal { session: id, data: bytes };
@@ -617,7 +741,7 @@ async fn session_ws(
                 // A burst outran this slow attach; scrollback already replayed and
                 // xterm.js tolerates a gap, so keep streaming.
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => { clean = true; break; }
             },
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
@@ -645,6 +769,11 @@ async fn session_ws(
             },
         }
     }
+    // Signal a deliberate end so the client stops instead of reconnecting; on a
+    // network drop the socket is already gone and this send is a harmless no-op.
+    if clean {
+        let _ = socket.send(Message::Close(None)).await;
+    }
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
     drop(attach);
@@ -661,6 +790,30 @@ async fn send_command(socket: &mut WebSocket, id: u64, verb: &str, payload: serd
     let _ = socket
         .send(Message::Binary(protocol::encode(&frame).into()))
         .await;
+}
+
+/// Spawn-and-COLLECT a config CLI invocation (`config get|set|unset`) for a
+/// Query/Mutate verb off the tokio runtime (ADR-0036 §2): unlike the streaming
+/// Spawn path, a config verb yields ONE collected reply. `None` when the blocking
+/// join or the spawn itself failed. Runs in `cwd` with the dispatch `daemon_id`.
+async fn collect_config(
+    argv: Vec<String>,
+    cwd: PathBuf,
+    daemon_id: Option<String>,
+) -> Option<(Option<i32>, Vec<u8>)> {
+    tokio::task::spawn_blocking(move || {
+        let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+        dispatch::collect(
+            &dispatch::ProcessSpawner,
+            &dispatch::ralphy_exe(),
+            &argv_refs,
+            &cwd,
+            daemon_id.as_deref(),
+        )
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
 }
 
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
@@ -734,10 +887,197 @@ async fn command_ws(
         return;
     };
 
+    // Observe verbs (ADR-0036 §2) read repo state IN-DAEMON and answer on THIS
+    // `id` — they NEVER reach the spawn path below. The branch always sends
+    // exactly one reply (ok or error) and returns; confinement (`tree`/`confine`)
+    // is the security boundary, so an out-of-root read looks like a plain miss.
+    if verb.effect_class() == dispatch::EffectClass::Observe {
+        let root = Path::new(&entry.path);
+        let rel = cmd
+            .payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let payload = match verb {
+            dispatch::Verb::TreeList => match tree::list(root, rel) {
+                Ok(entries) => serde_json::json!({ "status": "ok", "entries": entries }),
+                Err(_) => serde_json::json!({ "status": "error", "reason": "not found" }),
+            },
+            dispatch::Verb::FileRead => match tree::read(root, rel) {
+                Ok(content) => serde_json::json!({ "status": "ok", "content": content }),
+                Err(e) => {
+                    let reason = match e {
+                        tree::ReadError::Binary => "binary",
+                        tree::ReadError::TooLarge => "too large",
+                        tree::ReadError::NotFound => "not found",
+                    };
+                    serde_json::json!({ "status": "error", "reason": reason })
+                }
+            },
+            // Unreachable: only TreeList/FileRead are Observe verbs.
+            _ => serde_json::json!({ "status": "error", "reason": "refused" }),
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
+    // Write verbs (ADR-0036 Write amendment) perform a confined byte-op IN-DAEMON
+    // and answer on THIS `id` — they NEVER spawn and NEVER consult the run lock.
+    // Confinement (`fswrite`/`confine`) is the security boundary; a write-escape
+    // refusal surfaces verbatim as `refused` (unlike reads, which mask to a miss —
+    // a write-escape confirms nothing).
+    if verb.effect_class() == dispatch::EffectClass::Write {
+        let root = Path::new(&entry.path);
+        let rel = cmd
+            .payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let result = match verb {
+            dispatch::Verb::FileWrite => {
+                let content = cmd
+                    .payload
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                fswrite::write(root, rel, content)
+            }
+            dispatch::Verb::FileCreate => {
+                let dir = cmd
+                    .payload
+                    .get("dir")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                fswrite::create(root, rel, dir)
+            }
+            dispatch::Verb::FileRename => {
+                let to = cmd.payload.get("to").and_then(|v| v.as_str()).unwrap_or("");
+                fswrite::rename(root, rel, to)
+            }
+            dispatch::Verb::FileDelete => fswrite::delete(root, rel),
+            // Unreachable: only the four file.* verbs are Write verbs.
+            _ => Err(fswrite::WriteError::Io),
+        };
+        let payload = match result {
+            Ok(()) => serde_json::json!({ "status": "ok" }),
+            Err(e) => {
+                let reason = match e {
+                    fswrite::WriteError::Confined => "refused",
+                    fswrite::WriteError::Conflict => "exists",
+                    fswrite::WriteError::NotFound => "not found",
+                    fswrite::WriteError::Io => "io error",
+                };
+                serde_json::json!({ "status": "error", "reason": reason })
+            }
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
+    // Query verbs (ADR-0036 §2) spawn-and-COLLECT a read-only CLI invocation and
+    // answer ONCE on THIS id — no live stream. The verb picks BOTH the argv and
+    // the reply field: `config.get`→`config get --json`/`config`,
+    // `board.list`→`issues --format json --board`/`board`,
+    // `issue.show`→`issues show <n> --format json`/`issue`. The parsed JSON rides
+    // that field; a non-JSON stdout falls back to a raw string.
+    if verb.effect_class() == dispatch::EffectClass::Query {
+        let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb {
+            dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
+            dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
+            dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
+            dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
+            // Unreachable: only the four Query verbs reach this branch.
+            _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
+        };
+        let payload = match argv_result {
+            Err(e) => {
+                tracing::warn!(error = %e, "refused a query with invalid params");
+                serde_json::json!({ "status": "error", "message": "invalid query options" })
+            }
+            Ok(argv) => {
+                match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
+                    Some((Some(0), bytes)) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        let parsed: serde_json::Value = serde_json::from_str(text.trim())
+                            .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_string()));
+                        let mut obj = serde_json::Map::new();
+                        obj.insert("status".to_string(), serde_json::json!("ok"));
+                        obj.insert(field.to_string(), parsed);
+                        serde_json::Value::Object(obj)
+                    }
+                    Some((_, bytes)) => serde_json::json!({
+                        "status": "error",
+                        "message": String::from_utf8_lossy(&bytes).trim(),
+                    }),
+                    None => {
+                        serde_json::json!({ "status": "error", "message": "query read failed" })
+                    }
+                }
+            }
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
+    // Mutate verbs (ADR-0036 §2/§6) spawn-and-collect a run-lock-aware write
+    // (`config set`/`config unset`) and answer once; a non-zero exit (the CLI's
+    // run-lock refusal or unknown-key error) relays as the trimmed stderr.
+    if verb.effect_class() == dispatch::EffectClass::Mutate {
+        let argv_result = match verb {
+            dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {
+                dispatch::config_argv(verb, &cmd.payload)
+            }
+            dispatch::Verb::BranchSwitch | dispatch::Verb::BranchCreate => {
+                dispatch::branch_argv(verb, &cmd.payload)
+            }
+            dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
+            _ => Err(dispatch::ArgvError::BadParam("verb")),
+        };
+        let payload = match argv_result {
+            Err(e) => {
+                tracing::warn!(error = %e, "refused a mutation with invalid params");
+                serde_json::json!({ "status": "error", "message": "invalid mutation options" })
+            }
+            Ok(argv) => {
+                match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
+                    Some((Some(0), _)) => serde_json::json!({ "status": "ok" }),
+                    Some((_, bytes)) => {
+                        let msg = String::from_utf8_lossy(&bytes);
+                        let msg = msg.trim();
+                        let msg = if msg.is_empty() { "refused" } else { msg };
+                        serde_json::json!({ "status": "error", "message": msg })
+                    }
+                    None => {
+                        serde_json::json!({ "status": "error", "message": "mutation write failed" })
+                    }
+                }
+            }
+        };
+        send_command(&mut socket, id, &cmd.verb, payload).await;
+        return;
+    }
+
+    // Compose the argv from the verb + closed-enum params (ADR-0036 §1). A
+    // malformed/out-of-enum param refuses the run: one error frame, no spawn.
+    let argv = match dispatch::spawn_argv(verb, &cmd.payload) {
+        Ok(argv) => argv,
+        Err(e) => {
+            tracing::warn!(error = %e, "refused a run with invalid params");
+            send_command(
+                &mut socket,
+                id,
+                &cmd.verb,
+                serde_json::json!({ "status": "error", "message": "invalid run options" }),
+            )
+            .await;
+            return;
+        }
+    };
+    let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let mut child = match dispatch::dispatch(
         &dispatch::ProcessSpawner,
         &dispatch::ralphy_exe(),
-        verb,
+        &argv_refs,
         Path::new(&entry.path),
         daemon_id.as_deref(),
     ) {
@@ -857,16 +1197,176 @@ async fn command_ws(
     }
 }
 
+/// `GET /ws/tree`: the persistent live-tree subscription socket (#196, ADR-0036
+/// §4). A client `Frame::Command{verb:"watch", payload:{repo,path}}` starts
+/// watching that repo dir (subscribing to the repo's nudge broadcast on the first
+/// watch); `verb:"unwatch"` releases it. A settled change on a watched dir is
+/// pushed back as `Frame::Command{verb:"tree.dirty", payload:{repo,path}}`, and
+/// the browser re-reads that subtree via the Observe `tree.list` path.
+///
+/// TEARDOWN INVARIANT: on EVERY exit path — daemon shutdown OR client close/error
+/// — the connection releases EVERY dir it watched (tracked in `watched`) so the
+/// last release tears the repo watcher down, and aborts its forwarder tasks. A
+/// leaked watch would keep an OS watcher (and its debouncer thread) alive forever.
+async fn tree_ws(
+    mut socket: WebSocket,
+    watchers: Arc<watch::WatcherManager>,
+    registry_path: PathBuf,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    // Fan-in: one forwarder task per subscribed repo pipes that repo's broadcast
+    // into this shared channel, so the select! loop watches ONE receiver regardless
+    // of how many repos/dirs the connection holds. Keyed by repo so it is torn down
+    // when this connection releases the repo's LAST dir — and re-spawned (on the
+    // fresh broadcast the manager rebuilds) if the same repo is watched again.
+    let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+    let mut forwarders: std::collections::BTreeMap<String, tokio::task::JoinHandle<()>> =
+        std::collections::BTreeMap::new();
+    // The (repo, rel) dirs THIS connection holds, in normalized form — held at most
+    // once each (a duplicate `watch` is a no-op, so the manager refcount this
+    // connection contributes stays 1 per dir and teardown releases it exactly once).
+    // Doubles as the per-connection push filter (a repo's broadcast carries every
+    // dir, including ones other connections watch).
+    let mut watched: Vec<(String, String)> = Vec::new();
+
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Binary(bytes))) => {
+                    let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
+                        continue;
+                    };
+                    let repo = cmd
+                        .payload
+                        .get("repo")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let rel = watch::norm_rel(
+                        cmd.payload.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+                    );
+                    match cmd.verb.as_str() {
+                        "watch" => {
+                            if repo.is_empty() {
+                                continue;
+                            }
+                            // Idempotent per connection: a repeat watch must NOT take a
+                            // second manager refcount this teardown would never release.
+                            let key = (repo.clone(), rel.clone());
+                            if watched.contains(&key) {
+                                continue;
+                            }
+                            let root = match registry::load_from(&registry_path) {
+                                Ok(store) => store.entry(&repo).map(|e| PathBuf::from(&e.path)),
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "tree watch: registry unreadable");
+                                    None
+                                }
+                            };
+                            let Some(root) = root else { continue };
+                            match watchers.watch(&repo, &root, &rel) {
+                                Ok(rx) => {
+                                    // First dir for this repo on this connection → spawn its
+                                    // forwarder on the rx the manager just handed us.
+                                    forwarders
+                                        .entry(repo.clone())
+                                        .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
+                                    watched.push(key);
+                                }
+                                Err(e) => tracing::warn!(error = %e, "tree watch failed"),
+                            }
+                        }
+                        "unwatch" => {
+                            let key = (repo.clone(), rel.clone());
+                            if !watched.contains(&key) {
+                                continue; // not held → nothing to release (no double-unwatch)
+                            }
+                            watchers.unwatch(&repo, &rel);
+                            watched.retain(|k| k != &key);
+                            // Last dir of this repo released → stop its forwarder so a later
+                            // re-watch re-subscribes to the rebuilt broadcast.
+                            if !watched.iter().any(|(r, _)| r == &repo) {
+                                if let Some(f) = forwarders.remove(&repo) {
+                                    f.abort();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(_)) => {}
+                Some(Err(_)) => break,
+            },
+            nudge = nudge_rx.recv() => {
+                // A repo's broadcast carries every watched dir; push only the ones
+                // THIS connection subscribed to.
+                if let Some((repo, rel)) = nudge {
+                    if watched.iter().any(|(r, p)| r == &repo && p == &rel) {
+                        send_command(
+                            &mut socket,
+                            0,
+                            "tree.dirty",
+                            serde_json::json!({ "repo": repo, "path": rel }),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
+    }
+
+    // TEARDOWN: release every held dir (the last release tears the watcher down)
+    // and abort the forwarders (their broadcast receivers may otherwise outlive us
+    // if another connection keeps the repo alive).
+    for (repo, rel) in &watched {
+        watchers.unwatch(repo, rel);
+    }
+    for (_repo, forwarder) in forwarders {
+        forwarder.abort();
+    }
+}
+
+/// Pipe one repo's `tree.dirty` broadcast into the connection's fan-in channel.
+/// A lag just skips ahead (the browser re-reads idempotently); a closed broadcast
+/// (the repo watcher torn down) or a dropped fan-in ends the task.
+fn spawn_nudge_forwarder(
+    mut rx: watch::DirtyRx,
+    tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(item) => {
+                    if tx.send(item).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    })
+}
+
 /// `GET /api/repos`: the registered repos as JSON, each with its live
 /// reachability. Read FRESH from disk on every request so a separate `ralphy
 /// run` process's write shows up on the next page refresh. A load error yields
-/// an empty list with `200` (logged) rather than failing the page.
+/// an empty list with `200` (logged) rather than failing the page. `branch` is
+/// likewise read fresh from `<path>/.git/HEAD`, `None` when it cannot be
+/// determined (detached HEAD, unreachable repo, worktree gitdir pointer).
 async fn repos_route(registry_path: PathBuf) -> Response {
     #[derive(serde::Serialize)]
     struct RepoView {
         slug: String,
         path: String,
         reachable: bool,
+        branch: Option<String>,
+        // Additive (#204): the real working-tree state and origin URL. Both spawn
+        // `git`, so the whole `Vec` is built inside `spawn_blocking` below.
+        dirty: bool,
+        remote: Option<String>,
     }
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -875,15 +1375,24 @@ async fn repos_route(registry_path: PathBuf) -> Response {
             registry::RegistryStore::default()
         }
     };
-    let views: Vec<RepoView> = store
-        .repos
-        .iter()
-        .map(|(slug, entry)| RepoView {
-            slug: slug.clone(),
-            path: entry.path.clone(),
-            reachable: entry.reachable(),
-        })
-        .collect();
+    // `dirty`/`remote` each spawn a `git` subprocess per repo — that must not
+    // block the async reactor, so the whole map runs on a blocking thread.
+    let views = tokio::task::spawn_blocking(move || {
+        store
+            .repos
+            .iter()
+            .map(|(slug, entry)| RepoView {
+                slug: slug.clone(),
+                path: entry.path.clone(),
+                reachable: entry.reachable(),
+                branch: entry.head_branch(),
+                dirty: entry.dirty(),
+                remote: entry.remote(),
+            })
+            .collect::<Vec<RepoView>>()
+    })
+    .await
+    .unwrap_or_default();
     Json(views).into_response()
 }
 
@@ -975,6 +1484,34 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
     }
 }
 
+/// `GET /api/about`: the daemon's static product facts for the workbench About
+/// panel — the git-published version (embedded at build time, so it tracks the
+/// release tag), the product description, and the license/creator/source facts
+/// pulled straight from the workspace manifest. Read-only, no secrets.
+async fn about_route() -> Response {
+    #[derive(serde::Serialize)]
+    struct AboutView {
+        name: &'static str,
+        version: &'static str,
+        description: &'static str,
+        license: &'static str,
+        repository: &'static str,
+        creator: &'static str,
+    }
+    Json(AboutView {
+        name: "ralphy",
+        // Embedded by build.rs from `git describe --tags` (falls back to the
+        // Cargo manifest version off a tarball).
+        version: env!("RALPHY_VERSION"),
+        description: env!("CARGO_PKG_DESCRIPTION"),
+        // From the workspace manifest (`license`/`repository` are inherited).
+        license: env!("CARGO_PKG_LICENSE"),
+        repository: env!("CARGO_PKG_REPOSITORY"),
+        creator: "Paulo Corcino",
+    })
+    .into_response()
+}
+
 /// The `POST /api/login` form: the current TOTP `code` and, when a password is
 /// enrolled, the operator's `password`. `password` is `Option` so a bind with no
 /// password enrolled accepts a form carrying only `code`.
@@ -984,34 +1521,45 @@ struct LoginForm {
     password: Option<String>,
 }
 
-/// `GET /login`: the embedded login screen (in the login allowlist, so it is
-/// reachable without a cookie under a `Session` policy).
-async fn login_page() -> Response {
-    match UI.get_file("login.html") {
-        Some(file) => (
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-            file.contents(),
-        )
-            .into_response(),
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
-    }
-}
-
 /// `POST /api/login`: validate the TOTP code (and password, if enrolled) against
-/// the `Session` policy. On success `200` + a `Set-Cookie: ralphy_session=…`
-/// header; on a bad credential `401`. Login is meaningless without a network
-/// `Session` policy, so any other policy returns `404`.
-async fn login_submit(auth: auth::AuthPolicy, Form(form): Form<LoginForm>) -> Response {
-    let auth::AuthPolicy::Session(session) = &auth else {
+/// the CURRENT `Session` policy. On success `200` + a `Set-Cookie: ralphy_session=…`
+/// header; on a bad credential `401`; while rate-limited `429` with a
+/// `Retry-After` (amendment §D). Login is meaningless without a `Session` policy,
+/// so any other policy returns `404`.
+async fn login_submit(state: Arc<auth::AuthState>, Form(form): Form<LoginForm>) -> Response {
+    // Throttle first: a 6-digit TOTP is otherwise online-brute-forceable.
+    if let Err(retry_after) = state.throttle_check() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, retry_after.to_string())],
+            "too many attempts — try again shortly",
+        )
+            .into_response();
+    }
+    let auth::AuthPolicy::Session(session) = state.policy() else {
         return (StatusCode::NOT_FOUND, "login not enabled").into_response();
     };
-    match session.login(&form.code, form.password.as_deref(), now_unix()) {
-        Some(cookie) => (
-            StatusCode::OK,
-            [(header::SET_COOKIE, cookie::set_cookie_value(&cookie))],
-        )
-            .into_response(),
-        None => (StatusCode::UNAUTHORIZED, "invalid credentials").into_response(),
+    let now = now_unix();
+    // The last consumed TOTP step gates anti-replay (amendment §D); the store lives
+    // on the AuthState (real store at boot, detached temp in tests).
+    let last_step = state.last_step();
+    match session.login_checked(&form.code, form.password.as_deref(), now, last_step) {
+        auth::LoginOutcome::Ok { cookie, step } => {
+            // Persist the consumed step so the same code can't be replayed.
+            state.record_step(step);
+            state.throttle_record(true);
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie::set_cookie_value(&cookie))],
+            )
+                .into_response()
+        }
+        // A replay and a bad credential are indistinguishable to the client (generic
+        // message) and both feed the throttle.
+        auth::LoginOutcome::BadCredential | auth::LoginOutcome::Replayed => {
+            state.throttle_record(false);
+            (StatusCode::UNAUTHORIZED, "invalid credentials").into_response()
+        }
     }
 }
 
@@ -1029,6 +1577,324 @@ async fn ui_asset(uri: Uri) -> Response {
     }
 }
 
+/// `POST /api/logout`: bump the session epoch so the cookie is invalidated
+/// SERVER-SIDE (amendment §B — not merely cleared client-side), then emit a
+/// `Max-Age=0` clearing `Set-Cookie`. The cookie is `HttpOnly`, so JS cannot
+/// clear it — the server must (issue #186).
+async fn logout_route(state: Arc<auth::AuthState>) -> Response {
+    if let Err(e) = state.invalidate_sessions() {
+        // A failed epoch bump must not strand the operator "logged in": clearing
+        // the cookie still drops this browser. Log and proceed.
+        tracing::warn!(error = %e, "failed to bump the session epoch on logout");
+    }
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie::clear_cookie_value())],
+    )
+        .into_response()
+}
+
+/// The SPA's auth-state oracle, reachable pre-login (allowlisted). Drives the
+/// workbench gate's `authed` flag, password-field visibility, and the Security
+/// modal's policy-aware affordances (issue #205).
+#[derive(serde::Serialize)]
+struct SessionState {
+    authed: bool,
+    password: bool,
+    policy: &'static str,
+}
+
+/// `GET /api/session`: report whether this request is authorized and whether a
+/// password factor is enrolled. `Localhost`/`Bearer` are always `authed`; under a
+/// `Session` policy `authed` reflects a valid `Bearer` OR session cookie.
+async fn session_state_route(
+    state: Arc<auth::AuthState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let auth = state.policy();
+    let bearer = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let authed = auth.authorizes(bearer)
+        || match &auth {
+            auth::AuthPolicy::Session(s) => {
+                let cookie_header = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
+                s.cookie_valid(cookie_header, now_unix())
+            }
+            _ => false,
+        };
+    let password = matches!(&auth, auth::AuthPolicy::Session(s) if s.password.is_some());
+    Json(SessionState {
+        authed,
+        password,
+        policy: auth.name(),
+    })
+    .into_response()
+}
+
+/// The daemon's auth-state surface for the Security modal (issue #195): which
+/// factors are enrolled in the REAL stores. `require_login` is the PERSISTED
+/// `daemon-require-login` flag (ADR-0032 amendment §A): an operator opt-in that
+/// gates the browser UI even on a loopback bind, no longer derived from the seed.
+#[derive(serde::Serialize)]
+struct SecurityState {
+    token_set: bool,
+    password_set: bool,
+    totp_enrolled: bool,
+    require_login: bool,
+}
+
+/// Read the real store FILES under `dir` and report enrolment. Path-explicit (no
+/// env reads) so tests pass a tempdir. `require_login` is now the PERSISTED flag
+/// (ADR-0032 amendment §A), no longer derived from the seed.
+fn security_state_at(dir: &Path) -> SecurityState {
+    let totp_enrolled = totp::load_seed_from(&totp::seed_path_in(dir))
+        .ok()
+        .flatten()
+        .is_some();
+    SecurityState {
+        token_set: auth::load_token_from(&auth::token_path_in(dir))
+            .ok()
+            .flatten()
+            .is_some(),
+        password_set: password::load_from(&password::password_path_in(dir))
+            .ok()
+            .flatten()
+            .is_some(),
+        totp_enrolled,
+        require_login: auth::require_login_enabled_in(dir),
+    }
+}
+
+/// Begin enrolment: mint-once a PENDING TOTP seed under `dir` and return its
+/// `otpauth://` URI + whether it was newly minted. The seed is NOT armed — it
+/// gates nothing until [`confirm_totp_at`] verifies a code (ADR-0032 amendment
+/// §C). The URI is shown once (QR + base32); a re-enrol before confirming
+/// returns the SAME pending secret with `newly_minted=false`.
+fn enroll_totp_at(dir: &Path) -> Result<(String, bool)> {
+    let (seed, newly_minted) = totp::ensure_seed_at(&totp::pending_seed_path_in(dir))?;
+    Ok((seed.otpauth_uri("ralphy", "daemon"), newly_minted))
+}
+
+/// Confirm a pending enrolment: verify `code` against the pending seed and, on
+/// success, promote it to the live seed. Returns whether the code verified.
+fn confirm_totp_at(dir: &Path, code: &str, now: u64) -> Result<bool> {
+    totp::confirm_pending_at(
+        &totp::pending_seed_path_in(dir),
+        &totp::seed_path_in(dir),
+        code,
+        now,
+    )
+}
+
+/// Revoke enrolment: delete the live seed, any in-flight pending seed, and the
+/// anti-replay last-step marker, so an abandoned enrolment leaves nothing behind
+/// (ADR-0032 amendment §C/§D).
+fn revoke_totp_at(dir: &Path) -> Result<()> {
+    totp::revoke_seed_at(&totp::seed_path_in(dir))?;
+    totp::revoke_seed_at(&totp::pending_seed_path_in(dir))?;
+    totp::revoke_seed_at(&totp::last_step_path_in(dir))
+}
+
+/// Set (non-empty) or clear (empty/absent) the optional password under `dir`;
+/// return whether a password is now enrolled.
+fn set_password_at(dir: &Path, password: Option<&str>) -> Result<bool> {
+    let path = password::password_path_in(dir);
+    match password.filter(|p| !p.is_empty()) {
+        Some(pw) => {
+            password::save_to(&password::Hash::hash_password(pw), &path)?;
+            Ok(true)
+        }
+        None => {
+            password::clear_at(&path)?;
+            Ok(false)
+        }
+    }
+}
+
+/// Remint the access token under `dir`, overwriting any prior. The token is
+/// never echoed — only its rotation is reported.
+fn remint_token_at(dir: &Path) -> Result<()> {
+    auth::save_token_to(&auth::generate_token(), &auth::token_path_in(dir))
+}
+
+/// The require-login gate (ADR-0032 amendment §A): persist the operator's choice
+/// as the `daemon-require-login` flag. Enabling demands an armed TOTP seed
+/// (`Err("totp not enrolled")` otherwise) and MINTS the access token if absent —
+/// gating a loopback bind needs a signing key, and machine clients then use it as
+/// a bearer. Disabling just clears the flag.
+fn require_login_at(dir: &Path, enable: bool) -> Result<()> {
+    if enable {
+        if totp::load_seed_from(&totp::seed_path_in(dir))
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            anyhow::bail!("totp not enrolled");
+        }
+        // Ensure a signing key exists (mint-once) so the gate can sign cookies —
+        // a loopback bind may never have minted one.
+        auth::ensure_token_at(&auth::token_path_in(dir))?;
+    }
+    auth::set_require_login_in(dir, enable)
+}
+
+/// `GET /api/security/state`: the real enrolment state (gated by `require_auth`;
+/// not in the login allowlist).
+async fn security_state_route() -> Response {
+    match auth::store_dir() {
+        Ok(dir) => Json(security_state_at(&dir)).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to resolve the daemon store for security state");
+            (StatusCode::INTERNAL_SERVER_ERROR, "store unavailable").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/totp/enroll`: mint-once the seed and return the one-time
+/// `otpauth://` URI + `newly_minted`.
+async fn security_totp_enroll_route() -> Response {
+    match auth::store_dir().and_then(|dir| enroll_totp_at(&dir)) {
+        Ok((uri, newly_minted)) => {
+            Json(serde_json::json!({ "uri": uri, "newly_minted": newly_minted })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to enroll a TOTP seed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "enroll failed").into_response()
+        }
+    }
+}
+
+/// The `POST /api/security/totp/confirm` body: the live 6-digit code proving the
+/// operator scanned the pending QR.
+#[derive(serde::Deserialize)]
+struct ConfirmForm {
+    code: String,
+}
+
+/// `POST /api/security/totp/confirm`: verify `code` against the pending seed and
+/// arm it on success. `200 {confirmed}` either way; a wrong code is
+/// `confirmed:false` (not an error) so the UI can prompt a retry. On a successful
+/// arm the live policy is rebuilt (a promotion takes effect if require-login is
+/// already on).
+async fn security_totp_confirm_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<ConfirmForm>,
+) -> Response {
+    let now = now_unix();
+    match auth::store_dir().and_then(|dir| confirm_totp_at(&dir, &form.code, now)) {
+        Ok(confirmed) => {
+            if confirmed {
+                apply_auth_change(&state, false);
+            }
+            Json(serde_json::json!({ "confirmed": confirmed })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to confirm the TOTP enrolment");
+            (StatusCode::INTERNAL_SERVER_ERROR, "confirm failed").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/totp/revoke`: delete the live AND pending seeds (mint-once
+/// posture). Rebuilds the policy (demoting a gated bind) and invalidates live
+/// sessions — revoking the factor must drop anyone it authorized.
+async fn security_totp_revoke_route(state: Arc<auth::AuthState>) -> Response {
+    match auth::store_dir().and_then(|dir| revoke_totp_at(&dir)) {
+        Ok(()) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "revoked": true })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to revoke the TOTP seed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "revoke failed").into_response()
+        }
+    }
+}
+
+/// The `POST /api/security/password` body: a non-empty `password` sets it, an
+/// empty/absent one clears it.
+#[derive(serde::Deserialize)]
+struct PasswordForm {
+    password: Option<String>,
+}
+
+/// `POST /api/security/password`: set or clear the optional password factor.
+/// Rebuilds the policy (the `Session` carries the new/absent password) and
+/// invalidates live sessions so they re-authenticate under the changed factor.
+async fn security_password_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<PasswordForm>,
+) -> Response {
+    match auth::store_dir().and_then(|dir| set_password_at(&dir, form.password.as_deref())) {
+        Ok(password_set) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "password_set": password_set })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to update the password");
+            (StatusCode::INTERNAL_SERVER_ERROR, "password update failed").into_response()
+        }
+    }
+}
+
+/// `POST /api/security/token/remint`: rotate the access token (never echoed).
+/// The token is the cookie signing key, so rebuild the policy under the new key
+/// and invalidate live sessions — a re-mint logs everyone out (amendment §B),
+/// now IMMEDIATELY rather than at next restart.
+async fn security_token_remint_route(state: Arc<auth::AuthState>) -> Response {
+    match auth::store_dir().and_then(|dir| remint_token_at(&dir)) {
+        Ok(()) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "reminted": true })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to remint the access token");
+            (StatusCode::INTERNAL_SERVER_ERROR, "remint failed").into_response()
+        }
+    }
+}
+
+/// The `POST /api/security/require-login` body: the desired toggle state.
+#[derive(serde::Deserialize)]
+struct RequireLoginForm {
+    enable: bool,
+}
+
+/// `POST /api/security/require-login`: persist the operator's gate choice
+/// (amendment §A). Enabling without an armed TOTP seed is refused (`400`, AC4);
+/// enabling mints a signing token if absent. Either way the policy is rebuilt so
+/// the gate engages/lifts IMMEDIATELY, and live sessions are invalidated (turning
+/// the gate on logs the browser off; turning it off re-issues cleanly).
+async fn security_require_login_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<RequireLoginForm>,
+) -> Response {
+    match auth::store_dir().and_then(|dir| require_login_at(&dir, form.enable)) {
+        Ok(()) => {
+            apply_auth_change(&state, true);
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+/// Apply a security mutation to the LIVE auth state: rebuild the policy from disk
+/// so the change takes effect without a restart (amendment §A), and — when
+/// `invalidate` — bump the session epoch to drop outstanding cookies (§B).
+/// Failures are logged, never fatal to the request that triggered them (the store
+/// write already succeeded; a stale in-memory policy self-heals on restart).
+fn apply_auth_change(state: &auth::AuthState, invalidate: bool) {
+    if let Err(e) = state.rebuild() {
+        tracing::warn!(error = %e, "failed to rebuild the live auth policy");
+    }
+    if invalidate {
+        if let Err(e) = state.invalidate_sessions() {
+            tracing::warn!(error = %e, "failed to invalidate sessions");
+        }
+    }
+}
+
 fn content_type(path: &str) -> &'static str {
     match path.rsplit('.').next() {
         Some("html") => "text/html; charset=utf-8",
@@ -1036,6 +1902,11 @@ fn content_type(path: &str) -> &'static str {
         Some("js") => "text/javascript; charset=utf-8",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        Some("eot") => "application/vnd.ms-fontobject",
+        Some("json") => "application/json",
         _ => "application/octet-stream",
     }
 }
@@ -1077,11 +1948,127 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await
         .unwrap()
+    }
+
+    #[test]
+    fn security_state_reflects_the_stores() {
+        let dir = tempfile::tempdir().unwrap();
+        // Empty store → every factor unset.
+        let s = security_state_at(dir.path());
+        assert!(!s.token_set && !s.password_set && !s.totp_enrolled && !s.require_login);
+        // Writing a seed flips totp_enrolled — but require_login is now the
+        // PERSISTED opt-in flag (amendment §A), NOT derived from the seed.
+        totp::save_seed_to(&totp::generate_seed(), &totp::seed_path_in(dir.path())).unwrap();
+        let s = security_state_at(dir.path());
+        assert!(
+            s.totp_enrolled && !s.require_login,
+            "seed → enrolled, but require_login stays off until opted in"
+        );
+        // Setting the flag flips require_login on its own.
+        auth::set_require_login_in(dir.path(), true).unwrap();
+        assert!(
+            security_state_at(dir.path()).require_login,
+            "the flag drives require_login"
+        );
+        assert!(!s.token_set && !s.password_set, "other factors still unset");
+    }
+
+    #[test]
+    fn enroll_totp_is_mint_once_with_ralphy_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let (uri, minted) = enroll_totp_at(dir.path()).unwrap();
+        assert!(minted, "first enrol mints");
+        assert!(
+            uri.starts_with("otpauth://totp/ralphy:"),
+            "the real provisioning URI; got {uri}"
+        );
+        let secret_of = |u: &str| {
+            u.split("secret=")
+                .nth(1)
+                .and_then(|s| s.split('&').next())
+                .unwrap()
+                .to_string()
+        };
+        let (uri2, minted2) = enroll_totp_at(dir.path()).unwrap();
+        assert!(!minted2, "second enrol does not re-mint");
+        assert_eq!(secret_of(&uri), secret_of(&uri2), "same secret returned");
+    }
+
+    #[test]
+    fn enroll_then_confirm_arms_the_live_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        // Seed the PENDING slot with the RFC vector so we know a valid code.
+        totp::save_seed_to(
+            &totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            &totp::pending_seed_path_in(dir.path()),
+        )
+        .unwrap();
+        // Pending enrolment does not count as enrolled yet.
+        assert!(
+            !security_state_at(dir.path()).totp_enrolled,
+            "a pending seed is not enrolled"
+        );
+        // A wrong code arms nothing.
+        assert!(!confirm_totp_at(dir.path(), "999999", 59).unwrap());
+        assert!(!security_state_at(dir.path()).totp_enrolled);
+        // The RFC vector code (T=59 → 287082) confirms and arms the live seed.
+        assert!(confirm_totp_at(dir.path(), "287082", 59).unwrap());
+        assert!(
+            security_state_at(dir.path()).totp_enrolled,
+            "confirming arms TOTP"
+        );
+        // Revoke clears both live and (already-consumed) pending.
+        revoke_totp_at(dir.path()).unwrap();
+        assert!(!security_state_at(dir.path()).totp_enrolled);
+    }
+
+    #[test]
+    fn set_password_round_trips_set_then_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            set_password_at(dir.path(), Some("pw")).unwrap(),
+            "set → true"
+        );
+        assert!(
+            security_state_at(dir.path()).password_set,
+            "state reflects the set"
+        );
+        assert!(!set_password_at(dir.path(), None).unwrap(), "clear → false");
+        assert!(
+            !security_state_at(dir.path()).password_set,
+            "state reflects the clear"
+        );
+    }
+
+    #[test]
+    fn remint_token_yields_a_new_distinct_token() {
+        let dir = tempfile::tempdir().unwrap();
+        remint_token_at(dir.path()).unwrap();
+        let first = auth::load_token_from(&auth::token_path_in(dir.path()))
+            .unwrap()
+            .expect("token written");
+        assert_eq!(first.len(), 64, "64-hex token");
+        remint_token_at(dir.path()).unwrap();
+        let second = auth::load_token_from(&auth::token_path_in(dir.path()))
+            .unwrap()
+            .unwrap();
+        assert_ne!(first, second, "remint rotates the token");
+    }
+
+    #[test]
+    fn require_login_gate_needs_an_enrolled_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        // Enabling with no seed is refused; disabling is always Ok.
+        assert!(require_login_at(dir.path(), true).is_err());
+        assert!(require_login_at(dir.path(), false).is_ok());
+        // With a seed enrolled, enabling is Ok.
+        totp::save_seed_to(&totp::generate_seed(), &totp::seed_path_in(dir.path())).unwrap();
+        assert!(require_login_at(dir.path(), true).is_ok());
     }
 
     #[tokio::test]
@@ -1138,7 +2125,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1171,7 +2158,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1182,6 +2169,27 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn api_about_route_reports_version_and_facts() {
+        let resp = get("/api/about").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        // The build-embedded version string (git tag or Cargo fallback) — never empty.
+        assert!(
+            body.contains("\"version\":\"") && !body.contains("\"version\":\"\""),
+            "about must carry a non-empty version; got: {body}"
+        );
+        assert!(
+            body.contains("GPL-3.0"),
+            "about must carry the license; got: {body}"
+        );
+        assert!(
+            body.contains("Paulo Corcino"),
+            "about must carry the creator; got: {body}"
+        );
     }
 
     #[tokio::test]
@@ -1206,7 +2214,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1230,6 +2238,127 @@ mod tests {
         assert!(
             body.contains("\"reachable\":false"),
             "the bogus-path entry must be unreachable; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_repos_reports_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(
+            dir.path().join(".git").join("HEAD"),
+            "ref: refs/heads/feat/mini-ide\n",
+        )
+        .unwrap();
+        let registry_path = dir.path().join("repos.toml");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/here", &dir.path().to_string_lossy());
+        store.upsert("owner/gone", "/no/such/path/exists");
+        registry::save_to(&store, &registry_path).unwrap();
+
+        let resp = router(
+            None,
+            registry_path,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/repos")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"branch\":\"feat/mini-ide\""),
+            "the reachable repo's branch must be reported; got: {body}"
+        );
+        assert!(
+            body.contains("\"branch\":null"),
+            "the unreachable repo's branch must be null; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_repos_reports_dirty_and_remote() {
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git (CI and the build machine have git)");
+        }
+
+        // (a) a dirty repo (untracked file) WITH an origin remote.
+        let dirty = tempfile::tempdir().unwrap();
+        git(dirty.path(), &["init"]);
+        git(
+            dirty.path(),
+            &["remote", "add", "origin", "https://github.com/o/r.git"],
+        );
+        std::fs::write(dirty.path().join("untracked.txt"), "x").unwrap();
+        // (b) a clean repo with NO remote.
+        let clean = tempfile::tempdir().unwrap();
+        git(clean.path(), &["init"]);
+
+        let reg = tempfile::tempdir().unwrap();
+        let registry_path = reg.path().join("repos.toml");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/dirty", &dirty.path().to_string_lossy());
+        store.upsert("owner/clean", &clean.path().to_string_lossy());
+        registry::save_to(&store, &registry_path).unwrap();
+
+        let resp = router(
+            None,
+            registry_path,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/repos")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"dirty\":true"),
+            "the untracked-file repo must be dirty; got: {body}"
+        );
+        assert!(
+            body.contains("\"dirty\":false"),
+            "the clean repo must not be dirty; got: {body}"
+        );
+        assert!(
+            body.contains("\"remote\":\"https://github.com/o/r.git\""),
+            "the origin url must be reported; got: {body}"
+        );
+        assert!(
+            body.contains("\"remote\":null"),
+            "the remoteless repo must report null; got: {body}"
         );
     }
 
@@ -1259,7 +2388,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1309,7 +2438,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1364,7 +2493,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1440,7 +2569,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1505,7 +2634,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1557,7 +2686,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1625,7 +2754,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -1657,7 +2789,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -1690,7 +2825,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Localhost,
+            auth::AuthState::localhost(),
         )
         .oneshot(
             Request::builder()
@@ -1719,7 +2854,10 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthPolicy::Bearer("tok".into()),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
         )
         .oneshot(
             Request::builder()
@@ -1741,10 +2879,14 @@ mod tests {
     /// Build a router under a `Session` policy over `token` + the RFC seed, with a
     /// baptized identity so `/api/identity` answers `200` once authorized.
     fn session_router(token: &str) -> Router {
+        // One shared epoch: the `SessionAuth` signs/verifies cookies under it and
+        // the wrapping `AuthState` bumps the SAME counter on logout/invalidate.
+        let session_epoch = epoch::SessionEpoch::in_memory_detached();
         let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
             token: token.to_string(),
             totp: rfc_seed(),
             password: None,
+            epoch: session_epoch.clone(),
         }));
         let id = identity::Identity {
             id: ulid::Ulid::nil(),
@@ -1762,15 +2904,16 @@ mod tests {
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
-            policy,
+            auth::AuthState::fixed(policy, session_epoch),
         )
     }
 
-    /// The full browser-login round trip under a `Session` policy (issue #179):
-    /// no-cookie `401`, `GET /login` `200`, a valid-TOTP `POST /api/login` `200` +
-    /// `Set-Cookie`, the cookie authorizes a follow-up, `GET /` redirects to
-    /// `/login`, and a machine `Bearer` still authorizes. Plumbing only — the code
-    /// itself is pinned by the `totp` RFC-vector unit test.
+    /// The full browser-login round trip under a `Session` policy (issue #179,
+    /// promoted in #200): no-cookie `401` on data, the SPA shell is served ungated
+    /// at `/` (it renders its own login gate), a valid-TOTP `POST /api/login` `200`
+    /// + `Set-Cookie`, the cookie authorizes a follow-up, and a machine `Bearer`
+    /// still authorizes. Plumbing only — the code itself is pinned by the `totp`
+    /// RFC-vector unit test.
     #[tokio::test]
     async fn session_policy_login_flow() {
         // 1. No cookie / no bearer → the API is 401.
@@ -1785,17 +2928,12 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "no cookie → 401");
 
-        // 2. The login screen is reachable without a cookie.
+        // 2. The shell (which hosts its own login gate) is served without a cookie.
         let resp = session_router("tok")
-            .oneshot(
-                Request::builder()
-                    .uri("/login")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "GET /login → 200");
+        assert_eq!(resp.status(), StatusCode::OK, "GET / → 200 (ungated shell)");
 
         // 3. A valid current TOTP mints a session cookie.
         let now = now_unix();
@@ -1844,21 +2982,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK, "cookie authorizes → 200");
 
-        // 5. A top-level GET with no cookie redirects to the login screen.
-        let resp = session_router("tok")
-            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::FOUND, "GET / → 302");
-        assert_eq!(
-            resp.headers()
-                .get(header::LOCATION)
-                .and_then(|v| v.to_str().ok()),
-            Some("/login"),
-            "redirect target is /login"
-        );
-
-        // 6. The machine path is unchanged: a correct Bearer still authorizes.
+        // 5. The machine path is unchanged: a correct Bearer still authorizes.
         let resp = session_router("tok")
             .oneshot(
                 Request::builder()
@@ -1873,6 +2997,348 @@ mod tests {
             resp.status(),
             StatusCode::OK,
             "Bearer authorizes under Session"
+        );
+    }
+
+    /// Read the body of a response as a lossy UTF-8 string.
+    async fn body_string(resp: Response) -> String {
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// GET a path on a Localhost router (the `get` helper above), returning the
+    /// response for further assertions.
+    async fn get_local(path: &str) -> Response {
+        get(path).await
+    }
+
+    #[tokio::test]
+    async fn root_serves_workbench_shell() {
+        let resp = get_local("/").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");
+        let body = body_string(resp).await;
+        assert!(
+            body.contains(r#"x-data="shell()""#),
+            "the workbench shell HTML must render at the root; got: {}",
+            &body[..body.len().min(200)]
+        );
+        let resp = get_local("/app.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
+    }
+
+    #[tokio::test]
+    async fn root_serves_vendored_xterm() {
+        let resp = get_local("/vendor/xterm.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.js → 200");
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        let resp = get_local("/vendor/xterm.css").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET vendor/xterm.css → 200");
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/css; charset=utf-8"
+        );
+
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            shell.contains("vendor/xterm.js"),
+            "the shell HTML must load the vendored xterm"
+        );
+
+        let console = body_string(get_local("/wb-console.js").await).await;
+        assert!(
+            console.contains("new Terminal("),
+            "wb-console.js must construct a real xterm terminal"
+        );
+        assert!(
+            console.contains("/ws/session"),
+            "wb-console.js must open the session WebSocket"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_serves_wb_daemon() {
+        let resp = get_local("/wb-daemon.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET wb-daemon.js → 200");
+        let daemon = body_string(resp).await;
+        assert!(
+            daemon.contains("ACTION_TO_VERB"),
+            "wb-daemon.js must ship the action→verb map"
+        );
+        assert!(
+            daemon.contains("/ws/command"),
+            "wb-daemon.js must open the command WebSocket"
+        );
+
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            shell.contains("wb-daemon.js"),
+            "the shell HTML must load the daemon adapter"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_serves_wb_mode() {
+        let resp = get_local("/wb-mode.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET wb-mode.js → 200");
+        let mode = body_string(resp).await;
+        assert!(
+            mode.contains("function modeFor"),
+            "wb-mode.js must ship the pure mode predicate"
+        );
+
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            shell.contains("wb-mode.js"),
+            "the shell HTML must load the mode module"
+        );
+    }
+
+    #[tokio::test]
+    async fn served_ui_copy_has_no_mock_or_false_claims() {
+        const FILES: &[&str] = &[
+            "/index.html",
+            "/detached.html",
+            "/app.js",
+            "/styles.css",
+            "/wb-console.js",
+            "/wb-daemon.js",
+            "/wb-fail.js",
+            "/wb-kanban.js",
+            "/wb-mode.js",
+            "/wb-runs.js",
+            "/wb-settings.js",
+            "/wb-translate.js",
+            "/wb-viewer.js",
+        ];
+        for path in FILES {
+            let resp = get_local(path).await;
+            assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
+            let lc = body_string(resp).await.to_ascii_lowercase();
+            assert!(!lc.contains("mock"), "{path} still contains \"mock\"");
+            assert!(
+                !lc.contains("nothing is written to disk"),
+                "{path} still claims \"nothing is written to disk\""
+            );
+            assert!(
+                !lc.contains("no secrets are stored"),
+                "{path} still claims \"no secrets are stored\""
+            );
+            assert!(
+                !lc.contains("any 6-digit code"),
+                "{path} still claims \"any 6-digit code\""
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn root_serves_wb_fail() {
+        let resp = get_local("/wb-fail.js").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET wb-fail.js → 200");
+        let fail = body_string(resp).await;
+        assert!(
+            fail.contains("function message"),
+            "wb-fail.js must ship the message extractor"
+        );
+
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            shell.contains("wb-fail.js"),
+            "the shell HTML must load the failure presenter"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_serves_shell_but_gates_data() {
+        // The shell bytes are served without a cookie…
+        let resp = session_router("tok")
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "/ served pre-login (NOT redirected)"
+        );
+
+        // …but every DATA endpoint stays 401 under a no-cookie Session.
+        for uri in [
+            "/api/identity",
+            "/ws/session?repo=x&agent=claude",
+            "/ws/command",
+        ] {
+            let resp = session_router("tok")
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "{uri} must be 401 with no cookie"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn session_state_reports_authed() {
+        // Localhost is always authed.
+        let body = body_string(get_local("/api/session").await).await;
+        assert!(
+            body.contains(r#""authed":true"#),
+            "localhost authed: {body}"
+        );
+
+        // Session, no cookie → not authed.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = body_string(resp).await;
+        assert!(
+            body.contains(r#""authed":false"#),
+            "no-cookie session not authed: {body}"
+        );
+
+        // Session + a valid minted cookie → authed.
+        let now = now_unix();
+        let code = rfc_seed().code_at(now / 30);
+        let login = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(format!("code={code}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let set_cookie = login
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .expect("a Set-Cookie header")
+            .to_string();
+        let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session")
+                    .header(header::COOKIE, &cookie_pair)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = body_string(resp).await;
+        assert!(
+            body.contains(r#""authed":true"#),
+            "valid cookie authed: {body}"
+        );
+    }
+
+    /// `GET /api/session` reports the wire name of the ACTIVE policy under all
+    /// three binds (issue #205), so the Security modal can derive honest,
+    /// bind-specific affordances instead of always assuming `Session`.
+    #[tokio::test]
+    async fn session_state_reports_policy() {
+        // Localhost.
+        let body = body_string(get_local("/api/session").await).await;
+        assert!(
+            body.contains(r#""policy":"localhost""#),
+            "localhost: {body}"
+        );
+
+        // Session, no cookie — the route is allowlisted (200) even though
+        // `authed` is false.
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "allowlisted: {resp:?}");
+        let body = body_string(resp).await;
+        assert!(body.contains(r#""policy":"session""#), "session: {body}");
+
+        // Bearer, with a matching Authorization header.
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("tok".into()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/session")
+                .header(header::AUTHORIZATION, "Bearer tok")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let body = body_string(resp).await;
+        assert!(body.contains(r#""policy":"bearer""#), "bearer: {body}");
+    }
+
+    /// The served shell no longer claims every 6-digit code works (that was
+    /// true of the pre-#205 mock login) and explains the login gate inline
+    /// (issue #205, audit finding AC5; copy updated for the ADR-0032 amendment
+    /// where the gate can also apply to a loopback bind).
+    #[tokio::test]
+    async fn login_gate_drops_mock_hint() {
+        let shell = body_string(get_local("/").await).await;
+        assert!(
+            !shell.contains("any 6-digit code works"),
+            "mock hint must be gone"
+        );
+        assert!(
+            shell.contains("Needs 2FA enrolled first"),
+            "require-login explanation must be present"
+        );
+    }
+
+    #[tokio::test]
+    async fn logout_clears_cookie() {
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/logout")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "POST /api/logout → 200");
+        let set_cookie = resp
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .expect("a Set-Cookie header");
+        assert!(
+            set_cookie.contains("ralphy_session=;") && set_cookie.contains("Max-Age=0"),
+            "cookie cleared: {set_cookie}"
         );
     }
 
@@ -1919,7 +3385,10 @@ mod tests {
                 PathBuf::from("does-not-exist"),
                 Instant::now(),
                 idle_shutdown(),
-                auth::AuthPolicy::Bearer("tok".into()),
+                auth::AuthState::fixed(
+                    auth::AuthPolicy::Bearer("tok".into()),
+                    epoch::SessionEpoch::in_memory_detached(),
+                ),
             )
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await

@@ -58,6 +58,13 @@ pub struct IssuesArgs {
     /// Mutually exclusive with `--assignee`.
     #[arg(long = "no-assignee", conflicts_with = "assignee")]
     pub no_assignee: bool,
+
+    /// Emit the Kanban board fold instead of the flat queue array: `{issues[]
+    /// (per-issue + assignees[], state_reason), labels[] ({name,color} repo
+    /// vocabulary)}`. List + `--format json` only. Mutually exclusive with
+    /// `--push` (both are queue-level, but only one output mode applies).
+    #[arg(long, conflicts_with = "push")]
+    pub board: bool,
 }
 
 /// The output format `--format` selects.
@@ -91,6 +98,9 @@ struct ShowView {
     number: u64,
     title: String,
     body: String,
+    /// The issue's full comment thread, in order (raw, unlike
+    /// `consolidated_spec` which extracts just the marked comment).
+    comments: Vec<String>,
     labels: Vec<String>,
     /// The authoritative consolidated-spec comment (ADR-0017), surfaced
     /// first-class when a marked comment exists; `None` otherwise.
@@ -119,6 +129,39 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         args.no_assignee,
         settings.queue.assignee.as_deref(),
     );
+
+    // `--board` emits the Kanban fold (ADR-0036) instead of the flat queue
+    // array; JSON-only, list-only, so it cannot combine with `show <n>` or a
+    // non-JSON format.
+    if args.board {
+        if args.show.is_some() {
+            anyhow::bail!(
+                "`--board` emits the whole board fold and cannot be combined with `show <n>`"
+            );
+        }
+        if args.format != Format::Json {
+            anyhow::bail!("`--board` requires `--format json`");
+        }
+        // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
+        // union applies later in the fold, so unassigned issues are present to
+        // union over) and graph-ordered by the same resolver the runner uses
+        // (`build_list_queue` already sorts via `sort_queue_in_graph`); the
+        // open+closed reads feed the Backlog/Closed columns.
+        let queue = build_list_queue(&repo_root, None)?;
+        let open = github::list_all_open_meta(&repo_root)?;
+        let closed = github::list_closed_board(&repo_root)?;
+        let repo_labels = github::list_repo_labels(&repo_root)?;
+        // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
+        let login = match assignee.as_deref() {
+            Some(a) => Some(github::resolve_login(a, &repo_root)?),
+            None => None,
+        };
+        println!(
+            "{}",
+            render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
+        );
+        return Ok(());
+    }
 
     // `--push` emits the whole judged queue as a snapshot event rather than
     // printing it — the on-demand twin of the runner's enriched `queue.built`.
@@ -299,6 +342,7 @@ fn show_view(
         number: iv.number,
         title: iv.title,
         body: issue.body.clone(),
+        comments: comments.to_vec(),
         labels: iv.labels,
         consolidated_spec,
         queue_status: iv.queue_status,
@@ -355,6 +399,78 @@ fn render_json(view: &QueueView, fields: Option<&[String]>) -> Result<String> {
 fn render_show_json(view: &ShowView, fields: Option<&[String]>) -> Result<String> {
     let full = serde_json::to_value(view)?;
     Ok(serde_json::to_string_pretty(&select_fields(full, fields))?)
+}
+
+/// A degraded board row synthesized from a queue [`ralphy_core::Issue`] when the
+/// open read did not carry it (e.g. a queue-labeled issue older than the open
+/// read's `--limit`). Preserves the parity invariant — a Ready row the runner
+/// would execute never silently vanishes — at the cost of the richer meta
+/// (assignees empty ⇒ kept by the union, dates blank) the drawer's `issue.show`
+/// backfills anyway.
+fn degraded_board_issue(iss: &ralphy_core::Issue) -> github::BoardIssue {
+    github::BoardIssue {
+        number: iss.number,
+        title: iss.title.clone(),
+        state: "open".to_string(),
+        reason: None,
+        labels: iss.labels.clone(),
+        assignees: Vec::new(),
+        blocked_by: blocked::parse_blocked_by(&iss.body),
+        created: String::new(),
+        updated: String::new(),
+    }
+}
+
+/// Render the whole-tracker Kanban board fold (ADR-0036 slice 6): the Ready
+/// subset (`ready`, already in the core's `sort_queue_in_graph` order) FIRST,
+/// then the remaining open issues, then the recent-closed batch. Every row is
+/// filtered by the assignee union ([`blocked::assignee_union_keep`]), so with no
+/// configured login the default hides assigned issues. A Ready issue absent from
+/// the `open` read is emitted from a synthesized [`degraded_board_issue`] rather
+/// than dropped — board-order == core-queue-order stays true even when the open
+/// read's limit does not cover the whole queue. Each row carries
+/// `{number,title,state,reason,labels,assignees,blocked_by,created,updated}`;
+/// `labels[]` is the repo's `{name,color}` vocabulary for chip rendering.
+fn render_board_json(
+    ready: &[ralphy_core::Issue],
+    open: &[github::BoardIssue],
+    closed: &[github::BoardIssue],
+    login: Option<&str>,
+    repo_labels: &[(String, String)],
+) -> Result<String> {
+    let ready_set: std::collections::BTreeSet<u64> = ready.iter().map(|i| i.number).collect();
+    let keep = |b: &github::BoardIssue| blocked::assignee_union_keep(&b.assignees, login);
+    let mut rows: Vec<Value> = Vec::new();
+    // Ready issues first, preserving the core's graph order — this is what makes
+    // board-order == core-queue-order true by construction. A row missing from the
+    // open read is synthesized so it is never silently dropped.
+    for iss in ready {
+        let b = match open.iter().find(|b| b.number == iss.number) {
+            Some(b) => b.clone(),
+            None => degraded_board_issue(iss),
+        };
+        if keep(&b) {
+            rows.push(serde_json::to_value(&b)?);
+        }
+    }
+    // Remaining open issues, then the closed batch — natural read order.
+    for b in open {
+        if !ready_set.contains(&b.number) && keep(b) {
+            rows.push(serde_json::to_value(b)?);
+        }
+    }
+    for b in closed {
+        if keep(b) {
+            rows.push(serde_json::to_value(b)?);
+        }
+    }
+    let labels: Vec<Value> = repo_labels
+        .iter()
+        .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
+        .collect();
+    Ok(serde_json::to_string_pretty(
+        &serde_json::json!({"issues": rows, "labels": labels}),
+    )?)
 }
 
 /// The wire word for a queue status, matching the ADR-0020 columns.

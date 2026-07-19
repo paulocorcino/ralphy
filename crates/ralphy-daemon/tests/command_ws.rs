@@ -17,7 +17,9 @@ fn command(id: u64, verb: &str, slug: &str) -> Message {
     Message::Binary(protocol::encode(&Frame::Command(Command {
         id,
         verb: verb.to_string(),
-        payload: serde_json::json!({ "repo": slug }),
+        // `run` now requires validated closed-enum params (#191); triage/push
+        // ignore them.
+        payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
     })))
 }
 
@@ -54,7 +56,7 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
         std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        ralphy_daemon::auth::AuthPolicy::Localhost,
+        ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
