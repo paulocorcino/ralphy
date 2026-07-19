@@ -1150,5 +1150,14 @@ fn render_card_no_work_triad_has_no_issue_rows() {
     let card = render_card(&state, 0);
     assert!(state.issues.is_empty(), "no per-issue rows: {card}");
     assert!(!card.contains("✅ #"), "no per-issue rows: {card}");
-    assert!(card.contains('0'), "the 0-issue counters must show: {card}");
+    // The footer must SAY the run had nothing to do — the generic fallback
+    // ("stopped before any issue was processed") reads as an unexplained abort.
+    assert!(
+        card.contains("no open issues to process"),
+        "the no_work footer must explain itself: {card}"
+    );
+    assert!(
+        !card.contains("stopped before any issue was processed"),
+        "the generic abort footer must not appear: {card}"
+    );
 }

@@ -40,8 +40,12 @@ impl EdgeNoticeState {
         match ev {
             RunEvent::QueueBuilt { scope, .. } => self.scope = scope.clone(),
             RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
-                let scope = self.scope.clone().unwrap_or_default();
-                self.notice = Some(format!("No open issues for {scope} to process. Done."));
+                // An absent scope phrase would leave a double space and a dangling
+                // preposition, so drop the whole clause instead.
+                self.notice = Some(match self.scope.as_deref() {
+                    Some(scope) => format!("No open issues for {scope} to process. Done."),
+                    None => "No open issues to process. Done.".to_string(),
+                });
             }
             RunEvent::RunSkipped { reason } => self.notice = Some(reason.clone()),
             _ => {}
@@ -140,6 +144,18 @@ mod tests {
         state.fold(&queue_built("labels [AFK]"));
         state.fold(&run_finished("completed"));
         assert_eq!(state.take(), None);
+    }
+
+    /// A `no_work` fold with no scope phrase must not leave a double space and a
+    /// dangling preposition.
+    #[test]
+    fn a_scopeless_no_work_notice_drops_the_clause() {
+        let mut state = EdgeNoticeState::default();
+        state.fold(&run_finished("no_work"));
+        assert_eq!(
+            state.take().as_deref(),
+            Some("No open issues to process. Done.")
+        );
     }
 
     /// A notice prints once: the second take is empty.

@@ -250,7 +250,17 @@ pub(crate) fn init_tracing(
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // The run-border notices are FOLDED from `ralphy_core::emit` events now (#222),
+    // where they used to be unconditional `println!`s. A narrow `RUST_LOG` (say
+    // `warn`) must not silence the operator-facing notice, so that target is pinned
+    // at INFO regardless of the env filter.
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+        .add_directive(
+            "ralphy_core::emit=info"
+                .parse()
+                .expect("a static, valid filter directive"),
+        );
 
     // `--verbose`, or any explicit env filter, means the operator wants the raw
     // log on screen — drop the presenter and disable animation (ADR-0006 D3).

@@ -358,6 +358,12 @@ impl RunState {
             }
             // The run-boundary end carries no per-issue status; the fold infers the
             // boundary from the Layer lifecycle, so it is a no-op here.
+            // …except the empty-queue border (#222), whose outcome IS the run's whole
+            // story: without a summary the card falls back to "stopped before any
+            // issue was processed", which reads as an unexplained abort.
+            RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
+                self.final_summary = Some("no open issues to process".to_string());
+            }
             RunEvent::RunFinished { .. } => {}
             // The raw plan snapshots carry no per-issue status change (the sink
             // resets its plan-step poll snapshot on `PlanWritten`, not these).
