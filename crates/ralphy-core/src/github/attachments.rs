@@ -2,7 +2,8 @@
 //! (ADR-0025 §1–§3, §5–§7). The security axis — host allowlist, format
 //! allowlist, login-HTML masquerade guard, by-category truncation, dedup,
 //! deterministic order, and reject-visibility — is pure over the extracted link
-//! list and unit-tested with NO network. Only the orchestrator
+//! list and unit-tested with NO network — including the content sniff that
+//! rescues GitHub's extensionless inline uploads. Only the orchestrator
 //! [`fetch_triage_attachments`] touches `gh`; it is best-effort and never aborts
 //! triage. Images (§4) are fetched only for a vision-capable adapter — gated by
 //! [`gated_image_outcome`] before any download.
@@ -17,6 +18,11 @@ use crate::github::client::{gh, gh_output};
 /// Only files a reporter attached through GitHub's own UI are fetchable — this is
 /// what closes SSRF: the model never chooses a fetch target (ADR-0025 §3.1).
 pub const ATTACHMENT_HOST_PREFIX: &str = "https://github.com/user-attachments/";
+/// The path segment GitHub's *inline* uploads (paste/drag into the body) live
+/// under. Unlike the `/files/<id>/<name>` form, an asset URL ends in a bare UUID
+/// with no filename and no extension, so extension classification alone would
+/// deny every pasted screenshot (ADR-0025 §3.2 amendment).
+const ASSET_PATH_SEGMENT: &str = "/user-attachments/assets/";
 /// At most this many attachments per issue, counted after dedup (ADR-0025 §3.4).
 pub const COUNT_CAP: usize = 10;
 /// Free-text over this cap is kept head+tail with an elision marker (ADR-0025 §3.3).
@@ -59,6 +65,40 @@ pub fn classify_format(filename: &str) -> FormatClass {
         Some(e) if IMAGE_EXTS.contains(&e) => FormatClass::Image,
         _ => FormatClass::Denied,
     }
+}
+
+/// True for the one URL shape whose class cannot be read off the name: a
+/// `user-attachments/assets/<uuid>` link (GitHub's inline paste/drag upload),
+/// which carries no filename and no extension. Such a URL is a *candidate* for
+/// content sniffing — never an acceptance on its own: the bytes still have to
+/// prove they are an allowlisted image ([`sniff_image_ext`]) or the attachment is
+/// denied exactly as before (ADR-0025 §3.2 amendment).
+pub fn is_extensionless_asset(url: &str) -> bool {
+    // Scheme-agnostic on purpose: the extractor's regex admits `http` too, and a
+    // candidate that slips past here would be silently denied, not silently let in.
+    url.contains(ASSET_PATH_SEGMENT) && !filename_from_url(url).contains('.')
+}
+
+/// The allowlisted image extension the leading bytes *are*, or `None`. This is
+/// the deny-by-default half of the sniff: only a real PNG/JPEG/GIF/WEBP header
+/// yields a class, so an extensionless asset that is anything else (HTML, a zip,
+/// a video) stays `denied format`. Stricter than the name-based path — a `.png`
+/// name is believed, these bytes must prove it.
+pub fn sniff_image_ext(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("png");
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("jpg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("gif");
+    }
+    // RIFF container: `RIFF` + 4 size bytes + `WEBP`.
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    None
 }
 
 /// Extract `github.com/user-attachments/...` links from the body then each
@@ -274,8 +314,15 @@ fn count_capped(links: &[String]) -> Vec<(String, bool)> {
 /// truncation, and write it under `dir`. Returns the visible outcome; a `gh`
 /// failure maps to `download failed: <code>` and never propagates (best-effort).
 fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> AttachmentOutcome {
-    let name = filename_from_url(url);
-    let class = classify_format(&name);
+    let mut name = filename_from_url(url);
+    let mut class = classify_format(&name);
+    // An inline-pasted asset has no extension to classify, so it enters as a
+    // *provisional* image: gated and downloaded like one, then required to prove
+    // itself by content below. Nothing else escapes name-based denial.
+    let provisional_image = class == FormatClass::Denied && is_extensionless_asset(url);
+    if provisional_image {
+        class = FormatClass::Image;
+    }
     if class == FormatClass::Denied {
         return AttachmentOutcome::NotFetched {
             reason: "denied format".to_string(),
@@ -304,6 +351,19 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> At
         return AttachmentOutcome::NotFetched {
             reason: "auth".to_string(),
         };
+    }
+    // Resolve the provisional class by content, and give the file the extension
+    // its bytes earned — adapters that deliver pixels by path (codex `-i`) need
+    // the suffix to recognize the format.
+    if provisional_image {
+        match sniff_image_ext(&bytes) {
+            Some(ext) => name = format!("{name}.{ext}"),
+            None => {
+                return AttachmentOutcome::NotFetched {
+                    reason: "denied format".to_string(),
+                }
+            }
+        }
     }
     let payload = match classify_payload(class, bytes) {
         Ok(p) => p,
@@ -361,7 +421,7 @@ pub fn fetch_triage_attachments(
         }
         let mut entries: Vec<(String, AttachmentOutcome)> = Vec::new();
         for (url, within_cap) in count_capped(&links) {
-            let name = filename_from_url(&url);
+            let mut name = filename_from_url(&url);
             let outcome = if within_cap {
                 fetch_one(repo, &issue_dir, &url, &images)
             } else {
@@ -369,7 +429,13 @@ pub fn fetch_triage_attachments(
                     reason: "attachment cap reached".to_string(),
                 }
             };
+            // The written name is authoritative, not the URL's: a sniffed asset
+            // gained an extension on the way in, and that is what both the
+            // manifest and the image-class test must see.
             if let AttachmentOutcome::Fetched { path } = &outcome {
+                if let Some(written) = path.file_name().and_then(|n| n.to_str()) {
+                    name = written.to_string();
+                }
                 if classify_format(&name) == FormatClass::Image {
                     image_paths.push(path.clone());
                 }
@@ -421,6 +487,38 @@ mod tests {
         for f in ["a.exe", "a.zip", "foo"] {
             assert_eq!(classify_format(f), FormatClass::Denied, "{f}");
         }
+    }
+
+    #[test]
+    fn extensionless_asset_is_only_the_inline_upload_shape() {
+        assert!(is_extensionless_asset(
+            "https://github.com/user-attachments/assets/7a4d4bd2-c46f-48eb-b11a-9c53a0364b5e"
+        ));
+        // A named file under `/files/` classifies by extension as before.
+        assert!(!is_extensionless_asset(
+            "https://github.com/user-attachments/files/1/diagnose.log"
+        ));
+        // An asset that *does* carry an extension needs no sniffing.
+        assert!(!is_extensionless_asset(
+            "https://github.com/user-attachments/assets/abc.png"
+        ));
+    }
+
+    #[test]
+    fn sniff_image_ext_accepts_only_real_image_headers() {
+        assert_eq!(sniff_image_ext(b"\x89PNG\r\n\x1a\n\x00\x00"), Some("png"));
+        assert_eq!(sniff_image_ext(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+        assert_eq!(sniff_image_ext(b"GIF89a...."), Some("gif"));
+        assert_eq!(
+            sniff_image_ext(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
+            Some("webp")
+        );
+        // Deny-by-default: anything that is not one of the four is not an image.
+        assert_eq!(sniff_image_ext(b"<!DOCTYPE html>"), None);
+        assert_eq!(sniff_image_ext(b"PK\x03\x04"), None);
+        assert_eq!(sniff_image_ext(b""), None);
+        // A truncated RIFF header must not index out of bounds.
+        assert_eq!(sniff_image_ext(b"RIFF\x00\x00"), None);
     }
 
     #[test]
