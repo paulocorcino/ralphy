@@ -16,6 +16,8 @@
 //! extractor. This root keeps the cross-cutting branding helpers and the two
 //! types shared by more than one submodule.
 
+#[cfg(test)]
+mod capture;
 mod event;
 mod fields;
 mod state;
