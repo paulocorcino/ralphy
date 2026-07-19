@@ -216,13 +216,14 @@ pub fn render_final_push(state: &RunState) -> String {
     let processed =
         c.done + c.skipped + c.blocked + c.infeasible + c.non_green + c.needs_split + c.hitl;
     if processed == 0 {
-        return truncate_chars(
-            format!(
-                "🛑 {} — stopped before any issue was processed",
-                state.title
-            ),
-            TELEGRAM_LIMIT,
-        );
+        // A run border that folded its OWN summary (a `--if-idle` deferral, #222)
+        // knows why it processed nothing — say that instead of the generic stop,
+        // which would read as an unexplained abort.
+        let head = state
+            .final_summary
+            .clone()
+            .unwrap_or_else(|| "stopped before any issue was processed".to_string());
+        return truncate_chars(format!("🛑 {} — {head}", state.title), TELEGRAM_LIMIT);
     }
     let head = state
         .final_summary

@@ -251,13 +251,16 @@ pub const QUEUE_BUILT_MSG: &str = "queue built";
 /// The queue was resolved (ADR-0020/-0021). `order` is the `#30 -> #31` render,
 /// `issues_json` the enriched per-issue snapshot, `assignee_filter` the resolved
 /// login the queue was scoped to (empty = unfiltered). `stop_before` is `0` when
-/// the queue carries no stop-before (issue numbers are ≥ 1).
+/// the queue carries no stop-before (issue numbers are ≥ 1). `scope` is LOG-ONLY:
+/// the human-readable queue scope phrase the console notice is folded from — no
+/// decoder arm feeds it to the wire (ADR-0019 amendment, #222).
 pub fn queue_built(
     count: u64,
     order: &str,
     stop_before: u64,
     issues_json: &str,
     assignee_filter: &str,
+    scope: &str,
 ) {
     info!(
         count,
@@ -265,6 +268,7 @@ pub fn queue_built(
         stop_before,
         issues_json = %issues_json,
         assignee_filter = %assignee_filter,
+        scope = %scope,
         "{}",
         QUEUE_BUILT_MSG
     );
@@ -325,6 +329,16 @@ pub fn run_finished(
         "{}",
         RUN_FINISHED_MSG
     );
+}
+
+/// See [`run_skipped`].
+pub const RUN_SKIPPED_MSG: &str = "run skipped";
+
+/// The run declined to start and returned cleanly (ADR-0019 boundary event,
+/// #222 amendment) — e.g. `--if-idle` deferring to a run already in progress.
+/// `reason` is the operator-facing sentence.
+pub fn run_skipped(reason: &str) {
+    info!(reason = %reason, "{}", RUN_SKIPPED_MSG);
 }
 
 /// See [`knowledge_consolidating`].

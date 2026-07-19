@@ -129,6 +129,7 @@ fn agent_name_is_null_before_run_started_folds() {
             stop_before: None,
             issues: Value::Null,
             assignee_filter: None,
+            scope: None,
         },
         &RunState::new("t", 1),
     );
@@ -173,6 +174,7 @@ fn issue_block_present_on_subject_scoped_absent_on_run_scoped() {
             stop_before: None,
             issues: Value::Null,
             assignee_filter: None,
+            scope: None,
         },
         &run_state(),
     );
@@ -256,6 +258,7 @@ fn queue_built_has_no_subject_and_lists_order() {
             stop_before: Some(2),
             issues: Value::Null,
             assignee_filter: None,
+            scope: None,
         },
         &RunState::new("t", 1),
     );
@@ -286,6 +289,7 @@ fn queue_built_carries_the_enriched_issues_array() {
             stop_before: None,
             issues: issues.clone(),
             assignee_filter: None,
+            scope: None,
         },
         &RunState::new("t", 1),
     );
@@ -309,6 +313,7 @@ fn queue_snapshot_data_matches_queue_built_data() {
             stop_before: None,
             issues: issues.clone(),
             assignee_filter: None,
+            scope: None,
         },
         &RunState::new("t", 1),
     );
@@ -338,6 +343,7 @@ fn queue_built_and_snapshot_carry_assignee_filter() {
             stop_before: None,
             issues: Value::Null,
             assignee_filter: Some("octocat".into()),
+            scope: None,
         },
         &RunState::new("t", 1),
     );
@@ -350,6 +356,7 @@ fn queue_built_and_snapshot_carry_assignee_filter() {
             stop_before: None,
             issues: Value::Null,
             assignee_filter: None,
+            scope: None,
         },
         &RunState::new("t", 1),
     );
@@ -653,6 +660,7 @@ fn run_started_maps_cli_params_without_subject() {
             {"number": 2, "title": "two"},
         ]),
         assignee_filter: None,
+        scope: None,
     });
     state.apply(ev.clone());
     let v = runevent_to_cloudevent(&ev, &ctx(), &state).expect("mapped");
@@ -703,6 +711,7 @@ fn run_finished_maps_outcome_totals_without_subject() {
             {"number": 2, "title": "two"},
         ]),
         assignee_filter: None,
+        scope: None,
     });
     state.apply(RunEvent::IssueStarted {
         number: 1,
@@ -824,4 +833,40 @@ fn notice_maps_level_and_message_without_subject() {
     assert!(v.get("subject").is_none(), "notice carries no subject: {v}");
     assert_eq!(v["data"]["level"], "warn");
     assert_eq!(v["data"]["message"], "heads up");
+}
+
+#[test]
+fn queue_built_envelope_carries_no_scope_key() {
+    // `scope` is LOG-ONLY (#222): it folds the console edge notice and must NEVER
+    // reach the wire — the `dev.ralphy.queue.built` shape is unchanged.
+    let v = map(
+        RunEvent::QueueBuilt {
+            count: 0,
+            order: vec![],
+            stop_before: None,
+            issues: Value::Null,
+            assignee_filter: None,
+            scope: Some("labels [AFK]".into()),
+        },
+        &RunState::new("t", 0),
+    );
+    assert_eq!(v["type"], "dev.ralphy.queue.built");
+    assert!(
+        v["data"].get("scope").is_none(),
+        "scope is log-only, never on the wire: {v}"
+    );
+}
+
+#[test]
+fn run_skipped_envelope_shape() {
+    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+    let v = map(
+        RunEvent::RunSkipped {
+            reason: reason.into(),
+        },
+        &RunState::new("t", 0),
+    );
+    assert_eq!(v["type"], "dev.ralphy.run.skipped");
+    assert!(v.get("subject").is_none(), "run.skipped is run-scoped: {v}");
+    assert_eq!(v["data"]["reason"], reason);
 }

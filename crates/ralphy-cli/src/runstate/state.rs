@@ -310,6 +310,11 @@ impl RunState {
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
             }
+            // The run declined to start (#222): the deferral sentence IS the card's
+            // terminal state — no issue ever changed status.
+            RunEvent::RunSkipped { reason } => {
+                self.final_summary = Some(reason);
+            }
             RunEvent::SleepStarted {
                 reset,
                 target_epoch,
@@ -435,6 +440,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: None,
+                scope: None,
             },
             RunEvent::IssueStarted {
                 number: 1,
@@ -762,6 +768,7 @@ mod tests {
                 {"number": 2, "title": "two"},
             ]),
             assignee_filter: None,
+            scope: None,
         });
         assert_eq!(
             state.queue,
@@ -785,6 +792,7 @@ mod tests {
             stop_before: None,
             issues: serde_json::Value::Null,
             assignee_filter: None,
+            scope: None,
         });
         assert!(legacy.queue.is_empty());
     }

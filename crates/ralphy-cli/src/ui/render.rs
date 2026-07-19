@@ -227,6 +227,7 @@ pub(crate) fn render_line(
         // so no scroll-up line here.
         RunEvent::RunStarted { .. }
         | RunEvent::RunFinished { .. }
+        | RunEvent::RunSkipped { .. }
         | RunEvent::PlanOpened { .. }
         | RunEvent::PlanClosed { .. } => return None,
         RunEvent::IssueStarted { number, title } => (

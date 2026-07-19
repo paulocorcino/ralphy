@@ -293,6 +293,7 @@ mod tests {
         "queue built",                                       // CLI — roundtrip_queue_built
         "run started",                                       // CLI — roundtrip_run_started
         "run finished",                                      // CLI — roundtrip_run_finished
+        "run skipped",                                       // CLI — roundtrip_run_skipped
         "consolidating knowledge", // CLI — roundtrip_knowledge_consolidating
         "knowledge consolidated",  // CLI — roundtrip_knowledge_consolidated
         "planning",                // adapters — roundtrip_planning
@@ -317,7 +318,7 @@ mod tests {
     }
 
     /// Every message pinned across both crates: the 3 shared adapter constants
-    /// and the 22 `ralphy_core::emit`-owned messages — 25 in all. No
+    /// and the 23 `ralphy_core::emit`-owned messages — 26 in all. No
     /// source-fragment pins remain: every message now has a real emit helper, so
     /// `super::super::roundtrip` proves the encoding by execution.
     ///

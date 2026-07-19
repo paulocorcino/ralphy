@@ -225,6 +225,9 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             stop_before,
             issues,
             assignee_filter,
+            // LOG-ONLY (#222): the console notice's scope phrase never reaches the
+            // wire — `dev.ralphy.queue.built`'s shape is unchanged.
+            scope: _,
         } => Some(envelope(
             "dev.ralphy.queue.built",
             None,
@@ -350,6 +353,14 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             ctx,
             state,
             json!({ "number": number, "on": on }),
+        )),
+        // The run declined to start (#222): run-scoped, so no `subject`.
+        RunEvent::RunSkipped { reason } => Some(envelope(
+            "dev.ralphy.run.skipped",
+            None,
+            ctx,
+            state,
+            json!({ "reason": reason }),
         )),
         RunEvent::DeadlinePassed { number } => Some(envelope(
             "dev.ralphy.issue.deadline_passed",

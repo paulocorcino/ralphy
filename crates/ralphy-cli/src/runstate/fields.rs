@@ -90,6 +90,11 @@ pub struct EventFields {
     /// The resolved concrete login the queue was scoped to on a `queue built`
     /// event (ADR-0021 §5); absent / empty = whole queue.
     pub assignee_filter: Option<String>,
+    /// The operator-facing sentence on a `run skipped` event (#222).
+    pub reason: Option<String>,
+    /// The human-readable queue scope phrase on a `queue built` event (#222).
+    /// LOG-ONLY: folded into the console edge notice, never mapped to the wire.
+    pub scope: Option<String>,
 }
 
 impl Default for EventFields {
@@ -134,6 +139,8 @@ impl Default for EventFields {
             steps_json: None,
             plan_md: None,
             assignee_filter: None,
+            reason: None,
+            scope: None,
         }
     }
 }
@@ -194,6 +201,10 @@ impl Visit for EventFields {
             "plan_md" => self.plan_md = Some(value.to_string()),
             // The resolved queue assignee scope (ADR-0021 §5); empty → None.
             "assignee_filter" => self.assignee_filter = clean_opt(value),
+            // The run-border fields (#222): the deferral sentence and the LOG-ONLY
+            // queue scope phrase; an empty emission maps to `None`.
+            "reason" => self.reason = clean_opt(value),
+            "scope" => self.scope = clean_opt(value),
             _ => {}
         }
     }
@@ -240,6 +251,9 @@ impl Visit for EventFields {
             // The `%`-formatted (Display) resolved queue assignee scope (ADR-0021
             // §5) arrives here; an empty-string emission maps to `None`.
             "assignee_filter" => self.assignee_filter = clean_opt(&rendered),
+            // The `%`-formatted (Display) run-border fields (#222) arrive here.
+            "reason" => self.reason = clean_opt(&rendered),
+            "scope" => self.scope = clean_opt(&rendered),
             _ => {}
         }
     }

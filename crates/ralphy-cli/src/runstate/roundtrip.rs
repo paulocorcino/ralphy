@@ -83,6 +83,7 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
         RunEvent::KnowledgeConsolidated { .. } => "roundtrip_knowledge_consolidated",
         RunEvent::RunStarted { .. } => "roundtrip_run_started",
         RunEvent::RunFinished { .. } => "roundtrip_run_finished",
+        RunEvent::RunSkipped { .. } => "roundtrip_run_skipped",
         RunEvent::Notice { .. } => "roundtrip_level_wins_over_message",
         RunEvent::Planning { .. } => "roundtrip_planning",
         RunEvent::Executing { .. } => "roundtrip_executing",
@@ -372,6 +373,7 @@ fn roundtrip_queue_built() {
             2,
             r#"[{"number":1,"queue_status":"eligible"}]"#,
             "octocat",
+            "labels [AFK]",
         )
     });
     assert_eq!(
@@ -382,6 +384,7 @@ fn roundtrip_queue_built() {
             stop_before: Some(2),
             issues: serde_json::json!([{"number":1,"queue_status":"eligible"}]),
             assignee_filter: Some("octocat".into()),
+            scope: Some("labels [AFK]".into()),
         })
     );
 }
@@ -415,12 +418,13 @@ fn roundtrip_run_started() {
 
 #[test]
 fn roundtrip_queue_built_folds_its_sentinels() {
-    // The two "absent" encodings the helper's scalar signature forces: `0` for
+    // The three "absent" encodings the helper's scalar signature forces: `0` for
     // "no stop-before in this queue" (issue numbers are ≥ 1) and `""` for "the
-    // queue was fetched unfiltered". Both must decode back to `None` — a helper
-    // that stopped emitting them, or a decoder that stopped folding them, would
-    // otherwise surface a phantom stop-before at #0 and a scope mark of "".
-    let ev = one(|| ralphy_core::emit::queue_built(1, "#1", 0, "not json", ""));
+    // queue was fetched unfiltered" / "no scope phrase". All must decode back to
+    // `None` — a helper that stopped emitting them, or a decoder that stopped
+    // folding them, would otherwise surface a phantom stop-before at #0 and a
+    // scope mark of "".
+    let ev = one(|| ralphy_core::emit::queue_built(1, "#1", 0, "not json", "", ""));
     assert_eq!(
         decode(&ev),
         Some(RunEvent::QueueBuilt {
@@ -430,6 +434,7 @@ fn roundtrip_queue_built_folds_its_sentinels() {
             // An unparseable/absent snapshot degrades to `Null`, never a panic.
             issues: serde_json::Value::Null,
             assignee_filter: None,
+            scope: None,
         })
     );
 }
@@ -475,6 +480,42 @@ fn roundtrip_run_finished() {
     );
     // A run spans models, so `run finished` deliberately carries no `model`.
     assert_eq!(ev.fields.model, None);
+}
+
+/// The empty-queue border (#222): the run still emits the full `run finished`,
+/// with the `no_work` outcome and every count at 0.
+#[test]
+fn roundtrip_run_finished_no_work() {
+    let ev = one(|| {
+        ralphy_core::emit::run_finished("no_work", 0, 0, 0, &ralphy_core::Usage::default(), 0)
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::RunFinished {
+            outcome: "no_work".into(),
+            issues_done: 0,
+            issues_skipped: 0,
+            issues_total: 0,
+            up: 0,
+            cr: 0,
+            cw: 0,
+            out: 0,
+            duration_s: 0,
+        })
+    );
+}
+
+/// The `--if-idle` deferral border (#222).
+#[test]
+fn roundtrip_run_skipped() {
+    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+    let ev = one(|| ralphy_core::emit::run_skipped(reason));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::RunSkipped {
+            reason: reason.into(),
+        })
+    );
 }
 
 #[test]

@@ -1097,3 +1097,58 @@ fn try_start_notifier_returns_none_on_get_me_error() {
     let handle = try_start_notifier(client, 1, RunState::new("t", 0), queue);
     assert!(handle.is_none());
 }
+
+#[test]
+fn render_card_carries_the_run_skipped_reason() {
+    // The `--if-idle` deferral (#222): the run processed nothing, so the terminal
+    // footer must carry the folded deferral sentence rather than the generic
+    // "stopped before any issue was processed".
+    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+    let mut state = RunState::new("repo · 0 issues", 0);
+    state.apply(RunEvent::RunSkipped {
+        reason: reason.into(),
+    });
+    state.finished = true;
+    let card = render_card(&state, 0);
+    assert!(card.contains(reason), "card: {card}");
+}
+
+#[test]
+fn render_card_no_work_triad_has_no_issue_rows() {
+    // The empty-queue border (#222): the full triad folds to a 0-issue card — the
+    // counters read 0 and not a single per-issue row is drawn.
+    let mut state = RunState::new("repo · 0 issues", 0);
+    state.apply(RunEvent::QueueBuilt {
+        count: 0,
+        order: vec![],
+        stop_before: None,
+        issues: serde_json::Value::Null,
+        assignee_filter: None,
+        scope: Some("labels [AFK]".into()),
+    });
+    state.apply(RunEvent::RunStarted {
+        repo: "o/r".into(),
+        queue_labels: vec!["AFK".into()],
+        agent: "claude".into(),
+        plan_agent: "claude".into(),
+        branch_mode: "new".into(),
+        branch: "origin/main".into(),
+        deadline_hours: None,
+    });
+    state.apply(RunEvent::RunFinished {
+        outcome: "no_work".into(),
+        issues_done: 0,
+        issues_skipped: 0,
+        issues_total: 0,
+        up: 0,
+        cr: 0,
+        cw: 0,
+        out: 0,
+        duration_s: 0,
+    });
+    state.finished = true;
+    let card = render_card(&state, 0);
+    assert!(state.issues.is_empty(), "no per-issue rows: {card}");
+    assert!(!card.contains("✅ #"), "no per-issue rows: {card}");
+    assert!(card.contains('0'), "the 0-issue counters must show: {card}");
+}

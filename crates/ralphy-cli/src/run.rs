@@ -207,6 +207,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         assignee.as_deref(),
         &order,
         stop_before,
+        &empty_queue_scope(
+            &args.issues,
+            args.only_issue,
+            &effective_labels,
+            assignee.as_deref(),
+        ),
     );
 
     // Start the Telegram notifier worker now that the queue (and thus the title)
@@ -576,6 +582,7 @@ fn emit_queue_built(
     assignee: Option<&str>,
     order: &[String],
     stop_before: u64,
+    scope: &str,
 ) {
     let issues_json = {
         let tracker = GhTracker::new(repo_root);
@@ -611,6 +618,7 @@ fn emit_queue_built(
         stop_before,
         &issues_json,
         assignee_filter.as_deref().unwrap_or(""),
+        scope,
     );
 }
 

@@ -43,6 +43,10 @@ pub enum RunEvent {
         /// `None` = whole queue (unfiltered, or an explicit `--issues`/`--only-issue`
         /// selection). Only the CloudEvents sink carries it onto `queue.built`.
         assignee_filter: Option<String>,
+        /// The human-readable queue scope phrase (`labels [AFK]`, `issue #7`…),
+        /// LOG-ONLY (#222): the console edge notice is folded from it and it is
+        /// deliberately NOT mapped onto the `queue.built` envelope.
+        scope: Option<String>,
     },
     /// Work began on an issue (number + title).
     IssueStarted { number: u64, title: String },
@@ -161,6 +165,9 @@ pub enum RunEvent {
         out: u64,
         duration_s: u64,
     },
+    /// The run declined to start and returned cleanly (#222) — `--if-idle`
+    /// deferring to a live run. Mapped to `dev.ralphy.run.skipped`.
+    RunSkipped { reason: String },
     /// The raw `plan.md` snapshot at the plan-write point (#96), mapped to
     /// `dev.ralphy.plan.opened`. Issue-scoped; carries only the number + raw
     /// markdown, so it keeps `RunEvent` `PartialEq` (no new `Eq`/hash requirement).
@@ -202,6 +209,9 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             // The resolved concrete login the queue was scoped to (ADR-0021 §5);
             // `None` when the queue was fetched unfiltered.
             assignee_filter: fields.assignee_filter.clone(),
+            // LOG-ONLY (#222): the console edge notice's scope phrase; `""` folds
+            // to `None` and no envelope arm reads it.
+            scope: fields.scope.clone(),
         }),
         ralphy_core::emit::ISSUE_STARTED_MSG => Some(RunEvent::IssueStarted {
             number,
@@ -334,6 +344,9 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             cw: fields.cw.unwrap_or(0),
             out: fields.out.unwrap_or(0),
             duration_s: fields.duration_s.unwrap_or(0),
+        }),
+        ralphy_core::emit::RUN_SKIPPED_MSG => Some(RunEvent::RunSkipped {
+            reason: fields.reason.clone().unwrap_or_default(),
         }),
         _ => None,
     }
@@ -502,6 +515,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: Some("octocat".into()),
+                scope: None,
             })
         );
         assert_eq!(
@@ -517,6 +531,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: None,
+                scope: None,
             })
         );
     }
@@ -538,6 +553,7 @@ mod tests {
                 stop_before: Some(2),
                 issues: serde_json::json!([{"number":1,"queue_status":"eligible"}]),
                 assignee_filter: None,
+                scope: None,
             })
         );
         // A legacy `queue built` with no snapshot decodes with `issues: Null`.
@@ -554,6 +570,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: None,
+                scope: None,
             })
         );
         assert_eq!(
