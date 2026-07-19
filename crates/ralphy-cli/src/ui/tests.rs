@@ -1179,3 +1179,28 @@ fn usage_lite_is_alias_of_core_usage() {
     let u: UsageLite = ralphy_core::Usage::default();
     assert_eq!(u.total(), 0);
 }
+
+/// #225: a run with both phases priced on the same model must not carry the
+/// `+?` partial-residue suffix — the bug was the runner dropping the exec
+/// phase's model, which left it unpriced and forced `partial = true`.
+#[test]
+fn meter_for_prices_both_phases_without_partial_residue() {
+    let pt = PriceTable::defaults();
+    let plan = UsageLite {
+        input: 1_000_000,
+        model: Some("claude-opus-4-8".into()),
+        ..Default::default()
+    };
+    let exec = UsageLite {
+        input: 1_000_000,
+        model: Some("claude-opus-4-8".into()),
+        ..Default::default()
+    };
+
+    let m = meter_for(&pt, Some(&plan), &exec);
+
+    assert!((m.usd.unwrap() - 30.0).abs() < 1e-9, "usd: {:?}", m.usd);
+    assert!(!m.partial, "no phase should be unpriced");
+    assert_eq!(fmt_usd_compact(m.usd, m.partial), "$30.00");
+    assert_eq!(m.usage.input, 2_000_000);
+}
