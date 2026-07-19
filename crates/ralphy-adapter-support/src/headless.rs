@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use crate::idle::{IdleWatch, ProgressBeat};
+
 /// The raw result of driving one headless child to completion or timeout.
 ///
 /// `stdout` and `stderr` are kept **separate** (each captured as lossy-UTF-8) so
@@ -30,6 +32,15 @@ pub struct HeadlessOutput {
     pub stderr: String,
     /// `true` when the child outlived `timeout` and was killed.
     pub timed_out: bool,
+    /// `true` when the kill was the **idle watchdog** rather than the wall clock:
+    /// the child went silent past its idle window (docs/adr/0038). `timed_out` is
+    /// set alongside it on purpose — every downstream classifier keeps treating
+    /// this as the timeout it already understands (ADR-0023 ladder untouched).
+    ///
+    /// The operator-facing signal is the `IDLE_REAPED_MSG` event, not this flag;
+    /// this is the return-value counterpart, for a caller with no tracing
+    /// subscriber attached (the integration tests assert on it directly).
+    pub idle_killed: bool,
     /// The child's exit status, or `None` when it was killed (deadline or signal).
     pub exit: Option<ExitStatus>,
 }
@@ -62,6 +73,7 @@ fn spawn_reader<R: Read + Send + 'static>(
     tx: mpsc::Sender<Vec<u8>>,
     log: Option<Arc<Mutex<fs::File>>>,
     switch: Option<Arc<KillSwitch>>,
+    beat: Option<Arc<ProgressBeat>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut br = BufReader::new(reader);
@@ -74,6 +86,13 @@ fn spawn_reader<R: Read + Send + 'static>(
                 Ok(_) => {}
             }
             all.extend_from_slice(&line);
+            // Any output at all is the headless progress signal: a child still
+            // talking is a child still working. Both streams feed the same beacon
+            // (unlike the early-kill switch, which is stderr-only) — a child
+            // narrating only on stdout is just as alive.
+            if let Some(b) = &beat {
+                b.beat(Instant::now());
+            }
             if let Some(f) = &log {
                 if let Ok(mut f) = f.lock() {
                     let _ = f.write_all(&line);
@@ -102,7 +121,7 @@ fn spawn_reader<R: Read + Send + 'static>(
 /// reported. Output is then collected with a 5s grace so a child that flushed late
 /// is still captured complete.
 pub fn run_headless(cmd: Command, prompt: &str, timeout: Duration) -> Result<HeadlessOutput> {
-    drive_headless(cmd, prompt, timeout, None, None)
+    drive_headless(cmd, prompt, timeout, None, None, IdleWatch::default())
 }
 
 /// The shared spawn/drain/poll/kill/collect core behind [`run_headless`] and the
@@ -115,6 +134,7 @@ fn drive_headless(
     timeout: Duration,
     log: Option<Arc<Mutex<fs::File>>>,
     switch: Option<Arc<KillSwitch>>,
+    idle: IdleWatch,
 ) -> Result<HeadlessOutput> {
     // On Unix, run the child in its own process group so a timeout can signal the
     // whole tree, not just the direct child. An agent CLI that spawned helpers
@@ -151,10 +171,14 @@ fn drive_headless(
 
     let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
     let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
+    // The idle beacon starts now: the spawn itself counts as progress, so a child
+    // slow to emit its first line is not declared idle on arrival. `None` when the
+    // watchdog is off, which keeps the per-line cost at exactly zero.
+    let beat = idle.window().map(|_| ProgressBeat::new(Instant::now()));
     // The early-kill switch watches stderr only (see `KillSwitch`); stdout is teed
     // to the same log but never trips the switch.
-    let out_handle = spawn_reader(stdout, tx_out, log.clone(), None);
-    let err_handle = spawn_reader(stderr, tx_err, log, switch.clone());
+    let out_handle = spawn_reader(stdout, tx_out, log.clone(), None, beat.clone());
+    let err_handle = spawn_reader(stderr, tx_err, log, switch.clone(), beat.clone());
 
     // A broken pipe here means the child exited before draining stdin — its own
     // signal, not a fatal error. Warn and fall through to the poll loop, which
@@ -167,6 +191,7 @@ fn drive_headless(
 
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
+    let mut idle_killed = false;
     let exit = loop {
         if let Some(s) = child.try_wait().context("polling the headless child")? {
             break Some(s);
@@ -189,6 +214,24 @@ fn drive_headless(
             timed_out = true;
             break None;
         }
+        // The idle watchdog (docs/adr/0038): the child has emitted nothing on
+        // either stream for the whole window, so it is wedged rather than slow —
+        // a silently-retried provider quota block, a hung request, a deadlock.
+        // Reaped as a timeout so classification is unchanged; only the log says
+        // which clock fired.
+        if let Some(b) = &beat {
+            if idle.expired(b, Instant::now()) {
+                tracing::info!(
+                    idle_minutes = idle.window().map(|w| w.as_secs() / 60).unwrap_or(0),
+                    "{}",
+                    crate::idle::IDLE_REAPED_MSG
+                );
+                ralphy_proc_util::kill_tree(&mut child);
+                timed_out = true;
+                idle_killed = true;
+                break None;
+            }
+        }
         thread::sleep(Duration::from_millis(500));
     };
 
@@ -204,6 +247,7 @@ fn drive_headless(
         stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
         stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
         timed_out,
+        idle_killed,
         exit,
     })
 }
@@ -227,10 +271,80 @@ pub struct HeadlessRun {
     pub exited_cleanly: bool,
     /// `true` when the child outlived the timeout and was killed.
     pub timed_out: bool,
+    /// `true` when the idle watchdog fired rather than the wall clock — see
+    /// [`HeadlessOutput::idle_killed`]. Diagnostics only; `timed_out` is set too,
+    /// so every classifier behaves exactly as before.
+    pub idle_killed: bool,
     /// The raw numeric exit code, `None` when killed on the timeout. For adapters
     /// like Kimi that map a specific code (e.g. 75 → `Limit`), the boolean
     /// `exited_cleanly` erases this — keep both.
     pub exit_code: Option<i32>,
+}
+
+/// One configured headless call: the command plus the optional guards that drive
+/// it (streamed log, stderr early-kill, idle watchdog).
+///
+/// A builder rather than another `run_headless_logged_*` free function: the two
+/// existing entry points already encoded their options in the *name*, so each new
+/// guard would double the constructors. The named functions remain as thin
+/// wrappers, so existing call sites and import paths are untouched.
+pub struct HeadlessCall<'a> {
+    cmd: Command,
+    prompt: &'a str,
+    timeout: Duration,
+    log_path: &'a Path,
+    kill_on_stderr_line: Option<LinePredicate>,
+    idle: IdleWatch,
+}
+
+impl<'a> HeadlessCall<'a> {
+    /// A call with only the wall `timeout` and the streamed log at `log_path`.
+    pub fn new(cmd: Command, prompt: &'a str, timeout: Duration, log_path: &'a Path) -> Self {
+        Self {
+            cmd,
+            prompt,
+            timeout,
+            log_path,
+            kill_on_stderr_line: None,
+            idle: IdleWatch::default(),
+        }
+    }
+
+    /// Reap the child as soon as a **stderr** line matches — the child's own
+    /// terminal signal, so the run classifies identically, only faster.
+    pub fn kill_on_stderr_line(
+        mut self,
+        pred: impl Fn(&str) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.kill_on_stderr_line = Some(Box::new(pred));
+        self
+    }
+
+    /// Arm the idle watchdog: reap the child after `minutes` with no output on
+    /// either stream. `0` leaves it disabled (the default).
+    pub fn idle_minutes(mut self, minutes: u64) -> Self {
+        self.idle = IdleWatch::from_minutes(minutes);
+        self
+    }
+
+    /// [`idle_minutes`](Self::idle_minutes) with an exact window — used by tests
+    /// to drive the real kill path in seconds.
+    pub fn idle_window(mut self, window: Duration) -> Self {
+        self.idle = IdleWatch::from_window(window);
+        self
+    }
+
+    /// Drive the call to completion, timeout, early-kill or idle-kill.
+    pub fn run(self) -> Result<HeadlessRun> {
+        run_headless_logged_impl(
+            self.cmd,
+            self.prompt,
+            self.timeout,
+            self.log_path,
+            self.kill_on_stderr_line,
+            self.idle,
+        )
+    }
 }
 
 /// [`run_headless`] plus the post-run shell every headless adapter repeats: combine
@@ -246,7 +360,7 @@ pub fn run_headless_logged(
     timeout: Duration,
     log_path: &Path,
 ) -> Result<HeadlessRun> {
-    run_headless_logged_impl(cmd, prompt, timeout, log_path, None)
+    HeadlessCall::new(cmd, prompt, timeout, log_path).run()
 }
 
 /// [`run_headless_logged`] with an **early-kill** predicate over stderr lines. The
@@ -265,13 +379,9 @@ pub fn run_headless_logged_watched(
     log_path: &Path,
     kill_on_stderr_line: impl Fn(&str) -> bool + Send + Sync + 'static,
 ) -> Result<HeadlessRun> {
-    run_headless_logged_impl(
-        cmd,
-        prompt,
-        timeout,
-        log_path,
-        Some(Box::new(kill_on_stderr_line)),
-    )
+    HeadlessCall::new(cmd, prompt, timeout, log_path)
+        .kill_on_stderr_line(kill_on_stderr_line)
+        .run()
 }
 
 fn run_headless_logged_impl(
@@ -280,6 +390,7 @@ fn run_headless_logged_impl(
     timeout: Duration,
     log_path: &Path,
     kill_on_stderr_line: Option<LinePredicate>,
+    idle: IdleWatch,
 ) -> Result<HeadlessRun> {
     // Open the log up front so both streams can be teed to it as they arrive: the
     // run stays observable live and the partial output survives a crash of THIS
@@ -296,7 +407,7 @@ fn run_headless_logged_impl(
         })
     });
 
-    let r = drive_headless(cmd, prompt, timeout, sink, switch)?;
+    let r = drive_headless(cmd, prompt, timeout, sink, switch, idle)?;
     let stdout = r.stdout;
     let mut log = stdout.clone();
     log.push_str(&r.stderr);
@@ -313,6 +424,7 @@ fn run_headless_logged_impl(
         log,
         exited_cleanly,
         timed_out: r.timed_out,
+        idle_killed: r.idle_killed,
         exit_code: exit.and_then(|s| s.code()),
     })
 }

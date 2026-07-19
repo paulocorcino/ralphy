@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged_watched, CompletionSignals, HeadlessRun};
+use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::OpenCodeAgent;
@@ -75,14 +75,15 @@ impl OpenCodeAgent {
         // a crash or auth failure often only prints to stderr. The early-kill
         // predicate reaps a provider quota block the moment it prints to stderr,
         // instead of idling in the child's silent backoff until the wall timeout.
-        run_headless_logged_watched(
-            cmd,
-            prompt,
-            timeout,
-            &self.run_dir.join("opencode.log"),
-            kill_on_stderr_line,
-        )
-        .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")
+        // The two guards are complementary, and OpenCode needs both: the stderr
+        // matcher catches a quota block the moment it *prints*, while the idle
+        // watchdog catches the same block when the child swallows it into a
+        // silent retry and prints nothing at all (docs/adr/0038).
+        HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
+            .kill_on_stderr_line(kill_on_stderr_line)
+            .idle_minutes(self.budget.idle_minutes)
+            .run()
+            .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")
     }
 }
 

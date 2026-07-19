@@ -135,6 +135,22 @@ core.
 _Avoid_: shared runner, headless runner (ADR-0004 forbids a shared *Outcome*
 runner — this is only the plumbing), utils, helpers.
 
+**Run deadline / per-issue budget / idle watchdog**:
+The three *distinct* clocks bounding a **run**, deliberately not one knob
+(ADR-0038). The **run deadline** (`--deadline-hours`) is the global wall budget:
+don't start a new issue past it. The **per-issue budget**
+(`--max-minutes-per-issue`) is an *opt-in productivity cap* on a single issue —
+`0` (the default) means no cap, because a wall clock cannot tell a healthy long
+issue from a wedged child. The **idle watchdog** (`--idle-minutes`) is the
+*liveness* net: it measures **silence, not duration**, reaping a child that has
+made no progress for its window. What counts as progress is per-path — any
+output byte (headless) vs. **transcript** growth (interactive PTY, where spinner
+redraws make bytes worthless as a signal) — which is why the two carry different
+defaults. An idle kill is reported as a `timeout`; only the log distinguishes
+which clock fired.
+_Avoid_: "the timeout" (ambiguous across all three), using the per-issue budget
+as a hang detector, treating `0` as unset.
+
 **Completion signals / Outcome classifier**:
 The seam between an **adapter**'s vendor-specific end-state extraction and the one
 shared rule that maps it to a core `Outcome`. Each adapter reduces its raw session

@@ -111,7 +111,12 @@ pub(crate) fn build_agent(
     run_deadline: Option<std::time::Instant>,
     persisted_opencode_model: Option<String>,
     claude: &ResolvedClaude,
+    idle_minutes: Option<u64>,
 ) -> Box<dyn Agent> {
+    // The headless adapters drive one child shape, so they resolve the idle
+    // window here; the Claude adapter picks per execution path (its interactive
+    // session has a coarser progress signal) and so keeps the `Option`.
+    let headless_idle = idle_minutes.unwrap_or(ralphy_core::DEFAULT_IDLE_MINUTES);
     match which {
         CliAgent::Claude => Box::new(
             ClaudeAgent::new(
@@ -128,7 +133,8 @@ pub(crate) fn build_agent(
                 args.headless_exec,
                 args.max_exec_calls,
             )
-            .with_run_deadline(run_deadline),
+            .with_run_deadline(run_deadline)
+            .with_idle_minutes(idle_minutes),
         ),
         CliAgent::Codex => Box::new(
             CodexAgent::new(
@@ -136,7 +142,8 @@ pub(crate) fn build_agent(
                 run_dir,
             )
             .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue),
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+            .with_idle_minutes(headless_idle),
         ),
         CliAgent::Kimi => Box::new(
             KimiAgent::new(
@@ -144,7 +151,8 @@ pub(crate) fn build_agent(
                 run_dir,
             )
             .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue),
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+            .with_idle_minutes(headless_idle),
         ),
         CliAgent::OpenCode => Box::new(
             OpenCodeAgent::new(
@@ -153,7 +161,8 @@ pub(crate) fn build_agent(
             )
             .with_variant(non_empty(args.exec_variant.clone().unwrap_or_default()))
             .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue),
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+            .with_idle_minutes(headless_idle),
         ),
     }
 }

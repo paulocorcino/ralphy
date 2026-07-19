@@ -325,6 +325,11 @@ pub(crate) fn render_line(
             Style::new().green(),
             "API recovered — resuming".to_string(),
         ),
+        RunEvent::IdleReaped { idle_minutes } => (
+            pick("💤", "[idle]", opts.emoji),
+            Style::new().yellow(),
+            format!("no progress for {idle_minutes} min — child reaped"),
+        ),
         RunEvent::DeadlinePassed { number } => (
             pick("⏱️", "[timeout]", opts.emoji),
             Style::new().yellow(),

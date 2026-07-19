@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged, CompletionSignals, HeadlessRun};
+use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::auth::{is_codex_limit_text, parse_codex_reset_hint};
@@ -62,7 +62,12 @@ impl CodexAgent {
         // shared headless runner; Codex's `exited_cleanly` (a *successful* exit,
         // not merely "not timed out") is recovered from the returned exit status,
         // which is `None` exactly when the child was killed on the wall timeout.
-        run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
+        // The idle watchdog reaps a child that has gone silent past its window,
+        // which the wall `timeout` cannot do now that the per-issue cap is opt-in
+        // and unbounded by default (docs/adr/0038).
+        HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
+            .idle_minutes(self.budget.idle_minutes)
+            .run()
             .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")
     }
 }

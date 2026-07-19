@@ -328,6 +328,13 @@ impl RunState {
             RunEvent::ApiRecovered => {
                 self.degraded = false;
             }
+            // The child is gone, so any live retry indicator is now a lie: clear
+            // it. A reap can legitimately follow an `ApiDegraded` that never got
+            // its matching `ApiRecovered` (the child never recovered), and that is
+            // the one case where the #149 pair is closed by something else.
+            RunEvent::IdleReaped { .. } => {
+                self.degraded = false;
+            }
             RunEvent::KnowledgeConsolidating { notes } => {
                 self.consolidating = Some(notes);
             }

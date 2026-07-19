@@ -17,6 +17,10 @@
 //!   reader's `read_until` returns it at once), then sleep ~60s. Exercises the
 //!   early-kill switch: a watcher matching the marker must reap the child on the
 //!   line, not wait out the sleep.
+//! - `chatty` — emit a line every [`CHATTY_TICK`] for ~60s. The counterpart to
+//!   `sleep` for the idle watchdog: a child that keeps talking must **survive** a
+//!   window far shorter than its total runtime, proving the watchdog measures
+//!   silence and not elapsed time.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless.rs` via the shared constants below.
@@ -34,6 +38,9 @@ pub const LARGE_LEN: usize = 200_000;
 /// The newline-terminated stderr line the `stderr-then-sleep` child emits before
 /// sleeping — the early-kill watcher matches on it.
 pub const STDERR_MARKER: &str = "quota-marker: usage limit reached";
+/// How often the `chatty` child emits a line — short enough that several land
+/// inside any idle window a test can afford to wait out.
+pub const CHATTY_TICK: Duration = Duration::from_millis(100);
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
@@ -63,6 +70,15 @@ fn main() {
             eprintln!("{STDERR_MARKER}");
             let _ = std::io::stderr().flush();
             std::thread::sleep(Duration::from_secs(60));
+        }
+        "chatty" => {
+            // Newline + flush per tick so each one reaches the reader (and thus the
+            // idle beacon) immediately, rather than sitting in a block buffer.
+            for i in 0..600 {
+                println!("tick {i}");
+                let _ = std::io::stdout().flush();
+                std::thread::sleep(CHATTY_TICK);
+            }
         }
         "large" => {
             // A repeating byte pattern, written in one shot, so the test can assert

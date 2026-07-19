@@ -783,6 +783,58 @@ fn worker_pushes_on_api_degraded_and_recover_edges() {
 }
 
 #[test]
+fn worker_reap_after_degraded_never_claims_recovery() {
+    // The trap this guards (docs/adr/0038): an idle reap also clears `degraded`,
+    // so the true→false edge would fire the recover push — telling the operator
+    // "API recovered, resuming" about a child Ralphy had just killed for going
+    // silent. The reap must speak for itself and suppress that edge.
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let queue = Arc::new(EventQueue::new());
+    let shutdown = Arc::new(AtomicBool::new(false));
+
+    let worker_queue = queue.clone();
+    let worker_shutdown = shutdown.clone();
+    let state = RunState::new("title", 1);
+    let handle =
+        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+
+    queue.push(RunEvent::ApiDegraded);
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("API degraded"))
+    });
+
+    queue.push(RunEvent::IdleReaped { idle_minutes: 20 });
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("child reaped"))
+    });
+
+    shutdown.store(true, Ordering::SeqCst);
+    queue.wake();
+    handle.join().unwrap();
+
+    let calls = calls.lock().unwrap();
+    let texts = send_texts(&calls);
+    assert!(
+        !texts.iter().any(|t| t.contains("API recovered")),
+        "a reap must never be reported as a recovery: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("no progress for 20 min")),
+        "the reap push carries its window: {texts:?}"
+    );
+    // initial card + degraded + reap = three sendMessage calls.
+    assert_eq!(
+        texts.len(),
+        3,
+        "expected exactly 3 sendMessage, got {texts:?}"
+    );
+}
+
+#[test]
 fn worker_lone_api_recover_pushes_nothing() {
     // A lone `ApiRecovered` with no prior degraded folded is a no-op: matched
     // pairs only (`prev_degraded` starts false), so no recover buzz fires.

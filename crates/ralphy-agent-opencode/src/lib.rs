@@ -123,6 +123,14 @@ impl OpenCodeAgent {
         self
     }
 
+    /// Set the idle watchdog window in minutes: reap the child after that long
+    /// with no output at all. `0` disables it. Unlike the per-issue cap, this
+    /// keys on progress rather than elapsed time (docs/adr/0038).
+    pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
+        self.budget = self.budget.with_idle_minutes(minutes);
+        self
+    }
+
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
     /// issue's budget is then clamped to it, so an issue started just under the
     /// global limit can't overrun by a whole per-issue window (mirrors

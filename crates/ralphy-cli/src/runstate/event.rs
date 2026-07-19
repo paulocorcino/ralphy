@@ -112,6 +112,12 @@ pub enum RunEvent {
     /// The child's API recovered (transcript activity resumed) after an
     /// [`RunEvent::ApiDegraded`] — always a matched pair, never emitted alone.
     ApiRecovered,
+    /// The idle watchdog reaped the active issue's child after `idle_minutes`
+    /// with no progress (docs/adr/0038). Emitted identically from the PTY and the
+    /// headless paths — the two measure progress differently, but the operator
+    /// sees one event either way. Distinguishes "died of silence" from the wall
+    /// clock, which is otherwise invisible: both surface as `Timeout`.
+    IdleReaped { idle_minutes: u64 },
     /// The end-of-run knowledge consolidation started, folding `notes` loose
     /// per-issue notes into `KNOWLEDGE.md`.
     KnowledgeConsolidating { notes: u64 },
@@ -286,6 +292,12 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // gating happens in the adapter, so these fire only on the real edges.
         "api degraded — child retrying" => Some(RunEvent::ApiDegraded),
         "api recovered — child resuming" => Some(RunEvent::ApiRecovered),
+        // The idle watchdog's reap, from either execution path — the message is
+        // one shared constant (`ralphy_adapter_support::IDLE_REAPED_MSG`) so the
+        // two emitters cannot drift apart into two different operator experiences.
+        ralphy_adapter_support::IDLE_REAPED_MSG => Some(RunEvent::IdleReaped {
+            idle_minutes: fields.idle_minutes.unwrap_or(0),
+        }),
         // The end-of-run knowledge consolidation trigger: both events reuse the
         // generic `count` field (notes in / notes archived).
         "consolidating knowledge" => Some(RunEvent::KnowledgeConsolidating {
@@ -419,6 +431,51 @@ mod tests {
 
     fn decode(fields: EventFields) -> Option<RunEvent> {
         event_to_runevent("ralphy_core::runner", &fields.message.clone(), &fields)
+    }
+
+    #[test]
+    fn decoder_maps_the_idle_reap_from_either_execution_path() {
+        // The normalization this pins (docs/adr/0038): the PTY driver and the
+        // headless driver measure progress differently, but both emit the SAME
+        // shared constant, so one decoder arm serves both and the operator gets
+        // one event shape regardless of which child shape ran.
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+                idle_minutes: Some(20),
+                ..Default::default()
+            }),
+            Some(RunEvent::IdleReaped { idle_minutes: 20 })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+                idle_minutes: Some(45),
+                ..Default::default()
+            }),
+            Some(RunEvent::IdleReaped { idle_minutes: 45 })
+        );
+    }
+
+    #[test]
+    fn the_idle_reap_is_emitted_below_warn_so_it_stays_a_first_class_event() {
+        // The decoder short-circuits WARN/ERROR into a generic `Notice`. A reap
+        // logged at WARN would therefore lose its identity — no `IdleReaped`, no
+        // CloudEvent, no dedicated Telegram push. This pins the level contract the
+        // two emitters must honor.
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+                idle_minutes: Some(20),
+                level: Level::WARN,
+                ..Default::default()
+            }),
+            Some(RunEvent::Notice {
+                level: Level::WARN,
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+            }),
+            "if this ever changes, the emitters may log the reap at WARN again"
+        );
     }
 
     #[test]

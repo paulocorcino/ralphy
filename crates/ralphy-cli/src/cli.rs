@@ -192,12 +192,19 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) default_exec_model: Option<String>,
 
-    /// Per-issue wall-clock budget (minutes) before the session is reclaimed
-    /// (default: ≈60 min, or `claude.max_minutes_per_issue` in settings.json).
-    /// Pass `0` explicitly to disable the cap — the issue is then bounded only
-    /// by `--deadline-hours`.
+    /// Opt-in per-issue wall-clock cap (minutes) before the session is
+    /// reclaimed (default: no cap, or `claude.max_minutes_per_issue` in
+    /// settings.json). With no cap an issue is bounded only by
+    /// `--deadline-hours`; a wedged child is caught by `--idle-minutes`.
     #[arg(long)]
     pub(crate) max_minutes_per_issue: Option<u64>,
+
+    /// Reap a child that has made no progress for this many minutes — the
+    /// liveness net that catches a wedged or silently-retrying agent (default:
+    /// 20 headless / 45 interactive, or `idle_minutes` in settings.json). Pass
+    /// `0` to disable it.
+    #[arg(long)]
+    pub(crate) idle_minutes: Option<u64>,
 
     /// Enable Remote Control so you can follow/intervene from the mobile app.
     #[arg(long, overrides_with = "no_remote_control")]

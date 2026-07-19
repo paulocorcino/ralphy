@@ -279,6 +279,19 @@ pub fn render_degraded_push(state: &RunState) -> String {
     )
 }
 
+/// The push sent when the idle watchdog reaps the child. Closes a pending
+/// degraded push *without* claiming recovery — the episode ended because Ralphy
+/// killed the child, which is the opposite news.
+pub fn render_idle_reaped_push(state: &RunState, idle_minutes: u64) -> String {
+    truncate_chars(
+        format!(
+            "💤 {} — no progress for {idle_minutes} min, child reaped",
+            state.title
+        ),
+        TELEGRAM_LIMIT,
+    )
+}
+
 /// The push sent when the API recovers, matching a prior degraded push.
 pub fn render_recover_push(state: &RunState) -> String {
     truncate_chars(
@@ -406,6 +419,13 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
     }
 
     fn on_event(&mut self, event: RunEvent) {
+        // Captured before the fold: an idle reap also clears `degraded`, and the
+        // edge below would otherwise read that clear as a recovery and push
+        // "API recovered, resuming" about a child Ralphy just killed.
+        let reaped = match event {
+            RunEvent::IdleReaped { idle_minutes } => Some(idle_minutes),
+            _ => None,
+        };
         // Detect the sleep edge per applied event, not once per drained batch: a
         // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain
         // would net to `sleep = None` and silently swallow both pushes if compared
@@ -447,11 +467,22 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
                 self.client
                     .send_message(self.chat_id, &render_degraded_push(&self.state)),
             );
-        } else if !now_degraded && self.prev_degraded {
+        } else if !now_degraded && self.prev_degraded && reaped.is_none() {
             self.gate(
                 "recover push failed",
                 self.client
                     .send_message(self.chat_id, &render_recover_push(&self.state)),
+            );
+        }
+        // The reap gets its own push either way: it is terminal news for this
+        // issue, whether or not a degraded episode preceded it.
+        if let Some(idle_minutes) = reaped {
+            self.gate(
+                "idle reap push failed",
+                self.client.send_message(
+                    self.chat_id,
+                    &render_idle_reaped_push(&self.state, idle_minutes),
+                ),
             );
         }
         self.prev_degraded = now_degraded;

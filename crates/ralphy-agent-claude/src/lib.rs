@@ -97,7 +97,17 @@ impl ClaudeAgent {
             headless_exec,
             max_exec_calls,
             run_deadline: None,
+            idle_minutes: None,
         };
+        self
+    }
+
+    /// Set the operator's idle watchdog window (`--idle-minutes`). `None` leaves
+    /// each execution path on its own default; `Some(0)` disables the watchdog.
+    /// Call after [`with_exec_config`](Self::with_exec_config), which resets the
+    /// whole exec block.
+    pub fn with_idle_minutes(mut self, idle_minutes: Option<u64>) -> Self {
+        self.exec.idle_minutes = idle_minutes;
         self
     }
 

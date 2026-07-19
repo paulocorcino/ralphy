@@ -77,9 +77,13 @@ pub enum VerifySpec {
 - **Runs in `repo_root`, over the commit.** Monorepos scope inside the command
   itself (`cargo test -p foo`, `npm --prefix packages/x test`); the runner invents
   no `cwd` directive.
-- **Runs within the issue's remaining time budget** (`--max-minutes-per-issue`).
-  Exceeding it fails the gate like any non-zero exit — a hung verification cannot
-  become green by silence.
+- **Runs within its own time budget** (`verify.timeout_minutes`, defaulting to
+  `VERIFY_GATE_FALLBACK_MINUTES`). Exceeding it fails the gate like any non-zero
+  exit — a hung verification cannot become green by silence.
+  *(Amended by ADR-0038: the gate originally borrowed the issue's remaining
+  `--max-minutes-per-issue` budget. That broke once the per-issue cap became
+  opt-in and `0`-by-default, which would collapse the gate to a 0s timeout — a
+  gate needs a finite clock unconditionally, so it owns one.)*
 
 ### Resolution precedence
 
@@ -126,8 +130,8 @@ Mechanics, all runner-side so the **trust model is unchanged**:
   earns the close **only** by making the runner *see* the gate pass — it never gets
   to self-report past a red gate. The deterministic commands stay the authority;
   this is explicitly *not* the rejected "gate as a shipped skill".
-- The budget is `VERIFY_MAX_REPAIRS = 2` attempts. Repairs run within the issue's
-  existing `--max-minutes-per-issue` budget (no new time knob).
+- The budget is `VERIFY_MAX_REPAIRS = 2` attempts. Repairs run within the gate's
+  own time budget (ADR-0038; originally the issue's `--max-minutes-per-issue`).
 - **Budget exhausted → skip, not stop.** The issue is left open with its commits on
   the branch and the failing artifact comment, and the run continues with the next
   issue. The miss is reported as a `verify failed` **skip** (not a close, not a

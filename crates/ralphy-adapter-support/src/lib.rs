@@ -66,5 +66,9 @@ pub use ralphy_proc_util::{
 
 mod headless;
 pub use headless::{
-    run_headless, run_headless_logged, run_headless_logged_watched, HeadlessOutput, HeadlessRun,
+    run_headless, run_headless_logged, run_headless_logged_watched, HeadlessCall, HeadlessOutput,
+    HeadlessRun,
 };
+
+mod idle;
+pub use idle::{IdleWatch, ProgressBeat, IDLE_REAPED_MSG};

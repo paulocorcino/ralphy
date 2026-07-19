@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use ralphy_adapter_support::{
     run_headless, run_headless_logged, run_headless_logged_watched, run_init_session,
-    run_text_session, JsonSession, TextSession,
+    run_text_session, HeadlessCall, JsonSession, TextSession,
 };
 
 // These mirror the constants in `src/bin/headless_test_child.rs`. Kept in sync by
@@ -202,6 +202,98 @@ fn run_headless_logged_watched_without_a_match_times_out_normally() {
 
     assert!(r.timed_out, "no match → the wall timeout still fires");
     assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
+    let _ = std::fs::remove_file(&log_path);
+}
+
+// ── idle watchdog (docs/adr/0038) ───────────────────────────────────────────
+
+#[test]
+fn the_idle_watchdog_reaps_a_silent_child_long_before_the_wall_timeout() {
+    // This is the OpenCode failure mode in miniature: a child that hit a provider
+    // quota block, swallowed it into a silent retry, and now prints nothing at all.
+    // No stderr matcher can see a failure that is never printed — but the silence
+    // itself is unmistakable, and it is the only signal that catches this.
+    let log_path = temp_log("idle-kill");
+    let _ = std::fs::remove_file(&log_path);
+
+    let started = Instant::now();
+    let r = HeadlessCall::new(
+        child_cmd("sleep"),
+        "ignored prompt",
+        // A wall timeout the child would happily sleep out: a prompt return can
+        // only mean the idle watchdog fired.
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("an idle-watched run should not error");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "the watchdog reaped the silent child, it did not wait out the 60s wall timeout (took {elapsed:?})"
+    );
+    assert!(r.idle_killed, "the idle watchdog fired, not the wall clock");
+    assert!(
+        r.timed_out,
+        "an idle kill still reports as a timeout so classification is unchanged"
+    );
+    assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn the_idle_watchdog_spares_a_child_that_keeps_talking() {
+    // The regression this whole change risks: killing healthy work. The chatty
+    // child runs far longer than the idle window but never goes quiet for a full
+    // one, so it must survive — proving the watchdog measures silence, not elapsed
+    // time. (That distinction is the entire reason it replaced a wall-clock cap.)
+    let log_path = temp_log("idle-chatty");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("chatty"),
+        "ignored prompt",
+        // Wall timeout well past the idle window: whatever ends this run, it is
+        // not the wall clock racing the watchdog.
+        Duration::from_secs(3),
+        &log_path,
+    )
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("a chatty child should not error");
+
+    assert!(
+        !r.idle_killed,
+        "a child emitting a line every 100ms is never idle for a 1s window"
+    );
+    assert!(
+        r.log.contains("tick "),
+        "the child's output was captured while it ran"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
+    // `0` is the operator's opt-out: the silent child now runs to the wall timeout
+    // exactly as it did before the watchdog existed.
+    let log_path = temp_log("idle-off");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("sleep"),
+        "ignored prompt",
+        Duration::from_millis(300),
+        &log_path,
+    )
+    .idle_minutes(0)
+    .run()
+    .expect("a run with the watchdog disabled should not error");
+
+    assert!(r.timed_out, "the wall timeout still fires");
+    assert!(!r.idle_killed, "the watchdog was off, so it did not fire");
     let _ = std::fs::remove_file(&log_path);
 }
 

@@ -29,6 +29,13 @@ pub struct VerifySettings {
     /// runner tokenizes it into argv and runs it directly. `None` → no fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The gate's own time budget in minutes (`verify.timeout_minutes`).
+    /// `None` → [`crate::VERIFY_GATE_FALLBACK_MINUTES`]. The gate used to borrow
+    /// the per-issue cap, which broke the moment that cap became opt-in and
+    /// `0`-by-default: a verify command needs a finite, well-defined timeout, so
+    /// it owns its clock (docs/adr/0038, amending ADR-0011).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_minutes: Option<u64>,
     /// When `true`, an issue whose verify resolution lands on no gate at all
     /// (no `## Verify` in the plan AND no `verify.command` fallback) is NOT
     /// closed on the agent's self-report: it is labeled `ready-for-human` and
@@ -66,6 +73,16 @@ pub struct Settings {
     /// reads this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_control: Option<bool>,
+    /// Agent-agnostic idle watchdog default (`--idle-minutes`): reap a child
+    /// that has made no progress for this long. `None` → each execution path's
+    /// own default ([`crate::DEFAULT_IDLE_MINUTES`] /
+    /// [`crate::DEFAULT_INTERACTIVE_IDLE_MINUTES`]); `Some(0)` disables it.
+    ///
+    /// Top-level rather than under an agent section on purpose: liveness is a
+    /// property of driving *any* child, and the per-issue cap's mistake of
+    /// living under `claude.*` while governing every adapter is not one to copy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_minutes: Option<u64>,
     /// The runner-enforced verify gate's per-repo fallback (ADR-0011).
     #[serde(default)]
     pub verify: VerifySettings,

@@ -18,6 +18,9 @@ pub struct EventFields {
     pub open_steps: Option<u64>,
     pub count: Option<u64>,
     pub budget_min: Option<u64>,
+    /// The idle window (minutes) on an idle-reaped event; `0` when the emitter
+    /// had no finite window to report.
+    pub idle_minutes: Option<u64>,
     pub order: Option<String>,
     /// The first `stop-before` issue number on a `queue built` event (0 = none).
     pub stop_before: Option<u64>,
@@ -95,6 +98,7 @@ impl Default for EventFields {
             open_steps: None,
             count: None,
             budget_min: None,
+            idle_minutes: None,
             order: None,
             stop_before: None,
             issues_json: None,
@@ -136,6 +140,7 @@ impl Visit for EventFields {
             "open_steps" => self.open_steps = Some(value),
             "count" => self.count = Some(value),
             "budget_min" => self.budget_min = Some(value),
+            "idle_minutes" => self.idle_minutes = Some(value),
             "stop_before" => self.stop_before = Some(value),
             "tokens" => self.tokens = Some(value),
             "up" => self.up = Some(value),

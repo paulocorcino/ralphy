@@ -389,6 +389,15 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({}),
         )),
+        // The reap carries its window so a consumer can tell a tight operator
+        // setting from the path default without reading the run's config.
+        RunEvent::IdleReaped { idle_minutes } => Some(envelope(
+            "dev.ralphy.run.idle_reaped",
+            None,
+            ctx,
+            state,
+            json!({ "idle_minutes": idle_minutes }),
+        )),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
             "dev.ralphy.knowledge.consolidating",
             None,

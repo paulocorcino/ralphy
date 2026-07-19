@@ -367,6 +367,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             settings.remote_control,
         ),
     };
+    // The idle watchdog knob stays an `Option` through the composition root: an
+    // absent value is not "off", it is "let each execution path use the default
+    // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
+    let idle_minutes = args.idle_minutes.or(settings.idle_minutes);
     let executor = build_agent(
         args.agent,
         &args,
@@ -374,6 +378,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         run_deadline,
         persisted_opencode_model.clone(),
         &resolved_claude,
+        idle_minutes,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
         executor
@@ -386,6 +391,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 run_deadline,
                 persisted_opencode_model,
                 &resolved_claude,
+                idle_minutes,
             ),
             executor,
         })
@@ -409,7 +415,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         stop_on_limit_exec: args.stop_on_limit,
         // The runner-enforced verify gate (ADR-0011): the per-repo fallback
         // command (tokenized into one argv) used only when a plan emits no
-        // `## Verify` section, and the gate's time budget (the per-issue budget).
+        // `## Verify` section, and the gate's own time budget.
         verify_fallback: settings
             .verify
             .command
@@ -417,15 +423,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             .map(str::trim)
             .filter(|c| !c.is_empty())
             .map(|c| vec![ralphy_core::verify::tokenize(c)]),
-        // The verify gate borrows the per-issue budget, but a disabled budget
-        // (`0` = no per-issue cap) must not collapse the gate to a 0s timeout —
-        // fall back to the default window so verify still has room to run.
+        // The gate owns its clock (docs/adr/0038): it no longer derives from the
+        // per-issue cap, which is opt-in and `0`/unbounded by default and would
+        // collapse the gate to a 0s timeout.
         verify_timeout: std::time::Duration::from_secs(
-            match resolved_claude.max_minutes_per_issue {
-                0 => ralphy_core::VERIFY_GATE_FALLBACK_MINUTES,
-                n => n,
-            }
-            .saturating_mul(60),
+            resolve_verify_timeout_minutes(settings.verify.timeout_minutes).saturating_mul(60),
         ),
         // ADR-0015: when set, a `Done` that resolves to no verify gate at all is
         // parked for a human (`ready-for-human`) instead of closed on the
@@ -658,6 +660,19 @@ fn finalize_run(
     }
 }
 
+/// The verify gate's time budget in minutes: the persisted `verify.timeout_minutes`,
+/// else [`ralphy_core::VERIFY_GATE_FALLBACK_MINUTES`].
+///
+/// Split out of the `QueueConfig` literal so the "the gate never inherits the
+/// per-issue cap" rule is a testable unit rather than an inline expression
+/// (docs/adr/0038). Unlike the per-issue cap, `0` is not a sentinel here — a
+/// gate with no timeout is not a thing the runner can enforce.
+fn resolve_verify_timeout_minutes(persisted: Option<u64>) -> u64 {
+    persisted
+        .filter(|m| *m > 0)
+        .unwrap_or(ralphy_core::VERIFY_GATE_FALLBACK_MINUTES)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -692,12 +707,36 @@ mod tests {
     }
 
     #[test]
-    fn unset_max_minutes_resolves_to_finite_default() {
-        // The composition-root resolution (run.rs) an unset flag AND unset
-        // persisted setting must fall through to a finite backstop, never to
-        // `0` (which `issue_deadline` reads as unbounded).
+    fn unset_max_minutes_resolves_to_uncapped() {
+        // The per-issue cap is opt-in (docs/adr/0038): an unset flag AND unset
+        // setting resolve to `0`, which `issue_deadline` reads as "no per-issue
+        // cap" — the issue is bounded only by `--deadline-hours`. Liveness is
+        // the idle watchdog's job, not this knob's; a finite default here would
+        // cut healthy long issues to catch a hang it cannot recognize.
         let resolved = config::resolve_u64(None, None, ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE);
-        assert_eq!(resolved, 60);
-        assert_ne!(resolved, 0);
+        assert_eq!(resolved, 0);
+    }
+
+    #[test]
+    fn max_minutes_precedence_flag_over_setting_over_default() {
+        // Opting in must still work in both directions, in the documented order.
+        let d = ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE;
+        assert_eq!(config::resolve_u64(Some(30), Some(90), d), 30);
+        assert_eq!(config::resolve_u64(None, Some(90), d), 90);
+        // An explicit `0` is a deliberate "no cap", not an absent value.
+        assert_eq!(config::resolve_u64(Some(0), Some(90), d), 0);
+    }
+
+    #[test]
+    fn verify_timeout_no_longer_derives_from_the_per_issue_cap() {
+        // The gate owns its own clock (docs/adr/0038): with the cap uncapped
+        // (`0`, the default) verify must still get a finite window, and it must
+        // not silently inherit an unrelated per-issue cap either.
+        assert_eq!(
+            resolve_verify_timeout_minutes(None),
+            ralphy_core::VERIFY_GATE_FALLBACK_MINUTES
+        );
+        assert_eq!(resolve_verify_timeout_minutes(Some(15)), 15);
+        assert!(resolve_verify_timeout_minutes(None) > 0);
     }
 }

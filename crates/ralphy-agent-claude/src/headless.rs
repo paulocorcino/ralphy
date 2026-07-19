@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{classify, run_headless_logged, CompletionSignals, PROMPT_EXECUTE};
+use ralphy_adapter_support::{classify, CompletionSignals, HeadlessCall, PROMPT_EXECUTE};
 use ralphy_core::{git, plan, Outcome, Plan, Workspace};
 use tracing::info;
 
@@ -61,7 +61,9 @@ impl ClaudeAgent {
         // runner's `exited_cleanly` (a *successful* exit); the D10 auth bail stays
         // inline here.
         let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
-        let r = run_headless_logged(cmd, PROMPT_EXECUTE, timeout, &log_path)
+        let r = HeadlessCall::new(cmd, PROMPT_EXECUTE, timeout, &log_path)
+            .idle_minutes(self.exec.idle_minutes_for(false))
+            .run()
             .context("failed to spawn the `claude` CLI for headless exec")?;
 
         if is_claude_auth_error(&r.log) {

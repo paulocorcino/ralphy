@@ -7,7 +7,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged, CompletionSignals, HeadlessRun};
+use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 use serde_json::Value;
 
@@ -111,7 +111,10 @@ impl KimiAgent {
         prompt: &str,
         timeout: Duration,
     ) -> Result<HeadlessRun> {
-        run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("kimi.log"))
+        // Idle watchdog: see the sibling comment in the Codex adapter.
+        HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("kimi.log"))
+            .idle_minutes(self.budget.idle_minutes)
+            .run()
             .context("failed to spawn the `kimi` CLI (is it installed and on PATH?)")
     }
 }
