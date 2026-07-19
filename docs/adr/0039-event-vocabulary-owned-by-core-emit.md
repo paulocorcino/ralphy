@@ -1,6 +1,6 @@
 # ADR-0039 — The event vocabulary is owned by `ralphy_core::emit`
 
-**Status:** proposed
+**Status:** accepted
 **Date:** 2026-07-19
 **Refines:** ADR-0007 D6 (the decoder contract gains an owned emit side)
 **Evidence base:** `docs/audit-events-2026-07-19.md` (§2–§3, findings F1/F5)
