@@ -9,7 +9,30 @@
 use tracing::Level;
 
 use super::capture::{capture_events, Captured};
-use super::{event_to_runevent, EventFields, RunEvent};
+use super::{event_to_runevent, EventFields, RunEvent, SkipKind, UsageLite};
+
+/// A `Usage` with a distinct value per slot, so a helper that swaps two of them
+/// (`cache_read` for `cache_creation`) reds rather than passing on symmetry.
+fn usage() -> ralphy_core::Usage {
+    ralphy_core::Usage {
+        input: 11,
+        cache_read: 22,
+        cache_creation: 33,
+        output: 44,
+        model: Some("claude-opus-4".into()),
+    }
+}
+
+/// The [`UsageLite`] the decoder must read back out of [`usage`].
+fn usage_lite() -> UsageLite {
+    UsageLite {
+        input: 11,
+        cache_read: 22,
+        cache_creation: 33,
+        output: 44,
+        model: Some("claude-opus-4".into()),
+    }
+}
 
 /// Run one emit helper and hand back its single captured event, asserting the
 /// half of the contract every helper shares: exactly one event, at `INFO`.
@@ -39,6 +62,93 @@ fn roundtrip_issue_started() {
         Some(RunEvent::IssueStarted {
             number: 7,
             title: "a title".into(),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_plan_written() {
+    let ev = one(|| {
+        ralphy_core::emit::plan_written(7, 3, &usage(), r#"[{"text":"a","status":"open"}]"#)
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::PlanWritten {
+            number: 7,
+            open_steps: 3,
+            usage: usage_lite(),
+            steps: vec![("a".into(), "open".into())],
+        })
+    );
+}
+
+#[test]
+fn roundtrip_plan_opened() {
+    let ev = one(|| ralphy_core::emit::plan_opened(7, "# Plan\n## Steps\n- [ ] a\n"));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::PlanOpened {
+            number: 7,
+            plan_md: "# Plan\n## Steps\n- [ ] a\n".into(),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_plan_closed() {
+    let ev = one(|| ralphy_core::emit::plan_closed(7, "# Plan\n- [x] a\n"));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::PlanClosed {
+            number: 7,
+            plan_md: "# Plan\n- [x] a\n".into(),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_issue_closed() {
+    let ev = one(|| ralphy_core::emit::issue_closed(7, 1_200_000, &usage()));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::IssueClosed {
+            number: 7,
+            tokens: 1_200_000,
+            usage: usage_lite(),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_needs_split() {
+    let ev = one(|| ralphy_core::emit::needs_split(7));
+    assert_eq!(decode(&ev), Some(RunEvent::NeedsSplit { number: 7 }));
+}
+
+#[test]
+fn roundtrip_blocked_by_open() {
+    let ev = one(|| ralphy_core::emit::blocked_by_open(140, &[139]));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Skipped {
+            number: 140,
+            kind: SkipKind::BlockedBy,
+            label: None,
+            blockers: vec![139],
+        })
+    );
+}
+
+#[test]
+fn roundtrip_blocked_waiting_human() {
+    // `blockers` is emitted too but the `HumanBlocked` variant carries only the
+    // human half — the decoder deliberately drops the rest.
+    let ev = one(|| ralphy_core::emit::blocked_waiting_human(16, &[30, 18], &[30]));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::HumanBlocked {
+            number: 16,
+            on: vec![30],
         })
     );
 }

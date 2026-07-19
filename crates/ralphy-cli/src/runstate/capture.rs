@@ -406,9 +406,7 @@ mod tests {
         let body = body.split_once("_ => None").expect("the fallthrough arm").0;
         body.lines()
             .map(str::trim_start)
-            .filter(|l| {
-                l.starts_with('"') || l.starts_with("| \"") || l.starts_with("ralphy_")
-            })
+            .filter(|l| l.starts_with('"') || l.starts_with("| \"") || l.starts_with("ralphy_"))
             .count()
     }
 

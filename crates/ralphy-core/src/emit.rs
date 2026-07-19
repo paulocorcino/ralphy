@@ -28,3 +28,92 @@ pub const ISSUE_STARTED_MSG: &str = "issue started";
 pub fn issue_started(number: u64, title: &str) {
     info!(number, title = %title, "{}", ISSUE_STARTED_MSG);
 }
+
+/// See [`plan_written`].
+pub const PLAN_WRITTEN_MSG: &str = "plan written";
+
+/// A plan was written; `open_steps == 0` means the planner judged it infeasible.
+/// `usage` is the PLANNING phase's token split; `steps_json` the `[{text,status}]`
+/// checkbox list.
+pub fn plan_written(number: u64, open_steps: u64, usage: &crate::Usage, steps_json: &str) {
+    info!(
+        number,
+        open_steps,
+        up = usage.input,
+        cr = usage.cache_read,
+        cw = usage.cache_creation,
+        out = usage.output,
+        model = usage.model.as_deref().unwrap_or(""),
+        steps_json = %steps_json,
+        "{}",
+        PLAN_WRITTEN_MSG
+    );
+}
+
+/// See [`plan_opened`].
+pub const PLAN_OPENED_MSG: &str = "plan opened";
+
+/// The raw `plan.md` snapshot at the plan-write point (#96).
+pub fn plan_opened(number: u64, plan_md: &str) {
+    info!(number, plan_md = %plan_md, "{}", PLAN_OPENED_MSG);
+}
+
+/// See [`plan_closed`].
+pub const PLAN_CLOSED_MSG: &str = "plan closed";
+
+/// The raw `plan.md` snapshot at the issue close, before the next issue's
+/// `plan()` overwrites it (#96).
+pub fn plan_closed(number: u64, plan_md: &str) {
+    info!(number, plan_md = %plan_md, "{}", PLAN_CLOSED_MSG);
+}
+
+/// See [`issue_closed`].
+pub const ISSUE_CLOSED_MSG: &str = "green — issue closed";
+
+/// A green issue was closed. `tokens` is the issue TOTAL (plan + execute +
+/// protocol + repair) the telegram notifier reads; `usage` is the EXECUTION
+/// phase's split the live UI combines with the planning usage (ADR-0008 D11).
+pub fn issue_closed(number: u64, tokens: u64, usage: &crate::Usage) {
+    info!(
+        number,
+        tokens,
+        up = usage.input,
+        cr = usage.cache_read,
+        cw = usage.cache_creation,
+        out = usage.output,
+        model = usage.model.as_deref().unwrap_or(""),
+        "{}",
+        ISSUE_CLOSED_MSG
+    );
+}
+
+/// See [`needs_split`].
+pub const NEEDS_SPLIT_MSG: &str = "bundle plan — needs split";
+
+/// The planner judged the issue a bundle: the queue parks on a human split.
+pub fn needs_split(number: u64) {
+    info!(number, "{}", NEEDS_SPLIT_MSG);
+}
+
+/// See [`blocked_by_open`].
+pub const BLOCKED_BY_OPEN_MSG: &str = "blocked by open issue(s) — skipping";
+
+/// The issue is gated on still-open blockers, all of them agent work.
+pub fn blocked_by_open(number: u64, blockers: &[u64]) {
+    info!(number, blockers = ?blockers, "{}", BLOCKED_BY_OPEN_MSG);
+}
+
+/// See [`blocked_waiting_human`].
+pub const BLOCKED_WAITING_HUMAN_MSG: &str = "blocked — waiting on human";
+
+/// The issue is gated on blockers, at least one of which needs a person
+/// (ADR-0014) — `human_blockers` names the ones the operator must clear.
+pub fn blocked_waiting_human(number: u64, blockers: &[u64], human_blockers: &[u64]) {
+    info!(
+        number,
+        blockers = ?blockers,
+        human_blockers = ?human_blockers,
+        "{}",
+        BLOCKED_WAITING_HUMAN_MSG
+    );
+}

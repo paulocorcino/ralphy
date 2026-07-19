@@ -260,20 +260,9 @@ pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     } = open_blockers(&issue, cx.tracker)?;
     if !open_blockers.is_empty() {
         if human_blockers.is_empty() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                blockers = ?open_blockers,
-                "blocked by open issue(s) — skipping"
-            );
+            crate::emit::blocked_by_open(issue.number, &open_blockers);
         } else {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                blockers = ?open_blockers,
-                human_blockers = ?human_blockers,
-                "blocked — waiting on human"
-            );
+            crate::emit::blocked_waiting_human(issue.number, &open_blockers, &human_blockers);
         }
         return Ok(Prepared::Blocked {
             open: open_blockers,
@@ -390,21 +379,15 @@ pub(crate) fn plan_phase(
     // markdown rides a stable `plan opened` event (→ `dev.ralphy.plan.opened`).
     let plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
     let steps_json = plan_steps_json(&plan_md);
-    // consumed by the telegram notifier / presenter — keep stable
-    info!(
-        number = issue.number,
-        open_steps = plan.open_steps,
-        up = plan.usage.input,
-        cr = plan.usage.cache_read,
-        cw = plan.usage.cache_creation,
-        out = plan.usage.output,
-        model = plan.usage.model.as_deref().unwrap_or(""),
-        steps_json = %steps_json,
-        "plan written"
+    crate::emit::plan_written(
+        issue.number,
+        plan.open_steps as u64,
+        &plan.usage,
+        &steps_json,
     );
     // The raw plan snapshot at the write point (issue-scoped); the sink maps it to
-    // `dev.ralphy.plan.opened`. Keep the message stable.
-    info!(number = issue.number, plan_md = %plan_md, "plan opened");
+    // `dev.ralphy.plan.opened`.
+    crate::emit::plan_opened(issue.number, &plan_md);
 
     // Record the plan phase's token usage (ADR-0008 D6). Written before the
     // feasibility branch so even an infeasible plan's planning cost is on the
@@ -427,8 +410,7 @@ pub(crate) fn plan_phase(
         if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
             if let Some(reason) = handoff::infeasible_reason(&plan_md) {
                 if handoff::is_bundle_reason(&reason) {
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(number = issue.number, "bundle plan — needs split");
+                    crate::emit::needs_split(issue.number);
                     // Best-effort: a label failure must not stop the run —
                     // the comment below still carries the verdict.
                     if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
@@ -949,16 +931,7 @@ pub(crate) fn close_and_record(
     // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
     // carry the *execution* phase breakdown so the live UI can combine it
     // with the planning usage it stashed at `plan written` (ADR-0008 D11).
-    info!(
-        number = issue.number,
-        tokens = issue_total,
-        up = exec_usage.input,
-        cr = exec_usage.cache_read,
-        cw = exec_usage.cache_creation,
-        out = exec_usage.output,
-        model = exec_usage.model.as_deref().unwrap_or(""),
-        "green — issue closed"
-    );
+    crate::emit::issue_closed(issue.number, issue_total, &exec_usage);
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),
@@ -974,7 +947,7 @@ pub(crate) fn close_and_record(
     if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
         // Capture the raw plan at close (before the next issue's `plan()` overwrites
         // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
-        info!(number = issue.number, plan_md = %plan_md, "plan closed");
+        crate::emit::plan_closed(issue.number, &plan_md);
         let verdicts = acceptance::parse_ledger(&plan_md);
         if !verdicts.is_empty() {
             cx.tracker

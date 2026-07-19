@@ -205,18 +205,18 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             model: fields.model.clone(),
             effort: fields.effort.clone(),
         }),
-        "plan written" => Some(RunEvent::PlanWritten {
+        ralphy_core::emit::PLAN_WRITTEN_MSG => Some(RunEvent::PlanWritten {
             number,
             open_steps: fields.open_steps.unwrap_or(0),
             usage: usage_from(fields),
             steps: parse_steps_json(fields.steps_json.as_deref()),
         }),
         // The raw plan snapshots (#96): issue-scoped, carrying the complete `plan.md`.
-        "plan opened" => Some(RunEvent::PlanOpened {
+        ralphy_core::emit::PLAN_OPENED_MSG => Some(RunEvent::PlanOpened {
             number,
             plan_md: fields.plan_md.clone().unwrap_or_default(),
         }),
-        "plan closed" => Some(RunEvent::PlanClosed {
+        ralphy_core::emit::PLAN_CLOSED_MSG => Some(RunEvent::PlanClosed {
             number,
             plan_md: fields.plan_md.clone().unwrap_or_default(),
         }),
@@ -232,7 +232,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             model: fields.model.clone().unwrap_or_default(),
             effort: fields.effort.clone(),
         }),
-        "green — issue closed" => Some(RunEvent::IssueClosed {
+        ralphy_core::emit::ISSUE_CLOSED_MSG => Some(RunEvent::IssueClosed {
             number,
             tokens: fields.tokens.unwrap_or(0),
             usage: usage_from(fields),
@@ -241,8 +241,8 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             outcome: fields.outcome.clone().unwrap_or_default(),
         }),
-        "bundle plan — needs split" => Some(RunEvent::NeedsSplit { number }),
-        "blocked by open issue(s) — skipping" => Some(RunEvent::Skipped {
+        ralphy_core::emit::NEEDS_SPLIT_MSG => Some(RunEvent::NeedsSplit { number }),
+        ralphy_core::emit::BLOCKED_BY_OPEN_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::BlockedBy,
             label: None,
@@ -251,7 +251,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // A human gate (`ready-for-human`/`HITL`) sits in the issue's path: the
         // chain is parked until a person acts, but the run continues. `on` names
         // the issue(s) the operator must clear (ADR-0014).
-        "blocked — waiting on human" => Some(RunEvent::HumanBlocked {
+        ralphy_core::emit::BLOCKED_WAITING_HUMAN_MSG => Some(RunEvent::HumanBlocked {
             number,
             on: parse_u64_list(fields.human_blockers.as_deref()),
         }),

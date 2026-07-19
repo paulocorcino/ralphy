@@ -883,8 +883,6 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
 /// target is the helper's module — it physically cannot forward the caller's.
 /// The decoder ignores `target`, so this is the migration's ONE observable change.
 const T_EMIT: &str = "ralphy_core::emit";
-/// The `tracing` target every `phases.rs` emission carries.
-const T_PHASES: &str = "ralphy_core::runner::phases";
 /// The `tracing` target every `runner.rs` emission carries.
 const T_RUNNER: &str = "ralphy_core::runner";
 /// The `tracing` target every `clock.rs` emission carries.
@@ -960,7 +958,7 @@ fn pins_green_run_vocabulary() {
     let written = pin(
         &events,
         "plan written",
-        T_PHASES,
+        T_EMIT,
         &[
             "cr",
             "cw",
@@ -985,7 +983,7 @@ fn pins_green_run_vocabulary() {
     let opened = pin(
         &events,
         "plan opened",
-        T_PHASES,
+        T_EMIT,
         &["message", "number", "plan_md"],
     );
     assert_eq!(opened.get("number"), "7");
@@ -994,7 +992,7 @@ fn pins_green_run_vocabulary() {
     let closed = pin(
         &events,
         "plan closed",
-        T_PHASES,
+        T_EMIT,
         &["message", "number", "plan_md"],
     );
     assert_eq!(closed.get("number"), "7");
@@ -1003,7 +1001,7 @@ fn pins_green_run_vocabulary() {
     let green = pin(
         &events,
         "green — issue closed",
-        T_PHASES,
+        T_EMIT,
         &[
             "cr", "cw", "message", "model", "number", "out", "tokens", "up",
         ],
@@ -1160,7 +1158,7 @@ fn pins_blocked_and_split_vocabulary() {
     let blocked = pin(
         &events,
         "blocked by open issue(s) — skipping",
-        T_PHASES,
+        T_EMIT,
         &["blockers", "message", "number"],
     );
     assert_eq!(blocked.get("number"), "5");
@@ -1188,7 +1186,7 @@ fn pins_blocked_and_split_vocabulary() {
     let hb = pin(
         &events,
         "blocked — waiting on human",
-        T_PHASES,
+        T_EMIT,
         &["blockers", "human_blockers", "message", "number"],
     );
     assert_eq!(hb.get("number"), "5");
@@ -1215,7 +1213,7 @@ fn pins_blocked_and_split_vocabulary() {
         pin(
             &events,
             "bundle plan — needs split",
-            T_PHASES,
+            T_EMIT,
             &["message", "number"],
         )
         .get("number"),
