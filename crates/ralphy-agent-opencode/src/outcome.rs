@@ -82,6 +82,7 @@ impl OpenCodeAgent {
         HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
             .kill_on_stderr_line(kill_on_stderr_line)
             .idle_minutes(self.budget.idle_minutes)
+            .degraded_line(crate::events::is_opencode_api_degraded)
             .run()
             .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")
     }

@@ -288,10 +288,12 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             target_epoch: fields.target_epoch.unwrap_or(0),
         }),
         "reset reached — resuming" => Some(RunEvent::SleepEnded),
-        // The claude adapter's API-degraded transitions (issue #149): all timing
-        // gating happens in the adapter, so these fire only on the real edges.
-        "api degraded — child retrying" => Some(RunEvent::ApiDegraded),
-        "api recovered — child resuming" => Some(RunEvent::ApiRecovered),
+        // The API-degraded transitions, from EITHER execution path (PTY #149,
+        // headless #217): all timing gating happens in the adapter, so these fire
+        // only on the real edges. The messages are shared constants so the two
+        // emitters cannot drift into two different operator experiences.
+        ralphy_adapter_support::API_DEGRADED_MSG => Some(RunEvent::ApiDegraded),
+        ralphy_adapter_support::API_RECOVERED_MSG => Some(RunEvent::ApiRecovered),
         // The idle watchdog's reap, from either execution path — the message is
         // one shared constant (`ralphy_adapter_support::IDLE_REAPED_MSG`) so the
         // two emitters cannot drift apart into two different operator experiences.
@@ -790,14 +792,36 @@ mod tests {
     fn decoder_maps_api_degraded_events() {
         assert_eq!(
             decode(EventFields {
-                message: "api degraded — child retrying".into(),
+                message: ralphy_adapter_support::API_DEGRADED_MSG.into(),
                 ..Default::default()
             }),
             Some(RunEvent::ApiDegraded)
         );
         assert_eq!(
             decode(EventFields {
-                message: "api recovered — child resuming".into(),
+                message: ralphy_adapter_support::API_RECOVERED_MSG.into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::ApiRecovered)
+        );
+    }
+
+    #[test]
+    fn decoder_maps_the_api_degraded_from_either_execution_path() {
+        // The normalization this pins (issue #217): the PTY driver (#149) and the
+        // headless driver both emit the SAME shared constant, so one decoder arm
+        // serves both and the operator gets one event shape regardless of which
+        // child shape ran (mold of `decoder_maps_the_idle_reap_from_either_execution_path`).
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::API_DEGRADED_MSG.into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::ApiDegraded)
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::API_RECOVERED_MSG.into(),
                 ..Default::default()
             }),
             Some(RunEvent::ApiRecovered)

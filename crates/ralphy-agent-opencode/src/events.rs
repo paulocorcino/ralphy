@@ -37,6 +37,26 @@ pub(crate) fn is_opencode_auth_error(text: &str) -> bool {
     ralphy_adapter_support::auth_error(text, &[&["providerautherror"]])
 }
 
+/// The headless **degraded-line** matcher, handed to the shared runner's
+/// `degraded_line` seam. A degraded line is a *retryable* error event — a
+/// transient backend blip the SDK retries internally (`{type:"error"}` under any
+/// observed envelope) that is NOT a terminal usage limit or auth failure (those
+/// have their own handling: the early-kill switch and the auth bail). Keeping the
+/// terminal signals out of the degraded set is what stops a real quota block from
+/// being papered over as "degraded, retrying"; a false negative here is safe (the
+/// line just counts as ordinary progress).
+pub(crate) fn is_opencode_api_degraded(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return false; // logfmt/plain lines are not degraded events
+    };
+    if !is_error_event(&val) {
+        return false;
+    }
+    // A terminal limit or auth error is NOT "degraded" — those are terminal.
+    !is_opencode_auth_error(trimmed) && parse_opencode_limit(trimmed).is_none()
+}
+
 /// The payload object a single event's fields live in. opencode 1.16.2 wraps
 /// every event in an envelope `{type, timestamp, sessionID, part:{…}}` and puts
 /// the real fields (`text`, `tool`, `reason`, …) under `part`; the older/SDK
@@ -307,6 +327,33 @@ mod tests {
             is_opencode_auth_error(log),
             "auth error must win over a co-present DONE sentinel"
         );
+    }
+
+    // ── is_opencode_api_degraded ─────────────────────────────────────────────
+
+    #[test]
+    fn degraded_matches_retryable_error_event() {
+        // A 500 backend blip: a retryable error event, not a limit or auth — the
+        // degraded clock should track it.
+        let line = r#"{"type":"error","name":"APIError","statusCode":500,"message":"internal server error"}"#;
+        assert!(is_opencode_api_degraded(line));
+    }
+
+    #[test]
+    fn degraded_ignores_healthy_and_terminal_lines() {
+        // Healthy JSON event lines and plain assistant text are not degraded.
+        assert!(!is_opencode_api_degraded(
+            r#"{"type":"text","text":"working on it"}"#
+        ));
+        assert!(!is_opencode_api_degraded("just some assistant prose"));
+        // A terminal usage limit (429) is NOT degraded — it is handled as a limit.
+        assert!(!is_opencode_api_degraded(
+            r#"{"type":"error","name":"APIError","statusCode":429,"message":"rate limited"}"#
+        ));
+        // A terminal auth error is NOT degraded either.
+        assert!(!is_opencode_api_degraded(
+            r#"{"type":"error","name":"ProviderAuthError","message":"Not authenticated"}"#
+        ));
     }
 
     // ── parse_opencode_limit ─────────────────────────────────────────────────

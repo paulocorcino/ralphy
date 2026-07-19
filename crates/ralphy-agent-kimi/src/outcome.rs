@@ -13,6 +13,21 @@ use serde_json::Value;
 
 use crate::KimiAgent;
 
+/// The headless **degraded-line** matcher, handed to the shared runner's
+/// `degraded_line` seam. Conservative, keyed on kimi's transient-error vocabulary
+/// `(indicative — refine against a captured degraded run)`: a stream/connection
+/// hiccup the CLI retries internally. Terminal auth (`llm not set`) and usage
+/// limit (`access_terminated_error`) lines are explicitly excluded — a false
+/// positive reaping healthy work is the only unsafe failure mode, so narrowness is
+/// the design goal; a miss degrades gracefully (the line counts as progress).
+fn is_kimi_api_degraded(line: &str) -> bool {
+    if crate::auth::is_kimi_auth_error(line) || crate::auth::is_kimi_limit_text(line) {
+        return false;
+    }
+    let l = line.to_ascii_lowercase();
+    l.contains("stream error") || l.contains("connection error") || l.contains("reconnecting")
+}
+
 /// Extract Kimi's final assistant message from its `stream-json` output: coarse
 /// role-JSONL, one object per line. The final message is the LAST `role:assistant`
 /// object that carries NO pending `tool_calls` (a tool-call turn is intermediate,
@@ -114,6 +129,7 @@ impl KimiAgent {
         // Idle watchdog: see the sibling comment in the Codex adapter.
         HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("kimi.log"))
             .idle_minutes(self.budget.idle_minutes)
+            .degraded_line(is_kimi_api_degraded)
             .run()
             .context("failed to spawn the `kimi` CLI (is it installed and on PATH?)")
     }
@@ -181,6 +197,28 @@ mod tests {
         let answer =
             r#"{"role":"assistant","content":[{"type":"text","text":"ok\nRALPHY_DONE_EXIT"}]}"#;
         assert!(kimi_final_text(&format!("{answer}\n{{trunc")).ends_with("RALPHY_DONE_EXIT"));
+    }
+
+    // ── is_kimi_api_degraded ────────────────────────────────────────────────
+
+    #[test]
+    fn kimi_degraded_matches_transient_error() {
+        assert!(is_kimi_api_degraded("stream error: retrying request"));
+        assert!(is_kimi_api_degraded("connection error, reconnecting"));
+    }
+
+    #[test]
+    fn kimi_degraded_ignores_healthy_and_terminal_lines() {
+        // A healthy assistant JSON turn is not degraded.
+        assert!(!is_kimi_api_degraded(
+            r#"{"role":"assistant","content":[{"type":"text","text":"working"}]}"#
+        ));
+        // Terminal auth (`LLM not set`) and usage limit (`access_terminated_error`)
+        // are excluded — they have their own handling.
+        assert!(!is_kimi_api_degraded("Error: LLM not set"));
+        assert!(!is_kimi_api_degraded(
+            "'type': 'access_terminated_error'}}"
+        ));
     }
 
     #[test]

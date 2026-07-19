@@ -9,8 +9,23 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 
-use crate::auth::{is_codex_limit_text, parse_codex_reset_hint};
+use crate::auth::{is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint};
 use crate::CodexAgent;
+
+/// The headless **degraded-line** matcher, handed to the shared runner's
+/// `degraded_line` seam. Conservative, keyed on codex's transient-error
+/// vocabulary `(indicative — refine against a captured degraded run)`: a stream
+/// hiccup or reconnect the CLI retries internally. Terminal auth/limit lines are
+/// explicitly excluded (the logged-out log carries `Reconnecting...` alongside its
+/// 401, so the auth guard must win) — a false positive that reaped healthy work is
+/// the only unsafe failure mode, so narrowness is the design goal; a miss is safe.
+fn is_codex_api_degraded(line: &str) -> bool {
+    if is_codex_auth_error(line) || is_codex_limit_text(line) {
+        return false;
+    }
+    let l = line.to_ascii_lowercase();
+    l.contains("stream error") || l.contains("server error") || l.contains("reconnecting")
+}
 
 /// Extract Codex's [`CompletionSignals`] from a call's raw end state and delegate
 /// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
@@ -67,6 +82,7 @@ impl CodexAgent {
         // and unbounded by default (docs/adr/0038).
         HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
             .idle_minutes(self.budget.idle_minutes)
+            .degraded_line(is_codex_api_degraded)
             .run()
             .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")
     }
@@ -131,6 +147,31 @@ mod tests {
             classify_codex_outcome(false, true, false, out, ""),
             Outcome::Timeout
         );
+    }
+
+    // ── is_codex_api_degraded ───────────────────────────────────────────────
+
+    #[test]
+    fn codex_degraded_matches_transient_error() {
+        assert!(is_codex_api_degraded(
+            "ERROR codex_api: stream error, retrying"
+        ));
+        assert!(is_codex_api_degraded("Server error, backing off"));
+    }
+
+    #[test]
+    fn codex_degraded_ignores_healthy_and_terminal_lines() {
+        assert!(!is_codex_api_degraded("all steps green\nRALPHY_DONE_EXIT\n"));
+        // The logged-out log carries `Reconnecting...` next to its 401 — the auth
+        // guard must win so a real auth failure is not papered over as degraded.
+        assert!(!is_codex_api_degraded(
+            "ERROR: unexpected status 401 Unauthorized: Missing bearer or basic \
+             authentication in header\nERROR: Reconnecting... 5/5"
+        ));
+        // A usage limit is terminal, not degraded.
+        assert!(!is_codex_api_degraded(
+            "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
+        ));
     }
 
     // ── classify_codex_outcome — limit branch ───────────────────────────────
