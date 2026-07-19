@@ -57,12 +57,15 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
                 ..Default::default()
             };
             event.record(&mut fields);
-            sink.lock().unwrap().push(Captured {
+            // Built BEFORE the lock: nothing that could re-enter `tracing` may run
+            // while the sink's Mutex is held.
+            let captured = Captured {
                 level: fields.level,
                 target: event.metadata().target().to_string(),
                 message: fields.message.clone(),
                 fields,
-            });
+            };
+            sink.lock().unwrap().push(captured);
         });
     }
 }
@@ -83,15 +86,30 @@ fn install() {
     });
 }
 
+/// Restores the sink that was active before this capture, on every exit path.
+///
+/// Restore-previous rather than clear: nesting one `capture_events` inside
+/// another must not silently disable the outer one for the rest of its closure.
+/// `Drop` rather than a plain reset: under `--test-threads=1` every test shares
+/// the main thread, so a panicking `f` would otherwise leave a stale sink behind
+/// and poison the NEXT test.
+struct SinkGuard(Option<Sink>);
+
+impl Drop for SinkGuard {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        SINK.with(|s| *s.borrow_mut() = previous);
+    }
+}
+
 /// Run `f` with this thread's `tracing` events captured, returning its value and
-/// the events in emission order. A panicking `f` unwinds without clearing the
-/// sink, which fails the test anyway.
+/// the events in emission order.
 pub(crate) fn capture_events<T>(f: impl FnOnce() -> T) -> (T, Vec<Captured>) {
     install();
     let sink: Sink = Arc::new(Mutex::new(Vec::new()));
-    SINK.with(|s| *s.borrow_mut() = Some(sink.clone()));
+    let _guard = SinkGuard(SINK.with(|s| s.borrow_mut().replace(sink.clone())));
     let out = f();
-    SINK.with(|s| *s.borrow_mut() = None);
+    drop(_guard);
     let events = std::mem::take(&mut *sink.lock().unwrap());
     (out, events)
 }
@@ -354,7 +372,7 @@ mod tests {
             .join("..")
     }
 
-    /// The 16 core-emitted messages, each pinned by a named test in
+    /// The 15 core-emitted messages, each pinned by a named test in
     /// `crates/ralphy-core/tests/queue.rs` (that crate cannot see this module, so
     /// the coverage closure below restates them as literals).
     const CORE_PINNED_MESSAGES: &[&str] = &[
@@ -375,6 +393,26 @@ mod tests {
         "reset reached — resuming",                          // pins_usage_limit_vocabulary
     ];
 
+    /// How many messages `event_to_runevent`'s `match` consumes, read off the
+    /// decoder's source: every pattern line in the `match message {` block, which
+    /// is one message per line (a multi-message arm formats as `"a"\n| "b" => …`)
+    /// plus the three `ralphy_adapter_support::*_MSG` constant patterns.
+    fn decoder_arm_messages(src: &str) -> usize {
+        let body = src
+            .split_once("match message {")
+            .expect("the decoder's match")
+            .1;
+        let body = body.split_once("_ => None").expect("the fallthrough arm").0;
+        body.lines()
+            .map(str::trim_start)
+            .filter(|l| {
+                l.starts_with('"')
+                    || l.starts_with("| \"")
+                    || l.starts_with("ralphy_adapter_support::")
+            })
+            .count()
+    }
+
     /// Every message this issue pins, across both crates: the 13 `EMITTER_SITES`
     /// rows, the 3 shared constants, `run finished`, and the 15 core messages.
     ///
@@ -392,13 +430,16 @@ mod tests {
         pinned.push("run finished");
         pinned.extend(CORE_PINNED_MESSAGES);
 
-        // 32 = the arm count of `event_to_runevent` (event.rs), counting each
-        // message of the two multi-message arms (4 `planning with …`, 5
-        // `executing with …`) separately.
+        // Counted off the decoder's OWN source, not restated as a second constant:
+        // an arm added to `event_to_runevent` without a pin reds HERE.
+        let decoder =
+            std::fs::read_to_string(repo_root().join("crates/ralphy-cli/src/runstate/event.rs"))
+                .expect("reading the decoder source");
         assert_eq!(
             pinned.len(),
-            32,
-            "pin count drifted from the decoder's arms"
+            decoder_arm_messages(&decoder),
+            "the decoder's consumed-message count drifted from the pinned set — \
+             an `event_to_runevent` arm was added or removed without a pin"
         );
 
         let unique: std::collections::BTreeSet<&str> = pinned.iter().copied().collect();
@@ -430,12 +471,26 @@ mod tests {
         let mut from = 0usize;
         while let Some(rel) = src[from..].find(&literal) {
             let end = from + rel;
-            if let Some(start) = src[..end].rfind("info!(") {
-                sites.push(&src[start..end]);
+            if let Some(site) = enclosing_info_call(&src[..end]) {
+                sites.push(site);
             }
             from = end + literal.len();
         }
         sites
+    }
+
+    /// The `info!(`-to-here slice, but ONLY when `info!(` is the macro call the
+    /// literal actually sits in.
+    ///
+    /// A bare `rfind("info!(")` would skip backwards over an intervening
+    /// `warn!(`/`error!(` to an earlier, unrelated `info!(` — so flipping an
+    /// emitter's level (the drift that makes the decoder collapse it to a generic
+    /// `Notice`, `event.rs:173-179`) would leave the row green. Rejecting a
+    /// candidate that spans a `;` or another `!(` keeps the slice inside one call.
+    fn enclosing_info_call(before: &str) -> Option<&str> {
+        let start = before.rfind("info!(")?;
+        let body = &before[start + "info!(".len()..];
+        (!body.contains(';') && !body.contains("!(")).then_some(&before[start..])
     }
 
     #[test]
