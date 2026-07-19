@@ -77,6 +77,7 @@ pub mod acceptance;
 pub mod blocked;
 pub mod cmdcost;
 pub mod diagnosis;
+pub mod emit;
 pub mod environment;
 pub mod git;
 pub mod github;

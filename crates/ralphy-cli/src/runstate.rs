@@ -20,6 +20,8 @@
 mod capture;
 mod event;
 mod fields;
+#[cfg(test)]
+mod roundtrip;
 mod state;
 
 pub use event::{event_to_runevent, RunEvent};

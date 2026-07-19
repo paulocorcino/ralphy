@@ -396,7 +396,8 @@ mod tests {
     /// How many messages `event_to_runevent`'s `match` consumes, read off the
     /// decoder's source: every pattern line in the `match message {` block, which
     /// is one message per line (a multi-message arm formats as `"a"\n| "b" => …`)
-    /// plus the three `ralphy_adapter_support::*_MSG` constant patterns.
+    /// plus the `ralphy_*::…_MSG` constant patterns (the migrated arms match
+    /// `ralphy_core::emit` constants, never literals — ADR-0039 §1).
     fn decoder_arm_messages(src: &str) -> usize {
         let body = src
             .split_once("match message {")
@@ -406,9 +407,7 @@ mod tests {
         body.lines()
             .map(str::trim_start)
             .filter(|l| {
-                l.starts_with('"')
-                    || l.starts_with("| \"")
-                    || l.starts_with("ralphy_adapter_support::")
+                l.starts_with('"') || l.starts_with("| \"") || l.starts_with("ralphy_")
             })
             .count()
     }

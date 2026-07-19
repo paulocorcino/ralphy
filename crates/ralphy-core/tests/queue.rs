@@ -878,6 +878,11 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
 // `crates/ralphy-cli/src/runstate/event.rs`; the remaining 14 messages are pinned
 // there (`runstate::capture`).
 
+/// The `tracing` target every migrated emission carries (ADR-0039 §1): a helper
+/// in `ralphy_core::emit` builds tracing's `static` callsite `Metadata`, so the
+/// target is the helper's module — it physically cannot forward the caller's.
+/// The decoder ignores `target`, so this is the migration's ONE observable change.
+const T_EMIT: &str = "ralphy_core::emit";
 /// The `tracing` target every `phases.rs` emission carries.
 const T_PHASES: &str = "ralphy_core::runner::phases";
 /// The `tracing` target every `runner.rs` emission carries.
@@ -946,7 +951,7 @@ fn pins_green_run_vocabulary() {
     let started = pin(
         &events,
         "issue started",
-        T_PHASES,
+        T_EMIT,
         &["message", "number", "title"],
     );
     assert_eq!(started.get("number"), "7");

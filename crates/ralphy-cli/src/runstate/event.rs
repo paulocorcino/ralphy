@@ -192,7 +192,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             // `None` when the queue was fetched unfiltered.
             assignee_filter: fields.assignee_filter.clone(),
         }),
-        "issue started" => Some(RunEvent::IssueStarted {
+        ralphy_core::emit::ISSUE_STARTED_MSG => Some(RunEvent::IssueStarted {
             number,
             title: fields.title.clone().unwrap_or_default(),
         }),

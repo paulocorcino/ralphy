@@ -282,7 +282,7 @@ pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     }
 
     // consumed by the telegram notifier / presenter — keep stable
-    info!(number = issue.number, title = %issue.title, "issue started");
+    crate::emit::issue_started(issue.number, &issue.title);
 
     // The comment thread was attached up front (for the blocked-by gate); note
     // it here so the "comments attached for planner" visibility line still fires
