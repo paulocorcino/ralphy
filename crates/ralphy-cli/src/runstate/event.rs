@@ -237,7 +237,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             tokens: fields.tokens.unwrap_or(0),
             usage: usage_from(fields),
         }),
-        "non-green — stopping run" => Some(RunEvent::NonGreen {
+        ralphy_core::emit::NON_GREEN_MSG => Some(RunEvent::NonGreen {
             number,
             outcome: fields.outcome.clone().unwrap_or_default(),
         }),
@@ -255,7 +255,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             number,
             on: parse_u64_list(fields.human_blockers.as_deref()),
         }),
-        "stop-before label — halting run before this issue" => Some(RunEvent::Skipped {
+        ralphy_core::emit::STOP_BEFORE_LABEL_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::StopBefore,
             label: None,
@@ -265,7 +265,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // `needs-triage`, `wontfix`, `triage-agent`) outranks the queue label: the
         // issue is skipped with the parking label named and the queue continues
         // (ADR-0016).
-        "human-return label — skipping issue" => Some(RunEvent::Skipped {
+        ralphy_core::emit::HUMAN_RETURN_LABEL_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::HumanReturn,
             label: fields.label.clone(),
@@ -274,20 +274,20 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // The verify gate stayed red after the repair budget: the issue is left
         // open and the queue marches on (ADR-0011). Surfaced as a skip so the miss
         // is visible in the live card and the final counts.
-        "verify gate failed — skipping issue" => Some(RunEvent::Skipped {
+        ralphy_core::emit::VERIFY_GATE_FAILED_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::VerifyFailed,
             label: None,
             blockers: Vec::new(),
         }),
-        "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
+        ralphy_core::emit::DEADLINE_PASSED_MSG => Some(RunEvent::DeadlinePassed { number }),
         // The run entered a usage-limit sleep; the fold carries the reset hint and
         // the wake anchor for a live countdown.
-        "usage limit — waiting for reset" => Some(RunEvent::SleepStarted {
+        ralphy_core::emit::USAGE_LIMIT_WAITING_MSG => Some(RunEvent::SleepStarted {
             reset: fields.reset.clone().unwrap_or_default(),
             target_epoch: fields.target_epoch.unwrap_or(0),
         }),
-        "reset reached — resuming" => Some(RunEvent::SleepEnded),
+        ralphy_core::emit::RESET_REACHED_MSG => Some(RunEvent::SleepEnded),
         // The API-degraded transitions, from EITHER execution path (PTY #149,
         // headless #217): all timing gating happens in the adapter, so these fire
         // only on the real edges. The messages are shared constants so the two

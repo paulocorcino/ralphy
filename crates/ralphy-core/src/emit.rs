@@ -117,3 +117,69 @@ pub fn blocked_waiting_human(number: u64, blockers: &[u64], human_blockers: &[u6
         BLOCKED_WAITING_HUMAN_MSG
     );
 }
+
+/// See [`non_green`].
+pub const NON_GREEN_MSG: &str = "non-green — stopping run";
+
+/// An issue finished non-green and halts the queue.
+pub fn non_green(number: u64, outcome: &crate::Outcome) {
+    info!(number, ?outcome, "{}", NON_GREEN_MSG);
+}
+
+/// See [`deadline_passed`].
+pub const DEADLINE_PASSED_MSG: &str = "deadline passed — not starting issue";
+
+/// The global budget ran out before this issue could be started.
+pub fn deadline_passed(number: u64) {
+    info!(number, "{}", DEADLINE_PASSED_MSG);
+}
+
+/// See [`stop_before_label`].
+pub const STOP_BEFORE_LABEL_MSG: &str = "stop-before label — halting run before this issue";
+
+/// A `stop-before` flow-control label halts the run ahead of this issue.
+pub fn stop_before_label(number: u64) {
+    info!(number, "{}", STOP_BEFORE_LABEL_MSG);
+}
+
+/// See [`human_return_label`].
+pub const HUMAN_RETURN_LABEL_MSG: &str = "human-return label — skipping issue";
+
+/// A human-return label outranks the queue label (ADR-0016): the issue is
+/// skipped with the parking `label` named and the queue continues.
+pub fn human_return_label(number: u64, label: &str) {
+    info!(number, label = %label, "{}", HUMAN_RETURN_LABEL_MSG);
+}
+
+/// See [`verify_gate_failed`].
+pub const VERIFY_GATE_FAILED_MSG: &str = "verify gate failed — skipping issue";
+
+/// The verify gate stayed red after the repair budget (ADR-0011): the issue is
+/// left open and the queue marches on.
+pub fn verify_gate_failed(number: u64, summary: &str) {
+    info!(number, %summary, "{}", VERIFY_GATE_FAILED_MSG);
+}
+
+/// See [`usage_limit_waiting`].
+pub const USAGE_LIMIT_WAITING_MSG: &str = "usage limit — waiting for reset";
+
+/// The run hit a vendor usage limit and is sleeping. `reset` is the display wake
+/// time-of-day (`HH:MM`, buffer included), `hint` the raw vendor string (logged
+/// only — the decoder ignores it), `target_epoch` the countdown anchor.
+pub fn usage_limit_waiting(reset: &str, hint: &str, target_epoch: i64) {
+    info!(
+        reset = %reset,
+        hint = %hint,
+        target_epoch,
+        "{}",
+        USAGE_LIMIT_WAITING_MSG
+    );
+}
+
+/// See [`reset_reached`].
+pub const RESET_REACHED_MSG: &str = "reset reached — resuming";
+
+/// The usage-limit reset arrived and the run resumed.
+pub fn reset_reached() {
+    info!("{}", RESET_REACHED_MSG);
+}

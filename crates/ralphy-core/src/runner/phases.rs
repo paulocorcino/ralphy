@@ -931,7 +931,7 @@ pub(crate) fn close_and_record(
     // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
     // carry the *execution* phase breakdown so the live UI can combine it
     // with the planning usage it stashed at `plan written` (ADR-0008 D11).
-    crate::emit::issue_closed(issue.number, issue_total, &exec_usage);
+    crate::emit::issue_closed(issue.number, issue_total, exec_usage);
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),

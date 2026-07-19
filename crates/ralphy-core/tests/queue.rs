@@ -883,10 +883,6 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
 /// target is the helper's module — it physically cannot forward the caller's.
 /// The decoder ignores `target`, so this is the migration's ONE observable change.
 const T_EMIT: &str = "ralphy_core::emit";
-/// The `tracing` target every `runner.rs` emission carries.
-const T_RUNNER: &str = "ralphy_core::runner";
-/// The `tracing` target every `clock.rs` emission carries.
-const T_CLOCK: &str = "ralphy_core::runner::clock";
 
 /// Run `f` with this thread's `tracing` events captured, in order.
 fn capture_run<T>(f: impl FnOnce() -> T) -> (T, Vec<CapturedFields>) {
@@ -1029,7 +1025,7 @@ fn pins_skip_and_stop_vocabulary() {
     let non_green = pin(
         &events,
         "non-green — stopping run",
-        T_RUNNER,
+        T_EMIT,
         &["message", "number", "outcome"],
     );
     assert_eq!(non_green.get("number"), "2");
@@ -1054,7 +1050,7 @@ fn pins_skip_and_stop_vocabulary() {
         pin(
             &events,
             "deadline passed — not starting issue",
-            T_RUNNER,
+            T_EMIT,
             &["message", "number"],
         )
         .get("number"),
@@ -1079,7 +1075,7 @@ fn pins_skip_and_stop_vocabulary() {
         pin(
             &events,
             "stop-before label — halting run before this issue",
-            T_RUNNER,
+            T_EMIT,
             &["message", "number"],
         )
         .get("number"),
@@ -1103,7 +1099,7 @@ fn pins_skip_and_stop_vocabulary() {
     let hr = pin(
         &events,
         "human-return label — skipping issue",
-        T_RUNNER,
+        T_EMIT,
         &["label", "message", "number"],
     );
     assert_eq!(hr.get("number"), "1");
@@ -1129,7 +1125,7 @@ fn pins_skip_and_stop_vocabulary() {
     let vg = pin(
         &events,
         "verify gate failed — skipping issue",
-        T_RUNNER,
+        T_EMIT,
         &["message", "number", "summary"],
     );
     assert_eq!(vg.get("number"), "1");
@@ -1236,7 +1232,7 @@ fn pins_usage_limit_vocabulary() {
     let sleep = pin(
         &events,
         "usage limit — waiting for reset",
-        T_CLOCK,
+        T_EMIT,
         &["hint", "message", "reset", "target_epoch"],
     );
     // `%reset` is the WAKE time-of-day (`HH:MM`), not the raw hint — the decoder
@@ -1254,7 +1250,7 @@ fn pins_usage_limit_vocabulary() {
         sleep.get("target_epoch")
     );
 
-    pin(&events, "reset reached — resuming", T_CLOCK, &["message"]);
+    pin(&events, "reset reached — resuming", T_EMIT, &["message"]);
 }
 
 #[test]

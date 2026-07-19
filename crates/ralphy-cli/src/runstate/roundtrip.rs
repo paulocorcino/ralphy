@@ -154,6 +154,88 @@ fn roundtrip_blocked_waiting_human() {
 }
 
 #[test]
+fn roundtrip_non_green() {
+    let ev = one(|| ralphy_core::emit::non_green(7, &ralphy_core::Outcome::Stuck));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::NonGreen {
+            number: 7,
+            outcome: "Stuck".into(),
+        })
+    );
+}
+
+#[test]
+fn roundtrip_deadline_passed() {
+    let ev = one(|| ralphy_core::emit::deadline_passed(7));
+    assert_eq!(decode(&ev), Some(RunEvent::DeadlinePassed { number: 7 }));
+}
+
+#[test]
+fn roundtrip_stop_before_label() {
+    let ev = one(|| ralphy_core::emit::stop_before_label(8));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Skipped {
+            number: 8,
+            kind: SkipKind::StopBefore,
+            label: None,
+            blockers: vec![],
+        })
+    );
+}
+
+#[test]
+fn roundtrip_human_return_label() {
+    let ev = one(|| ralphy_core::emit::human_return_label(9, "wontfix"));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Skipped {
+            number: 9,
+            kind: SkipKind::HumanReturn,
+            label: Some("wontfix".into()),
+            blockers: vec![],
+        })
+    );
+}
+
+#[test]
+fn roundtrip_verify_gate_failed() {
+    let ev = one(|| ralphy_core::emit::verify_gate_failed(9, "cargo test: 2 failed"));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Skipped {
+            number: 9,
+            kind: SkipKind::VerifyFailed,
+            label: None,
+            blockers: vec![],
+        })
+    );
+}
+
+#[test]
+fn roundtrip_usage_limit_waiting() {
+    // `hint` rides along for the log but has no decoded home — the pin in
+    // `ralphy-core`'s `pins_usage_limit_vocabulary` is what keeps it emitted.
+    let ev = one(|| {
+        ralphy_core::emit::usage_limit_waiting("07:30", "2026-07-19T07:25:00Z", 1_700_000_000)
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::SleepStarted {
+            reset: "07:30".into(),
+            target_epoch: 1_700_000_000,
+        })
+    );
+}
+
+#[test]
+fn roundtrip_reset_reached() {
+    let ev = one(ralphy_core::emit::reset_reached);
+    assert_eq!(decode(&ev), Some(RunEvent::SleepEnded));
+}
+
+#[test]
 fn roundtrip_level_wins_over_message() {
     // The other half of the level contract: a vocabulary message emitted above
     // INFO does NOT decode to its variant — it collapses to a `Notice`. This is

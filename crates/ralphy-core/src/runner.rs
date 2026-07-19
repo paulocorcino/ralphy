@@ -170,11 +170,7 @@ fn run_queue_with(
         // Don't start a new issue past the global budget. Work already committed
         // for earlier issues is kept; the branch is handed back as it stands.
         if clock.deadline_passed() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                "deadline passed — not starting issue"
-            );
+            crate::emit::deadline_passed(issue.number);
             stop = Some(StopReason::Deadline);
             break;
         }
@@ -184,11 +180,7 @@ fn run_queue_with(
         // — the queue was pre-filtered to that selection, so the operator clearly
         // wants it to run.
         if first_stop_before(std::slice::from_ref(issue), &cfg.forced_issues).is_some() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                "stop-before label — halting run before this issue"
-            );
+            crate::emit::stop_before_label(issue.number);
             stop = Some(StopReason::StopBefore {
                 number: issue.number,
             });
@@ -201,12 +193,7 @@ fn run_queue_with(
         // override this: the label may record someone else's state (a reporter
         // owing info, a parked verify gate) that a run flag must not steamroll.
         if let Some(label) = human_return_label(issue, &cfg.human_return_labels) {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                label = %label,
-                "human-return label — skipping issue"
-            );
+            crate::emit::human_return_label(issue.number, label);
             worked.push(IssueResult {
                 number: issue.number,
                 outcome: None,
@@ -295,8 +282,7 @@ fn run_queue_with(
                 outcome,
                 deadline_cut,
             } => {
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(number = issue.number, ?outcome, "non-green — stopping run");
+                crate::emit::non_green(issue.number, &outcome);
                 let number = issue.number;
                 worked.push(IssueResult {
                     number,
@@ -367,8 +353,7 @@ fn run_queue_with(
                 // for a human to pick up — see the artifact comment) and march on
                 // to the next issue. The issue is reported skipped-on-verify so the
                 // miss is visible, never a silent close.
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(number, %summary, "verify gate failed — skipping issue");
+                crate::emit::verify_gate_failed(number, &summary);
                 worked.push(IssueResult {
                     number,
                     outcome: None,
