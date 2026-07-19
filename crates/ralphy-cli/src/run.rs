@@ -16,7 +16,9 @@ use tracing::{info, warn};
 use crate::cli::{CliAgent, RunArgs};
 use crate::{config, events, runlock, runstate, split_agent, telegram, ui};
 
-mod report;
+// `pub(crate)` only so `runstate::capture`'s #[cfg(test)] pins can drive the real
+// `emit_run_finished` (#219). Bin crate: no public surface is widened.
+pub(crate) mod report;
 mod wiring;
 
 use report::{
