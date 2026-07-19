@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use crate::degraded::{DegradedAction, DegradedWatch};
 use crate::idle::{IdleWatch, ProgressBeat};
 
 /// The raw result of driving one headless child to completion or timeout.
@@ -61,6 +62,20 @@ struct KillSwitch {
     pred: LinePredicate,
 }
 
+/// A shared **degraded-state** signal. Both reader threads flip `active` per line
+/// — `true` when a line matches the vendor's degraded predicate, `false` on the
+/// next healthy line — and the poll loop samples it to advance a [`DegradedWatch`]
+/// clock. Unlike [`KillSwitch`] the predicate runs against **both** streams: a
+/// vendor's retry/degraded banner can surface on stdout (the JSON event stream) or
+/// stderr (`--print-logs`), and a failure banner is not progress on either. A
+/// matched line also skips the idle beacon, so a child emitting *only* degraded
+/// lines is still reaped by the idle watchdog rather than kept alive by its own
+/// retry noise.
+struct DegradedSwitch {
+    active: AtomicBool,
+    pred: LinePredicate,
+}
+
 /// Spawn one reader thread that drains `reader` line by line: it accumulates the
 /// full bytes for the return value, optionally **tees** each line to `log` as it
 /// arrives (so the on-disk log is live and survives a crash of this process), and
@@ -74,6 +89,7 @@ fn spawn_reader<R: Read + Send + 'static>(
     log: Option<Arc<Mutex<fs::File>>>,
     switch: Option<Arc<KillSwitch>>,
     beat: Option<Arc<ProgressBeat>>,
+    degraded: Option<Arc<DegradedSwitch>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut br = BufReader::new(reader);
@@ -86,12 +102,25 @@ fn spawn_reader<R: Read + Send + 'static>(
                 Ok(_) => {}
             }
             all.extend_from_slice(&line);
+            // Publish the degraded state for the poll loop: `true` on a matching
+            // line, `false` on any other. Computed before the beat because a
+            // degraded line is a failure banner, not progress.
+            let is_degraded = degraded
+                .as_ref()
+                .is_some_and(|d| (d.pred)(&String::from_utf8_lossy(&line)));
+            if let Some(d) = &degraded {
+                d.active.store(is_degraded, Ordering::Release);
+            }
             // Any output at all is the headless progress signal: a child still
             // talking is a child still working. Both streams feed the same beacon
             // (unlike the early-kill switch, which is stderr-only) — a child
-            // narrating only on stdout is just as alive.
-            if let Some(b) = &beat {
-                b.beat(Instant::now());
+            // narrating only on stdout is just as alive. A degraded line is the one
+            // exception: it must NOT rearm the beacon, or a child stuck retrying an
+            // API failure would look alive forever and never be idle-reaped.
+            if !is_degraded {
+                if let Some(b) = &beat {
+                    b.beat(Instant::now());
+                }
             }
             if let Some(f) = &log {
                 if let Ok(mut f) = f.lock() {
@@ -121,7 +150,7 @@ fn spawn_reader<R: Read + Send + 'static>(
 /// reported. Output is then collected with a 5s grace so a child that flushed late
 /// is still captured complete.
 pub fn run_headless(cmd: Command, prompt: &str, timeout: Duration) -> Result<HeadlessOutput> {
-    drive_headless(cmd, prompt, timeout, None, None, IdleWatch::default())
+    drive_headless(cmd, prompt, timeout, None, None, IdleWatch::default(), None)
 }
 
 /// The shared spawn/drain/poll/kill/collect core behind [`run_headless`] and the
@@ -135,6 +164,7 @@ fn drive_headless(
     log: Option<Arc<Mutex<fs::File>>>,
     switch: Option<Arc<KillSwitch>>,
     idle: IdleWatch,
+    degraded: Option<Arc<DegradedSwitch>>,
 ) -> Result<HeadlessOutput> {
     // On Unix, run the child in its own process group so a timeout can signal the
     // whole tree, not just the direct child. An agent CLI that spawned helpers
@@ -177,8 +207,24 @@ fn drive_headless(
     let beat = idle.window().map(|_| ProgressBeat::new(Instant::now()));
     // The early-kill switch watches stderr only (see `KillSwitch`); stdout is teed
     // to the same log but never trips the switch.
-    let out_handle = spawn_reader(stdout, tx_out, log.clone(), None, beat.clone());
-    let err_handle = spawn_reader(stderr, tx_err, log, switch.clone(), beat.clone());
+    // The degraded switch watches BOTH streams (see `DegradedSwitch`): the same
+    // Arc is handed to each reader so a match on either stream feeds one clock.
+    let out_handle = spawn_reader(
+        stdout,
+        tx_out,
+        log.clone(),
+        None,
+        beat.clone(),
+        degraded.clone(),
+    );
+    let err_handle = spawn_reader(
+        stderr,
+        tx_err,
+        log,
+        switch.clone(),
+        beat.clone(),
+        degraded.clone(),
+    );
 
     // A broken pipe here means the child exited before draining stdin — its own
     // signal, not a fatal error. Warn and fall through to the poll loop, which
@@ -192,6 +238,10 @@ fn drive_headless(
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
     let mut idle_killed = false;
+    // The API-degraded clock, only when a predicate was supplied — otherwise the
+    // poll loop pays nothing for it. It never kills the child; it only turns a
+    // persistent degraded stretch into a matched pair of tracing events.
+    let mut degraded_watch = degraded.as_ref().map(|_| DegradedWatch::new());
     let exit = loop {
         if let Some(s) = child.try_wait().context("polling the headless child")? {
             break Some(s);
@@ -230,6 +280,18 @@ fn drive_headless(
                 timed_out = true;
                 idle_killed = true;
                 break None;
+            }
+        }
+        // The API-degraded clock: a persistent degraded stretch (≥ ping) emits the
+        // shared degraded/recovered events, so the operator sees the same signal
+        // the PTY path surfaces. Advisory only — never kills the child.
+        if let (Some(sw), Some(w)) = (&degraded, &mut degraded_watch) {
+            match w.poll(Instant::now(), sw.active.load(Ordering::Acquire)) {
+                DegradedAction::Degraded => tracing::info!("{}", crate::degraded::API_DEGRADED_MSG),
+                DegradedAction::Recovered => {
+                    tracing::info!("{}", crate::degraded::API_RECOVERED_MSG)
+                }
+                DegradedAction::None => {}
             }
         }
         thread::sleep(Duration::from_millis(500));
@@ -295,6 +357,7 @@ pub struct HeadlessCall<'a> {
     log_path: &'a Path,
     kill_on_stderr_line: Option<LinePredicate>,
     idle: IdleWatch,
+    degraded_line: Option<LinePredicate>,
 }
 
 impl<'a> HeadlessCall<'a> {
@@ -307,6 +370,7 @@ impl<'a> HeadlessCall<'a> {
             log_path,
             kill_on_stderr_line: None,
             idle: IdleWatch::default(),
+            degraded_line: None,
         }
     }
 
@@ -334,6 +398,17 @@ impl<'a> HeadlessCall<'a> {
         self
     }
 
+    /// Supply the vendor's **degraded-line** predicate. A matched line (on either
+    /// stream) is treated as a retry/failure banner rather than progress: it does
+    /// not rearm the idle beacon, and a stretch persisting ≥3 min emits the shared
+    /// `API_DEGRADED_MSG` / `API_RECOVERED_MSG` events (docs/adr/0038 normalization
+    /// over the headless path). The predicate never kills the child — a false
+    /// negative degrades gracefully to today's behaviour.
+    pub fn degraded_line(mut self, pred: impl Fn(&str) -> bool + Send + Sync + 'static) -> Self {
+        self.degraded_line = Some(Box::new(pred));
+        self
+    }
+
     /// Drive the call to completion, timeout, early-kill or idle-kill.
     pub fn run(self) -> Result<HeadlessRun> {
         run_headless_logged_impl(
@@ -343,6 +418,7 @@ impl<'a> HeadlessCall<'a> {
             self.log_path,
             self.kill_on_stderr_line,
             self.idle,
+            self.degraded_line,
         )
     }
 }
@@ -391,6 +467,7 @@ fn run_headless_logged_impl(
     log_path: &Path,
     kill_on_stderr_line: Option<LinePredicate>,
     idle: IdleWatch,
+    degraded_line: Option<LinePredicate>,
 ) -> Result<HeadlessRun> {
     // Open the log up front so both streams can be teed to it as they arrive: the
     // run stays observable live and the partial output survives a crash of THIS
@@ -406,8 +483,14 @@ fn run_headless_logged_impl(
             pred,
         })
     });
+    let degraded = degraded_line.map(|pred| {
+        Arc::new(DegradedSwitch {
+            active: AtomicBool::new(false),
+            pred,
+        })
+    });
 
-    let r = drive_headless(cmd, prompt, timeout, sink, switch, idle)?;
+    let r = drive_headless(cmd, prompt, timeout, sink, switch, idle, degraded)?;
     let stdout = r.stdout;
     let mut log = stdout.clone();
     log.push_str(&r.stderr);

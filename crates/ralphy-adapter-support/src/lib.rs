@@ -72,3 +72,6 @@ pub use headless::{
 
 mod idle;
 pub use idle::{IdleWatch, ProgressBeat, IDLE_REAPED_MSG};
+
+mod degraded;
+pub use degraded::{DegradedAction, DegradedWatch, API_DEGRADED_MSG, API_RECOVERED_MSG};

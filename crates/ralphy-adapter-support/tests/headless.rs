@@ -17,6 +17,7 @@ const CLEAN_STDOUT: &str = "hello-from-stdout";
 const CLEAN_STDERR: &str = "hello-from-stderr";
 const LARGE_LEN: usize = 200_000;
 const STDERR_MARKER: &str = "quota-marker: usage limit reached";
+const DEGRADED_MARKER: &str = "Waiting for API response";
 
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/
 /// stderr piped exactly as the adapters do before handing the command off.
@@ -271,6 +272,71 @@ fn the_idle_watchdog_spares_a_child_that_keeps_talking() {
     assert!(
         r.log.contains("tick "),
         "the child's output was captured while it ran"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn degraded_only_child_is_idle_reaped_despite_talking() {
+    // The headless counterpart to the PTY `Waiting for API response` wedge: a child
+    // that keeps printing degraded banners at the chatty cadence but makes no real
+    // progress. Because every line matches the degraded predicate, none of them
+    // rearm the idle beacon, so the watchdog reaps it despite the constant chatter.
+    // This FAILS before the degraded plumbing exists (the banners would beat).
+    let log_path = temp_log("degraded-idle");
+    let _ = std::fs::remove_file(&log_path);
+
+    let started = Instant::now();
+    let r = HeadlessCall::new(
+        child_cmd("degraded-chatty"),
+        "ignored prompt",
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .degraded_line(|l| l.contains(DEGRADED_MARKER))
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("a degraded-watched run should not error");
+    let elapsed = started.elapsed();
+
+    assert!(
+        r.idle_killed,
+        "a child emitting only degraded lines is reaped by the idle watchdog"
+    );
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "reaped promptly despite talking every 100ms (took {elapsed:?})"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn healthy_child_with_a_degraded_matcher_survives() {
+    // The non-regression: arming a degraded matcher must not endanger a healthy
+    // child. The chatty child's lines never match the predicate, so they still beat
+    // the idle beacon and the child survives — proving the degraded gate only ever
+    // stops *matching* lines from counting as progress.
+    let log_path = temp_log("degraded-healthy");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("chatty"),
+        "ignored prompt",
+        Duration::from_secs(3),
+        &log_path,
+    )
+    .degraded_line(|l| l.contains(DEGRADED_MARKER))
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("a healthy chatty child should not error");
+
+    assert!(
+        !r.idle_killed,
+        "the matcher never matches, so healthy lines still rearm the beacon"
+    );
+    assert!(
+        r.log.contains("tick "),
+        "the child's healthy output was captured while it ran"
     );
     let _ = std::fs::remove_file(&log_path);
 }
