@@ -62,6 +62,10 @@ struct ScriptedAgent {
     /// ADR-0015 bounce brief) repairs the plan: ticks every step and appends
     /// the missing closing sections — a well-behaved executor.
     fix_protocol: bool,
+    /// Per-attempt `Usage` to hand back from `execute`, one per call, in
+    /// order; once exhausted, `Usage::default()` (no model). Lets a test
+    /// script the resume loop's model-folding behavior.
+    exec_usages: RefCell<VecDeque<Usage>>,
 }
 
 impl ScriptedAgent {
@@ -85,6 +89,7 @@ impl ScriptedAgent {
             extra_by_issue: Vec::new(),
             lint_dirty: false,
             fix_protocol: false,
+            exec_usages: RefCell::new(VecDeque::new()),
         }
     }
 
@@ -130,6 +135,13 @@ impl ScriptedAgent {
     /// a `PlanLimit`; once exhausted, `plan` succeeds.
     fn with_plan_scripts(self, scripts: Vec<PlanScript>) -> Self {
         *self.plan_scripts.borrow_mut() = scripts.into();
+        self
+    }
+
+    /// Script the `Usage` (including `model`) each `execute` call hands back,
+    /// one per call in order.
+    fn with_exec_usages(self, usages: Vec<Usage>) -> Self {
+        *self.exec_usages.borrow_mut() = usages.into();
         self
     }
 }
@@ -229,7 +241,11 @@ impl Agent for ScriptedAgent {
         }
         Ok(Execution {
             outcome,
-            usage: Usage::default(),
+            usage: self
+                .exec_usages
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_default(),
             session_id: None,
         })
     }
@@ -1003,6 +1019,139 @@ fn pins_green_run_vocabulary() {
         ],
     );
     assert_eq!(green.get("number"), "7");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+// ── #225: exec_usage folds model instead of dropping it on accumulate ────────
+
+#[test]
+fn exec_usage_single_attempt_keeps_model() {
+    let repo = init_repo("exec-usage-single");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![Usage {
+        input: 100,
+        output: 400,
+        cache_read: 200,
+        cache_creation: 300,
+        model: Some("claude-opus-4-8".into()),
+    }]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-exec-usage-single", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("model"), "claude-opus-4-8");
+    assert_eq!(green.get("up"), "100");
+    assert_eq!(green.get("out"), "400");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn exec_usage_resume_loop_folds_heaviest_model() {
+    let repo = init_repo("exec-usage-resume");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::scripted(vec![
+        (Outcome::Limit(Some("15:00".into())), false),
+        (Outcome::Done, true),
+    ])
+    .with_exec_usages(vec![
+        Usage {
+            input: 100,
+            output: 400,
+            cache_read: 200,
+            cache_creation: 300,
+            model: Some("claude-haiku-4-5".into()),
+        },
+        Usage {
+            input: 1000,
+            output: 4000,
+            cache_read: 2000,
+            cache_creation: 3000,
+            model: Some("claude-opus-4-8".into()),
+        },
+    ]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-exec-usage-resume", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("model"), "claude-opus-4-8");
+    assert_eq!(green.get("up"), "1100");
+    assert_eq!(green.get("cr"), "2200");
+    assert_eq!(green.get("cw"), "3300");
+    assert_eq!(green.get("out"), "4400");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn exec_usage_without_model_stays_unattributed() {
+    let repo = init_repo("exec-usage-unattributed");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![Usage {
+        input: 10,
+        output: 0,
+        cache_read: 0,
+        cache_creation: 0,
+        model: None,
+    }]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-exec-usage-unattributed", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("model"), "");
+    assert_eq!(green.get("up"), "10");
 
     fs::remove_dir_all(&repo).ok();
 }
