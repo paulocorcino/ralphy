@@ -10,6 +10,7 @@
 
 use console::Style;
 
+mod fit;
 mod notice;
 mod presenter;
 mod render;
@@ -102,7 +103,7 @@ pub(crate) fn active_phase(status: &IssueStatus) -> Option<Phase> {
 /// The `stop-before` cut is marked in the pending list (`… #10 ⛔ stop-before #15 …`)
 /// so the operator sees up front that nothing from that issue onward will run this
 /// session. `opts.emoji` picks the glyph; the bar itself is ANSI-free by construction.
-pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts) -> String {
+pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts, width: usize) -> String {
     let terminal = |n: u64| {
         state
             .issues
@@ -147,7 +148,24 @@ pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts) -> String {
             .collect();
         format!(" (pending {})", nums.join(" "))
     };
-    format!("{filled}{empty} {completed}/{total}{pending_part}")
+    let head = format!("{filled}{empty} {completed}/{total}");
+    if fit::display_width(&head) > width {
+        // The bar glyphs overflow even before the pending tail: shrink them one
+        // at a time, but never touch the `N/M` counter (the one segment that
+        // must survive any width, per the issue's design constraint).
+        let counter = format!(" {completed}/{total}");
+        let bar_glyphs: Vec<char> = filled.chars().chain(empty.chars()).collect();
+        for cut in (0..=bar_glyphs.len()).rev() {
+            let bar: String = bar_glyphs[..cut].iter().collect();
+            let candidate = format!("{bar}{counter}");
+            if fit::display_width(&candidate) <= width {
+                return candidate;
+            }
+        }
+        return counter; // Even the bare counter overflows: return it, never empty.
+    }
+    let head_width = fit::display_width(&head);
+    head + &fit::truncate_to_width(&pending_part, width - head_width)
 }
 
 #[cfg(test)]

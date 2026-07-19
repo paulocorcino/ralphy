@@ -579,6 +579,7 @@ fn bar(state: &RunState) -> String {
             color: false,
             emoji: true,
         },
+        1000,
     )
 }
 
@@ -666,6 +667,7 @@ fn golden_render_active_line_is_derived_from_the_fold() {
             color: false,
             emoji: true,
         },
+        1000,
     );
     assert_eq!(line, "⚙️ #7 t · claude-opus-4 · 1:03 / 45:00");
     // Every terminal status ends the active line.
@@ -775,7 +777,7 @@ fn queue_bar_label_marks_the_stop_before_cut_in_the_pending_list() {
         emoji: true,
     };
     assert_eq!(
-        queue_bar_label(&s, emoji),
+        queue_bar_label(&s, emoji, 1000),
         "▱▱▱▱▱▱▱▱▱▱▱▱▱ 0/13 \
              (pending #21 #20 #14 #7 #8 #9 #10 ⛔ stop-before #15 #16 #17 #18 #19 #5)"
     );
@@ -785,9 +787,9 @@ fn queue_bar_label_marks_the_stop_before_cut_in_the_pending_list() {
         emoji: false,
     };
     assert!(
-        queue_bar_label(&s, ascii).contains("#10 |stop-before #15| #16"),
+        queue_bar_label(&s, ascii, 1000).contains("#10 |stop-before #15| #16"),
         "ascii marker brackets the boundary issue: {}",
-        queue_bar_label(&s, ascii)
+        queue_bar_label(&s, ascii, 1000)
     );
     // No `stop_before` -> no marker, unchanged rendering.
     let mut plain = RunState::new("t", 2);
@@ -817,6 +819,7 @@ fn render_active_line_executing_shows_icon_number_title_model_and_budget() {
         Duration::from_secs(12 * 60 + 43),
         Some(45),
         opts,
+        1000,
     );
     assert!(line.contains('⚙'), "executing phase icon: {line}");
     assert!(line.contains("#31"), "issue number: {line}");
@@ -844,6 +847,7 @@ fn render_active_line_executing_zero_budget_shows_elapsed_only() {
         Duration::from_secs(12 * 60 + 43),
         Some(0),
         opts,
+        1000,
     );
     assert!(line.contains("12:43"), "elapsed clock: {line}");
     assert!(
@@ -868,6 +872,7 @@ fn render_active_line_planning_shows_brain_icon_and_no_budget() {
         Duration::from_secs(12),
         None,
         opts,
+        1000,
     );
     assert!(line.contains('🧠'), "planning phase icon: {line}");
     assert!(line.contains("0:12"), "elapsed clock: {line}");
@@ -893,9 +898,27 @@ fn render_active_line_no_colour_emits_no_ansi() {
         Duration::from_secs(63),
         Some(45),
         opts,
+        1000,
     );
     assert!(line.contains("[exec]"), "ascii phase fallback: {line}");
     assert!(!line.contains('\u{1b}'), "no ANSI byte: {line:?}");
+    // Width independence (Step 10, #226): the plain path must stay ANSI-free at
+    // any width, including one so small the title is cut to nothing.
+    let narrow = render_active_line(
+        Phase::Executing,
+        31,
+        "title",
+        Some("opus"),
+        Some("high"),
+        Duration::from_secs(63),
+        Some(45),
+        opts,
+        10,
+    );
+    assert!(
+        !narrow.contains('\u{1b}'),
+        "no ANSI byte at width 10: {narrow:?}"
+    );
 }
 
 #[test]
@@ -920,6 +943,115 @@ fn bar_label_no_colour_emits_no_ansi() {
     let label = bar(&s);
     assert_eq!(label, "▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)");
     assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
+}
+
+/// A pending-heavy queue at a realistic terminal width: the label fits and the
+/// `N/M` counter survives (#226).
+#[test]
+fn queue_bar_label_fits_the_terminal_width() {
+    let mut s = RunState::new("t", 7);
+    s.apply(RunEvent::QueueBuilt {
+        count: 7,
+        order: vec![217, 219, 220, 221, 222, 223, 224],
+        stop_before: None,
+        issues: serde_json::Value::Null,
+        assignee_filter: None,
+        scope: None,
+    });
+    let opts = RenderOpts {
+        color: false,
+        emoji: true,
+    };
+    let label = queue_bar_label(&s, opts, 60);
+    assert!(
+        fit::display_width(&label) <= 60,
+        "fits the given width: {label:?}"
+    );
+    assert!(label.contains("0/7"), "counter survives: {label}");
+    // At width 60 this content already fits whole (56 columns — the queue
+    // glyphs `▰`/`▱` measure width_cjk=1 on this unicode-width table, not the
+    // ambiguous 2 the plan assumed); truncation is exercised instead by the
+    // ten-column case below.
+}
+
+/// A 300-char title at width 60: the title is cut, but the tail (model/effort +
+/// clock) is never touched (#226).
+#[test]
+fn render_active_line_truncates_the_title_and_keeps_the_clock() {
+    let opts = RenderOpts {
+        color: false,
+        emoji: true,
+    };
+    let title = "x".repeat(300);
+    let line = render_active_line(
+        Phase::Executing,
+        31,
+        &title,
+        Some("claude-opus-4"),
+        None,
+        Duration::from_secs(65),
+        Some(45),
+        opts,
+        60,
+    );
+    assert!(
+        fit::display_width(&line) <= 60,
+        "fits the given width: {line:?}"
+    );
+    assert!(line.contains('…'), "the title is truncated: {line}");
+    assert!(
+        line.ends_with("1:05 / 45:00"),
+        "the clock tail survives whole: {line}"
+    );
+}
+
+/// The degenerate case: a ten-column terminal must not panic and must still
+/// carry the `N/M` counter (#226).
+#[test]
+fn queue_bar_label_survives_a_ten_column_terminal() {
+    let mut s = RunState::new("t", 7);
+    s.apply(RunEvent::QueueBuilt {
+        count: 7,
+        order: vec![217, 219, 220, 221, 222, 223, 224],
+        stop_before: None,
+        issues: serde_json::Value::Null,
+        assignee_filter: None,
+        scope: None,
+    });
+    let opts = RenderOpts {
+        color: false,
+        emoji: true,
+    };
+    let label = queue_bar_label(&s, opts, 10);
+    assert!(!label.is_empty(), "never empty, even at width 10");
+    assert!(label.contains("0/7"), "counter survives: {label}");
+    assert!(
+        fit::display_width(&label) <= 10,
+        "fits the given width: {label:?}"
+    );
+}
+
+/// The degenerate case for the active line: a ten-column terminal must not
+/// panic and must still return a non-empty string (#226).
+#[test]
+fn render_active_line_survives_a_ten_column_terminal() {
+    let opts = RenderOpts {
+        color: false,
+        emoji: true,
+    };
+    let title = "x".repeat(300);
+    let line = render_active_line(
+        Phase::Executing,
+        31,
+        &title,
+        Some("claude-opus-4"),
+        None,
+        Duration::from_secs(65),
+        Some(45),
+        opts,
+        10,
+    );
+    assert!(!line.is_empty(), "never empty, even at width 10");
 }
 
 #[test]

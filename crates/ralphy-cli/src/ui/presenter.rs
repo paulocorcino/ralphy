@@ -23,7 +23,8 @@ use tracing_subscriber::layer::{Context, Layer};
 
 use super::render::{meter_for, pick, render_active_line, render_line, sleep_label, LineExtra};
 use super::{
-    active_phase, queue_bar_label, render_info_line, render_totals_panel, PanelData, RenderOpts,
+    active_phase, fit, queue_bar_label, render_info_line, render_totals_panel, PanelData,
+    RenderOpts,
 };
 use crate::pricing::PriceTable;
 use crate::runstate::{event_to_runevent, EventFields, RunEvent, RunState};
@@ -208,7 +209,7 @@ impl Renderer {
                 if self.opts.color {
                     let bar = self.multi.add(ProgressBar::new_spinner());
                     bar.set_style(ProgressStyle::with_template("{msg}").expect("static template"));
-                    bar.set_message(queue_bar_label(&s.run, self.opts));
+                    bar.set_message(queue_bar_label(&s.run, self.opts, fit::terminal_width()));
                     s.queue_bar = Some(bar);
                 }
                 LineExtra::default()
@@ -338,9 +339,10 @@ impl Renderer {
             return;
         }
         if let Some(bar) = s.queue_bar.as_ref() {
+            let width = fit::terminal_width();
             let msg = match s.run.sleep.as_ref() {
-                Some(sleep) => sleep_label(&sleep.reset, self.opts),
-                None => queue_bar_label(&s.run, self.opts),
+                Some(sleep) => fit::truncate_to_width(&sleep_label(&sleep.reset, self.opts), width),
+                None => queue_bar_label(&s.run, self.opts, width),
             };
             bar.set_message(msg);
         }
@@ -383,6 +385,14 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
     let Some(phase) = active_phase(&entry.status) else {
         return;
     };
+    // API-degraded: the retry prefix eats into the budget too, so the line
+    // (prefix + retry indicator together) still fits the terminal.
+    let retry_prefix = s
+        .run
+        .degraded
+        .then(|| pick("🔄", "[api-retry]", opts.emoji));
+    let width = fit::terminal_width()
+        .saturating_sub(retry_prefix.map(|p| fit::display_width(p) + 1).unwrap_or(0));
     let line = render_active_line(
         phase,
         entry.number,
@@ -392,13 +402,13 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
         s.elapsed_of(entry.number).unwrap_or_default(),
         entry.budget_min,
         opts,
+        width,
     );
     // API-degraded: prefix the spinner message with a retry indicator so the
     // operator sees the child is retrying, not stalled (issue #149).
-    let msg = if s.run.degraded {
-        format!("{} {line}", pick("🔄", "[api-retry]", opts.emoji))
-    } else {
-        line
+    let msg = match retry_prefix {
+        Some(p) => format!("{p} {line}"),
+        None => line,
     };
     bar.set_message(msg);
 }
@@ -533,6 +543,7 @@ impl PresenterHandle {
                 color: false,
                 emoji: true,
             },
+            fit::terminal_width(),
         );
         if let Some(bar) = s.queue_bar.as_ref() {
             bar.set_message(label);
