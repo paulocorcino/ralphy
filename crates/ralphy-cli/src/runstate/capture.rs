@@ -49,11 +49,13 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
             let Some(sink) = s.borrow().as_ref().cloned() else {
                 return;
             };
-            let mut fields = EventFields::default();
             // The `Visit` impl never sets `level`; the decoder's "level wins"
             // short-circuit reads `fields.level`, so seed it from the metadata
             // BEFORE recording (a visitor could never supply it).
-            fields.level = *event.metadata().level();
+            let mut fields = EventFields {
+                level: *event.metadata().level(),
+                ..Default::default()
+            };
             event.record(&mut fields);
             sink.lock().unwrap().push(Captured {
                 level: fields.level,
