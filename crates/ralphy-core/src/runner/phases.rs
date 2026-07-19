@@ -482,7 +482,7 @@ pub(crate) fn execute_phase(
 
     let mut no_commit_streak = 0u32;
     let mut deadline_cut = false;
-    let mut exec_usage = Usage::default();
+    let mut exec_attempts: Vec<Usage> = Vec::new();
     // Last non-empty vendor session across the resume loop — the terminal
     // attempt's session is the one the single execute ledger line records
     // (ADR-0033 §5, last-non-empty-wins).
@@ -496,7 +496,11 @@ pub(crate) fn execute_phase(
         } = cx.agent.execute(plan, cx.ws)?;
         // Accumulate across the resume loop so the single execute ledger line
         // carries the whole issue's execution cost, not just the last attempt.
-        exec_usage.add_tokens(&usage);
+        // Model attribution happens once, after the loop, via `fold_usage` —
+        // the ONE place accumulated-usage model derivation lives (ADR-0008
+        // D8); the runner stays vendor-neutral and passes no fallback
+        // (ADR-0004 — alias fallback lives in the adapter).
+        exec_attempts.push(usage);
         if session_id.is_some() {
             exec_session_id = session_id;
         }
@@ -550,6 +554,8 @@ pub(crate) fn execute_phase(
         }
         // Otherwise loop: re-run execute() against the same on-disk plan.md.
     };
+
+    let exec_usage = Usage::fold_usage(&exec_attempts, None);
 
     // Record the execute phase's accumulated token usage with this issue's
     // terminal outcome (ADR-0008 D6). One line per issue regardless of how
