@@ -576,4 +576,104 @@ mod tests {
         );
         assert_eq!(v["data"]["emitter"]["pid"], 4242);
     }
+
+    /// A fake sink recording every delivered envelope, shared with the test thread.
+    struct RecordingSink(Arc<std::sync::Mutex<Vec<Value>>>);
+    impl EventSink for RecordingSink {
+        fn post(&self, body: &Value) -> anyhow::Result<PostOutcome> {
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(body.clone());
+            Ok(PostOutcome::Delivered)
+        }
+    }
+
+    /// Push `events` onto a fresh ring BEFORE the worker exists, then start the
+    /// worker over a recording sink and shut it down — the exact ordering both
+    /// no-work borders (#222) rely on. Returns every envelope delivered.
+    fn deliver_from_pre_start_ring(events: Vec<RunEvent>) -> Vec<Value> {
+        let queue = new_queue();
+        for ev in events {
+            queue.push(ev);
+        }
+        let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let handle = try_start_sink(
+            RecordingSink(Arc::clone(&recorded)),
+            test_ctx(),
+            queue,
+            std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
+        )
+        .expect("the sink worker spawns");
+        handle.shutdown();
+        let out = recorded.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        out
+    }
+
+    fn envelope_types(envelopes: &[Value]) -> Vec<String> {
+        envelopes
+            .iter()
+            .map(|e| e["type"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// The "ring buffered and discarded" pin (#222): an empty-queue run emits its
+    /// whole triad BEFORE the sink worker starts, so a border that returned without
+    /// starting (or without draining) the worker would deliver nothing.
+    #[test]
+    fn pre_start_ring_delivers_the_no_work_triad() {
+        let envelopes = deliver_from_pre_start_ring(vec![
+            RunEvent::QueueBuilt {
+                count: 0,
+                order: vec![],
+                stop_before: None,
+                issues: Value::Null,
+                assignee_filter: None,
+                scope: Some("labels [AFK]".into()),
+            },
+            RunEvent::RunStarted {
+                repo: "o/r".into(),
+                queue_labels: vec!["AFK".into()],
+                agent: "claude".into(),
+                plan_agent: "claude".into(),
+                branch_mode: "new".into(),
+                branch: "origin/main".into(),
+                deadline_hours: None,
+            },
+            RunEvent::RunFinished {
+                outcome: "no_work".into(),
+                issues_done: 0,
+                issues_skipped: 0,
+                issues_total: 0,
+                up: 0,
+                cr: 0,
+                cw: 0,
+                out: 0,
+                duration_s: 0,
+            },
+        ]);
+        assert_eq!(
+            envelope_types(&envelopes),
+            vec![
+                "dev.ralphy.queue.built",
+                "dev.ralphy.run.started",
+                "dev.ralphy.run.finished",
+            ],
+            "envelopes: {envelopes:?}"
+        );
+        let fin = envelopes.last().expect("the run.finished envelope");
+        assert_eq!(fin["data"]["outcome"], "no_work");
+        assert_eq!(fin["data"]["issues_total"], 0);
+    }
+
+    /// The same pin for the `--if-idle` deferral border (#222).
+    #[test]
+    fn pre_start_ring_delivers_run_skipped() {
+        let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+        let envelopes = deliver_from_pre_start_ring(vec![RunEvent::RunSkipped {
+            reason: reason.into(),
+        }]);
+        assert_eq!(envelope_types(&envelopes), vec!["dev.ralphy.run.skipped"]);
+        assert_eq!(envelopes[0]["data"]["reason"], reason);
+    }
 }

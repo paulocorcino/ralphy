@@ -223,6 +223,29 @@ mod tests {
         }
     }
 
+    /// The empty-queue border's own emitter (#222): it does NOT go through
+    /// `emit_run_finished`/`outcome_of` (no `QueueReport` exists), so its shape is
+    /// pinned separately — same target, same level, `no_work` and all-zero counts.
+    #[test]
+    fn no_work_triple_is_pinned() {
+        let ((), events) = capture_events(|| {
+            crate::run::report::emit_run_finished_no_work(std::time::Instant::now())
+        });
+        let ev = events
+            .iter()
+            .find(|e| e.message == "run finished")
+            .expect("a `run finished` event");
+
+        assert_eq!(ev.level, Level::INFO);
+        assert_eq!(ev.target, "ralphy_core::emit");
+        let f = &ev.fields;
+        assert_eq!(f.outcome.as_deref(), Some("no_work"));
+        assert_eq!(
+            (f.issues_done, f.issues_skipped, f.issues_total),
+            (Some(0), Some(0), Some(0))
+        );
+    }
+
     #[test]
     fn shared_vocabulary_constants_are_pinned() {
         use super::super::{event_to_runevent, RunEvent};
