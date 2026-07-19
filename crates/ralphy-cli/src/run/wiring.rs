@@ -270,19 +270,25 @@ pub(crate) fn init_tracing(
 
     // The notifier Layer (when installed) composes alongside the file/presenter
     // layers so it sees every consumed event; `Option<Layer>` is a no-op when None.
+    // The run-border notice fold (#222) is installed on BOTH console paths — the
+    // presenter is dropped entirely under `--verbose`/`RUST_LOG`, so folding inside
+    // it would silently lose the notice on the raw-stderr path.
+    let edge = std::sync::Arc::new(std::sync::Mutex::new(ui::EdgeNoticeState::default()));
+
     let registry = tracing_subscriber::registry()
         .with(filter)
         .with(file_layer)
         .with(notifier)
-        .with(events);
+        .with(events)
+        .with(ui::EdgeNoticeLayer::new(std::sync::Arc::clone(&edge)));
 
     if raw_stderr {
         let stderr_layer = fmt::layer().with_timer(timer).with_writer(std::io::stderr);
         registry.with(stderr_layer).init();
-        ui::PresenterHandle::plain()
+        ui::PresenterHandle::plain().with_edge(edge)
     } else {
         let presenter = ui::Presenter::new();
-        let handle = presenter.handle();
+        let handle = presenter.handle().with_edge(edge);
         registry.with(presenter).init();
         handle
     }

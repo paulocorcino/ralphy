@@ -10,8 +10,10 @@
 
 use console::Style;
 
+mod notice;
 mod presenter;
 mod render;
+pub(crate) use notice::{EdgeNoticeLayer, EdgeNoticeState};
 pub use presenter::{Presenter, PresenterHandle};
 pub use render::{
     normalize_remote_url, render_info_line, render_totals_panel, PanelBranchMode, PanelData,

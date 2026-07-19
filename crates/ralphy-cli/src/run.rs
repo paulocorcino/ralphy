@@ -47,15 +47,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // ring/Layer, the events-token env scrub, and the tracing subscriber — in one
     // place, returning the handles the later worker starts consume. The scrub runs
     // there BEFORE any worker thread, so the block stays ordering-safe.
-    let Observability {
-        presenter,
-        event_queue,
-        tg_cfg,
-        event_sink_queue,
-        events_url,
-        events_token,
-        events_slug,
-    } = install_observability(log_file, &args, &repo_root);
+    // Kept whole (rather than destructured) so `start_delivery` can be the ONE
+    // place a delivery worker is spawned — every exit path reaches a started worker.
+    let obs = install_observability(log_file, &args, &repo_root);
+    let presenter = &obs.presenter;
+    let events_slug = obs.events_slug.clone();
 
     // The repo name feeds the run title (below); the branding header is printed once
     // that title is known, so the console face is seeded by the same title as the
@@ -69,6 +65,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
 
+    // Resolved above the lock check because the `--if-idle` deferral needs it for its
+    // run title: a pure per-repo config read (`github/labels.rs`), no side effect.
+    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
+
     // Presence lock (issue #72): the concurrency policy lives in the invocation.
     // `--if-idle` defers to a live run (clean exit 0, so a scheduler's history
     // shows no false failures); without it a live lock only warns — intentional
@@ -80,11 +80,28 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or(info.started_at);
             let msg = format!("skipped: run in progress since {since}, pid {}", info.pid);
-            info!("{msg}");
-            // finalize before printing so the live region is cleared first (ADR-0006).
-            presenter.finalize();
-            presenter.print_notice(&msg);
-            return Ok(());
+            // The deferral is a run BORDER, not a silent return: it rides the bus so
+            // every sink sees it (ADR-0019 amendment, #222). The workers start here
+            // and both `shutdown()`s run on this path AFTER the emit, so the ring is
+            // drained rather than discarded.
+            let title = telegram::notifier::derive_title(
+                repo_name,
+                0,
+                &effective_labels,
+                None,
+                args.title.as_deref(),
+            );
+            // The run never cut a branch, so report the branch the repo is actually
+            // on — not the `afk/run-<stamp>` a real run would have created.
+            let (notifier, events_handle) = start_delivery(
+                &obs,
+                &title,
+                0,
+                &git::current_branch(&repo_root).unwrap_or_default(),
+                &repo_root,
+                &ws,
+            );
+            return finish_if_idle(presenter, &msg, notifier, events_handle);
         }
         runlock::LockState::HeldAlive(info) => {
             warn!(
@@ -129,7 +146,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Build the queue and the explicitly-named ("forced") issue set. Pure of the
     // lifecycle ordering (no env/thread side effects), so it lives outside the
     // orchestrator; see `build_run_queue` for the two-path selection + dependency sort.
-    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
     let (queue, forced_issues) =
         build_run_queue(&args, assignee.as_deref(), &effective_labels, &repo_root)?;
 
@@ -166,18 +182,9 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let repo_url = git::origin_url(&repo_root).map(|u| ui::normalize_remote_url(&u));
     presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
 
-    if queue.is_empty() {
-        let scope = empty_queue_scope(
-            &args.issues,
-            args.only_issue,
-            &effective_labels,
-            assignee.as_deref(),
-        );
-        // finalize before printing so the live region is cleared first (ADR-0006).
-        presenter.finalize();
-        presenter.print_notice(&format!("No open issues for {scope} to process. Done."));
-        return Ok(());
-    }
+    // NOTE: an empty queue does NOT return here (#222) — it rides the full triad
+    // (`queue.built` count 0 → `run.started` → `run.finished` no_work) and exits
+    // below, after the delivery workers have started and drained.
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
     // Where the run will halt: the first issue carrying `stop-before` in the sorted
     // order (0 = none). An explicit selection (`--only-issue`/`--issues`) overrides
@@ -214,25 +221,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             assignee.as_deref(),
         ),
     );
-
-    // Start the Telegram notifier worker now that the queue (and thus the title)
-    // is known. `try_start_notifier` runs `getMe`; on failure it warns once and
-    // returns `None`, leaving the installed Layer inert and the run unaffected
-    // (ADR-0007 D7). Events emitted before this point (just `queue built`) are
-    // buffered in the ring and drained by the worker on start.
-    let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
-    if let (Some(event_queue), Some(cfg)) = (event_queue.as_ref(), tg_cfg.as_ref()) {
-        if let (Some(chat_id), Some(token)) = (
-            cfg.chat_id,
-            telegram::config::effective_token(Some(&cfg.token)),
-        ) {
-            let state = runstate::RunState::new(title.clone(), queue.len());
-            let client =
-                telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
-            notifier =
-                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
-        }
-    }
 
     // Settings were loaded above (before the queue build) so `queue.assignee` could
     // filter the label queue; the operating run branch resolved from them still feeds
@@ -272,24 +260,16 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // the format literal in `runner.rs`), the current branch in `current` mode.
     let operating_branch = operating_branch(branch_mode, &stamp, start_branch.as_deref());
 
-    // Start the CloudEvents sink worker now that the run context is known. The
-    // process `runid` and the emitter identity are minted once here; the worker
-    // drains the ring (already buffering `queue built`) and POSTs each event as a
-    // CloudEvents envelope. A spawn failure leaves the installed Layer inert.
-    let mut events_handle: Option<events::sink::EventsHandle> = None;
-    if let (Some(queue), Some(url)) = (event_sink_queue.as_ref(), events_url.as_ref()) {
-        let ctx = events::envelope::EventCtx {
-            source: events::emitter::source(&events_slug),
-            runid: events::emitter::new_runid(),
-            emitter: serde_json::to_value(events::emitter::detect(&repo_root)).unwrap_or_default(),
-            git: serde_json::json!({
-                "repository": events_slug,
-                "branch": operating_branch,
-            }),
-        };
-        let transport = events::client::UreqEventTransport::new(url.clone(), events_token.clone());
-        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
-    }
+    // Start both delivery workers now that the run context is known. Events emitted
+    // before this point (`queue built`) are buffered in the rings and drained on start.
+    let (notifier, events_handle) = start_delivery(
+        &obs,
+        &title,
+        queue.len(),
+        &operating_branch,
+        &repo_root,
+        &ws,
+    );
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
     // quota (matching the ps1 oracle behaviour).
@@ -342,6 +322,24 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         &base_branch,
         args.deadline_hours.unwrap_or(0.0),
     );
+
+    // The empty-queue border (#222): the run emitted the full triad and did no work.
+    // Deliberately NOT routed through `finalize_run` — that would also trigger
+    // `maybe_consolidate_knowledge`, i.e. spawn a paid session on a run with nothing
+    // to consolidate. Both `shutdown()`s run here, after the emit, so the rings drain.
+    if queue.is_empty() {
+        report::emit_run_finished_no_work(run_start);
+        presenter.finalize();
+        presenter.print_edge_notice();
+        if let Some(n) = notifier {
+            n.shutdown();
+        }
+        if let Some(e) = events_handle {
+            e.shutdown();
+        }
+        return Ok(());
+    }
+
     let resolved_claude = ResolvedClaude {
         plan_model: config::resolve_str(
             args.plan_model.clone(),
@@ -460,7 +458,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // pushes; `render_final_panel` runs after, only on the green path.
     finalize_run(
         args.agent,
-        &presenter,
+        presenter,
         &result,
         args.dry_run,
         &ws,
@@ -473,14 +471,86 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let report = result?;
 
-    render_final_panel(
-        &presenter,
-        report,
-        branch_mode,
-        args.dry_run,
-        &cfg.repo_root,
-    );
+    render_final_panel(presenter, report, branch_mode, args.dry_run, &cfg.repo_root);
     Ok(())
+}
+
+/// Close out the `--if-idle` deferral border (#222): emit `run skipped`, clear the
+/// live region, print the folded notice, then drain BOTH delivery rings. The
+/// ordering is load-bearing — the emit precedes the two `shutdown()`s, so the event
+/// is delivered rather than discarded with the ring. Exit code 0 is preserved: a
+/// deferral is a clean outcome, so a scheduler's history shows no false failure.
+fn finish_if_idle(
+    presenter: &ui::PresenterHandle,
+    msg: &str,
+    notifier: Option<telegram::notifier::NotifierHandle>,
+    events: Option<events::sink::EventsHandle>,
+) -> Result<()> {
+    ralphy_core::emit::run_skipped(msg);
+    // finalize before printing so the live region is cleared first (ADR-0006).
+    presenter.finalize();
+    presenter.print_edge_notice();
+    if let Some(n) = notifier {
+        n.shutdown();
+    }
+    if let Some(e) = events {
+        e.shutdown();
+    }
+    Ok(())
+}
+
+/// Start both delivery workers (Telegram notifier + CloudEvents sink) over the
+/// already-installed rings. The CROSS-PATH INVARIANT this exists for: it is the ONLY
+/// place a worker is spawned, so every exit path of `run_cmd` — including the two
+/// no-work borders (#222) — can reach a STARTED worker and drain its ring rather than
+/// discarding the buffered events.
+///
+/// `try_start_notifier` runs `getMe` and `try_start_sink` spawns a thread; either
+/// failing warns once and returns `None`, leaving the installed Layer inert and the
+/// run unaffected (ADR-0007 D7).
+fn start_delivery(
+    obs: &Observability,
+    title: &str,
+    queue_len: usize,
+    branch: &str,
+    repo_root: &std::path::Path,
+    ws: &Workspace,
+) -> (
+    Option<telegram::notifier::NotifierHandle>,
+    Option<events::sink::EventsHandle>,
+) {
+    let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
+    if let (Some(event_queue), Some(cfg)) = (obs.event_queue.as_ref(), obs.tg_cfg.as_ref()) {
+        if let (Some(chat_id), Some(token)) = (
+            cfg.chat_id,
+            telegram::config::effective_token(Some(&cfg.token)),
+        ) {
+            let state = runstate::RunState::new(title.to_string(), queue_len);
+            let client =
+                telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
+            notifier =
+                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
+        }
+    }
+
+    // The process `runid` and the emitter identity are minted once here.
+    let mut events_handle: Option<events::sink::EventsHandle> = None;
+    if let (Some(queue), Some(url)) = (obs.event_sink_queue.as_ref(), obs.events_url.as_ref()) {
+        let ctx = events::envelope::EventCtx {
+            source: events::emitter::source(&obs.events_slug),
+            runid: events::emitter::new_runid(),
+            emitter: serde_json::to_value(events::emitter::detect(repo_root)).unwrap_or_default(),
+            git: serde_json::json!({
+                "repository": obs.events_slug,
+                "branch": branch,
+            }),
+        };
+        let transport =
+            events::client::UreqEventTransport::new(url.clone(), obs.events_token.clone());
+        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
+    }
+
+    (notifier, events_handle)
 }
 
 /// The observability bundle installed once at run boot: the presenter handle plus
@@ -683,6 +753,32 @@ fn resolve_verify_timeout_minutes(persisted: Option<u64>) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two no-work borders emit events now (#222); no imperative notice print
+    /// may survive in the orchestrator, or the console would double-print (or, worse,
+    /// keep printing on a path that no longer emits).
+    #[test]
+    fn no_print_notice_call_remains_in_run_cmd() {
+        assert!(
+            // Split so this assertion is not itself the occurrence it forbids.
+            !include_str!("run.rs").contains(concat!("print_", "notice(")),
+            "the run borders print from the folded event, never imperatively"
+        );
+    }
+
+    /// The `--if-idle` deferral is a clean exit 0 — a scheduler's history must show
+    /// no failure — and it tears both delivery handles down on the way out.
+    #[test]
+    fn if_idle_edge_returns_ok() {
+        let presenter = ui::PresenterHandle::plain();
+        let out = finish_if_idle(
+            &presenter,
+            "skipped: run in progress since 2026-07-19 10:00:00, pid 4242",
+            None,
+            None,
+        );
+        assert!(out.is_ok(), "a deferral exits 0");
+    }
 
     #[test]
     fn resolution_byte_for_byte_when_absent() {

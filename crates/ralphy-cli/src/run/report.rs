@@ -81,6 +81,23 @@ pub(crate) fn emit_run_finished(
     );
 }
 
+/// Emit the ADR-0019 `run finished` boundary event for the EMPTY-QUEUE border (#222):
+/// the `no_work` outcome, every count at 0, no usage. Separate from
+/// [`emit_run_finished`] because that one maps a `StopReason` off a real
+/// `QueueReport` — an empty run has none, and threading a synthetic one through
+/// `finalize_run` would also trigger `maybe_consolidate_knowledge`, i.e. spawn a paid
+/// consolidation session on a run that did no work.
+pub(crate) fn emit_run_finished_no_work(run_start: std::time::Instant) {
+    ralphy_core::emit::run_finished(
+        "no_work",
+        0,
+        0,
+        0,
+        &ralphy_core::Usage::default(),
+        run_start.elapsed().as_secs(),
+    );
+}
+
 /// Assemble and print the final run panel (ADR-0006/-0008): bucket the worked issues
 /// into the done/blocked/skipped/hitl triad, map the stop reason and branch mode into
 /// their panel shapes, compute the run + project token totals and their read-time USD

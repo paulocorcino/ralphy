@@ -135,6 +135,7 @@ impl Presenter {
             state: Arc::clone(&self.state),
             color: self.color,
             flush: Some(self.tx.lock().unwrap_or_else(|e| e.into_inner()).clone()),
+            edge: Arc::new(Mutex::new(crate::ui::EdgeNoticeState::default())),
         }
     }
 }
@@ -451,23 +452,44 @@ pub struct PresenterHandle {
     /// Sender to the render thread so [`finalize`](Self::finalize) can flush the last
     /// scroll lines before clearing the region. `None` on the plain / banner path.
     flush: Option<Sender<PresenterMsg>>,
+    /// The run-border notice folded off the bus (#222), shared with
+    /// [`crate::ui::EdgeNoticeLayer`]. Detached (and thus always empty) unless
+    /// `init_tracing` installed the layer.
+    edge: Arc<Mutex<crate::ui::EdgeNoticeState>>,
 }
 
 impl PresenterHandle {
     /// A plain (colour off, no bars) handle for the `--verbose` / raw-stderr path.
-    /// `finalize` is a no-op; `print_panel`/`print_notice` produce uncoloured lines.
+    /// `finalize` is a no-op; `print_panel` produces uncoloured lines.
     pub fn plain() -> PresenterHandle {
         PresenterHandle {
             multi: MultiProgress::new(),
             state: Arc::new(Mutex::new(LiveState::default())),
             color: false,
             flush: None,
+            edge: Arc::new(Mutex::new(crate::ui::EdgeNoticeState::default())),
         }
     }
 
-    /// Print a single notice line to stdout (no colour, no ANSI).
-    pub fn print_notice(&self, text: &str) {
-        println!("{text}");
+    /// Attach the shared run-border notice state (`init_tracing` builds it with the
+    /// layer). Without this the handle keeps its own detached, always-empty state.
+    pub(crate) fn with_edge(mut self, edge: Arc<Mutex<crate::ui::EdgeNoticeState>>) -> Self {
+        self.edge = edge;
+        self
+    }
+
+    /// Print the run-border notice, if a border event folded one (#222). Same
+    /// stdout stream and byte shape as the imperative print it replaced; a no-op
+    /// on every run that did work. Call AFTER [`finalize`](Self::finalize), so the
+    /// live region is cleared first (ADR-0006).
+    pub fn print_edge_notice(&self) {
+        let notice = match self.edge.lock() {
+            Ok(mut g) => g.take(),
+            Err(e) => e.into_inner().take(),
+        };
+        if let Some(text) = notice {
+            println!("{text}");
+        }
     }
 
     /// Print the run's branding header (`🦊 Ralphy - vX`) at start-up, seeded by a
@@ -623,6 +645,7 @@ mod tests {
             state: Arc::new(Mutex::new(LiveState::default())),
             color: true,
             flush: None,
+            edge: Arc::new(Mutex::new(crate::ui::EdgeNoticeState::default())),
         };
         let _held = handle.state.lock().expect("hold the state lock");
         let start = Instant::now();
