@@ -63,6 +63,7 @@ impl ClaudeAgent {
         let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
         let r = HeadlessCall::new(cmd, PROMPT_EXECUTE, timeout, &log_path)
             .idle_minutes(self.exec.idle_minutes_for(false))
+            .degraded_line(is_headless_api_degraded)
             .run()
             .context("failed to spawn the `claude` CLI for headless exec")?;
 
@@ -150,6 +151,18 @@ impl ClaudeAgent {
         );
         Ok(headless_reason_to_outcome(HeadlessReason::MaxCalls))
     }
+}
+
+/// The headless `-p` degraded-line matcher, handed to the shared runner's
+/// [`degraded_line`](ralphy_adapter_support::HeadlessCall::degraded_line) seam.
+/// Reuses the two distinctive substrings from the PTY banner detector
+/// ([`crate::api_watch::is_api_degraded_output`]) but over plain `-p` text — no
+/// TUI cursor-escape stripping, since `claude -p` writes flat lines. A miss is
+/// safe (the line just counts as ordinary progress); the paired test guards that
+/// healthy output does not match.
+fn is_headless_api_degraded(line: &str) -> bool {
+    let l = line.to_lowercase();
+    l.contains("waiting for api response") || l.contains("server error mid-response")
 }
 
 /// Map the session's end state to an [`Outcome`]. Extracts the Stop-hook flag and
@@ -351,6 +364,27 @@ mod tests {
             Outcome::Stuck
         );
         assert_eq!(classify_outcome(None, false, None), Outcome::Stuck);
+    }
+
+    // ── is_headless_api_degraded ────────────────────────────────────────────
+
+    #[test]
+    fn headless_degraded_matcher_matches_the_retry_banners() {
+        assert!(is_headless_api_degraded("Waiting for API response…"));
+        // Case-insensitive, and the second distinctive substring.
+        assert!(is_headless_api_degraded(
+            "API Error: Server error mid-response"
+        ));
+    }
+
+    #[test]
+    fn headless_degraded_matcher_ignores_healthy_output() {
+        // A healthy `-p` line must not match, or a busy child would starve its own
+        // idle beacon and be wrongly reaped.
+        assert!(!is_headless_api_degraded("Running cargo test..."));
+        assert!(!is_headless_api_degraded(
+            "the api call returned 200 · continuing"
+        ));
     }
 
     // ── classify_exec_call ──────────────────────────────────────────────────

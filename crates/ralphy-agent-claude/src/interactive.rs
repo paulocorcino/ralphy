@@ -237,8 +237,12 @@ impl ClaudeAgent {
                     idle_beat.beat(Instant::now());
                 }
                 match api_watch.poll(Instant::now(), advanced) {
-                    ApiWatchAction::Degraded => info!("api degraded — child retrying"),
-                    ApiWatchAction::Recovered => info!("api recovered — child resuming"),
+                    ApiWatchAction::Degraded => {
+                        info!("{}", ralphy_adapter_support::API_DEGRADED_MSG)
+                    }
+                    ApiWatchAction::Recovered => {
+                        info!("{}", ralphy_adapter_support::API_RECOVERED_MSG)
+                    }
                     ApiWatchAction::Respawn => return Ok(DriveEnd::Respawn),
                     ApiWatchAction::None => {}
                 }
