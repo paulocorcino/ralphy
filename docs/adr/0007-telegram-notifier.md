@@ -183,13 +183,23 @@ left the card and the CloudEvents heartbeat perenially "planning".
   and `ui::active_phase(&IssueStatus)` derive the whole live region from the fold.
 - **Supersede is a concern of the fold**, not of any sink: an `issue started`
   whose predecessor is still non-terminal moves that predecessor to the new
-  terminal status `IssueStatus::Planned` (wire `"planned"`, `📝`) — the terminal
-  status of a plan-only pass. Every sink inherits the fix with no per-sink code.
+  terminal status `IssueStatus::Planned` (wire `"planned"`, `📝`). It fires for ANY
+  non-terminal predecessor — `Planning` (the plan-only dry run that named the
+  status) and `Executing` alike, since an execution whose outcome event never
+  arrived is equally an issue the run left behind. Every sink inherits the fix
+  with no per-sink code. Consequence on the rollup: such an issue is counted in
+  the `run.finished` scalar `issues_skipped` (`run/report.rs`, keyed on a missing
+  outcome) while appearing in `issues[]` as `"planned"` — the scalar and the
+  array describe it differently, by design.
 - The bar's progress rule follows from that single definition: an issue advances
-  when its entry `is_terminal()`. An `infeasible`/`needs_split` issue therefore
-  advances at `plan written` instead of waiting for the next `issue started` —
-  the only intermediate-label change, pinned by
+  when its entry `is_terminal()`. An issue whose plan is `infeasible` (zero steps)
+  therefore advances at `plan written`, and a `needs split` at its own event,
+  instead of waiting for the next `issue started` — the only intermediate-label
+  change, pinned by
   `ui::tests::golden_render_queue_bar_labels_over_a_fixed_event_sequence`.
+  Both events also settle the presenter's active line at that moment
+  (`Renderer::settle_if_terminal`), or the per-second ticker would repaint a
+  frozen clock for an issue the run has already left.
 - The fold grew the facts the console needs: `RunState::{order, stop_before}` and
   per-issue `IssueEntry::{model, effort, budget_min, plan_usage, exec_usage}`.
   These are per-issue and reset on `issue started`, deliberately distinct from the

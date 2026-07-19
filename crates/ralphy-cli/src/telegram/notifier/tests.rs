@@ -304,6 +304,49 @@ fn render_card_and_footer_surface_needs_split() {
 }
 
 #[test]
+fn render_card_and_footer_surface_a_dry_run_plan_only_pass() {
+    // The dry-run fix reaching the card: the superseded issue renders 📝, the
+    // counter line grows a `· 📝 N` segment AFTER the 🧩 one, and the pass counts
+    // as processed so the footer is the normal 🏁, never "stopped before any
+    // issue was processed".
+    let mut state = RunState::new("repo · 2 issues", 2);
+    state.apply(RunEvent::IssueStarted {
+        number: 1,
+        title: "one".into(),
+    });
+    state.apply(RunEvent::PlanWritten {
+        number: 1,
+        open_steps: 3,
+        usage: UsageLite::default(),
+        steps: vec![],
+    });
+    state.apply(RunEvent::IssueStarted {
+        number: 2,
+        title: "two".into(),
+    });
+    let card = render_card(&state, 0);
+    assert!(card.contains("📝 #1 one"), "issue line: {card}");
+    assert!(card.contains("· 📝 1"), "counter: {card}");
+    assert!(
+        card.contains("▶️ 2 · ✅ 0 · ⏭️ 0 · ⛔ 0 · 🤷 0 · ❌ 0 · 📝 1"),
+        "the 📝 segment is appended, leaving the base counters byte-stable: {card}"
+    );
+    state.finished = true;
+    let footer = render_final_push(&state);
+    assert!(
+        footer.contains("🏁"),
+        "a dry run did process work: {footer}"
+    );
+    assert!(
+        !footer.contains("stopped before any issue was processed"),
+        "footer: {footer}"
+    );
+    // A run with no plan-only pass keeps the card byte-identical to before.
+    let clean = RunState::new("repo · 2 issues", 2);
+    assert!(!render_card(&clean, 0).contains("📝"));
+}
+
+#[test]
 fn footer_marks_a_run_that_processed_nothing_as_stopped() {
     // A run whose card reaches its terminal edge with zero issues finished,
     // skipped, or parked was interrupted (killed/superseded/bailed at startup) —

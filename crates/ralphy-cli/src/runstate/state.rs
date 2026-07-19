@@ -285,6 +285,7 @@ impl RunState {
                 e.effort = None;
                 e.budget_min = None;
                 e.plan_usage = None;
+                e.exec_usage = None;
             }
             // Live-region only for the card (the planner's model/effort never
             // changes an issue's status), but it does set the current-phase agent
