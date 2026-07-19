@@ -173,6 +173,34 @@ blocked. The `run.finished` per-issue rollup carries the same field on its
 skip kinds. Purely **additive** — no existing field changes, `runid` stays the
 only extension — so a consumer that ignores it is unaffected.
 
+### 9. Amendment (#222): the run's borders emit
+
+A run that does no work used to return from the CLI orchestrator without ever
+reaching the bus: an empty queue and an `--if-idle` deferral both printed a
+console notice and exited. Two silent borders, invisible to every sink. Both now
+emit, **additively**:
+
+- **`dev.ralphy.run.skipped`** — a new run-scoped type (no `subject`), `data` =
+  `{reason}`, the operator-facing deferral sentence. Emitted on the `--if-idle`
+  path, which keeps its early decision (no `gh` queue fetch on a deferral) and its
+  clean exit 0. `data.git.branch` is the branch the repo is actually on — the run
+  never cut one.
+- **`no_work`** — a new value of `run.finished.outcome`. An empty queue emits the
+  FULL triad in this order: `queue.built` with `count: 0` → `run.started` →
+  `run.finished` with `outcome: "no_work"` and every count at `0`. It is emitted
+  by a dedicated CLI emitter, not by the `QueueReport` path, so an empty run never
+  triggers the end-of-run knowledge consolidation.
+
+Both borders emit AFTER the delivery workers start and BEFORE their `shutdown()`,
+so the buffered ring is drained rather than discarded — the invariant that makes
+the emission observable at all. The console notices for both borders are now
+FOLDED from these events rather than printed imperatively.
+
+The human-readable queue scope phrase the empty-queue notice needs (`labels
+[AFK]`, `issue #7`) rides `queue built` as a **log-only** `scope` field: decoded
+onto `RunEvent::QueueBuilt.scope`, deliberately NOT mapped into the
+`dev.ralphy.queue.built` envelope. The wire format is unchanged.
+
 ## Consequences
 
 - The platform can be built against [docs/events.md](../events.md) alone:

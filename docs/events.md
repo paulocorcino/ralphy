@@ -137,7 +137,8 @@ Types mirror the canonical `RunEvent` decoder
 ([runstate.rs](../crates/ralphy-cli/src/runstate.rs)) plus three emissions
 introduced by ADR-0019 (`run.started`, `run.finished`, `run.heartbeat`), one
 by ADR-0020 (`queue.snapshot`), and three raw/step plan events added by the
-#96 normalization (`plan.step`, `plan.opened`, `plan.closed`). Token
+#96 normalization (`plan.step`, `plan.opened`, `plan.closed`), and one by the
+#222 run-borders amendment (`run.skipped`). Token
 breakdowns use the ledger's four counters: `up` input, `cr` cache-read, `cw`
 cache-write, `out` output (ADR-0008).
 
@@ -164,8 +165,9 @@ cache-write, `out` output (ADR-0008).
 | `knowledge.consolidated` | Consolidation finished | `archived` |
 | `run.notice` | Any WARN/ERROR on the bus | `level`, `message` |
 | `run.heartbeat` | Every ~30s while the process lives — **including during usage-limit sleeps** (`phase: "sleeping"`), so a long sleep is never mistaken for death | see below |
-| `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `issues[]` — per-issue rollup `{number, title, status, kind?, blocked_by?}` (`status`: `done` \| `skipped` \| `blocked` \| `infeasible` \| `needs_split` \| `non_green` \| `hitl`; `kind` and `blocked_by[]` only on a `skipped` — `blocked_by` names the open blocker(s), empty for non-dependency skips); `tokens_total {up,cr,cw,out}`, `duration_s`. Carries **no** `data.agent` block. The `issues[]` rollup lists only issues that **entered the run**; key completeness off the scalar `issues_total`, not the array length |
+| `run.finished` | Clean end of a run (never on crash/kill — detect those by heartbeat silence) | `outcome` (`completed` \| `non_green` \| `deadline` \| `stop_before` \| `no_work`; only `completed` means the whole queue was worked), `issues_done`, `issues_skipped`, `issues_total`, `issues[]` — per-issue rollup `{number, title, status, kind?, blocked_by?}` (`status`: `done` \| `skipped` \| `blocked` \| `infeasible` \| `needs_split` \| `non_green` \| `hitl`; `kind` and `blocked_by[]` only on a `skipped` — `blocked_by` names the open blocker(s), empty for non-dependency skips); `tokens_total {up,cr,cw,out}`, `duration_s`. Carries **no** `data.agent` block. The `issues[]` rollup lists only issues that **entered the run**; key completeness off the scalar `issues_total`, not the array length. `no_work` (#222) is the empty-queue border: the run emits the full triad (`queue.built` with `count: 0` → `run.started` → `run.finished`) with every count at `0` and no `issues[]` entries |
 | `queue.snapshot` | On demand: `ralphy issues --push` (ADR-0020) | identical `data` shape to the enriched `queue.built` (`count`, `order[]`, `stop_before?`, `issues[]`, `assignee_filter?`) |
+| `run.skipped` | The run declined to start and exited 0 — `--if-idle` deferring to a run already in progress (#222). No `queue.built`/`run.started` precedes it | `reason` — the operator-facing sentence (`skipped: run in progress since …, pid …`) |
 
 ### `run.heartbeat`
 
@@ -207,7 +209,10 @@ contract vintage):
    normal path (e.g. `queue.built`/`queue.snapshot` gained `assignee_filter` in
    ADR-0021 §5); removing or renaming a field, or changing a field's meaning,
    requires a **new event type** instead.
-2. New event types may appear at any release; consumers skip unknown types.
+2. New event types may appear at any release; consumers skip unknown types
+   (e.g. `run.skipped`, added by the ADR-0019 #222 amendment). A new *value*
+   of an existing enum field is additive the same way — `run.finished.outcome`
+   gained `no_work` — so a consumer must treat these as open sets.
 3. `data.emitter.version` on every event identifies the emitting contract vintage
    when forensics are needed.
 4. `runid` and the `data.emitter` block are stable; new emitter fields or
