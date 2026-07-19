@@ -21,6 +21,7 @@ pub use render::{
 };
 // Re-exported because it appears in `PanelData`'s public fields (constructed in `main`).
 pub use crate::runstate::UsageLite;
+use crate::runstate::{IssueStatus, RunState};
 #[cfg(test)]
 use std::time::Duration;
 
@@ -74,98 +75,77 @@ impl FinishOutcome {
     }
 }
 
-/// The pure state behind the queue progress bar: a fixed `total`, the ordered
-/// `pending` issue numbers, and a `completed` count. Every terminal outcome
-/// advances it by one; [`finish`](Self::finish) flushes it to `N/N`. Kept pure
-/// (no `indicatif`) so the advancement logic is unit-tested directly.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueueState {
-    total: u64,
-    pending: Vec<u64>,
-    completed: u64,
-    /// The first issue carrying `stop-before`: the run halts before it, so the
-    /// pending bar marks the cut. `None` when no queue issue is tagged.
-    stop_before: Option<u64>,
+/// The phase icon for the live active line, derived from the folded status. `None`
+/// for every terminal status — the issue is finished, so there is no active line.
+pub(crate) fn active_phase(status: &IssueStatus) -> Option<Phase> {
+    match status {
+        IssueStatus::Planning => Some(Phase::Planning),
+        IssueStatus::Executing => Some(Phase::Executing),
+        IssueStatus::Planned
+        | IssueStatus::Done
+        | IssueStatus::Skipped
+        | IssueStatus::Blocked
+        | IssueStatus::Infeasible
+        | IssueStatus::NeedsSplit
+        | IssueStatus::NonGreen
+        | IssueStatus::Hitl => None,
+    }
 }
 
-impl QueueState {
-    /// Build from the `queue built` `count`, parsed `order`, and `stop_before`
-    /// boundary (the first `stop-before` issue, or `None`).
-    pub fn built(count: u64, order: Vec<u64>, stop_before: Option<u64>) -> Self {
-        QueueState {
-            total: count,
-            pending: order,
-            completed: 0,
-            stop_before,
-        }
-    }
-
-    /// A terminal outcome for `number` (done / non-green / blocked / stop-before):
-    /// drop it from `pending` and bump `completed`. Idempotent — a `number` not in
-    /// `pending` (already advanced, or superseded) is a no-op, so a double event
-    /// never over-counts.
-    pub fn advance(&mut self, number: u64) {
-        if let Some(pos) = self.pending.iter().position(|&n| n == number) {
-            self.pending.remove(pos);
-            self.completed += 1;
-        }
-    }
-
-    /// A new active issue started, so a still-pending prior issue that emitted no
-    /// terminal event (infeasible / dry-run plan) is complete. Same as
-    /// [`advance`](Self::advance).
-    pub fn supersede(&mut self, number: u64) {
-        self.advance(number);
-    }
-
-    /// Flush to `N/N` at the end of the run — covers a trailing infeasible/dry-run
-    /// issue whose completion has no following `issue started` to supersede it.
-    pub fn finish(&mut self) {
-        self.completed = self.total;
-        self.pending.clear();
-    }
-
-    /// Render `▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)` with emoji on. ANSI-free by
-    /// construction. Thin wrapper over [`bar_label_opts`](Self::bar_label_opts).
-    pub fn bar_label(&self) -> String {
-        self.bar_label_opts(RenderOpts {
-            color: false,
-            emoji: true,
-        })
-    }
-
-    /// Render the queue bar, marking where a `stop-before` halts the run: the
-    /// tagged issue is prefixed in the pending list (`… #10 ⛔ stop-before #15 …`),
-    /// so the operator sees up front that nothing from that issue onward will run
-    /// this session. `opts.emoji` picks the glyph; the bar itself is ANSI-free.
-    pub fn bar_label_opts(&self, opts: RenderOpts) -> String {
-        let done = self.completed.min(self.total) as usize;
-        let left = (self.total.saturating_sub(self.completed)) as usize;
-        let filled = "▰".repeat(done);
-        let empty = "▱".repeat(left);
-        let pending = if self.pending.is_empty() {
-            String::new()
-        } else {
-            let nums: Vec<String> = self
-                .pending
-                .iter()
-                .map(|&n| {
-                    if Some(n) == self.stop_before {
-                        // The cut: this issue (and everything after it) won't run.
-                        if opts.emoji {
-                            format!("⛔ stop-before #{n}")
-                        } else {
-                            format!("|stop-before #{n}|")
-                        }
+/// Render the queue bar `▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)` from the folded run state
+/// (ADR-0007 D6 amendment #223: the console has no reducer of its own). An issue is
+/// pending until its entry reaches a terminal status, so a plan-only pass advances
+/// the bar the moment the fold supersedes it; a `finished` run flushes to `N/N`.
+///
+/// The `stop-before` cut is marked in the pending list (`… #10 ⛔ stop-before #15 …`)
+/// so the operator sees up front that nothing from that issue onward will run this
+/// session. `opts.emoji` picks the glyph; the bar itself is ANSI-free by construction.
+pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts) -> String {
+    let terminal = |n: u64| {
+        state
+            .issues
+            .iter()
+            .any(|e| e.number == n && e.status.is_terminal())
+    };
+    let pending: Vec<u64> = if state.finished {
+        Vec::new()
+    } else {
+        state
+            .order
+            .iter()
+            .copied()
+            .filter(|&n| !terminal(n))
+            .collect()
+    };
+    let total = state.total;
+    let completed = if state.finished {
+        total
+    } else {
+        state.order.len().saturating_sub(pending.len())
+    };
+    let filled = "▰".repeat(completed.min(total));
+    let empty = "▱".repeat(total.saturating_sub(completed));
+    let pending_part = if pending.is_empty() {
+        String::new()
+    } else {
+        let nums: Vec<String> = pending
+            .iter()
+            .map(|&n| {
+                if Some(n) == state.stop_before {
+                    // The cut: this issue (and everything after it) won't run.
+                    if opts.emoji {
+                        format!("⛔ stop-before #{n}")
                     } else {
-                        format!("#{n}")
+                        format!("|stop-before #{n}|")
                     }
-                })
-                .collect();
-            format!(" (pending {})", nums.join(" "))
-        };
-        format!("{filled}{empty} {}/{}{pending}", self.completed, self.total)
-    }
+                } else {
+                    format!("#{n}")
+                }
+            })
+            .collect();
+        format!(" (pending {})", nums.join(" "))
+    };
+    format!("{filled}{empty} {completed}/{total}{pending_part}")
 }
 
 #[cfg(test)]

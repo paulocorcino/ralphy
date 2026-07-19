@@ -23,40 +23,36 @@ use tracing_subscriber::layer::{Context, Layer};
 
 use super::render::{meter_for, pick, render_active_line, render_line, sleep_label, LineExtra};
 use super::{
-    render_info_line, render_totals_panel, PanelData, Phase, QueueState, RenderOpts, UsageLite,
+    active_phase, queue_bar_label, render_info_line, render_totals_panel, PanelData, RenderOpts,
 };
 use crate::pricing::PriceTable;
-use crate::runstate::{event_to_runevent, EventFields, RunEvent};
+use crate::runstate::{event_to_runevent, EventFields, RunEvent, RunState};
 
-/// The active issue's live state, tracked so the finishing line can show its
-/// wall-clock duration and the active spinner line its phase/model/budget.
-struct ActiveIssue {
-    number: u64,
-    title: String,
-    start: Instant,
-    phase: Phase,
-    model: Option<String>,
-    effort: Option<String>,
-    budget_min: Option<u64>,
-    /// The planning phase's usage, stashed at `PlanWritten` so the `done` line can
-    /// show the issue total (plan + execute) and price each phase's model (D8).
-    plan_usage: Option<UsageLite>,
-}
-
-/// The mutable live-region state behind the presenter's single `Mutex`: the active
-/// issue, the pure queue state, and the two `indicatif` bars (only present on a
-/// colour TTY). Shared with the [`PresenterHandle`] via `Arc` so `main` can flush
-/// and clear the region after the queue returns.
+/// The mutable live-region state behind the presenter's single `Mutex`: the folded
+/// run, the active issue's wall-clock anchor, and the two `indicatif` bars (only
+/// present on a colour TTY). Shared with the [`PresenterHandle`] via `Arc` so `main`
+/// can flush and clear the region after the queue returns.
+///
+/// Every rendered fact is derived from `run` (ADR-0007 D6 amendment #223) — the
+/// console keeps no reducer of its own. `active_start` is the one exception: no
+/// event carries a wall clock, so the per-issue `Instant` stays presenter-local.
 #[derive(Default)]
 struct LiveState {
-    active: Option<ActiveIssue>,
-    queue: Option<QueueState>,
-    sleep: Option<String>,
-    /// The active child is in a sustained API-degraded state (issue #149): the
-    /// active spinner shows a retry indicator until recovery. Live-region only.
-    degraded: bool,
+    run: RunState,
+    /// `(issue number, start instant)` for the issue currently on the active line.
+    active_start: Option<(u64, Instant)>,
     queue_bar: Option<ProgressBar>,
     active_bar: Option<ProgressBar>,
+}
+
+impl LiveState {
+    /// The elapsed wall clock of `number`, when it is the issue the active line is
+    /// timing. `None` for any other issue (a stale or superseded anchor).
+    fn elapsed_of(&self, number: u64) -> Option<Duration> {
+        self.active_start
+            .filter(|(n, _)| *n == number)
+            .map(|(_, t)| t.elapsed())
+    }
 }
 
 /// The console presenter: a `tracing` Layer that renders the run's lifecycle. Its
@@ -201,146 +197,84 @@ impl Renderer {
     }
 
     /// Update the live region for one event and return a finishing duration when
-    /// the event closes the active issue. The live-region (`indicatif`) calls are
-    /// guarded behind `self.opts.color`, so `--verbose`/non-TTY draw nothing.
+    /// the event closes the active issue. The fold runs FIRST and every rendered
+    /// fact is read back from it; only the wall clock is presenter-local. The
+    /// live-region (`indicatif`) calls are guarded behind `self.opts.color`, so
+    /// `--verbose`/non-TTY draw nothing.
     fn drive(&self, s: &mut LiveState, event: &RunEvent) -> LineExtra {
+        s.run.apply(event.clone());
         match event {
-            RunEvent::QueueBuilt {
-                count,
-                order,
-                stop_before,
-                ..
-            } => {
-                s.queue = Some(QueueState::built(*count, order.clone(), *stop_before));
+            RunEvent::QueueBuilt { .. } => {
                 if self.opts.color {
                     let bar = self.multi.add(ProgressBar::new_spinner());
                     bar.set_style(ProgressStyle::with_template("{msg}").expect("static template"));
-                    if let Some(q) = s.queue.as_ref() {
-                        bar.set_message(q.bar_label_opts(self.opts));
-                    }
+                    bar.set_message(queue_bar_label(&s.run, self.opts));
                     s.queue_bar = Some(bar);
                 }
                 LineExtra::default()
             }
-            RunEvent::IssueStarted { number, title } => {
-                // A new active issue supersedes a still-pending prior one that
-                // emitted no terminal event (infeasible / dry-run plan).
-                if let Some(prev) = s.active.take() {
-                    if let Some(q) = s.queue.as_mut() {
-                        q.supersede(prev.number);
-                    }
-                    self.refresh_queue_bar(s);
-                }
-                s.active = Some(ActiveIssue {
-                    number: *number,
-                    title: title.clone(),
-                    start: Instant::now(),
-                    phase: Phase::Planning,
-                    model: None,
-                    effort: None,
-                    budget_min: None,
-                    plan_usage: None,
-                });
+            RunEvent::IssueStarted { number, .. } => {
+                // The fold already superseded a still-non-terminal prior issue, so
+                // the bar may have advanced.
+                s.active_start = Some((*number, Instant::now()));
+                self.refresh_queue_bar(s);
                 self.refresh_active_bar(s);
                 LineExtra::default()
             }
-            RunEvent::Planning { model, effort } => {
-                // Live-region only: label the planning spinner with the planner's
-                // display model/effort. The adapter carries no issue number.
-                if let Some(a) = s.active.as_mut() {
-                    if model.is_some() {
-                        a.model = model.clone();
-                    }
-                    if effort.is_some() {
-                        a.effort = effort.clone();
-                    }
-                }
+            RunEvent::Planning { .. } | RunEvent::Executing { .. } => {
+                // Live-region only: the fold carries the planner's/executor's
+                // display model, effort and budget onto the active entry.
                 self.refresh_active_bar(s);
                 LineExtra::default()
             }
             RunEvent::PlanWritten { usage, .. } => {
-                // Stash the planning usage for the eventual `done` line, and surface
-                // the scroll line with the planning meter + elapsed-so-far.
-                match s.active.as_mut() {
-                    Some(a) => {
-                        a.plan_usage = Some(usage.clone());
-                        LineExtra {
-                            duration: Some(a.start.elapsed()),
-                            model: a.model.clone(),
-                            effort: a.effort.clone(),
-                            meter: Some(meter_for(&self.price, None, usage)),
-                        }
-                    }
+                // The scroll line shows the planning meter + elapsed-so-far; the
+                // fold stashed the planning usage for the eventual `done` line.
+                let meter = Some(meter_for(&self.price, None, usage));
+                match s.run.active_issue() {
+                    Some(e) => LineExtra {
+                        duration: s.elapsed_of(e.number),
+                        model: e.model.clone(),
+                        effort: e.effort.clone(),
+                        meter,
+                    },
                     None => LineExtra {
-                        meter: Some(meter_for(&self.price, None, usage)),
+                        meter,
                         ..Default::default()
                     },
                 }
             }
-            RunEvent::Executing {
-                model,
-                budget_min,
-                effort,
-                ..
-            } => {
-                // The event carries no number; it applies to the active issue.
-                if let Some(a) = s.active.as_mut() {
-                    a.phase = Phase::Executing;
-                    a.model = Some(model.clone());
-                    if effort.is_some() {
-                        a.effort = effort.clone();
-                    }
-                    a.budget_min = Some(*budget_min);
-                }
-                self.refresh_active_bar(s);
-                LineExtra::default()
-            }
             RunEvent::IssueClosed { number, usage, .. } => {
                 // The `done` line shows the issue total (plan + execute) and prices
-                // each phase's model: combine the stashed planning usage with this
-                // execution usage before clearing the active issue.
-                let extra = match s.active.as_ref().filter(|a| a.number == *number) {
-                    Some(a) => LineExtra {
-                        duration: Some(a.start.elapsed()),
-                        model: a.model.clone(),
-                        effort: a.effort.clone(),
-                        meter: Some(meter_for(&self.price, a.plan_usage.as_ref(), usage)),
+                // each phase's model: combine the planning usage the fold stashed
+                // with this execution usage.
+                let extra = match s.run.active_issue().filter(|e| e.number == *number) {
+                    Some(e) => LineExtra {
+                        duration: s.elapsed_of(e.number),
+                        model: e.model.clone(),
+                        effort: e.effort.clone(),
+                        meter: Some(meter_for(&self.price, e.plan_usage.as_ref(), usage)),
                     },
                     None => LineExtra::default(),
                 };
-                s.active = None;
-                if let Some(q) = s.queue.as_mut() {
-                    q.advance(*number);
-                }
-                self.refresh_queue_bar(s);
-                if let Some(bar) = s.active_bar.take() {
-                    bar.finish_and_clear();
-                }
+                self.close_active(s);
                 extra
             }
             RunEvent::NonGreen { number, .. }
             | RunEvent::Skipped { number, .. }
             | RunEvent::HumanBlocked { number, .. } => {
                 let duration = s
-                    .active
-                    .as_ref()
-                    .filter(|a| a.number == *number)
-                    .map(|a| a.start.elapsed());
-                s.active = None;
-                if let Some(q) = s.queue.as_mut() {
-                    q.advance(*number);
-                }
-                self.refresh_queue_bar(s);
-                if let Some(bar) = s.active_bar.take() {
-                    bar.finish_and_clear();
-                }
+                    .run
+                    .active_issue()
+                    .filter(|e| e.number == *number)
+                    .and_then(|e| s.elapsed_of(e.number));
+                self.close_active(s);
                 LineExtra {
                     duration,
                     ..Default::default()
                 }
             }
-            RunEvent::SleepStarted { reset, .. } => {
-                s.sleep = Some(reset.clone());
+            RunEvent::SleepStarted { .. } => {
                 if let Some(bar) = s.active_bar.take() {
                     bar.finish_and_clear();
                 }
@@ -348,7 +282,6 @@ impl Renderer {
                 LineExtra::default()
             }
             RunEvent::SleepEnded => {
-                s.sleep = None;
                 self.refresh_queue_bar(s);
                 self.refresh_active_bar(s);
                 LineExtra::default()
@@ -357,13 +290,7 @@ impl Renderer {
             // retry indicator immediately (unthrottled live region), unlike the
             // ~60s Telegram card refresh (issue #149). Live-region only — the
             // scroll line is drawn by `render_line`.
-            RunEvent::ApiDegraded => {
-                s.degraded = true;
-                self.refresh_active_bar(s);
-                LineExtra::default()
-            }
-            RunEvent::ApiRecovered => {
-                s.degraded = false;
+            RunEvent::ApiDegraded | RunEvent::ApiRecovered => {
                 self.refresh_active_bar(s);
                 LineExtra::default()
             }
@@ -371,27 +298,40 @@ impl Renderer {
         }
     }
 
-    /// Repaint the queue bar's label from the current [`QueueState`]. No-op off a
-    /// colour TTY.
+    /// The active issue reached a terminal status: drop its wall-clock anchor, take
+    /// down the spinner, and repaint the queue bar the fold just advanced.
+    fn close_active(&self, s: &mut LiveState) {
+        s.active_start = None;
+        self.refresh_queue_bar(s);
+        if let Some(bar) = s.active_bar.take() {
+            bar.finish_and_clear();
+        }
+    }
+
+    /// Repaint the queue bar's label from the folded state. No-op off a colour TTY.
     fn refresh_queue_bar(&self, s: &LiveState) {
         if !self.opts.color {
             return;
         }
         if let Some(bar) = s.queue_bar.as_ref() {
-            let msg = match (&s.sleep, &s.queue) {
-                (Some(reset), _) => sleep_label(reset, self.opts),
-                (None, Some(q)) => q.bar_label_opts(self.opts),
-                (None, None) => return,
+            let msg = match s.run.sleep.as_ref() {
+                Some(sleep) => sleep_label(&sleep.reset, self.opts),
+                None => queue_bar_label(&s.run, self.opts),
             };
             bar.set_message(msg);
         }
     }
 
-    /// Repaint (creating on first use) the self-ticking active-issue spinner from
-    /// the current [`ActiveIssue`]. No-op off a colour TTY. The message itself is
-    /// rendered by [`repaint_active_bar`], shared with the per-second clock ticker.
+    /// Repaint (creating on first use) the self-ticking active-issue spinner from the
+    /// folded active entry. No-op off a colour TTY or when no issue is in a
+    /// non-terminal phase. The message itself is rendered by [`repaint_active_bar`],
+    /// shared with the per-second clock ticker.
     fn refresh_active_bar(&self, s: &mut LiveState) {
-        if !self.opts.color || s.active.is_none() {
+        let live = s
+            .run
+            .active_issue()
+            .is_some_and(|e| active_phase(&e.status).is_some());
+        if !self.opts.color || !live {
             return;
         }
         if s.active_bar.is_none() {
@@ -413,26 +353,30 @@ impl Renderer {
 /// the clock would freeze at its event-time value; calling this on a one-second
 /// timer keeps the elapsed time advancing between events (ADR-0006 D4).
 fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
-    if let (Some(a), Some(bar)) = (s.active.as_ref(), s.active_bar.as_ref()) {
-        let line = render_active_line(
-            a.phase,
-            a.number,
-            &a.title,
-            a.model.as_deref(),
-            a.effort.as_deref(),
-            a.start.elapsed(),
-            a.budget_min,
-            opts,
-        );
-        // API-degraded: prefix the spinner message with a retry indicator so the
-        // operator sees the child is retrying, not stalled (issue #149).
-        let msg = if s.degraded {
-            format!("{} {line}", pick("🔄", "[api-retry]", opts.emoji))
-        } else {
-            line
-        };
-        bar.set_message(msg);
-    }
+    let (Some(entry), Some(bar)) = (s.run.active_issue(), s.active_bar.as_ref()) else {
+        return;
+    };
+    let Some(phase) = active_phase(&entry.status) else {
+        return;
+    };
+    let line = render_active_line(
+        phase,
+        entry.number,
+        &entry.title,
+        entry.model.as_deref(),
+        entry.effort.as_deref(),
+        s.elapsed_of(entry.number).unwrap_or_default(),
+        entry.budget_min,
+        opts,
+    );
+    // API-degraded: prefix the spinner message with a retry indicator so the
+    // operator sees the child is retrying, not stalled (issue #149).
+    let msg = if s.run.degraded {
+        format!("{} {line}", pick("🔄", "[api-retry]", opts.emoji))
+    } else {
+        line
+    };
+    bar.set_message(msg);
 }
 
 impl Default for Presenter {
@@ -556,11 +500,17 @@ impl PresenterHandle {
         let Some(mut s) = self.lock_state_bounded(Duration::from_secs(2)) else {
             return;
         };
-        if let Some(q) = s.queue.as_mut() {
-            q.finish();
-        }
-        let label = s.queue.as_ref().map(|q| q.bar_label());
-        if let (Some(bar), Some(label)) = (s.queue_bar.as_ref(), label) {
+        // The end-of-run flush: a trailing dry-run issue has no following event to
+        // supersede it, so `finished` is what takes the bar to N/N.
+        s.run.finished = true;
+        let label = queue_bar_label(
+            &s.run,
+            RenderOpts {
+                color: false,
+                emoji: true,
+            },
+        );
+        if let Some(bar) = s.queue_bar.as_ref() {
             bar.set_message(label);
         }
         if let Some(bar) = s.active_bar.take() {
