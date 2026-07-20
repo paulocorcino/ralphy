@@ -42,9 +42,18 @@ them here.
 
 `crates/ralphy-cli` (the `ralphy` binary + composition root) ·
 `crates/ralphy-core` (queue lifecycle, git/GitHub, run reporting) ·
-`crates/ralphy-agent-{claude,codex,opencode}` (the vendor adapters) ·
+`crates/ralphy-agent-*` (**the vendor adapters — one crate per vendor**;
+`claude`, `codex`, `kimi`, `opencode` today, more arriving) ·
 `crates/ralphy-adapter-support` (vendor-neutral child-driving plumbing) ·
-`crates/ralphy-pty` · `assets/prompts` (plan/execute charters) ·
+`crates/ralphy-daemon` (the supervised launcher + workbench) ·
+`crates/ralphy-usage-scan` (stateless reads of the vendors' session stores) ·
+`crates/ralphy-pty` · `crates/ralphy-proc-util` ·
+`assets/prompts` (plan/execute charters) ·
 `assets/plugin` (bundled skills, embedded into the binary).
 
-#teste 1
+Adding a vendor is not just a new crate: follow
+[ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md), whose wiring
+inventory lists every edit site across five tiers. **Do not enumerate the vendor
+crates anywhere a list can go stale** — that list has already drifted once
+(Kimi was missing from this section and is still missing from the daemon's
+agent enum).
