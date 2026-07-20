@@ -13,3 +13,8 @@ serde_json.workspace = true
 uuid.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
+ralphy-usage-scan.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true
+tempfile.workspace = true

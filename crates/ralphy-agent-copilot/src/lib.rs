@@ -9,10 +9,9 @@
 //! bytes before the issue body is appended, against a Windows argv ceiling of
 //! ~32 KB (ADR-0041 D2).
 //!
-//! This is the tracer-bullet slice (#229): `usage.rs`, `tasks.rs` and `skills.rs`
-//! belong to later slices (ADR-0040 Tier 1), so `plan`/`execute` report
-//! [`Usage::default`] — a Copilot run reports **zero tokens** until the D10 usage
-//! slice lands. That zero is a missing feature, not a pricing bug.
+//! Token usage is read back from Copilot's own `session-store.db` by the minted
+//! `--session-id` ([`usage`], ADR-0041 D10). `tasks.rs` and `skills.rs` still
+//! belong to later slices (ADR-0040 Tier 1).
 
 use std::fs;
 use std::path::PathBuf;
@@ -28,6 +27,7 @@ use tracing::info;
 mod auth;
 mod command;
 mod outcome;
+mod usage;
 
 /// `true` (ADR-0041 D12): `copilot --attachment <path>` attaches an image or
 /// native document to the initial prompt in non-interactive mode, so a triage
@@ -39,6 +39,7 @@ pub const ACCEPTS_IMAGES: bool = true;
 use auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
 use command::{build_copilot_command, mint_session_id};
 use outcome::{classify_copilot_outcome, copilot_final_text};
+use usage::copilot_usage;
 
 /// The Copilot planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with no `## Execution model` tier
@@ -151,9 +152,14 @@ impl Agent for CopilotAgent {
             // Copilot runs the account's own default model, no complexity tier (D6).
             recommended_model: None,
             path: plan_path,
-            usage: Usage::default(),
+            // A RESUMED finalized plan ran no `copilot` process, so no session by
+            // this id exists to read: report zero rather than another run's rows.
+            usage: session
+                .as_ref()
+                .map(|_| copilot_usage(&session_id))
+                .unwrap_or_default(),
             // `None` = a finalized plan was RESUMED and no `copilot` process ran,
-            // so no session by this id exists for the D10 usage slice to read.
+            // so no session by this id exists in the store.
             session_id: session.map(|_| session_id),
         })
     }
@@ -207,8 +213,7 @@ impl Agent for CopilotAgent {
         );
         Ok(Execution {
             outcome,
-            // Zero until the D10 usage slice lands — see the module doc.
-            usage: Usage::default(),
+            usage: copilot_usage(&session_id),
             session_id: Some(session_id),
         })
     }

@@ -1572,7 +1572,10 @@ dependencies = [
  "anyhow",
  "ralphy-adapter-support",
  "ralphy-core",
+ "ralphy-usage-scan",
+ "rusqlite",
  "serde_json",
+ "tempfile",
  "tracing",
  "uuid",
 ]
