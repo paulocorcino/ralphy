@@ -299,6 +299,13 @@ accident.
 
 ## D9 — Skills reuse the Codex pattern, targeting `.agents/skills`
 
+**Enforced** (#235). The dance is shared as
+`ralphy_adapter_support::{link_or_copy_dir, ensure_gitignore_entries, remove_path}`
+— both adapters call it, and `skills::tests::the_dance_is_not_reimplemented_locally`
+in the Codex crate reds if a local copy reappears. The load receipt is asserted by
+`skills_load_violation` in `ralphy-agent-copilot/src/skills.rs`, reached through
+the `CopilotAgent::check_skills_loaded` seam on both the plan and the execute path.
+
 Copilot auto-discovers `.github/skills/`, `.agents/skills/` and
 `.claude/skills/`, but **not** `.ralphy/skills` where Ralphy materializes. This
 is exactly Codex's situation, and Codex already solved it: materialize into
@@ -320,7 +327,14 @@ gitignore, which would wipe the operator's own skills. Also rejected:
 
 Copilot then gives what Codex never had — a **load receipt**:
 `session.skills_loaded` lists every discovered skill with its resolved path, so
-the adapter can assert the Ralphy skills actually loaded instead of assuming it.
+the adapter asserts the Ralphy skills actually loaded instead of assuming it. The
+live shape (`copilot 1.0.71`, 2026-07-20) is `data.skills[]`, each entry keyed
+`name`; the record is `"ephemeral":true`, so — exactly as with D7's receipt — the
+scan applies no `ephemeral` filter. Copilot injects its own skills into the same
+array, so the guard checks each required name is PRESENT, never set equality.
+`require_receipt` follows D7's split: an absent receipt fails closed only for a run
+that exited cleanly, so a `Limit`/`Timeout` is never overwritten with
+"skills receipt missing".
 
 ## D10 — Usage: mint the session id, read the store by primary key
 

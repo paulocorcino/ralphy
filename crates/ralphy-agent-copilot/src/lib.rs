@@ -10,8 +10,9 @@
 //! ~32 KB (ADR-0041 D2).
 //!
 //! Token usage is read back from Copilot's own `session-store.db` by the minted
-//! `--session-id` ([`usage`], ADR-0041 D10). `tasks.rs` and `skills.rs` still
-//! belong to later slices (ADR-0040 Tier 1).
+//! `--session-id` ([`usage`], ADR-0041 D10). Skills are materialized into
+//! `.agents/skills` and their load receipt asserted by [`skills`] (ADR-0041 D9);
+//! `tasks.rs` still belongs to a later slice (ADR-0040 Tier 1).
 
 use std::fs;
 use std::path::PathBuf;
