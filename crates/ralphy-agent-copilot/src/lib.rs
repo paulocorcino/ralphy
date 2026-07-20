@@ -25,9 +25,17 @@ use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, 
 use tracing::info;
 
 mod auth;
+mod catalog;
 mod command;
 mod outcome;
 mod usage;
+
+/// The free model catalog the preflight learns from one `copilot` subprocess
+/// (ADR-0041; issue #231). `fetch_catalog` doubles as the login/entitlement probe.
+pub use catalog::{
+    fetch_catalog, parse_catalog, CopilotCatalog, CopilotModel, CopilotPrices,
+    COPILOT_CATALOG_ERROR_MSG,
+};
 
 /// `true` (ADR-0041 D12): `copilot --attachment <path>` attaches an image or
 /// native document to the initial prompt in non-interactive mode, so a triage
