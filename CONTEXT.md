@@ -125,7 +125,9 @@ _Avoid_: model selection (reserved for Claude complexity routing).
 The shared machinery every **adapter** leans on but that is specific to *no*
 vendor — the headless child-driving loop (spawn, drain stdout/stderr, poll to
 completion-or-timeout, kill on deadline), the `RALPHY_DONE_EXIT` /
-`RALPHY_BLOCKED_EXIT` sentinel parser, and skill/plugin materialization. It is
+`RALPHY_BLOCKED_EXIT` sentinel parser, and skill/plugin materialization —
+including the `.agents/skills` exposure dance (link-or-copy, symlink-safe
+removal, merged per-entry `.gitignore`) that Codex and Copilot both drive. It is
 the deliberate counterpart of **Adapter**: where an adapter holds what is
 vendor-specific, adapter support holds what is common. It owns **no** completion
 protocol and produces **no** `Outcome` — it hands back raw captured output and
