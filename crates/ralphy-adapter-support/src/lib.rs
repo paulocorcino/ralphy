@@ -55,7 +55,9 @@ mod session_files;
 pub use session_files::{list_session_files, session_files_appeared};
 
 mod sentinel;
-pub use sentinel::{blocked_reason, done_sentinel, DONE_SENTINEL, PLAN_CHARTER, PROMPT_EXECUTE};
+pub use sentinel::{
+    blocked_reason, done_sentinel, DONE_SENTINEL, EXEC_CHARTER, PLAN_CHARTER, PROMPT_EXECUTE,
+};
 
 mod assets;
 pub use assets::materialize_assets;

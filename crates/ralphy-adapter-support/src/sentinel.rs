@@ -15,6 +15,12 @@ pub const DONE_SENTINEL: &str = "RALPHY_DONE_EXIT";
 /// names no sentinel.
 pub const PLAN_CHARTER: &str = "Read .ralphy/plan-charter.md and follow it exactly to plan the issue described by .ralphy/issue.json. Write the plan to .ralphy/plan.md.";
 
+/// The one-line execution charter delivered per issue. It points the agent at the
+/// full execution charter written to `.ralphy/exec.md` at the top of each execute
+/// call (mirroring [`PLAN_CHARTER`]) and names the completion sentinel. Byte-identical
+/// to the Claude adapter's private copy.
+pub const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.";
+
 /// The vendor-neutral execution charter, embedded once here (like [`PLAN_CHARTER`])
 /// and referenced by every adapter, instead of each `include_str!`-ing its own
 /// byte-identical copy. It already names the `RALPHY_DONE_EXIT` /
@@ -59,6 +65,16 @@ mod tests {
             "planning has no completion sentinel"
         );
         assert!(PLAN_CHARTER.len() < 512, "must stay a one-line pointer");
+    }
+
+    /// Anti-drift: the per-issue exec pointer must name the on-disk charter and
+    /// the completion sentinel, and must stay a pointer — never regrow into the
+    /// full charter (that lives in [`PROMPT_EXECUTE`]).
+    #[test]
+    fn exec_charter_stays_a_one_line_pointer() {
+        assert!(EXEC_CHARTER.len() < 512, "must stay a one-line pointer");
+        assert!(EXEC_CHARTER.contains(".ralphy/exec.md"));
+        assert!(EXEC_CHARTER.contains(DONE_SENTINEL));
     }
 
     /// Anti-drift: the shared execution charter must name the completion
