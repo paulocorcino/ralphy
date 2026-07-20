@@ -274,12 +274,13 @@ mod tests {
     }
 
     /// `init`/`triage` auto-selection takes the FIRST logged-in agent in `ALL`, and
-    /// Copilot's one-shot verbs bail until the `tasks.rs` slice lands. Promoting it
-    /// ahead of a fully-wired vendor would turn a working `ralphy init` into a hard
-    /// bail on any machine where both are logged in — so pin the position, not just
-    /// the membership.
+    /// `Agent::ALL` is the auto-selection ORDER for a no-flag `ralphy init`/
+    /// `triage` on a multi-login machine. The one-shots exist now (#237), so the
+    /// reason to pin Copilot last is no longer a missing `tasks.rs` — it is
+    /// auto-selection STABILITY: promoting Copilot would silently change which
+    /// vendor drives a no-flag run, a behavior change no issue has asked for.
     #[test]
-    fn copilot_is_last_in_all_until_its_one_shots_exist() {
+    fn copilot_stays_last_in_all() {
         assert_eq!(Agent::ALL.last(), Some(&Agent::Copilot));
     }
 

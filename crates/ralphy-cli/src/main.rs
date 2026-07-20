@@ -94,10 +94,9 @@ fn consolidate_with_agent(
         CliAgent::Codex => {
             ralphy_agent_codex::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
-        // `tasks.rs` is a later slice (ADR-0040 Tier 1): the variant makes this
-        // match non-exhaustive at compile time, and an honest bail beats silently
-        // falling back to another vendor.
-        CliAgent::Copilot => anyhow::bail!("the copilot adapter does not support one-shot consolidate yet (tasks.rs is a later slice, ADR-0040 Tier 1)"),
+        CliAgent::Copilot => {
+            ralphy_agent_copilot::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
@@ -253,5 +252,26 @@ pub(crate) fn non_empty(s: String) -> Option<String> {
         None
     } else {
         Some(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #237: the four one-shot dispatch sites must route Copilot to real work, not
+    /// bail. Fragments so the needle cannot match this very assertion.
+    #[test]
+    fn copilot_one_shots_are_wired() {
+        let needle = concat!("does not support ", "one-shot");
+        for src in [
+            include_str!("init/run.rs"),
+            include_str!("init/issues.rs"),
+            include_str!("triage.rs"),
+            include_str!("main.rs"),
+        ] {
+            assert!(!src.contains(needle), "stale one-shot bail found");
+        }
+        assert_eq!(consolidate_defaults(CliAgent::Copilot), (None, None));
     }
 }
