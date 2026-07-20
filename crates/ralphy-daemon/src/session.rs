@@ -42,6 +42,7 @@ pub struct SessionSpec {
 pub enum Agent {
     Claude,
     Codex,
+    Kimi,
     OpenCode,
 }
 
@@ -52,6 +53,7 @@ impl Agent {
         match value {
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
+            "kimi" => Some(Agent::Kimi),
             "opencode" => Some(Agent::OpenCode),
             _ => None,
         }
@@ -62,6 +64,9 @@ impl Agent {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            // `kimi-code` ships its binary as `kimi` — the same name the adapter
+            // resolves for its headless calls (ADR-0028 D5).
+            Agent::Kimi => "kimi",
             Agent::OpenCode => "opencode",
         }
     }
@@ -609,6 +614,36 @@ mod tests {
             console_cwd(None),
             ralphy_proc_util::home_dir().unwrap_or_else(|| PathBuf::from(".")),
             "no chosen repo falls back to the home directory (or '.' if unresolvable)"
+        );
+    }
+
+    #[test]
+    fn every_agent_parses_from_its_query_value_and_names_a_program() {
+        // The daemon's enum is hand-kept in step with the CLI's `--agent` values
+        // (ADR-0040 Tier 4). A vendor missing here is invisible to the compiler —
+        // `from_query` just returns `None` and the daemon refuses the spawn, which
+        // is exactly how Kimi went unreachable from the workbench (issue #228).
+        for (value, agent, program) in [
+            ("claude", Agent::Claude, "claude"),
+            ("codex", Agent::Codex, "codex"),
+            ("kimi", Agent::Kimi, "kimi"),
+            ("opencode", Agent::OpenCode, "opencode"),
+        ] {
+            assert_eq!(
+                Agent::from_query(value),
+                Some(agent),
+                "`agent={value}` must parse — an unparsed vendor cannot be launched"
+            );
+            assert_eq!(
+                agent.program_name(),
+                program,
+                "{value} must resolve the program the adapter itself shells"
+            );
+        }
+        assert_eq!(
+            Agent::from_query("bash"),
+            None,
+            "an unknown value stays unparsed rather than launching a surprise program"
         );
     }
 }

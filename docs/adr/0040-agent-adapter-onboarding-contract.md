@@ -225,9 +225,19 @@ and `MIGRATED_EMITTERS` (ADR-0039) · workspace + CLI `Cargo.toml`.
 **Tier 4 — usage scan and daemon**: `usage-scan/src/<vendor>.rs` +
 `<Vendor>Scan` + the `pub mod`/`pub use` · `daemon/src/usage.rs` path resolver
 and `interactive_records` · the four `daemon/src/lib.rs` state-plumbing sites ·
-**`daemon/src/dispatch.rs::agent_flag`** — this is the third agent enum and it
-has *already been missed once*: Kimi is absent from it today, so Kimi is not
-reachable from the workbench. Treat it as the canary.
+**`daemon/src/session.rs::Agent`** — the third agent enum, plus its two matches
+(`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and the
+`agents` / `consoleItems` / accelerator-map trio in `daemon/assets/ui/app.js`.
+
+Treat `session::Agent` as the canary, not `agent_flag`. This tier has *already
+been missed once*: Kimi shipped a full adapter and a `daemon/src/usage.rs` path
+resolver while remaining absent from the daemon enum, so the daemon could
+account for its tokens but not launch it (issue #228, fixed). Nothing complained,
+because `agent_flag` is exhaustive over the daemon's own enum — a missing variant
+there compiles cleanly and always will. The failure surfaces at runtime, three
+layers deep: `Agent::from_query` returns `None` → `ArgvError::BadParam("agent")`
+→ the daemon spawns nothing. Add the variant first and let the compiler walk you
+through the rest.
 
 **Tier 5 — the tests that will trip you**: `prompt_assembly` ·
 `capture.rs::no_vocabulary_literal_outside_emit` · the `pricing.rs` model-id

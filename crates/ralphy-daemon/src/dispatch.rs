@@ -98,6 +98,7 @@ fn agent_flag(a: Agent) -> &'static str {
     match a {
         Agent::Claude => "claude",
         Agent::Codex => "codex",
+        Agent::Kimi => "kimi",
         Agent::OpenCode => "opencode",
     }
 }
@@ -996,6 +997,28 @@ mod tests {
                 "--if-idle",
                 "--agent",
                 "claude",
+                "--branch-mode",
+                "new"
+            ]
+        );
+    }
+
+    #[test]
+    fn spawn_argv_carries_kimi_through_to_the_agent_flag() {
+        // Kimi was absent from the daemon's enum while its adapter shipped, so a
+        // workbench run refused with BadParam("agent") (issue #228). The flag value
+        // must be the CLI's own `--agent kimi`.
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "kimi", "branchMode": "new" })
+            )
+            .unwrap(),
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "kimi",
                 "--branch-mode",
                 "new"
             ]
