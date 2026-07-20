@@ -15,6 +15,15 @@ pub struct CopilotSettings {
     /// `--exec-model` flag is given. `None` → omit `--model` for that phase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec_model: Option<String>,
+    /// The reasoning effort requested for `plan()`. CLAMPED per model before it
+    /// reaches argv (ADR-0041 D5a): a level the phase's model does not publish is
+    /// lowered, and a model that takes no effort argument never receives the flag.
+    /// `None` → omit `--effort` for that phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_effort: Option<String>,
+    /// The reasoning effort requested for `execute()`. Same clamp; `None` → omit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec_effort: Option<String>,
 }
 
 impl CopilotSettings {
@@ -31,6 +40,8 @@ mod tests {
         let d = CopilotSettings::default();
         assert_eq!(d.plan_model, None);
         assert_eq!(d.exec_model, None);
+        assert_eq!(d.plan_effort, None);
+        assert_eq!(d.exec_effort, None);
     }
 
     #[test]
@@ -39,6 +50,14 @@ mod tests {
             serde_json::from_str(r#"{"plan_model":"a","exec_model":"b"}"#).unwrap();
         assert_eq!(s.plan_model.as_deref(), Some("a"));
         assert_eq!(s.exec_model.as_deref(), Some("b"));
+        let e: CopilotSettings =
+            serde_json::from_str(r#"{"plan_effort":"high","exec_effort":"low"}"#).unwrap();
+        assert_eq!(e.plan_effort.as_deref(), Some("high"));
+        assert_eq!(e.exec_effort.as_deref(), Some("low"));
+        assert_eq!(
+            e.plan_model, None,
+            "an effort-only section leaves models unset"
+        );
         assert_eq!(
             serde_json::to_string(&CopilotSettings::default()).unwrap(),
             "{}"

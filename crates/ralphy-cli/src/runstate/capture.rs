@@ -493,8 +493,17 @@ mod tests {
             "crates/ralphy-agent-copilot/src/lib.rs",
             1,
             1,
-            &["\"copilot\"", "model.unwrap_or(\"\")", "\"\""],
-            &["\"copilot\"", "0", "model.unwrap_or(\"\")", "\"\""],
+            &[
+                "\"copilot\"",
+                "model.unwrap_or(\"\")",
+                "effort.as_deref().unwrap_or(\"\")",
+            ],
+            &[
+                "\"copilot\"",
+                "0",
+                "model.unwrap_or(\"\")",
+                "effort.as_deref().unwrap_or(\"\")",
+            ],
         ),
         (
             "crates/ralphy-agent-kimi/src/lib.rs",

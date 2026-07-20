@@ -82,6 +82,11 @@ enum Phase {
 pub struct CopilotAgent {
     exec_model: Option<String>,
     plan_model: Option<String>,
+    exec_effort: Option<String>,
+    plan_effort: Option<String>,
+    /// The free model catalog, fetched at most once and ONLY when a phase actually
+    /// requested an effort — a default run must spawn no probe (see [`Self::catalog`]).
+    catalog: std::sync::OnceLock<Option<CopilotCatalog>>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -91,6 +96,9 @@ impl CopilotAgent {
         Self {
             exec_model: model,
             plan_model: None,
+            exec_effort: None,
+            plan_effort: None,
+            catalog: std::sync::OnceLock::new(),
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
@@ -103,11 +111,50 @@ impl CopilotAgent {
         self
     }
 
+    /// Set the reasoning effort requested for `plan()` (ADR-0041 D5a). The value
+    /// is the operator's REQUEST, not what is sent: it is clamped per model.
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Set the reasoning effort requested for `execute()` (ADR-0041 D5a).
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
+        self
+    }
+
     fn phase_model(&self, phase: Phase) -> Option<&str> {
         match phase {
             Phase::Plan => self.plan_model.as_deref(),
             Phase::Execute => self.exec_model.as_deref(),
         }
+    }
+
+    fn phase_effort(&self, phase: Phase) -> Option<&str> {
+        match phase {
+            Phase::Plan => self.plan_effort.as_deref(),
+            Phase::Execute => self.exec_effort.as_deref(),
+        }
+    }
+
+    /// The model catalog, fetched lazily and memoized for the agent's lifetime.
+    ///
+    /// Callers MUST reach this only once they know an effort was requested (guard
+    /// with `phase_effort(..).and_then(..)`), so a default run pays nothing. The
+    /// probe itself is free — zero model calls (#231) — but it is still a
+    /// subprocess. A failed fetch memoizes `None`, which degrades to omitting
+    /// `--effort` rather than failing the run.
+    fn catalog(&self) -> Option<&CopilotCatalog> {
+        self.catalog
+            .get_or_init(|| match catalog::fetch_catalog() {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    tracing::warn!(error = %e, "no Copilot catalog: --effort will be omitted");
+                    None
+                }
+            })
+            .as_ref()
     }
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `KimiAgent::with_max_minutes_per_issue`).
@@ -148,12 +195,22 @@ impl Agent for CopilotAgent {
         let log_path = self.run_dir.join("copilot.log");
         let session_id = mint_session_id();
 
+        // `None` (the default) omits `--model` entirely, which selects the
+        // account's own default — the correct default, not a fallback (D4).
+        let model = self.phase_model(Phase::Plan);
+        // `and_then`, never an unconditional `self.catalog()` binding: the probe
+        // must not be spawned when no effort was requested (D5a).
+        let effort = self
+            .phase_effort(Phase::Plan)
+            .and_then(|e| effort::resolve_effort(Some(e), model, self.catalog()));
+
         let run = || {
-            // `None` (the default) omits `--model` entirely, which selects the
-            // account's own default — the correct default, not a fallback (D4).
-            let model = self.phase_model(Phase::Plan);
-            let cmd = build_copilot_command(&session_id, model, ws.repo_root());
-            ralphy_core::emit::planning("copilot", model.unwrap_or(""), "");
+            let cmd = build_copilot_command(&session_id, model, effort.as_deref(), ws.repo_root());
+            ralphy_core::emit::planning(
+                "copilot",
+                model.unwrap_or(""),
+                effort.as_deref().unwrap_or(""),
+            );
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -215,10 +272,19 @@ impl Agent for CopilotAgent {
         // write-tool activity, NOT repository change (spike §2).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
 
+        let model = self.phase_model(Phase::Execute);
+        let effort = self
+            .phase_effort(Phase::Execute)
+            .and_then(|e| effort::resolve_effort(Some(e), model, self.catalog()));
+
         let run = || {
-            let model = self.phase_model(Phase::Execute);
-            let cmd = build_copilot_command(&session_id, model, ws.repo_root());
-            ralphy_core::emit::executing("copilot", 0, model.unwrap_or(""), "");
+            let cmd = build_copilot_command(&session_id, model, effort.as_deref(), ws.repo_root());
+            ralphy_core::emit::executing(
+                "copilot",
+                0,
+                model.unwrap_or(""),
+                effort.as_deref().unwrap_or(""),
+            );
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_copilot(cmd, PROMPT_EXECUTE, timeout)?;
             Ok((r, ()))
@@ -349,6 +415,7 @@ mod tests {
         let cmd = build_copilot_command(
             "s1",
             agent.phase_model(Phase::Plan),
+            None,
             std::path::Path::new("/repo"),
         );
         let args = argv(&cmd);
@@ -363,6 +430,7 @@ mod tests {
         let cmd = build_copilot_command(
             "s1",
             agent.phase_model(Phase::Execute),
+            None,
             std::path::Path::new("/repo"),
         );
         let args = argv(&cmd);
@@ -377,10 +445,66 @@ mod tests {
             let cmd = build_copilot_command(
                 "s1",
                 agent.phase_model(phase),
+                None,
                 std::path::Path::new("/repo"),
             );
             let args = argv(&cmd);
             assert!(!args.iter().any(|a| a == "--model"), "argv: {args:?}");
+        }
+    }
+
+    fn fixture_catalog() -> CopilotCatalog {
+        parse_catalog(
+            include_str!("../fixtures/capi-models-2026-07-20.log"),
+            "probe-1",
+        )
+        .expect("the fixture parses")
+    }
+
+    /// The end-to-end shape of D5a on the plan phase: an `xhigh` request against a
+    /// model that publishes only `low/medium/high` rides the argv as `high`.
+    #[test]
+    fn plan_phase_clamps_its_effort_in_argv() {
+        let agent = CopilotAgent::new(None, PathBuf::from("/run"))
+            .with_plan_model(Some("gpt-5-mini".into()))
+            .with_plan_effort(Some("xhigh".into()));
+        let cat = fixture_catalog();
+        let model = agent.phase_model(Phase::Plan);
+        let effort = agent
+            .phase_effort(Phase::Plan)
+            .and_then(|e| effort::resolve_effort(Some(e), model, Some(&cat)));
+        let cmd = build_copilot_command(
+            "s1",
+            model,
+            effort.as_deref(),
+            std::path::Path::new("/repo"),
+        );
+        let args = argv(&cmd);
+        let i = args
+            .iter()
+            .position(|a| a == "--effort")
+            .unwrap_or_else(|| panic!("--effort missing: {args:?}"));
+        assert_eq!(args[i + 1], "high");
+    }
+
+    /// The default run: no effort requested, no `--effort` token, and the catalog
+    /// is never consulted (`phase_effort` short-circuits before `and_then`).
+    #[test]
+    fn both_phases_omit_effort_when_unset() {
+        let agent = CopilotAgent::new(None, PathBuf::from("/run"));
+        for phase in [Phase::Plan, Phase::Execute] {
+            let effort = agent
+                .phase_effort(phase)
+                .and_then(|e| effort::resolve_effort(Some(e), None, None));
+            assert_eq!(effort, None);
+            let cmd = build_copilot_command(
+                "s1",
+                agent.phase_model(phase),
+                effort.as_deref(),
+                std::path::Path::new("/repo"),
+            );
+            let args = argv(&cmd);
+            assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");
         }
     }
 

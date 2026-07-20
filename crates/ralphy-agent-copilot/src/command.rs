@@ -42,6 +42,13 @@ pub(crate) fn mint_session_id() -> String {
 /// degraded fallback, and a hardcoded id hard-fails every run on a free plan
 /// (ADR-0041 D4, spike §4a).
 ///
+/// `--effort` follows the same omit-by-default rule (D5), and `effort` is already
+/// CLAMPED when it arrives here: Copilot's effort vocabulary is per-model, so
+/// `crate::effort` maps the operator's request onto the chosen model's published
+/// support list before this function sees it (D5a). A `None` means the operator
+/// asked for nothing, the model takes no effort argument, or no support list was
+/// knowable — in every case the flag is omitted and the model's own default wins.
+///
 /// The repo root is set with `current_dir`, not `-C`: the CLI honours the spawned
 /// process's cwd (spike C1).
 ///
@@ -53,6 +60,7 @@ pub(crate) fn mint_session_id() -> String {
 pub(crate) fn build_copilot_command(
     session_id: &str,
     model: Option<&str>,
+    effort: Option<&str>,
     work_dir: &Path,
 ) -> Command {
     let mut cmd = Command::new(resolve_program("copilot"));
@@ -69,6 +77,9 @@ pub(crate) fn build_copilot_command(
         .arg("--no-ask-user");
     if let Some(m) = model {
         cmd.arg("--model").arg(m);
+    }
+    if let Some(e) = effort {
+        cmd.arg("--effort").arg(e);
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -104,7 +115,7 @@ mod tests {
     #[test]
     fn build_command_argv_and_env() {
         let id = mint_session_id();
-        let cmd = build_copilot_command(&id, None, Path::new("/repo"));
+        let cmd = build_copilot_command(&id, None, None, Path::new("/repo"));
         assert_eq!(stem(&cmd), "copilot");
 
         let args = argv(&cmd);
@@ -152,7 +163,7 @@ mod tests {
 
     #[test]
     fn build_command_passes_model_when_some() {
-        let cmd = build_copilot_command("s1", Some("claude-sonnet-5"), Path::new("/repo"));
+        let cmd = build_copilot_command("s1", Some("claude-sonnet-5"), None, Path::new("/repo"));
         let args = argv(&cmd);
         let i = args
             .iter()
@@ -160,6 +171,21 @@ mod tests {
             .expect("--model missing");
         assert_eq!(args[i + 1], "claude-sonnet-5");
         // The blast-radius flags survive a model override.
+        assert!(args.iter().any(|a| a == "--no-ask-user"), "argv: {args:?}");
+        assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");
+    }
+
+    /// D5: an effort that reached here is already clamped — it rides the argv as
+    /// the pair `--effort <level>`, and the blast-radius flags survive it.
+    #[test]
+    fn build_command_passes_effort_when_some() {
+        let cmd = build_copilot_command("s1", Some("gpt-5-mini"), Some("high"), Path::new("/repo"));
+        let args = argv(&cmd);
+        let i = args
+            .iter()
+            .position(|a| a == "--effort")
+            .expect("--effort missing");
+        assert_eq!(args[i + 1], "high");
         assert!(args.iter().any(|a| a == "--no-ask-user"), "argv: {args:?}");
     }
 
