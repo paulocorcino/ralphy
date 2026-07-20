@@ -41,10 +41,17 @@ mod tests {
 
     #[test]
     fn is_kimi_auth_error_matches_login_required() {
-        // The verbatim 0.28 logged-out message (ADR-0028 D6).
-        let live = "error: failed to run prompt: auth.login_required:\n\
-             OAuth provider \"managed:kimi-code\" requires login before it can be used.";
+        // The verbatim 0.28 logged-out message, captured live on this host with
+        // KIMI_CODE_HOME pointed at a temp dir holding config.toml but no
+        // `credentials` (ADR-0028 D6).
+        let live = "error: failed to run prompt: auth.login_required: OAuth provider \
+             \"managed:kimi-code\" requires login before it can be used.";
         assert!(is_kimi_auth_error(live));
+        // The same signal survives the CLI's line wrap of the same message.
+        assert!(is_kimi_auth_error(
+            "error: failed to run prompt: auth.login_required:\n\
+             OAuth provider \"managed:kimi-code\" requires login before it can be used."
+        ));
         // The pre-0.28 (1.48) signal is NOT the 0.28 one.
         assert!(!is_kimi_auth_error("Error: LLM not set"));
         // A clean run is not an auth error.
