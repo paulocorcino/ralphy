@@ -57,6 +57,17 @@ use usage::{fold_wire_usage, kimi_sessions_dir, resume_hint_session_id};
 /// `assets/prompts/`.
 const PROMPT_PLAN_KIMI: &str = include_str!("../../../assets/prompts/prompt.plan.kimi.md");
 
+/// Write the full execution charter to `<ws>/.ralphy/exec.md` and return its path.
+/// The charter is too large for the argv ceiling, so only
+/// [`ralphy_adapter_support::EXEC_CHARTER`] — a pointer at this file — rides `-p`
+/// (ADR-0028 Amendment (b)). `execute` calls this before every spawn; if it is
+/// ever dropped the child is handed a pointer at a file nobody wrote.
+fn write_exec_charter(ws: &Workspace) -> Result<PathBuf> {
+    let path = ws.ralphy_dir().join("exec.md");
+    fs::write(&path, PROMPT_EXECUTE).context("writing .ralphy/exec.md")?;
+    Ok(path)
+}
+
 /// Drives the `kimi` CLI. `model` is the operator override (else
 /// [`DEFAULT_KIMI_MODEL`]); `run_dir` is where the captured logs live;
 /// `max_minutes_per_issue` is the per-issue wall budget, clamped to `run_deadline`
@@ -205,10 +216,7 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            // The full charter is too large for the argv ceiling, so it goes to disk
-            // and `-p` carries only the pointer at it (ADR-0028 Amendment (b)).
-            fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
-                .context("writing .ralphy/exec.md")?;
+            write_exec_charter(ws)?;
             let cmd = build_kimi_command(
                 &model,
                 ws.repo_root(),
@@ -343,10 +351,15 @@ mod tests {
         let ws = Workspace::new(&base);
         fs::create_dir_all(ws.ralphy_dir()).unwrap();
 
-        let exec_md = ws.ralphy_dir().join("exec.md");
-        fs::write(&exec_md, PROMPT_EXECUTE).unwrap();
+        // Drive the PRODUCTION write, not a hand-rolled copy of it: deleting the
+        // call in `execute` must red this test, not leave it tautologically green.
+        let exec_md = write_exec_charter(&ws).unwrap();
+        assert_eq!(exec_md, ws.ralphy_dir().join("exec.md"));
         assert_eq!(fs::read_to_string(&exec_md).unwrap(), PROMPT_EXECUTE);
-        assert!(ralphy_adapter_support::EXEC_CHARTER.len() * 50 < PROMPT_EXECUTE.len());
+        // The pointer stays a pointer (same rule sentinel.rs pins) and the file it
+        // points at carries the real charter.
+        assert!(ralphy_adapter_support::EXEC_CHARTER.len() < 512);
+        assert!(PROMPT_EXECUTE.len() > 512);
 
         let _ = fs::remove_dir_all(&base);
     }

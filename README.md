@@ -153,7 +153,7 @@ Two extra controls:
 |---|---|---|
 | `claude` (default) | Claude Code, live session | Mobile Remote Control, model routing, auto-resume on usage limits |
 | `codex` | `codex exec`, headless | Scales effort on one model; stops and reports on a usage limit |
-| `kimi` | `kimi --print`, headless | Fixed model (`kimi-code/kimi-for-coding`); stops and reports on a usage limit |
+| `kimi` | `kimi -p`, headless | Fixed model (`kimi-code/k3`); stops and reports on a usage limit |
 | `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant`; stops and reports on a usage limit |
 
 All four run on a **subscription, not a metered API key** — Ralphy makes sure your
@@ -179,7 +179,7 @@ forces both phases to stop).
 
 ```powershell
 ralphy run --agent codex                   # use Codex instead of Claude
-ralphy run --agent kimi                     # use Kimi (kimi --print, headless)
+ralphy run --agent kimi                     # use Kimi (kimi -p, headless)
 ralphy run --agent opencode                # use OpenCode
 ralphy run --agent opencode --plan-agent claude  # Claude plans, OpenCode executes
 ralphy run --base-branch feature/x         # cut the run branch from another base

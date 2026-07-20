@@ -56,11 +56,23 @@ fn parse_kimi_wire_usage(jsonl: &str, model: Option<String>) -> Usage {
 /// (ADR-0028 D7). Mirrors `ralphy-daemon`'s `kimi_code_dir_path` precedence.
 /// `None` when no home is known.
 pub(crate) fn kimi_sessions_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_KIMI_CODE_DIR") {
+    kimi_sessions_dir_from(
+        std::env::var_os("RALPHY_KIMI_CODE_DIR"),
+        std::env::var_os("KIMI_CODE_HOME"),
+    )
+}
+
+/// [`kimi_sessions_dir`] with both env reads lifted to parameters, so every branch
+/// of the precedence is assertable without mutating process-global state.
+fn kimi_sessions_dir_from(
+    ralphy_override: Option<std::ffi::OsString>,
+    kimi_code_home: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    if let Some(dir) = ralphy_override {
         return Some(PathBuf::from(dir).join("sessions"));
     }
     ralphy_adapter_support::home_scoped_path(
-        std::env::var_os("KIMI_CODE_HOME"),
+        kimi_code_home,
         Path::new(".kimi-code"),
         Path::new("sessions"),
     )
@@ -104,25 +116,22 @@ mod tests {
 
     #[test]
     fn parse_kimi_wire_usage_counts_turn_records_only() {
-        // Two per-step `turn` records (summed), plus the two shapes that must be
-        // skipped: a `session`-scoped rollup and the `context.append_loop_event`
-        // line that repeats the first step's numbers under `event.usage`. Counting
-        // either would give 7033/202 instead of 3622/111.
-        let jsonl = concat!(
+        // Two per-step `turn` records (summed → 3622/111/15/3), plus the three shapes
+        // that must be skipped, each with numbers DISTINCT from the sum so no wrong
+        // rule can land on the right answer by coincidence:
+        // - a `session`-scoped rollup (a keep-last/scope-blind parser → 9999),
+        // - a `context.append_loop_event` repeating step one under `event.usage`
+        //   (double-counting it → 7033/202),
+        // - a non-`usage.record` line that IS scoped `turn` (dropping the `type`
+        //   guard → 3622 + 8888).
+        let lines = [
             r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":3411,"output":91,"inputCacheRead":10,"inputCacheCreation":1},"usageScope":"turn"}"#,
-            "
-",
             r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":211,"output":20,"inputCacheRead":5,"inputCacheCreation":2},"usageScope":"turn"}"#,
-            "
-",
-            r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":3622,"output":111,"inputCacheRead":15,"inputCacheCreation":3},"usageScope":"session"}"#,
-            "
-",
+            r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":9999,"output":9999,"inputCacheRead":9999,"inputCacheCreation":9999},"usageScope":"session"}"#,
             r#"{"type":"context.append_loop_event","event":{"usage":{"inputOther":3411,"output":91}}}"#,
-            "
-",
-        );
-        let usage = parse_kimi_wire_usage(jsonl, Some("kimi-code/k3".into()));
+            r#"{"type":"turn.summary","usage":{"inputOther":8888,"output":8888},"usageScope":"turn"}"#,
+        ];
+        let usage = parse_kimi_wire_usage(&lines.join("\n"), Some("kimi-code/k3".into()));
         assert_eq!(usage.input, 3622, "summed inputOther across the two turns");
         assert_eq!(usage.output, 111);
         assert_eq!(usage.cache_read, 15);
@@ -132,17 +141,13 @@ mod tests {
 
     #[test]
     fn resume_hint_session_id_reads_the_meta_line() {
-        let stdout = concat!(
+        let stdout = [
             r#"{"role":"meta","type":"session.start"}"#,
-            "
-",
-            "not json
-",
+            "not json",
             r#"{"role":"meta","type":"session.resume_hint","session_id":"sess-42"}"#,
-            "
-",
-        );
-        assert_eq!(resume_hint_session_id(stdout).as_deref(), Some("sess-42"));
+        ]
+        .join("\n");
+        assert_eq!(resume_hint_session_id(&stdout).as_deref(), Some("sess-42"));
         // A wire PATH is not a session id — the positional read is gone.
         assert_eq!(
             resume_hint_session_id(r#"{"path":"/k/session_x/agents/main/wire.jsonl"}"#),
@@ -151,23 +156,36 @@ mod tests {
         assert_eq!(resume_hint_session_id(""), None);
     }
 
+    /// All three branches of the 0.28 store precedence, including the `.kimi`
+    /// → `.kimi-code` rename — a typo in the default would silently fold zero
+    /// usage on every run.
     #[test]
-    fn kimi_sessions_dir_honours_ralphy_env_override() {
-        let dir = std::env::temp_dir().join(format!("ralphy-kimi-code-{}", std::process::id()));
-        std::env::set_var("RALPHY_KIMI_CODE_DIR", &dir);
-        let got = kimi_sessions_dir().expect("override always resolves");
-        std::env::remove_var("RALPHY_KIMI_CODE_DIR");
-        assert_eq!(got, dir.join("sessions"));
+    fn kimi_sessions_dir_precedence_covers_all_three_branches() {
+        use std::ffi::OsString;
+
+        let over = OsString::from("/tmp/override");
+        let home = OsString::from("/tmp/kimihome");
+        // 1. RALPHY_KIMI_CODE_DIR wins outright.
+        assert_eq!(
+            kimi_sessions_dir_from(Some(over.clone()), Some(home.clone())),
+            Some(PathBuf::from("/tmp/override").join("sessions"))
+        );
+        // 2. Else KIMI_CODE_HOME, still WITHOUT the `.kimi-code` segment.
+        assert_eq!(
+            kimi_sessions_dir_from(None, Some(home)),
+            Some(PathBuf::from("/tmp/kimihome").join("sessions"))
+        );
+        // 3. Else <home>/.kimi-code/sessions — the 0.28 base dir, not `.kimi`.
+        let fallback = kimi_sessions_dir_from(None, None).expect("this host has a home dir");
+        assert!(
+            fallback.ends_with(Path::new(".kimi-code").join("sessions")),
+            "{fallback:?}"
+        );
     }
 
     #[test]
     fn parse_kimi_wire_usage_empty_keeps_model() {
-        let usage = parse_kimi_wire_usage(
-            "not json
-{}
-",
-            Some("kimi-code/k3".into()),
-        );
+        let usage = parse_kimi_wire_usage("not json\n{}\n", Some("kimi-code/k3".into()));
         assert_eq!(usage.total(), 0);
         assert_eq!(usage.model.as_deref(), Some("kimi-code/k3"));
     }

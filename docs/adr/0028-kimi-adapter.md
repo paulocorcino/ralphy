@@ -29,9 +29,8 @@ that spike and [0028-kimi-validation.md](./0028-kimi-validation.md) are now
 
 The contract below is **`kimi-code` 0.28** — a different, native-binary CLI —
 validated live on **both** Windows and WSL Ubuntu 22.04 in #239 (byte-identical
-across targets except the argv ceiling, see the Amendment). This slice is
-docs-only; the adapter code still targets 1.48 until the follow-up code issue
-lands.
+across targets except the argv ceiling, see the Amendment). The adapter code
+was brought onto this contract in #241.
 
 Status: **accepted** — implemented (#151–#154) and validated end-to-end against a
 real repo (#155). **Amended 2026-07-20 (#240)** — see the Amendment section for
@@ -187,10 +186,13 @@ keyed on — **that guard is dead against 0.28** and needs rewriting to key on
 `kimi login` and retry" stop, taking precedence over generic classification
 because it won't self-heal — the same precedence the other adapters' auth
 detectors use (ADR-0013). Detection stays **behavioral** rather than inspecting
-the credentials file, which is simpler and matches the other adapters. Today,
-with the guard unported, a logged-out run instead falls through as a generic
-`kimi produced no plan` / `Stuck` — no infinite plan-retry has been observed,
-but the guard's actionable message is lost until the code lands. Historical
+the credentials file, which is simpler and matches the other adapters. The guard
+landed on this signal in #241; before that a logged-out run fell through as a
+generic `kimi produced no plan` / `Stuck`, losing the actionable message.
+One boundary observed while porting it: a `KIMI_CODE_HOME` with **no**
+`config.toml` at all answers `No model configured…` instead, which the detector
+deliberately does not claim — that is "never configured", not "logged out".
+Historical
 caveat, no longer applicable: `LLM not set` meant "no model resolved"; 0.28's
 `auth.login_required` line is unambiguous about the cause.
 
@@ -388,10 +390,11 @@ this: the validated Linux host in #239 has **no `~/.kimi` at all** — it is a
 clean `kimi-code` install that never ran `kimi-cli`, so any host provisioned
 from here on simply will not have the legacy store to fall back to.
 
-**(d) Ordering.** This document lands before the adapter code change. Until
-that follow-up issue lands, `ralphy-agent-kimi` still emits the 1.48 invocation
-(`--work-dir`, `--print`, `-y`) and fails on `kimi-code` 0.28's first flag
-(`error: unknown option '--work-dir'`) — the adapter is **currently broken**
-against the CLI version operators actually have installed. This amendment
-exists so the fix, when it lands, is implemented against a true contract
-rather than rediscovering #239's findings from scratch.
+**(d) Ordering.** This document landed before the adapter code change. While
+it was outstanding, `ralphy-agent-kimi` emitted the 1.48 invocation and failed
+on `kimi-code` 0.28's first flag (`error: unknown option '--work-dir'`) — the
+adapter was broken against the CLI version operators actually had installed.
+**#241 closed that gap**: the argv, the auth signal, the `usage.record` token
+capture, the `session.resume_hint` session id and the `ralphy init` login probe
+all now target 0.28. This amendment exists so that fix was implemented against
+a true contract rather than rediscovering #239's findings from scratch.
