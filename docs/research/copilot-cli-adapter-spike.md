@@ -422,18 +422,33 @@ be omitted when unset, never defaulted, or the adapter sends a value the
 provider rejects.** A hardcoded `--effort medium` — the Codex D-shape — would
 break `--model kimi-k2.7-code` on 100 % of runs.
 
-#### An *unsupported level* on a *supporting* model is silently coerced
+#### An out-of-range level is silently dropped to the model default — it is NOT clamped
 
 The binary "does this model do effort at all" is the only thing validated. The
-level itself is not:
+level itself is not, and the fallback is **not** the nearest supported level —
+it is the model's own default, in *both* directions. Probe P6, three runs
+against `gpt-5-mini` (supports exactly `low, medium, high`):
 
-```
-$ copilot -p "…" --model claude-sonnet-5 --effort minimal   # 'minimal' is NOT in sonnet-5's list
-exit = 0
-assistant_usage_events.reasoning_effort = "medium"          # coerced, no warning
-```
+| requested | recorded in `assistant_usage_events.reasoning_effort` |
+|---|---|
+| `xhigh` — above the ceiling | **`medium`** |
+| `minimal` — below the floor | **`medium`** |
+| `high` — in range | `high` |
 
-So the adapter cannot trust that the effort it asked for is the effort it got —
+Corroborated on a second model: `--effort minimal` on `claude-sonnet-5`
+(supports `low, medium, high, xhigh, max`) also recorded `medium`.
+
+**Asking for `xhigh` on a model that stops at `high` therefore yields *less*
+effort than asking for `high`.** The request is inverted, exit is 0, and nothing
+in the stream says so. This is the strongest argument for normalising effort in
+the adapter rather than passing the operator's string through: the vendor's own
+fallback is intent-destroying.
+
+Ordering, per `--help`: `none < minimal < low < medium < high < xhigh < max`.
+Note `low`, `medium` and `high` are supported by **every** model that supports
+effort at all, so a clamp that never exceeds the request always lands.
+
+The adapter also cannot trust that the effort it asked for is the effort it got.
 `assistant_usage_events.reasoning_effort` is the only truth, read post-hoc.
 
 `--context default|long_context` sets the context-window tier for
