@@ -42,6 +42,7 @@ async fn serve_repo() -> (String, String, PathBuf) {
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),

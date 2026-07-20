@@ -57,6 +57,7 @@ async fn dispatched_run_survives_a_client_disconnect_after_the_ack() {
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
