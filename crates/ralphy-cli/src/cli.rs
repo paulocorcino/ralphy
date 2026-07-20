@@ -164,7 +164,9 @@ pub(crate) struct RunArgs {
     #[arg(long = "branch-mode", value_enum)]
     pub(crate) branch_mode: Option<CliBranchMode>,
 
-    /// Planning model (default: opus, or `claude.plan_model` in settings.json).
+    /// Planning model (default: opus, or `claude.plan_model` in settings.json;
+    /// for `--agent copilot` / a Copilot `--plan-agent`, the persisted fallback
+    /// is `copilot.plan_model` instead, and an unset value omits `--model`).
     #[arg(long)]
     pub(crate) plan_model: Option<String>,
 
@@ -173,7 +175,9 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) plan_effort: Option<String>,
 
-    /// Force the execution model for the issue (overrides the plan's judgment).
+    /// Force the execution model for the issue (overrides the plan's judgment;
+    /// for `--agent copilot`, the persisted fallback is `copilot.exec_model`
+    /// instead, and an unset value omits `--model`).
     #[arg(long)]
     pub(crate) exec_model: Option<String>,
 
@@ -334,6 +338,24 @@ impl From<CliBranchMode> for BranchMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// This slice (#232) wires Copilot's per-phase models through the EXISTING
+    /// `--plan-model`/`--exec-model` flags and `copilot.*` settings — no new
+    /// `run` flag. Pins the flag count captured on HEAD before the change.
+    #[test]
+    fn no_new_run_flags_for_copilot_model() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        let run = cli
+            .get_subcommands()
+            .find(|s| s.get_name() == "run")
+            .expect("the `run` subcommand must be registered");
+        let n = run
+            .get_arguments()
+            .filter(|a| a.get_long().is_some())
+            .count();
+        assert_eq!(n, 29, "this slice must introduce no new run flag");
+    }
 
     #[test]
     fn init_subcommand_is_registered() {

@@ -244,6 +244,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             Default::default()
         });
     let persisted_opencode_model = opencode_settings.model.clone();
+    let copilot_settings: ralphy_agent_copilot::CopilotSettings = settings
+        .agent_settings(ralphy_agent_copilot::CopilotSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed copilot settings section — its persisted defaults ignored");
+            Default::default()
+        });
     let base_branch = config::resolve_str(
         args.base_branch.clone(),
         settings.base_branch.clone(),
@@ -368,6 +374,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             settings.remote_control,
         ),
     };
+    let resolved_copilot = wiring::resolve_copilot(
+        args.plan_model.clone(),
+        args.exec_model.clone(),
+        &copilot_settings,
+    );
     // The idle watchdog knob stays an `Option` through the composition root: an
     // absent value is not "off", it is "let each execution path use the default
     // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
@@ -379,6 +390,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         run_deadline,
         persisted_opencode_model.clone(),
         &resolved_claude,
+        &resolved_copilot,
         idle_minutes,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
@@ -392,6 +404,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 run_deadline,
                 persisted_opencode_model,
                 &resolved_claude,
+                &resolved_copilot,
                 idle_minutes,
             ),
             executor,

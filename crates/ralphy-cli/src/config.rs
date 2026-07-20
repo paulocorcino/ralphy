@@ -2,17 +2,20 @@
 //!
 //! Manages per-repo `.ralphy/settings.json`. Supported keys: `opencode.model`
 //! (OpenCode execution-model default, #47), the agent-agnostic `base_branch` and
-//! `branch_mode`, and the Claude-only run defaults under `claude.*`
+//! `branch_mode`, the Claude-only run defaults under `claude.*`
 //! (`plan_model`, `plan_effort`, `default_exec_model`, `exec_effort`,
-//! `max_minutes_per_issue`). The model/effort/budget knobs are Claude-only
-//! today — a Codex equivalent is deferred. Each resolves with the same
-//! precedence: per-run flag > `settings.json` > hardcoded default.
+//! `max_minutes_per_issue`), and the Copilot per-phase model overrides under
+//! `copilot.*` (`plan_model`, `exec_model`, #232). The model/effort/budget
+//! knobs are Claude-only today — a Codex equivalent is deferred. Each resolves
+//! with the same precedence: per-run flag > `settings.json` > hardcoded default
+//! (Copilot's default is `None`, omitting `--model`).
 
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
 use clap::{Args, Subcommand};
 use ralphy_agent_claude::ClaudeSettings;
+use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
@@ -95,6 +98,8 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.default_exec_model",
     "claude.exec_effort",
     "claude.max_minutes_per_issue",
+    "copilot.plan_model",
+    "copilot.exec_model",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -107,7 +112,8 @@ verify.command is the per-repo fallback verify gate, ADR-0011; \
 verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
-(Codex deferred; OpenCode's model lives under opencode.model, #47))";
+(Codex deferred; OpenCode's model lives under opencode.model, #47); \
+Copilot's per-phase models live under copilot.plan_model / copilot.exec_model, #232)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -141,6 +147,13 @@ fn with_opencode(s: &mut Settings, f: impl FnOnce(&mut OpenCodeSettings)) -> Res
     let mut o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     f(&mut o);
     s.set_agent_settings(OpenCodeSettings::SECTION, &o)
+}
+
+/// Load-mutate-store the Copilot section; same contract as [`with_claude`].
+fn with_copilot(s: &mut Settings, f: impl FnOnce(&mut CopilotSettings)) -> Result<()> {
+    let mut c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
+    f(&mut c);
+    s.set_agent_settings(CopilotSettings::SECTION, &c)
 }
 
 pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
@@ -204,6 +217,8 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             })?;
             with_claude(&mut s, |c| c.max_minutes_per_issue = Some(n))?;
         }
+        "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
+        "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = Some(value.to_owned()))?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -238,6 +253,8 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.default_exec_model" => with_claude(&mut s, |c| c.default_exec_model = None)?,
         "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = None)?,
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
+        "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
+        "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -253,6 +270,7 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     let s = Settings::load(ws)?;
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
@@ -274,6 +292,8 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         Some(n) => println!("claude.max_minutes_per_issue = {n}"),
         None => println!("claude.max_minutes_per_issue: not set"),
     }
+    print_str("copilot.plan_model", copilot.plan_model);
+    print_str("copilot.exec_model", copilot.exec_model);
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -298,6 +318,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
     let s = Settings::load(ws)?;
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
     let slug = git::project_slug(ws.repo_root());
     let events = crate::events::config::EventsStore::load().unwrap_or_default();
     let entry = events.entry(&slug);
@@ -319,6 +340,8 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "claude.default_exec_model": claude.default_exec_model,
         "claude.exec_effort": claude.exec_effort,
         "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
+        "copilot.plan_model": copilot.plan_model,
+        "copilot.exec_model": copilot.exec_model,
     }))
 }
 
@@ -331,6 +354,14 @@ fn print_str(key: &str, value: Option<String>) {
     }
 }
 
+/// Resolve a vendor-neutral optional model knob (ADR-0010). Precedence: `flag`,
+/// then the persisted `settings.json` value, then `None` (the adapter resolves
+/// its own default). Empty strings on either source are treated as unset.
+pub fn resolve_optional_model(flag: Option<String>, persisted: Option<String>) -> Option<String> {
+    flag.filter(|s| !s.is_empty())
+        .or_else(|| persisted.filter(|s| !s.is_empty()))
+}
+
 /// Resolve the OpenCode execution model from the per-run flag and the
 /// persisted setting (ADR-0010). Precedence: `exec_model` flag > persisted
 /// `opencode.model` > `None` (OpenCode resolves its own default). Empty
@@ -339,9 +370,7 @@ pub fn resolve_opencode_model(
     exec_model: Option<String>,
     persisted: Option<String>,
 ) -> Option<String> {
-    exec_model
-        .filter(|s| !s.is_empty())
-        .or_else(|| persisted.filter(|s| !s.is_empty()))
+    resolve_optional_model(exec_model, persisted)
 }
 
 /// Resolve a string-valued run knob (ADR-0010). Precedence: per-run `flag` >
@@ -456,6 +485,32 @@ mod tests {
             resolve_opencode_model(Some("".into()), Some("k2p7".into())),
             Some("k2p7".into())
         );
+    }
+
+    #[test]
+    fn copilot_config_round_trip() {
+        let (ws, dir) = tmp_ws("copilot-config-round-trip");
+
+        set(&ws, "copilot.plan_model", "gpt-5").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_model.as_deref(), Some("gpt-5"));
+        assert_eq!(c.exec_model, None);
+
+        set(&ws, "copilot.exec_model", "claude-sonnet-5").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_model.as_deref(), Some("gpt-5"));
+        assert_eq!(c.exec_model.as_deref(), Some("claude-sonnet-5"));
+
+        unset(&ws, "copilot.plan_model").unwrap();
+        unset(&ws, "copilot.exec_model").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_model, None);
+        assert_eq!(c.exec_model, None);
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     // --- resolve_str / resolve_u64 precedence ---

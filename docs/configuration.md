@@ -111,6 +111,22 @@ so OpenCode picks its own. The model that **actually** ran is read back into the
 usage ledger, so the ledger is always truthful even when you let OpenCode decide.
 OpenCode effort is set per-run with `--exec-variant` (not persisted).
 
+## Copilot run defaults (`copilot.*`)
+
+| Key | Flag | Values | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `copilot.plan_model` | `--plan-model` | any model id Copilot offers | none | The persisted planning-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
+| `copilot.exec_model` | `--exec-model` | any model id Copilot offers | none | The persisted execution-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
+
+```powershell
+ralphy config set copilot.exec_model gpt-5
+```
+
+Resolution per phase: `--plan-model`/`--exec-model` (per-run) > `copilot.plan_model`/
+`copilot.exec_model` (persisted) > omit `--model` — an omitted `--model` runs the
+account's own current selection, the correct default rather than a degraded
+fallback (ADR-0041 D4).
+
 ## Events sink keys (`events.*`)
 
 Stored in the **global** `~/.ralphy/events.toml`, not `settings.json`. See

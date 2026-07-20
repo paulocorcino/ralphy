@@ -32,6 +32,30 @@ pub(crate) struct ResolvedClaude {
     pub(crate) remote_control: bool,
 }
 
+/// The two Copilot per-phase model overrides resolved once (flag, then
+/// settings.json, then `None`, ADR-0010/ADR-0041 D4) so the executor and an
+/// optional split planner share one value. `None` on either field omits
+/// `--model` for that phase.
+pub(crate) struct ResolvedCopilot {
+    pub(crate) plan_model: Option<String>,
+    pub(crate) exec_model: Option<String>,
+}
+
+/// Resolve the two Copilot per-phase model overrides (ADR-0041 D4). Each phase
+/// resolves independently through [`config::resolve_optional_model`]: the
+/// phase's own flag, then the persisted `copilot.plan_model`/`copilot.exec_model`,
+/// then `None` (omit `--model`, the account's own default).
+pub(crate) fn resolve_copilot(
+    plan_flag: Option<String>,
+    exec_flag: Option<String>,
+    persisted: &ralphy_agent_copilot::CopilotSettings,
+) -> ResolvedCopilot {
+    ResolvedCopilot {
+        plan_model: config::resolve_optional_model(plan_flag, persisted.plan_model.clone()),
+        exec_model: config::resolve_optional_model(exec_flag, persisted.exec_model.clone()),
+    }
+}
+
 /// Build the run's issue queue and the explicitly-named ("forced") issue set. Two
 /// paths:
 ///   `--issues`: an explicit, ordered selection — fetch each number directly
@@ -105,6 +129,7 @@ pub(crate) fn build_run_queue(
 /// the executor and (only in a split run) once for the planner — so `--plan-agent`
 /// can wire two adapters without duplicating the match. The `String`/`Option`
 /// config values are cloned per call so the same `RunArgs` can back both builds.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_agent(
     which: CliAgent,
     args: &RunArgs,
@@ -112,6 +137,7 @@ pub(crate) fn build_agent(
     run_deadline: Option<std::time::Instant>,
     persisted_opencode_model: Option<String>,
     claude: &ResolvedClaude,
+    copilot: &ResolvedCopilot,
     idle_minutes: Option<u64>,
 ) -> Box<dyn Agent> {
     // The headless adapters drive one child shape, so they resolve the idle
@@ -147,13 +173,11 @@ pub(crate) fn build_agent(
             .with_idle_minutes(headless_idle),
         ),
         CliAgent::Copilot => Box::new(
-            CopilotAgent::new(
-                non_empty(args.exec_model.clone().unwrap_or_default()),
-                run_dir,
-            )
-            .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
-            .with_idle_minutes(headless_idle),
+            CopilotAgent::new(copilot.exec_model.clone(), run_dir)
+                .with_plan_model(copilot.plan_model.clone())
+                .with_run_deadline(run_deadline)
+                .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+                .with_idle_minutes(headless_idle),
         ),
         CliAgent::Kimi => Box::new(
             KimiAgent::new(
@@ -399,5 +423,47 @@ mod tests {
     fn check_agents_present_ok_when_all_present() {
         let result = check_agents_present(CliAgent::Claude, CliAgent::Codex, |_| true);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn resolve_copilot_flag_wins() {
+        let persisted = ralphy_agent_copilot::CopilotSettings {
+            plan_model: Some("persisted".into()),
+            ..Default::default()
+        };
+        let resolved = resolve_copilot(Some("flag".into()), None, &persisted);
+        assert_eq!(resolved.plan_model, Some("flag".into()));
+    }
+
+    #[test]
+    fn resolve_copilot_uses_persisted_when_flag_absent() {
+        let persisted = ralphy_agent_copilot::CopilotSettings {
+            plan_model: Some("persisted".into()),
+            ..Default::default()
+        };
+        let resolved = resolve_copilot(None, None, &persisted);
+        assert_eq!(resolved.plan_model, Some("persisted".into()));
+    }
+
+    #[test]
+    fn resolve_copilot_none_when_both_unset() {
+        let resolved = resolve_copilot(
+            None,
+            None,
+            &ralphy_agent_copilot::CopilotSettings::default(),
+        );
+        assert_eq!(resolved.plan_model, None);
+        assert_eq!(resolved.exec_model, None);
+    }
+
+    #[test]
+    fn resolve_copilot_maps_flags_per_phase() {
+        let resolved = resolve_copilot(
+            Some("p".into()),
+            Some("e".into()),
+            &ralphy_agent_copilot::CopilotSettings::default(),
+        );
+        assert_eq!(resolved.plan_model, Some("p".into()));
+        assert_eq!(resolved.exec_model, Some("e".into()));
     }
 }
