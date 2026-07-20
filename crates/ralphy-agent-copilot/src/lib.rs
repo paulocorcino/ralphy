@@ -581,6 +581,42 @@ mod tests {
         );
     }
 
+    /// The D9 seam itself, not just its source-text pin: replacing
+    /// `check_skills_loaded`'s body with `Ok(())` must RED something. Mirrors the
+    /// D7 seam test above — a pin alone counts substrings and cannot see a gutted
+    /// body. Also proves D9 carries NO escape hatch: the D7 hatch must not
+    /// suppress a missing skill.
+    #[test]
+    fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
+        let required = vec!["reviewer".to_string(), "staged-plan".to_string()];
+        let missing = concat!(
+            r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]},"ephemeral":true}"#,
+            "\n"
+        );
+        let agent = CopilotAgent::new(None, PathBuf::from("/run"));
+        let err = agent
+            .check_skills_loaded(missing, &required, true)
+            .expect_err("a missing ralphy skill must fail the run");
+        assert!(err.to_string().contains("staged-plan"), "{err}");
+
+        // The D7 hatch is scoped to D7: it must NOT suppress the capability guard.
+        let permissive =
+            CopilotAgent::new(None, PathBuf::from("/run")).with_allow_builtin_mcps(true);
+        assert!(
+            permissive
+                .check_skills_loaded(missing, &required, true)
+                .is_err(),
+            "D9 has no escape hatch; the D7 hatch must not suppress it"
+        );
+
+        // A receipt listing both passes through the seam.
+        let complete = concat!(
+            r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"},{"name":"staged-plan"}]},"ephemeral":true}"#,
+            "\n"
+        );
+        assert!(agent.check_skills_loaded(complete, &required, true).is_ok());
+    }
+
     /// Same reasoning as D7's pin, for D9: no test here constructs a `Workspace`,
     /// so deleting either call site would leave the suite green and ADR-0041 D9 a
     /// silent no-op. Pins both the materialization and the receipt assertion.

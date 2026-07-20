@@ -314,11 +314,18 @@ is exactly Codex's situation, and Codex already solved it: materialize into
 per-entry lines into `.agents/skills/.gitignore` so user-owned sibling skills
 survive and the tree stays clean for the next run's clean-tree check.
 
-The adapter does **not** re-implement this. `link_or_copy_dir` and
-`ensure_gitignore_entries` are currently private to `ralphy-agent-codex`; they
-are lifted into `ralphy-adapter-support` and both adapters call the shared
+The adapter does **not** re-implement the PRIMITIVES. `link_or_copy_dir`,
+`remove_path` and `ensure_gitignore_entries` were private to `ralphy-agent-codex`;
+they are lifted into `ralphy-adapter-support` and both adapters call the shared
 version. Two vendors needing the identical dance is the threshold for promoting
 it out of a vendor crate.
+
+The per-skill exposure **loop** deliberately stays in each adapter (#235): it is
+~25 lines, and Copilot's diverges — it returns the exposed names so the load
+receipt below has a required set, which Codex has no use for. That leaves the two
+loops near-identical today, which is a known and accepted duplication: promote it
+to a shared `expose_skills()` when a THIRD vendor needs it, or sooner if the two
+start drifting in behaviour rather than in return type.
 
 Rejected: materializing directly into `.agents/skills` — `materialize_assets`
 does a clear-and-replace `remove_dir_all(dest_dir)` and writes a blanket `*`

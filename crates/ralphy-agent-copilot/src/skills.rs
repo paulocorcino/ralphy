@@ -260,6 +260,13 @@ mod tests {
         materialize_copilot_skills(&ws).expect("materialize");
 
         let out = git(&["status", "--porcelain"], &base).expect("git status");
+        // Without this the oracle passes VACUOUSLY: a failed `git status` also
+        // yields empty stdout, which would satisfy the assertion below.
+        assert!(
+            out.status.success(),
+            "git status failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let porcelain = String::from_utf8(out.stdout).unwrap();
         assert_eq!(
             porcelain, "",
@@ -267,6 +274,75 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    /// The load-bearing invariant behind the whole D9 guard: `required` is built
+    /// from embedded DIRECTORY names, but Copilot reports each skill by its
+    /// SKILL.md frontmatter `name`. They agree today; nothing in the type system
+    /// binds them, so a fourth skill whose frontmatter name differs from its
+    /// directory would fail EVERY real run while the suite stayed green. This is
+    /// that check, in the gate, where it reds when reality diverges.
+    #[test]
+    fn every_embedded_skill_directory_matches_its_frontmatter_name() {
+        let mut checked = 0usize;
+        for skill in SKILLS.dirs() {
+            let dir_name = skill
+                .path()
+                .file_name()
+                .expect("embedded skill directory has no name")
+                .to_string_lossy()
+                .into_owned();
+            let md = SKILLS
+                .get_file(format!("{dir_name}/SKILL.md"))
+                .unwrap_or_else(|| panic!("{dir_name} has no SKILL.md"))
+                .contents_utf8()
+                .unwrap_or_else(|| panic!("{dir_name}/SKILL.md is not valid UTF-8"));
+            // Frontmatter only: stop at the closing delimiter so a `name:` in the
+            // body cannot satisfy this.
+            let front = md
+                .lines()
+                .skip(1)
+                .take_while(|l| *l != "---")
+                .find_map(|l| l.strip_prefix("name:"))
+                .unwrap_or_else(|| panic!("{dir_name}/SKILL.md frontmatter has no `name:`"))
+                .trim()
+                .to_string();
+            assert_eq!(
+                front, dir_name,
+                "skill directory `{dir_name}` declares frontmatter name `{front}`; the D9 \
+                 required set uses directory names, so this would fail every real run"
+            );
+            checked += 1;
+        }
+        assert!(checked >= 3, "expected >= 3 skills, checked {checked}");
+    }
+
+    /// A required name must match a loaded name EXACTLY. Without this, rewriting
+    /// the check as a substring scan passes every other test while
+    /// `staged-plan-legacy` silently satisfies the `staged-plan` requirement.
+    #[test]
+    fn a_similarly_named_skill_does_not_satisfy_the_requirement() {
+        let stream =
+            r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"staged-plan-legacy"}]}}"#;
+        let req = vec!["staged-plan".to_string()];
+        let msg = skills_load_violation(stream, &req, true)
+            .expect("a near-miss name must not satisfy the requirement");
+        assert!(msg.contains("staged-plan"), "{msg}");
+    }
+
+    /// `require_receipt` gates ONLY the absent-receipt case. A receipt that IS
+    /// present and is missing a required skill fails even for a run that died
+    /// early — otherwise an implementation that early-returns `None` whenever
+    /// `require_receipt` is false would pass the whole suite.
+    #[test]
+    fn a_present_receipt_missing_a_skill_fails_even_on_a_run_that_died_early() {
+        let stream = r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]}}"#;
+        let msg = skills_load_violation(stream, &required(), false)
+            .expect("a present receipt missing a skill is always a violation");
+        assert!(
+            msg.contains("setup-pocock") || msg.contains("staged-plan"),
+            "{msg}"
+        );
     }
 
     #[test]
