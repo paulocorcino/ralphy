@@ -213,25 +213,18 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         Agent::Copilot => return copilot_logged_in(ralphy_agent_copilot::fetch_catalog()),
 
         Agent::Kimi => {
-            // `hello` is passed as the VALUE of `-p`, never a positional word:
-            // Typer parses a bare positional as a subcommand (`No such command`,
-            // exit 2) → an always-false login probe. Logged-out → exit 1
-            // (`LLM not set`), logged-in → exit 0.
+            // The kimi-code 0.28 headless contract (ADR-0028 D5), same argv shape the
+            // adapter builds: `hello` is the VALUE of `-p`, never a positional word.
+            // Logged-out → non-zero exit with an `auth.login_required` line;
+            // logged-in → exit 0. The env is inherited untouched.
             cmd.args([
-                "--print",
+                "-p",
+                hello,
                 "--output-format",
                 "stream-json",
                 "-m",
-                "kimi-code/kimi-for-coding",
-                "-p",
-                hello,
+                "kimi-code/k3",
             ]);
-            // Mirror the adapter's mandatory encoding contract (command.rs): strip
-            // PYTHONIOENCODING (an inherited value flips Kimi into the Textual TUI,
-            // falsely failing a logged-in operator's probe) and set PYTHONUTF8=1 (so
-            // a non-cp1252 char in Kimi's reply can't crash the probe on Windows).
-            cmd.env_remove("PYTHONIOENCODING");
-            cmd.env("PYTHONUTF8", "1");
         }
 
         Agent::Opencode => {

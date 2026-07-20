@@ -119,6 +119,18 @@ impl PriceTable {
                 cache_creation: 0.95,
             },
         );
+        // `kimi-code/k3` is the id kimi-code 0.28 reports (ADR-0028 D4); the row
+        // above stays for runs recorded before the 0.28 cut. Same indicative
+        // K2-family rates.
+        t.insert(
+            "kimi-code/k3".to_string(),
+            ModelPrice {
+                input: 0.95,
+                output: 4.0,
+                cache_read: 0.16,
+                cache_creation: 0.95,
+            },
+        );
         // Copilot's catalog ids (ADR-0041 D10). Copilot bills in AI CREDITS, not
         // tokens; there is no documented nano-AIU→USD rate, so these rows price the
         // rows at the UNDERLYING vendor's list price — ADR-0034's counterfactual
@@ -337,6 +349,10 @@ mod tests {
                 .cost_usd("kimi-code/kimi-for-coding", &tokens)
                 .is_some(),
             "the native Kimi adapter's `kimi-code/kimi-for-coding` must be priced (ADR-0028)"
+        );
+        assert!(
+            table.cost_usd("kimi-code/k3", &tokens).is_some(),
+            "the 0.28 Kimi adapter's `kimi-code/k3` must be priced (ADR-0028 D4)"
         );
     }
 
