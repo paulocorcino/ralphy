@@ -106,6 +106,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "copilot.exec_model",
     "copilot.plan_effort",
     "copilot.exec_effort",
+    "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -119,7 +120,10 @@ verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47); \
-Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233)";
+Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
+copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
+hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
+which can open a PR on its own, #234)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -242,6 +246,16 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
                 *slot = Some(value.to_owned());
             })?
         }
+        // The verbosity IS the safety feature (ADR-0041 D7): the hatch gives
+        // Copilot back a credentialled MCP server that can open a PR on its own.
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_copilot(&mut s, |c| {
+                c.allow_builtin_mcp_servers_i_understand_the_risk = b
+            })?
+        }
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -280,6 +294,9 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,
         "copilot.exec_effort" => with_copilot(&mut s, |c| c.exec_effort = None)?,
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => with_copilot(&mut s, |c| {
+            c.allow_builtin_mcp_servers_i_understand_the_risk = false
+        })?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -321,6 +338,10 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     print_str("copilot.exec_model", copilot.exec_model);
     print_str("copilot.plan_effort", copilot.plan_effort);
     print_str("copilot.exec_effort", copilot.exec_effort);
+    println!(
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk = {}",
+        copilot.allow_builtin_mcp_servers_i_understand_the_risk
+    );
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -371,6 +392,8 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "copilot.exec_model": copilot.exec_model,
         "copilot.plan_effort": copilot.plan_effort,
         "copilot.exec_effort": copilot.exec_effort,
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk":
+            copilot.allow_builtin_mcp_servers_i_understand_the_risk,
     }))
 }
 
@@ -538,6 +561,42 @@ mod tests {
         let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
         assert_eq!(c.plan_model, None);
         assert_eq!(c.exec_model, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// D7's escape hatch (#234): a bool key that only `'true'`/`'false'` set, so a
+    /// hopeful `yes` cannot silently hand Copilot back its credentialled MCP server.
+    #[test]
+    fn copilot_allow_builtin_mcps_round_trip() {
+        const KEY: &str = "copilot.allow_builtin_mcp_servers_i_understand_the_risk";
+        let (ws, dir) = tmp_ws("copilot-allow-builtin-mcps");
+
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(
+            !c.allow_builtin_mcp_servers_i_understand_the_risk,
+            "the hatch is off until the operator sets it"
+        );
+
+        set(&ws, KEY, "true").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(c.allow_builtin_mcp_servers_i_understand_the_risk);
+        assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
+
+        let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
+        assert!(err.to_string().contains("'true' or 'false'"), "{err}");
+        // The refused write left the stored value alone.
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(c.allow_builtin_mcp_servers_i_understand_the_risk);
+
+        unset(&ws, KEY).unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(!c.allow_builtin_mcp_servers_i_understand_the_risk);
+        assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(false));
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -967,6 +1026,7 @@ mod tests {
                 "claude.max_minutes_per_issue" => "45",
                 // Validated against Copilot's effort vocabulary, so `x` is refused.
                 "copilot.plan_effort" | "copilot.exec_effort" => "high",
+                "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
                 _ => "x",
             }
         };

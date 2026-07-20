@@ -45,6 +45,10 @@ pub(crate) struct ResolvedCopilot {
     /// open question, and the adapter clamps whatever arrives here per model.
     pub(crate) plan_effort: Option<String>,
     pub(crate) exec_effort: Option<String>,
+    /// D7's escape hatch (ADR-0041), persisted-only for the same reason as the
+    /// effort axis — and additionally because a per-run flag would make giving
+    /// Copilot back its credentialled MCP server a one-keystroke decision.
+    pub(crate) allow_builtin_mcps: bool,
 }
 
 /// Resolve the two Copilot per-phase model overrides (ADR-0041 D4). Each phase
@@ -61,6 +65,7 @@ pub(crate) fn resolve_copilot(
         exec_model: config::resolve_optional_model(exec_flag, persisted.exec_model.clone()),
         plan_effort: persisted.plan_effort.clone(),
         exec_effort: persisted.exec_effort.clone(),
+        allow_builtin_mcps: persisted.allow_builtin_mcp_servers_i_understand_the_risk,
     }
 }
 
@@ -185,6 +190,7 @@ pub(crate) fn build_agent(
                 .with_plan_model(copilot.plan_model.clone())
                 .with_plan_effort(copilot.plan_effort.clone())
                 .with_exec_effort(copilot.exec_effort.clone())
+                .with_allow_builtin_mcps(copilot.allow_builtin_mcps)
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
@@ -497,5 +503,22 @@ mod tests {
         );
         assert_eq!(bare.plan_effort, None, "a model flag is not an effort");
         assert_eq!(bare.exec_effort, None);
+    }
+
+    /// D7's hatch reaches the agent only from settings.json, and defaults off.
+    #[test]
+    fn resolve_copilot_allow_builtin_mcps_comes_from_settings_only() {
+        let bare = resolve_copilot(
+            Some("p".into()),
+            Some("e".into()),
+            &ralphy_agent_copilot::CopilotSettings::default(),
+        );
+        assert!(!bare.allow_builtin_mcps, "the hatch defaults off");
+
+        let persisted = ralphy_agent_copilot::CopilotSettings {
+            allow_builtin_mcp_servers_i_understand_the_risk: true,
+            ..Default::default()
+        };
+        assert!(resolve_copilot(None, None, &persisted).allow_builtin_mcps);
     }
 }
