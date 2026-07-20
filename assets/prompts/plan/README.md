@@ -1,10 +1,10 @@
 # Plan prompt sources (canonical template + variant overlays)
 
-The four plan prompt artifacts the adapters embed via `include_str!` —
-`../prompt.plan.md` (claude), `../prompt.plan.codex.md` (codex),
-`../prompt.plan.opencode.md` (opencode), and `../prompt.plan.staged.md`
-(staged planning, claude-only today) — are **generated** from the files in
-this directory. Never edit those artifacts directly.
+The plan prompt artifacts the adapters embed via `include_str!` — one per
+vendor variant, plus `../prompt.plan.staged.md` (staged planning, claude-only
+today) — are **generated** from the files in this directory. Never edit those
+artifacts directly. `VARIANTS` in `ralphy-core`'s `prompt_assembly.rs` is the
+authoritative list of (variant, artifact) pairs.
 
 - `template.md` — the canonical shared body. Eight `{{slot}}` placeholder lines
   mark where the variant-specific blocks go:
@@ -26,9 +26,8 @@ this directory. Never edit those artifacts directly.
   - `{{mode-rules}}` — trailing Rules bullets specific to a planning mode
     (staged: authoritative-artifact, stage ordering, and the bundle-rule
     override); empty for the three vendor prompts.
-- `overlay.<variant>.md` — one file per variant (claude, codex, opencode,
-  staged), each slot's verbatim content under a `<!-- slot: name -->` marker
-  line. An empty slot (two adjacent markers) deliberately omits that block.
+- `overlay.<variant>.md` — one file per variant, each slot's verbatim content
+  under a `<!-- slot: name -->` marker line. An empty slot (two adjacent markers) deliberately omits that block.
 
 Staged planning is claude-only today (`ralphy-agent-claude` selects
 `prompt.plan.staged.md` on the `stagedplan` label); its reviewer idiom lives in

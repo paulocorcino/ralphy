@@ -5,6 +5,7 @@ members = [
     "crates/ralphy-cli",
     "crates/ralphy-agent-claude",
     "crates/ralphy-agent-codex",
+    "crates/ralphy-agent-copilot",
     "crates/ralphy-agent-kimi",
     "crates/ralphy-agent-opencode",
     "crates/ralphy-pty",
@@ -36,6 +37,7 @@ directories = "5"
 toml = "0.8"
 rusqlite = { version = "0.31", features = ["bundled"] }
 ulid = "1"
+uuid = { version = "1", features = ["v4"] }
 hostname = "0.4"
 tempfile = "3"
 os_info = { version = "3", default-features = false }
@@ -44,6 +46,7 @@ winresource = "0.1"
 ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-agent-codex = { path = "crates/ralphy-agent-codex" }
+ralphy-agent-copilot = { path = "crates/ralphy-agent-copilot" }
 ralphy-agent-kimi = { path = "crates/ralphy-agent-kimi" }
 ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
