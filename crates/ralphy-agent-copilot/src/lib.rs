@@ -92,6 +92,9 @@ pub struct CopilotAgent {
     /// The free model catalog, fetched at most once and ONLY when a phase actually
     /// requested an effort — a default run must spawn no probe (see [`Self::catalog`]).
     catalog: std::sync::OnceLock<Option<CopilotCatalog>>,
+    /// The D7 escape hatch (`copilot.allow_builtin_mcp_servers_i_understand_the_risk`):
+    /// drops `--disable-builtin-mcps` from the argv AND skips the receipt guard.
+    allow_builtin_mcps: bool,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -104,6 +107,7 @@ impl CopilotAgent {
             exec_effort: None,
             plan_effort: None,
             catalog: std::sync::OnceLock::new(),
+            allow_builtin_mcps: false,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
@@ -127,6 +131,28 @@ impl CopilotAgent {
     pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
         self.exec_effort = effort;
         self
+    }
+
+    /// Hand Copilot's builtin MCP surface back to the operator (ADR-0041 D7's
+    /// escape hatch). `true` both drops `--disable-builtin-mcps` and skips the
+    /// in-band receipt guard — suppressing the check while still passing the flag
+    /// would grant the operator nothing.
+    pub fn with_allow_builtin_mcps(mut self, allow: bool) -> Self {
+        self.allow_builtin_mcps = allow;
+        self
+    }
+
+    /// D7's in-band receipt guard, the single seam both phases call. `Err` aborts
+    /// the run: a connected builtin MCP is a safety-envelope violation, not a work
+    /// outcome. Skipped entirely under the escape hatch.
+    pub(crate) fn check_builtin_mcps(&self, stdout: &str) -> Result<()> {
+        if self.allow_builtin_mcps {
+            return Ok(());
+        }
+        match guards::builtin_mcp_violation(stdout) {
+            Some(msg) => Err(anyhow::anyhow!("{msg}")),
+            None => Ok(()),
+        }
     }
 
     fn phase_model(&self, phase: Phase) -> Option<&str> {
@@ -240,7 +266,13 @@ impl Agent for CopilotAgent {
             .and_then(|e| effort::resolve_effort(Some(e), model, self.catalog()));
 
         let run = || {
-            let cmd = build_copilot_command(&session_id, model, effort.as_deref(), ws.repo_root());
+            let cmd = build_copilot_command(
+                &session_id,
+                model,
+                effort.as_deref(),
+                ws.repo_root(),
+                self.allow_builtin_mcps,
+            );
             ralphy_core::emit::planning(
                 "copilot",
                 model.unwrap_or(""),
@@ -281,6 +313,15 @@ impl Agent for CopilotAgent {
             },
         )?;
 
+        // D7's receipt guard runs AFTER `run_plan_session` returns, never inside
+        // `run`: the closure's error would pre-empt the auth and plan-limit
+        // handlers the wrapper applies to `r.log`, turning a logged-out run into
+        // "MCP receipt missing".
+        if let Some((r, _)) = session.as_ref() {
+            self.check_builtin_mcps(&r.stdout)
+                .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
+        }
+
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         // Only when a `copilot` process actually ran: a RESUMED finalized plan
         // wrote no rows under this session id, so there is nothing to verify.
@@ -318,7 +359,13 @@ impl Agent for CopilotAgent {
             .and_then(|e| effort::resolve_effort(Some(e), model, self.catalog()));
 
         let run = || {
-            let cmd = build_copilot_command(&session_id, model, effort.as_deref(), ws.repo_root());
+            let cmd = build_copilot_command(
+                &session_id,
+                model,
+                effort.as_deref(),
+                ws.repo_root(),
+                self.allow_builtin_mcps,
+            );
             ralphy_core::emit::executing(
                 "copilot",
                 0,
@@ -341,6 +388,11 @@ impl Agent for CopilotAgent {
             run,
             is_copilot_auth_error,
         )?;
+
+        // Same ordering invariant as `plan`: after the session wrapper, so
+        // auth/limit errors keep precedence over the receipt verdict (D7).
+        self.check_builtin_mcps(&r.stdout)
+            .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
@@ -443,6 +495,35 @@ mod tests {
         );
     }
 
+    /// The hatch is the ONLY thing that turns a connected builtin server from a
+    /// run-failing violation into a pass — the same stream, the two agents.
+    #[test]
+    fn escape_hatch_suppresses_the_connected_failure() {
+        let stream = concat!(
+            r#"{"type":"session.mcp_servers_loaded","data":{"servers":[{"name":"github-mcp-server","status":"connected","source":"builtin","transport":"http"}]},"ephemeral":true}"#,
+            "\n"
+        );
+        let strict = CopilotAgent::new(None, PathBuf::from("/run"));
+        let err = strict
+            .check_builtin_mcps(stream)
+            .expect_err("a connected builtin must fail the run by default");
+        assert!(err.to_string().contains("github-mcp-server"), "{err}");
+
+        let permissive =
+            CopilotAgent::new(None, PathBuf::from("/run")).with_allow_builtin_mcps(true);
+        assert!(
+            permissive.check_builtin_mcps(stream).is_ok(),
+            "the operator's explicit hatch must suppress the failure"
+        );
+        // …and the hatch does not blanket-suppress: it is not a "skip all checks"
+        // switch for a stream that never carried a receipt either way.
+        assert!(permissive.check_builtin_mcps("").is_ok());
+        assert!(
+            strict.check_builtin_mcps("").is_err(),
+            "an absent receipt still fails closed by default"
+        );
+    }
+
     fn argv(cmd: &std::process::Command) -> Vec<String> {
         cmd.get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -458,6 +539,7 @@ mod tests {
             agent.phase_model(Phase::Plan),
             None,
             std::path::Path::new("/repo"),
+            false,
         );
         let args = argv(&cmd);
         let i = args.iter().position(|a| a == "--model").unwrap();
@@ -473,6 +555,7 @@ mod tests {
             agent.phase_model(Phase::Execute),
             None,
             std::path::Path::new("/repo"),
+            false,
         );
         let args = argv(&cmd);
         let i = args.iter().position(|a| a == "--model").unwrap();
@@ -488,6 +571,7 @@ mod tests {
                 agent.phase_model(phase),
                 None,
                 std::path::Path::new("/repo"),
+                false,
             );
             let args = argv(&cmd);
             assert!(!args.iter().any(|a| a == "--model"), "argv: {args:?}");
@@ -519,6 +603,7 @@ mod tests {
             model,
             effort.as_deref(),
             std::path::Path::new("/repo"),
+            false,
         );
         let args = argv(&cmd);
         let i = args
@@ -543,6 +628,7 @@ mod tests {
                 agent.phase_model(phase),
                 effort.as_deref(),
                 std::path::Path::new("/repo"),
+                false,
             );
             let args = argv(&cmd);
             assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");

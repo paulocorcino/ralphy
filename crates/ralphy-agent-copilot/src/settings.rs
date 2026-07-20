@@ -24,6 +24,18 @@ pub struct CopilotSettings {
     /// The reasoning effort requested for `execute()`. Same clamp; `None` → omit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec_effort: Option<String>,
+    /// The D7 escape hatch (ADR-0041): `true` drops `--disable-builtin-mcps` from
+    /// the argv AND suppresses the connected-builtin-server failure, handing the
+    /// operator back Copilot's bundled GitHub MCP server — which holds their
+    /// GitHub credential and can open a PR without `git push`. The name is
+    /// deliberately verbose: length is the safety feature, so it cannot be set by
+    /// accident.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub allow_builtin_mcp_servers_i_understand_the_risk: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl CopilotSettings {
@@ -42,6 +54,10 @@ mod tests {
         assert_eq!(d.exec_model, None);
         assert_eq!(d.plan_effort, None);
         assert_eq!(d.exec_effort, None);
+        assert!(
+            !d.allow_builtin_mcp_servers_i_understand_the_risk,
+            "the D7 escape hatch is off unless the operator sets it"
+        );
     }
 
     #[test]

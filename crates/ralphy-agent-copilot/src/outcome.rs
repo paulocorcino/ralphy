@@ -103,6 +103,18 @@ pub(crate) fn classify_copilot_outcome(
     })
 }
 
+/// D11's preflight: `continueOnAutoMode` is a vendor-internal retry that
+/// silently switches model and hides a rate limit from Ralphy, so it is asserted
+/// BEFORE a child is spawned — no token is spent on a run that cannot be trusted.
+/// `None` (no config file, or an unreadable one) is a pass; see
+/// [`crate::guards::continue_on_auto_mode_violation`].
+pub(crate) fn preflight(config_src: Option<&str>) -> Result<()> {
+    if let Some(msg) = config_src.and_then(crate::guards::continue_on_auto_mode_violation) {
+        anyhow::bail!("{msg}");
+    }
+    Ok(())
+}
+
 impl CopilotAgent {
     /// Spawn a single headless `copilot` call, piping `prompt` on stdin and
     /// draining stdout/stderr via the shared headless runner (avoids pipe-buffer
@@ -115,6 +127,11 @@ impl CopilotAgent {
         prompt: &str,
         timeout: Duration,
     ) -> Result<HeadlessRun> {
+        // FIRST, before `HeadlessCall::new`: a D11 violation must cost no child
+        // and no tokens. A read error is a pass — the file is machine-managed.
+        let config =
+            crate::guards::copilot_config_path().and_then(|p| std::fs::read_to_string(p).ok());
+        preflight(config.as_deref())?;
         HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("copilot.log"))
             .idle_minutes(self.budget.idle_minutes)
             .run()
@@ -125,6 +142,20 @@ impl CopilotAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D11 bails BEFORE any child is spawned — the assertion is on the extracted
+    /// helper precisely so it needs no real process.
+    #[test]
+    fn run_copilot_preflight_bails_before_spawn() {
+        let err = preflight(Some(r#"{"continueOnAutoMode": true}"#))
+            .expect_err("continueOnAutoMode must abort before the spawn");
+        assert!(err.to_string().contains("continueOnAutoMode"), "{err}");
+
+        // No config, an empty config, and an unparsable one all pass.
+        assert!(preflight(None).is_ok());
+        assert!(preflight(Some("{}")).is_ok());
+        assert!(preflight(Some("not json")).is_ok());
+    }
 
     const ANSWER: &str = r#"{"type":"assistant.message","id":"a1","data":{"model":"claude-sonnet-5","content":"all green\nRALPHY_DONE_EXIT","toolRequests":[],"outputTokens":75}}"#;
 

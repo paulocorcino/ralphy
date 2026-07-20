@@ -28,14 +28,19 @@ pub(crate) fn mint_session_id() -> String {
 /// `--session-id` is Ralphy's own minted id, so the session is addressable before
 /// the child is even spawned.
 ///
-/// Five flags shrink Copilot's default blast radius (D7) — all unconditional,
-/// because each one is a capability Ralphy's ethos forbids outright:
-/// `--no-remote` / `--no-remote-export` (no remote control of, or export of, the
-/// session to GitHub web/mobile), `--disable-builtin-mcps` (the bundled GitHub
-/// MCP server holds the operator's token and can open PRs), `--no-auto-update`
-/// (a run must not mutate its own toolchain mid-flight), `--no-ask-user`
-/// (disables the `ask_user` tool outright — stronger than relying on the
-/// non-interactive mode to auto-dismiss a prompt; no human is watching).
+/// Five flags shrink Copilot's default blast radius (D7), because each one is a
+/// capability Ralphy's ethos forbids outright: `--no-remote` /
+/// `--no-remote-export` (no remote control of, or export of, the session to
+/// GitHub web/mobile), `--disable-builtin-mcps` (the bundled GitHub MCP server
+/// holds the operator's token and can open PRs), `--no-auto-update` (a run must
+/// not mutate its own toolchain mid-flight), `--no-ask-user` (disables the
+/// `ask_user` tool outright — stronger than relying on the non-interactive mode
+/// to auto-dismiss a prompt; no human is watching).
+///
+/// Four of the five are unconditional. `--disable-builtin-mcps` is the one the
+/// operator can deliberately give back, via `allow_builtin_mcps` (persisted as
+/// `copilot.allow_builtin_mcp_servers_i_understand_the_risk`) — the D7 escape
+/// hatch, which also suppresses the receipt guard below.
 ///
 /// `--model` is passed only when the operator supplied one: omission selects the
 /// account's *current default*, which is the correct default rather than a
@@ -52,16 +57,16 @@ pub(crate) fn mint_session_id() -> String {
 /// The repo root is set with `current_dir`, not `-C`: the CLI honours the spawned
 /// process's cwd (spike C1).
 ///
-/// Deferred, deliberately: D7's in-band RECEIPT check (fail the run when
-/// `session.mcp_servers_loaded` still reports a builtin server as `connected`) and
-/// D11's `continueOnAutoMode` assertion. #229 scopes both to "flags only" / "the
-/// mapping"; until those slices land, the flags above are trusted, not verified
-/// against the stream.
+/// The flags are no longer merely trusted: `crate::guards` now asserts BOTH in
+/// band — the D7 receipt (`session.mcp_servers_loaded` must report every builtin
+/// server off, and an absent receipt fails closed) and D11's `continueOnAutoMode`,
+/// checked as a preflight before any child is spawned.
 pub(crate) fn build_copilot_command(
     session_id: &str,
     model: Option<&str>,
     effort: Option<&str>,
     work_dir: &Path,
+    allow_builtin_mcps: bool,
 ) -> Command {
     let mut cmd = Command::new(resolve_program("copilot"));
     cmd.current_dir(work_dir)
@@ -72,9 +77,11 @@ pub(crate) fn build_copilot_command(
         .arg(session_id)
         .arg("--no-remote")
         .arg("--no-remote-export")
-        .arg("--disable-builtin-mcps")
         .arg("--no-auto-update")
         .arg("--no-ask-user");
+    if !allow_builtin_mcps {
+        cmd.arg("--disable-builtin-mcps");
+    }
     if let Some(m) = model {
         cmd.arg("--model").arg(m);
     }
@@ -112,10 +119,12 @@ mod tests {
             .unwrap_or_default()
     }
 
+    /// The #229 baseline, pinned: with the escape hatch OFF nothing about the
+    /// default argv changed when D7's hatch was introduced (#234).
     #[test]
-    fn build_command_argv_and_env() {
+    fn defaults_are_unchanged_from_229() {
         let id = mint_session_id();
-        let cmd = build_copilot_command(&id, None, None, Path::new("/repo"));
+        let cmd = build_copilot_command(&id, None, None, Path::new("/repo"), false);
         assert_eq!(stem(&cmd), "copilot");
 
         let args = argv(&cmd);
@@ -159,11 +168,24 @@ mod tests {
             let removed = cmd.get_envs().any(|(k, v)| k == key && v.is_none());
             assert!(removed, "{key} should be removed on the child");
         }
+
+        // The persisted side of "unchanged": the new escape-hatch field must not
+        // start serializing into every settings file.
+        assert_eq!(
+            serde_json::to_string(&crate::CopilotSettings::default()).unwrap(),
+            "{}"
+        );
     }
 
     #[test]
     fn build_command_passes_model_when_some() {
-        let cmd = build_copilot_command("s1", Some("claude-sonnet-5"), None, Path::new("/repo"));
+        let cmd = build_copilot_command(
+            "s1",
+            Some("claude-sonnet-5"),
+            None,
+            Path::new("/repo"),
+            false,
+        );
         let args = argv(&cmd);
         let i = args
             .iter()
@@ -179,7 +201,13 @@ mod tests {
     /// the pair `--effort <level>`, and the blast-radius flags survive it.
     #[test]
     fn build_command_passes_effort_when_some() {
-        let cmd = build_copilot_command("s1", Some("gpt-5-mini"), Some("high"), Path::new("/repo"));
+        let cmd = build_copilot_command(
+            "s1",
+            Some("gpt-5-mini"),
+            Some("high"),
+            Path::new("/repo"),
+            false,
+        );
         let args = argv(&cmd);
         let i = args
             .iter()
@@ -187,6 +215,29 @@ mod tests {
             .expect("--effort missing");
         assert_eq!(args[i + 1], "high");
         assert!(args.iter().any(|a| a == "--no-ask-user"), "argv: {args:?}");
+    }
+
+    /// D7's escape hatch drops exactly ONE flag — the other four blast-radius
+    /// flags are not negotiable.
+    #[test]
+    fn escape_hatch_drops_disable_builtin_mcps_from_argv() {
+        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), true);
+        let args = argv(&cmd);
+        assert!(
+            !args.iter().any(|a| a == "--disable-builtin-mcps"),
+            "the hatch must give the builtin MCP surface back: {args:?}"
+        );
+        for flag in [
+            "--no-remote",
+            "--no-remote-export",
+            "--no-auto-update",
+            "--no-ask-user",
+        ] {
+            assert!(
+                args.iter().any(|a| a == flag),
+                "the hatch must not widen {flag}: {args:?}"
+            );
+        }
     }
 
     #[test]
