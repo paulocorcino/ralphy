@@ -259,18 +259,39 @@ pub(crate) fn non_empty(s: String) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// #237: the four one-shot dispatch sites must route Copilot to real work, not
-    /// bail. Fragments so the needle cannot match this very assertion.
+    /// #237: the four one-shot dispatch sites must route Copilot to REAL work, not
+    /// bail — and not merely lack the bail string (a swap to another vendor's
+    /// same-signature function would still pass a bare substring-absence check).
+    /// Pins the actual call each `Agent::Copilot`/`CliAgent::Copilot` arm must make,
+    /// scoped to a window after the arm's own match guard. Fragments are assembled
+    /// with `concat!` so the assertion cannot match itself.
     #[test]
     fn copilot_one_shots_are_wired() {
-        let needle = concat!("does not support ", "one-shot");
-        for src in [
-            include_str!("init/run.rs"),
-            include_str!("init/issues.rs"),
-            include_str!("triage.rs"),
-            include_str!("main.rs"),
-        ] {
-            assert!(!src.contains(needle), "stale one-shot bail found");
+        let stale_needle = concat!("does not support ", "one-shot");
+        let cases: [(&str, &str); 4] = [
+            (
+                include_str!("init/run.rs"),
+                concat!("ralphy_agent_copilot::", "diagnose_repo("),
+            ),
+            (
+                include_str!("init/issues.rs"),
+                concat!("ralphy_agent_copilot::", "draft_issues("),
+            ),
+            (
+                include_str!("triage.rs"),
+                concat!("ralphy_agent_copilot::", "triage_issues("),
+            ),
+            (
+                include_str!("main.rs"),
+                concat!("ralphy_agent_copilot::", "consolidate_knowledge("),
+            ),
+        ];
+        for (src, real_call) in cases {
+            assert!(!src.contains(stale_needle), "stale one-shot bail found");
+            assert!(
+                src.contains(real_call),
+                "expected {real_call} in dispatch source"
+            );
         }
         assert_eq!(consolidate_defaults(CliAgent::Copilot), (None, None));
     }

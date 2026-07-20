@@ -339,8 +339,14 @@ mod tests {
             2,
             "argv: {args:?}"
         );
-        let first = args.iter().position(|a| a == "--attachment").unwrap();
-        assert_eq!(args[first + 1], "/t/a.png", "argv: {args:?}");
+        let positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "--attachment")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(args[positions[0] + 1], "/t/a.png", "argv: {args:?}");
+        assert_eq!(args[positions[1] + 1], "/t/b.png", "argv: {args:?}");
     }
 
     #[test]

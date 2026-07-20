@@ -1,8 +1,10 @@
 # #237 live one-shot smoke: `ralphy consolidate --agent copilot`
 
-Exercises the new `build_copilot_init_command` builder, the D8 env scrub, and
-`run_text_session` against a real `copilot` process — the runtime leg the
-static tests in `command.rs`/`tasks.rs` cannot give.
+Exercises the new `build_copilot_init_command` builder, the D8 env scrub,
+`run_text_session` against a real `copilot` process, and — after the
+self-review fix — the D11 preflight and D7 receipt guard now wired into
+`tasks.rs` (`preflight_or_bail`/`check_builtin_mcp_receipt`). Re-run after
+that fix to confirm the guards don't false-positive on a real session.
 
 ## Setup
 

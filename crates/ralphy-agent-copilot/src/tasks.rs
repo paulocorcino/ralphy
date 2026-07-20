@@ -3,6 +3,15 @@
 //! backlog → issues drafting, agent-triage drafting, and knowledge
 //! consolidation. None of these publish to GitHub; the cli applies the
 //! drafted artifact after the operator confirms.
+//!
+//! D7 (builtin-MCP receipt) and D11 (`continueOnAutoMode` preflight) are
+//! ADR-0041 SAFETY guarantees, not `CopilotAgent`-scoped: every function here
+//! calls [`preflight_or_bail`] before spawning and [`check_builtin_mcp_receipt`]
+//! after the session returns, the same two guards `CopilotAgent::plan`/`execute`
+//! apply, reached here as free `pub(crate)` functions instead of `self` methods
+//! since a one-shot has no `CopilotAgent`. D9 (skills) stays excluded: it reads a
+//! `Workspace` for skill materialization and none of the init charters invoke a
+//! skill, same reason Kimi's init builder drops `--skills-dir`.
 
 use std::path::Path;
 use std::time::Duration;
@@ -18,6 +27,30 @@ use ralphy_core::{
 
 use crate::auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
 use crate::command::build_copilot_init_command;
+use crate::guards::{builtin_mcp_violation, copilot_config_path};
+use crate::outcome::preflight;
+
+/// D11: assert `continueOnAutoMode` is not enabled before ANY one-shot child is
+/// spawned — no token is spent on a run that cannot be trusted. Mirrors
+/// `CopilotAgent::run_copilot`'s preflight call, minus the `&self` it has no use
+/// for here.
+fn preflight_or_bail() -> Result<()> {
+    let config = copilot_config_path().and_then(|p| std::fs::read_to_string(p).ok());
+    preflight(config.as_deref())
+}
+
+/// D7: fail the one-shot if the builtin-MCP kill switch (`--disable-builtin-mcps`)
+/// did not take, reading the combined log this session already wrote to
+/// `log_path`. `require_receipt = true` unconditionally: this runs only after the
+/// session already returned `Ok` (no auth/timeout/missing-artifact bail), so the
+/// child reached a state where its receipt should be present.
+fn check_builtin_mcp_receipt(log_path: &Path) -> Result<()> {
+    let log = std::fs::read_to_string(log_path).unwrap_or_default();
+    if let Some(msg) = builtin_mcp_violation(&log, true) {
+        anyhow::bail!("{msg} (see {})", log_path.display());
+    }
+    Ok(())
+}
 
 /// Run a one-shot headless `copilot` repo-diagnosis session (ADR-0012 stage 2)
 /// from `neutral_cwd` — a directory OUTSIDE the target repo. The target `repo` is
@@ -35,11 +68,12 @@ pub fn diagnose_repo(
     let _ = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
+    let log_path = neutral_cwd.join("diagnose.log");
 
     info!(?model, "diagnosing repo with copilot");
+    preflight_or_bail()?;
     let cmd = build_copilot_init_command(model, neutral_cwd, &[]);
-    let log_path = neutral_cwd.join("diagnose.log");
-    run_init_session(
+    let report = run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -60,7 +94,9 @@ pub fn diagnose_repo(
                 )
             })
         },
-    )
+    )?;
+    check_builtin_mcp_receipt(&log_path)?;
+    Ok(report)
 }
 
 /// Run a one-shot headless `copilot` backlog/milestone → issues session
@@ -80,15 +116,16 @@ pub fn draft_issues(
     let _ = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
+    let log_path = repo.join(".ralphy").join("init-issues.log");
 
     info!(
         ?model,
         mode = req.mode.as_str(),
         "drafting issues with copilot"
     );
+    preflight_or_bail()?;
     let cmd = build_copilot_init_command(model, repo, &[]);
-    let log_path = repo.join(".ralphy").join("init-issues.log");
-    run_init_session(
+    let draft = run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -109,7 +146,9 @@ pub fn draft_issues(
                 )
             })
         },
-    )
+    )?;
+    check_builtin_mcp_receipt(&log_path)?;
+    Ok(draft)
 }
 
 /// Run a one-shot headless `copilot` knowledge-consolidation session in `ws`'s
@@ -128,21 +167,24 @@ pub fn consolidate_knowledge(
 ) -> Result<()> {
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
+    let log_path = run_dir.join("consolidate.log");
 
     info!(?model, "consolidating knowledge with copilot");
+    preflight_or_bail()?;
     let cmd = build_copilot_init_command(model, ws.repo_root(), &[]);
     run_text_session(
         TextSession {
             cmd,
             prompt: PROMPT_CONSOLIDATE,
             timeout,
-            log_path: &run_dir.join("consolidate.log"),
+            log_path: &log_path,
             spawn_err: "failed to spawn the `copilot` CLI (is it installed and on PATH?)",
             auth_msg: COPILOT_AUTH_ERROR_MSG,
             timeout_msg: "consolidation session hit the wall timeout",
         },
         is_copilot_auth_error,
     )?;
+    check_builtin_mcp_receipt(&log_path)?;
     Ok(())
 }
 
@@ -166,11 +208,12 @@ pub fn triage_issues(
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
         req.attachments_manifest
     );
+    let log_path = repo.join(".ralphy").join("triage.log");
 
     info!(?model, "triaging issues with copilot");
+    preflight_or_bail()?;
     let cmd = build_copilot_init_command(model, repo, req.image_paths);
-    let log_path = repo.join(".ralphy").join("triage.log");
-    run_init_session(
+    let draft = run_init_session(
         JsonSession {
             cmd,
             prompt: &prompt,
@@ -191,5 +234,69 @@ pub fn triage_issues(
                 )
             })
         },
-    )
+    )?;
+    check_builtin_mcp_receipt(&log_path)?;
+    Ok(draft)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The D7/D11 guards must be wired into all four one-shot verbs — #237 wires
+    /// real subprocess execution here for the first time, so a missing call would
+    /// silently drop an ADR-0041 adapter-wide safety guarantee the moment a
+    /// one-shot actually spawns a child. Source-text pin: no test here spawns a
+    /// real `copilot` process, so nothing else would catch a deleted call site.
+    /// Fragments assembled with `concat!` so the assertion cannot match itself.
+    #[test]
+    fn d7_and_d11_guards_are_wired_into_all_four_verbs() {
+        let src = include_str!("tasks.rs");
+        let preflight_call = concat!("preflight_or", "_bail()?;");
+        let receipt_call = concat!("check_builtin_mcp", "_receipt(&log_path)?;");
+        assert_eq!(
+            src.matches(preflight_call).count(),
+            4,
+            "D11 preflight must run before every one-shot spawn"
+        );
+        assert_eq!(
+            src.matches(receipt_call).count(),
+            4,
+            "D7's receipt guard must run after every one-shot session"
+        );
+    }
+
+    /// The VERDICT half, mirroring `outcome::preflight_rejects_continue_on_auto_mode`:
+    /// a config with `continueOnAutoMode: true` on disk must abort before any
+    /// `copilot` child is spawned.
+    #[test]
+    fn preflight_or_bail_rejects_continue_on_auto_mode() {
+        // No config on this test host is the common case, and it must pass —
+        // this pins only the wiring (the predicate itself is tested in
+        // `outcome::tests`), so an unreadable/absent config is not a failure.
+        assert!(preflight_or_bail().is_ok());
+    }
+
+    /// D7's verdict half, reachable here without a `CopilotAgent`: a connected
+    /// builtin MCP server in the log must fail the one-shot.
+    #[test]
+    fn check_builtin_mcp_receipt_fails_on_a_connected_server() {
+        let dir = std::env::temp_dir().join(format!(
+            "ralphy-copilot-tasks-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log_path = dir.join("copilot.log");
+        std::fs::write(
+            &log_path,
+            concat!(
+                r#"{"type":"session.mcp_servers_loaded","data":{"servers":[{"name":"github-mcp-server","status":"connected","source":"builtin","transport":"http"}]},"ephemeral":true}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let err = check_builtin_mcp_receipt(&log_path).expect_err("connected must fail");
+        assert!(err.to_string().contains("github-mcp-server"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

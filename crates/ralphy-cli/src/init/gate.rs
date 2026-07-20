@@ -17,11 +17,11 @@ pub enum Agent {
 impl Agent {
     /// ORDER IS LOAD-BEARING: `init`/`triage` auto-selection takes the FIRST
     /// logged-in agent in this array (`init::run::select_agent`,
-    /// `triage::select_triage_agent`). `Copilot` is last on purpose — its one-shot
-    /// verbs bail until the `tasks.rs` slice lands (ADR-0040 Tier 1), so placing it
-    /// ahead of a fully-wired vendor would turn a working `ralphy init` into a hard
-    /// bail on any machine where both are logged in. Move it up when its one-shots
-    /// exist, not before.
+    /// `triage::select_triage_agent`). `Copilot` is last on purpose — its one-shots
+    /// exist (#237), so the reason to pin it is auto-selection STABILITY: promoting
+    /// it would silently change which vendor drives a no-flag `ralphy init`/
+    /// `triage` on a machine where multiple vendors are logged in, a behavior
+    /// change no issue has asked for.
     pub const ALL: [Agent; 5] = [
         Agent::Claude,
         Agent::Codex,
