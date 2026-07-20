@@ -18,16 +18,25 @@ sentinel-in-final-message + exit code + HEAD-diff, shared scaffold
 (deterministic single model, token store, limit-by-exit-code, Windows I/O), the
 adapter diverges deliberately.
 
-This is grounded in the installed **`kimi 1.48.0`** CLI, probed hands-on
-(logged-out and logged-in) and read at the source level for the limit/exit-code
-behavior. The full evidence — command surface, stream/session formats, token
-location, exit-code semantics, and Windows I/O traps — is in
+This was originally grounded in the installed **`kimi 1.48.0`** CLI
+(`kimi-cli`, Python/Typer), probed hands-on (logged-out and logged-in) and read
+at the source level for the limit/exit-code behavior. The full evidence —
+command surface, stream/session formats, token location, exit-code semantics,
+and Windows I/O traps — is in
 [docs/research/kimi-cli-adapter-spike.md](../research/kimi-cli-adapter-spike.md);
-this ADR records the decisions, the spike records the observations.
+that spike and [0028-kimi-validation.md](./0028-kimi-validation.md) are now
+**historical records of `kimi-cli` 1.48**, superseded by the contract below.
+
+The contract below is **`kimi-code` 0.28** — a different, native-binary CLI —
+validated live on **both** Windows and WSL Ubuntu 22.04 in #239 (byte-identical
+across targets except the argv ceiling, see the Amendment). This slice is
+docs-only; the adapter code still targets 1.48 until the follow-up code issue
+lands.
 
 Status: **accepted** — implemented (#151–#154) and validated end-to-end against a
-real repo (#155); see [0028-kimi-validation.md](./0028-kimi-validation.md) for the
-live findings. Amends nothing; consistent with ADR-0002/0003/0004/0005/0008/0023.
+real repo (#155). **Amended 2026-07-20 (#240)** — see the Amendment section for
+the `kimi-code` 0.28 rewrite of D4/D5/D6/D7/D9. Consistent with
+ADR-0002/0003/0004/0005/0008/0023.
 
 ## D1 — Selection is per run, via `--agent kimi`; the core is untouched
 
@@ -41,7 +50,7 @@ ADR-0005 folded in for `opencode`.
 
 ## D2 — Completion is the sentinel for *intent*, with exit code + HEAD-diff as the net
 
-Both `plan` and `execute` run headless:
+**Historical (`kimi-cli` 1.48) invocation shape, superseded by D5's 0.28 contract:**
 
 ```
 kimi --work-dir <ws> --print --input-format text --output-format stream-json -y \
@@ -49,9 +58,9 @@ kimi --work-dir <ws> --print --input-format text --output-format stream-json -y 
 ```
 
 driven by the same reader-thread + poll-`try_wait` + kill-on-timeout loop the
-Codex adapter uses (`run_headless_logged`). The prompt goes in on **stdin**
-(`--input-format text`), not as an argv element: Kimi is a Typer app and a stray
-word in a split argv is parsed as a subcommand (`No such command 'hello'`,
+Codex adapter uses (`run_headless_logged`). The prompt went in on **stdin**
+(`--input-format text`), not as an argv element: `kimi-cli` was a Typer app and a
+stray word in a split argv was parsed as a subcommand (`No such command 'hello'`,
 exit 2). `--output-format stream-json` is **mandatory** (see D5).
 
 The stdout stream is coarse OpenAI-role JSONL discriminated by top-level `role`
@@ -81,95 +90,156 @@ fills `CompletionSignals` and delegates the precedence ladder to the shared
 
 ## D3 — Deterministic: one model, no complexity routing
 
-Kimi Code exposes a single stable model id, `kimi-code/kimi-for-coding` (backend
-remaps it to newer models; `display_name` "K2.7 Code"). There is no
-sonnet/opus-style tier to route (Claude) and no `model_reasoning_effort` analog
-worth wiring (Codex D3). So the Kimi adapter is **deterministic — no auto
+Kimi Code exposes a single stable model id, pinned as `kimi-code/k3` per D4
+(historically `kimi-code/kimi-for-coding`, `display_name` "K2.7 Code"). There is
+no sonnet/opus-style tier to route (Claude) and no `model_reasoning_effort`
+analog worth wiring (Codex D3). So the Kimi adapter is **deterministic — no auto
 complexity routing**, the same stance as OpenCode D8. `Plan.recommended_model` is
 left `None`, and the Kimi plan prompt emits **no** `## Execution model` tier line
 (D8). Kimi's own `--thinking` is left at its config default; the model already
-thinks by default (`default_thinking = true`).
+thinks by default (`default_thinking = true`) — **unverified against 0.28**, not
+covered by #239's evidence.
 
-## D4 — Model resolution: the full config-key form is the default; `--exec-model` overrides
+## D4 — Model resolution: pinned to `kimi-code/k3`; the config-key form is the default; `--exec-model` overrides
 
-Kimi requires the **full `provider-key/model` form** `kimi-code/kimi-for-coding`.
-The short form `kimi-for-coding` is **rejected** (exit 1, stdout `LLM not set`),
-so the adapter must pass the full key. The adapter defaults to
-`kimi-code/kimi-for-coding` and passes `-m` explicitly (rather than deferring to
-the config `default_model`) so a run is reproducible regardless of the operator's
-`~/.kimi/config.toml`; `--exec-model` overrides it verbatim for an operator who
-has configured a different provider/model. Unlike Codex there is no `config.toml`
-parsing to re-implement — the single canonical id is hardcoded, with the override
-as the escape hatch.
+**Amended 2026-07-20 (#239/#240): the pin moves to `kimi-code/k3`.** 0.28 was
+adopted by the vendor *for* Kimi 3, but neither the adapter's hardcoded pin nor
+the operator's `config.toml` `default_model` (which still names *K2.7 Coding*)
+routed a run there — so the upgrade would have been invisible to Ralphy, which
+would have kept driving the previous generation while the operator believed
+otherwise. `-m kimi-code/k3` was verified live on both Windows and WSL.
 
-## D5 — Full autonomy via `-y`; force `stream-json` + stdin (the Windows I/O contract)
+Kimi requires the **full `provider-key/model` form**, e.g. `kimi-code/k3`. The
+historical rejection of the short form (`kimi-for-coding` → exit 1, stdout
+`LLM not set`) described `kimi-cli` 1.48 (see D6 for the current auth-failure
+text); the "full key required" rule itself survives, unverified as literally
+re-triggerable against 0.28. The adapter defaults to `kimi-code/k3` and passes
+`-m` explicitly (rather than deferring to the config `default_model`) so a run
+is reproducible regardless of the operator's `config.toml`; `--exec-model`
+overrides it verbatim for an operator who has configured a different
+provider/model. Unlike Codex there is no `config.toml` parsing to re-implement —
+the single canonical id is hardcoded, with the override as the escape hatch.
 
-The adapter always passes `-y` (`--yolo`, auto-approve all actions); `--print`
-already auto-dismisses `AskUserQuestion` and auto-approves tools for the run.
-There is no OS sandbox and no `PreToolUse` guard to port; safety rests on Ralphy's
-existing net (every issue commits onto an isolated run branch a human merges by
-hand, plus the reviewer self-review) — the same rationale as OpenCode D5.
+## D5 — Void as written; rewritten to the `kimi-code` 0.28 invocation contract (#239/#240)
 
-Two Windows-specific hazards, observed in the spike, are baked in as hard rules
-(this is the compatibility-shaped code the design *does* need, because it is
-correctness, not cosmetics):
+**The rationale below this line described `kimi-cli` 1.48 (Python/Typer,
+Textual TUI, cp1252-redirected-stdout crash) and is gone: `kimi-code` is a
+native binary, so its historical Python-interpreter env-var workarounds are
+inert and there is no
+Typer subcommand parser, no Textual TUI, and no cp1252 charmap crash to guard
+against.** The validated 0.28 contract, live on both Windows and WSL:
 
-- **Always `--output-format stream-json`.** The default rich/TUI renderer writes
-  box-drawing/emoji and **crashes on a cp1252-redirected stdout**
-  (`'charmap' codec can't encode…`, exit 1). stream-json is ASCII-safe.
-- **Never set `PYTHONIOENCODING=utf-8`** on a redirected/no-console child — it
-  flips Kimi into trying to start the Textual TUI (`No Windows console found`).
-  **Do set `PYTHONUTF8=1`** instead (resolved at validation, #155): it puts Kimi's
-  stdio on UTF-8 so captured **tool-subprocess** output with a non-cp1252 char
-  (e.g. Prisma's `✔`) can't crash it with `'charmap' codec can't encode` (exit 1),
-  and — touching encoding, not console detection — it does not re-trigger the TUI.
-- **Prompt via stdin**, never a split argv (D2).
+```
+kimi -p <charter> --output-format stream-json -m <model> --skills-dir <dir>
+```
+
+- **The charter travels in `-p, --prompt <prompt>`, as an argv element — there
+  is no stdin channel any more.** `echo … | kimi --output-format stream-json`
+  answers `error: Output format is only supported in prompt mode.` This
+  reverses D2's historical stdin rule; see the Amendment for the argv-ceiling
+  consequence and the file-pointer decision this forces on the execute
+  charter.
+- **`--work-dir` is gone.** The working directory is the process cwd
+  (`Command::current_dir`), with no flag to set it explicitly.
+- **`-y`/`--yolo` and `--auto` are refused, not merely unnecessary**:
+  `error: Cannot combine --prompt with --yolo.` (same for `--auto`). Prompt
+  mode already auto-approves every action — the session wire records
+  `{"type":"permission.set_mode","mode":"auto"}` — so the adapter passes
+  neither flag; there is nothing left to grant.
+- **`--output-format stream-json`, `-m` and `--skills-dir` are unchanged** in
+  name and shape from the historical contract.
+
+There is still no OS sandbox and no `PreToolUse` guard to port; safety rests on
+Ralphy's existing net (every issue commits onto an isolated run branch a human
+merges by hand, plus the reviewer self-review) — the same rationale as OpenCode
+D5, carried over unchanged from the 1.48 decision.
 
 The PTY, the Stop hook + flag file, the workspace-trust shim, and Codex's `-o`
-final-message file are **not** ported — none apply to `kimi --print`, and
+final-message file are **not** ported — none apply to `kimi --prompt`, and
 importing them would be compatibility-shaped bloat.
 
-## D6 — Auth is the operator's; detection is behavioral (exit 1 + `LLM not set`)
+## D6 — Auth is the operator's; detection is behavioral (`auth.login_required`, #239/#240)
 
-Kimi Code auth is OAuth, owned by the operator via **`kimi login`** (a real
-subcommand, not just a TUI `/login`); the token lives in
-`~/.kimi/credentials/kimi-code.json` (`access_token`/`refresh_token`/`expires_at`),
-**not** in `config.toml` (whose `api_key` stays `""`). The adapter manages no
-provider key — the same stance as Codex D5 / OpenCode D6 — and there is no
+**The `LLM not set` line below is `kimi-cli` 1.48's text and no longer
+appears.** Kimi Code auth is OAuth, owned by the operator via **`kimi login`**
+(a real subcommand, not just a TUI `/login`); the historical token location
+(`~/.kimi/credentials/kimi-code.json`, **not** `config.toml`) is
+**unverified against 0.28** — #239's evidence never re-probed the on-disk
+credential path, only the CLI's own error text, so this ADR does not guess a
+`~/.kimi-code/credentials/...` location. The adapter manages no provider key —
+the same stance as Codex D5 / OpenCode D6 — and there is no
 `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` auto-detect hazard to scrub (Kimi resolves
 only its own OAuth), so **no env-key scrub is needed**.
 
-A signed-out / no-model run surfaces as **exit 1 with `LLM not set` on stdout**.
-`is_kimi_auth_error` keys on that pair and maps it to an actionable "run
+A signed-out run surfaces as, verbatim, captured live on Windows (#239's
+cross-platform WSL re-run confirmed the four *refusal* strings word-for-word —
+`--work-dir`, `--yolo`, `--auto`, prompt-mode-only — but did not separately
+re-capture this auth line on WSL):
+
+```
+error: failed to run prompt: auth.login_required:
+OAuth provider "managed:kimi-code" requires login before it can be used.
+```
+
+This replaces the historical `exit 1` + `LLM not set` pair `is_kimi_auth_error`
+keyed on — **that guard is dead against 0.28** and needs rewriting to key on
+`auth.login_required` instead, mapping it to the same actionable "run
 `kimi login` and retry" stop, taking precedence over generic classification
 because it won't self-heal — the same precedence the other adapters' auth
 detectors use (ADR-0013). Detection stays **behavioral** rather than inspecting
-the credentials file, which is simpler and matches the other adapters. Caveat:
-`LLM not set` literally means "no model resolved"; because the adapter always
-passes a valid `-m` (D4), post-login it should only appear on a genuine auth gap.
+the credentials file, which is simpler and matches the other adapters. Today,
+with the guard unported, a logged-out run instead falls through as a generic
+`kimi produced no plan` / `Stuck` — no infinite plan-retry has been observed,
+but the guard's actionable message is lost until the code lands. Historical
+caveat, no longer applicable: `LLM not set` meant "no model resolved"; 0.28's
+`auth.login_required` line is unambiguous about the cause.
 
-## D7 — Tokens come from `wire.jsonl` `StatusUpdate`, per step, snapshot-diffed
+## D7 — Tokens come from `wire.jsonl` `usage.record`, per step, snapshot-diffed (#239/#240)
 
-Per ADR-0008 (per-adapter token harvest, tokens-as-truth). Kimi does **not** put
-usage on the stdout stream. It writes per-step `StatusUpdate` events into the
-session's `wire.jsonl`:
+Per ADR-0008 (per-adapter token harvest, tokens-as-truth). Kimi still does
+**not** put usage on the stdout stream — that half of D7 survives. The record
+vocabulary itself does not: **the `StatusUpdate`/`message.payload.token_usage`
+shape below is `kimi-cli` 1.48's and is gone.** 0.28 writes a top-level,
+dotted-lowercase, camelCase record — no `message` envelope:
 
+```json
+{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":…,"output":…,"inputCacheRead":…,"inputCacheCreation":…},"usageScope":"turn"}
 ```
-message.payload.token_usage = { input_other, output, input_cache_read, input_cache_creation }
-```
 
-one `StatusUpdate` per LLM call, between `TurnBegin`/`TurnEnd`. Sessions live at
-`~/.kimi/sessions/<workdir-hash>/<session-id>/wire.jsonl`; the session id is
-recoverable from the **stderr resume hint** (`To resume this session: kimi -r
-<id>`) and from `~/.kimi/kimi.json` → `work_dirs[].last_session_id`.
+Two properties survive from the 1.48 contract and are **traps** an implementer
+must preserve explicitly:
 
-The adapter **snapshot-diffs `wire.jsonl`** (the "appeared-over-grew" rule,
-ADR-0008 D10, via `session_files`) and sums `token_usage` across the run, mapping
-the four fields to `Usage`: `input_other→input`, `output→output`,
-`input_cache_read→cache_read`, `input_cache_creation→cache_creation`, with model
-attribution `kimi-code/kimi-for-coding` (ADR-0008 D8). We reject reading usage
-from the stdout stream (it isn't there) and `kimi export` (a ZIP, heavier than
-tailing one file).
+- **Records are per-step increments, not a cumulative snapshot** — validated
+  live, two steps of one session recorded `3411/91` then `211/20` (Windows) and
+  `2154/72` then `202/26` (WSL). D7's summing-across-the-run rule stands
+  unchanged.
+- **`context.append_loop_event` repeats the same numbers under `event.usage`.**
+  Folding both double-counts a step. Only a top-level `usage.record` line with
+  `usageScope == "turn"` may be counted; `event.usage` must be skipped.
+
+Store layout moved one level deeper and to a different base dir:
+`~/.kimi-code/sessions/wd_<repo>_<hash>/session_<uuid>/agents/<AGENT>/wire.jsonl`
+(historically `~/.kimi/sessions/<workdir-hash>/<session-id>/wire.jsonl`). The
+historical session-id recovery path (stderr resume hint, `~/.kimi/kimi.json`)
+is **unverified against 0.28** — #239 observed a `{"role":"meta",
+"type":"session.resume_hint","session_id":…}` line on 0.28's own stdout, which
+would be authoritative rather than positional if adopted (see the Amendment,
+decision 3).
+
+The adapter still **snapshot-diffs `wire.jsonl`** (the "appeared-over-grew"
+rule, ADR-0008 D10, via `session_files`) and sums usage across the run, mapping
+the four fields to `Usage`: `inputOther→input`, `output→output`,
+`inputCacheRead→cache_read`, `inputCacheCreation→cache_creation`, with model
+attribution `kimi-code/k3` (ADR-0008 D8, D4). We reject reading usage from the
+stdout stream (it isn't there) and `kimi export` (a ZIP, heavier than tailing
+one file).
+
+**`ralphy-usage-scan` (ADR-0033) needs no fix.** It already reads
+`usage.record`, `usageScope == "turn"`, camelCase fields, and the
+`agents/<AGENT>/` layout, and sums via `agg.add` — it was written ahead of a
+real 0.28 sample and matches field for field now that one exists. Only the
+adapter's in-run capture (this D7, `ralphy-agent-kimi`) was left behind; the
+scan path has no regression.
 
 ## D8 — Reuse the skill content; a `prompt.plan.kimi.md` variant; not native `--plan`
 
@@ -181,9 +251,11 @@ instructs the model to **write `.ralphy/plan.md` itself**; plan success is the
 file appearing on disk (`plan::count_open_steps` is vendor-neutral and reused).
 
 Kimi's **native `--plan` mode is deliberately not used**: it explores heavily and
-is slow (>120s), signals completion via an `ExitPlanMode` tool call, and persists
-to `~/.kimi/plans/` — none of which fits Ralphy's "write `.ralphy/plan.md`"
-contract. Skills are materialized the Codex way (embedded `reviewer` +
+is slow (>120s), signals completion via an `ExitPlanMode` tool call, and
+persisted to `~/.kimi/plans/` (historical, 1.48-only; not re-verified against
+0.28 and moot either way since native `--plan` stays unused) — none of which
+fits Ralphy's "write `.ralphy/plan.md`" contract. Skills are materialized the
+Codex way (embedded `reviewer` +
 `staged-plan` content) and pointed at with `--skills-dir` (a real repeatable Kimi
 flag) under `.ralphy/`, keeping a stray `.agents/`/`.kimi/` dir out of the target
 repo; the exact materialization path is settled at implementation time against
@@ -214,6 +286,15 @@ and drop the forced stop — mirrors PR #145 but is **not required** for a corre
 v1. We reject treating a limit as plain `Stuck` (loses the actionable re-run
 signal).
 
+**Unvalidated against 0.28 (#239/#240).** Neither the exit-75 sentinel nor
+`is_kimi_limit_text`'s `access_terminated_error` match could be exercised: an
+exhausted billing-cycle quota cannot be forced on demand, on either CLI. Given
+that every other error string and exit-code path this ADR documented for 1.48
+turned out to have changed on 0.28 (D5/D6/D7), **both are suspect and should be
+treated as unverified, not settled**, until a live limit is actually observed
+against `kimi-code` 0.28. Whoever hits one first should capture the exit code
+and the literal stdout/stderr text and fold it back into this decision.
+
 ## Consequences
 
 - The core, `ralphy-agent-claude`, `ralphy-agent-codex`, `ralphy-agent-opencode`,
@@ -231,7 +312,11 @@ signal).
   `run_exec_session`, `run_headless_logged`, `classify`, `session_files`,
   `IssueBudget`, `resolve_program`. The binary is resolved via
   `resolve_program("kimi")`, which must also probe `~/.local/bin` (the `uv tool
-  install` location — `kimi` was not on PATH in a fresh shell).
+  install` location — `kimi` was not on PATH in a fresh shell). **Unverified
+  against 0.28** (#239/#240): `kimi-code` ships as a native binary, not a `uv
+  tool install`, so whether `~/.local/bin` is still where it lands (vs. a
+  platform-native install path) was not re-probed in #239 — #239's hosts
+  already had `kimi` resolvable.
 - `ACCEPTS_IMAGES`: **resolved to `false`** (#155). The model advertises
   `image_in`/`video_in`, but `kimi --print` exposes no image/attachment flag — the
   only input is a text/`stream-json` charter on stdin — so there is no verified
@@ -247,9 +332,66 @@ signal).
   could not be forced without burning real quota — a live 429 — was resolved by
   source instead (D9, exit 75); if a real limit later shows a parseable timestamp,
   the optional upgrade applies.
-- A Windows-only defect surfaced live and was fixed (#155,
-  [validation](./0028-kimi-validation.md)): kimi crashes with a cp1252 `'charmap'
-  codec can't encode` error, exit 1, when it captures **tool-subprocess** output
-  carrying a non-cp1252 char (e.g. Prisma's `✔`) — a path D5's forced `stream-json`
-  does not cover. Setting `PYTHONUTF8=1` on the child (alongside the existing
-  `PYTHONIOENCODING` strip) fixes it without re-triggering the D5 Textual-TUI trap.
+- **Historical, `kimi-cli` 1.48-only.** A Windows-only defect surfaced live and
+  was fixed (#155, [validation](./0028-kimi-validation.md)): kimi crashed with a
+  cp1252 `'charmap' codec can't encode` error, exit 1, when it captured
+  **tool-subprocess** output carrying a non-cp1252 char (e.g. Prisma's `✔`) — a
+  path the historical D5's forced `stream-json` did not cover. Setting the
+  Python interpreter's UTF-8 mode on the child (alongside stripping its I/O
+  encoding override) fixed it without re-triggering the Textual-TUI trap.
+  `kimi-code` 0.28 is a native
+  binary with no Python runtime, so this whole defect class — and its fix — is
+  inert against it (D5).
+
+## Amendment (2026-07-20) — kimi-code 0.28: the argv ceiling, the charter pointer, and the supported baseline (#239/#240)
+
+Validated live in #239 on both Windows and WSL Ubuntu 22.04, byte-identical
+except where noted. This amendment lands **before** the code change (#240
+first, the adapter fix follows), so the implementer reads a true contract
+instead of discovering the drift mid-fix. It rewrote D4/D5/D6/D7/D9 above in
+place; the three decisions below are new, not a rewrite of an existing one.
+
+**(a) The argv ceiling, measured, not quoted from documentation.** D5 moved the
+charter from stdin to argv (`-p, --prompt`), which turns the process's
+single-argument limit into a real constraint:
+
+| platform | single-arg ceiling | measured |
+|---|---|---|
+| Windows (`CreateProcess` `lpCommandLine`) | 32,767 chars | passes at 32,000, `WinError 206` at 33,000 |
+| Linux (`MAX_ARG_STRLEN`, 32 pages) | 131,072 bytes | passes at 131,000, `E2BIG` at 131,072 |
+
+These are host-measured ceilings from the #239 probe, not vendor-documented
+constants — treat them as measured-on-that-host, not a portable guarantee.
+
+**(b) Decision: the execute charter rides a `.ralphy/exec.md` file-pointer, not
+argv.** `prompt.execute.md` is 23,698 chars today (measured in #239; 23,884
+bytes on disk in this working tree — the gap is non-ASCII characters encoding
+to multiple UTF-8 bytes, not a line-ending difference); escaped for Windows (46
+embedded `"`, no backslashes) it is ~23,746,
+leaving ~8.8 KB of slack once the program path and the other flags are
+counted — it fits *today*. But it is a source file that can be edited past the
+Windows ceiling **invisibly on Linux and fatally on Windows**, since Linux's
+ceiling is 4x larger and CI running on Linux would never catch a Windows-only
+regression. Rather than ship the charter in argv with a regression test
+pinning it under a Windows-safe budget, the adapter passes a **file-pointer**:
+write the charter to `.ralphy/exec.md` and pass a one-line pointer in `-p`,
+mirroring the plan path's existing `PLAN_CHARTER`/`.ralphy/plan-charter.md`
+mechanism. This is not new machinery, it is the pattern this adapter already
+uses on the plan side, applied to the side that just lost its stdin channel.
+
+**(c) Decision: `kimi-code` 0.28+ is the only supported baseline.** The legacy
+`~/.kimi` session store is dropped — the adapter only ever reads sessions it
+just created (D7), so straddling both the 1.48 and 0.28 stores buys nothing,
+unlike `ralphy-usage-scan` (ADR-0033) which straddles because it reads
+historical data written by whichever CLI generated it. One data point backing
+this: the validated Linux host in #239 has **no `~/.kimi` at all** — it is a
+clean `kimi-code` install that never ran `kimi-cli`, so any host provisioned
+from here on simply will not have the legacy store to fall back to.
+
+**(d) Ordering.** This document lands before the adapter code change. Until
+that follow-up issue lands, `ralphy-agent-kimi` still emits the 1.48 invocation
+(`--work-dir`, `--print`, `-y`) and fails on `kimi-code` 0.28's first flag
+(`error: unknown option '--work-dir'`) — the adapter is **currently broken**
+against the CLI version operators actually have installed. This amendment
+exists so the fix, when it lands, is implemented against a true contract
+rather than rediscovering #239's findings from scratch.
