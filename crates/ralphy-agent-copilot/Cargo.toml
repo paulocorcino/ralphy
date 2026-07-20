@@ -9,6 +9,7 @@ description = "GitHub Copilot CLI adapter for Ralphy: drives headless `copilot` 
 [dependencies]
 anyhow.workspace = true
 tracing.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 ralphy-core.workspace = true

@@ -1574,6 +1574,7 @@ dependencies = [
  "ralphy-core",
  "ralphy-usage-scan",
  "rusqlite",
+ "serde",
  "serde_json",
  "tempfile",
  "tracing",

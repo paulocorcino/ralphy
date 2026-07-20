@@ -28,6 +28,7 @@ mod auth;
 mod catalog;
 mod command;
 mod outcome;
+mod settings;
 mod usage;
 
 /// The free model catalog the preflight learns from one `copilot` subprocess
@@ -36,6 +37,9 @@ pub use catalog::{
     fetch_catalog, parse_catalog, CopilotCatalog, CopilotModel, CopilotPrices,
     COPILOT_CATALOG_ERROR_MSG, COPILOT_PROBE_BILLED_MSG,
 };
+
+/// Persisted per-phase model overrides (ADR-0041 D4). See [`CopilotSettings`].
+pub use settings::CopilotSettings;
 
 /// `true` (ADR-0041 D12): `copilot --attachment <path>` attaches an image or
 /// native document to the initial prompt in non-interactive mode, so a triage
@@ -56,13 +60,27 @@ use usage::copilot_usage;
 /// is piped on stdin. Single source of truth lives at `assets/prompts/`.
 const PROMPT_PLAN_COPILOT: &str = include_str!("../../../assets/prompts/prompt.plan.copilot.md");
 
-/// Drives the `copilot` CLI. `model` is the operator override, omitted from argv
-/// when `None` — omission selects the account's current default, which is the
-/// correct default rather than a degraded fallback (ADR-0041 D4). `run_dir` is
-/// where the captured logs live; `max_minutes_per_issue` is the per-issue wall
-/// budget, clamped to `run_deadline` when the run carries a global deadline.
+/// The two phases a `CopilotAgent` drives, each with its own model source
+/// (`--plan-model` / persisted `copilot.plan_model` for `Plan`; `--exec-model` /
+/// persisted `copilot.exec_model` for `Execute`, ADR-0041 D4).
+#[derive(Clone, Copy)]
+enum Phase {
+    Plan,
+    Execute,
+}
+
+/// Drives the `copilot` CLI. `exec_model` is the operator override for
+/// `execute()` (set via `new`); `plan_model` is the override for `plan()` (set
+/// via `with_plan_model`). Resolution order for each phase, outside this crate:
+/// the phase's `--plan-model`/`--exec-model` flag, then the persisted
+/// `copilot.plan_model`/`copilot.exec_model`, then omission — omitting `--model`
+/// selects the account's current default, the correct default rather than a
+/// degraded fallback (ADR-0041 D4). `run_dir` is where the captured logs live;
+/// `max_minutes_per_issue` is the per-issue wall budget, clamped to
+/// `run_deadline` when the run carries a global deadline.
 pub struct CopilotAgent {
-    model: Option<String>,
+    exec_model: Option<String>,
+    plan_model: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -70,9 +88,24 @@ pub struct CopilotAgent {
 impl CopilotAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
         Self {
-            model,
+            exec_model: model,
+            plan_model: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
+        }
+    }
+
+    /// Set the model override used for `plan()` (mirrors `ClaudeAgent`'s builder
+    /// style; ADR-0041 D4).
+    pub fn with_plan_model(mut self, model: Option<String>) -> Self {
+        self.plan_model = model;
+        self
+    }
+
+    fn phase_model(&self, phase: Phase) -> Option<&str> {
+        match phase {
+            Phase::Plan => self.plan_model.as_deref(),
+            Phase::Execute => self.exec_model.as_deref(),
         }
     }
 
@@ -117,8 +150,9 @@ impl Agent for CopilotAgent {
         let run = || {
             // `None` (the default) omits `--model` entirely, which selects the
             // account's own default — the correct default, not a fallback (D4).
-            let cmd = build_copilot_command(&session_id, self.model.as_deref(), ws.repo_root());
-            ralphy_core::emit::planning("copilot", self.model.as_deref().unwrap_or(""), "");
+            let model = self.phase_model(Phase::Plan);
+            let cmd = build_copilot_command(&session_id, model, ws.repo_root());
+            ralphy_core::emit::planning("copilot", model.unwrap_or(""), "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -181,8 +215,9 @@ impl Agent for CopilotAgent {
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
 
         let run = || {
-            let cmd = build_copilot_command(&session_id, self.model.as_deref(), ws.repo_root());
-            ralphy_core::emit::executing("copilot", 0, self.model.as_deref().unwrap_or(""), "");
+            let model = self.phase_model(Phase::Execute);
+            let cmd = build_copilot_command(&session_id, model, ws.repo_root());
+            ralphy_core::emit::executing("copilot", 0, model.unwrap_or(""), "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_copilot(cmd, PROMPT_EXECUTE, timeout)?;
             Ok((r, ()))
@@ -298,6 +333,54 @@ mod tests {
             PROMPT_PLAN_COPILOT.contains("<!-- ralphy-plan: issue=<N> -->"),
             "planning prompt must instruct writing the exact finalized-plan trailer"
         );
+    }
+
+    fn argv(cmd: &std::process::Command) -> Vec<String> {
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn plan_phase_uses_plan_model_in_argv() {
+        let agent = CopilotAgent::new(Some("exec-pin".into()), PathBuf::from("/run"))
+            .with_plan_model(Some("plan-pin".into()));
+        let cmd = build_copilot_command(
+            "s1",
+            agent.phase_model(Phase::Plan),
+            std::path::Path::new("/repo"),
+        );
+        let args = argv(&cmd);
+        let i = args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(args[i + 1], "plan-pin");
+    }
+
+    #[test]
+    fn execute_phase_uses_exec_model_in_argv() {
+        let agent = CopilotAgent::new(Some("exec-pin".into()), PathBuf::from("/run"))
+            .with_plan_model(Some("plan-pin".into()));
+        let cmd = build_copilot_command(
+            "s1",
+            agent.phase_model(Phase::Execute),
+            std::path::Path::new("/repo"),
+        );
+        let args = argv(&cmd);
+        let i = args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(args[i + 1], "exec-pin");
+    }
+
+    #[test]
+    fn both_phases_omit_model_when_unpinned() {
+        let agent = CopilotAgent::new(None, PathBuf::from("/run"));
+        for phase in [Phase::Plan, Phase::Execute] {
+            let cmd = build_copilot_command(
+                "s1",
+                agent.phase_model(phase),
+                std::path::Path::new("/repo"),
+            );
+            let args = argv(&cmd);
+            assert!(!args.iter().any(|a| a == "--model"), "argv: {args:?}");
+        }
     }
 
     /// The reason the charter goes on stdin and never on argv (D2): at 23 884 bytes
