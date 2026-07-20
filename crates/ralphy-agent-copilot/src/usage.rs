@@ -51,6 +51,22 @@ pub(crate) fn copilot_usage(session_id: &str) -> Usage {
     usage_from(tokens, model)
 }
 
+/// The reasoning effort Copilot RECORDED for `session_id`, or `None` when no home
+/// resolves, the store is unavailable, or the vendor wrote nothing. Best-effort by
+/// the same contract as [`copilot_usage`].
+pub(crate) fn copilot_recorded_effort(session_id: &str) -> Option<String> {
+    ralphy_usage_scan::session_reasoning_effort(&copilot_store_db()?, session_id)
+}
+
+/// The post-hoc verification of the effort clamp (ADR-0041 D5a): the REQUEST is
+/// not the truth, the vendor's own record is. `Some(message)` only when both are
+/// known and they differ — an absent record proves nothing, and an equal pair is
+/// the expected case. Purely a `warn!` payload: never fails a run.
+pub(crate) fn effort_mismatch(requested: Option<&str>, recorded: Option<&str>) -> Option<String> {
+    let (r, v) = (requested?, recorded?);
+    (r != v).then(|| format!("requested effort {r}, but the vendor recorded {v}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +123,18 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = seed_p2(tmp.path(), "ses_x");
         assert_eq!(usage_of(&db, "ses_nobody"), Usage::default());
+    }
+
+    #[test]
+    fn effort_mismatch_names_both_levels() {
+        assert_eq!(
+            effort_mismatch(Some("high"), Some("medium")).as_deref(),
+            Some("requested effort high, but the vendor recorded medium")
+        );
+        assert_eq!(effort_mismatch(Some("high"), Some("high")), None);
+        assert_eq!(effort_mismatch(Some("high"), None), None);
+        assert_eq!(effort_mismatch(None, Some("high")), None);
+        assert_eq!(effort_mismatch(None, None), None);
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub mod opencode;
 
 pub use claude::scan_claude;
 pub use codex::scan_codex;
-pub use copilot::{scan_copilot, session_tokens};
+pub use copilot::{scan_copilot, session_reasoning_effort, session_tokens};
 pub use kimi::scan_kimi;
 pub use opencode::scan_opencode;
 

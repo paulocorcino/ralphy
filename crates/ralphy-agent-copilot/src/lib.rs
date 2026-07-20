@@ -185,6 +185,19 @@ impl CopilotAgent {
     }
 }
 
+/// D5a's post-hoc verification: compare what the argv asked for against what the
+/// vendor actually recorded for the session, and `warn!` on a divergence. Never
+/// changes a return value or fails a run — the request is not the truth, but a
+/// silent divergence is what would hide a clamp bug.
+fn warn_effort_mismatch(requested: Option<&str>, session_id: &str) {
+    if let Some(msg) = usage::effort_mismatch(
+        requested,
+        usage::copilot_recorded_effort(session_id).as_deref(),
+    ) {
+        tracing::warn!(session_id, "{}", msg);
+    }
+}
+
 impl Agent for CopilotAgent {
     fn name(&self) -> &'static str {
         "copilot"
@@ -256,7 +269,10 @@ impl Agent for CopilotAgent {
             // this id exists to read: report zero rather than another run's rows.
             usage: session
                 .as_ref()
-                .map(|_| copilot_usage(&session_id))
+                .map(|_| {
+                    warn_effort_mismatch(effort.as_deref(), &session_id);
+                    copilot_usage(&session_id)
+                })
                 .unwrap_or_default(),
             // `None` = a finalized plan was RESUMED and no `copilot` process ran,
             // so no session by this id exists in the store.
@@ -321,6 +337,7 @@ impl Agent for CopilotAgent {
             committed,
             "copilot execution ended"
         );
+        warn_effort_mismatch(effort.as_deref(), &session_id);
         Ok(Execution {
             outcome,
             usage: copilot_usage(&session_id),

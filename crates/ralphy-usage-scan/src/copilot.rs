@@ -141,6 +141,37 @@ fn read_session_tokens(db: &Path, session_id: &str) -> rusqlite::Result<(Tokens,
     Ok((total, model))
 }
 
+/// The reasoning effort Copilot RECORDED for `session_id` — the chronologically
+/// last non-NULL `assistant_usage_events.reasoning_effort` (`ORDER BY id`, the
+/// same key the model carry uses).
+///
+/// This is the post-hoc oracle for the effort clamp (ADR-0041 D5a): what the
+/// adapter requested is not the truth, what the vendor wrote is. Fully
+/// best-effort like [`session_tokens`] — a missing store, a corrupt file, or a
+/// renamed column all yield `None` rather than failing a run.
+pub fn session_reasoning_effort(db_path: &Path, session_id: &str) -> Option<String> {
+    copy_store(db_path)
+        .ok()
+        .and_then(|c| read_session_effort(&c.db, session_id).ok())
+        .flatten()
+}
+
+/// The non-copying reader core of [`session_reasoning_effort`].
+fn read_session_effort(db: &Path, session_id: &str) -> rusqlite::Result<Option<String>> {
+    use rusqlite::Connection;
+
+    let conn = Connection::open(db)?;
+    let mut stmt = conn.prepare(
+        "SELECT reasoning_effort FROM assistant_usage_events WHERE session_id = ?1 ORDER BY id",
+    )?;
+    let rows = stmt.query_map([session_id], |row| row.get::<_, Option<String>>(0))?;
+    let mut last = None;
+    for level in rows.flatten().flatten() {
+        last = Some(level);
+    }
+    Ok(last)
+}
+
 /// Scan the Copilot SQLite store into interactive records (one per session ×
 /// model). Fully best-effort: any error (missing db, corrupt file, schema drift)
 /// yields an empty vec via the single [`read_copilot`] error funnel. `since` drops
@@ -316,6 +347,14 @@ mod tests {
     use std::fs;
 
     const CREATE_USAGE: &str = "CREATE TABLE assistant_usage_events (\
+         id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, turn_index INTEGER, \
+         model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
+         cache_read_tokens INTEGER, cache_write_tokens INTEGER, \
+         reasoning_tokens INTEGER, reasoning_effort TEXT, token_details_json TEXT, \
+         created_at TEXT)";
+    /// The same table as the live store MINUS `reasoning_effort` — the schema-drift
+    /// shape the effort reader has to survive.
+    const CREATE_USAGE_NO_EFFORT: &str = "CREATE TABLE assistant_usage_events (\
          id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, turn_index INTEGER, \
          model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
          cache_read_tokens INTEGER, cache_write_tokens INTEGER, \
@@ -776,6 +815,63 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].session_id, "ses_new");
+    }
+
+    /// The post-hoc effort oracle: the LAST recorded level wins, an unknown session
+    /// is `None`, and a store whose schema lost the column degrades to `None`
+    /// instead of panicking.
+    #[test]
+    fn session_reasoning_effort_reads_the_recorded_level() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("session-store.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(CREATE_USAGE, []).unwrap();
+        for level in ["low", "high"] {
+            conn.execute(
+                "INSERT INTO assistant_usage_events (session_id, turn_index, model, \
+                 input_tokens, output_tokens, reasoning_effort, created_at) \
+                 VALUES ('ses_e', 0, 'm', 1, 1, ?1, '2026-07-20T11:54:33.066Z')",
+                rusqlite::params![level],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        assert_eq!(
+            session_reasoning_effort(&path, "ses_e"),
+            Some("high".to_string()),
+            "the chronologically last row wins"
+        );
+        assert_eq!(session_reasoning_effort(&path, "ses_nobody"), None);
+
+        let drifted = tmp.path().join("drifted");
+        fs::create_dir_all(&drifted).unwrap();
+        let dpath = drifted.join("session-store.db");
+        let dconn = Connection::open(&dpath).unwrap();
+        dconn.execute(CREATE_USAGE_NO_EFFORT, []).unwrap();
+        insert(
+            &dconn,
+            &Row {
+                session_id: "ses_e",
+                turn_index: 0,
+                model: "claude-sonnet-5",
+                input: 1,
+                output: 1,
+                cache_read: 0,
+                cache_write: 0,
+                reasoning: 0,
+                created_at: "2026-07-20T11:54:33.066Z",
+            },
+        );
+        drop(dconn);
+        assert_eq!(
+            session_reasoning_effort(&dpath, "ses_e"),
+            None,
+            "a renamed/dropped column degrades to None, never a panic"
+        );
+        assert_eq!(
+            session_reasoning_effort(Path::new("does-not-exist-session-store.db"), "ses_e"),
+            None
+        );
     }
 
     #[test]
