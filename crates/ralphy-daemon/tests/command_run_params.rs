@@ -5,6 +5,9 @@
 //! claude` AND `--branch-mode new`, then `status:"exited"`. Mirrors
 //! `tests/command_ws.rs`.
 //!
+//! A second round trip covers the split planner/executor shape with Kimi on both
+//! phases (issue #228), on its own connection.
+//!
 //! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE`/`RALPHY_TEST_*` are
 //! process-global, so an env-setting integration test must be alone in its file
 //! (no intra-process race).
@@ -106,6 +109,76 @@ async fn run_command_argv_reaches_the_child() {
     );
 
     let exited = exited.expect("must receive an exit frame");
+    assert_eq!(exited["status"], "exited");
+    assert_eq!(exited["code"].as_i64(), Some(0));
+
+    // A second run on a FRESH connection — the handler closes the socket once a
+    // dispatched child exits, so it is one command per connection.
+    //
+    // This one is the split planner/executor shape with Kimi on BOTH phases
+    // (issue #228). Kimi was absent from the daemon's agent enum while its adapter
+    // shipped, so this payload used to be refused with BadParam("agent") and spawn
+    // nothing. Only a real child echoing its argv proves the vendor survived the
+    // whole path — `spawn_argv`'s unit test alone cannot, since the enum it is
+    // exhaustive over is the very thing that was missing the variant.
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("reconnecting to /ws/command for the kimi run");
+    ws.send(Message::Binary(protocol::encode(&Frame::Command(
+        Command {
+            id: 2,
+            verb: "run".to_string(),
+            payload: serde_json::json!({
+                "repo": slug,
+                "agent": "kimi",
+                "planAgent": "kimi",
+                "branchMode": "current"
+            }),
+        },
+    ))))
+    .await
+    .unwrap();
+
+    let (output, exited) = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut exited: Option<serde_json::Value> = None;
+        let mut output = String::new();
+        while let Some(msg) = ws.next().await {
+            let bytes = match msg.unwrap() {
+                Message::Binary(b) => b,
+                _ => continue,
+            };
+            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                match cmd.payload.get("status").and_then(|s| s.as_str()) {
+                    Some("output") => {
+                        output.push_str(cmd.payload["chunk"].as_str().unwrap_or_default());
+                    }
+                    Some("exited") => {
+                        exited = Some(cmd.payload);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        (output, exited)
+    })
+    .await
+    .expect("the kimi run's output + exit must arrive within 10s");
+
+    assert!(
+        output.contains("--agent kimi"),
+        "the executor flag must reach the child as --agent kimi; got: {output:?}"
+    );
+    assert!(
+        output.contains("--plan-agent kimi"),
+        "the planner flag must reach the child as --plan-agent kimi; got: {output:?}"
+    );
+    assert!(
+        output.contains("--branch-mode current"),
+        "the run argv must carry --branch-mode current; got: {output:?}"
+    );
+
+    let exited = exited.expect("the kimi run must receive an exit frame");
     assert_eq!(exited["status"], "exited");
     assert_eq!(exited["code"].as_i64(), Some(0));
 }
