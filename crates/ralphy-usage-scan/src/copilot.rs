@@ -70,6 +70,9 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
         std::process::id(),
         seq
     ));
+    // A process killed before `Drop` ran leaves a directory this pid+seq can name
+    // again; a stale `-wal` there would be replayed over the fresh `.db` snapshot.
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
     let name = db
         .file_name()
@@ -406,6 +409,144 @@ mod tests {
         assert_eq!(model.as_deref(), Some("claude-sonnet-5"));
     }
 
+    /// `ORDER BY id`, LAST row wins — not first, and not `turn_index` order. The
+    /// two rows carry different models in an order where id and alphabet disagree.
+    #[test]
+    fn copilot_model_carry_is_the_highest_id_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("session-store.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(CREATE_USAGE, []).unwrap();
+        for (model, turn) in [("claude-sonnet-5", 1), ("a-later-model", 0)] {
+            insert(
+                &conn,
+                &Row {
+                    session_id: "ses_m",
+                    turn_index: turn,
+                    model,
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                    reasoning: 0,
+                    created_at: "2026-07-20T11:54:33.066Z",
+                },
+            );
+        }
+        drop(conn);
+        let (_, model) = session_tokens(&path, "ses_m");
+        assert_eq!(
+            model.as_deref(),
+            Some("a-later-model"),
+            "the highest `id` wins — keep-first or `ORDER BY turn_index` would give claude-sonnet-5"
+        );
+    }
+
+    /// The cwd-less fallback query (ADR-0033 §6): a store with no `sessions` table
+    /// still reports its rows, unattributed, instead of degrading to zero.
+    #[test]
+    fn copilot_store_without_a_sessions_table_still_reports_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("session-store.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(CREATE_USAGE, []).unwrap();
+        insert(
+            &conn,
+            &Row {
+                session_id: "ses_nofk",
+                turn_index: 0,
+                model: "claude-sonnet-5",
+                input: 10,
+                output: 5,
+                cache_read: 0,
+                cache_write: 0,
+                reasoning: 0,
+                created_at: "2026-07-20T11:54:33.066Z",
+            },
+        );
+        drop(conn);
+        let records = scan_copilot(&CopilotScan {
+            db_path: &path,
+            run_session_ids: &HashSet::new(),
+            repos: &[RegisteredRepo {
+                slug: "o/ralphy".into(),
+                path: "C:\\Dev\\ralphy".into(),
+            }],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tokens.input, 10);
+        assert_eq!(records[0].project, None, "no cwd column, no attribution");
+        assert_eq!(records[0].actor_email, None);
+    }
+
+    /// A cwd that matches no registered repo is REPORTED, never dropped (§6), and
+    /// a matched one carries the repo's git actor email.
+    #[test]
+    fn copilot_attribution_covers_matched_and_unmatched_cwd() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(["-C", repo.to_str().unwrap()])
+                .args(args)
+                .output()
+                .unwrap();
+        };
+        run(&["init"]);
+        run(&["config", "user.email", "t@example.com"]);
+        let repo_path = repo.to_string_lossy().to_string();
+
+        let path = tmp.path().join("session-store.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(CREATE_USAGE, []).unwrap();
+        conn.execute(CREATE_SESSIONS, []).unwrap();
+        for sid in ["ses_in", "ses_out"] {
+            insert(
+                &conn,
+                &Row {
+                    session_id: sid,
+                    turn_index: 0,
+                    model: "claude-sonnet-5",
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_write: 0,
+                    reasoning: 0,
+                    created_at: "2026-07-20T11:54:33.066Z",
+                },
+            );
+        }
+        conn.execute(
+            "INSERT INTO sessions (id, cwd) VALUES ('ses_in', ?1), ('ses_out', ?2)",
+            rusqlite::params![repo_path, tmp.path().join("elsewhere").to_string_lossy()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let records = scan_copilot(&CopilotScan {
+            db_path: &path,
+            run_session_ids: &HashSet::new(),
+            repos: &[RegisteredRepo {
+                slug: "o/repo".into(),
+                path: repo_path,
+            }],
+            since: None,
+        });
+        assert_eq!(
+            records.len(),
+            2,
+            "an unmatched cwd is reported, not dropped"
+        );
+        let matched = records.iter().find(|r| r.session_id == "ses_in").unwrap();
+        assert_eq!(matched.project.as_deref(), Some("o/repo"));
+        assert_eq!(matched.actor_email.as_deref(), Some("t@example.com"));
+        let unmatched = records.iter().find(|r| r.session_id == "ses_out").unwrap();
+        assert_eq!(unmatched.project, None);
+        assert_eq!(unmatched.actor_email, None);
+    }
+
     #[test]
     fn copilot_wal_rows_need_the_sidecars() {
         let tmp = tempfile::tempdir().unwrap();
@@ -450,14 +591,55 @@ mod tests {
         assert_eq!(a.input, 0, "the `.db` alone cannot see uncheckpointed rows");
         let (b, _) = read_session_tokens(&all_three.join("session-store.db"), "ses_wal").unwrap();
         assert_eq!(b.input, 100, "the `.db` + sidecars replays the WAL");
+
+        // The PRODUCTION path over the same live store, writer still open: this is
+        // the leg that reds if `copy_store`'s sidecar loop is deleted — the two
+        // hand-copied legs above only establish the SQLite premise.
+        let (live_tokens, _) = session_tokens(&db, "ses_wal");
+        assert_eq!(
+            live_tokens.input, 100,
+            "session_tokens must copy the sidecars, not just the `.db`"
+        );
+        let records = scan_copilot(&CopilotScan {
+            db_path: &db,
+            run_session_ids: &HashSet::new(),
+            repos: &[],
+            since: None,
+        });
+        assert_eq!(records.len(), 1, "scan_copilot sees the uncheckpointed row");
+        assert_eq!(records[0].tokens.input, 100);
     }
 
+    /// The store under test is a LIVE WAL store with its writer still open — the
+    /// shape the daemon actually meets. A reader that opened it in place would
+    /// checkpoint or truncate the `-wal` (or leave a journal behind); asserting the
+    /// `.db` AND `-wal` bytes plus the directory listing is what makes "never
+    /// writes the live database" a falsifiable claim rather than a property any
+    /// pure-SELECT implementation satisfies on a quiescent DELETE-mode file.
     #[test]
     fn copilot_never_writes_the_live_store() {
         let tmp = tempfile::tempdir().unwrap();
         let live = tmp.path().join("live");
         fs::create_dir_all(&live).unwrap();
-        let db = seed_p2(&live, "ses_p2"); // the writer is dropped inside seed_p2
+        let db = live.join("session-store.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute(CREATE_USAGE, []).unwrap();
+        conn.execute(CREATE_SESSIONS, []).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        insert(
+            &conn,
+            &Row {
+                session_id: "ses_p2",
+                turn_index: 0,
+                model: "claude-sonnet-5",
+                input: 22913,
+                output: 350,
+                cache_read: 0,
+                cache_write: 22903,
+                reasoning: 159,
+                created_at: "2026-07-20T11:54:33.066Z",
+            },
+        );
 
         let names = |dir: &Path| {
             let mut n: Vec<String> = fs::read_dir(dir)
@@ -468,19 +650,36 @@ mod tests {
             n.sort();
             n
         };
-        let before_bytes = fs::read(&db).unwrap();
+        let wal = live.join("session-store.db-wal");
+        let before_db = fs::read(&db).unwrap();
+        let before_wal = fs::read(&wal).unwrap();
         let before_names = names(&live);
+        assert!(
+            before_names.iter().any(|n| n.ends_with("-wal")),
+            "the fixture must be a live WAL store, got {before_names:?}"
+        );
 
-        let _ = session_tokens(&db, "ses_p2");
-        let _ = scan_copilot(&CopilotScan {
+        let (tokens, _) = session_tokens(&db, "ses_p2");
+        assert_eq!(tokens.input, 22913, "the scan actually read the live row");
+        let records = scan_copilot(&CopilotScan {
             db_path: &db,
             run_session_ids: &HashSet::new(),
             repos: &[],
             since: None,
         });
+        assert_eq!(records.len(), 1);
 
-        assert_eq!(fs::read(&db).unwrap(), before_bytes, "live bytes unchanged");
-        assert_eq!(names(&live), before_names, "no sidecar left behind");
+        assert_eq!(
+            fs::read(&db).unwrap(),
+            before_db,
+            "live `.db` bytes unchanged"
+        );
+        assert_eq!(
+            fs::read(&wal).unwrap(),
+            before_wal,
+            "the `-wal` was neither checkpointed nor truncated"
+        );
+        assert_eq!(names(&live), before_names, "no file added or removed");
     }
 
     #[test]

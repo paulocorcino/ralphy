@@ -94,13 +94,6 @@ pub struct OpenCodeScan<'a> {
     pub since: Option<&'a str>,
 }
 
-/// Everything the Kimi scan reads, mirroring [`OpenCodeScan`] but with TWO store
-/// roots (ADR-0033 §2): `kimi_dir` is the `.kimi` base (legacy `kimi-cli`
-/// `StatusUpdate` wire files) and `kimi_code_dir` is the `.kimi-code` base
-/// (`usage.record` wire files). Per-root dispatch avoids content-sniffing — the
-/// format is decided by which root a `wire.jsonl` lives under. Plus the run-owned
-/// ids to exclude, the repo registry for attribution, and an optional `since`
-/// lower bound on `last_ts`.
 /// Everything the Copilot scan reads, mirroring [`OpenCodeScan`]: `db_path` is the
 /// `session-store.db` SQLite store (the scan COPIES it plus its `-wal`/`-shm`
 /// sidecars before reading its `assistant_usage_events`/`sessions` tables — see
@@ -113,6 +106,13 @@ pub struct CopilotScan<'a> {
     pub since: Option<&'a str>,
 }
 
+/// Everything the Kimi scan reads, mirroring [`OpenCodeScan`] but with TWO store
+/// roots (ADR-0033 §2): `kimi_dir` is the `.kimi` base (legacy `kimi-cli`
+/// `StatusUpdate` wire files) and `kimi_code_dir` is the `.kimi-code` base
+/// (`usage.record` wire files). Per-root dispatch avoids content-sniffing — the
+/// format is decided by which root a `wire.jsonl` lives under. Plus the run-owned
+/// ids to exclude, the repo registry for attribution, and an optional `since`
+/// lower bound on `last_ts`.
 pub struct KimiScan<'a> {
     pub kimi_dir: &'a Path,
     pub kimi_code_dir: &'a Path,

@@ -351,9 +351,15 @@ mod tests {
             table.cost_usd("claude-sonnet-5", &tokens).is_some(),
             "Copilot's account-default `claude-sonnet-5` must be priced"
         );
+        // An exact oracle on one row: `is_some()` alone would stay green with
+        // `cache_read` and `cache_creation` transposed, mispricing every run.
+        // 1M of each field at 0.95 / 4.0 / 0.16 / 0.95.
+        let kimi = table
+            .cost_usd("kimi-k2.7-code", &tokens)
+            .expect("Copilot's `kimi-k2.7-code` must be priced");
         assert!(
-            table.cost_usd("kimi-k2.7-code", &tokens).is_some(),
-            "Copilot's `kimi-k2.7-code` must be priced"
+            (kimi - (0.95 + 4.0 + 0.16 + 0.95)).abs() < 1e-9,
+            "kimi-k2.7-code priced field-by-field; got {kimi}"
         );
         let dotted = table
             .cost_usd("claude-haiku-4.5", &tokens)
