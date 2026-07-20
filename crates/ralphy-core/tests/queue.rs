@@ -62,6 +62,10 @@ struct ScriptedAgent {
     /// ADR-0015 bounce brief) repairs the plan: ticks every step and appends
     /// the missing closing sections — a well-behaved executor.
     fix_protocol: bool,
+    /// Per-attempt `Usage` to hand back from `execute`, one per call, in
+    /// order; once exhausted, `Usage::default()` (no model). Lets a test
+    /// script the resume loop's model-folding behavior.
+    exec_usages: RefCell<VecDeque<Usage>>,
 }
 
 impl ScriptedAgent {
@@ -85,6 +89,7 @@ impl ScriptedAgent {
             extra_by_issue: Vec::new(),
             lint_dirty: false,
             fix_protocol: false,
+            exec_usages: RefCell::new(VecDeque::new()),
         }
     }
 
@@ -130,6 +135,13 @@ impl ScriptedAgent {
     /// a `PlanLimit`; once exhausted, `plan` succeeds.
     fn with_plan_scripts(self, scripts: Vec<PlanScript>) -> Self {
         *self.plan_scripts.borrow_mut() = scripts.into();
+        self
+    }
+
+    /// Script the `Usage` (including `model`) each `execute` call hands back,
+    /// one per call in order.
+    fn with_exec_usages(self, usages: Vec<Usage>) -> Self {
+        *self.exec_usages.borrow_mut() = usages.into();
         self
     }
 }
@@ -229,7 +241,11 @@ impl Agent for ScriptedAgent {
         }
         Ok(Execution {
             outcome,
-            usage: Usage::default(),
+            usage: self
+                .exec_usages
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_default(),
             session_id: None,
         })
     }
@@ -699,17 +715,55 @@ fn works_issues_in_order_and_closes_each_green() {
 
 /// The event fields a capture cares about (#96): the message plus the two raw plan
 /// snapshots and the serialized steps carried on the plan-lifecycle emissions.
+///
+/// #219 generalizes it into a characterization harness: `level`/`target` come off
+/// the event metadata and `all` holds EVERY field rendered as a string, so a
+/// vocabulary pin can assert the exact key set and the observed encoding
+/// (`%order` arrives as `a -> b`, `?blockers` as `[139]`).
 #[derive(Default)]
 struct CapturedFields {
     message: String,
     plan_md: Option<String>,
     steps_json: Option<String>,
+    level: Option<tracing::Level>,
+    target: String,
+    all: std::collections::BTreeMap<String, String>,
+}
+
+impl CapturedFields {
+    /// The sorted field names present on this event, `message` included — the
+    /// shape a pin asserts so an ADDED or DROPPED field reds.
+    fn keys(&self) -> Vec<&str> {
+        self.all.keys().map(String::as_str).collect()
+    }
+
+    /// The rendered value of `name`, or `""` when the field is absent.
+    fn get(&self, name: &str) -> &str {
+        self.all.get(name).map_or("", String::as_str)
+    }
 }
 
 impl tracing::field::Visit for CapturedFields {
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.all.insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        self.all.insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+        self.all.insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.all.insert(field.name().to_string(), value.to_string());
+    }
+
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         // `%plan_md`/`%steps_json` (Display) and the event message all arrive here.
         let rendered = format!("{value:?}");
+        self.all.insert(field.name().to_string(), rendered.clone());
         match field.name() {
             "message" => self.message = rendered,
             "plan_md" => self.plan_md = Some(rendered),
@@ -746,7 +800,11 @@ impl tracing::Subscriber for GlobalCapture {
     fn event(&self, event: &tracing::Event<'_>) {
         CAPTURE_TARGET.with(|t| {
             if let Some(target) = t.borrow().as_ref() {
-                let mut f = CapturedFields::default();
+                let mut f = CapturedFields {
+                    level: Some(*event.metadata().level()),
+                    target: event.metadata().target().to_string(),
+                    ..Default::default()
+                };
                 event.record(&mut f);
                 target.lock().unwrap().push(f);
             }
@@ -824,6 +882,524 @@ fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
     );
 
     fs::remove_dir_all(&repo).ok();
+}
+
+// ── #219: characterization pins over the core-emitted event vocabulary ───────
+//
+// Each pin asserts the FULL `(level, target, message, field-key-set)` triple of a
+// consumed message, plus the observed encoding of the interesting values (`%order`
+// arrives rendered, `?blockers` as a Debug list). An added, dropped, renamed, or
+// re-sigiled field reds the pin — that is the drift class ADR-0039 §2 names. The
+// CLI-side decoder that consumes these lives in
+// `crates/ralphy-cli/src/runstate/event.rs`; the remaining 14 messages are pinned
+// there (`runstate::capture`).
+
+/// The `tracing` target every migrated emission carries (ADR-0039 §1): a helper
+/// in `ralphy_core::emit` builds tracing's `static` callsite `Metadata`, so the
+/// target is the helper's module — it physically cannot forward the caller's.
+/// The decoder ignores `target`, so this is the migration's ONE observable change.
+const T_EMIT: &str = "ralphy_core::emit";
+
+/// Run `f` with this thread's `tracing` events captured, in order.
+fn capture_run<T>(f: impl FnOnce() -> T) -> (T, Vec<CapturedFields>) {
+    install_global_capture();
+    let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    CAPTURE_TARGET.with(|t| *t.borrow_mut() = Some(sink.clone()));
+    let out = f();
+    CAPTURE_TARGET.with(|t| *t.borrow_mut() = None);
+    let events = std::mem::take(&mut *sink.lock().unwrap());
+    (out, events)
+}
+
+/// Assert the `(level, target, message, field-key-set)` triple of `message` and
+/// hand the event back for per-field value assertions.
+#[track_caller]
+fn pin<'a>(
+    events: &'a [CapturedFields],
+    message: &str,
+    target: &str,
+    keys: &[&str],
+) -> &'a CapturedFields {
+    let ev = events
+        .iter()
+        .find(|f| f.message == message)
+        .unwrap_or_else(|| {
+            let seen: Vec<&str> = events.iter().map(|e| e.message.as_str()).collect();
+            panic!("no `{message}` event was emitted; captured: {seen:?}")
+        });
+    assert_eq!(
+        ev.level,
+        Some(tracing::Level::INFO),
+        "`{message}` must stay INFO — a WARN/ERROR decodes as a generic Notice"
+    );
+    assert_eq!(ev.target, target, "`{message}` target drifted");
+    assert_eq!(ev.keys(), keys, "`{message}` field set drifted");
+    ev
+}
+
+#[test]
+fn pins_green_run_vocabulary() {
+    let repo = init_repo("pins-green");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-green", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(
+        report.unwrap().stop.is_none(),
+        "a single green issue completes"
+    );
+
+    let started = pin(
+        &events,
+        "issue started",
+        T_EMIT,
+        &["message", "number", "title"],
+    );
+    assert_eq!(started.get("number"), "7");
+    assert_eq!(started.get("title"), "issue 7");
+
+    let written = pin(
+        &events,
+        "plan written",
+        T_EMIT,
+        &[
+            "cr",
+            "cw",
+            "message",
+            "model",
+            "number",
+            "open_steps",
+            "out",
+            "steps_json",
+            "up",
+        ],
+    );
+    assert_eq!(written.get("number"), "7");
+    assert_eq!(written.get("open_steps"), "1");
+    // `%steps_json` (Display) arrives as the raw JSON array, NOT a quoted Debug form.
+    assert!(
+        written.get("steps_json").starts_with('['),
+        "steps_json must arrive Display-rendered: {}",
+        written.get("steps_json")
+    );
+
+    let opened = pin(
+        &events,
+        "plan opened",
+        T_EMIT,
+        &["message", "number", "plan_md"],
+    );
+    assert_eq!(opened.get("number"), "7");
+    assert!(opened.get("plan_md").contains("## Steps"));
+
+    let closed = pin(
+        &events,
+        "plan closed",
+        T_EMIT,
+        &["message", "number", "plan_md"],
+    );
+    assert_eq!(closed.get("number"), "7");
+    assert!(closed.get("plan_md").contains("## Steps"));
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("number"), "7");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+// ── #225: exec_usage folds model instead of dropping it on accumulate ────────
+
+#[test]
+fn exec_usage_single_attempt_keeps_model() {
+    let repo = init_repo("exec-usage-single");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![Usage {
+        input: 100,
+        output: 400,
+        cache_read: 200,
+        cache_creation: 300,
+        model: Some("claude-opus-4-8".into()),
+    }]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-exec-usage-single", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("model"), "claude-opus-4-8");
+    assert_eq!(green.get("up"), "100");
+    assert_eq!(green.get("out"), "400");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn exec_usage_resume_loop_folds_heaviest_model() {
+    let repo = init_repo("exec-usage-resume");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::scripted(vec![
+        (Outcome::Limit(Some("15:00".into())), false),
+        (Outcome::Done, true),
+    ])
+    .with_exec_usages(vec![
+        Usage {
+            input: 100,
+            output: 400,
+            cache_read: 200,
+            cache_creation: 300,
+            model: Some("claude-haiku-4-5".into()),
+        },
+        Usage {
+            input: 1000,
+            output: 4000,
+            cache_read: 2000,
+            cache_creation: 3000,
+            model: Some("claude-opus-4-8".into()),
+        },
+    ]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-exec-usage-resume", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("model"), "claude-opus-4-8");
+    assert_eq!(green.get("up"), "1100");
+    assert_eq!(green.get("cr"), "2200");
+    assert_eq!(green.get("cw"), "3300");
+    assert_eq!(green.get("out"), "4400");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn exec_usage_without_model_stays_unattributed() {
+    let repo = init_repo("exec-usage-unattributed");
+    let queue = vec![issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![Usage {
+        input: 10,
+        output: 0,
+        cache_read: 0,
+        cache_creation: 0,
+        model: None,
+    }]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-exec-usage-unattributed", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let green = pin(
+        &events,
+        "green — issue closed",
+        T_EMIT,
+        &[
+            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+        ],
+    );
+    assert_eq!(green.get("model"), "");
+    assert_eq!(green.get("up"), "10");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn pins_skip_and_stop_vocabulary() {
+    // Non-green stop: #1 green, #2 blocked.
+    let repo = init_repo("pins-nongreen");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Blocked("nope".into())]);
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-nongreen", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::never(),
+        )
+    });
+    let non_green = pin(
+        &events,
+        "non-green — stopping run",
+        T_EMIT,
+        &["message", "number", "outcome"],
+    );
+    assert_eq!(non_green.get("number"), "2");
+    // `?outcome` (Debug on the shorthand) — the decoder reads this rendered form.
+    assert_eq!(non_green.get("outcome"), "Blocked(\"nope\")");
+    fs::remove_dir_all(&repo).ok();
+
+    // Deadline: the clock reports passed before #2.
+    let repo = init_repo("pins-deadline");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]);
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-deadline", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::passes_after(1),
+        )
+    });
+    assert_eq!(
+        pin(
+            &events,
+            "deadline passed — not starting issue",
+            T_EMIT,
+            &["message", "number"],
+        )
+        .get("number"),
+        "2"
+    );
+    fs::remove_dir_all(&repo).ok();
+
+    // Stop-before label on #2.
+    let repo = init_repo("pins-stopbefore");
+    let queue = vec![issue(1), issue_labeled(2, &["stop-before"]), issue(3)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-stopbefore", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::never(),
+        )
+    });
+    assert_eq!(
+        pin(
+            &events,
+            "stop-before label — halting run before this issue",
+            T_EMIT,
+            &["message", "number"],
+        )
+        .get("number"),
+        "2"
+    );
+    fs::remove_dir_all(&repo).ok();
+
+    // Human-return label on #1; the queue continues to #2.
+    let repo = init_repo("pins-humanreturn");
+    let queue = vec![issue_labeled(1, &["AFK", "needs-info"]), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-hr", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::never(),
+        )
+    });
+    let hr = pin(
+        &events,
+        "human-return label — skipping issue",
+        T_EMIT,
+        &["label", "message", "number"],
+    );
+    assert_eq!(hr.get("number"), "1");
+    // `%label` (Display) — the decoder's `clean_opt` strips no quotes here.
+    assert_eq!(hr.get("label"), "needs-info");
+    fs::remove_dir_all(&repo).ok();
+
+    // Verify gate red past the repair budget on #1; the queue continues to #2.
+    let repo = init_repo("pins-verifyfail");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
+        .with_plan_extra_for(1, format!("## Verify\n\n{}\n", verify_fail_line()))
+        .with_plan_extra_for(2, format!("## Verify\n\n{}\n", verify_ok_line()));
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-verifyfail", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::never(),
+        )
+    });
+    let vg = pin(
+        &events,
+        "verify gate failed — skipping issue",
+        T_EMIT,
+        &["message", "number", "summary"],
+    );
+    assert_eq!(vg.get("number"), "1");
+    assert!(
+        !vg.get("summary").is_empty(),
+        "the `%summary` field must carry the failure text"
+    );
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn pins_blocked_and_split_vocabulary() {
+    // #5 blocked by open, agent-owned #2.
+    let repo = init_repo("pins-blocked");
+    let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n"), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-blocked", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::never(),
+        )
+    });
+    let blocked = pin(
+        &events,
+        "blocked by open issue(s) — skipping",
+        T_EMIT,
+        &["blockers", "message", "number"],
+    );
+    assert_eq!(blocked.get("number"), "5");
+    // `?blockers` — a Debug-rendered `Vec<u64>` the decoder parses the numbers out of.
+    assert_eq!(blocked.get("blockers"), "[2]");
+    fs::remove_dir_all(&repo).ok();
+
+    // #5 blocked by open #2, which carries a human gate.
+    let repo = init_repo("pins-humangate");
+    let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n"), issue(7)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker {
+        issue_labels: HashMap::from([(2u64, vec!["ready-for-human".to_string()])]),
+        ..Default::default()
+    };
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-humangate", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+    });
+    let hb = pin(
+        &events,
+        "blocked — waiting on human",
+        T_EMIT,
+        &["blockers", "human_blockers", "message", "number"],
+    );
+    assert_eq!(hb.get("number"), "5");
+    assert_eq!(hb.get("blockers"), "[2]");
+    assert_eq!(hb.get("human_blockers"), "[2]");
+    fs::remove_dir_all(&repo).ok();
+
+    // An infeasible plan whose reason names a bundle → the needs-split verdict.
+    let repo = init_repo("pins-bundle");
+    let queue = vec![issue(3)];
+    let agent = ScriptedAgent::new(vec![]).infeasible().with_plan_extra(
+        "## Feasible: no\nThe issue bundles six PRD breakdown tasks; split into W1-T01..T06.",
+    );
+    let (_r, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-pins-bundle", false),
+            &queue,
+            &agent,
+            &RecordingTracker::default(),
+            &ScriptedClock::never(),
+        )
+    });
+    assert_eq!(
+        pin(
+            &events,
+            "bundle plan — needs split",
+            T_EMIT,
+            &["message", "number"],
+        )
+        .get("number"),
+        "3"
+    );
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn pins_usage_limit_vocabulary() {
+    // The two sleep-boundary emissions live on the REAL `WallClock`, not the
+    // `ScriptedClock` the runner tests inject — so drive it directly. A reset
+    // instant more than the 5-minute wake buffer in the past makes the wait
+    // resolve on its first loop turn, with no sleep.
+    let past = (chrono::Local::now() - chrono::Duration::minutes(30)).to_rfc3339();
+    let (outcome, events) =
+        capture_run(|| ralphy_core::WallClock { deadline: None }.wait_for_reset(&past));
+    assert_eq!(outcome, ralphy_core::WaitOutcome::Resumed);
+
+    let sleep = pin(
+        &events,
+        "usage limit — waiting for reset",
+        T_EMIT,
+        &["hint", "message", "reset", "target_epoch"],
+    );
+    // `%reset` is the WAKE time-of-day (`HH:MM`), not the raw hint — the decoder
+    // carries it straight into the card's countdown label.
+    assert_eq!(
+        sleep.get("reset").len(),
+        5,
+        "reset is HH:MM: {}",
+        sleep.get("reset")
+    );
+    assert_eq!(sleep.get("hint"), past, "the raw hint stays on `hint`");
+    assert!(
+        sleep.get("target_epoch").parse::<i64>().is_ok(),
+        "target_epoch is an i64 timestamp: {}",
+        sleep.get("target_epoch")
+    );
+
+    pin(&events, "reset reached — resuming", T_EMIT, &["message"]);
 }
 
 #[test]

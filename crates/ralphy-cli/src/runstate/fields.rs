@@ -18,13 +18,18 @@ pub struct EventFields {
     pub open_steps: Option<u64>,
     pub count: Option<u64>,
     pub budget_min: Option<u64>,
+    /// The idle window (minutes) on an idle-reaped event; `0` when the emitter
+    /// had no finite window to report.
+    pub idle_minutes: Option<u64>,
     pub order: Option<String>,
     /// The first `stop-before` issue number on a `queue built` event (0 = none).
     pub stop_before: Option<u64>,
-    /// The enriched per-issue snapshot on a `queue built` event (ADR-0020): the
-    /// JSON array string the CLI serializes from `resolve_queue_view`. Absent on a
-    /// legacy `queue built` with no snapshot; parsed back into a `Value` by the
-    /// decoder (`Value::Null` when absent or unparseable).
+    /// The per-issue JSON array string, carried by TWO events: the enriched
+    /// snapshot on `queue built` (ADR-0020, serialized from `resolve_queue_view`)
+    /// and the closing rollup on `run finished` (#224, serialized from
+    /// `RunSummary::issues_json`). Absent on a legacy emission of either; parsed
+    /// back into a `Value` by the decoder (`Value::Null` when absent or
+    /// unparseable).
     pub issues_json: Option<String>,
     pub outcome: Option<String>,
     pub reset: Option<String>,
@@ -34,6 +39,10 @@ pub struct EventFields {
     /// Reasoning effort label (`low`/`medium`/`high`); adapters also report it as
     /// `variant` (OpenCode), folded into the same slot.
     pub effort: Option<String>,
+    /// Readable child command on `planning` / `executing`. Decoder-inert: recorded
+    /// (and pinned by the round-trips) but never read by `event_to_runevent` — it
+    /// exists for `ralphy.log` and for downstream sinks that want the command.
+    pub cmd: Option<String>,
     /// Per-phase token breakdown carried on `plan written` / `green — issue
     /// closed`: `up` input, `cr` cache-read, `cw` cache-write, `out` output.
     pub up: Option<u64>,
@@ -73,6 +82,10 @@ pub struct EventFields {
     pub issues_skipped: Option<u64>,
     /// The queue size on a `run finished` event.
     pub issues_total: Option<u64>,
+    /// The non-green-issue count on a `run finished` event.
+    pub issues_blocked: Option<u64>,
+    /// The human-gate-parked issue count on a `run finished` event.
+    pub issues_hitl: Option<u64>,
     /// The run's wall-clock seconds on a `run finished` event.
     pub duration_s: Option<u64>,
     /// The serialized `[{text,status}]` steps on a `plan written` event (#96): the
@@ -83,6 +96,11 @@ pub struct EventFields {
     /// The resolved concrete login the queue was scoped to on a `queue built`
     /// event (ADR-0021 §5); absent / empty = whole queue.
     pub assignee_filter: Option<String>,
+    /// The operator-facing sentence on a `run skipped` event (#222).
+    pub reason: Option<String>,
+    /// The human-readable queue scope phrase on a `queue built` event (#222).
+    /// LOG-ONLY: folded into the console edge notice, never mapped to the wire.
+    pub scope: Option<String>,
 }
 
 impl Default for EventFields {
@@ -95,6 +113,7 @@ impl Default for EventFields {
             open_steps: None,
             count: None,
             budget_min: None,
+            idle_minutes: None,
             order: None,
             stop_before: None,
             issues_json: None,
@@ -104,6 +123,7 @@ impl Default for EventFields {
             model: None,
             tokens: None,
             effort: None,
+            cmd: None,
             up: None,
             cr: None,
             cw: None,
@@ -121,10 +141,14 @@ impl Default for EventFields {
             issues_done: None,
             issues_skipped: None,
             issues_total: None,
+            issues_blocked: None,
+            issues_hitl: None,
             duration_s: None,
             steps_json: None,
             plan_md: None,
             assignee_filter: None,
+            reason: None,
+            scope: None,
         }
     }
 }
@@ -136,6 +160,7 @@ impl Visit for EventFields {
             "open_steps" => self.open_steps = Some(value),
             "count" => self.count = Some(value),
             "budget_min" => self.budget_min = Some(value),
+            "idle_minutes" => self.idle_minutes = Some(value),
             "stop_before" => self.stop_before = Some(value),
             "tokens" => self.tokens = Some(value),
             "up" => self.up = Some(value),
@@ -145,6 +170,8 @@ impl Visit for EventFields {
             "issues_done" => self.issues_done = Some(value),
             "issues_skipped" => self.issues_skipped = Some(value),
             "issues_total" => self.issues_total = Some(value),
+            "issues_blocked" => self.issues_blocked = Some(value),
+            "issues_hitl" => self.issues_hitl = Some(value),
             "duration_s" => self.duration_s = Some(value),
             _ => {}
         }
@@ -172,6 +199,7 @@ impl Visit for EventFields {
             "reset" => self.reset = Some(value.to_string()),
             "model" => self.model = clean_opt(value),
             "effort" | "variant" => self.effort = clean_opt(value),
+            "cmd" => self.cmd = clean_opt(value),
             "label" => self.label = clean_opt(value),
             "repo" => self.repo = Some(value.to_string()),
             "queue_labels" => self.queue_labels = Some(value.to_string()),
@@ -183,6 +211,10 @@ impl Visit for EventFields {
             "plan_md" => self.plan_md = Some(value.to_string()),
             // The resolved queue assignee scope (ADR-0021 §5); empty → None.
             "assignee_filter" => self.assignee_filter = clean_opt(value),
+            // The run-border fields (#222): the deferral sentence and the LOG-ONLY
+            // queue scope phrase; an empty emission maps to `None`.
+            "reason" => self.reason = clean_opt(value),
+            "scope" => self.scope = clean_opt(value),
             _ => {}
         }
     }
@@ -212,6 +244,7 @@ impl Visit for EventFields {
             // decoder never carries a literal `None` or `""` into a display label.
             "model" => self.model = clean_opt(&rendered),
             "effort" | "variant" => self.effort = clean_opt(&rendered),
+            "cmd" => self.cmd = clean_opt(&rendered),
             // The `%`-formatted (Display) run-boundary fields arrive here via
             // tracing's Display wrapper; store them raw (no quote stripping — these
             // are plain strings, not `Option`/`&str` Debug forms).
@@ -228,6 +261,9 @@ impl Visit for EventFields {
             // The `%`-formatted (Display) resolved queue assignee scope (ADR-0021
             // §5) arrives here; an empty-string emission maps to `None`.
             "assignee_filter" => self.assignee_filter = clean_opt(&rendered),
+            // The `%`-formatted (Display) run-border fields (#222) arrive here.
+            "reason" => self.reason = clean_opt(&rendered),
+            "scope" => self.scope = clean_opt(&rendered),
             _ => {}
         }
     }

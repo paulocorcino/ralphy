@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged, CompletionSignals, HeadlessRun};
+use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 
 use crate::OpenCodeAgent;
@@ -38,26 +38,52 @@ pub(crate) fn classify_opencode_outcome(
     })
 }
 
+/// Collapse a detected OpenCode usage limit to an **unschedulable** one: keep the
+/// "a limit fired" signal (the outer `Some`) but drop any reset hint (the inner
+/// `Option` → `None`). OpenCode fronts many providers whose reset strings are
+/// unreliable — a "5 hour" limit reporting a reset ~12h out (FinCal #73, glm-5.2) is
+/// internally impossible yet parses cleanly — so the runner must never schedule on
+/// one; a `Limit(None)` routes it to the ~30-min synthetic cadence (ADR-0030 D1).
+/// Trustworthiness is a per-vendor extraction decision (the `classify` seam,
+/// ADR-0023); Claude/Codex are stable and keep their hints.
+pub(crate) fn unschedulable_opencode_limit(
+    detected: Option<Option<String>>,
+) -> Option<Option<String>> {
+    detected.map(|_| None)
+}
+
 impl OpenCodeAgent {
     /// Spawn a single `opencode run` call, piping `prompt` on stdin and draining
     /// stdout/stderr via reader threads to avoid pipe-buffer deadlock (mirrors
     /// `CodexAgent::run_codex`). Polls `try_wait` until `timeout`; kills the child
-    /// on expiry. Returns the [`HeadlessRun`] — its `stdout` is the JSON event
-    /// stream the caller parses; its `log` is the combined stdout+stderr written to
-    /// `run_dir/opencode.log` and used by the auth detector (auth failures often
-    /// print only to stderr).
+    /// on expiry, or early when `kill_on_stderr_line` matches a stderr line. Returns
+    /// the [`HeadlessRun`] — its `stdout` is the JSON event stream the caller parses;
+    /// its `log` is the combined stdout+stderr streamed to `run_dir/opencode.log`
+    /// (observable live, survives a crash) and used by the auth/limit detectors (both
+    /// often print only to stderr).
     pub(crate) fn run_opencode(
         &self,
         cmd: Command,
         prompt: &str,
         timeout: Duration,
+        kill_on_stderr_line: impl Fn(&str) -> bool + Send + Sync + 'static,
     ) -> Result<HeadlessRun> {
         // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
         // shared headless runner; `exited_cleanly` is a *successful* exit (the
-        // status is `None` exactly when the child was killed on the wall timeout).
+        // status is `None` exactly when the child was killed — deadline or signal).
         // The combined log keeps stderr too — the JSON stream lives on stdout, but
-        // a crash or auth failure often only prints to stderr.
-        run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
+        // a crash or auth failure often only prints to stderr. The early-kill
+        // predicate reaps a provider quota block the moment it prints to stderr,
+        // instead of idling in the child's silent backoff until the wall timeout.
+        // The two guards are complementary, and OpenCode needs both: the stderr
+        // matcher catches a quota block the moment it *prints*, while the idle
+        // watchdog catches the same block when the child swallows it into a
+        // silent retry and prints nothing at all (docs/adr/0038).
+        HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
+            .kill_on_stderr_line(kill_on_stderr_line)
+            .idle_minutes(self.budget.idle_minutes)
+            .degraded_line(crate::events::is_opencode_api_degraded)
+            .run()
             .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")
     }
 }
@@ -65,6 +91,23 @@ impl OpenCodeAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── unschedulable_opencode_limit ────────────────────────────────────────
+
+    #[test]
+    fn opencode_limit_discards_reset_hint() {
+        // A detected limit *with* a reset hint collapses to `Some(None)`: OpenCode
+        // resets are not scheduled on (FinCal #73 — a "5 hour" limit resetting ~12h
+        // out). Detection is preserved, so the runner still parks and retries.
+        assert_eq!(
+            unschedulable_opencode_limit(Some(Some("2026-07-13 17:50:11".into()))),
+            Some(None)
+        );
+        // A limit already carrying no hint is unchanged.
+        assert_eq!(unschedulable_opencode_limit(Some(None)), Some(None));
+        // No limit stays no limit (never fabricates one).
+        assert_eq!(unschedulable_opencode_limit(None), None);
+    }
 
     // ── classify_opencode_outcome ───────────────────────────────────────────
 

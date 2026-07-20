@@ -225,6 +225,9 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             stop_before,
             issues,
             assignee_filter,
+            // LOG-ONLY (#222): the console notice's scope phrase never reaches the
+            // wire — `dev.ralphy.queue.built`'s shape is unchanged.
+            scope: _,
         } => Some(envelope(
             "dev.ralphy.queue.built",
             None,
@@ -351,6 +354,14 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "number": number, "on": on }),
         )),
+        // The run declined to start (#222): run-scoped, so no `subject`.
+        RunEvent::RunSkipped { reason } => Some(envelope(
+            "dev.ralphy.run.skipped",
+            None,
+            ctx,
+            state,
+            json!({ "reason": reason }),
+        )),
         RunEvent::DeadlinePassed { number } => Some(envelope(
             "dev.ralphy.issue.deadline_passed",
             Some(&subject_for(*number)),
@@ -388,6 +399,15 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             ctx,
             state,
             json!({}),
+        )),
+        // The reap carries its window so a consumer can tell a tight operator
+        // setting from the path default without reading the run's config.
+        RunEvent::IdleReaped { idle_minutes } => Some(envelope(
+            "dev.ralphy.run.idle_reaped",
+            None,
+            ctx,
+            state,
+            json!({ "idle_minutes": idle_minutes }),
         )),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
             "dev.ralphy.knowledge.consolidating",
@@ -450,33 +470,65 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             issues_done,
             issues_skipped,
             issues_total,
+            issues_blocked,
+            issues_hitl,
+            issues: rollup,
             up,
             cr,
             cw,
             out,
             duration_s,
         } => {
-            // The per-issue rollup (#96): every issue that entered the fold and
-            // reached a terminal status, with its granular `status` and (only on a
-            // skip) the skip `kind`. The scalar counts stay for completeness.
-            let issues: Vec<Value> = state
-                .issues
-                .iter()
-                .filter_map(|e| {
-                    let status = e.status.status_wire()?;
-                    let mut obj = serde_json::Map::new();
-                    obj.insert("number".to_string(), json!(e.number));
-                    obj.insert("title".to_string(), json!(issue_title(state, e.number)));
-                    obj.insert("status".to_string(), json!(status));
-                    if status == "skipped" {
-                        if let Some(kind) = e.kind {
-                            obj.insert("kind".to_string(), json!(skip_kind_name(kind)));
+            // The per-issue rollup (#96, #224). PREFER the run's own rollup: the
+            // scalars above are folded from it, and the console `RunState` this
+            // sink also sees is a lossy mirror — a drop-oldest eviction on the
+            // event ring can starve it, leaving `data.issues` contradicting the
+            // very counts beside it. One source, or none. An emitter that carried
+            // no rollup (a legacy `run finished`) falls back to the fold below.
+            // `title` stays fold-sourced either way: `QueueReport` has no titles,
+            // and it is display sugar, not a count.
+            let issues: Vec<Value> = match rollup {
+                Value::Array(entries) => entries
+                    .iter()
+                    .map(|e| {
+                        let number = e.get("number").cloned().unwrap_or(Value::Null);
+                        let mut obj = serde_json::Map::new();
+                        obj.insert("number".to_string(), number.clone());
+                        obj.insert(
+                            "title".to_string(),
+                            json!(issue_title(state, number.as_u64().unwrap_or(0))),
+                        );
+                        if let Some(status) = e.get("status") {
+                            obj.insert("status".to_string(), status.clone());
                         }
-                        obj.insert("blocked_by".to_string(), json!(e.blocked_by));
-                    }
-                    Some(Value::Object(obj))
-                })
-                .collect();
+                        if let Some(kind) = e.get("kind") {
+                            obj.insert("kind".to_string(), kind.clone());
+                        }
+                        if let Some(blocked_by) = e.get("blocked_by") {
+                            obj.insert("blocked_by".to_string(), blocked_by.clone());
+                        }
+                        Value::Object(obj)
+                    })
+                    .collect(),
+                _ => state
+                    .issues
+                    .iter()
+                    .filter_map(|e| {
+                        let status = e.status.status_wire()?;
+                        let mut obj = serde_json::Map::new();
+                        obj.insert("number".to_string(), json!(e.number));
+                        obj.insert("title".to_string(), json!(issue_title(state, e.number)));
+                        obj.insert("status".to_string(), json!(status));
+                        if status == "skipped" {
+                            if let Some(kind) = e.kind {
+                                obj.insert("kind".to_string(), json!(skip_kind_name(kind)));
+                            }
+                            obj.insert("blocked_by".to_string(), json!(e.blocked_by));
+                        }
+                        Some(Value::Object(obj))
+                    })
+                    .collect(),
+            };
             Some(envelope(
                 "dev.ralphy.run.finished",
                 None,
@@ -487,6 +539,8 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                     "issues_done": issues_done,
                     "issues_skipped": issues_skipped,
                     "issues_total": issues_total,
+                    "issues_blocked": issues_blocked,
+                    "issues_hitl": issues_hitl,
                     "issues": issues,
                     "tokens_total": { "up": up, "cr": cr, "cw": cw, "out": out },
                     "duration_s": duration_s,

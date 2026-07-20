@@ -16,6 +16,13 @@
 
 use std::time::{Duration, Instant};
 
+/// The `ApiWatch` short-kill threshold in minutes: how long the degraded banner
+/// may persist before the child is re-spawned (mid-range of the body's
+/// "~15–20 min"). Named (not an inline literal) because it is the floor the
+/// interactive idle default must stay above — see
+/// `interactive_idle_default_stays_above_the_api_watch_kill` (issue #217 Part B).
+pub(crate) const API_WATCH_KILL_MINUTES: u64 = 17;
+
 /// What the PTY loop should do after a `poll` of the degraded clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ApiWatchAction {
@@ -67,7 +74,10 @@ impl ApiWatch {
     /// `ping = 3 min` (the criterion's ≥3-min degraded gate), `kill = 17 min`
     /// (mid-range of the body's "~15–20 min" short kill).
     pub(crate) fn new() -> Self {
-        Self::with_thresholds(Duration::from_secs(180), Duration::from_secs(17 * 60))
+        Self::with_thresholds(
+            Duration::from_secs(180),
+            Duration::from_secs(API_WATCH_KILL_MINUTES * 60),
+        )
     }
 
     /// Accumulate a PTY chunk (keeps the most recent [`Self::MAX_BUF`] bytes).
@@ -230,6 +240,22 @@ mod tests {
         assert_eq!(
             w.poll(t0 + Duration::from_secs(20 * 60), false),
             ApiWatchAction::None
+        );
+    }
+
+    #[test]
+    fn interactive_idle_default_stays_above_the_api_watch_kill() {
+        // Part B invariant (issue #217): the interactive idle watchdog must never
+        // reap the child before the ApiWatch respawn (#149) gets its chance. If the
+        // default idle window drops to or below the kill, the idle reap silently
+        // preempts the API recovery attempt.
+        // Bound to locals so clippy sees a runtime comparison, not a const assert:
+        // the point is to FAIL the build if either value ever crosses the other.
+        let idle_default = ralphy_core::DEFAULT_INTERACTIVE_IDLE_MINUTES;
+        let api_watch_kill = API_WATCH_KILL_MINUTES;
+        assert!(
+            idle_default > api_watch_kill,
+            "DEFAULT_INTERACTIVE_IDLE_MINUTES ({idle_default}) must stay above the ApiWatch kill ({api_watch_kill} min): lowering it below the kill silently preempts the #149 API respawn — the interactive idle watchdog reaps the child before the recovery attempt fires (issue #217 Part B)"
         );
     }
 

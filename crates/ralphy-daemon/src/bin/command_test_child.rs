@@ -6,7 +6,8 @@
 //! child (house convention).
 //!
 //! Behavior: read `RALPHY_TEST_EXIT_CODE` (default `0`), print stdout+stderr
-//! markers, and exit with that code. Ignores its argv. When `RALPHY_TEST_ENV_DUMP`
+//! markers, echoes its argv on stdout for the run-params test, and exit with that
+//! code. When `RALPHY_TEST_ENV_DUMP`
 //! names a path, first write the child's view of BOTH `RALPHY_DAEMON_TOKEN` and
 //! `RALPHY_DAEMON_ID` there (newline-separated) — one dump proving the boot-time
 //! token strip AND the dispatch-path daemon_id injection reached this child.
@@ -31,6 +32,12 @@ fn main() {
     // Markers on BOTH streams: the merged-pipe test asserts the log carries each.
     println!("dispatch-stdout-marker");
     eprintln!("dispatch-stderr-marker");
+    // Echo the argv so the run-params test can assert the composed flags reached
+    // the child (proving `spawn_argv` → CLI end to end).
+    println!(
+        "dispatch-argv: {}",
+        std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+    );
     println!("command_test_child exiting {code}");
     if let Some(ms) = std::env::var("RALPHY_TEST_SLEEP_MS")
         .ok()

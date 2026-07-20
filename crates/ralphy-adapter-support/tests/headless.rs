@@ -7,7 +7,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use ralphy_adapter_support::{
-    run_headless, run_headless_logged, run_init_session, run_text_session, JsonSession, TextSession,
+    run_headless, run_headless_logged, run_headless_logged_watched, run_init_session,
+    run_text_session, HeadlessCall, JsonSession, TextSession,
 };
 
 // These mirror the constants in `src/bin/headless_test_child.rs`. Kept in sync by
@@ -15,6 +16,8 @@ use ralphy_adapter_support::{
 const CLEAN_STDOUT: &str = "hello-from-stdout";
 const CLEAN_STDERR: &str = "hello-from-stderr";
 const LARGE_LEN: usize = 200_000;
+const STDERR_MARKER: &str = "quota-marker: usage limit reached";
+const DEGRADED_MARKER: &str = "Waiting for API response";
 
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/
 /// stderr piped exactly as the adapters do before handing the command off.
@@ -144,6 +147,219 @@ fn run_headless_logged_reports_timeout_and_not_clean() {
         !r.exited_cleanly,
         "a killed child did not exit cleanly (exit == None)"
     );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_headless_logged_watched_early_kills_on_matching_stderr_line() {
+    let log_path = temp_log("early-kill");
+    let _ = std::fs::remove_file(&log_path);
+
+    let started = Instant::now();
+    let r = run_headless_logged_watched(
+        child_cmd("stderr-then-sleep"),
+        "ignored prompt",
+        // A generous wall timeout the child would otherwise sleep out entirely, so a
+        // prompt return can only mean the early-kill switch fired on the marker.
+        Duration::from_secs(60),
+        &log_path,
+        |line| line.contains(STDERR_MARKER),
+    )
+    .expect("a watched run should not error");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "the switch reaped the child on the stderr marker, not on the 60s timeout (took {elapsed:?})"
+    );
+    assert!(
+        !r.timed_out,
+        "an early-kill is an explicit signal, not a timeout"
+    );
+    assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
+    assert!(
+        r.log.contains(STDERR_MARKER),
+        "the matched stderr line is captured in the log"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn run_headless_logged_watched_without_a_match_times_out_normally() {
+    // A non-matching predicate leaves the switch inert: the sleep child runs to the
+    // wall timeout exactly like the unwatched path, proving the switch only ever
+    // shortens the run when it actually fires.
+    let log_path = temp_log("watched-timeout");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = run_headless_logged_watched(
+        child_cmd("sleep"),
+        "ignored prompt",
+        Duration::from_millis(300),
+        &log_path,
+        |_line| false,
+    )
+    .expect("a watched run should not error when killing on timeout");
+
+    assert!(r.timed_out, "no match → the wall timeout still fires");
+    assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
+    let _ = std::fs::remove_file(&log_path);
+}
+
+// ── idle watchdog (docs/adr/0038) ───────────────────────────────────────────
+
+#[test]
+fn the_idle_watchdog_reaps_a_silent_child_long_before_the_wall_timeout() {
+    // This is the OpenCode failure mode in miniature: a child that hit a provider
+    // quota block, swallowed it into a silent retry, and now prints nothing at all.
+    // No stderr matcher can see a failure that is never printed — but the silence
+    // itself is unmistakable, and it is the only signal that catches this.
+    let log_path = temp_log("idle-kill");
+    let _ = std::fs::remove_file(&log_path);
+
+    let started = Instant::now();
+    let r = HeadlessCall::new(
+        child_cmd("sleep"),
+        "ignored prompt",
+        // A wall timeout the child would happily sleep out: a prompt return can
+        // only mean the idle watchdog fired.
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("an idle-watched run should not error");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "the watchdog reaped the silent child, it did not wait out the 60s wall timeout (took {elapsed:?})"
+    );
+    assert!(r.idle_killed, "the idle watchdog fired, not the wall clock");
+    assert!(
+        r.timed_out,
+        "an idle kill still reports as a timeout so classification is unchanged"
+    );
+    assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn the_idle_watchdog_spares_a_child_that_keeps_talking() {
+    // The regression this whole change risks: killing healthy work. The chatty
+    // child runs far longer than the idle window but never goes quiet for a full
+    // one, so it must survive — proving the watchdog measures silence, not elapsed
+    // time. (That distinction is the entire reason it replaced a wall-clock cap.)
+    let log_path = temp_log("idle-chatty");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("chatty"),
+        "ignored prompt",
+        // Wall timeout well past the idle window: whatever ends this run, it is
+        // not the wall clock racing the watchdog.
+        Duration::from_secs(3),
+        &log_path,
+    )
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("a chatty child should not error");
+
+    assert!(
+        !r.idle_killed,
+        "a child emitting a line every 100ms is never idle for a 1s window"
+    );
+    assert!(
+        r.log.contains("tick "),
+        "the child's output was captured while it ran"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn degraded_only_child_is_idle_reaped_despite_talking() {
+    // The headless counterpart to the PTY `Waiting for API response` wedge: a child
+    // that keeps printing degraded banners at the chatty cadence but makes no real
+    // progress. Because every line matches the degraded predicate, none of them
+    // rearm the idle beacon, so the watchdog reaps it despite the constant chatter.
+    // This FAILS before the degraded plumbing exists (the banners would beat).
+    let log_path = temp_log("degraded-idle");
+    let _ = std::fs::remove_file(&log_path);
+
+    let started = Instant::now();
+    let r = HeadlessCall::new(
+        child_cmd("degraded-chatty"),
+        "ignored prompt",
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .degraded_line(|l| l.contains(DEGRADED_MARKER))
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("a degraded-watched run should not error");
+    let elapsed = started.elapsed();
+
+    assert!(
+        r.idle_killed,
+        "a child emitting only degraded lines is reaped by the idle watchdog"
+    );
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "reaped promptly despite talking every 100ms (took {elapsed:?})"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn healthy_child_with_a_degraded_matcher_survives() {
+    // The non-regression: arming a degraded matcher must not endanger a healthy
+    // child. The chatty child's lines never match the predicate, so they still beat
+    // the idle beacon and the child survives — proving the degraded gate only ever
+    // stops *matching* lines from counting as progress.
+    let log_path = temp_log("degraded-healthy");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("chatty"),
+        "ignored prompt",
+        Duration::from_secs(3),
+        &log_path,
+    )
+    .degraded_line(|l| l.contains(DEGRADED_MARKER))
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("a healthy chatty child should not error");
+
+    assert!(
+        !r.idle_killed,
+        "the matcher never matches, so healthy lines still rearm the beacon"
+    );
+    assert!(
+        r.log.contains("tick "),
+        "the child's healthy output was captured while it ran"
+    );
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
+    // `0` is the operator's opt-out: the silent child now runs to the wall timeout
+    // exactly as it did before the watchdog existed.
+    let log_path = temp_log("idle-off");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("sleep"),
+        "ignored prompt",
+        Duration::from_millis(300),
+        &log_path,
+    )
+    .idle_minutes(0)
+    .run()
+    .expect("a run with the watchdog disabled should not error");
+
+    assert!(r.timed_out, "the wall timeout still fires");
+    assert!(!r.idle_killed, "the watchdog was off, so it did not fire");
     let _ = std::fs::remove_file(&log_path);
 }
 

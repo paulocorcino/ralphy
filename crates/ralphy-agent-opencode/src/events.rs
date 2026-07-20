@@ -9,12 +9,16 @@ use regex::Regex;
 /// Kimi, OpenAI-compatible, …) whose quota wording differs, so keying on any one
 /// vendor's exact phrase misses the next one — this matches the shared shape
 /// instead (D9). Anchored on limit-specific combos (`usage limit`, `rate limit`,
-/// `limit reached/exceeded`, `too many requests`, `quota exceeded/exhausted`), not
-/// a bare `"limit"`, so an ordinary error line (`limit not found`, a transient
-/// backend blip) is not misread as a quota cap. Compiled once per scan.
-fn usage_limit_regex() -> Regex {
+/// `limit reached/exceeded/exhausted`, `too many requests`, `quota
+/// exceeded/exhausted`), not a bare `"limit"`, so an ordinary error line (`limit not
+/// found`, a transient backend blip) is not misread as a quota cap. `exhausted` sits
+/// in the limit-verb group so Z.ai's weekly/monthly wording (`Limit Exhausted`, which
+/// carries no `quota` prefix — FinCal #77, 2026-07-13) is caught. Compiled once per
+/// scan (or once per early-kill hook build in the execute path —
+/// [`OpenCodeAgent::execute`]).
+pub(crate) fn usage_limit_regex() -> Regex {
     Regex::new(
-        r"(?i)usage limit|rate[ _]?limit|limit (?:reached|exceeded)|too many requests|quota (?:exceeded|exhausted)",
+        r"(?i)usage limit|rate[ _]?limit|limit (?:reached|exceeded|exhausted)|too many requests|quota (?:exceeded|exhausted)",
     )
     .expect("valid usage-limit regex")
 }
@@ -31,6 +35,26 @@ pub(crate) const OPENCODE_AUTH_ERROR_MSG: &str =
 /// prompt text mentioning `opencode auth login`.
 pub(crate) fn is_opencode_auth_error(text: &str) -> bool {
     ralphy_adapter_support::auth_error(text, &[&["providerautherror"]])
+}
+
+/// The headless **degraded-line** matcher, handed to the shared runner's
+/// `degraded_line` seam. A degraded line is a *retryable* error event — a
+/// transient backend blip the SDK retries internally (`{type:"error"}` under any
+/// observed envelope) that is NOT a terminal usage limit or auth failure (those
+/// have their own handling: the early-kill switch and the auth bail). Keeping the
+/// terminal signals out of the degraded set is what stops a real quota block from
+/// being papered over as "degraded, retrying"; a false negative here is safe (the
+/// line just counts as ordinary progress).
+pub(crate) fn is_opencode_api_degraded(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return false; // logfmt/plain lines are not degraded events
+    };
+    if !is_error_event(&val) {
+        return false;
+    }
+    // A terminal limit or auth error is NOT "degraded" — those are terminal.
+    !is_opencode_auth_error(trimmed) && parse_opencode_limit(trimmed).is_none()
 }
 
 /// The payload object a single event's fields live in. opencode 1.16.2 wraps
@@ -305,6 +329,33 @@ mod tests {
         );
     }
 
+    // ── is_opencode_api_degraded ─────────────────────────────────────────────
+
+    #[test]
+    fn degraded_matches_retryable_error_event() {
+        // A 500 backend blip: a retryable error event, not a limit or auth — the
+        // degraded clock should track it.
+        let line = r#"{"type":"error","name":"APIError","statusCode":500,"message":"internal server error"}"#;
+        assert!(is_opencode_api_degraded(line));
+    }
+
+    #[test]
+    fn degraded_ignores_healthy_and_terminal_lines() {
+        // Healthy JSON event lines and plain assistant text are not degraded.
+        assert!(!is_opencode_api_degraded(
+            r#"{"type":"text","text":"working on it"}"#
+        ));
+        assert!(!is_opencode_api_degraded("just some assistant prose"));
+        // A terminal usage limit (429) is NOT degraded — it is handled as a limit.
+        assert!(!is_opencode_api_degraded(
+            r#"{"type":"error","name":"APIError","statusCode":429,"message":"rate limited"}"#
+        ));
+        // A terminal auth error is NOT degraded either.
+        assert!(!is_opencode_api_degraded(
+            r#"{"type":"error","name":"ProviderAuthError","message":"Not authenticated"}"#
+        ));
+    }
+
     // ── parse_opencode_limit ─────────────────────────────────────────────────
 
     #[test]
@@ -435,6 +486,25 @@ mod tests {
         assert_eq!(
             parse_opencode_log_limit(log),
             Some(Some("2026-07-11 22:14:08".into())),
+        );
+    }
+
+    #[test]
+    fn log_limit_detects_zai_weekly_limit_exhausted_wording() {
+        // Z.ai's weekly/monthly block reads `Limit Exhausted`, not the 5h cap's
+        // `Usage limit reached` — captured live 2026-07-13 (FinCal #77). The verb
+        // `exhausted` sits directly after `Limit` with no `quota` prefix, so the
+        // matcher must carry `limit exhausted` or this slips through and the child
+        // burns the full wall budget in silent backoff instead of early-killing.
+        let log = concat!(
+            "timestamp=2026-07-13T17:06:04.998Z level=ERROR run=d9a3c1f7 ",
+            "message=\"stream error\" providerID=zai-coding-plan modelID=glm-5.2 ",
+            "session.id=ses_x error.error=\"AI_APICallError: Weekly/Monthly Limit ",
+            "Exhausted. Your limit will reset at 2026-07-18 11:26:07\"",
+        );
+        assert_eq!(
+            parse_opencode_log_limit(log),
+            Some(Some("2026-07-18 11:26:07".into())),
         );
     }
 

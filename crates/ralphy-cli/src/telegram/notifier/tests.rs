@@ -27,6 +27,7 @@ fn drive_worker<T: Transport>(
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     run_delivery_worker(engine, queue, shutdown);
 }
@@ -300,6 +301,88 @@ fn render_card_and_footer_surface_needs_split() {
     let clean = RunState::new("repo · 1 issues", 1);
     assert!(!render_card(&clean, 0).contains("🧩"));
     assert!(!render_final_push(&clean).contains("🧩"));
+}
+
+#[test]
+fn render_card_and_footer_surface_a_dry_run_plan_only_pass() {
+    // The dry-run fix reaching the card: the superseded issue renders 📝, the
+    // counter line grows a `· 📝 N` segment AFTER the 🧩 one, and the pass counts
+    // as processed so the footer is the normal 🏁, never "stopped before any
+    // issue was processed".
+    let mut state = RunState::new("repo · 2 issues", 2);
+    state.apply(RunEvent::IssueStarted {
+        number: 1,
+        title: "one".into(),
+    });
+    state.apply(RunEvent::PlanWritten {
+        number: 1,
+        open_steps: 3,
+        usage: UsageLite::default(),
+        steps: vec![],
+    });
+    state.apply(RunEvent::IssueStarted {
+        number: 2,
+        title: "two".into(),
+    });
+    let card = render_card(&state, 0);
+    assert!(card.contains("📝 #1 one"), "issue line: {card}");
+    assert!(card.contains("· 📝 1"), "counter: {card}");
+    assert!(
+        card.contains("▶️ 2 · ✅ 0 · ⏭️ 0 · ⛔ 0 · 🤷 0 · ❌ 0 · 📝 1"),
+        "the 📝 segment is appended, leaving the base counters byte-stable: {card}"
+    );
+    state.finished = true;
+    let footer = render_final_push(&state);
+    assert!(
+        footer.contains("🏁"),
+        "a dry run did process work: {footer}"
+    );
+    assert!(
+        !footer.contains("stopped before any issue was processed"),
+        "footer: {footer}"
+    );
+    // A run with no plan-only pass keeps the card byte-identical to before.
+    let clean = RunState::new("repo · 2 issues", 2);
+    assert!(!render_card(&clean, 0).contains("📝"));
+}
+
+#[test]
+fn footer_marks_a_run_that_processed_nothing_as_stopped() {
+    // A run whose card reaches its terminal edge with zero issues finished,
+    // skipped, or parked was interrupted (killed/superseded/bailed at startup) —
+    // the footer must say so, not `🏁 … ✅ 0 done` which reads as a clean finish
+    // (FinCal, 2026-07-13: an aborted run's finished card sat above the next run's
+    // start card, reading "finished → started").
+    let mut state = RunState::new("repo · 12 issues", 12);
+    state.finished = true;
+    let footer = render_final_push(&state);
+    assert!(footer.contains("🛑"), "stopped marker: {footer}");
+    assert!(
+        footer.contains("stopped before any issue was processed"),
+        "stopped wording: {footer}"
+    );
+    assert!(!footer.contains("🏁"), "no finish flag: {footer}");
+    assert!(
+        !footer.contains("✅ 0 done"),
+        "no zero-done claim: {footer}"
+    );
+
+    // One issue done flips it back to the normal `🏁` completion footer.
+    state.apply(RunEvent::IssueStarted {
+        number: 1,
+        title: "first".into(),
+    });
+    state.apply(RunEvent::IssueClosed {
+        number: 1,
+        tokens: 0,
+        usage: UsageLite::default(),
+    });
+    let done_footer = render_final_push(&state);
+    assert!(done_footer.contains("🏁"), "finish flag: {done_footer}");
+    assert!(
+        done_footer.contains("✅ 1 done"),
+        "done count: {done_footer}"
+    );
 }
 
 #[test]
@@ -743,6 +826,58 @@ fn worker_pushes_on_api_degraded_and_recover_edges() {
 }
 
 #[test]
+fn worker_reap_after_degraded_never_claims_recovery() {
+    // The trap this guards (docs/adr/0038): an idle reap also clears `degraded`,
+    // so the true→false edge would fire the recover push — telling the operator
+    // "API recovered, resuming" about a child Ralphy had just killed for going
+    // silent. The reap must speak for itself and suppress that edge.
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let queue = Arc::new(EventQueue::new());
+    let shutdown = Arc::new(AtomicBool::new(false));
+
+    let worker_queue = queue.clone();
+    let worker_shutdown = shutdown.clone();
+    let state = RunState::new("title", 1);
+    let handle =
+        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+
+    queue.push(RunEvent::ApiDegraded);
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("API degraded"))
+    });
+
+    queue.push(RunEvent::IdleReaped { idle_minutes: 20 });
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("child reaped"))
+    });
+
+    shutdown.store(true, Ordering::SeqCst);
+    queue.wake();
+    handle.join().unwrap();
+
+    let calls = calls.lock().unwrap();
+    let texts = send_texts(&calls);
+    assert!(
+        !texts.iter().any(|t| t.contains("API recovered")),
+        "a reap must never be reported as a recovery: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("no progress for 20 min")),
+        "the reap push carries its window: {texts:?}"
+    );
+    // initial card + degraded + reap = three sendMessage calls.
+    assert_eq!(
+        texts.len(),
+        3,
+        "expected exactly 3 sendMessage, got {texts:?}"
+    );
+}
+
+#[test]
 fn worker_lone_api_recover_pushes_nothing() {
     // A lone `ApiRecovered` with no prior degraded folded is a no-op: matched
     // pairs only (`prev_degraded` starts false), so no recover buzz fires.
@@ -799,8 +934,10 @@ fn worker_swallows_edit_error_and_finishes_cleanly() {
 fn worker_terminal_edit_adds_footer_as_the_last_call() {
     // With no state-changing events the idle loop makes no edit (an identical
     // body would be rejected as "message is not modified"). The one terminal
-    // edit is the `finished` flip growing the `🏁` footer — a genuine change —
-    // and it is the LAST call: there is no final push after it.
+    // edit is the `finished` flip growing the footer — a genuine change — and it
+    // is the LAST call: there is no final push after it. A run with no folded
+    // issue processed nothing, so that footer is the `🛑` stopped marker (never
+    // the celebratory `🏁 … ✅ 0 done`).
     let transport = RecordingTransport::new();
     let calls = transport.calls.clone();
     let client = BotClient::new(transport);
@@ -822,8 +959,9 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     assert_eq!(edits.len(), 1, "exactly one terminal footer edit: {m:?}");
     let edited_text = edits[0]["text"].as_str().unwrap_or("");
     assert!(
-        edited_text.contains("🏁") && edited_text.contains("run finished"),
-        "terminal edit must carry the footer: {edited_text}"
+        edited_text.contains("🛑")
+            && edited_text.contains("stopped before any issue was processed"),
+        "terminal edit must carry the stopped footer: {edited_text}"
     );
 }
 
@@ -846,6 +984,7 @@ fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     engine.on_start(); // card sent, id 100
 
@@ -904,6 +1043,7 @@ fn progress_ping_is_suppressed_while_sleeping() {
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     engine.on_start();
     engine.on_event(RunEvent::SleepStarted {
@@ -921,6 +1061,70 @@ fn progress_ping_is_suppressed_while_sleeping() {
 }
 
 #[test]
+fn short_reason_collapses_the_multiline_network_chain() {
+    // The exact shape the run reported: a DNS failure whose anyhow chain repeats
+    // the OS message three times over two lines. It must collapse to one clause.
+    let dns = anyhow::anyhow!(
+        "editMessageText request failed: Dns Failed: resolve dns name \
+         'api.telegram.org:443': host not known (os error 11001): host not known \
+         (os error 11001)"
+    );
+    let r = short_reason(&dns);
+    assert_eq!(r, "network unreachable (DNS)", "got: {r}");
+    assert!(!r.contains('\n'), "reason must be one line: {r}");
+
+    // A connect timeout (os error 10060) is the other outage face.
+    let timeout = anyhow::anyhow!("sendMessage request failed: Network Error (os error 10060)");
+    assert_eq!(short_reason(&timeout), "network unreachable (timeout)");
+
+    // A genuine API rejection is NOT a network drop: keep it legible (first line),
+    // never silently reclassified as "unreachable".
+    let api = anyhow::anyhow!("sendMessage failed: Bad Request: chat not found");
+    assert_eq!(
+        short_reason(&api),
+        "sendMessage failed: Bad Request: chat not found"
+    );
+}
+
+#[test]
+fn gate_warns_once_then_resets_on_success() {
+    // A wedged network fails every edit; the gate must warn on the FIRST failure
+    // only (net_warned latches), and a later successful call clears the latch so a
+    // genuinely new drop warns again. Only edits fail here, so a successful send
+    // (the ping) is the recovery that resets the gate.
+    let mut transport = RecordingTransport::new();
+    transport.fail_edit = true;
+    let client = BotClient::new(transport);
+    let mut engine = TelegramEngine {
+        client,
+        chat_id: 7,
+        state: RunState::new("t", 1),
+        message_id: None,
+        last_card: String::new(),
+        last_edit: Instant::now(),
+        sleep_notice_id: None,
+        ping: None,
+        prev_sleeping: false,
+        prev_degraded: false,
+        net_warned: false,
+    };
+    engine.on_start(); // send ok → gate clear
+    assert!(!engine.net_warned);
+
+    // A failing edit latches the gate.
+    engine.on_event(RunEvent::IssueStarted {
+        number: 1,
+        title: "a".into(),
+    });
+    engine.on_tick(true);
+    assert!(engine.net_warned, "first edit failure latches the gate");
+
+    // A successful send (the ping) clears it — recovery re-arms the warning.
+    engine.fire_ping();
+    assert!(!engine.net_warned, "a success resets the gate");
+}
+
+#[test]
 fn try_start_notifier_returns_none_on_get_me_error() {
     struct ErrTransport;
     impl Transport for ErrTransport {
@@ -935,4 +1139,71 @@ fn try_start_notifier_returns_none_on_get_me_error() {
     let queue = Arc::new(EventQueue::new());
     let handle = try_start_notifier(client, 1, RunState::new("t", 0), queue);
     assert!(handle.is_none());
+}
+
+#[test]
+fn render_card_carries_the_run_skipped_reason() {
+    // The `--if-idle` deferral (#222): the run processed nothing, so the terminal
+    // footer must carry the folded deferral sentence rather than the generic
+    // "stopped before any issue was processed".
+    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+    let mut state = RunState::new("repo · 0 issues", 0);
+    state.apply(RunEvent::RunSkipped {
+        reason: reason.into(),
+    });
+    state.finished = true;
+    let card = render_card(&state, 0);
+    assert!(card.contains(reason), "card: {card}");
+}
+
+#[test]
+fn render_card_no_work_triad_has_no_issue_rows() {
+    // The empty-queue border (#222): the full triad folds to a 0-issue card — the
+    // counters read 0 and not a single per-issue row is drawn.
+    let mut state = RunState::new("repo · 0 issues", 0);
+    state.apply(RunEvent::QueueBuilt {
+        count: 0,
+        order: vec![],
+        stop_before: None,
+        issues: serde_json::Value::Null,
+        assignee_filter: None,
+        scope: Some("labels [AFK]".into()),
+    });
+    state.apply(RunEvent::RunStarted {
+        repo: "o/r".into(),
+        queue_labels: vec!["AFK".into()],
+        agent: "claude".into(),
+        plan_agent: "claude".into(),
+        branch_mode: "new".into(),
+        branch: "origin/main".into(),
+        deadline_hours: None,
+    });
+    state.apply(RunEvent::RunFinished {
+        outcome: "no_work".into(),
+        issues_done: 0,
+        issues_skipped: 0,
+        issues_total: 0,
+        issues_blocked: 0,
+        issues_hitl: 0,
+        issues: serde_json::Value::Null,
+        up: 0,
+        cr: 0,
+        cw: 0,
+        out: 0,
+        duration_s: 0,
+    });
+    state.finished = true;
+    let card = render_card(&state, 0);
+    assert!(state.issues.is_empty(), "no per-issue rows: {card}");
+    assert!(!card.contains("✅ #"), "no per-issue rows: {card}");
+    // The footer must SAY the run had nothing to do — the generic fallback
+    // ("stopped before any issue was processed") reads as an unexplained abort.
+    assert!(
+        card.contains("no open issues to process"),
+        "the no_work footer must explain itself: {card}"
+    );
+    assert!(
+        !card.contains("stopped before any issue was processed"),
+        "the generic abort footer must not appear: {card}"
+    );
 }

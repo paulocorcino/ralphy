@@ -77,6 +77,14 @@ impl CodexAgent {
         self
     }
 
+    /// Set the idle watchdog window in minutes: reap the child after that long
+    /// with no output at all. `0` disables it. Unlike the per-issue cap, this
+    /// keys on progress rather than elapsed time (docs/adr/0038).
+    pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
+        self.budget = self.budget.with_idle_minutes(minutes);
+        self
+    }
+
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
     /// issue's budget is then clamped to it, so an issue started just under the
     /// global limit can't overrun by a whole per-issue window (mirrors
@@ -143,7 +151,7 @@ impl Agent for CodexAgent {
             // planning quality comes from Sol, not an effort bump (ADR-0004,
             // Amendment 2026-07-10 supersedes the old always-`high`).
             let cmd = build_codex_command(&model, DEFAULT_CODEX_EFFORT, ws.repo_root(), &out_path);
-            info!(model = %model, effort = DEFAULT_CODEX_EFFORT, "planning with codex exec");
+            ralphy_core::emit::planning("codex exec", &model, DEFAULT_CODEX_EFFORT);
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -226,7 +234,7 @@ impl Agent for CodexAgent {
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
             let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
-            info!(model = %model, effort, "executing with codex exec");
+            ralphy_core::emit::executing("codex exec", 0, &model, effort);
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);

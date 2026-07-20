@@ -96,6 +96,19 @@ pub fn current_branch(repo: &Path) -> Result<String> {
     git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
 }
 
+/// The repo's local branch names, one per line, in `git branch` order. Backs the
+/// workbench branch switcher (issue #199): robust enumeration needs git (packed
+/// refs, worktrees), so the CLI owns it and the daemon reads it via `branch list`.
+pub fn local_branches(repo: &Path) -> Result<Vec<String>> {
+    let out = git(repo, &["branch", "--format=%(refname:short)"])?;
+    Ok(out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
 /// Best-effort `git remote get-url origin` for the header's repo link. `None` when
 /// there is no `origin` remote (a local-only repo), so the caller simply omits the
 /// link rather than failing the run.
@@ -330,6 +343,25 @@ mod tests {
         );
         let subject = git(&dir, &["log", "-1", "--format=%s"]).unwrap();
         assert_eq!(subject, "chore: snapshot before ralphy init");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn local_branches_lists_all_local_branches() {
+        let dir = init_repo("local-branches");
+        git(&dir, &["commit", "--allow-empty", "-q", "-m", "init"]).unwrap();
+        git(&dir, &["branch", "feat/x"]).unwrap();
+
+        let branches = local_branches(&dir).unwrap();
+        assert!(
+            branches.iter().any(|b| b == "feat/x"),
+            "must list feat/x, got: {branches:?}"
+        );
+        assert!(
+            branches.iter().any(|b| b == "main"),
+            "must list the default branch, got: {branches:?}"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

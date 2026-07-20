@@ -20,7 +20,8 @@ and issues #8203/#10432/#15562).
 Status: accepted — implemented as `crates/ralphy-agent-opencode` and validated
 live against a real OpenCode install (see
 [ADR-0005-opencode-validation](./0005-opencode-validation.md)). D4's model
-default was later amended by [ADR-0010](./0010-settings-and-opencode-model-default.md).
+default was later amended by [ADR-0010](./0010-settings-and-opencode-model-default.md);
+D9's limit handling was substantially amended (see *Amendment 2026-07-13* below).
 
 ## D1 — Selection is per run, via `--agent`; the core is untouched
 
@@ -235,6 +236,13 @@ is pointless when OpenCode is already self-waiting short limits and long ones ca
 no parseable reset. We rejected auto-resume (ADR-0003's hours-long-hang failure
 mode) and treating a limit as plain `Stuck` (loses the actionable re-run signal).
 
+> **Superseded (2026-07-13, see *Amendment* below):** the *"wall timeout is the
+> primary backstop"*, *"best-effort upgrade only"*, and *"`--stop-on-limit` is
+> forced for OpenCode"* clauses no longer hold. Detection is now a real stderr
+> logfmt scan (`parse_opencode_log_limit`) with an early-kill on the matching line,
+> auto-resume is the default (ADR-0030 D3), and every OpenCode reset hint is
+> discarded to `Limit(None)` (D9a). The retry-engine analysis above still stands.
+
 - *Partially resolved (live against opencode 1.16.2, 2026-06-10, issue #29)*: the
   **error-event envelope** is now observed and the parser is fixed to it — a real
   error event is `{"type":"error","error":{"name":<n>,"data":{"message":<m>,…}}}`
@@ -251,13 +259,82 @@ mode) and treating a limit as plain `Stuck` (loses the actionable re-run signal)
   is. The exact 429 string set / reset parser stays best-effort until a real
   rate-limit event is captured.
 
+## Amendment (2026-07-13) — limit detection is real, the reset is discarded, and the kill is a signal not a clock
+
+D9's original stance — *"the per-issue wall timeout is the primary limit backstop"*,
+a *"best-effort"* text upgrade, and *"`--stop-on-limit` is **forced** for OpenCode"* —
+has been overtaken by live evidence and two later decisions. What follows supersedes
+those three clauses; the rest of D9 (the evidence, the retry-engine analysis, the
+error-event envelope) still stands.
+
+**Detection is now real, on stderr.** A live GLM/`zai-coding-plan` cap (FinCal #71,
+2026-07-11) confirmed the common case D9 predicted: the quota block
+(`AI_APICallError: Usage limit reached for 5 hour`) never reaches the JSON stream —
+OpenCode treats it as a retryable stream error and loops in silent backoff. The
+adapter now passes `--print-logs --log-level ERROR` so that line lands on the stderr
+we already drain, and `parse_opencode_log_limit` (a logfmt substring scan over the
+combined log, keyed on the model-agnostic `usage_limit_regex`) classifies it as
+`Limit`. So a long limit is caught by a *detector*, not only by the wall timeout.
+
+**Auto-resume is the default; the force is gone.** Per
+[ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md) D3, the per-agent
+`stop_on_limit` force that pinned OpenCode is removed — a `Limit(None)` now parks a
+synthetic ~30-min window and retries (D1) rather than stopping, so the "auto-resume
+is pointless" premise no longer holds. `--stop-on-limit` remains the operator opt-out.
+
+**D9a — Every OpenCode reset hint is discarded; the limit is always `Limit(None)`.**
+OpenCode fronts many providers whose reset strings are unreliable. Live (FinCal #73,
+2026-07-13, glm-5.2) the provider returned *"Usage limit reached for **5 hour**. …
+reset at **17:50:11**"* — a reset ~12 h out for a five-hour window, internally
+impossible, yet it parses cleanly and would park the run on a bogus instant for 11 h
+while the provider's own dashboard showed the 5-hour quota already free. Rather than
+build a per-provider "clamp the reset to `now + window`" heuristic (fragile across N
+wordings — exactly what D3 rejected for `--variant`), the adapter **keeps the
+"a limit fired" signal but drops the hint** (`unschedulable_opencode_limit`
+collapses `Some(Some(ts))` → `Some(None)`). The runner then falls to the ADR-0030 D1
+synthetic ~30-min cadence — *"the retry itself is the probe"* — instead of trusting a
+timestamp OpenCode cannot be relied on to state. This is the trust decision the
+shared classifier already delegates to extraction (ADR-0023): Claude and Codex are
+stable and keep their hints; OpenCode does not. Strict parsing was the guard ADR-0030
+D5 counted on, but a syntactically-valid-yet-impossible hint slips past it — so for
+OpenCode the guard moves up a level, to "never schedule on this vendor's reset."
+
+**D9b — Early-kill on the stderr limit line, not the wall clock.** The quota line
+prints within seconds, but the child then idles in its own silent backoff until the
+per-issue wall budget expires (60 min wasted, live in both #71 and #73). The adapter
+now drives `execute` through `run_headless_logged_watched`, handing the shared runner
+a predicate (the same `usage_limit_regex`) that watches **stderr**; the moment it
+matches, the runner reaps the process tree instead of waiting out the timeout. The
+predicate matches the same signal `parse_opencode_log_limit` keys on, so an
+early-killed run classifies **identically** — only ~sub-second instead of burning the
+budget. This realigns the behaviour with the Ralph-loop principle
+([ADR-0003](./0003-usage-limit-handling.md) D1, ADR-0030): Ralphy acts on the agent's
+**explicit output** (a signal), and the wall timeout is demoted to what it always
+should have been — the last-resort net for a genuinely mute hang, not the normal
+limit path. The watch is stderr-only on purpose: that is where the provider's own
+quota lines surface, whereas stdout carries the agent's text (which may legitimately
+mention "rate limit" and must not trip the kill). Applied to `execute` only —
+`plan` surfaces no limit today (its detector is `|_log| None`), so there is nothing
+for an early-kill to hand off to.
+
+**Shared-runner change (streaming log).** Delivering D9b meant the shared
+`run_headless_logged` now drains line-by-line and **tees each line to the run log as
+it arrives** (rather than buffering everything in memory and writing once at exit),
+so the log is observable live and survives a crash of the `ralphy` process; the file
+is rewritten once at the end in the canonical stdout-then-stderr order the detectors
+scan. This is shared OS plumbing — the same seam as `run_headless`, and like the
+Windows program-resolver correction it does **not** reopen ADR-0004. All four
+adapters get the streamed log; only OpenCode passes the early-kill predicate.
+
 ## Consequences
 
 - The core, `ralphy-agent-claude`, `ralphy-agent-codex`, the existing
   prompts/plugin, `hook.rs`, `guard.rs`, and the `ANTHROPIC_API_KEY` clearing all
   stay untouched. Core-side changes are limited to `main.rs`: the `OpenCode`
-  `--agent` arm and extending `effective_stop_on_limit` to force it for OpenCode.
-  No-regression for Claude and Codex is structural, not tested-in.
+  `--agent` arm. (The original `effective_stop_on_limit` force for OpenCode was
+  removed by [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md) D3; see
+  the *Amendment 2026-07-13*.) No-regression for Claude and Codex is structural, not
+  tested-in.
 - `plan::count_open_steps` is vendor-neutral and reused. Because routing is
   dropped (D3), the OpenCode adapter leaves `Plan.recommended_model` `None` and the
   core `Plan` shape is unchanged.

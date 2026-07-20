@@ -74,6 +74,61 @@ pub struct QueueConfig {
     pub done_signal: String,
 }
 
+/// The terminal status of one queued issue, in the run's OWN vocabulary — the
+/// distinctions (`infeasible` vs `needs_split` vs `planned`) exist only inside
+/// the queue loop and cannot be re-derived from `(outcome, blocked_by,
+/// human_blockers)` downstream. The wire names mirror the console fold's
+/// `IssueStatus::status_wire`, so a `run.finished` rollup built from here is
+/// byte-compatible with the fold-derived one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResultStatus {
+    Done,
+    Skipped,
+    Blocked,
+    Infeasible,
+    NeedsSplit,
+    NonGreen,
+    Hitl,
+    Planned,
+}
+
+impl ResultStatus {
+    /// The wire name for the `run.finished.issues` rollup `status` field.
+    pub fn wire(&self) -> &'static str {
+        match self {
+            ResultStatus::Done => "done",
+            ResultStatus::Skipped => "skipped",
+            ResultStatus::Blocked => "blocked",
+            ResultStatus::Infeasible => "infeasible",
+            ResultStatus::NeedsSplit => "needs_split",
+            ResultStatus::NonGreen => "non_green",
+            ResultStatus::Hitl => "hitl",
+            ResultStatus::Planned => "planned",
+        }
+    }
+}
+
+/// Why a [`ResultStatus::Skipped`] issue was skipped — the rollup's `kind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipReason {
+    BlockedBy,
+    StopBefore,
+    HumanReturn,
+    VerifyFailed,
+}
+
+impl SkipReason {
+    /// The wire name for the rollup's `kind` field.
+    pub fn wire(&self) -> &'static str {
+        match self {
+            SkipReason::BlockedBy => "blocked_by",
+            SkipReason::StopBefore => "stop_before",
+            SkipReason::HumanReturn => "human_return",
+            SkipReason::VerifyFailed => "verify_failed",
+        }
+    }
+}
+
 /// What happened to one issue in the queue.
 #[derive(Debug)]
 pub struct IssueResult {
@@ -92,6 +147,12 @@ pub struct IssueResult {
     /// will clear. Empty when no blocker is a human gate. The run still continues
     /// past the issue — only this chain stalls; this field is for visibility.
     pub human_blockers: Vec<u64>,
+    /// The issue's terminal status in the run's own vocabulary, recorded at the
+    /// site that knows it. The `run.finished` rollup reads it verbatim.
+    pub status: ResultStatus,
+    /// Why the issue was skipped. `Some` ONLY for a [`ResultStatus::Skipped`]
+    /// status; `None` for every other status.
+    pub skip: Option<SkipReason>,
 }
 
 /// Why the queue loop stopped before reaching the end.

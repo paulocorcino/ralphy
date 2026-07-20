@@ -104,6 +104,14 @@ issue with the failure report published for the human reviewer.
      surprise, a caveat, a partial that a human should see) with `- [!]` instead
      of a tick, rather than silently ticking it or leaving it open — `- [!]` is a
      first-class "done but noticed" marker the run surfaces on the event stream.
+     `- [!]` is legitimate only for a step whose verification you ATTEMPTED and
+     whose literal blocker (or surprise) is recorded under `## Notes &
+     decisions` — the same bar as a `[review-only]` downgrade. A step marked
+     `- [!]` with no recorded attempt is a silent tick in disguise, and the
+     shape is enforced: the completion lint REJECTS a bare `- [!]` — the step
+     line itself must end with the reason, `— blocked: <the literal blocker>`
+     or `— noticed: <the surprise>`, and a malformed one costs you the
+     protocol bounce.
    - BATCH tightly-coupled steps: when 2–3 consecutive steps change the same
      functions, or one produces exactly what the next consumes (add variant →
      map it → wire it), implement the group and pay ONE format+test cycle and
@@ -118,14 +126,16 @@ issue with the failure report published for the human reviewer.
      edit of `.ralphy/plan.md`), at the moment you commit — never a guessed
      string-replace from a script. A silently-failed replace leaves the step
      open, which blocks the completion lint AND keeps the cost gate locked.
-3. When EVERY step is `- [x]` and the project's tests are green, print this on
+3. When EVERY step is resolved — `- [x]` checked, or `- [!]` noticed with its
+   blocker recorded — and the project's tests are green, print this on
    its own line and then STOP — the runner reads this token to mark the issue
    done:
 
        RALPHY_DONE_EXIT
 
    COMPLETION LINT: the runner accepts the token only after a deterministic
-   lint of `.ralphy/plan.md` — every step ticked, `## Handoff`, `## Plan
+   lint of `.ralphy/plan.md` — no step left `- [ ]`, every `- [!]` carrying
+   its inline `— blocked:`/`— noticed:` reason, `## Handoff`, `## Plan
    friction`, and `## Self-review findings` present with real content, and no
    planner placeholder `evidence:` text left in the `## Acceptance ledger`.
    Each artifact is specified in its own section below; complete them all
@@ -232,14 +242,33 @@ planner). As you complete each step, update the matching ledger line:
    actually failed (probe the environment first, e.g. `docker info`, network
    reachability, then run the named command) and record the literal
    probe/command error under `## Notes & decisions` — "would require X" with
-   no attempt is NOT a valid downgrade. A line legitimately stays
+   no attempt is NOT a valid downgrade. A tool's absence from
+   `environment.md` is NOT a probe result: that file lists only what the
+   runner samples, so run the tool's own version command and cite its literal
+   failure before claiming a tool is missing. A line legitimately stays
    `[review-only]` only when it needs human judgment (visual, UX, subjective)
-   or the recorded attempt failed.
+   or the recorded attempt failed. For browser-facing criteria, human
+   judgment means VISUAL judgment (layout, clipping, look-and-feel):
+   behavior a script can assert from the DOM or an HTTP API — routing, data
+   appearing, state surviving a reload — is machine-verifiable whenever a
+   headless-browser driver (Playwright or equivalent) is available.
+   Probe for one; if none is present, install it
+   (`pip install playwright && playwright install chromium`), then attempt
+   a throwaway smoke script. Only a recorded, failed install attempt
+   (offline host, no package manager) justifies settling for
+   `[review-only]` — put the literal error in `## Residue` with the
+   install command a human should run.
+   Every browser-driven verification MUST leave evidence: capture a
+   screenshot at the asserting moment, save it as
+   `docs/screenshots/<YYYY-MM-DD>-issue-<N>-<slug>.png`, commit it with the
+   work it proves, and cite the path + commit hash in the ledger evidence
+   line (the runner publishes the ledger on the issue; the image renders in
+   the PR). A DOM assertion without its screenshot is half the evidence.
 
 **The ledger does NOT gate `RALPHY_DONE_EXIT`.** The green gate stays keyed to
 the plan's machine-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT`
-when every machine-verifiable "Done when" condition is green and every step is
-`- [x]`, regardless of the ledger's review-only entries.
+when every machine-verifiable "Done when" condition is green and no step is
+left `- [ ]`, regardless of the ledger's review-only entries.
 
 ## Write the handoff
 

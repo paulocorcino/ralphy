@@ -16,7 +16,10 @@ use tracing::{info, warn};
 use crate::cli::{CliAgent, RunArgs};
 use crate::{config, events, runlock, runstate, split_agent, telegram, ui};
 
-mod report;
+// `pub(crate)` only so `runstate::capture`'s #[cfg(test)] pins can drive the real
+// `emit_run_finished` (#219). Bin crate: no public surface is widened.
+pub(crate) mod report;
+pub(crate) mod summary;
 mod wiring;
 
 use report::{
@@ -45,15 +48,13 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // ring/Layer, the events-token env scrub, and the tracing subscriber — in one
     // place, returning the handles the later worker starts consume. The scrub runs
     // there BEFORE any worker thread, so the block stays ordering-safe.
-    let Observability {
-        presenter,
-        event_queue,
-        tg_cfg,
-        event_sink_queue,
-        events_url,
-        events_token,
-        events_slug,
-    } = install_observability(log_file, &args, &repo_root);
+    // Kept whole (rather than destructured) so `start_delivery` can be the ONE
+    // place a delivery worker is spawned — every exit path AFTER it reaches a
+    // started worker. (The `?` bails above it — lock acquire, queue build — still
+    // return with the rings unstarted; those are error exits, not run borders.)
+    let obs = install_observability(log_file, &args, &repo_root);
+    let presenter = &obs.presenter;
+    let events_slug = obs.events_slug.clone();
 
     // The repo name feeds the run title (below); the branding header is printed once
     // that title is known, so the console face is seeded by the same title as the
@@ -67,6 +68,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
 
+    // Resolved above the lock check because the `--if-idle` deferral needs it for its
+    // run title: a pure per-repo config read (`github/labels.rs`), no side effect.
+    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
+
     // Presence lock (issue #72): the concurrency policy lives in the invocation.
     // `--if-idle` defers to a live run (clean exit 0, so a scheduler's history
     // shows no false failures); without it a live lock only warns — intentional
@@ -78,11 +83,28 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or(info.started_at);
             let msg = format!("skipped: run in progress since {since}, pid {}", info.pid);
-            info!("{msg}");
-            // finalize before printing so the live region is cleared first (ADR-0006).
-            presenter.finalize();
-            presenter.print_notice(&msg);
-            return Ok(());
+            // The deferral is a run BORDER, not a silent return: it rides the bus so
+            // every sink sees it (ADR-0019 amendment, #222). The workers start here
+            // and both `shutdown()`s run on this path AFTER the emit, so the ring is
+            // drained rather than discarded.
+            let title = telegram::notifier::derive_title(
+                repo_name,
+                0,
+                &effective_labels,
+                None,
+                args.title.as_deref(),
+            );
+            // The run never cut a branch, so report the branch the repo is actually
+            // on — not the `afk/run-<stamp>` a real run would have created.
+            let (notifier, events_handle) = start_delivery(
+                &obs,
+                &title,
+                0,
+                &git::current_branch(&repo_root).unwrap_or_default(),
+                &repo_root,
+                &ws,
+            );
+            return finish_if_idle(presenter, &msg, notifier, events_handle);
         }
         runlock::LockState::HeldAlive(info) => {
             warn!(
@@ -127,7 +149,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Build the queue and the explicitly-named ("forced") issue set. Pure of the
     // lifecycle ordering (no env/thread side effects), so it lives outside the
     // orchestrator; see `build_run_queue` for the two-path selection + dependency sort.
-    let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
     let (queue, forced_issues) =
         build_run_queue(&args, assignee.as_deref(), &effective_labels, &repo_root)?;
 
@@ -164,18 +185,9 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let repo_url = git::origin_url(&repo_root).map(|u| ui::normalize_remote_url(&u));
     presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
 
-    if queue.is_empty() {
-        let scope = empty_queue_scope(
-            &args.issues,
-            args.only_issue,
-            &effective_labels,
-            assignee.as_deref(),
-        );
-        // finalize before printing so the live region is cleared first (ADR-0006).
-        presenter.finalize();
-        presenter.print_notice(&format!("No open issues for {scope} to process. Done."));
-        return Ok(());
-    }
+    // NOTE: an empty queue does NOT return here (#222) — it rides the full triad
+    // (`queue.built` count 0 → `run.started` → `run.finished` no_work) and exits
+    // below, after the delivery workers have started and drained.
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
     // Where the run will halt: the first issue carrying `stop-before` in the sorted
     // order (0 = none). An explicit selection (`--only-issue`/`--issues`) overrides
@@ -193,7 +205,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     // Emit the `queue built` telemetry (ADR-0020/-0021): the enriched per-issue
     // snapshot and the applied assignee scope, terminating in the single stable
-    // `info!("queue built")` the notifier/presenter consume. Positioned after the
+    // `emit::queue_built` the notifier/presenter consume. Positioned after the
     // header/info-line prints and before the notifier worker start, so the
     // buffered-ring drain order is unchanged.
     emit_queue_built(
@@ -205,26 +217,13 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         assignee.as_deref(),
         &order,
         stop_before,
+        &empty_queue_scope(
+            &args.issues,
+            args.only_issue,
+            &effective_labels,
+            assignee.as_deref(),
+        ),
     );
-
-    // Start the Telegram notifier worker now that the queue (and thus the title)
-    // is known. `try_start_notifier` runs `getMe`; on failure it warns once and
-    // returns `None`, leaving the installed Layer inert and the run unaffected
-    // (ADR-0007 D7). Events emitted before this point (just `queue built`) are
-    // buffered in the ring and drained by the worker on start.
-    let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
-    if let (Some(event_queue), Some(cfg)) = (event_queue.as_ref(), tg_cfg.as_ref()) {
-        if let (Some(chat_id), Some(token)) = (
-            cfg.chat_id,
-            telegram::config::effective_token(Some(&cfg.token)),
-        ) {
-            let state = runstate::RunState::new(title.clone(), queue.len());
-            let client =
-                telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
-            notifier =
-                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
-        }
-    }
 
     // Settings were loaded above (before the queue build) so `queue.assignee` could
     // filter the label queue; the operating run branch resolved from them still feeds
@@ -264,24 +263,16 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // the format literal in `runner.rs`), the current branch in `current` mode.
     let operating_branch = operating_branch(branch_mode, &stamp, start_branch.as_deref());
 
-    // Start the CloudEvents sink worker now that the run context is known. The
-    // process `runid` and the emitter identity are minted once here; the worker
-    // drains the ring (already buffering `queue built`) and POSTs each event as a
-    // CloudEvents envelope. A spawn failure leaves the installed Layer inert.
-    let mut events_handle: Option<events::sink::EventsHandle> = None;
-    if let (Some(queue), Some(url)) = (event_sink_queue.as_ref(), events_url.as_ref()) {
-        let ctx = events::envelope::EventCtx {
-            source: events::emitter::source(&events_slug),
-            runid: events::emitter::new_runid(),
-            emitter: serde_json::to_value(events::emitter::detect(&repo_root)).unwrap_or_default(),
-            git: serde_json::json!({
-                "repository": events_slug,
-                "branch": operating_branch,
-            }),
-        };
-        let transport = events::client::UreqEventTransport::new(url.clone(), events_token.clone());
-        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
-    }
+    // Start both delivery workers now that the run context is known. Events emitted
+    // before this point (`queue built`) are buffered in the rings and drained on start.
+    let (notifier, events_handle) = start_delivery(
+        &obs,
+        &title,
+        queue.len(),
+        &operating_branch,
+        &repo_root,
+        &ws,
+    );
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
     // quota (matching the ps1 oracle behaviour).
@@ -325,16 +316,26 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         BranchMode::New => "new",
         BranchMode::Current => "current",
     };
-    info!(
-        repo = %events_slug,
-        queue_labels = %effective_labels.join(","),
-        agent = args.agent.cli_name(),
-        plan_agent = plan_agent.cli_name(),
-        branch_mode = branch_mode_str,
-        base = %base_branch,
-        deadline_hours = args.deadline_hours.unwrap_or(0.0),
-        "run started"
+    ralphy_core::emit::run_started(
+        &events_slug,
+        &effective_labels.join(","),
+        args.agent.cli_name(),
+        plan_agent.cli_name(),
+        branch_mode_str,
+        &base_branch,
+        args.deadline_hours.unwrap_or(0.0),
     );
+
+    // The empty-queue border (#222): the run emitted the full triad and did no work.
+    // Deliberately NOT routed through `finalize_run` — that would also trigger
+    // `maybe_consolidate_knowledge`, i.e. spawn a paid session on a run with nothing
+    // to consolidate. Both `shutdown()`s run here, after the emit, so the rings drain.
+    if queue.is_empty() {
+        report::emit_run_finished_no_work(run_start);
+        finish_border(presenter, notifier, events_handle);
+        return Ok(());
+    }
+
     let resolved_claude = ResolvedClaude {
         plan_model: config::resolve_str(
             args.plan_model.clone(),
@@ -367,6 +368,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             settings.remote_control,
         ),
     };
+    // The idle watchdog knob stays an `Option` through the composition root: an
+    // absent value is not "off", it is "let each execution path use the default
+    // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
+    let idle_minutes = args.idle_minutes.or(settings.idle_minutes);
     let executor = build_agent(
         args.agent,
         &args,
@@ -374,6 +379,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         run_deadline,
         persisted_opencode_model.clone(),
         &resolved_claude,
+        idle_minutes,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
         executor
@@ -386,6 +392,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 run_deadline,
                 persisted_opencode_model,
                 &resolved_claude,
+                idle_minutes,
             ),
             executor,
         })
@@ -409,7 +416,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         stop_on_limit_exec: args.stop_on_limit,
         // The runner-enforced verify gate (ADR-0011): the per-repo fallback
         // command (tokenized into one argv) used only when a plan emits no
-        // `## Verify` section, and the gate's time budget (the per-issue budget).
+        // `## Verify` section, and the gate's own time budget.
         verify_fallback: settings
             .verify
             .command
@@ -417,15 +424,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             .map(str::trim)
             .filter(|c| !c.is_empty())
             .map(|c| vec![ralphy_core::verify::tokenize(c)]),
-        // The verify gate borrows the per-issue budget, but a disabled budget
-        // (`0` = no per-issue cap) must not collapse the gate to a 0s timeout —
-        // fall back to the default window so verify still has room to run.
+        // The gate owns its clock (docs/adr/0038): it no longer derives from the
+        // per-issue cap, which is opt-in and `0`/unbounded by default and would
+        // collapse the gate to a 0s timeout.
         verify_timeout: std::time::Duration::from_secs(
-            match resolved_claude.max_minutes_per_issue {
-                0 => ralphy_core::VERIFY_GATE_FALLBACK_MINUTES,
-                n => n,
-            }
-            .saturating_mul(60),
+            resolve_verify_timeout_minutes(settings.verify.timeout_minutes).saturating_mul(60),
         ),
         // ADR-0015: when set, a `Done` that resolves to no verify gate at all is
         // parked for a human (`ready-for-human`) instead of closed on the
@@ -445,33 +448,131 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 
+    // ONE fold of the report, read by both `run.finished` and the final panel.
+    let summary = result
+        .as_ref()
+        .ok()
+        .map(|r| summary::RunSummary::from_report(r, queue.len()));
+
     // Finalize the presenter, consolidate knowledge, emit `run finished`, and tear
     // down the notifier then the sink — in that exact order (ADR-0006/-0007/-0019).
     // Kept before the `?` propagation so a non-green result still finalizes and
     // pushes; `render_final_panel` runs after, only on the green path.
     finalize_run(
         args.agent,
-        &presenter,
+        presenter,
         &result,
         args.dry_run,
         &ws,
         &cfg.stamp,
-        queue.len(),
+        summary.as_ref(),
         run_start,
         notifier,
         events_handle,
     );
 
     let report = result?;
+    let summary = summary.expect("run_queue returned Ok, so the summary was built");
 
     render_final_panel(
-        &presenter,
+        presenter,
         report,
+        &summary,
         branch_mode,
         args.dry_run,
         &cfg.repo_root,
     );
     Ok(())
+}
+
+/// Close out the `--if-idle` deferral border (#222): emit `run skipped`, clear the
+/// live region, print the folded notice, then drain BOTH delivery rings. The
+/// ordering is load-bearing — the emit precedes the two `shutdown()`s, so the event
+/// is delivered rather than discarded with the ring. Exit code 0 is preserved: a
+/// deferral is a clean outcome, so a scheduler's history shows no false failure.
+fn finish_if_idle(
+    presenter: &ui::PresenterHandle,
+    msg: &str,
+    notifier: Option<telegram::notifier::NotifierHandle>,
+    events: Option<events::sink::EventsHandle>,
+) -> Result<()> {
+    ralphy_core::emit::run_skipped(msg);
+    finish_border(presenter, notifier, events);
+    Ok(())
+}
+
+/// The teardown both no-work borders share (#222), in the ONE order that works:
+/// clear the live region, print the folded notice, THEN drain both delivery rings.
+/// Every caller must have emitted its border event BEFORE calling this — a
+/// `shutdown()` that runs first would drop the event with the ring.
+fn finish_border(
+    presenter: &ui::PresenterHandle,
+    notifier: Option<telegram::notifier::NotifierHandle>,
+    events: Option<events::sink::EventsHandle>,
+) {
+    // finalize before printing so the live region is cleared first (ADR-0006).
+    presenter.finalize();
+    presenter.print_edge_notice();
+    if let Some(n) = notifier {
+        n.shutdown();
+    }
+    if let Some(e) = events {
+        e.shutdown();
+    }
+}
+
+/// Start both delivery workers (Telegram notifier + CloudEvents sink) over the
+/// already-installed rings. The CROSS-PATH INVARIANT this exists for: it is the ONLY
+/// place a worker is spawned, so every exit path of `run_cmd` — including the two
+/// no-work borders (#222) — can reach a STARTED worker and drain its ring rather than
+/// discarding the buffered events.
+///
+/// `try_start_notifier` runs `getMe` and `try_start_sink` spawns a thread; either
+/// failing warns once and returns `None`, leaving the installed Layer inert and the
+/// run unaffected (ADR-0007 D7).
+fn start_delivery(
+    obs: &Observability,
+    title: &str,
+    queue_len: usize,
+    branch: &str,
+    repo_root: &std::path::Path,
+    ws: &Workspace,
+) -> (
+    Option<telegram::notifier::NotifierHandle>,
+    Option<events::sink::EventsHandle>,
+) {
+    let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
+    if let (Some(event_queue), Some(cfg)) = (obs.event_queue.as_ref(), obs.tg_cfg.as_ref()) {
+        if let (Some(chat_id), Some(token)) = (
+            cfg.chat_id,
+            telegram::config::effective_token(Some(&cfg.token)),
+        ) {
+            let state = runstate::RunState::new(title.to_string(), queue_len);
+            let client =
+                telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
+            notifier =
+                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
+        }
+    }
+
+    // The process `runid` and the emitter identity are minted once here.
+    let mut events_handle: Option<events::sink::EventsHandle> = None;
+    if let (Some(queue), Some(url)) = (obs.event_sink_queue.as_ref(), obs.events_url.as_ref()) {
+        let ctx = events::envelope::EventCtx {
+            source: events::emitter::source(&obs.events_slug),
+            runid: events::emitter::new_runid(),
+            emitter: serde_json::to_value(events::emitter::detect(repo_root)).unwrap_or_default(),
+            git: serde_json::json!({
+                "repository": obs.events_slug,
+                "branch": branch,
+            }),
+        };
+        let transport =
+            events::client::UreqEventTransport::new(url.clone(), obs.events_token.clone());
+        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
+    }
+
+    (notifier, events_handle)
 }
 
 /// The observability bundle installed once at run boot: the presenter handle plus
@@ -558,7 +659,7 @@ fn install_observability(
 
 /// Emit the ADR-0020/-0021 `queue built` telemetry: enrich it with the per-issue
 /// snapshot the runner would judge (`data.issues[]`) and mark the applied assignee
-/// scope, terminating in the single stable `info!("queue built")` the notifier /
+/// scope, terminating in the single stable `emit::queue_built` the notifier /
 /// presenter consume. Both resolutions are best-effort telemetry — a `gh` blip warns
 /// and emits the legacy/unmarked shape rather than aborting the run. The caller
 /// positions this after the header/info-line prints and before the notifier worker
@@ -573,6 +674,7 @@ fn emit_queue_built(
     assignee: Option<&str>,
     order: &[String],
     stop_before: u64,
+    scope: &str,
 ) {
     let issues_json = {
         let tracker = GhTracker::new(repo_root);
@@ -602,14 +704,13 @@ fn emit_queue_built(
         },
         None => None,
     };
-    // message consumed by the telegram notifier / presenter — keep stable
-    info!(
-        count = queue.len(),
-        order = %order.join(" -> "),
+    ralphy_core::emit::queue_built(
+        queue.len() as u64,
+        &order.join(" -> "),
         stop_before,
-        issues_json = %issues_json,
-        assignee_filter = %assignee_filter.as_deref().unwrap_or(""),
-        "queue built"
+        &issues_json,
+        assignee_filter.as_deref().unwrap_or(""),
+        scope,
     );
 }
 
@@ -627,7 +728,7 @@ fn finalize_run(
     dry_run: bool,
     ws: &Workspace,
     stamp: &str,
-    queue_len: usize,
+    summary: Option<&summary::RunSummary>,
     run_start: std::time::Instant,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events_handle: Option<events::sink::EventsHandle>,
@@ -644,8 +745,8 @@ fn finalize_run(
     // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
     // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the
     // sink shutdown so the worker drains and POSTs it as the run's last event.
-    if let Ok(report) = result.as_ref() {
-        emit_run_finished(report, queue_len, run_start);
+    if let (Some(s), Ok(report)) = (summary, result.as_ref()) {
+        emit_run_finished(s, &report.run_usage, run_start);
     }
 
     // Tear down the notifier (ADR-0007 D4), then the CloudEvents sink: each worker
@@ -658,9 +759,110 @@ fn finalize_run(
     }
 }
 
+/// The verify gate's time budget in minutes: the persisted `verify.timeout_minutes`,
+/// else [`ralphy_core::VERIFY_GATE_FALLBACK_MINUTES`].
+///
+/// Split out of the `QueueConfig` literal so the "the gate never inherits the
+/// per-issue cap" rule is a testable unit rather than an inline expression
+/// (docs/adr/0038). Unlike the per-issue cap, `0` is not a sentinel here — a
+/// gate with no timeout is not a thing the runner can enforce.
+fn resolve_verify_timeout_minutes(persisted: Option<u64>) -> u64 {
+    persisted
+        .filter(|m| *m > 0)
+        .unwrap_or(ralphy_core::VERIFY_GATE_FALLBACK_MINUTES)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two no-work borders emit events now (#222); no imperative notice print
+    /// may survive in the orchestrator, or the console would double-print (or, worse,
+    /// keep printing on a path that no longer emits).
+    #[test]
+    fn no_print_notice_call_remains_in_run_cmd() {
+        assert!(
+            // Split so this assertion is not itself the occurrence it forbids.
+            !include_str!("run.rs").contains(concat!("print_", "notice(")),
+            "the run borders print from the folded event, never imperatively"
+        );
+    }
+
+    /// A fake CloudEvents sink recording every delivered envelope.
+    struct RecordingSink(Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
+    impl crate::events::client::EventSink for RecordingSink {
+        fn post(
+            &self,
+            body: &serde_json::Value,
+        ) -> Result<crate::events::client::PostOutcome, anyhow::Error> {
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(body.clone());
+            Ok(crate::events::client::PostOutcome::Delivered)
+        }
+    }
+
+    /// Run `f` with the REAL sink Layer installed over a started worker, and hand
+    /// back every envelope the worker delivered. This is the whole border path —
+    /// emit → Layer → ring → running worker → drain — not a hand-built ring.
+    fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) -> Vec<String> {
+        use tracing_subscriber::prelude::*;
+
+        let queue = events::sink::new_queue();
+        let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let handle = events::sink::try_start_sink(
+            RecordingSink(Arc::clone(&recorded)),
+            events::envelope::EventCtx {
+                source: "ralphy/o/r".to_string(),
+                runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
+                emitter: serde_json::json!({ "version": "0.0.0", "pid": 4242 }),
+                git: serde_json::json!({ "repository": "o/r", "branch": "main" }),
+            },
+            queue.clone(),
+            std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
+        );
+        let subscriber =
+            tracing_subscriber::registry().with(events::sink::new_events_layer(queue.clone()));
+        tracing::subscriber::with_default(subscriber, || f(handle));
+        let out = recorded.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        out.iter()
+            .map(|e| e["type"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// The `--if-idle` deferral is a clean exit 0 — a scheduler's history must show
+    /// no failure — AND its `run.skipped` actually reaches the sink: the emit happens
+    /// before the drain, over a worker that was started on this very path. Reordering
+    /// the emit after the shutdown, or dropping `start_delivery` from the border,
+    /// reds here.
+    #[test]
+    fn if_idle_edge_returns_ok() {
+        let presenter = ui::PresenterHandle::plain();
+        let mut out = None;
+        let types = envelopes_delivered_by(|events| {
+            out = Some(finish_if_idle(
+                &presenter,
+                "skipped: run in progress since 2026-07-19 10:00:00, pid 4242",
+                None,
+                events,
+            ));
+        });
+        assert!(out.expect("the border ran").is_ok(), "a deferral exits 0");
+        assert_eq!(types, vec!["dev.ralphy.run.skipped"]);
+    }
+
+    /// The empty-queue border's own teardown: `emit_run_finished_no_work` then
+    /// `finish_border` must deliver the `run.finished`, not discard it with the ring.
+    #[test]
+    fn no_work_border_delivers_run_finished_before_the_drain() {
+        let presenter = ui::PresenterHandle::plain();
+        let types = envelopes_delivered_by(|events| {
+            report::emit_run_finished_no_work(std::time::Instant::now());
+            finish_border(&presenter, None, events);
+        });
+        assert_eq!(types, vec!["dev.ralphy.run.finished"]);
+    }
 
     #[test]
     fn resolution_byte_for_byte_when_absent() {
@@ -692,12 +894,36 @@ mod tests {
     }
 
     #[test]
-    fn unset_max_minutes_resolves_to_finite_default() {
-        // The composition-root resolution (run.rs) an unset flag AND unset
-        // persisted setting must fall through to a finite backstop, never to
-        // `0` (which `issue_deadline` reads as unbounded).
+    fn unset_max_minutes_resolves_to_uncapped() {
+        // The per-issue cap is opt-in (docs/adr/0038): an unset flag AND unset
+        // setting resolve to `0`, which `issue_deadline` reads as "no per-issue
+        // cap" — the issue is bounded only by `--deadline-hours`. Liveness is
+        // the idle watchdog's job, not this knob's; a finite default here would
+        // cut healthy long issues to catch a hang it cannot recognize.
         let resolved = config::resolve_u64(None, None, ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE);
-        assert_eq!(resolved, 60);
-        assert_ne!(resolved, 0);
+        assert_eq!(resolved, 0);
+    }
+
+    #[test]
+    fn max_minutes_precedence_flag_over_setting_over_default() {
+        // Opting in must still work in both directions, in the documented order.
+        let d = ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE;
+        assert_eq!(config::resolve_u64(Some(30), Some(90), d), 30);
+        assert_eq!(config::resolve_u64(None, Some(90), d), 90);
+        // An explicit `0` is a deliberate "no cap", not an absent value.
+        assert_eq!(config::resolve_u64(Some(0), Some(90), d), 0);
+    }
+
+    #[test]
+    fn verify_timeout_no_longer_derives_from_the_per_issue_cap() {
+        // The gate owns its own clock (docs/adr/0038): with the cap uncapped
+        // (`0`, the default) verify must still get a finite window, and it must
+        // not silently inherit an unrelated per-issue cap either.
+        assert_eq!(
+            resolve_verify_timeout_minutes(None),
+            ralphy_core::VERIFY_GATE_FALLBACK_MINUTES
+        );
+        assert_eq!(resolve_verify_timeout_minutes(Some(15)), 15);
+        assert!(resolve_verify_timeout_minutes(None) > 0);
     }
 }

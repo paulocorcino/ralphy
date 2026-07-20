@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use futures_util::StreamExt;
-use ralphy_daemon::auth::AuthPolicy;
+use ralphy_daemon::auth::{AuthPolicy, AuthState};
+use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{identity, router};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -39,7 +40,10 @@ async fn bearer_policy_gates_the_ws_upgrade() {
         PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
-        AuthPolicy::Bearer("tok".into()),
+        AuthState::fixed(
+            AuthPolicy::Bearer("tok".into()),
+            SessionEpoch::in_memory_detached(),
+        ),
     );
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

@@ -1,6 +1,17 @@
 //! The semantic-event mapper: [`RunEvent`] plus [`event_to_runevent`], which lifts
 //! the raw `(target, message, fields)` triple into a typed lifecycle event
 //! (ADR-0007 D6).
+//!
+//! **The convention** (ADR-0039 §1/§2): every arm matches a `ralphy_core::emit`
+//! constant, never a message literal — the emitter and the decoder read the SAME
+//! `…_MSG`, so a renamed message cannot half-land. A new [`RunEvent`] variant
+//! without an `emit` helper AND a round-trip test in [`super::roundtrip`] is an
+//! incomplete change; `roundtrip::_every_variant_has_a_roundtrip` enforces it at
+//! compile time.
+//!
+//! No message literal remains: the vendor adapters' phase events collapsed into
+//! `emit::planning` / `emit::executing` plus a `cmd` field (ADR-0039 Decision 3),
+//! so every arm below reads a constant.
 
 use tracing::Level;
 
@@ -32,6 +43,10 @@ pub enum RunEvent {
         /// `None` = whole queue (unfiltered, or an explicit `--issues`/`--only-issue`
         /// selection). Only the CloudEvents sink carries it onto `queue.built`.
         assignee_filter: Option<String>,
+        /// The human-readable queue scope phrase (`labels [AFK]`, `issue #7`…),
+        /// LOG-ONLY (#222): the console edge notice is folded from it and it is
+        /// deliberately NOT mapped onto the `queue.built` envelope.
+        scope: Option<String>,
     },
     /// Work began on an issue (number + title).
     IssueStarted { number: u64, title: String },
@@ -112,6 +127,12 @@ pub enum RunEvent {
     /// The child's API recovered (transcript activity resumed) after an
     /// [`RunEvent::ApiDegraded`] — always a matched pair, never emitted alone.
     ApiRecovered,
+    /// The idle watchdog reaped the active issue's child after `idle_minutes`
+    /// with no progress (docs/adr/0038). Emitted identically from the PTY and the
+    /// headless paths — the two measure progress differently, but the operator
+    /// sees one event either way. Distinguishes "died of silence" from the wall
+    /// clock, which is otherwise invisible: both surface as `Timeout`.
+    IdleReaped { idle_minutes: u64 },
     /// The end-of-run knowledge consolidation started, folding `notes` loose
     /// per-issue notes into `KNOWLEDGE.md`.
     KnowledgeConsolidating { notes: u64 },
@@ -138,12 +159,22 @@ pub enum RunEvent {
         issues_done: u64,
         issues_skipped: u64,
         issues_total: u64,
+        issues_blocked: u64,
+        issues_hitl: u64,
+        /// The run's OWN per-issue rollup (a JSON array of `{number, status,
+        /// kind?, blocked_by?}`), the same fold the scalars come from.
+        /// `Value::Null` when the emitter carried none — the envelope then falls
+        /// back to the folded [`super::RunState`].
+        issues: serde_json::Value,
         up: u64,
         cr: u64,
         cw: u64,
         out: u64,
         duration_s: u64,
     },
+    /// The run declined to start and returned cleanly (#222) — `--if-idle`
+    /// deferring to a live run. Mapped to `dev.ralphy.run.skipped`.
+    RunSkipped { reason: String },
     /// The raw `plan.md` snapshot at the plan-write point (#96), mapped to
     /// `dev.ralphy.plan.opened`. Issue-scoped; carries only the number + raw
     /// markdown, so it keeps `RunEvent` `PartialEq` (no new `Eq`/hash requirement).
@@ -173,7 +204,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
     }
     let number = fields.number.unwrap_or(0);
     match message {
-        "queue built" => Some(RunEvent::QueueBuilt {
+        ralphy_core::emit::QUEUE_BUILT_MSG => Some(RunEvent::QueueBuilt {
             count: fields.count.unwrap_or(0),
             order: parse_order(fields.order.as_deref()),
             // 0 is the "no stop-before in this queue" sentinel (issue numbers are ≥1).
@@ -185,58 +216,54 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             // The resolved concrete login the queue was scoped to (ADR-0021 §5);
             // `None` when the queue was fetched unfiltered.
             assignee_filter: fields.assignee_filter.clone(),
+            // LOG-ONLY (#222): the console edge notice's scope phrase; `""` folds
+            // to `None` and no envelope arm reads it.
+            scope: fields.scope.clone(),
         }),
-        "issue started" => Some(RunEvent::IssueStarted {
+        ralphy_core::emit::ISSUE_STARTED_MSG => Some(RunEvent::IssueStarted {
             number,
             title: fields.title.clone().unwrap_or_default(),
         }),
         // The adapter's planning events carry no issue number; the fold applies
         // the display model/effort to the active issue's planning spinner.
-        "planning with claude -p"
-        | "planning with codex exec"
-        | "planning with opencode run"
-        | "planning with kimi --print" => Some(RunEvent::Planning {
+        ralphy_core::emit::PLANNING_MSG => Some(RunEvent::Planning {
             model: fields.model.clone(),
             effort: fields.effort.clone(),
         }),
-        "plan written" => Some(RunEvent::PlanWritten {
+        ralphy_core::emit::PLAN_WRITTEN_MSG => Some(RunEvent::PlanWritten {
             number,
             open_steps: fields.open_steps.unwrap_or(0),
             usage: usage_from(fields),
             steps: parse_steps_json(fields.steps_json.as_deref()),
         }),
         // The raw plan snapshots (#96): issue-scoped, carrying the complete `plan.md`.
-        "plan opened" => Some(RunEvent::PlanOpened {
+        ralphy_core::emit::PLAN_OPENED_MSG => Some(RunEvent::PlanOpened {
             number,
             plan_md: fields.plan_md.clone().unwrap_or_default(),
         }),
-        "plan closed" => Some(RunEvent::PlanClosed {
+        ralphy_core::emit::PLAN_CLOSED_MSG => Some(RunEvent::PlanClosed {
             number,
             plan_md: fields.plan_md.clone().unwrap_or_default(),
         }),
         // The adapter's execution events carry no issue number; the fold applies
         // this to the active issue.
-        "executing with interactive claude over the PTY"
-        | "executing with headless claude -p loop"
-        | "executing with codex exec"
-        | "executing with opencode run"
-        | "executing with kimi --print" => Some(RunEvent::Executing {
+        ralphy_core::emit::EXECUTING_MSG => Some(RunEvent::Executing {
             number,
             budget_min: fields.budget_min.unwrap_or(0),
             model: fields.model.clone().unwrap_or_default(),
             effort: fields.effort.clone(),
         }),
-        "green — issue closed" => Some(RunEvent::IssueClosed {
+        ralphy_core::emit::ISSUE_CLOSED_MSG => Some(RunEvent::IssueClosed {
             number,
             tokens: fields.tokens.unwrap_or(0),
             usage: usage_from(fields),
         }),
-        "non-green — stopping run" => Some(RunEvent::NonGreen {
+        ralphy_core::emit::NON_GREEN_MSG => Some(RunEvent::NonGreen {
             number,
             outcome: fields.outcome.clone().unwrap_or_default(),
         }),
-        "bundle plan — needs split" => Some(RunEvent::NeedsSplit { number }),
-        "blocked by open issue(s) — skipping" => Some(RunEvent::Skipped {
+        ralphy_core::emit::NEEDS_SPLIT_MSG => Some(RunEvent::NeedsSplit { number }),
+        ralphy_core::emit::BLOCKED_BY_OPEN_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::BlockedBy,
             label: None,
@@ -245,11 +272,11 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // A human gate (`ready-for-human`/`HITL`) sits in the issue's path: the
         // chain is parked until a person acts, but the run continues. `on` names
         // the issue(s) the operator must clear (ADR-0014).
-        "blocked — waiting on human" => Some(RunEvent::HumanBlocked {
+        ralphy_core::emit::BLOCKED_WAITING_HUMAN_MSG => Some(RunEvent::HumanBlocked {
             number,
             on: parse_u64_list(fields.human_blockers.as_deref()),
         }),
-        "stop-before label — halting run before this issue" => Some(RunEvent::Skipped {
+        ralphy_core::emit::STOP_BEFORE_LABEL_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::StopBefore,
             label: None,
@@ -259,7 +286,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // `needs-triage`, `wontfix`, `triage-agent`) outranks the queue label: the
         // issue is skipped with the parking label named and the queue continues
         // (ADR-0016).
-        "human-return label — skipping issue" => Some(RunEvent::Skipped {
+        ralphy_core::emit::HUMAN_RETURN_LABEL_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::HumanReturn,
             label: fields.label.clone(),
@@ -268,34 +295,42 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // The verify gate stayed red after the repair budget: the issue is left
         // open and the queue marches on (ADR-0011). Surfaced as a skip so the miss
         // is visible in the live card and the final counts.
-        "verify gate failed — skipping issue" => Some(RunEvent::Skipped {
+        ralphy_core::emit::VERIFY_GATE_FAILED_MSG => Some(RunEvent::Skipped {
             number,
             kind: SkipKind::VerifyFailed,
             label: None,
             blockers: Vec::new(),
         }),
-        "deadline passed — not starting issue" => Some(RunEvent::DeadlinePassed { number }),
+        ralphy_core::emit::DEADLINE_PASSED_MSG => Some(RunEvent::DeadlinePassed { number }),
         // The run entered a usage-limit sleep; the fold carries the reset hint and
         // the wake anchor for a live countdown.
-        "usage limit — waiting for reset" => Some(RunEvent::SleepStarted {
+        ralphy_core::emit::USAGE_LIMIT_WAITING_MSG => Some(RunEvent::SleepStarted {
             reset: fields.reset.clone().unwrap_or_default(),
             target_epoch: fields.target_epoch.unwrap_or(0),
         }),
-        "reset reached — resuming" => Some(RunEvent::SleepEnded),
-        // The claude adapter's API-degraded transitions (issue #149): all timing
-        // gating happens in the adapter, so these fire only on the real edges.
-        "api degraded — child retrying" => Some(RunEvent::ApiDegraded),
-        "api recovered — child resuming" => Some(RunEvent::ApiRecovered),
+        ralphy_core::emit::RESET_REACHED_MSG => Some(RunEvent::SleepEnded),
+        // The API-degraded transitions, from EITHER execution path (PTY #149,
+        // headless #217): all timing gating happens in the adapter, so these fire
+        // only on the real edges. The messages are shared constants so the two
+        // emitters cannot drift into two different operator experiences.
+        ralphy_core::emit::API_DEGRADED_MSG => Some(RunEvent::ApiDegraded),
+        ralphy_core::emit::API_RECOVERED_MSG => Some(RunEvent::ApiRecovered),
+        // The idle watchdog's reap, from either execution path — the message is
+        // one shared constant (`ralphy_core::emit::IDLE_REAPED_MSG`) so the
+        // two emitters cannot drift apart into two different operator experiences.
+        ralphy_core::emit::IDLE_REAPED_MSG => Some(RunEvent::IdleReaped {
+            idle_minutes: fields.idle_minutes.unwrap_or(0),
+        }),
         // The end-of-run knowledge consolidation trigger: both events reuse the
         // generic `count` field (notes in / notes archived).
-        "consolidating knowledge" => Some(RunEvent::KnowledgeConsolidating {
+        ralphy_core::emit::KNOWLEDGE_CONSOLIDATING_MSG => Some(RunEvent::KnowledgeConsolidating {
             notes: fields.count.unwrap_or(0),
         }),
-        "knowledge consolidated" => Some(RunEvent::KnowledgeConsolidated {
+        ralphy_core::emit::KNOWLEDGE_CONSOLIDATED_MSG => Some(RunEvent::KnowledgeConsolidated {
             archived: fields.count.unwrap_or(0),
         }),
         // The two ADR-0019 run-boundary emissions (from the CLI, not the core).
-        "run started" => Some(RunEvent::RunStarted {
+        ralphy_core::emit::RUN_STARTED_MSG => Some(RunEvent::RunStarted {
             repo: fields.repo.clone().unwrap_or_default(),
             queue_labels: split_labels(fields.queue_labels.as_deref()),
             agent: fields.agent.clone().unwrap_or_default(),
@@ -306,16 +341,22 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             // `--deadline-hours` becomes `0.0`), so filter it back to `None`.
             deadline_hours: fields.deadline_hours.filter(|&h| h > 0.0),
         }),
-        "run finished" => Some(RunEvent::RunFinished {
+        ralphy_core::emit::RUN_FINISHED_MSG => Some(RunEvent::RunFinished {
             outcome: fields.outcome.clone().unwrap_or_default(),
             issues_done: fields.issues_done.unwrap_or(0),
             issues_skipped: fields.issues_skipped.unwrap_or(0),
             issues_total: fields.issues_total.unwrap_or(0),
+            issues_blocked: fields.issues_blocked.unwrap_or(0),
+            issues_hitl: fields.issues_hitl.unwrap_or(0),
+            issues: parse_issues_snapshot(fields.issues_json.as_deref()),
             up: fields.up.unwrap_or(0),
             cr: fields.cr.unwrap_or(0),
             cw: fields.cw.unwrap_or(0),
             out: fields.out.unwrap_or(0),
             duration_s: fields.duration_s.unwrap_or(0),
+        }),
+        ralphy_core::emit::RUN_SKIPPED_MSG => Some(RunEvent::RunSkipped {
+            reason: fields.reason.clone().unwrap_or_default(),
         }),
         _ => None,
     }
@@ -422,6 +463,51 @@ mod tests {
     }
 
     #[test]
+    fn decoder_maps_the_idle_reap_from_either_execution_path() {
+        // The normalization this pins (docs/adr/0038): the PTY driver and the
+        // headless driver measure progress differently, but both emit the SAME
+        // shared constant, so one decoder arm serves both and the operator gets
+        // one event shape regardless of which child shape ran.
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+                idle_minutes: Some(20),
+                ..Default::default()
+            }),
+            Some(RunEvent::IdleReaped { idle_minutes: 20 })
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+                idle_minutes: Some(45),
+                ..Default::default()
+            }),
+            Some(RunEvent::IdleReaped { idle_minutes: 45 })
+        );
+    }
+
+    #[test]
+    fn the_idle_reap_is_emitted_below_warn_so_it_stays_a_first_class_event() {
+        // The decoder short-circuits WARN/ERROR into a generic `Notice`. A reap
+        // logged at WARN would therefore lose its identity — no `IdleReaped`, no
+        // CloudEvent, no dedicated Telegram push. This pins the level contract the
+        // two emitters must honor.
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+                idle_minutes: Some(20),
+                level: Level::WARN,
+                ..Default::default()
+            }),
+            Some(RunEvent::Notice {
+                level: Level::WARN,
+                message: ralphy_adapter_support::IDLE_REAPED_MSG.into(),
+            }),
+            "if this ever changes, the emitters may log the reap at WARN again"
+        );
+    }
+
+    #[test]
     fn decoder_maps_queue_built_assignee_filter() {
         // ADR-0021 §5: a `queue built` carrying the resolved login decodes it onto
         // `QueueBuilt.assignee_filter`; a field-absent `queue built` decodes to `None`.
@@ -439,6 +525,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: Some("octocat".into()),
+                scope: None,
             })
         );
         assert_eq!(
@@ -454,6 +541,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: None,
+                scope: None,
             })
         );
     }
@@ -475,6 +563,7 @@ mod tests {
                 stop_before: Some(2),
                 issues: serde_json::json!([{"number":1,"queue_status":"eligible"}]),
                 assignee_filter: None,
+                scope: None,
             })
         );
         // A legacy `queue built` with no snapshot decodes with `issues: Null`.
@@ -491,6 +580,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: None,
+                scope: None,
             })
         );
         assert_eq!(
@@ -536,7 +626,7 @@ mod tests {
         // The adapter's planning event seeds the planning spinner's model/effort.
         assert_eq!(
             decode(EventFields {
-                message: "planning with claude -p".into(),
+                message: ralphy_core::emit::PLANNING_MSG.into(),
                 model: Some("opus".into()),
                 effort: Some("high".into()),
                 ..Default::default()
@@ -548,7 +638,7 @@ mod tests {
         );
         assert_eq!(
             decode(EventFields {
-                message: "executing with interactive claude over the PTY".into(),
+                message: ralphy_core::emit::EXECUTING_MSG.into(),
                 budget_min: Some(45),
                 model: Some("claude-sonnet-4".into()),
                 effort: Some("medium".into()),
@@ -563,7 +653,7 @@ mod tests {
         );
         assert_eq!(
             decode(EventFields {
-                message: "executing with headless claude -p loop".into(),
+                message: ralphy_core::emit::EXECUTING_MSG.into(),
                 budget_min: Some(30),
                 ..Default::default()
             }),
@@ -671,7 +761,7 @@ mod tests {
         // Telegram card, and the heartbeat phase all stay stuck on "planning".
         assert_eq!(
             decode(EventFields {
-                message: "planning with kimi --print".into(),
+                message: ralphy_core::emit::PLANNING_MSG.into(),
                 model: Some("kimi-code".into()),
                 ..Default::default()
             }),
@@ -682,7 +772,7 @@ mod tests {
         );
         assert_eq!(
             decode(EventFields {
-                message: "executing with kimi --print".into(),
+                message: ralphy_core::emit::EXECUTING_MSG.into(),
                 budget_min: Some(30),
                 model: Some("kimi-code".into()),
                 ..Default::default()
@@ -733,14 +823,36 @@ mod tests {
     fn decoder_maps_api_degraded_events() {
         assert_eq!(
             decode(EventFields {
-                message: "api degraded — child retrying".into(),
+                message: ralphy_adapter_support::API_DEGRADED_MSG.into(),
                 ..Default::default()
             }),
             Some(RunEvent::ApiDegraded)
         );
         assert_eq!(
             decode(EventFields {
-                message: "api recovered — child resuming".into(),
+                message: ralphy_adapter_support::API_RECOVERED_MSG.into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::ApiRecovered)
+        );
+    }
+
+    #[test]
+    fn decoder_maps_the_api_degraded_from_either_execution_path() {
+        // The normalization this pins (issue #217): the PTY driver (#149) and the
+        // headless driver both emit the SAME shared constant, so one decoder arm
+        // serves both and the operator gets one event shape regardless of which
+        // child shape ran (mold of `decoder_maps_the_idle_reap_from_either_execution_path`).
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::API_DEGRADED_MSG.into(),
+                ..Default::default()
+            }),
+            Some(RunEvent::ApiDegraded)
+        );
+        assert_eq!(
+            decode(EventFields {
+                message: ralphy_adapter_support::API_RECOVERED_MSG.into(),
                 ..Default::default()
             }),
             Some(RunEvent::ApiRecovered)
@@ -887,6 +999,9 @@ mod tests {
                 issues_done: 3,
                 issues_skipped: 1,
                 issues_total: 5,
+                issues_blocked: 0,
+                issues_hitl: 0,
+                issues: serde_json::Value::Null,
                 up: 100,
                 cr: 200,
                 cw: 50,

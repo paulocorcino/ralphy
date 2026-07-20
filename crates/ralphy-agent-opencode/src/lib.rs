@@ -17,9 +17,15 @@
 //! `is_opencode_auth_error` detects `ProviderAuthError` in the combined log and an
 //! actionable bail fires in both `plan` and `execute` before any generic
 //! classification. Usage-limit (D9) is implemented: `parse_opencode_limit` scans
-//! the JSON stream for a 429/`APIError` or documented rate-limit string and
-//! `classify_opencode_outcome` upgrades `Timeout`/`Stuck` to `Outcome::Limit` when
-//! one is seen; `--stop-on-limit` is forced for OpenCode in `main.rs`.
+//! the JSON stream for a 429/`APIError` or documented rate-limit string (and
+//! `parse_opencode_log_limit` the logfmt server log for quota blocks that never
+//! reach the JSON stream), and `classify_opencode_outcome` upgrades
+//! `Timeout`/`Stuck` to `Outcome::Limit` when one is seen. Any reset hint is then
+//! **discarded** (`unschedulable_opencode_limit`): OpenCode fronts many providers
+//! whose reset strings are unreliable (FinCal #73), so the runner never schedules
+//! on one and instead retries on the ~30-min synthetic cadence (ADR-0030 D1).
+//! Auto-resume is the default for all agents; `--stop-on-limit` is the opt-out
+//! (ADR-0030 D3) — it is no longer forced for OpenCode.
 
 use std::fs;
 use std::path::PathBuf;
@@ -45,9 +51,9 @@ pub const ACCEPTS_IMAGES: bool = false;
 use command::build_opencode_command;
 use events::{
     is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, parse_opencode_log_limit,
-    OPENCODE_AUTH_ERROR_MSG,
+    usage_limit_regex, OPENCODE_AUTH_ERROR_MSG,
 };
-use outcome::classify_opencode_outcome;
+use outcome::{classify_opencode_outcome, unschedulable_opencode_limit};
 use skills::{materialize_opencode_skills, opencode_skills_config};
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 use usage::{opencode_usage, resolved_model_label, session_id_from_stream};
@@ -117,6 +123,14 @@ impl OpenCodeAgent {
         self
     }
 
+    /// Set the idle watchdog window in minutes: reap the child after that long
+    /// with no output at all. `0` disables it. Unlike the per-issue cap, this
+    /// keys on progress rather than elapsed time (docs/adr/0038).
+    pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
+        self.budget = self.budget.with_idle_minutes(minutes);
+        self
+    }
+
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
     /// issue's budget is then clamped to it, so an issue started just under the
     /// global limit can't overrun by a whole per-issue window (mirrors
@@ -156,11 +170,21 @@ impl Agent for OpenCodeAgent {
                 ws.repo_root(),
                 &skills_config,
             );
-            info!(model = ?self.model, variant = ?self.variant, "planning with opencode run");
+            ralphy_core::emit::planning(
+                "opencode run",
+                self.model.as_deref().unwrap_or(""),
+                self.variant.as_deref().unwrap_or(""),
+            );
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-            let r = self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
+            // No early-kill on plan: plan surfaces no usage limit today (the detector
+            // below is `|_log| None`), so there is nothing for a kill to hand off to.
+            // The call still streams the log live, like execute.
+            let r =
+                self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout, |_| {
+                    false
+                })?;
             let stdout = r.stdout.clone();
             Ok((r, stdout))
         };
@@ -224,11 +248,28 @@ impl Agent for OpenCodeAgent {
                 ws.repo_root(),
                 &skills_config,
             );
-            info!(model = ?self.model, variant = ?self.variant, "executing with opencode run");
+            ralphy_core::emit::executing(
+                "opencode run",
+                0,
+                self.model.as_deref().unwrap_or(""),
+                self.variant.as_deref().unwrap_or(""),
+            );
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-            let r = self.run_opencode(cmd, ralphy_adapter_support::PROMPT_EXECUTE, timeout)?;
+            // Early-kill: a provider quota block only ever prints to `--print-logs`
+            // stderr (never the JSON stream), then the child idles in silent backoff
+            // until the wall timeout (FinCal #71/#73, glm-5.2). Match the same
+            // usage-limit shape the post-run `parse_opencode_log_limit` keys on, so an
+            // early-killed run classifies as `Limit` identically — only ~sub-second
+            // instead of burning the whole per-issue budget.
+            let limit_re = usage_limit_regex();
+            let r = self.run_opencode(
+                cmd,
+                ralphy_adapter_support::PROMPT_EXECUTE,
+                timeout,
+                move |line| limit_re.is_match(line),
+            )?;
             let stdout = r.stdout.clone();
             Ok((r, stdout))
         };
@@ -252,7 +293,22 @@ impl Agent for OpenCodeAgent {
         // the logfmt scan over the combined stdout+stderr log for providers whose
         // quota block only prints to `--print-logs` stderr and never reaches the JSON
         // stream (Z.ai `zai-coding-plan`/GLM, kimi — D9, FinCal #71).
-        let limit = parse_opencode_limit(&stdout_text).or_else(|| parse_opencode_log_limit(&r.log));
+        let detected =
+            parse_opencode_limit(&stdout_text).or_else(|| parse_opencode_log_limit(&r.log));
+        // OpenCode fronts N providers whose reset strings are unreliable: a "5 hour"
+        // limit reporting a reset ~12h out (FinCal #73, glm-5.2) is internally
+        // impossible, yet parses cleanly and would park the run on a bogus instant.
+        // Never schedule on an OpenCode reset — keep detecting the limit but discard
+        // the hint so the runner falls to the ~30-min synthetic cadence (ADR-0030 D1)
+        // instead of honouring it. Trustworthiness is a per-vendor extraction decision
+        // (the `classify` seam, ADR-0023); Claude/Codex are stable and keep their hints.
+        if let Some(Some(reset)) = &detected {
+            info!(
+                %reset,
+                "opencode reported a usage-limit reset — discarding (OpenCode resets are unschedulable by policy)"
+            );
+        }
+        let limit = unschedulable_opencode_limit(detected);
 
         let outcome = classify_opencode_outcome(
             r.exited_cleanly,

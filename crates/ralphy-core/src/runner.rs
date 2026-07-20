@@ -31,7 +31,7 @@ pub(crate) use phases::{
     verify_gate, ExecPhase, IssueCtx, PlanPhase, Prepared, ProtocolGate, VerifyGate,
 };
 pub(crate) use types::RunLedger;
-pub use types::{IssueResult, QueueConfig, QueueReport, StopReason};
+pub use types::{IssueResult, QueueConfig, QueueReport, ResultStatus, SkipReason, StopReason};
 
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";
@@ -170,11 +170,7 @@ fn run_queue_with(
         // Don't start a new issue past the global budget. Work already committed
         // for earlier issues is kept; the branch is handed back as it stands.
         if clock.deadline_passed() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                "deadline passed — not starting issue"
-            );
+            crate::emit::deadline_passed(issue.number);
             stop = Some(StopReason::Deadline);
             break;
         }
@@ -184,11 +180,7 @@ fn run_queue_with(
         // — the queue was pre-filtered to that selection, so the operator clearly
         // wants it to run.
         if first_stop_before(std::slice::from_ref(issue), &cfg.forced_issues).is_some() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                "stop-before label — halting run before this issue"
-            );
+            crate::emit::stop_before_label(issue.number);
             stop = Some(StopReason::StopBefore {
                 number: issue.number,
             });
@@ -201,18 +193,15 @@ fn run_queue_with(
         // override this: the label may record someone else's state (a reporter
         // owing info, a parked verify gate) that a run flag must not steamroll.
         if let Some(label) = human_return_label(issue, &cfg.human_return_labels) {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                label = %label,
-                "human-return label — skipping issue"
-            );
+            crate::emit::human_return_label(issue.number, label);
             worked.push(IssueResult {
                 number: issue.number,
                 outcome: None,
                 closed: false,
                 blocked_by: Vec::new(),
                 human_blockers: Vec::new(),
+                status: ResultStatus::Skipped,
+                skip: Some(SkipReason::HumanReturn),
             });
             continue;
         }
@@ -222,12 +211,21 @@ fn run_queue_with(
         let issue = match prepare_issue(&cx, issue) {
             Ok(Prepared::Ready(enriched)) => enriched,
             Ok(Prepared::Blocked { open, human }) => {
+                // Mirrors the emitter split in `prepare_issue`: a blocker that
+                // is a human gate parks the issue as HITL, not a plain skip.
+                let status = if human.is_empty() {
+                    ResultStatus::Skipped
+                } else {
+                    ResultStatus::Hitl
+                };
                 worked.push(IssueResult {
                     number: issue.number,
                     outcome: None,
                     closed: false,
                     blocked_by: open,
                     human_blockers: human,
+                    status,
+                    skip: (status == ResultStatus::Skipped).then_some(SkipReason::BlockedBy),
                 });
                 continue;
             }
@@ -241,13 +239,19 @@ fn run_queue_with(
         // Plan the issue; a non-limit planning failure restores and propagates.
         let plan = match plan_phase(&cx, issue, &mut ledger) {
             Ok(PlanPhase::Planned(plan)) => plan,
-            Ok(PlanPhase::Infeasible) => {
+            Ok(PlanPhase::Infeasible { needs_split }) => {
                 worked.push(IssueResult {
                     number: issue.number,
                     outcome: None,
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: if needs_split {
+                        ResultStatus::NeedsSplit
+                    } else {
+                        ResultStatus::Infeasible
+                    },
+                    skip: None,
                 });
                 continue;
             }
@@ -258,6 +262,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::NonGreen,
+                    skip: None,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -283,6 +289,8 @@ fn run_queue_with(
                 closed: false,
                 blocked_by: Vec::new(),
                 human_blockers: Vec::new(),
+                status: ResultStatus::Planned,
+                skip: None,
             });
             continue;
         }
@@ -295,8 +303,7 @@ fn run_queue_with(
                 outcome,
                 deadline_cut,
             } => {
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(number = issue.number, ?outcome, "non-green — stopping run");
+                crate::emit::non_green(issue.number, &outcome);
                 let number = issue.number;
                 worked.push(IssueResult {
                     number,
@@ -304,6 +311,13 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    // Mirrors the fold's `outcome.starts_with("Blocked")` split.
+                    status: if matches!(outcome, Outcome::Blocked(_)) {
+                        ResultStatus::Blocked
+                    } else {
+                        ResultStatus::NonGreen
+                    },
+                    skip: None,
                 });
                 stop = Some(if deadline_cut {
                     StopReason::Deadline
@@ -335,6 +349,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::NonGreen,
+                    skip: None,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -356,6 +372,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::NonGreen,
+                    skip: None,
                 });
                 stop = Some(StopReason::Limit { number, reset });
                 break;
@@ -367,14 +385,15 @@ fn run_queue_with(
                 // for a human to pick up — see the artifact comment) and march on
                 // to the next issue. The issue is reported skipped-on-verify so the
                 // miss is visible, never a silent close.
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(number, %summary, "verify gate failed — skipping issue");
+                crate::emit::verify_gate_failed(number, &summary);
                 worked.push(IssueResult {
                     number,
                     outcome: None,
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::Skipped,
+                    skip: Some(SkipReason::VerifyFailed),
                 });
                 continue;
             }
@@ -401,6 +420,8 @@ fn run_queue_with(
                     closed: false,
                     blocked_by: Vec::new(),
                     human_blockers: Vec::new(),
+                    status: ResultStatus::Done,
+                    skip: None,
                 });
                 continue;
             }
@@ -878,11 +899,11 @@ mod tests {
             .collect();
         assert_eq!(phases, vec!["plan", "execute"]);
         assert_eq!(report.run_usage.total(), 8, "3 plan + 5 execute tokens");
-        // The plan usage carries its model straight through; the execute usage
-        // is an `add_tokens` accumulation, which by design never copies
-        // `model`, so its tokens key under `unknown` (pre-refactor behavior).
-        assert_eq!(report.run_usage_by_model["fake-model"].total(), 3);
-        assert_eq!(report.run_usage_by_model["unknown"].total(), 5);
+        // Both phases carry the same model: the plan usage straight through,
+        // and the execute usage via `Usage::fold_usage` over the resume loop's
+        // attempts (#225) — the exec phase no longer drops model to `unknown`.
+        assert_eq!(report.run_usage_by_model["fake-model"].total(), 8);
+        assert!(!report.run_usage_by_model.contains_key("unknown"));
 
         // Branch lifecycle: the run branch was cut, and the clean run
         // returned to the original branch.

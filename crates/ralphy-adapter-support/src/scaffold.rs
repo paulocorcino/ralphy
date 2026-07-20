@@ -169,6 +169,7 @@ mod tests {
             log: log.to_string(),
             exited_cleanly: true,
             timed_out: false,
+            idle_killed: false,
             exit_code: Some(0),
         }
     }
@@ -181,6 +182,7 @@ mod tests {
             log: log.to_string(),
             exited_cleanly: false,
             timed_out: true,
+            idle_killed: false,
             exit_code: None,
         }
     }

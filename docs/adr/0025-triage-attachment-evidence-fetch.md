@@ -84,6 +84,24 @@ the `.json` name and the agent would read fabricated evidence. So:
    rejected. Not primarily an anti-virus measure — a downloaded file is inert; we
    never execute, `chmod`, or run anything — it falls out of a simpler truth: an
    attachment the model cannot read does not help the judgment.
+   **Amendment (2026-07-19, from [#216](https://github.com/paulocorcino/ralphy/issues/216)):
+   classification is by extension *or* by content, never by extension alone.**
+   GitHub has two attachment URL shapes: the named
+   `user-attachments/files/<id>/<name.ext>`, and — for an image pasted or dragged
+   into the body, which is the default path in today's UI —
+   `user-attachments/assets/<uuid>`, carrying **no filename and no extension**.
+   Extension-only classification denied the second shape unconditionally, so every
+   inline screenshot came back `not fetched (denied format)`: the exact evidence
+   §4 exists to deliver, denied before the download that (verified) would have
+   succeeded. So an extensionless URL **under the already-allowlisted asset path**
+   is a *candidate*: it is gated on adapter capability and downloaded as an image
+   would be, then must prove itself by **magic bytes** (PNG, JPEG, GIF, WEBP). On a
+   match it is written with the sniffed extension — adapters that deliver pixels by
+   path need the suffix — and on no match it is `denied format`, exactly as before.
+   This tightens the allowlist rather than loosening it: a `.png` *name* is still
+   believed on the named path, but an asset must *be* an image. Extensions remain
+   authoritative wherever one exists, and no new host, no new format, and no
+   model judgment enters the fetch decision.
 3. **Size cap, truncation by category.**
    - Free text (`.log .txt .md .diff .patch`): downloaded up to a cap (default
      1 MB); an over-cap file is kept **head + tail** with a

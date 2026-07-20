@@ -105,11 +105,10 @@ impl RunClock for WallClock {
         // synthesised window) that reads badly in a card. The countdown downstream is
         // driven by `target_epoch`, so a bare `HH:MM` here is enough for the UI; the
         // raw hint stays as `hint` for the log.
-        info!(
-            reset = %target.format("%H:%M"),
-            hint = %reset,
-            target_epoch = target.timestamp(),
-            "usage limit — waiting for reset"
+        crate::emit::usage_limit_waiting(
+            &target.format("%H:%M").to_string(),
+            reset,
+            target.timestamp(),
         );
         let mut last_heartbeat = Instant::now();
         loop {
@@ -117,7 +116,7 @@ impl RunClock for WallClock {
                 return WaitOutcome::DeadlinePassed;
             }
             if Local::now() >= target {
-                info!("reset reached — resuming");
+                crate::emit::reset_reached();
                 return WaitOutcome::Resumed;
             }
             if last_heartbeat.elapsed() >= Duration::from_secs(60) {

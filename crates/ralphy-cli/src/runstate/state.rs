@@ -2,7 +2,7 @@
 //! the semantic [`RunEvent`] stream (ADR-0007 D6).
 
 use super::event::RunEvent;
-use super::SkipKind;
+use super::{SkipKind, UsageLite};
 
 /// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
 /// or `stop-before` skip) from 🤷 infeasible (an empty plan), 🧩 needs-split (a
@@ -12,6 +12,10 @@ use super::SkipKind;
 pub enum IssueStatus {
     Planning,
     Executing,
+    /// A plan-only pass superseded by the next `issue started` (a dry run): the
+    /// issue got a plan and never executed, so it is terminal without a lifecycle
+    /// outcome of its own.
+    Planned,
     Done,
     Skipped,
     Blocked,
@@ -29,7 +33,8 @@ impl IssueStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            IssueStatus::Done
+            IssueStatus::Planned
+                | IssueStatus::Done
                 | IssueStatus::Skipped
                 | IssueStatus::Blocked
                 | IssueStatus::Infeasible
@@ -40,11 +45,12 @@ impl IssueStatus {
     }
 
     /// The wire name for the `run.finished.issues` rollup `status` field (#96):
-    /// `Some(name)` for a terminal status (one of `done|skipped|blocked|infeasible|
-    /// needs_split|non_green|hitl`), `None` for the non-terminal `Planning`/
-    /// `Executing` — the rollup includes only terminal entries.
+    /// `Some(name)` for a terminal status (one of `planned|done|skipped|blocked|
+    /// infeasible|needs_split|non_green|hitl`), `None` for the non-terminal
+    /// `Planning`/`Executing` — the rollup includes only terminal entries.
     pub fn status_wire(&self) -> Option<&'static str> {
         match self {
+            IssueStatus::Planned => Some("planned"),
             IssueStatus::Done => Some("done"),
             IssueStatus::Skipped => Some("skipped"),
             IssueStatus::Blocked => Some("blocked"),
@@ -79,6 +85,20 @@ pub struct IssueEntry {
     /// the Telegram card and the `run.finished.issues` rollup can name them
     /// (`blocked by #139`). Empty for every non-skip entry and for the other skip kinds.
     pub blocked_by: Vec<u64>,
+    /// The current phase's display model for THIS issue, reset on `issue started`.
+    /// Distinct from the run-level [`RunState::cur_model`], which never resets and
+    /// degrades an empty exec model to `None` — the console's active line keeps the
+    /// empty-string form, so the two cannot be merged.
+    pub model: Option<String>,
+    /// The current phase's reasoning effort for THIS issue, reset on `issue started`.
+    pub effort: Option<String>,
+    /// The execution budget ceiling in minutes, from `executing`.
+    pub budget_min: Option<u64>,
+    /// The planning phase's usage, stashed at `plan written` so the `done` line can
+    /// show the issue total (plan + execute) and price each phase's model (ADR-0008 D8).
+    pub plan_usage: Option<UsageLite>,
+    /// The execution phase's usage, from `issue closed`.
+    pub exec_usage: Option<UsageLite>,
 }
 
 /// A light `{number, title}` reference for the `run.started.queue` scope list and
@@ -95,6 +115,8 @@ pub struct QueueRef {
 /// A tally of issues by terminal/active status, for the card's counter line.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Counts {
+    /// Plan-only passes superseded by the next issue (a dry run).
+    pub planned: usize,
     pub done: usize,
     pub skipped: usize,
     pub blocked: usize,
@@ -115,6 +137,13 @@ pub struct RunState {
     pub title: String,
     /// The queue size from `queue built`.
     pub total: usize,
+    /// The queue's issue numbers in working order, from `queue built` — the source
+    /// of the console's derived queue bar (its pending list is `order` minus the
+    /// entries already terminal).
+    pub order: Vec<u64>,
+    /// The first issue carrying `stop-before`: the run halts before it, so the
+    /// derived queue bar marks the cut. `None` when no queue issue is tagged.
+    pub stop_before: Option<u64>,
     /// The issues that have entered the lifecycle, in the order first seen.
     pub issues: Vec<IssueEntry>,
     /// The current/active issue number (the "phase" pointer): its [`IssueStatus`]
@@ -195,6 +224,11 @@ impl RunState {
                 status: IssueStatus::Planning,
                 kind: None,
                 blocked_by: Vec::new(),
+                model: None,
+                effort: None,
+                budget_min: None,
+                plan_usage: None,
+                exec_usage: None,
             });
             self.issues.last_mut().expect("just pushed")
         }
@@ -203,8 +237,16 @@ impl RunState {
     /// Fold one event into the state. Pure over `(self, event)`.
     pub fn apply(&mut self, event: RunEvent) {
         match event {
-            RunEvent::QueueBuilt { count, issues, .. } => {
+            RunEvent::QueueBuilt {
+                count,
+                order,
+                stop_before,
+                issues,
+                ..
+            } => {
                 self.total = count as usize;
+                self.order = order;
+                self.stop_before = stop_before;
                 // Seed the light queue scope from the enriched snapshot (tolerating
                 // the legacy `Null` shape and missing titles) — NOT into `issues`,
                 // so the Telegram card fold never renders not-yet-started issues.
@@ -224,26 +266,57 @@ impl RunState {
                 }
             }
             RunEvent::IssueStarted { number, title } => {
+                // A new active issue supersedes a still-non-terminal prior one: it
+                // emitted no lifecycle outcome (a plan-only dry run, or an execution
+                // whose outcome never arrived), so it is done as far as the run goes.
+                if let Some(prev) = self.active.filter(|p| *p != number) {
+                    let e = self.entry_mut(prev);
+                    if !e.status.is_terminal() {
+                        e.status = IssueStatus::Planned;
+                    }
+                }
                 self.active = Some(number);
                 let e = self.entry_mut(number);
                 e.title = title;
                 e.status = IssueStatus::Planning;
+                // The render facts are per-pass, not cumulative: a restarted issue
+                // must not inherit the previous pass's model/effort/budget.
+                e.model = None;
+                e.effort = None;
+                e.budget_min = None;
+                e.plan_usage = None;
+                e.exec_usage = None;
             }
             // Live-region only for the card (the planner's model/effort never
             // changes an issue's status), but it does set the current-phase agent
             // context the `data.agent` block reads (ADR-0019 amendment #96).
             RunEvent::Planning { model, effort } => {
                 self.cur_agent = Some(self.plan_agent.clone());
-                self.cur_model = model;
-                self.cur_effort = effort;
+                self.cur_model = model.clone();
+                self.cur_effort = effort.clone();
+                // The planner's labels land on the active issue only when present:
+                // an absent field must not blank what a previous event set.
+                if let Some(n) = self.active {
+                    let e = self.entry_mut(n);
+                    if model.is_some() {
+                        e.model = model;
+                    }
+                    if effort.is_some() {
+                        e.effort = effort;
+                    }
+                }
             }
             RunEvent::PlanWritten {
-                number, open_steps, ..
+                number,
+                open_steps,
+                usage,
+                ..
             } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
                 let e = self.entry_mut(n);
+                e.plan_usage = Some(usage);
                 e.status = if open_steps == 0 {
                     IssueStatus::Infeasible
                 } else {
@@ -254,21 +327,32 @@ impl RunState {
                 number,
                 model,
                 effort,
-                ..
+                budget_min,
             } => {
                 self.cur_agent = Some(self.exec_agent.clone());
-                self.cur_model = (!model.is_empty()).then_some(model);
-                self.cur_effort = effort;
+                self.cur_model = (!model.is_empty()).then(|| model.clone());
+                self.cur_effort = effort.clone();
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
-                self.entry_mut(n).status = IssueStatus::Executing;
+                let e = self.entry_mut(n);
+                e.status = IssueStatus::Executing;
+                // The per-issue model is set unconditionally, empty string included:
+                // the console's active line renders the bare separator that produces,
+                // and `cur_model`'s `None` degradation would change it.
+                e.model = Some(model);
+                if effort.is_some() {
+                    e.effort = effort;
+                }
+                e.budget_min = Some(budget_min);
             }
-            RunEvent::IssueClosed { number, .. } => {
+            RunEvent::IssueClosed { number, usage, .. } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
-                self.entry_mut(n).status = IssueStatus::Done;
+                let e = self.entry_mut(n);
+                e.exec_usage = Some(usage);
+                e.status = IssueStatus::Done;
             }
             RunEvent::NonGreen { number, outcome } => {
                 let Some(n) = self.resolve(number) else {
@@ -310,6 +394,11 @@ impl RunState {
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
             }
+            // The run declined to start (#222): the deferral sentence IS the card's
+            // terminal state — no issue ever changed status.
+            RunEvent::RunSkipped { reason } => {
+                self.final_summary = Some(reason);
+            }
             RunEvent::SleepStarted {
                 reset,
                 target_epoch,
@@ -326,6 +415,13 @@ impl RunState {
                 self.degraded = true;
             }
             RunEvent::ApiRecovered => {
+                self.degraded = false;
+            }
+            // The child is gone, so any live retry indicator is now a lie: clear
+            // it. A reap can legitimately follow an `ApiDegraded` that never got
+            // its matching `ApiRecovered` (the child never recovered), and that is
+            // the one case where the #149 pair is closed by something else.
+            RunEvent::IdleReaped { .. } => {
                 self.degraded = false;
             }
             RunEvent::KnowledgeConsolidating { notes } => {
@@ -346,6 +442,12 @@ impl RunState {
             }
             // The run-boundary end carries no per-issue status; the fold infers the
             // boundary from the Layer lifecycle, so it is a no-op here.
+            // …except the empty-queue border (#222), whose outcome IS the run's whole
+            // story: without a summary the card falls back to "stopped before any
+            // issue was processed", which reads as an unexplained abort.
+            RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
+                self.final_summary = Some("no open issues to process".to_string());
+            }
             RunEvent::RunFinished { .. } => {}
             // The raw plan snapshots carry no per-issue status change (the sink
             // resets its plan-step poll snapshot on `PlanWritten`, not these).
@@ -358,6 +460,7 @@ impl RunState {
         let mut c = Counts::default();
         for e in &self.issues {
             match e.status {
+                IssueStatus::Planned => c.planned += 1,
                 IssueStatus::Done => c.done += 1,
                 IssueStatus::Skipped => c.skipped += 1,
                 IssueStatus::Blocked => c.blocked += 1,
@@ -428,6 +531,7 @@ mod tests {
                 stop_before: None,
                 issues: serde_json::Value::Null,
                 assignee_filter: None,
+                scope: None,
             },
             RunEvent::IssueStarted {
                 number: 1,
@@ -684,6 +788,9 @@ mod tests {
             issues_done: 1,
             issues_skipped: 0,
             issues_total: 1,
+            issues_blocked: 0,
+            issues_hitl: 0,
+            issues: serde_json::Value::Null,
             up: 0,
             cr: 0,
             cw: 0,
@@ -755,6 +862,7 @@ mod tests {
                 {"number": 2, "title": "two"},
             ]),
             assignee_filter: None,
+            scope: None,
         });
         assert_eq!(
             state.queue,
@@ -778,6 +886,7 @@ mod tests {
             stop_before: None,
             issues: serde_json::Value::Null,
             assignee_filter: None,
+            scope: None,
         });
         assert!(legacy.queue.is_empty());
     }
@@ -827,6 +936,83 @@ mod tests {
             effort: None,
         });
         assert_eq!(state.cur_model, None);
+    }
+
+    #[test]
+    fn issue_started_supersedes_a_non_terminal_prior_issue() {
+        // The dry-run bug: a plan-only pass left the prior issue perenially
+        // "planning". The next `issue started` is the fold's supersede edge.
+        let mut state = RunState::new("t", 2);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "one".into(),
+        });
+        state.apply(RunEvent::PlanWritten {
+            number: 1,
+            open_steps: 3,
+            usage: UsageLite::default(),
+            steps: vec![],
+        });
+        state.apply(RunEvent::IssueStarted {
+            number: 2,
+            title: "two".into(),
+        });
+        assert_eq!(state.issues[0].status, IssueStatus::Planned);
+        let c = state.counts();
+        assert_eq!(c.planned, 1);
+        assert_eq!(c.planning, 1, "only the new issue is still planning");
+    }
+
+    #[test]
+    fn per_issue_render_facts_fold_with_presenter_semantics() {
+        // The presenter's per-field rules, now in the fold: `Planning` writes only
+        // what is `Some`, `Executing` overwrites the model unconditionally (empty
+        // string included), and `IssueStarted` resets the facts per issue.
+        let mut state = RunState::new("t", 2);
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "one".into(),
+        });
+        state.apply(RunEvent::Planning {
+            model: Some("opus".into()),
+            effort: None,
+        });
+        state.apply(RunEvent::Executing {
+            number: 0,
+            budget_min: 45,
+            model: String::new(),
+            effort: Some("medium".into()),
+        });
+        assert_eq!(state.issues[0].model, Some(String::new()));
+        assert_eq!(state.issues[0].effort.as_deref(), Some("medium"));
+        assert_eq!(state.issues[0].budget_min, Some(45));
+        state.apply(RunEvent::IssueStarted {
+            number: 2,
+            title: "two".into(),
+        });
+        assert_eq!(state.issues[1].model, None);
+        assert_eq!(state.issues[1].budget_min, None);
+    }
+
+    #[test]
+    fn queue_built_seeds_the_working_order_and_stop_before_cut() {
+        let mut state = RunState::new("t", 3);
+        state.apply(RunEvent::QueueBuilt {
+            count: 3,
+            order: vec![1, 2, 3],
+            stop_before: Some(3),
+            issues: serde_json::Value::Null,
+            assignee_filter: None,
+            scope: None,
+        });
+        assert_eq!(state.order, vec![1, 2, 3]);
+        assert_eq!(state.stop_before, Some(3));
+    }
+
+    #[test]
+    fn planned_status_wire_is_additive() {
+        assert_eq!(IssueStatus::Planned.status_wire(), Some("planned"));
+        assert!(IssueStatus::Planned.is_terminal());
     }
 
     #[test]

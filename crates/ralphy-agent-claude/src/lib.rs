@@ -24,7 +24,6 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use ralphy_adapter_support::{list_session_files, session_files_appeared};
 use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
-use tracing::info;
 
 mod api_watch;
 mod auth;
@@ -97,7 +96,17 @@ impl ClaudeAgent {
             headless_exec,
             max_exec_calls,
             run_deadline: None,
+            idle_minutes: None,
         };
+        self
+    }
+
+    /// Set the operator's idle watchdog window (`--idle-minutes`). `None` leaves
+    /// each execution path on its own default; `Some(0)` disables the watchdog.
+    /// Call after [`with_exec_config`](Self::with_exec_config), which resets the
+    /// whole exec block.
+    pub fn with_idle_minutes(mut self, idle_minutes: Option<u64>) -> Self {
+        self.exec.idle_minutes = idle_minutes;
         self
     }
 
@@ -184,11 +193,14 @@ impl Agent for ClaudeAgent {
             args.push(e.clone());
         }
 
-        info!(
-            model = self.plan_model.as_deref().unwrap_or(""),
-            effort = self.plan_effort.as_deref().unwrap_or("medium"),
-            staged,
-            "planning with claude -p"
+        ralphy_core::emit::planning(
+            if staged {
+                "claude -p --staged"
+            } else {
+                "claude -p"
+            },
+            self.plan_model.as_deref().unwrap_or(""),
+            self.plan_effort.as_deref().unwrap_or("medium"),
         );
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)

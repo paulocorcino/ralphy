@@ -121,6 +121,25 @@ pub fn pid_is_alive(pid: u32) -> bool {
     }
 }
 
+/// Refuses `verb` when a run currently holds `ws`'s lock; every other state
+/// (free, stale, corrupt) is safe to proceed — a dead PID or an unreadable lock
+/// is not a live run. Shared by the branch/label mutations (`mutate.rs`) and the
+/// `config set`/`config unset` Mutate verbs (ADR-0036 §6).
+pub(crate) fn guard_run_lock(
+    ws: &ralphy_core::Workspace,
+    verb: &str,
+    is_alive: impl Fn(u32) -> bool,
+) -> Result<()> {
+    if let LockState::HeldAlive(info) = inspect(&ws.run_lock_path(), is_alive) {
+        anyhow::bail!(
+            "refusing to {verb}: a run holds this repo's lock (pid {}, since {}) — wait for it to finish or stop it",
+            info.pid,
+            info.started_at
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{classify, run_headless_logged, CompletionSignals, PROMPT_EXECUTE};
+use ralphy_adapter_support::{classify, CompletionSignals, HeadlessCall, PROMPT_EXECUTE};
 use ralphy_core::{git, plan, Outcome, Plan, Workspace};
 use tracing::info;
 
@@ -61,7 +61,10 @@ impl ClaudeAgent {
         // runner's `exited_cleanly` (a *successful* exit); the D10 auth bail stays
         // inline here.
         let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
-        let r = run_headless_logged(cmd, PROMPT_EXECUTE, timeout, &log_path)
+        let r = HeadlessCall::new(cmd, PROMPT_EXECUTE, timeout, &log_path)
+            .idle_minutes(self.exec.idle_minutes_for(false))
+            .degraded_line(is_headless_api_degraded)
+            .run()
             .context("failed to spawn the `claude` CLI for headless exec")?;
 
         if is_claude_auth_error(&r.log) {
@@ -88,12 +91,14 @@ impl ClaudeAgent {
         let deadline = self.issue_deadline();
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
-        info!(
-            model = %exec_model,
-            effort = self.exec.exec_effort.as_deref().unwrap_or("medium"),
-            max_calls = self.exec.max_exec_calls,
-            budget_min = self.exec.max_minutes_per_issue,
-            "executing with headless claude -p loop"
+        ralphy_core::emit::executing(
+            &format!(
+                "headless claude -p loop --max-calls {}",
+                self.exec.max_exec_calls
+            ),
+            self.exec.max_minutes_per_issue,
+            &exec_model,
+            self.exec.exec_effort.as_deref().unwrap_or("medium"),
         );
 
         let mut no_commit_streak = 0u32;
@@ -148,6 +153,18 @@ impl ClaudeAgent {
         );
         Ok(headless_reason_to_outcome(HeadlessReason::MaxCalls))
     }
+}
+
+/// The headless `-p` degraded-line matcher, handed to the shared runner's
+/// [`degraded_line`](ralphy_adapter_support::HeadlessCall::degraded_line) seam.
+/// Reuses the two distinctive substrings from the PTY banner detector
+/// ([`crate::api_watch::is_api_degraded_output`]) but over plain `-p` text — no
+/// TUI cursor-escape stripping, since `claude -p` writes flat lines. A miss is
+/// safe (the line just counts as ordinary progress); the paired test guards that
+/// healthy output does not match.
+fn is_headless_api_degraded(line: &str) -> bool {
+    let l = line.to_lowercase();
+    l.contains("waiting for api response") || l.contains("server error mid-response")
 }
 
 /// Map the session's end state to an [`Outcome`]. Extracts the Stop-hook flag and
@@ -349,6 +366,27 @@ mod tests {
             Outcome::Stuck
         );
         assert_eq!(classify_outcome(None, false, None), Outcome::Stuck);
+    }
+
+    // ── is_headless_api_degraded ────────────────────────────────────────────
+
+    #[test]
+    fn headless_degraded_matcher_matches_the_retry_banners() {
+        assert!(is_headless_api_degraded("Waiting for API response…"));
+        // Case-insensitive, and the second distinctive substring.
+        assert!(is_headless_api_degraded(
+            "API Error: Server error mid-response"
+        ));
+    }
+
+    #[test]
+    fn headless_degraded_matcher_ignores_healthy_output() {
+        // A healthy `-p` line must not match, or a busy child would starve its own
+        // idle beacon and be wrongly reaped.
+        assert!(!is_headless_api_degraded("Running cargo test..."));
+        assert!(!is_headless_api_degraded(
+            "the api call returned 200 · continuing"
+        ));
     }
 
     // ── classify_exec_call ──────────────────────────────────────────────────

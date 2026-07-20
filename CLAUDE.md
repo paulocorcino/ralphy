@@ -40,3 +40,5 @@ them here.
 `crates/ralphy-adapter-support` (vendor-neutral child-driving plumbing) ·
 `crates/ralphy-pty` · `assets/prompts` (plan/execute charters) ·
 `assets/plugin` (bundled skills, embedded into the binary).
+
+#teste 1

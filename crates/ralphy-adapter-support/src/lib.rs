@@ -65,4 +65,13 @@ pub use ralphy_proc_util::{
 };
 
 mod headless;
-pub use headless::{run_headless, run_headless_logged, HeadlessOutput, HeadlessRun};
+pub use headless::{
+    run_headless, run_headless_logged, run_headless_logged_watched, HeadlessCall, HeadlessOutput,
+    HeadlessRun,
+};
+
+mod idle;
+pub use idle::{IdleWatch, ProgressBeat, IDLE_REAPED_MSG};
+
+mod degraded;
+pub use degraded::{DegradedAction, DegradedWatch, API_DEGRADED_MSG, API_RECOVERED_MSG};

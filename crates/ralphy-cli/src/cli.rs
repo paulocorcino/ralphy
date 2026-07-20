@@ -9,7 +9,9 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::BranchMode;
 
-use crate::{config, daemon, init, install, issues, models, schedule, telegram, triage, usage};
+use crate::{
+    config, daemon, init, install, issues, models, mutate, schedule, telegram, triage, usage,
+};
 
 #[derive(Parser)]
 #[command(
@@ -76,6 +78,12 @@ pub(crate) enum Command {
     /// Run the resident daemon in the foreground: a localhost HTTP listener
     /// serving the embedded workbench UI (docs/adr/0032). Ctrl+C stops it.
     Daemon(daemon::DaemonArgs),
+    /// Run-lock-aware git branch ops (ADR-0036 §6).
+    #[command(subcommand)]
+    Branch(mutate::BranchCommand),
+    /// Run-lock-aware label mutation (ADR-0036 §6).
+    #[command(subcommand)]
+    Label(mutate::LabelCommand),
 }
 
 #[derive(Subcommand)]
@@ -184,12 +192,19 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) default_exec_model: Option<String>,
 
-    /// Per-issue wall-clock budget (minutes) before the session is reclaimed
-    /// (default: ≈60 min, or `claude.max_minutes_per_issue` in settings.json).
-    /// Pass `0` explicitly to disable the cap — the issue is then bounded only
-    /// by `--deadline-hours`.
+    /// Opt-in per-issue wall-clock cap (minutes) before the session is
+    /// reclaimed (default: no cap, or `claude.max_minutes_per_issue` in
+    /// settings.json). With no cap an issue is bounded only by
+    /// `--deadline-hours`; a wedged child is caught by `--idle-minutes`.
     #[arg(long)]
     pub(crate) max_minutes_per_issue: Option<u64>,
+
+    /// Reap a child that has made no progress for this many minutes — the
+    /// liveness net that catches a wedged or silently-retrying agent (default:
+    /// 20 headless / 45 interactive, or `idle_minutes` in settings.json). Pass
+    /// `0` to disable it.
+    #[arg(long)]
+    pub(crate) idle_minutes: Option<u64>,
 
     /// Enable Remote Control so you can follow/intervene from the mobile app.
     #[arg(long, overrides_with = "no_remote_control")]
@@ -571,6 +586,41 @@ mod tests {
             CliAgent::from_str("open-code", false).ok(),
             Some(CliAgent::OpenCode)
         );
+    }
+
+    #[test]
+    fn branch_switch_and_create_subcommands_parse() {
+        let cli = Cli::try_parse_from(["ralphy", "branch", "switch", "feat"])
+            .expect("branch switch must parse");
+        let Command::Branch(mutate::BranchCommand::Switch(a)) = cli.command else {
+            panic!("expected `branch switch`");
+        };
+        assert_eq!(a.name, "feat");
+
+        let cli = Cli::try_parse_from(["ralphy", "branch", "create", "feat"])
+            .expect("branch create must parse");
+        let Command::Branch(mutate::BranchCommand::Create(a)) = cli.command else {
+            panic!("expected `branch create`");
+        };
+        assert_eq!(a.name, "feat");
+
+        let cli = Cli::try_parse_from(["ralphy", "branch", "list", "--format", "json"])
+            .expect("branch list must parse");
+        let Command::Branch(mutate::BranchCommand::List(a)) = cli.command else {
+            panic!("expected `branch list`");
+        };
+        assert_eq!(a.format.as_deref(), Some("json"));
+    }
+
+    #[test]
+    fn label_set_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "label", "set", "7", "--add", "AFK"])
+            .expect("label set must parse");
+        let Command::Label(mutate::LabelCommand::Set(a)) = cli.command else {
+            panic!("expected `label set`");
+        };
+        assert_eq!(a.issue, 7);
+        assert_eq!(a.add, vec!["AFK".to_string()]);
     }
 
     #[test]

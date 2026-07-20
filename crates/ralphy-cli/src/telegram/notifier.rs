@@ -51,6 +51,7 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
     match status {
         IssueStatus::Planning => "🧠",
         IssueStatus::Executing => "⚙️",
+        IssueStatus::Planned => "📝",
         IssueStatus::Done => "✅",
         IssueStatus::Skipped => "⏭️",
         IssueStatus::Blocked => "⛔",
@@ -96,6 +97,11 @@ fn counters_line(state: &RunState) -> String {
     );
     if c.needs_split > 0 {
         line.push_str(&format!(" · 🧩 {}", c.needs_split));
+    }
+    // A `📝 N` counter appears only on a plan-only (dry-run) pass, so the common
+    // card stays unchanged but a dry run is visibly not a stalled one.
+    if c.planned > 0 {
+        line.push_str(&format!(" · 📝 {}", c.planned));
     }
     // A `🙋 N` counter appears only when a chain is parked on a human gate
     // (ADR-0014) — the common card stays unchanged, but a run waiting on a
@@ -206,6 +212,31 @@ pub fn render_card(state: &RunState, now_epoch: i64) -> String {
 /// an over-long `--title` cannot make Telegram reject the edit.
 pub fn render_final_push(state: &RunState) -> String {
     let c = state.counts();
+    // A run that reaches its terminal edge without a single issue finishing,
+    // skipping, or parking never actually did any work — it was interrupted
+    // (killed, superseded, or bailed at startup before the first `IssueStarted`).
+    // The celebratory `🏁 … ✅ 0 done` footer misreads that as a clean completion:
+    // an aborted run's card then sits above the next run's fresh card and reads
+    // "finished → started" (FinCal, 2026-07-13). Render a distinct stopped footer so
+    // a no-op run never masquerades as a completed one.
+    let processed = c.done
+        + c.skipped
+        + c.blocked
+        + c.infeasible
+        + c.non_green
+        + c.needs_split
+        + c.hitl
+        + c.planned;
+    if processed == 0 {
+        // A run border that folded its OWN summary (a `--if-idle` deferral, #222)
+        // knows why it processed nothing — say that instead of the generic stop,
+        // which would read as an unexplained abort.
+        let head = state
+            .final_summary
+            .clone()
+            .unwrap_or_else(|| "stopped before any issue was processed".to_string());
+        return truncate_chars(format!("🛑 {} — {head}", state.title), TELEGRAM_LIMIT);
+    }
     let head = state
         .final_summary
         .clone()
@@ -257,6 +288,19 @@ pub fn render_sleep_push(state: &RunState) -> String {
 pub fn render_degraded_push(state: &RunState) -> String {
     truncate_chars(
         format!("⚠️ {} — API degraded, child retrying", state.title),
+        TELEGRAM_LIMIT,
+    )
+}
+
+/// The push sent when the idle watchdog reaps the child. Closes a pending
+/// degraded push *without* claiming recovery — the episode ended because Ralphy
+/// killed the child, which is the opposite news.
+pub fn render_idle_reaped_push(state: &RunState, idle_minutes: u64) -> String {
+    truncate_chars(
+        format!(
+            "💤 {} — no progress for {idle_minutes} min, child reaped",
+            state.title
+        ),
         TELEGRAM_LIMIT,
     )
 }
@@ -359,6 +403,12 @@ struct TelegramEngine<T: Transport> {
     /// false→true edge and the recover push on true→false — matched pairs, never
     /// a lone recover (issue #149).
     prev_degraded: bool,
+    /// The run's single "network dropped" gate. A stalled network fails every
+    /// call — the ~60s idle refresh alone would otherwise `warn!` once a minute
+    /// forever — so the first failure warns concisely and every later one is
+    /// silent, until a success clears the gate (a genuinely new drop warns again).
+    /// Mirrors the CloudEvents sink's warn-once discipline (`events::sink`).
+    net_warned: bool,
 }
 
 impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
@@ -366,13 +416,12 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // Initial card: capture its message_id so every later edit targets it, and
         // remember its rendered text so the idle refresh can skip a no-op edit.
         let initial_card = render_card(&self.state, now_epoch());
-        self.message_id = match self.client.send_message(self.chat_id, &initial_card) {
-            Ok(v) => v.get("message_id").and_then(Value::as_i64),
-            Err(e) => {
-                warn!("telegram: initial card failed: {e}");
-                None
-            }
-        };
+        self.message_id = self
+            .gate(
+                "initial card failed",
+                self.client.send_message(self.chat_id, &initial_card),
+            )
+            .and_then(|v| v.get("message_id").and_then(Value::as_i64));
         self.last_card = initial_card;
         // No separate start/final pushes: the card is one consolidated component
         // edited in place. The sleep/resume pushes are kept — a usage-limit pause is
@@ -383,6 +432,13 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
     }
 
     fn on_event(&mut self, event: RunEvent) {
+        // Captured before the fold: an idle reap also clears `degraded`, and the
+        // edge below would otherwise read that clear as a recovery and push
+        // "API recovered, resuming" about a child Ralphy just killed.
+        let reaped = match event {
+            RunEvent::IdleReaped { idle_minutes } => Some(idle_minutes),
+            _ => None,
+        };
         // Detect the sleep edge per applied event, not once per drained batch: a
         // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain
         // would net to `sleep = None` and silently swallow both pushes if compared
@@ -398,13 +454,13 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
             // bury the chat. Delete the prior notice first so at most one is ever
             // live, then buzz with the current reset time.
             self.delete_sleep_notice();
-            match self
-                .client
-                .send_message(self.chat_id, &render_sleep_push(&self.state))
-            {
-                Ok(v) => self.sleep_notice_id = v.get("message_id").and_then(Value::as_i64),
-                Err(e) => warn!("telegram: sleep push failed: {e}"),
-            }
+            self.sleep_notice_id = self
+                .gate(
+                    "sleep push failed",
+                    self.client
+                        .send_message(self.chat_id, &render_sleep_push(&self.state)),
+                )
+                .and_then(|v| v.get("message_id").and_then(Value::as_i64));
         } else if !now_sleeping && self.prev_sleeping {
             // Resumed: the pause is over, so drop the disposable notice to keep the
             // chat organized. No resume push — the live card already reflects the
@@ -419,19 +475,28 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // `ApiRecovered` (no prior degraded folded) is a no-op.
         let now_degraded = self.state.degraded;
         if now_degraded && !self.prev_degraded {
-            if let Err(e) = self
-                .client
-                .send_message(self.chat_id, &render_degraded_push(&self.state))
-            {
-                warn!("telegram: degraded push failed: {e}");
-            }
-        } else if !now_degraded && self.prev_degraded {
-            if let Err(e) = self
-                .client
-                .send_message(self.chat_id, &render_recover_push(&self.state))
-            {
-                warn!("telegram: recover push failed: {e}");
-            }
+            self.gate(
+                "degraded push failed",
+                self.client
+                    .send_message(self.chat_id, &render_degraded_push(&self.state)),
+            );
+        } else if !now_degraded && self.prev_degraded && reaped.is_none() {
+            self.gate(
+                "recover push failed",
+                self.client
+                    .send_message(self.chat_id, &render_recover_push(&self.state)),
+            );
+        }
+        // The reap gets its own push either way: it is terminal news for this
+        // issue, whether or not a degraded episode preceded it.
+        if let Some(idle_minutes) = reaped {
+            self.gate(
+                "idle reap push failed",
+                self.client.send_message(
+                    self.chat_id,
+                    &render_idle_reaped_push(&self.state, idle_minutes),
+                ),
+            );
         }
         self.prev_degraded = now_degraded;
     }
@@ -446,20 +511,23 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
                 // Skip the round-trip when the body is unchanged: Telegram rejects an
                 // identical edit, which would otherwise warn! once per idle refresh.
                 if card != self.last_card {
-                    match self.client.edit_message_text(self.chat_id, mid, &card) {
-                        // Only record the card as shown on success, so a transient
-                        // failure is retried on the next refresh rather than masked.
-                        Ok(_) => {
-                            self.last_card = card;
-                            // The edit is silent — buzz the phone on genuine
-                            // progress. Suppressed while sleeping: the disposable
-                            // sleep notice already buzzes, and the 60s countdown
-                            // re-render must not ping every minute.
-                            if self.state.sleep.is_none() {
-                                self.fire_ping();
-                            }
+                    // Only record the card as shown on success, so a transient
+                    // failure is retried on the next refresh rather than masked.
+                    if self
+                        .gate(
+                            "edit failed",
+                            self.client.edit_message_text(self.chat_id, mid, &card),
+                        )
+                        .is_some()
+                    {
+                        self.last_card = card;
+                        // The edit is silent — buzz the phone on genuine progress.
+                        // Suppressed while sleeping: the disposable sleep notice
+                        // already buzzes, and the 60s countdown re-render must not
+                        // ping every minute.
+                        if self.state.sleep.is_none() {
+                            self.fire_ping();
                         }
-                        Err(e) => warn!("telegram: edit failed: {e}"),
                     }
                 }
                 self.last_edit = Instant::now();
@@ -482,23 +550,46 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         if let Some(mid) = self.message_id {
             let card = render_card(&self.state, now_epoch());
             if card != self.last_card {
-                if let Err(e) = self.client.edit_message_text(self.chat_id, mid, &card) {
-                    warn!("telegram: final edit failed: {e}");
-                }
+                self.gate(
+                    "final edit failed",
+                    self.client.edit_message_text(self.chat_id, mid, &card),
+                );
             }
         }
     }
 }
 
 impl<T: Transport> TelegramEngine<T> {
+    /// Fold a transport result into the run's single [`net_warned`](Self::net_warned)
+    /// gate: on success clear the gate and hand back the value; on failure warn
+    /// once with a compact one-line reason (never the raw multi-line anyhow chain)
+    /// then stay silent until the next success. This is the ONE place a transport
+    /// error becomes console noise, so a wedged network buzzes once, not per call.
+    fn gate(&mut self, what: &str, result: anyhow::Result<Value>) -> Option<Value> {
+        match result {
+            Ok(v) => {
+                self.net_warned = false;
+                Some(v)
+            }
+            Err(e) => {
+                if !self.net_warned {
+                    warn!("telegram: {what} — {}", short_reason(&e));
+                    self.net_warned = true;
+                }
+                None
+            }
+        }
+    }
+
     /// Delete the current disposable sleep notice, if any, clearing the slot.
-    /// Best-effort: a failed delete is `warn!`ed, never fatal — a stale notice is
-    /// preferable to aborting the run.
+    /// Best-effort: a failed delete is gated (warn-once), never fatal — a stale
+    /// notice is preferable to aborting the run.
     fn delete_sleep_notice(&mut self) {
         if let Some(mid) = self.sleep_notice_id.take() {
-            if let Err(e) = self.client.delete_message(self.chat_id, mid) {
-                warn!("telegram: sleep notice delete failed: {e}");
-            }
+            self.gate(
+                "sleep notice delete failed",
+                self.client.delete_message(self.chat_id, mid),
+            );
         }
     }
 
@@ -508,13 +599,13 @@ impl<T: Transport> TelegramEngine<T> {
         if self.ping.is_some() {
             return;
         }
-        match self.client.send_message(self.chat_id, "🔔") {
-            Ok(v) => {
-                if let Some(id) = v.get("message_id").and_then(Value::as_i64) {
-                    self.ping = Some((id, Instant::now()));
-                }
+        if let Some(v) = self.gate(
+            "ping send failed",
+            self.client.send_message(self.chat_id, "🔔"),
+        ) {
+            if let Some(id) = v.get("message_id").and_then(Value::as_i64) {
+                self.ping = Some((id, Instant::now()));
             }
-            Err(e) => warn!("telegram: ping send failed: {e}"),
         }
     }
 
@@ -531,9 +622,10 @@ impl<T: Transport> TelegramEngine<T> {
     /// Best-effort: a failed delete is `warn!`ed, never fatal.
     fn delete_ping(&mut self) {
         if let Some((id, _)) = self.ping.take() {
-            if let Err(e) = self.client.delete_message(self.chat_id, id) {
-                warn!("telegram: ping delete failed: {e}");
-            }
+            self.gate(
+                "ping delete failed",
+                self.client.delete_message(self.chat_id, id),
+            );
         }
     }
 }
@@ -541,6 +633,33 @@ impl<T: Transport> TelegramEngine<T> {
 /// The current wall-clock Unix-seconds anchor for the live card countdown.
 fn now_epoch() -> i64 {
     Local::now().timestamp()
+}
+
+/// Collapse a transport error into ONE short console-friendly clause. The raw
+/// `ureq`→anyhow chain repeats the same OS message three times over two lines
+/// (`Dns Failed: … (os error 11001): … (os error 11001)`), which is exactly the
+/// noise this run reported. A DNS/connect/timeout failure is the network being
+/// down — say that in four words; anything else falls back to the first line of
+/// the chain, never the whole multi-line blast.
+fn short_reason(e: &anyhow::Error) -> String {
+    let full = format!("{e:#}");
+    let low = full.to_lowercase();
+    if low.contains("dns failed") || low.contains("resolve dns") {
+        return "network unreachable (DNS)".to_string();
+    }
+    if low.contains("os error 10060") || low.contains("timed out") || low.contains("timeout") {
+        return "network unreachable (timeout)".to_string();
+    }
+    if low.contains("network error") || low.contains("connection") || low.contains("connect") {
+        return "network unreachable".to_string();
+    }
+    // Not a recognised network drop: keep just the first line so a genuine API
+    // rejection (bad token, chat gone) is still legible without the chain dump.
+    full.lines()
+        .next()
+        .unwrap_or("send failed")
+        .trim()
+        .to_string()
 }
 
 /// The worker's edit gate, factored out so the ~60s cadence is testable without
@@ -594,6 +713,7 @@ pub fn try_start_notifier<T: Transport + Send + 'static>(
         ping: None,
         prev_sleeping: false,
         prev_degraded: false,
+        net_warned: false,
     };
     spawn_worker("ralphy-telegram", engine, queue, detach_warn)
 }

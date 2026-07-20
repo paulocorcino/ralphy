@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Context, Result};
+use ralphy_adapter_support::{IdleWatch, ProgressBeat};
 use ralphy_core::{Outcome, Plan, Workspace};
 use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tracing::info;
@@ -114,7 +115,16 @@ impl ClaudeAgent {
         };
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
-        info!(model = %exec_model, effort = self.exec.exec_effort.as_deref().unwrap_or("medium"), remote_control = self.exec.remote_control, budget_min = self.exec.max_minutes_per_issue, "executing with interactive claude over the PTY");
+        ralphy_core::emit::executing(
+            if self.exec.remote_control {
+                "interactive claude over the PTY --remote-control"
+            } else {
+                "interactive claude over the PTY"
+            },
+            self.exec.max_minutes_per_issue,
+            &exec_model,
+            self.exec.exec_effort.as_deref().unwrap_or("medium"),
+        );
 
         let transcript_dir = self.transcript_dir(ws);
         let transcript_since = SystemTime::now()
@@ -183,6 +193,14 @@ impl ClaudeAgent {
         let mut dsr_carry: Vec<u8> = Vec::new();
         let mut login_watch = LoginTuiWatch::new();
         let mut api_watch = ApiWatch::new();
+        // Idle watchdog (docs/adr/0038). The progress signal is transcript growth
+        // and ONLY transcript growth: the TUI redraws its spinner forever, so PTY
+        // bytes keep arriving from a child that is thoroughly wedged and would
+        // make this watchdog permanently blind. That coarser signal is why the
+        // interactive window is the larger default — a legitimate long tool call
+        // advances no transcript while it runs.
+        let idle_watch = IdleWatch::from_minutes(self.exec.idle_minutes_for(true));
+        let idle_beat = ProgressBeat::new(Instant::now());
         // Last observed transcript length; a growth between polls is the
         // "activity resumed" signal that clears a degraded state.
         let mut last_len: usize = 0;
@@ -224,11 +242,28 @@ impl ClaudeAgent {
                         bail!("{CLAUDE_AUTH_ERROR_MSG}");
                     }
                 }
+                if advanced {
+                    idle_beat.beat(Instant::now());
+                }
                 match api_watch.poll(Instant::now(), advanced) {
-                    ApiWatchAction::Degraded => info!("api degraded — child retrying"),
-                    ApiWatchAction::Recovered => info!("api recovered — child resuming"),
+                    ApiWatchAction::Degraded => ralphy_core::emit::api_degraded(),
+                    ApiWatchAction::Recovered => ralphy_core::emit::api_recovered(),
                     ApiWatchAction::Respawn => return Ok(DriveEnd::Respawn),
                     ApiWatchAction::None => {}
+                }
+                // Deliberately no re-spawn here, unlike the API-banner path above:
+                // a visible retry banner is evidence the child is trying and may
+                // recover, whereas silence is evidence of nothing. End the drive as
+                // the timeout it already is rather than spend a respawn on a guess.
+                if idle_watch.expired(&idle_beat, Instant::now()) {
+                    // The same canonical helper the headless path calls, so the
+                    // operator-facing event does not depend on which child shape
+                    // happened to be driving (docs/adr/0038).
+                    ralphy_core::emit::idle_reaped(
+                        idle_watch.window().map(|w| w.as_secs() / 60).unwrap_or(0),
+                    );
+                    timed_out = true;
+                    break;
                 }
                 next_transcript_poll = Instant::now() + Duration::from_secs(2);
             }

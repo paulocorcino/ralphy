@@ -6,11 +6,30 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_headless_logged, CompletionSignals, HeadlessRun};
+use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 
-use crate::auth::{is_codex_limit_text, parse_codex_reset_hint};
+use crate::auth::{is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint};
 use crate::CodexAgent;
+
+/// The headless **degraded-line** matcher, handed to the shared runner's
+/// `degraded_line` seam. Conservative, keyed on codex's transient-error
+/// vocabulary `(indicative — refine against a captured degraded run)`: a stream
+/// hiccup the CLI retries internally. Terminal auth/limit lines are excluded via
+/// the guard below. Deliberately does NOT key on `reconnecting`: the runner feeds
+/// the predicate ONE line at a time, and a logged-out codex run prints its
+/// `Reconnecting... 5/5` retries on lines SEPARATE from the `401 Unauthorized` —
+/// so a `reconnecting` token would read those auth-retry lines as degraded even
+/// though the auth guard (which only sees the 401 line) can't reach them. A false
+/// positive that reaped healthy work is the only unsafe failure mode, so narrowness
+/// is the design goal; a miss is safe.
+fn is_codex_api_degraded(line: &str) -> bool {
+    if is_codex_auth_error(line) || is_codex_limit_text(line) {
+        return false;
+    }
+    let l = line.to_ascii_lowercase();
+    l.contains("stream error") || l.contains("server error")
+}
 
 /// Extract Codex's [`CompletionSignals`] from a call's raw end state and delegate
 /// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
@@ -62,7 +81,13 @@ impl CodexAgent {
         // shared headless runner; Codex's `exited_cleanly` (a *successful* exit,
         // not merely "not timed out") is recovered from the returned exit status,
         // which is `None` exactly when the child was killed on the wall timeout.
-        run_headless_logged(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
+        // The idle watchdog reaps a child that has gone silent past its window,
+        // which the wall `timeout` cannot do now that the per-issue cap is opt-in
+        // and unbounded by default (docs/adr/0038).
+        HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("codex.log"))
+            .idle_minutes(self.budget.idle_minutes)
+            .degraded_line(is_codex_api_degraded)
+            .run()
             .context("failed to spawn the `codex` CLI (is it installed and on PATH?)")
     }
 }
@@ -126,6 +151,36 @@ mod tests {
             classify_codex_outcome(false, true, false, out, ""),
             Outcome::Timeout
         );
+    }
+
+    // ── is_codex_api_degraded ───────────────────────────────────────────────
+
+    #[test]
+    fn codex_degraded_matches_transient_error() {
+        assert!(is_codex_api_degraded(
+            "ERROR codex_api: stream error, retrying"
+        ));
+        assert!(is_codex_api_degraded("Server error, backing off"));
+    }
+
+    #[test]
+    fn codex_degraded_ignores_healthy_and_terminal_lines() {
+        assert!(!is_codex_api_degraded(
+            "all steps green\nRALPHY_DONE_EXIT\n"
+        ));
+        // Per-line, as the runner delivers them: a logged-out run prints the 401 and
+        // its `Reconnecting...` retries on SEPARATE lines. The 401 line is caught by
+        // the auth guard; the reconnect line must ALSO not read as degraded (the
+        // matcher deliberately does not key on `reconnecting`).
+        assert!(!is_codex_api_degraded(
+            "ERROR: unexpected status 401 Unauthorized: Missing bearer or basic \
+             authentication in header"
+        ));
+        assert!(!is_codex_api_degraded("ERROR: Reconnecting... 5/5"));
+        // A usage limit is terminal, not degraded.
+        assert!(!is_codex_api_degraded(
+            "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
+        ));
     }
 
     // ── classify_codex_outcome — limit branch ───────────────────────────────

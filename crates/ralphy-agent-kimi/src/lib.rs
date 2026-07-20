@@ -82,6 +82,14 @@ impl KimiAgent {
         self
     }
 
+    /// Set the idle watchdog window in minutes: reap the child after that long
+    /// with no output at all. `0` disables it. Unlike the per-issue cap, this
+    /// keys on progress rather than elapsed time (docs/adr/0038).
+    pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
+        self.budget = self.budget.with_idle_minutes(minutes);
+        self
+    }
+
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
     /// issue's budget is then clamped to it (mirrors `CodexAgent::with_run_deadline`).
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
@@ -125,7 +133,7 @@ impl Agent for KimiAgent {
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
             let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            info!(model = %model, "planning with kimi --print");
+            ralphy_core::emit::planning("kimi --print", &model, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -191,7 +199,7 @@ impl Agent for KimiAgent {
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
             let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            info!(model = %model, "executing with kimi --print");
+            ralphy_core::emit::executing("kimi --print", 0, &model, "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
             let r = self.run_kimi(cmd, PROMPT_EXECUTE, timeout)?;

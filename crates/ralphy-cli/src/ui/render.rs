@@ -9,7 +9,7 @@ use chrono::{DateTime, Local};
 use console::Style;
 use tracing::Level;
 
-use super::{FinishOutcome, Phase, UsageLite};
+use super::{fit, FinishOutcome, Phase, UsageLite};
 use crate::pricing::PriceTable;
 use crate::runstate::{RunEvent, SkipKind};
 
@@ -87,19 +87,13 @@ pub(crate) fn render_active_line(
     elapsed: Duration,
     budget_min: Option<u64>,
     opts: RenderOpts,
+    width: usize,
 ) -> String {
     let icon = match phase {
         Phase::Planning => pick("🧠", "[plan]", opts.emoji),
         Phase::Executing => pick("⚙️", "[exec]", opts.emoji),
     };
-    let mut parts: Vec<String> = vec![format!("{icon} #{number} {title}")];
-    if let Some(seg) = model_effort_seg(model, effort) {
-        parts.push(if opts.color {
-            Style::new().cyan().apply_to(seg).to_string()
-        } else {
-            seg
-        });
-    }
+    let seg = model_effort_seg(model, effort);
     // A `0` budget means the per-issue cap is disabled (unbounded, explicit opt-out):
     // show only the elapsed clock, never a misleading `/ 0:00` ceiling.
     let clock = match budget_min {
@@ -110,6 +104,26 @@ pub(crate) fn render_active_line(
         ),
         _ => fmt_clock(elapsed),
     };
+    // The tail (model/effort + clock) is the fixed-cost, information-dense part
+    // and is never truncated; only the elastic title gives up columns. `·`
+    // (U+00B7) measures width_cjk=2, not the 1 its glyph suggests — always
+    // measure the joiner, never assume its byte length.
+    let join_width = fit::display_width(" · ");
+    let prefix = format!("{icon} #{number} ");
+    let mut overhead = fit::display_width(&prefix) + fit::display_width(&clock) + join_width;
+    if let Some(s) = &seg {
+        overhead += fit::display_width(s) + join_width;
+    }
+    let title = fit::truncate_to_width(title, width.saturating_sub(overhead));
+
+    let mut parts: Vec<String> = vec![format!("{prefix}{title}")];
+    if let Some(seg) = seg {
+        parts.push(if opts.color {
+            Style::new().cyan().apply_to(seg).to_string()
+        } else {
+            seg
+        });
+    }
     parts.push(if opts.color {
         Style::new().dim().apply_to(clock).to_string()
     } else {
@@ -227,6 +241,7 @@ pub(crate) fn render_line(
         // so no scroll-up line here.
         RunEvent::RunStarted { .. }
         | RunEvent::RunFinished { .. }
+        | RunEvent::RunSkipped { .. }
         | RunEvent::PlanOpened { .. }
         | RunEvent::PlanClosed { .. } => return None,
         RunEvent::IssueStarted { number, title } => (
@@ -324,6 +339,11 @@ pub(crate) fn render_line(
             pick("🔄", "[api]", opts.emoji),
             Style::new().green(),
             "API recovered — resuming".to_string(),
+        ),
+        RunEvent::IdleReaped { idle_minutes } => (
+            pick("💤", "[idle]", opts.emoji),
+            Style::new().yellow(),
+            format!("no progress for {idle_minutes} min — child reaped"),
         ),
         RunEvent::DeadlinePassed { number } => (
             pick("⏱️", "[timeout]", opts.emoji),

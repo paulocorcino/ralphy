@@ -28,7 +28,7 @@ fn spawned_child_does_not_inherit_the_token() {
     let mut child = dispatch::dispatch(
         &dispatch::ProcessSpawner,
         &dispatch::ralphy_exe(),
-        dispatch::Verb::Run,
+        &["run", "--if-idle"],
         dir.path(),
         Some("01DAEMONID0000000000000000"),
     )

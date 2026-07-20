@@ -33,11 +33,15 @@ pub struct ClaudeSettings {
     /// Execution effort default (`--exec-effort`). `None` → hardcoded `medium`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec_effort: Option<String>,
-    /// Per-issue wall-clock budget in minutes (`--max-minutes-per-issue`).
-    /// `None` → [`ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE`] (a finite ≈60 min
-    /// backstop by default). `0` — whether set explicitly or via
-    /// `claude.max_minutes_per_issue = 0` — disables the per-issue cap: the
-    /// issue is then bounded only by `--deadline-hours`.
+    /// Per-issue wall-clock budget in minutes (`--max-minutes-per-issue`): an
+    /// opt-in productivity cap. `None` →
+    /// [`ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE`], which is `0` = **no cap**
+    /// by default. `0` — whether left unset or written explicitly — leaves the
+    /// issue bounded only by `--deadline-hours`.
+    ///
+    /// A wedged child is not this knob's problem: that is the idle watchdog
+    /// (`--idle-minutes`), which keys on progress instead of elapsed time
+    /// (docs/adr/0038).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_minutes_per_issue: Option<u64>,
 }
@@ -80,6 +84,30 @@ pub(crate) struct ExecConfig {
     /// global limit can't overrun it (mirrors `min(issueDeadline, $Deadline)`
     /// in ralphy.ps1:270).
     pub(crate) run_deadline: Option<std::time::Instant>,
+    /// The operator's idle watchdog window in minutes, or `None` to let each
+    /// execution path pick its own default.
+    ///
+    /// Deliberately an `Option` carried this far: the two paths have different
+    /// progress signals and therefore different safe defaults (see
+    /// [`ExecConfig::idle_minutes_for`]), but an operator who names a number
+    /// means it for whichever path runs.
+    pub(crate) idle_minutes: Option<u64>,
+}
+
+impl ExecConfig {
+    /// The idle window to arm for the path about to run.
+    ///
+    /// An explicit operator value wins for both paths. Unset, headless gets the
+    /// tighter default (any byte on either stream proves life) and interactive
+    /// gets the looser one (only transcript growth does, and a long tool call
+    /// legitimately produces none) — docs/adr/0038.
+    pub(crate) fn idle_minutes_for(&self, interactive: bool) -> u64 {
+        self.idle_minutes.unwrap_or(if interactive {
+            ralphy_core::DEFAULT_INTERACTIVE_IDLE_MINUTES
+        } else {
+            ralphy_core::DEFAULT_IDLE_MINUTES
+        })
+    }
 }
 
 impl Default for ExecConfig {
@@ -93,6 +121,7 @@ impl Default for ExecConfig {
             headless_exec: false,
             max_exec_calls: 6,
             run_deadline: None,
+            idle_minutes: None,
         }
     }
 }

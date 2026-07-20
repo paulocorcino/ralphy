@@ -17,6 +17,13 @@ pub struct IssueBudget {
     pub max_minutes_per_issue: u64,
     /// The run-level deadline the per-issue budget is clamped to, when set.
     pub run_deadline: Option<Instant>,
+    /// The idle watchdog window in minutes; `0` disables it.
+    ///
+    /// Rides along here because every adapter already carries one `IssueBudget`,
+    /// but it is a **different kind of clock** and never participates in the
+    /// deadline arithmetic above: the cap measures elapsed time, this measures
+    /// silence (docs/adr/0038).
+    pub idle_minutes: u64,
 }
 
 impl IssueBudget {
@@ -25,6 +32,7 @@ impl IssueBudget {
         Self {
             max_minutes_per_issue: default_max_minutes,
             run_deadline: None,
+            idle_minutes: 0,
         }
     }
 
@@ -37,6 +45,12 @@ impl IssueBudget {
     /// Set the run's global wall-clock deadline; each issue's budget is clamped to it.
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.run_deadline = run_deadline;
+        self
+    }
+
+    /// Set the idle watchdog window in minutes (`0` disables it).
+    pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
+        self.idle_minutes = minutes;
         self
     }
 

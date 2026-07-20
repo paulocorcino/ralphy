@@ -97,8 +97,18 @@ on one.
      0 even on unformatted files).>
    - Review-only (omit if none): <behavior only human JUDGMENT can confirm in
      the PR, e.g. "the row disappears immediately before the refresh
-     completes">. State these separately — the executor gates the done token on
-     the machine-verifiable conditions and flags review-only ones for the PR
+     completes">. Judgment means visual/subjective: browser behavior a script
+     could assert from the DOM or an HTTP API is machine-verifiable — the
+     executor installs a headless-browser driver (e.g. Playwright) if none
+     is present — plan that check instead of conceding the criterion to
+     review-only, and price
+     its evidence: a dated screenshot under `docs/screenshots/` named with
+     the issue number, committed with the work. Screenshot evidence belongs
+     to that browser-driven path only — do not require screenshot artifacts
+     for criteria a browser never renders (terminal scrollback, CLI output,
+     logs). State
+     these separately — the executor gates the done token on the
+     machine-verifiable conditions and flags review-only ones for the PR
      reviewer.
 
    ## Acceptance ledger
@@ -277,7 +287,12 @@ on one.
   ATTEMPTS the verification; the executor downgrades to `[review-only]` only
   if the attempt fails, recording the literal error. "Not verifiable by the
   test suite", "artifacts are git-ignored", or "needs an external repo" are
-  NOT grounds for `[review-only]`.
+  NOT grounds for `[review-only]`. Write that attempt step like any other —
+  the probe, the command, the artifact — and never restate executor
+  bookkeeping (done-token, checkbox, or ledger-tag policy) inside a step's
+  text: the executor prompt owns it, and a step whose recorded attempt fails
+  ends `- [!]` with its reason inline on the step line
+  (`— blocked: <the literal error>`), which does not hold the token.
 - Anchor every claim about existing code, not just steps: any "already
   exists / already present" statement in `## Feasible` or `## Decisions` must
   cite the file and function you read in THIS pass. Before planning, check

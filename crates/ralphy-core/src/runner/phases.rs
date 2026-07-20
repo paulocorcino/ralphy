@@ -21,7 +21,9 @@ use super::artifacts::{
 };
 use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
-use super::{synthetic_reset, IssueResult, QueueConfig, RunClock, RunLedger, WaitOutcome};
+use super::{
+    synthetic_reset, IssueResult, QueueConfig, ResultStatus, RunClock, RunLedger, WaitOutcome,
+};
 
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
@@ -260,20 +262,9 @@ pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     } = open_blockers(&issue, cx.tracker)?;
     if !open_blockers.is_empty() {
         if human_blockers.is_empty() {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                blockers = ?open_blockers,
-                "blocked by open issue(s) — skipping"
-            );
+            crate::emit::blocked_by_open(issue.number, &open_blockers);
         } else {
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                blockers = ?open_blockers,
-                human_blockers = ?human_blockers,
-                "blocked — waiting on human"
-            );
+            crate::emit::blocked_waiting_human(issue.number, &open_blockers, &human_blockers);
         }
         return Ok(Prepared::Blocked {
             open: open_blockers,
@@ -282,7 +273,7 @@ pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     }
 
     // consumed by the telegram notifier / presenter — keep stable
-    info!(number = issue.number, title = %issue.title, "issue started");
+    crate::emit::issue_started(issue.number, &issue.title);
 
     // The comment thread was attached up front (for the blocked-by gate); note
     // it here so the "comments attached for planner" visibility line still fires
@@ -321,8 +312,10 @@ pub(crate) enum PlanPhase {
     /// A feasible plan was written — proceed to execute.
     Planned(Plan),
     /// The planner judged the issue infeasible or a bundle; the verdict is
-    /// posted on the issue — skip to the next one.
-    Infeasible,
+    /// posted on the issue — skip to the next one. `needs_split` distinguishes
+    /// the bundle verdict (the `needs-split` label was applied) from a plain
+    /// infeasible one; the two are separate statuses on the wire.
+    Infeasible { needs_split: bool },
     /// A plan-time usage limit stops the run (configured `stop_on_limit_plan`, or a
     /// scheduled reset that hit the no-progress cap). A limit with no parseable reset
     /// no longer stops here — it parks a synthetic wait and re-plans (ADR-0030).
@@ -390,21 +383,15 @@ pub(crate) fn plan_phase(
     // markdown rides a stable `plan opened` event (→ `dev.ralphy.plan.opened`).
     let plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
     let steps_json = plan_steps_json(&plan_md);
-    // consumed by the telegram notifier / presenter — keep stable
-    info!(
-        number = issue.number,
-        open_steps = plan.open_steps,
-        up = plan.usage.input,
-        cr = plan.usage.cache_read,
-        cw = plan.usage.cache_creation,
-        out = plan.usage.output,
-        model = plan.usage.model.as_deref().unwrap_or(""),
-        steps_json = %steps_json,
-        "plan written"
+    crate::emit::plan_written(
+        issue.number,
+        plan.open_steps as u64,
+        &plan.usage,
+        &steps_json,
     );
     // The raw plan snapshot at the write point (issue-scoped); the sink maps it to
-    // `dev.ralphy.plan.opened`. Keep the message stable.
-    info!(number = issue.number, plan_md = %plan_md, "plan opened");
+    // `dev.ralphy.plan.opened`.
+    crate::emit::plan_opened(issue.number, &plan_md);
 
     // Record the plan phase's token usage (ADR-0008 D6). Written before the
     // feasibility branch so even an infeasible plan's planning cost is on the
@@ -424,11 +411,12 @@ pub(crate) fn plan_phase(
     // planner's reasoning is posted on the issue so the verdict is
     // actionable instead of dying in the gitignored plan.md.
     if !plan.is_feasible() {
+        let mut needs_split = false;
         if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
             if let Some(reason) = handoff::infeasible_reason(&plan_md) {
                 if handoff::is_bundle_reason(&reason) {
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(number = issue.number, "bundle plan — needs split");
+                    needs_split = true;
+                    crate::emit::needs_split(issue.number);
                     // Best-effort: a label failure must not stop the run —
                     // the comment below still carries the verdict.
                     if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
@@ -450,7 +438,7 @@ pub(crate) fn plan_phase(
                 }
             }
         }
-        return Ok(PlanPhase::Infeasible);
+        return Ok(PlanPhase::Infeasible { needs_split });
     }
 
     Ok(PlanPhase::Planned(plan))
@@ -494,7 +482,7 @@ pub(crate) fn execute_phase(
 
     let mut no_commit_streak = 0u32;
     let mut deadline_cut = false;
-    let mut exec_usage = Usage::default();
+    let mut exec_attempts: Vec<Usage> = Vec::new();
     // Last non-empty vendor session across the resume loop — the terminal
     // attempt's session is the one the single execute ledger line records
     // (ADR-0033 §5, last-non-empty-wins).
@@ -508,7 +496,11 @@ pub(crate) fn execute_phase(
         } = cx.agent.execute(plan, cx.ws)?;
         // Accumulate across the resume loop so the single execute ledger line
         // carries the whole issue's execution cost, not just the last attempt.
-        exec_usage.add_tokens(&usage);
+        // Model attribution happens once, after the loop, via `fold_usage` —
+        // the ONE place accumulated-usage model derivation lives (ADR-0008
+        // D8); the runner stays vendor-neutral and passes no fallback
+        // (ADR-0004 — alias fallback lives in the adapter).
+        exec_attempts.push(usage);
         if session_id.is_some() {
             exec_session_id = session_id;
         }
@@ -563,6 +555,8 @@ pub(crate) fn execute_phase(
         // Otherwise loop: re-run execute() against the same on-disk plan.md.
     };
 
+    let exec_usage = Usage::fold_usage(&exec_attempts, None);
+
     // Record the execute phase's accumulated token usage with this issue's
     // terminal outcome (ADR-0008 D6). One line per issue regardless of how
     // many resume attempts ran. Best-effort (D9).
@@ -600,7 +594,7 @@ pub(crate) enum ProtocolGate {
 }
 
 /// Deterministic protocol lint (ADR-0015): before anything else, structurally
-/// lint the plan the executor claims is finished — every step ticked, the
+/// lint the plan the executor claims is finished — no step left open, the
 /// charter's closing sections present, no planner placeholder left in the
 /// ledger. Presence and shape only, never truthfulness. On a violation the
 /// session is handed back to the executor ONCE via `protocol-failure.md` (the
@@ -949,22 +943,15 @@ pub(crate) fn close_and_record(
     // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
     // carry the *execution* phase breakdown so the live UI can combine it
     // with the planning usage it stashed at `plan written` (ADR-0008 D11).
-    info!(
-        number = issue.number,
-        tokens = issue_total,
-        up = exec_usage.input,
-        cr = exec_usage.cache_read,
-        cw = exec_usage.cache_creation,
-        out = exec_usage.output,
-        model = exec_usage.model.as_deref().unwrap_or(""),
-        "green — issue closed"
-    );
+    crate::emit::issue_closed(issue.number, issue_total, exec_usage);
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),
         closed: true,
         blocked_by: Vec::new(),
         human_blockers: Vec::new(),
+        status: ResultStatus::Done,
+        skip: None,
     });
 
     // Write acceptance evidence when the plan carries a ledger, and
@@ -974,7 +961,7 @@ pub(crate) fn close_and_record(
     if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
         // Capture the raw plan at close (before the next issue's `plan()` overwrites
         // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
-        info!(number = issue.number, plan_md = %plan_md, "plan closed");
+        crate::emit::plan_closed(issue.number, &plan_md);
         let verdicts = acceptance::parse_ledger(&plan_md);
         if !verdicts.is_empty() {
             cx.tracker

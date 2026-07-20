@@ -11,12 +11,15 @@
 //! with its detected version. The prose tells the agent to verify anything not
 //! listed before depending on it, so omission never becomes a false "installed".
 //!
-//! Detection is cheap but not free (one `--version` spawn per found tool), so the
-//! runner writes the file once and reuses it: [`ensure_brief`] is a no-op when the
-//! file already exists. Everything here is cross-platform — `os_info` for the OS
-//! label, [`ralphy_proc_util::find_program`] for PATH resolution (PATHEXT-aware on
-//! Windows) — so the same code produces the right brief on Windows, Linux, and
-//! macOS.
+//! The brief is regenerated at the start of every run, not cached: it now carries
+//! one run-specific fact — the live PID of the orchestrator process that must never
+//! be killed — so a stale copy from an earlier run would name a dead (or recycled)
+//! PID. Re-probing the toolchain once per run start (a `--version` spawn per found
+//! tool) is negligible against a run's lifetime. Everything here is cross-platform
+//! — `os_info` for the OS label, [`ralphy_proc_util::find_program`] for PATH
+//! resolution (PATHEXT-aware on Windows), and `std::env::current_exe` /
+//! `std::process::id` for the orchestrator identity — so the same code produces the
+//! right brief on Windows, Linux, and macOS.
 
 use std::process::Command;
 
@@ -39,8 +42,13 @@ const HEADER: &str = "\
 You are working on the machine below. Adapt every command — build steps, \
 `## Verify`, smoke scripts — to this OS and the project's needs. These are the \
 tools confirmed present; the machine may have others, but never assume a tool \
-exists because it is common — verify it before a command depends on it. Don't \
-install new tools unless the task explicitly asks.
+exists because it is common — verify it before a command depends on it. \
+Equally, this list is a lead, not an inventory: a tool missing from it may \
+still be installed, so never cite its absence here as proof it is unavailable \
+— the only valid evidence of absence is a probe you ran that failed (e.g. \
+`tool --version`). Don't install new tools unless the task explicitly asks — \
+with one standing exception: a headless-browser driver (e.g. Playwright) \
+needed to verify a browser-facing acceptance criterion.
 ";
 
 /// One probed toolchain: the label shown to the agent and the argument that makes
@@ -53,13 +61,18 @@ struct Tool {
 }
 
 /// The probe list: common language runtimes, package managers, and the shell
-/// tools agents reach for in verify/smoke steps. Curated for signal over
+/// tools agents reach for in verify/smoke steps (`gh` included — Ralphy's own
+/// workflow is GitHub-driven, and its omission once read as "not installed"). Curated for signal over
 /// coverage — niche toolchains (JVM, .NET) are intentionally omitted to keep the
 /// brief short; only tools found on this machine appear in the output. `python`
 /// and `python3` are both probed because the canonical name differs by OS.
 const TOOLS: &[Tool] = &[
     Tool {
         name: "git",
+        version_arg: "--version",
+    },
+    Tool {
+        name: "gh",
         version_arg: "--version",
     },
     Tool {
@@ -118,19 +131,55 @@ const TOOLS: &[Tool] = &[
         name: "make",
         version_arg: "--version",
     },
+    Tool {
+        name: "playwright",
+        version_arg: "--version",
+    },
 ];
 
-/// Write `.ralphy/environment.md` once. A no-op when the file already exists so a
-/// resumed run reuses the first detection. Best-effort: a detection or write
-/// failure just means the charter reads no brief, strictly no worse than today.
+/// Write `.ralphy/environment.md`, refreshing it on every run. Unlike the machine
+/// facts (static), the orchestrator-guard section carries this run's live PID, so a
+/// stale file from an earlier run would name a dead or recycled process — hence no
+/// write-once short-circuit. Best-effort: a detection or write failure just means
+/// the charter reads no brief, strictly no worse than today.
 pub fn ensure_brief(ws: &Workspace) {
     let path = ws.ralphy_dir().join(ENVIRONMENT_FILE);
-    if path.exists() {
-        return;
-    }
-    if let Err(e) = std::fs::write(&path, render(detect())) {
+    if let Err(e) = std::fs::write(&path, render(detect(), &orchestrator_guard())) {
         warn!(error = %e, "writing the environment brief failed");
     }
+}
+
+/// The live orchestrator identity for [`guard_section`]: this process's executable
+/// path and PID, read fresh each run. `current_exe` is stable (same binary) but the
+/// PID is not — which is exactly why the brief cannot be cached.
+fn orchestrator_guard() -> String {
+    let exe = std::env::current_exe()
+        .ok()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "the ralphy executable".to_string());
+    guard_section(&exe, std::process::id())
+}
+
+/// The DO-NOT-KILL notice, pure over its inputs so it unit-tests without touching
+/// the host. It names the executable and PID, but leads with the NAME-match hazard:
+/// the workbench daemon is the same `ralphy` binary, so a by-name kill (the actual
+/// failure this section exists to prevent) takes the orchestrator down with it.
+fn guard_section(exe: &str, pid: u32) -> String {
+    format!(
+        "## ⛔ DO NOT KILL the orchestrator\n\
+        \n\
+        `{exe}` is Ralphy — the agent orchestrator that launched this session and is \
+        monitoring it. It is the parent of your own process; killing it ends the \
+        whole run instantly.\n\
+        \n\
+        - DO NOT KILL any process by the NAME `ralphy` / `ralphy.exe`. The workbench \
+        daemon is the SAME binary, so `Stop-Process ralphy`, `taskkill /IM \
+        ralphy.exe`, `pkill ralphy`, and `killall ralphy` all hit the orchestrator \
+        too. To stop a daemon you started, target its exact PID or port — never a \
+        name match.\n\
+        - Live orchestrator PID on this host: {pid} — never signal, kill, or \
+        force-stop it.\n"
+    )
 }
 
 /// The OS label and every probed tool that resolved, gathered from the live host.
@@ -218,16 +267,19 @@ fn classify_wsl(proc_version: &str) -> Option<&'static str> {
     }
 }
 
-/// Assemble the brief: the fixed header, then one `- ` bullet per fact (OS first,
-/// then each detected tool). Kept as a pure function over [`Detected`] so it
-/// unit-tests without touching the host.
-fn render(d: Detected) -> String {
+/// Assemble the brief: the fixed header, one `- ` bullet per fact (OS first, then
+/// each detected tool), then the orchestrator-guard notice last so the machine
+/// facts stay contiguous under the header. Pure over its inputs ([`Detected`] plus
+/// the pre-rendered `guard`) so it unit-tests without touching the host.
+fn render(d: Detected, guard: &str) -> String {
     let mut out = String::from(HEADER);
     out.push('\n');
     out.push_str(&format!("- OS: {}\n", d.os));
     for tool in &d.tools {
         out.push_str(&format!("- {tool}\n"));
     }
+    out.push('\n');
+    out.push_str(guard);
     out
 }
 
@@ -279,34 +331,66 @@ mod tests {
     }
 
     #[test]
-    fn render_lists_os_then_tools_under_the_header() {
-        let md = render(Detected {
-            os: "Windows 11 · x86_64".into(),
-            tools: vec!["git 2.44.0".into(), "node 22.3.0".into()],
-        });
+    fn render_lists_os_then_tools_then_guard_under_the_header() {
+        let md = render(
+            Detected {
+                os: "Windows 11 · x86_64".into(),
+                tools: vec!["git 2.44.0".into(), "node 22.3.0".into()],
+            },
+            "## ⛔ DO NOT KILL the orchestrator\n",
+        );
         assert!(md.starts_with("# ⚠️ Build environment"));
         assert!(md.contains("never assume a tool exists because it is common"));
+        // The inverse trap — treating omission from the list as proof of
+        // absence — must be closed explicitly (an executor once left a
+        // criterion review-only citing "no gh per environment.md" on a host
+        // that had gh).
+        assert!(md.contains("the only valid evidence of absence is a probe you ran"));
+        assert!(md.contains("## ⛔ DO NOT KILL the orchestrator"));
         assert!(md.contains("- OS: Windows 11 · x86_64\n"));
         assert!(md.contains("- git 2.44.0\n"));
         assert!(md.contains("- node 22.3.0\n"));
-        // The OS bullet precedes the tool bullets.
+        // Machine facts stay contiguous under the header (OS then tools); the guard
+        // lands last, below the OS/tool bullets.
         assert!(md.find("- OS:").unwrap() < md.find("- git").unwrap());
+        assert!(md.find("- git").unwrap() < md.find("DO NOT KILL").unwrap());
     }
 
     #[test]
-    fn ensure_brief_writes_once_and_does_not_overwrite() {
+    fn guard_section_leads_with_name_hazard_and_names_pid() {
+        let s = guard_section("C:\\ralphy\\ralphy.exe", 54636);
+        assert!(s.contains("## ⛔ DO NOT KILL the orchestrator"));
+        assert!(s.contains("C:\\ralphy\\ralphy.exe"));
+        assert!(s.contains("54636"));
+        // The by-NAME prohibition — the actual failure this section prevents — must
+        // be explicit, naming the cross-platform kill idioms.
+        assert!(s.contains("NAME"));
+        assert!(s.contains("Stop-Process ralphy"));
+        assert!(s.contains("pkill ralphy"));
+    }
+
+    #[test]
+    fn ensure_brief_refreshes_each_run_and_names_the_orchestrator() {
         let dir = tempfile::tempdir().unwrap();
         let ws = Workspace::new(dir.path());
         std::fs::create_dir_all(ws.ralphy_dir()).unwrap();
         let path = ws.ralphy_dir().join(ENVIRONMENT_FILE);
 
         ensure_brief(&ws);
-        assert!(path.exists(), "brief should be written on first call");
+        let first = std::fs::read_to_string(&path).unwrap();
+        assert!(first.contains("DO NOT KILL the orchestrator"));
+        // This run's live PID is named so a by-PID kill can avoid it.
+        assert!(first.contains(&std::process::id().to_string()));
+        // The tools brief still rides along under the guard.
+        assert!(first.contains("never assume a tool exists because it is common"));
 
-        // A second call must not clobber a hand-edited brief.
-        std::fs::write(&path, "sentinel").unwrap();
+        // A stale copy MUST be overwritten — the PID it carries is run-specific, so
+        // (unlike the old write-once brief) reuse would name the wrong process.
+        std::fs::write(&path, "stale").unwrap();
         ensure_brief(&ws);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "sentinel");
+        let second = std::fs::read_to_string(&path).unwrap();
+        assert_ne!(second, "stale");
+        assert!(second.contains("DO NOT KILL the orchestrator"));
     }
 
     #[test]

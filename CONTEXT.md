@@ -135,6 +135,22 @@ core.
 _Avoid_: shared runner, headless runner (ADR-0004 forbids a shared *Outcome*
 runner — this is only the plumbing), utils, helpers.
 
+**Run deadline / per-issue budget / idle watchdog**:
+The three *distinct* clocks bounding a **run**, deliberately not one knob
+(ADR-0038). The **run deadline** (`--deadline-hours`) is the global wall budget:
+don't start a new issue past it. The **per-issue budget**
+(`--max-minutes-per-issue`) is an *opt-in productivity cap* on a single issue —
+`0` (the default) means no cap, because a wall clock cannot tell a healthy long
+issue from a wedged child. The **idle watchdog** (`--idle-minutes`) is the
+*liveness* net: it measures **silence, not duration**, reaping a child that has
+made no progress for its window. What counts as progress is per-path — any
+output byte (headless) vs. **transcript** growth (interactive PTY, where spinner
+redraws make bytes worthless as a signal) — which is why the two carry different
+defaults. An idle kill is reported as a `timeout`; only the log distinguishes
+which clock fired.
+_Avoid_: "the timeout" (ambiguous across all three), using the per-issue budget
+as a hang detector, treating `0` as unset.
+
 **Completion signals / Outcome classifier**:
 The seam between an **adapter**'s vendor-specific end-state extraction and the one
 shared rule that maps it to a core `Outcome`. Each adapter reduces its raw session
@@ -354,6 +370,16 @@ drives; no run is involved.
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
 the session), remote session (too generic).
 
+**Canvas / Agents tab**:
+The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
+Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
+strip** runs across the top where **tab 0 is the fixed Agents tab** — it never
+closes and hosts the floating agent (**workbench session**) consoles — and every
+opened file rides in after it as a **closable** tab. Decided in
+[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md).
+_Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
+"main tab" for the Agents tab (it is fixed, not merely first).
+
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the
 **fleet** converges: it consumes run telemetry (the CloudEvents sink,
@@ -446,6 +472,16 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
   and shell-script children are not portable to Windows CI; plans that test
   child-process behavior should follow this pattern.
+- **A Python smoke script reading a Rust child's stdout on Windows must decode
+  it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
+  Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not
+  UTF-8 — a non-ASCII byte the Rust side emitted (e.g. the `→` in `ralphy
+  daemon add`'s "registered X → path") comes back mangled with no exception,
+  so a downstream `str.split`/`in` match silently fails. Pass
+  `encoding="utf-8"` to `subprocess.run`, and call
+  `sys.stdout.reconfigure(encoding="utf-8")` once at the top of the script if
+  it will itself `print()` a non-ASCII string (e.g. one echoed back from that
+  output) — the default stdout write raises `UnicodeEncodeError` otherwise.
 
 ## Refactoring conventions
 
