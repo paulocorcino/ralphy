@@ -58,6 +58,7 @@ pub const ACCEPTS_IMAGES: bool = true;
 use auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
 use command::{build_copilot_command, mint_session_id};
 use outcome::{classify_copilot_outcome, copilot_final_text};
+use skills::materialize_copilot_skills;
 use usage::copilot_usage;
 
 /// The Copilot planning prompt, embedded so the binary is self-contained as a
@@ -151,6 +152,22 @@ impl CopilotAgent {
             return Ok(());
         }
         match guards::builtin_mcp_violation(stdout, require_receipt) {
+            Some(msg) => Err(anyhow::anyhow!("{msg}")),
+            None => Ok(()),
+        }
+    }
+
+    /// D9's in-band load receipt, the single seam both phases call. `Err` aborts
+    /// the run: a charter whose skill invocations silently do nothing is a run that
+    /// only looks like it worked. No escape hatch — unlike D7's builtin MCPs, a
+    /// missing skill grants the operator no capability worth opting into.
+    pub(crate) fn check_skills_loaded(
+        &self,
+        stdout: &str,
+        required: &[String],
+        require_receipt: bool,
+    ) -> Result<()> {
+        match skills::skills_load_violation(stdout, required, require_receipt) {
             Some(msg) => Err(anyhow::anyhow!("{msg}")),
             None => Ok(()),
         }
@@ -266,6 +283,12 @@ impl Agent for CopilotAgent {
             .phase_effort(Phase::Plan)
             .and_then(|e| effort::resolve_effort(Some(e), model, self.catalog()));
 
+        // Hoisted ABOVE the closure (unlike Codex, which materializes inside it):
+        // `required` is read by the D9 guard after the session wrapper returns, and
+        // the closure is `Fn`, so it borrows this rather than producing it.
+        // Materializing here still precedes every `copilot` spawn.
+        let required = materialize_copilot_skills(ws)?;
+
         let run = || {
             let cmd = build_copilot_command(
                 &session_id,
@@ -321,6 +344,10 @@ impl Agent for CopilotAgent {
         if let Some((r, _)) = session.as_ref() {
             self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
                 .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
+            // Cross-path invariant: the SAFETY receipt (D7) keeps precedence over
+            // the CAPABILITY receipt (D9) on every return path.
+            self.check_skills_loaded(&r.stdout, &required, r.exited_cleanly)
+                .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
         }
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -358,6 +385,9 @@ impl Agent for CopilotAgent {
         let effort = self
             .phase_effort(Phase::Execute)
             .and_then(|e| effort::resolve_effort(Some(e), model, self.catalog()));
+
+        // See `plan`: hoisted so the D9 guard can read it after the wrapper returns.
+        let required = materialize_copilot_skills(ws)?;
 
         let run = || {
             let cmd = build_copilot_command(
@@ -397,6 +427,9 @@ impl Agent for CopilotAgent {
         // that died before emitting the receipt would overwrite `Limit`/`Timeout`
         // with "receipt missing". A CONNECTED server still fails unconditionally.
         self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
+            .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
+        // D7 before D9 here too: the safety receipt keeps precedence.
+        self.check_skills_loaded(&r.stdout, &required, r.exited_cleanly)
             .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
@@ -544,6 +577,29 @@ mod tests {
             src.matches(call).count(),
             2,
             "D7's guard must be called on BOTH the plan and the execute path"
+        );
+    }
+
+    /// Same reasoning as D7's pin, for D9: no test here constructs a `Workspace`,
+    /// so deleting either call site would leave the suite green and ADR-0041 D9 a
+    /// silent no-op. Pins both the materialization and the receipt assertion.
+    #[test]
+    fn the_skills_guard_is_wired_into_both_phases() {
+        let src = include_str!("lib.rs");
+        let call = concat!(
+            "self.check_skills_loaded(",
+            "&r.stdout, &required, r.exited_cleanly)"
+        );
+        assert_eq!(
+            src.matches(call).count(),
+            2,
+            "D9's guard must be called on BOTH the plan and the execute path"
+        );
+        assert_eq!(
+            src.matches(concat!("materialize_copilot", "_skills(ws)?"))
+                .count(),
+            2,
+            "skills must be materialized on BOTH the plan and the execute path"
         );
     }
 
