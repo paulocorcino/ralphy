@@ -835,11 +835,20 @@ mod tests {
             )
             .unwrap();
         }
+        // The live store carries NULLs in this column: the LAST NON-NULL wins, so
+        // a trailing NULL row must not erase the answer.
+        conn.execute(
+            "INSERT INTO assistant_usage_events (session_id, turn_index, model, \
+             input_tokens, output_tokens, reasoning_effort, created_at) \
+             VALUES ('ses_e', 0, 'm', 1, 1, NULL, '2026-07-20T11:54:33.066Z')",
+            [],
+        )
+        .unwrap();
         drop(conn);
         assert_eq!(
             session_reasoning_effort(&path, "ses_e"),
             Some("high".to_string()),
-            "the chronologically last row wins"
+            "the chronologically last NON-NULL row wins"
         );
         assert_eq!(session_reasoning_effort(&path, "ses_nobody"), None);
 

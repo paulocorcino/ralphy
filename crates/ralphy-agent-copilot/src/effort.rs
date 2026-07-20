@@ -24,6 +24,16 @@ fn rank(level: &str) -> Option<usize> {
     EFFORT_ORDER.iter().position(|l| *l == level)
 }
 
+/// Is `level` a reasoning-effort level Copilot's vocabulary knows at all?
+///
+/// The validator `ralphy config set` uses, so a typo is refused at the keyboard
+/// instead of persisting as a setting that silently does nothing at run time. It
+/// answers membership only — whether a given MODEL accepts the level is the
+/// catalog's business, and unknowable at `config set` time.
+pub fn is_known_effort(level: &str) -> bool {
+    rank(level).is_some()
+}
+
 /// Clamp `requested` into `supported` (ADR-0041 D5a): the greatest supported level
 /// at or below the request, falling back to the lowest supported level when the
 /// request sits below the model's floor.
@@ -71,14 +81,28 @@ pub(crate) fn resolve_effort(
         );
         return None;
     };
-    let clamped = clamp_effort(requested, entry.reasoning_effort.as_deref());
-    if clamped.as_deref() != Some(requested) {
-        tracing::warn!(
+    let supported = entry.reasoning_effort.as_deref();
+    let clamped = clamp_effort(requested, supported);
+    match clamped.as_deref() {
+        Some(level) if level == requested => {}
+        Some(level) => tracing::warn!(
             requested,
             model = effective,
-            clamped = clamped.as_deref().unwrap_or("<omitted>"),
+            clamped = level,
             "Copilot effort clamped to what the model supports"
-        );
+        ),
+        // The two omission cases are distinct faults and must not share a message:
+        // one is the operator's typo, the other is the model's nature.
+        None if supported.is_none_or(<[String]>::is_empty) => tracing::warn!(
+            requested,
+            model = effective,
+            "this model takes no reasoning-effort argument: omitting --effort"
+        ),
+        None => tracing::warn!(
+            requested,
+            model = effective,
+            "unknown effort level: omitting --effort"
+        ),
     }
     clamped
 }
@@ -145,6 +169,7 @@ mod tests {
     fn clamp_never_exceeds_the_request() {
         let cat = fixture();
         let mut checked = 0;
+        let mut above_floor = 0;
         for model in &cat.models {
             let Some(list) = model.reasoning_effort.as_deref() else {
                 continue;
@@ -160,12 +185,28 @@ mod tests {
                     "{} / {level}: {got} is not published",
                     model.id
                 );
-                let ok = rank(&got) <= rank(level) || got == list[0];
+                // The floor exception applies ONLY when the request genuinely sits
+                // below everything the model publishes. An unconditional
+                // `got == list[0]` would make this property vacuous: an
+                // implementation that always returned the lowest level would
+                // satisfy it for every model × every level.
+                let floor = list.iter().filter_map(|s| rank(s)).min();
+                let ok = rank(&got) <= rank(level) || rank(level) < floor;
                 assert!(ok, "{} / {level}: clamped UP to {got}", model.id);
                 checked += 1;
+                if rank(&got) > rank(&list[0]) {
+                    above_floor += 1;
+                }
             }
         }
         assert!(checked > 0, "the fixture published no effort list at all");
+        // Non-degeneracy: an implementation that always answered the LOWEST
+        // supported level would satisfy every assertion above. It would not
+        // satisfy this one.
+        assert!(
+            above_floor > 0,
+            "every answer was the model's floor — the property proves nothing"
+        );
     }
 
     /// What makes the floor branch unreachable for every model the vendor actually

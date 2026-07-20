@@ -147,6 +147,12 @@ model's own default decides. After the phase runs, Ralphy compares the request
 against the level the vendor actually recorded in its session store and logs a
 warning on a divergence.
 
+The one direction that is *not* downward is a request below the model's floor:
+every effort-capable model Copilot publishes today starts at `low`, so
+`none` or `minimal` is raised to that floor rather than omitted (ADR-0041 D5a's
+"nothing supported at or below the request → use the lowest supported level").
+If you want the model's own default, leave the key unset.
+
 ## Events sink keys (`events.*`)
 
 Stored in the **global** `~/.ralphy/events.toml`, not `settings.json`. See

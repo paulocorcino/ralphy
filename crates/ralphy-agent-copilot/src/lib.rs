@@ -42,6 +42,10 @@ pub use catalog::{
 /// Persisted per-phase model overrides (ADR-0041 D4). See [`CopilotSettings`].
 pub use settings::CopilotSettings;
 
+/// Membership test for the reasoning-effort vocabulary, so `ralphy config set`
+/// can refuse a typo without the ORDERING leaving this crate (ADR-0041 D5a).
+pub use effort::is_known_effort;
+
 /// `true` (ADR-0041 D12): `copilot --attachment <path>` attaches an image or
 /// native document to the initial prompt in non-interactive mode, so a triage
 /// attachment fetched per ADR-0025 §4 has a real delivery channel. The flag is
@@ -189,11 +193,28 @@ impl CopilotAgent {
 /// vendor actually recorded for the session, and `warn!` on a divergence. Never
 /// changes a return value or fails a run — the request is not the truth, but a
 /// silent divergence is what would hide a clamp bug.
+/// The early return is load-bearing, not style: Rust evaluates both arguments
+/// before `effort_mismatch` can short-circuit on its own `?`, and
+/// `copilot_recorded_effort` COPIES the whole vendor session store. Without the
+/// guard a default run — which requested nothing — would pay that copy twice per
+/// issue.
 fn warn_effort_mismatch(requested: Option<&str>, session_id: &str) {
-    if let Some(msg) = usage::effort_mismatch(
-        requested,
-        usage::copilot_recorded_effort(session_id).as_deref(),
-    ) {
+    warn_effort_mismatch_with(requested, session_id, || {
+        usage::copilot_recorded_effort(session_id)
+    })
+}
+
+/// The reader is a closure so a test can COUNT its invocations — the "a default
+/// run reads no store" property is otherwise unobservable from outside.
+fn warn_effort_mismatch_with(
+    requested: Option<&str>,
+    session_id: &str,
+    read_recorded: impl FnOnce() -> Option<String>,
+) {
+    let Some(requested) = requested else {
+        return;
+    };
+    if let Some(msg) = usage::effort_mismatch(Some(requested), read_recorded().as_deref()) {
         tracing::warn!(session_id, "{}", msg);
     }
 }
@@ -260,6 +281,11 @@ impl Agent for CopilotAgent {
         )?;
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
+        // Only when a `copilot` process actually ran: a RESUMED finalized plan
+        // wrote no rows under this session id, so there is nothing to verify.
+        if session.is_some() {
+            warn_effort_mismatch(effort.as_deref(), &session_id);
+        }
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),
             // Copilot runs the account's own default model, no complexity tier (D6).
@@ -269,10 +295,7 @@ impl Agent for CopilotAgent {
             // this id exists to read: report zero rather than another run's rows.
             usage: session
                 .as_ref()
-                .map(|_| {
-                    warn_effort_mismatch(effort.as_deref(), &session_id);
-                    copilot_usage(&session_id)
-                })
+                .map(|_| copilot_usage(&session_id))
                 .unwrap_or_default(),
             // `None` = a finalized plan was RESUMED and no `copilot` process ran,
             // so no session by this id exists in the store.
@@ -523,6 +546,27 @@ mod tests {
             let args = argv(&cmd);
             assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");
         }
+    }
+
+    /// A default run must not touch the vendor's session store for effort: the
+    /// reader COPIES the whole database, and `effort_mismatch`'s own `?` cannot
+    /// prevent it — Rust evaluates arguments before the call. The counter is what
+    /// makes "reads nothing" observable; without it the eager form passes too.
+    #[test]
+    fn no_effort_requested_reads_no_session_store() {
+        use std::cell::Cell;
+        let reads = Cell::new(0);
+        warn_effort_mismatch_with(None, "s1", || {
+            reads.set(reads.get() + 1);
+            Some("high".into())
+        });
+        assert_eq!(reads.get(), 0, "a default run must read no store");
+
+        warn_effort_mismatch_with(Some("high"), "s1", || {
+            reads.set(reads.get() + 1);
+            Some("medium".into())
+        });
+        assert_eq!(reads.get(), 1, "a requested effort IS verified post-hoc");
     }
 
     /// The reason the charter goes on stdin and never on argv (D2): at 23 884 bytes

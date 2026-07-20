@@ -119,7 +119,7 @@ verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47); \
-Copilot's per-phase models live under copilot.plan_model / copilot.exec_model, #232)";
+Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -225,8 +225,23 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         }
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = Some(value.to_owned()))?,
-        "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = Some(value.to_owned()))?,
-        "copilot.exec_effort" => with_copilot(&mut s, |c| c.exec_effort = Some(value.to_owned()))?,
+        // Validated here, not at run time: an unrankable level is silently
+        // dropped by the adapter's clamp, so an unvalidated typo would persist as
+        // a setting that `config get` reports as set and that does nothing.
+        "copilot.plan_effort" | "copilot.exec_effort" => {
+            if !ralphy_agent_copilot::is_known_effort(value) {
+                bail!("{key} must be a Copilot reasoning-effort level, got '{value}'");
+            }
+            let plan = key == "copilot.plan_effort";
+            with_copilot(&mut s, |c| {
+                let slot = if plan {
+                    &mut c.plan_effort
+                } else {
+                    &mut c.exec_effort
+                };
+                *slot = Some(value.to_owned());
+            })?
+        }
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -551,6 +566,21 @@ mod tests {
         assert_eq!(c.exec_effort, None);
         let j = config_json(&ws).unwrap();
         assert_eq!(j["copilot.plan_effort"], serde_json::Value::Null);
+
+        // A typo is refused at `set` time: an unrankable level is silently
+        // dropped by the adapter's clamp, so persisting it would leave the
+        // operator with a setting `config get` reports as set and that does
+        // nothing.
+        let err = set(&ws, "copilot.plan_effort", "hgih").expect_err("a typo must be refused");
+        assert!(
+            err.to_string().contains("reasoning-effort level"),
+            "error: {err}"
+        );
+        assert_eq!(
+            config_json(&ws).unwrap()["copilot.plan_effort"],
+            serde_json::Value::Null,
+            "a refused set must persist nothing"
+        );
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -935,6 +965,8 @@ mod tests {
                 "verify.require_verify_gate" => "true",
                 "remote_control" => "true",
                 "claude.max_minutes_per_issue" => "45",
+                // Validated against Copilot's effort vocabulary, so `x` is refused.
+                "copilot.plan_effort" | "copilot.exec_effort" => "high",
                 _ => "x",
             }
         };
