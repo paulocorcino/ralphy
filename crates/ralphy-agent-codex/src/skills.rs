@@ -3,11 +3,11 @@
 //! maintains there.
 
 use std::fs;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use include_dir::{include_dir, Dir};
 
+use ralphy_adapter_support::{ensure_gitignore_entries, link_or_copy_dir, remove_path};
 use ralphy_core::Workspace;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -72,103 +72,25 @@ pub(crate) fn materialize_codex_skills(ws: &Workspace) -> Result<std::path::Path
     Ok(skills_dir)
 }
 
-/// Link `src` into `dest` as a directory symlink, falling back to a recursive copy
-/// when the symlink is rejected on Windows (no Developer Mode / not elevated).
-fn link_or_copy_dir(src: &Path, dest: &Path) -> Result<()> {
-    match symlink_dir(src, dest) {
-        Ok(()) => Ok(()),
-        Err(_) if cfg!(windows) => copy_dir_all(src, dest)
-            .with_context(|| format!("copying {} -> {}", src.display(), dest.display())),
-        Err(e) => {
-            Err(e).with_context(|| format!("symlinking {} -> {}", src.display(), dest.display()))
-        }
-    }
-}
-
-#[cfg(unix)]
-fn symlink_dir(src: &Path, dest: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(src, dest).map_err(Into::into)
-}
-
-#[cfg(windows)]
-fn symlink_dir(src: &Path, dest: &Path) -> Result<()> {
-    std::os::windows::fs::symlink_dir(src, dest).map_err(Into::into)
-}
-
-/// Remove a path that may be a symlink, a real directory, or a file — without
-/// following a symlink into its target. On Windows a directory symlink must be
-/// removed via `remove_dir`, a file symlink via `remove_file`, so both are tried.
-fn remove_path(p: &Path) -> Result<()> {
-    let ft = fs::symlink_metadata(p)?.file_type();
-    if ft.is_symlink() {
-        #[cfg(windows)]
-        {
-            fs::remove_file(p).or_else(|_| fs::remove_dir(p))?;
-        }
-        #[cfg(unix)]
-        {
-            fs::remove_file(p)?;
-        }
-    } else if ft.is_dir() {
-        fs::remove_dir_all(p)?;
-    } else {
-        fs::remove_file(p)?;
-    }
-    Ok(())
-}
-
-/// Recursively copy `src` into `dest` (the Windows fallback when symlinks are
-/// unavailable). Creates `dest` and every intermediate directory.
-fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
-    fs::create_dir_all(dest)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = dest.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir_all(&from, &to)?;
-        } else {
-            fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
-}
-
-/// Ensure a `/<name>` ignore line exists for each ralphy skill — plus a
-/// `/.gitignore` self-ignore — in `.agents/skills/.gitignore`, appending only
-/// what's missing so any entries the user already keeps there survive. The
-/// self-ignore keeps the file itself from being the one untracked thing that
-/// surfaces `.agents/` in `git status`. Idempotent: a no-op once the lines exist.
-fn ensure_gitignore_entries(path: &Path, names: &[std::ffi::OsString]) -> Result<()> {
-    let existing = fs::read_to_string(path).unwrap_or_default();
-    let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
-    let mut changed = false;
-    // Self-ignore `.gitignore` itself (`/.gitignore`) alongside each skill subdir.
-    // Without the self-entry this file is the lone unignored thing left in
-    // `.agents/skills/`, so `.agents/` shows as untracked and dirties the working
-    // tree — aborting the next run's clean-tree check. (The OpenCode adapter avoids
-    // this with a blanket `.ralphy/.gitignore = *`; Codex shares `.agents/skills`
-    // with the user's own skills, so it ignores precisely its own subdirs plus
-    // this file rather than the whole directory.)
-    let entries = std::iter::once("/.gitignore".to_string())
-        .chain(names.iter().map(|n| format!("/{}", n.to_string_lossy())));
-    for entry in entries {
-        if !lines.iter().any(|l| l.trim() == entry) {
-            lines.push(entry);
-            changed = true;
-        }
-    }
-    if changed {
-        let mut out = lines.join("\n");
-        out.push('\n');
-        fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter
+    /// must keep CALLING it rather than growing a second copy. Fragments are
+    /// spliced with `concat!` so the assertion cannot match itself.
+    #[test]
+    fn the_dance_is_not_reimplemented_locally() {
+        let src = include_str!("skills.rs");
+        assert!(
+            !src.contains(concat!("fn link_or_copy", "_dir")),
+            "link_or_copy_dir must come from ralphy-adapter-support"
+        );
+        assert!(
+            !src.contains(concat!("fn ensure_gitignore", "_entries")),
+            "ensure_gitignore_entries must come from ralphy-adapter-support"
+        );
+    }
 
     #[test]
     fn materialize_codex_skills_extracts_required_skills() {
