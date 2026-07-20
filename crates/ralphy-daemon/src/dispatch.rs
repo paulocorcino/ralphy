@@ -98,6 +98,7 @@ fn agent_flag(a: Agent) -> &'static str {
     match a {
         Agent::Claude => "claude",
         Agent::Codex => "codex",
+        Agent::Copilot => "copilot",
         Agent::Kimi => "kimi",
         Agent::OpenCode => "opencode",
     }
@@ -997,6 +998,28 @@ mod tests {
                 "--if-idle",
                 "--agent",
                 "claude",
+                "--branch-mode",
+                "new"
+            ]
+        );
+    }
+
+    #[test]
+    fn spawn_argv_carries_copilot_through_to_the_agent_flag() {
+        // Copilot's adapter and CLI variant landed in #229; the daemon's own enum is
+        // hand-kept in step with them (ADR-0040 Tier 4, issue #238). The flag value
+        // must be the CLI's own `--agent copilot`.
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "copilot", "branchMode": "new" })
+            )
+            .unwrap(),
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "copilot",
                 "--branch-mode",
                 "new"
             ]

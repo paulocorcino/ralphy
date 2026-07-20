@@ -42,6 +42,7 @@ pub struct SessionSpec {
 pub enum Agent {
     Claude,
     Codex,
+    Copilot,
     Kimi,
     OpenCode,
 }
@@ -53,6 +54,7 @@ impl Agent {
         match value {
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
+            "copilot" => Some(Agent::Copilot),
             "kimi" => Some(Agent::Kimi),
             "opencode" => Some(Agent::OpenCode),
             _ => None,
@@ -64,6 +66,9 @@ impl Agent {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            // The GitHub Copilot CLI ships as `copilot`, the same name the
+            // adapter resolves for its headless calls (ADR-0041).
+            Agent::Copilot => "copilot",
             // `kimi-code` ships its binary as `kimi` — the same name the adapter
             // resolves for its headless calls (ADR-0028 D5).
             Agent::Kimi => "kimi",
@@ -626,6 +631,7 @@ mod tests {
         for (value, agent, program) in [
             ("claude", Agent::Claude, "claude"),
             ("codex", Agent::Codex, "codex"),
+            ("copilot", Agent::Copilot, "copilot"),
             ("kimi", Agent::Kimi, "kimi"),
             ("opencode", Agent::OpenCode, "opencode"),
         ] {

@@ -1439,7 +1439,7 @@ function shell() {
 
     // --- canvas tabs ------------------------------------------------------
     // The Agents tab is permanent; file tabs are appended and closable.
-    agents: ["claude", "codex", "opencode", "kimi"],
+    agents: ["claude", "codex", "opencode", "kimi", "copilot"],
     agentMenu: false,
     consoleCount: 0,
     // The design-system confirm dialog (replaces window.confirm). `askConfirm`
@@ -1966,6 +1966,7 @@ function shell() {
         // Kimi arrived after the first three, so it takes the next free digit
         // rather than renumbering the accelerators already in an operator's hands.
         { kind: "kimi", label: "kimi", plain: false, digit: "4" },
+        { kind: "copilot", label: "copilot", plain: false, digit: "5" },
         { kind: "console", label: "console", plain: true, digit: "0" },
       ];
     },
@@ -2232,12 +2233,12 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
 // Alt+Shift+<digit> → open a console: 1 claude · 2 codex · 3 opencode · 4 kimi ·
-// 0 plain
+// 5 copilot · 0 plain
 // console. Matched on the physical key (e.code) so layout / macOS Option glyphs
 // don't matter; guarded so it never hijacks a text field, modal, or the login.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit4: "kimi", Digit0: "__plain" };
+  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit4: "kimi", Digit5: "copilot", Digit0: "__plain" };
   const kind = map[e.code];
   if (!kind) return;
   const c = getShell();
