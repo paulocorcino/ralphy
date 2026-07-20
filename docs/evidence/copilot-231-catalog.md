@@ -55,6 +55,19 @@ left: Usage { input: 5519473, output: 42503, cache_read: 5355709, cache_creation
 right: Usage { input: 0, output: 0, cache_read: 0, cache_creation: 0, model: None }
 ```
 
+That check proved the oracle falsifiable on this host at that instant only, so the
+falsifiability is now **encoded in the shipped test**: before the zero-usage
+assertion, `live_probe_fetches_the_catalog_for_free` resolves the store, asserts it
+exists, finds a session with real tokens via `scan_copilot`, and asserts that
+session reads back non-default. `copilot_usage` funnels every failure to
+`Usage::default()`, so without that positive control a dead reader and a free probe
+are indistinguishable.
+
+The probe additionally refuses a log that shows no rejection of `zzz-not-real`
+(`COPILOT_PROBE_BILLED_MSG`): if the vendor ever fell back to a working model, the
+login check would silently become a billed `--allow-all-tools` turn. Re-run with
+both guards in place: `1 passed`, 5.71s.
+
 ## Rate card / effort samples pinned from the fixture
 
 | id | selectable | restricted_to | reasoning_effort | in / out / cache_read / cache_write | max_prompt_tokens |

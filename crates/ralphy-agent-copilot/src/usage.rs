@@ -18,7 +18,7 @@ use ralphy_usage_scan::Tokens;
 
 /// `$COPILOT_HOME/session-store.db`, else `<home>/.copilot/session-store.db`
 /// (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when no home is known.
-fn copilot_store_db() -> Option<PathBuf> {
+pub(crate) fn copilot_store_db() -> Option<PathBuf> {
     ralphy_adapter_support::home_scoped_path(
         std::env::var_os("COPILOT_HOME"),
         Path::new(".copilot"),

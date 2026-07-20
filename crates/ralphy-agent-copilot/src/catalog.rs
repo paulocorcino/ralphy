@@ -29,6 +29,9 @@ const CATALOG_MARKER: &str = "fetched models from CAPI /models ";
 /// The marker the vendor logs for the model it actually settled on.
 const DEFAULT_MODEL_MARKER: &str = "Using default model: ";
 
+/// The binary, named once. Matches `Agent::cli_name()` on the CLI side.
+const COPILOT_BIN: &str = "copilot";
+
 /// The invalid `--model` value that makes selection fail after the catalog fetch.
 /// Verified free: the CLI exits before any model call.
 const UNSELECTABLE_SENTINEL: &str = "zzz-not-real";
@@ -37,6 +40,11 @@ const UNSELECTABLE_SENTINEL: &str = "zzz-not-real";
 /// operator, an account that cannot pin a model, or an inherited token that made
 /// the CLI refuse to start. Actionable, never a panic.
 pub const COPILOT_CATALOG_ERROR_MSG: &str = "Copilot model catalog unavailable (the preflight probe logged no CAPI model list) — run `copilot login`, then confirm the account can pin a model with `copilot --model <id>`";
+
+/// Surfaced when the probe fetched the catalog but the vendor never rejected the
+/// deliberately invalid `--model`: the probe may have run a BILLED turn, so the
+/// result is refused rather than trusted.
+pub const COPILOT_PROBE_BILLED_MSG: &str = "Copilot preflight probe did not reject its invalid --model: the probe may have spent a model call — treat the catalog as unavailable and report it upstream";
 
 /// The rate card of one model, in nano-AIU per 1M tokens as the vendor reports it.
 /// NOT a cost model: Copilot bills in AI credits with an independent per-model
@@ -153,14 +161,21 @@ fn model_of(entry: &Value) -> Result<CopilotModel> {
                 .and_then(|s| s.get("reasoning_effort")),
         ),
         prices: prices_of(token_prices.and_then(|t| t.get("default"))),
-        long_context: token_prices.and_then(|t| t.get("long_context")).is_some(),
+        long_context: token_prices
+            .and_then(|t| t.get("long_context"))
+            .is_some_and(|v| !v.is_null()),
         id,
     })
 }
 
-/// Parse a `copilot --log-level all` log into the catalog. `probe_session_id` is
-/// the id the caller minted for the probe, carried through so a caller can prove
-/// the probe billed nothing.
+/// Parse a `copilot --log-level all` PROBE log into the catalog.
+/// `probe_session_id` is the id the caller minted for the probe, carried through
+/// so a caller can prove the probe billed nothing.
+///
+/// The freeness of the probe rests on model SELECTION failing after the catalog
+/// fetch, so this refuses a log that shows no rejection of the sentinel id: a
+/// vendor that ever fell back to a working model would otherwise turn a login
+/// check into a billed, `--allow-all-tools` turn, silently.
 pub fn parse_catalog(log: &str, probe_session_id: &str) -> Result<CopilotCatalog> {
     let payload = log
         .lines()
@@ -177,6 +192,12 @@ pub fn parse_catalog(log: &str, probe_session_id: &str) -> Result<CopilotCatalog
             .map(|(_, rest)| rest.trim().to_owned())
             .filter(|s| !s.is_empty())
     });
+    if !log
+        .lines()
+        .any(|l| l.contains(UNSELECTABLE_SENTINEL) && l.contains("not available"))
+    {
+        return Err(anyhow!("{COPILOT_PROBE_BILLED_MSG}"));
+    }
     Ok(CopilotCatalog {
         models,
         default_model,
@@ -201,8 +222,13 @@ pub fn parse_catalog(log: &str, probe_session_id: &str) -> Result<CopilotCatalog
 pub fn fetch_catalog() -> Result<CopilotCatalog> {
     let session_id = mint_session_id();
     let dir = tempfile::tempdir().context("creating the probe log dir")?;
-    let mut cmd = std::process::Command::new(resolve_program("copilot"));
-    cmd.arg("-p")
+    let mut cmd = std::process::Command::new(resolve_program(COPILOT_BIN));
+    // The cwd is the throwaway temp dir, NOT the operator's repo: with
+    // `--allow-all-tools`, Copilot loads repo instructions and `*/skills/`
+    // cwd-relatively (ADR-0041 D9), and a login check must not execute an
+    // untrusted repo's instructions.
+    cmd.current_dir(dir.path())
+        .arg("-p")
         .arg("hi")
         .arg("--model")
         .arg(UNSELECTABLE_SENTINEL)
@@ -225,8 +251,13 @@ pub fn fetch_catalog() -> Result<CopilotCatalog> {
         .env_remove("GH_TOKEN")
         .env_remove("GITHUB_TOKEN");
     // A wedged child must be killed, not left hanging `ralphy init` forever.
-    let _ = run_headless(cmd, "", Duration::from_secs(120))
+    let out = run_headless(cmd, "", Duration::from_secs(120))
         .context("running the Copilot catalog probe")?;
+    if out.timed_out {
+        return Err(anyhow!(
+            "the Copilot catalog probe was killed at its 120s budget"
+        ));
+    }
     // The exit status is never inspected: it is 0 on some hosts and 1 on others
     // for the very same intended failure.
     let mut log = String::new();
@@ -234,8 +265,12 @@ pub fn fetch_catalog() -> Result<CopilotCatalog> {
         for entry in entries.flatten() {
             let path = entry.path();
             // A fresh dir yields one `process-<epoch>-<pid>.log`, but the name is
-            // the vendor's to choose.
-            if path.extension().is_some_and(|e| e == "log") {
+            // the vendor's to choose — match the extension case-insensitively.
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("log"))
+            {
                 if let Ok(text) = std::fs::read_to_string(&path) {
                     log.push_str(&text);
                     log.push('\n');
@@ -243,6 +278,11 @@ pub fn fetch_catalog() -> Result<CopilotCatalog> {
             }
         }
     }
+    // Both streams carry the same markers under `--log-level all`, and the
+    // rejection notice lands on stderr even when no log file was written.
+    log.push_str(&out.stdout);
+    log.push('\n');
+    log.push_str(&out.stderr);
     let catalog = parse_catalog(&log, &session_id);
     drop(dir);
     catalog
@@ -296,6 +336,8 @@ mod tests {
             ["pro", "pro_plus", "business", "enterprise", "max"].map(String::from)
         );
         assert!(sonnet.long_context);
+        // 33 of the 46 entries omit the key entirely — the flag discriminates.
+        assert!(!cat.get("gpt-5-mini").expect("present").long_context);
 
         // An ABSENT `restricted_to` means every tier, and an absent
         // `max_prompt_tokens` means the vendor caps nothing here.
@@ -344,9 +386,29 @@ mod tests {
             r#"{"count":46,"models":"[{\"id\":\"x\""}"#
         );
         let err = parse_catalog(&truncated, "probe-1").expect_err("truncated array");
-        // Not the missing-marker message: the marker WAS found, the payload was not
-        // parseable.
-        assert_ne!(err.to_string(), COPILOT_CATALOG_ERROR_MSG);
+        // The marker WAS found; the payload was not parseable — the error must name
+        // the payload, not the missing marker and not the freeness guard.
+        assert!(
+            format!("{err:#}").contains("parsing the nested `models` array"),
+            "error chain: {err:#}"
+        );
+    }
+
+    /// The freeness guard: a probe log whose catalog fetch succeeded but which
+    /// shows NO rejection of the sentinel model may have run a billed turn, so it
+    /// is refused. Red before the guard existed — the fixture minus its warning
+    /// line parsed happily.
+    #[test]
+    fn a_probe_that_never_rejected_the_model_is_refused() {
+        let no_rejection: String = FIXTURE
+            .lines()
+            .filter(|l| !l.contains(UNSELECTABLE_SENTINEL))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let err = parse_catalog(&no_rejection, "probe-1").expect_err("no rejection line");
+        assert_eq!(err.to_string(), COPILOT_PROBE_BILLED_MSG);
+        // The unmodified fixture still parses: the guard is not vacuous.
+        assert!(parse_catalog(FIXTURE, "probe-1").is_ok());
     }
 
     /// The catalog is the vendor's to publish: no id, price or effort list may be
@@ -370,15 +432,47 @@ mod tests {
     }
 
     /// The one test that proves the artifact RUNS — and that it runs for FREE.
-    /// `#[ignore]`d (network-bound) and self-skipping where `copilot` is absent
-    /// (Linux CI). Invoked by its own `## Verify` line.
+    /// `#[ignore]`d (network-bound). It self-skips where `copilot` is absent
+    /// (Linux CI), but LOUDLY: set `RALPHY_LIVE_COPILOT` and a missing binary
+    /// FAILS, so a lane that claims to run this cannot pass by skipping.
+    /// Invoked by its own `## Verify` line.
     #[test]
     #[ignore]
     fn live_probe_fetches_the_catalog_for_free() {
-        if ralphy_adapter_support::locate_program("copilot").is_none() {
+        let required = std::env::var_os("RALPHY_LIVE_COPILOT").is_some();
+        if ralphy_adapter_support::locate_program(COPILOT_BIN).is_none() {
+            assert!(
+                !required,
+                "RALPHY_LIVE_COPILOT is set but no `{COPILOT_BIN}` binary is on this host"
+            );
             eprintln!("copilot absent — skipping the live probe");
             return;
         }
+
+        // POSITIVE CONTROL, before the zero-usage oracle: `copilot_usage` funnels
+        // every failure (no home, missing store, schema drift) to
+        // `Usage::default()`, so a zero below would otherwise be indistinguishable
+        // from a dead reader. Prove the reader is live on THIS host first.
+        let db = crate::usage::copilot_store_db().expect("a Copilot home resolves");
+        assert!(db.exists(), "no session store at {}", db.display());
+        let records = ralphy_usage_scan::scan_copilot(&ralphy_usage_scan::CopilotScan {
+            db_path: &db,
+            run_session_ids: &std::collections::HashSet::new(),
+            repos: &[],
+            since: None,
+        });
+        let control = records
+            .iter()
+            .find(|r| r.tokens.input + r.tokens.output > 0)
+            .expect(
+                "the store holds no billed session — the zero-usage oracle would prove nothing",
+            );
+        assert_ne!(
+            crate::usage::copilot_usage(&control.session_id),
+            ralphy_core::Usage::default(),
+            "the usage reader is dead on this host; the oracle below is vacuous"
+        );
+
         let cat = fetch_catalog().expect("the live probe returns a catalog");
         assert!(cat.models.len() >= 40, "models: {}", cat.models.len());
         assert!(

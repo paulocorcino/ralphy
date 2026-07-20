@@ -178,6 +178,15 @@ pub(crate) fn agent_present(a: &Agent) -> bool {
     locate_program(a.cli_name()).is_some()
 }
 
+/// The Copilot login verdict, split out from the spawning probe so the mapping
+/// itself is testable: a catalog came back ⇒ the operator is logged in AND the
+/// account may pin a model. An `Err` carries `COPILOT_CATALOG_ERROR_MSG` (or the
+/// billed-probe refusal); the gate reports only the boolean, and the message is
+/// surfaced by the report the operator reads.
+fn copilot_logged_in(probe: anyhow::Result<ralphy_agent_copilot::CopilotCatalog>) -> bool {
+    probe.is_ok()
+}
+
 pub(crate) fn agent_logged_in(a: &Agent) -> bool {
     let hello = "hello";
     let bin = resolve_program(a.cli_name());
@@ -201,7 +210,7 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         // still scrubs the three token vars (ADR-0041 D8: an ambient token would
         // authenticate the child and make a logged-out operator look logged in) —
         // that now happens inside `fetch_catalog`.
-        Agent::Copilot => return ralphy_agent_copilot::fetch_catalog().is_ok(),
+        Agent::Copilot => return copilot_logged_in(ralphy_agent_copilot::fetch_catalog()),
 
         Agent::Kimi => {
             // `hello` is passed as the VALUE of `-p`, never a positional word:
@@ -295,18 +304,46 @@ mod tests {
             .split_once(concat!("Agent::", "Copilot =>"))
             .expect("the Copilot arm")
             .1;
-        let arm = &arm[..arm.find('\n').unwrap_or(arm.len())];
+        // Slice to the NEXT arm, not to the next newline: rustfmt may reflow this
+        // arm into a block at any time, and a pin that reds on reflow names no
+        // real defect.
+        let arm = arm
+            .split_once("\n        Agent::")
+            .map(|(a, _)| a)
+            .unwrap_or(arm);
         assert!(
             arm.contains(concat!("fetch_", "catalog()")),
             "the Copilot arm must probe through the free catalog fetch: {arm}"
         );
-        // `return`: this arm must not fall through to the shared exit-status tail.
-        assert!(arm.trim_start().starts_with("return"), "arm: {arm}");
+        // `return`: this arm must not fall through to the shared exit-status tail,
+        // which would judge the probe by an exit code observed as both 0 and 1.
+        assert!(arm.contains("return"), "arm: {arm}");
         // No paid model call anywhere in the probe.
         assert!(
             !probe.contains(concat!("\"-p\", ", "hello, \"--allow-all-tools\"")),
             "the paid Copilot probe is gone"
         );
+    }
+
+    /// The Ok⇒logged-in mapping itself, asserted in BOTH directions — the source
+    /// pin above can only see that the arm calls the probe, not what it does with
+    /// the answer.
+    #[test]
+    fn copilot_logged_in_maps_a_catalog_to_true_and_an_error_to_false() {
+        let catalog = ralphy_agent_copilot::CopilotCatalog {
+            models: Vec::new(),
+            default_model: None,
+            probe_session_id: String::new(),
+        };
+        assert!(copilot_logged_in(Ok(catalog)));
+        assert!(!copilot_logged_in(Err(anyhow::anyhow!(
+            "{}",
+            ralphy_agent_copilot::COPILOT_CATALOG_ERROR_MSG
+        ))));
+        assert!(!copilot_logged_in(Err(anyhow::anyhow!(
+            "{}",
+            ralphy_agent_copilot::COPILOT_PROBE_BILLED_MSG
+        ))));
     }
 
     // (a) All-green: evaluate_gate returns empty vec when ≥1 agent is logged in.

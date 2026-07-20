@@ -16,7 +16,9 @@ use ralphy_core::{
     Workspace, CONSOLIDATED_SPEC_MARKER, PROMOTE_EVIDENCE_MARKER, TRIAGE_AGENT_LABEL,
 };
 
-use crate::init::{agent_logged_in, resolve_human_label, resolve_triage_label, Agent};
+use crate::init::{
+    agent_logged_in, agent_present, resolve_human_label, resolve_triage_label, Agent,
+};
 use crate::runlock::{self, LockState};
 
 /// The canonical reporter-bounce label a `bounce` verdict swaps in.
@@ -154,7 +156,14 @@ fn triage_with_agent(
 /// Choose the triage agent: an explicit `--agent` must be logged in; otherwise the
 /// first logged-in agent in gate order. Errors when none is logged in.
 fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
-    let logged_in: Vec<Agent> = Agent::ALL.into_iter().filter(agent_logged_in).collect();
+    // `agent_present` first, as `ralphy init` does: a login probe spawns the
+    // vendor CLI (Copilot's is a real subprocess + CAPI fetch), so probing an
+    // absent binary is pure wall-clock.
+    let logged_in: Vec<Agent> = Agent::ALL
+        .into_iter()
+        .filter(agent_present)
+        .filter(agent_logged_in)
+        .collect();
     match requested {
         Some(a) if logged_in.contains(&a) => Ok(a),
         Some(a) => bail!(
