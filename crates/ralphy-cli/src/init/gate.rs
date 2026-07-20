@@ -192,18 +192,16 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
             cmd.env_remove("OPENAI_API_KEY");
         }
 
-        Agent::Copilot => {
-            // `--allow-all-tools` is REQUIRED for non-interactive mode; without it
-            // the probe would hang waiting for a permission prompt. Logged out →
-            // exit 1 (`No authentication information found.` on stderr).
-            cmd.args(["-p", hello, "--allow-all-tools", "--output-format", "json"]);
-            // The probe must prove the OPERATOR's `copilot login` session, not an
-            // ambient token: any of these three would authenticate the child and
-            // make a logged-out operator look logged in (spike §5, ADR-0041 D8).
-            cmd.env_remove("COPILOT_GITHUB_TOKEN");
-            cmd.env_remove("GH_TOKEN");
-            cmd.env_remove("GITHUB_TOKEN");
-        }
+        // The only arm that returns instead of falling through to the shared
+        // `status().success()` tail: the catalog probe is judged by the CAPI log
+        // line it leaves, never by the exit status, which has been observed as both
+        // 0 and 1 for the very same intended model-selection failure — an exit-code
+        // gate would report every Copilot operator logged in on one of those hosts.
+        // The probe also costs no model call, unlike the `-p hello` it replaces, and
+        // still scrubs the three token vars (ADR-0041 D8: an ambient token would
+        // authenticate the child and make a logged-out operator look logged in) —
+        // that now happens inside `fetch_catalog`.
+        Agent::Copilot => return ralphy_agent_copilot::fetch_catalog().is_ok(),
 
         Agent::Kimi => {
             // `hello` is passed as the VALUE of `-p`, never a positional word:
@@ -274,6 +272,41 @@ mod tests {
     #[test]
     fn copilot_is_last_in_all_until_its_one_shots_exist() {
         assert_eq!(Agent::ALL.last(), Some(&Agent::Copilot));
+    }
+
+    /// The Copilot login probe is the FREE catalog fetch (#231), not a paid
+    /// `-p hello` model call, and it is judged by what the probe logged rather than
+    /// by the exit status the shared tail reads. Source-text pin: `agent_logged_in`
+    /// spawns real processes, so the routing is what a test can hold. The needles
+    /// are assembled from fragments so this assertion cannot match itself.
+    #[test]
+    fn copilot_login_probe_is_the_free_catalog_fetch() {
+        let src = include_str!("gate.rs");
+        // Scope to the probe fn: `cli_name` carries a `Copilot` arm of its own.
+        let probe = src
+            .split_once("fn agent_logged_in")
+            .expect("the probe fn")
+            .1;
+        let probe = probe
+            .split_once("\n#[cfg(test)]")
+            .map(|(p, _)| p)
+            .unwrap_or(probe);
+        let arm = probe
+            .split_once(concat!("Agent::", "Copilot =>"))
+            .expect("the Copilot arm")
+            .1;
+        let arm = &arm[..arm.find('\n').unwrap_or(arm.len())];
+        assert!(
+            arm.contains(concat!("fetch_", "catalog()")),
+            "the Copilot arm must probe through the free catalog fetch: {arm}"
+        );
+        // `return`: this arm must not fall through to the shared exit-status tail.
+        assert!(arm.trim_start().starts_with("return"), "arm: {arm}");
+        // No paid model call anywhere in the probe.
+        assert!(
+            !probe.contains(concat!("\"-p\", ", "hello, \"--allow-all-tools\"")),
+            "the paid Copilot probe is gone"
+        );
     }
 
     // (a) All-green: evaluate_gate returns empty vec when ≥1 agent is logged in.
