@@ -1,21 +1,24 @@
-//! Kimi authentication detection: the one signal recovered from `kimi --print`
+//! Kimi authentication detection: the one signal recovered from headless `kimi`
 //! output that the process exit code alone can't distinguish from a generic
-//! failure — a logged-out session prints `LLM not set` (ADR-0028 D6).
+//! failure — a logged-out 0.28 session prints `auth.login_required` (ADR-0028 D6).
 
 /// The actionable message surfaced when a run hits a Kimi authentication failure
 /// (no active OAuth session). Stops a logged-out infinite plan-retry.
 pub(crate) const KIMI_AUTH_ERROR_MSG: &str =
-    "Kimi is not authenticated (LLM not set) — run `kimi login` and retry";
+    "Kimi is not authenticated (auth.login_required) — run `kimi login` and retry";
 
 /// Return `true` when `text` shows a Kimi authentication failure. A logged-out
-/// `kimi --print` prints `LLM not set` to stdout; without this the failure
-/// masquerades as a generic "no plan" (planning) or `Outcome::Stuck` (execution).
+/// `kimi -p` fails with `error: failed to run prompt: auth.login_required:` and a
+/// second line naming the OAuth provider (ADR-0028 D6); matching the error-type
+/// token alone survives the provider name and the line wrap. Without this the
+/// failure masquerades as a generic "no plan" (planning) or `Outcome::Stuck`
+/// (execution).
 pub(crate) fn is_kimi_auth_error(text: &str) -> bool {
-    ralphy_adapter_support::auth_error(text, &[&["llm not set"]])
+    ralphy_adapter_support::auth_error(text, &[&["auth.login_required"]])
 }
 
 /// Return `true` when `text` shows a Kimi API-level usage-limit failure. When the
-/// billing-cycle quota is exhausted, `kimi --print` gets an HTTP 403 whose body
+/// billing-cycle quota is exhausted, headless `kimi` gets an HTTP 403 whose body
 /// carries `access_terminated_error`; the CLI writes that line to the log and exits
 /// non-zero *without* the exit-75 chat-level sentinel (ADR-0028 D9) and without a
 /// `RALPHY_DONE_EXIT`, so — absent this marker — a genuine limit is misread as
@@ -37,10 +40,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_kimi_auth_error_matches_llm_not_set() {
-        assert!(is_kimi_auth_error("Error: LLM not set"));
-        // Case-insensitive.
-        assert!(is_kimi_auth_error("llm not set"));
+    fn is_kimi_auth_error_matches_login_required() {
+        // The verbatim 0.28 logged-out message (ADR-0028 D6).
+        let live = "error: failed to run prompt: auth.login_required:\n\
+             OAuth provider \"managed:kimi-code\" requires login before it can be used.";
+        assert!(is_kimi_auth_error(live));
+        // The pre-0.28 (1.48) signal is NOT the 0.28 one.
+        assert!(!is_kimi_auth_error("Error: LLM not set"));
         // A clean run is not an auth error.
         assert!(!is_kimi_auth_error("all green\nRALPHY_DONE_EXIT\n"));
     }
