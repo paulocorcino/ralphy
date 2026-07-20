@@ -140,12 +140,73 @@ This is **the same rule ADR-0005 D3 settled for OpenCode's `--variant`** —
 reached independently from a different vendor's evidence. Two vendors, one rule;
 it is now the house default for any optional passthrough knob.
 
-Corollary the adapter must respect: an *unsupported level* on a *supporting*
-model is **silently coerced**, not rejected — `--effort minimal` on
-`claude-sonnet-5` exits 0 and the usage row records `medium`. Only the binary
-"does this model do effort at all" is validated. **The requested effort is not
-necessarily the effort that ran**; `assistant_usage_events.reasoning_effort` is
-the only truth, read post-hoc.
+## D5a — When effort *is* requested, the adapter clamps it; the vendor fallback inverts intent
+
+Only the binary "does this model do effort at all" is validated by the CLI. An
+out-of-range **level** is accepted, exits 0, and is silently dropped to the
+**model's own default** — it is *not* clamped to the nearest supported level,
+and this holds in both directions. Probe P6 against `gpt-5-mini`, which supports
+exactly `low, medium, high`:
+
+| requested | recorded in `assistant_usage_events.reasoning_effort` |
+|---|---|
+| `xhigh` — above the ceiling | **`medium`** |
+| `minimal` — below the floor | **`medium`** |
+| `high` — in range | `high` |
+
+So **asking for `xhigh` on a model that stops at `high` yields *less* effort
+than asking for `high`.** The operator asks for more, gets less, exit 0, nothing
+in the stream mentions it. A passthrough adapter would inherit that inversion,
+which is why effort gets normalised here rather than forwarded verbatim.
+
+The ordering is `none < minimal < low < medium < high < xhigh < max`, and
+`low`/`medium`/`high` are supported by **every** model that supports effort at
+all. So a clamp that never exceeds the request is always satisfiable. The rule:
+
+> Clamp the requested level to the nearest supported level **at or below** it.
+> If nothing supported sits at or below, use the lowest supported level. If the
+> model supports no effort at all, **omit the flag** (D5).
+
+Stated as one rule rather than a list of special cases, it covers `xhigh → high`
+and `minimal → low`, and it handles `claude-sonnet-4.6` — which has `max` but
+*not* `xhigh` — by degrading to `high` rather than escalating to `max`. **The
+clamp never buys more than was asked for**, so it can never surprise the
+operator with cost.
+
+### The support table is read, never hardcoded
+
+The per-model `capabilities.supports.reasoning_effort` list comes from the live
+CAPI catalog, **not** from a table baked into the adapter. Hardcoding it would
+repeat precisely the mistake this spike documented: `copilot help config` lists
+21 model ids under the `model` key and 8 of them are not selectable at any tier.
+Vendor help text is not a contract, and a static table would go stale the same
+way.
+
+The catalog is obtainable for **zero model calls**: a run with a deliberately
+invalid `--model` plus `--log-level all --log-dir` fails *after* the catalog
+fetch and *before* any paid call, dumping all 46 entries verbatim. Since Ralphy
+already performs a per-run auth preflight
+([ADR-0013](./0013-run-auth-preflight.md)), this is not new machinery — it is
+the existing preflight answering auth, entitlement, model catalog, effort
+support and pricing in a single free subprocess, which is also ADR-0040's C4/C5
+answer.
+
+### Verification is post-hoc, because the request is not the truth
+
+Even clamped, the adapter cannot assume the effort it asked for is the effort
+that ran. `assistant_usage_events.reasoning_effort` is the only record of what
+actually happened and is read after the fact (D10).
+
+### Scope: this is a clamp, not a vocabulary
+
+D5a normalises *within* the Copilot adapter. It deliberately stops short of
+making `low|medium|high|xhigh` **Ralphy's** effort vocabulary, because effort is
+currently an opaque passthrough in every adapter — Claude forwards the operator's
+string, Codex hardcodes `medium`, OpenCode's `--variant` is documented as an
+opaque passthrough — and a normalised vocabulary honoured by one vendor out of
+five is worse than none: the operator cannot tell where the word means anything.
+Promoting effort to a core concept touches `CONTEXT.md` and all five adapters
+and is tracked separately, so it does not sit on this adapter's critical path.
 
 ## D6 — No complexity routing in v1
 
