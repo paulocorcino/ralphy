@@ -28,6 +28,7 @@ mod auth;
 mod catalog;
 mod command;
 mod effort;
+mod guards;
 mod outcome;
 mod settings;
 mod usage;
