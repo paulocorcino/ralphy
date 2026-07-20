@@ -44,6 +44,12 @@ pub(crate) fn mint_session_id() -> String {
 ///
 /// The repo root is set with `current_dir`, not `-C`: the CLI honours the spawned
 /// process's cwd (spike C1).
+///
+/// Deferred, deliberately: D7's in-band RECEIPT check (fail the run when
+/// `session.mcp_servers_loaded` still reports a builtin server as `connected`) and
+/// D11's `continueOnAutoMode` assertion. #229 scopes both to "flags only" / "the
+/// mapping"; until those slices land, the flags above are trusted, not verified
+/// against the stream.
 pub(crate) fn build_copilot_command(
     session_id: &str,
     model: Option<&str>,

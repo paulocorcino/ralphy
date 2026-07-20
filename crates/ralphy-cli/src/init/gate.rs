@@ -15,12 +15,19 @@ pub enum Agent {
 }
 
 impl Agent {
+    /// ORDER IS LOAD-BEARING: `init`/`triage` auto-selection takes the FIRST
+    /// logged-in agent in this array (`init::run::select_agent`,
+    /// `triage::select_triage_agent`). `Copilot` is last on purpose — its one-shot
+    /// verbs bail until the `tasks.rs` slice lands (ADR-0040 Tier 1), so placing it
+    /// ahead of a fully-wired vendor would turn a working `ralphy init` into a hard
+    /// bail on any machine where both are logged in. Move it up when its one-shots
+    /// exist, not before.
     pub const ALL: [Agent; 5] = [
         Agent::Claude,
         Agent::Codex,
-        Agent::Copilot,
         Agent::Kimi,
         Agent::Opencode,
+        Agent::Copilot,
     ];
 
     pub fn cli_name(&self) -> &'static str {
@@ -257,6 +264,16 @@ mod tests {
         // The hardcoded ALL array length must track the enum: a new variant that
         // never joins ALL is invisible to `ralphy init`'s agent report.
         assert_eq!(Agent::ALL.len(), 5);
+    }
+
+    /// `init`/`triage` auto-selection takes the FIRST logged-in agent in `ALL`, and
+    /// Copilot's one-shot verbs bail until the `tasks.rs` slice lands. Promoting it
+    /// ahead of a fully-wired vendor would turn a working `ralphy init` into a hard
+    /// bail on any machine where both are logged in — so pin the position, not just
+    /// the membership.
+    #[test]
+    fn copilot_is_last_in_all_until_its_one_shots_exist() {
+        assert_eq!(Agent::ALL.last(), Some(&Agent::Copilot));
     }
 
     // (a) All-green: evaluate_gate returns empty vec when ≥1 agent is logged in.

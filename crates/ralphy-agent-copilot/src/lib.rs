@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{
     run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg, PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
 
 mod auth;
@@ -106,8 +106,9 @@ impl Agent for CopilotAgent {
         let session_id = mint_session_id();
 
         let run = || {
-            // No `--model` in this slice: omission selects the account default (D4).
-            let cmd = build_copilot_command(&session_id, None, ws.repo_root());
+            // `None` (the default) omits `--model` entirely, which selects the
+            // account's own default — the correct default, not a fallback (D4).
+            let cmd = build_copilot_command(&session_id, self.model.as_deref(), ws.repo_root());
             ralphy_core::emit::planning("copilot", self.model.as_deref().unwrap_or(""), "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir setup.
@@ -118,7 +119,7 @@ impl Agent for CopilotAgent {
 
         let ralphy_dir = ws.ralphy_dir();
         let charter_path = ws.plan_charter_path();
-        run_plan_session(
+        let session = run_plan_session(
             PlanCfg {
                 issue_number: issue.number,
                 ralphy_dir: &ralphy_dir,
@@ -132,8 +133,16 @@ impl Agent for CopilotAgent {
             },
             run,
             is_copilot_auth_error,
-            // No plan-time usage limit is surfaced for Copilot in this slice (D11).
-            |_log| None,
+            // A usage limit during planning is not a generic failure: surface it as
+            // a typed `PlanLimit` so the runner routes it through the same
+            // stop-and-report / auto-resume path as an execute-time
+            // `Outcome::Limit`, rather than aborting the run with "produced no
+            // plan". No reset hint is recoverable (D11), so the ADR-0030 synthetic
+            // cadence sets the wait.
+            |log| {
+                ralphy_adapter_support::detect_limit(log, auth::is_copilot_limit_text, |_| None)
+                    .map(|reset| PlanLimit { reset }.into())
+            },
         )?;
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -143,7 +152,9 @@ impl Agent for CopilotAgent {
             recommended_model: None,
             path: plan_path,
             usage: Usage::default(),
-            session_id: Some(session_id),
+            // `None` = a finalized plan was RESUMED and no `copilot` process ran,
+            // so no session by this id exists for the D10 usage slice to read.
+            session_id: session.map(|_| session_id),
         })
     }
 
@@ -156,7 +167,7 @@ impl Agent for CopilotAgent {
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
 
         let run = || {
-            let cmd = build_copilot_command(&session_id, None, ws.repo_root());
+            let cmd = build_copilot_command(&session_id, self.model.as_deref(), ws.repo_root());
             ralphy_core::emit::executing("copilot", 0, self.model.as_deref().unwrap_or(""), "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_copilot(cmd, PROMPT_EXECUTE, timeout)?;

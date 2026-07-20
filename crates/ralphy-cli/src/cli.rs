@@ -104,7 +104,8 @@ pub(crate) struct RunArgs {
     pub(crate) repo: PathBuf,
 
     /// Which agent CLI executes the run: `claude` (the default, a live PTY
-    /// session), `codex` (headless `codex exec`), or `opencode`. Selects the
+    /// session) or one of the headless adapters — `codex`, `copilot`, `kimi`,
+    /// `opencode`. Selects the
     /// executor; pair with `--plan-agent` to plan with a different adapter.
     /// Selected per run; the core never learns which vendor it holds.
     #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]

@@ -24,13 +24,21 @@ pub(crate) fn is_copilot_auth_error(text: &str) -> bool {
 /// The predicate therefore matches a limit *class* (ADR-0040 C7) rather than one
 /// provider's phrasing, and is trusted only on a NON-CLEAN exit — a clean exit is
 /// itself proof the phrase was merely echoed by the agent's own prose.
+///
+/// Every alternative is ERROR-SHAPED (`… exceeded`, `… reached`, `429 …`) rather
+/// than a bare topic word. The scan runs over the whole captured log, which carries
+/// the echoed charter, the issue body and every tool's output — a bare `rate limit`
+/// would fire on an issue that merely *discusses* rate limiting and park the queue
+/// for hours on the ADR-0030 cadence.
 pub(crate) fn is_copilot_limit_text(text: &str) -> bool {
     let l = text.to_ascii_lowercase();
-    l.contains("rate limit")
+    l.contains("rate limit exceeded")
+        || l.contains("rate limit reached")
         || l.contains("quota exceeded")
-        || l.contains("too many requests")
-        || l.contains("usage limit")
-        || l.contains("ai credits")
+        || l.contains("429 too many requests")
+        || l.contains("usage limit for")
+        || l.contains("usage limit reached")
+        || l.contains("out of ai credits")
 }
 
 #[cfg(test)]
@@ -76,6 +84,21 @@ mod tests {
                 !is_copilot_auth_error(phrase),
                 "not an auth error: {phrase}"
             );
+        }
+    }
+
+    /// The predicate scans the WHOLE captured log, which echoes the charter, the
+    /// issue body and every tool's output. Prose that merely names the topic must
+    /// not fire — a false positive parks the queue on the ADR-0030 cadence.
+    #[test]
+    fn is_copilot_limit_text_ignores_prose_about_limits() {
+        for prose in [
+            "the issue asks us to handle a rate limit gracefully",
+            "TODO: retry when the API returns too many requests",
+            "docs: document the usage limit behaviour",
+            "fn ai_credits_remaining() -> u32",
+        ] {
+            assert!(!is_copilot_limit_text(prose), "should NOT match: {prose}");
         }
     }
 }
