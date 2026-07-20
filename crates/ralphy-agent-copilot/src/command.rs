@@ -108,6 +108,17 @@ pub(crate) fn build_copilot_command(
     cmd
 }
 
+/// The one-shot sibling for `tasks.rs` (diagnose/draft/triage/consolidate) — same
+/// argv, same D7 flags, same D8 env scrub, `effort` always `None` (D5), escape
+/// hatch never on for a one-shot.
+pub(crate) fn build_copilot_init_command(
+    model: Option<&str>,
+    cwd: &Path,
+    images: &[PathBuf],
+) -> Command {
+    build_copilot_command(&mint_session_id(), model, None, cwd, false, images)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +289,58 @@ mod tests {
         let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), false, &[]);
         let args = argv(&cmd);
         assert!(!args.iter().any(|a| a == "--attachment"), "argv: {args:?}");
+    }
+
+    /// The one-shot builder shares the run builder's env hygiene and flags (AC 4):
+    /// same D7 blast-radius flags, same D8 token scrub, no `-p`/`--model`/`--effort`
+    /// when unrequested.
+    #[test]
+    fn init_command_shares_run_hygiene_and_flags() {
+        let cmd = build_copilot_init_command(None, Path::new("/repo"), &[]);
+        assert_eq!(stem(&cmd), "copilot");
+
+        for key in ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] {
+            let removed = cmd.get_envs().any(|(k, v)| k == key && v.is_none());
+            assert!(removed, "{key} should be removed on the one-shot child");
+        }
+
+        let args = argv(&cmd);
+        for flag in [
+            "--no-remote",
+            "--no-remote-export",
+            "--disable-builtin-mcps",
+            "--no-auto-update",
+            "--no-ask-user",
+        ] {
+            assert!(
+                args.iter().any(|a| a == flag),
+                "missing blast-radius flag {flag}: {args:?}"
+            );
+        }
+        let i = args
+            .iter()
+            .position(|a| a == "--output-format")
+            .expect("--output-format missing");
+        assert_eq!(args[i + 1], "json");
+
+        assert!(!args.iter().any(|a| a == "-p"), "argv: {args:?}");
+        assert!(!args.iter().any(|a| a == "--model"), "argv: {args:?}");
+        assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");
+    }
+
+    /// D12: the one-shot builder forwards images just like the run builder.
+    #[test]
+    fn init_command_attaches_each_image() {
+        let images = [PathBuf::from("/t/a.png"), PathBuf::from("/t/b.png")];
+        let cmd = build_copilot_init_command(None, Path::new("/repo"), &images);
+        let args = argv(&cmd);
+        assert_eq!(
+            args.iter().filter(|a| *a == "--attachment").count(),
+            2,
+            "argv: {args:?}"
+        );
+        let first = args.iter().position(|a| a == "--attachment").unwrap();
+        assert_eq!(args[first + 1], "/t/a.png", "argv: {args:?}");
     }
 
     #[test]
