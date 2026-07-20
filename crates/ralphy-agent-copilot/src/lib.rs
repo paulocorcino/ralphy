@@ -11,8 +11,8 @@
 //!
 //! Token usage is read back from Copilot's own `session-store.db` by the minted
 //! `--session-id` ([`usage`], ADR-0041 D10). Skills are materialized into
-//! `.agents/skills` and their load receipt asserted by [`skills`] (ADR-0041 D9);
-//! `tasks.rs` still belongs to a later slice (ADR-0040 Tier 1).
+//! `.agents/skills` and their load receipt asserted by [`skills`] (ADR-0041 D9).
+//! The one-shot `init`/`triage`/`consolidate` flows go through [`tasks`].
 
 use std::fs;
 use std::path::PathBuf;
@@ -33,6 +33,7 @@ mod guards;
 mod outcome;
 mod settings;
 mod skills;
+mod tasks;
 mod usage;
 
 /// The free model catalog the preflight learns from one `copilot` subprocess
@@ -60,6 +61,7 @@ use auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
 use command::{build_copilot_command, mint_session_id};
 use outcome::{classify_copilot_outcome, copilot_final_text};
 use skills::materialize_copilot_skills;
+pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 use usage::copilot_usage;
 
 /// The Copilot planning prompt, embedded so the binary is self-contained as a
