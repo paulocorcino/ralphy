@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
-    scan_claude, scan_codex, scan_kimi, scan_opencode, ClaudeScan, CodexScan, KimiScan,
-    OpenCodeScan, RegisteredRepo,
+    scan_claude, scan_codex, scan_copilot, scan_kimi, scan_opencode, ClaudeScan, CodexScan,
+    CopilotScan, KimiScan, OpenCodeScan, RegisteredRepo,
 };
 
 use crate::registry::RegistryStore;
@@ -130,6 +130,25 @@ pub fn opencode_db_path() -> anyhow::Result<PathBuf> {
         .join("opencode.db"))
 }
 
+/// The Copilot SQLite store: `$RALPHY_COPILOT_DB` when set (tests point it at a
+/// temp file), else `$COPILOT_HOME/session-store.db` (Copilot's own base var),
+/// else `<home>/.copilot/session-store.db`. Mirrors the adapter's
+/// `copilot_store_db` and [`opencode_db_path`].
+pub fn copilot_db_path() -> anyhow::Result<PathBuf> {
+    if let Some(db) = std::env::var_os("RALPHY_COPILOT_DB") {
+        return Ok(PathBuf::from(db));
+    }
+    if let Some(base) = std::env::var_os("COPILOT_HOME") {
+        return Ok(PathBuf::from(base).join("session-store.db"));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the Copilot store"))?;
+    Ok(PathBuf::from(home)
+        .join(".copilot")
+        .join("session-store.db"))
+}
+
 /// The legacy Kimi (`kimi-cli`) session store root: `$RALPHY_KIMI_DIR` when set
 /// (tests point it at a temp dir), else `$KIMI_HOME` (Kimi's own base var), else
 /// `<home>/.kimi`. This is the `.kimi` BASE — `scan_kimi` walks its `sessions/`
@@ -166,12 +185,13 @@ pub fn kimi_code_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".kimi-code"))
 }
 
-/// Scan the Claude, Codex, OpenCode, AND Kimi stores for interactive usage records,
-/// excluding sessions the ledger already owns (their `session_id` appears in
-/// `run_records`), and serialize each to JSON (ADR-0033 §2/§6). `registry.repos`
-/// supplies the project/actor attribution. Read-only: no scan writes. The Codex
-/// records are chained after the Claude ones, then the OpenCode ones, then the
-/// Kimi ones.
+/// Scan the Claude, Codex, OpenCode, Kimi AND Copilot stores for interactive usage
+/// records, excluding sessions the ledger already owns (their `session_id` appears
+/// in `run_records`), and serialize each to JSON (ADR-0033 §2/§6).
+/// `registry.repos` supplies the project/actor attribution. Read-only: no scan
+/// writes (the Copilot scan reads a private copy, never the live store). The
+/// Codex records are chained after the Claude ones, then the OpenCode ones, then
+/// the Kimi ones, then the Copilot ones.
 // One positional per store path/handle; grouping them into a struct would only
 // move the argument list, not shrink it (mirrors `router`/`usage_route`).
 #[allow(clippy::too_many_arguments)]
@@ -181,6 +201,7 @@ pub fn interactive_records(
     opencode_db: &Path,
     kimi_dir: &Path,
     kimi_code_dir: &Path,
+    copilot_db: &Path,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -223,11 +244,18 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
+    let copilot = scan_copilot(&CopilotScan {
+        db_path: copilot_db,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
     claude
         .iter()
         .chain(codex.iter())
         .chain(opencode.iter())
         .chain(kimi.iter())
+        .chain(copilot.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()
 }
@@ -236,8 +264,53 @@ pub fn interactive_records(
 mod tests {
     use super::*;
 
+    /// Serializes the env-mutating path resolvers against each other (mirrors
+    /// `identity.rs`'s lock); the tests share one process env.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn write_ledger(dir: &Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
+    }
+
+    /// `$RALPHY_COPILOT_DB` wins over `$COPILOT_HOME`, which wins over the home
+    /// default. Env is process-global, so the three legs run in one test.
+    #[test]
+    fn copilot_db_path_prefers_the_env_override() {
+        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let restore = (
+            std::env::var_os("RALPHY_COPILOT_DB"),
+            std::env::var_os("COPILOT_HOME"),
+        );
+
+        std::env::set_var("RALPHY_COPILOT_DB", "C:/tmp/override.db");
+        std::env::set_var("COPILOT_HOME", "C:/tmp/copilot-home");
+        assert_eq!(
+            copilot_db_path().unwrap(),
+            PathBuf::from("C:/tmp/override.db")
+        );
+
+        std::env::remove_var("RALPHY_COPILOT_DB");
+        assert_eq!(
+            copilot_db_path().unwrap(),
+            PathBuf::from("C:/tmp/copilot-home").join("session-store.db")
+        );
+
+        std::env::remove_var("COPILOT_HOME");
+        let home = copilot_db_path().unwrap();
+        assert!(
+            home.ends_with(PathBuf::from(".copilot").join("session-store.db")),
+            "home default, got {home:?}"
+        );
+
+        match restore.0 {
+            Some(v) => std::env::set_var("RALPHY_COPILOT_DB", v),
+            None => std::env::remove_var("RALPHY_COPILOT_DB"),
+        }
+        match restore.1 {
+            Some(v) => std::env::set_var("COPILOT_HOME", v),
+            None => std::env::remove_var("COPILOT_HOME"),
+        }
+        drop(guard);
     }
 
     #[test]

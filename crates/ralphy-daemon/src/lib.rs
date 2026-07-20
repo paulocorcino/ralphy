@@ -142,6 +142,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let opencode_db = usage::opencode_db_path()?;
     let kimi_dir = usage::kimi_dir_path()?;
     let kimi_code_dir = usage::kimi_code_dir_path()?;
+    let copilot_db = usage::copilot_db_path()?;
     axum::serve(
         listener,
         router(
@@ -153,6 +154,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             opencode_db,
             kimi_dir,
             kimi_code_dir,
+            copilot_db,
             start,
             shutdown_rx,
             auth_state,
@@ -186,6 +188,7 @@ pub fn router(
     opencode_db: PathBuf,
     kimi_dir: PathBuf,
     kimi_code_dir: PathBuf,
+    copilot_db: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
@@ -246,6 +249,7 @@ pub fn router(
                 let opencode_db = opencode_db.clone();
                 let kimi_dir = kimi_dir.clone();
                 let kimi_code_dir = kimi_code_dir.clone();
+                let copilot_db = copilot_db.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
@@ -256,6 +260,7 @@ pub fn router(
                         opencode_db,
                         kimi_dir,
                         kimi_code_dir,
+                        copilot_db,
                         registry,
                         daemon_id,
                         q.0.since,
@@ -1413,6 +1418,7 @@ async fn usage_route(
     opencode_db: PathBuf,
     kimi_dir: PathBuf,
     kimi_code_dir: PathBuf,
+    copilot_db: PathBuf,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -1433,6 +1439,7 @@ async fn usage_route(
         &opencode_db,
         &kimi_dir,
         &kimi_code_dir,
+        &copilot_db,
         &store,
         &runs,
         since.as_deref(),
@@ -1946,6 +1953,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2123,6 +2131,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2149,6 +2158,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2212,6 +2222,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2259,6 +2270,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2329,6 +2341,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2386,6 +2399,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2431,6 +2445,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2487,6 +2502,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
             claude_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2567,6 +2583,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2632,6 +2649,7 @@ mod tests {
             db.clone(),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2662,6 +2680,76 @@ mod tests {
         );
     }
 
+    /// `/api/usage` also carries Copilot interactive records: a row in a seeded
+    /// `session-store.db` flows through the scan and appears in the `interactive`
+    /// array with `agent=="copilot"` and its `session_id`. Proves the `copilot_db`
+    /// router arg is threaded end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_copilot_interactive_records() {
+        use rusqlite::Connection;
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("session-store.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute(
+                "CREATE TABLE assistant_usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                 session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
+                 cache_read_tokens INTEGER, cache_write_tokens INTEGER, created_at TEXT)",
+                [],
+            )
+            .unwrap();
+            conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT)", [])
+                .unwrap();
+            conn.execute(
+                "INSERT INTO assistant_usage_events (session_id, model, input_tokens, \
+                 output_tokens, cache_read_tokens, cache_write_tokens, created_at) \
+                 VALUES ('ses_cp', 'claude-sonnet-5', 22913, 350, 0, 22903, \
+                 '2026-07-20T11:54:33.066Z')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            db.clone(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("copilot")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_cp")
+            }),
+            "interactive must carry a copilot record with the session id; got: {body_string}"
+        );
+        assert!(
+            !body_string.contains("usd"),
+            "no pricing in the payload; got: {body_string}"
+        );
+    }
+
     /// `/api/usage` also carries Kimi interactive records: a legacy `wire.jsonl`
     /// with one non-zero `StatusUpdate` under the kimi base dir's `sessions/` tree
     /// flows through the scan and appears in the `interactive` array with
@@ -2683,6 +2771,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             kimi_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
@@ -2752,6 +2841,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -2780,6 +2870,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2823,6 +2914,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2845,6 +2937,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2895,6 +2988,7 @@ mod tests {
         };
         router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -3281,6 +3375,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3376,6 +3471,7 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
