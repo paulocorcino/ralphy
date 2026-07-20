@@ -271,6 +271,15 @@ deliberately verbose escape hatch for the operator who genuinely wants the MCP
 surface. Forcing it with no opt-out would have been the exception; it is not
 needed, because the receipt makes the default honest rather than merely hopeful.
 
+**Enforced** (#234): `crates/ralphy-agent-copilot/src/guards.rs` scans the run's
+stdout after each phase and fails the run on a `connected` builtin server — and
+on an ABSENT receipt too, since an unverifiable kill switch is not a verified
+one; the escape hatch is the persisted
+`copilot.allow_builtin_mcp_servers_i_understand_the_risk`, which drops
+`--disable-builtin-mcps` from the argv and suppresses the failure together.
+(The live receipt is `ephemeral: true` on every copy, so the scan must not reuse
+the stream parser's ephemeral filter.)
+
 ## D8 — The three GitHub token env vars are scrubbed from the child
 
 Copilot's precedence is `COPILOT_GITHUB_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN`.
@@ -351,6 +360,15 @@ retry that hides the limit from the caller**, the same failure mode that makes
 OpenCode burn a full 60-minute timeout while reporting `saw_error = false`. It
 defaults to `false`; the adapter asserts it stays false rather than trusting the
 default.
+
+**Enforced** (#234): `guards.rs`'s `continue_on_auto_mode_violation` reads the
+vendor's GLOBAL config (`$COPILOT_HOME/config.json`, else
+`<home>/.copilot/config.json` — which is JSONC, so line comments are stripped
+before parsing) as a **preflight in `run_copilot`, before any child is spawned**,
+so a violation costs no tokens. An absent or unparsable config is a pass: the
+documented default is `false`, and failing every run over an unreadable
+machine-managed file would trade one silent risk for a loud outage. The runtime
+limit surface is unchanged — still `Limit(None)` plus ADR-0030.
 
 ## D12 — `ACCEPTS_IMAGES` is true
 

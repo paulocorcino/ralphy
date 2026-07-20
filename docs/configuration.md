@@ -119,6 +119,7 @@ OpenCode effort is set per-run with `--exec-variant` (not persisted).
 | `copilot.exec_model` | `--exec-model` | any model id Copilot offers | none | The persisted execution-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
 | `copilot.plan_effort` | none | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | none | The reasoning effort *requested* for the planning phase. When unset, `--effort` is omitted (ADR-0041 D5). |
 | `copilot.exec_effort` | none | same | none | The reasoning effort *requested* for the execution phase. When unset, `--effort` is omitted (ADR-0041 D5). |
+| `copilot.allow_builtin_mcp_servers_i_understand_the_risk` | none | `true`, `false` | `false` | **Danger.** The D7 escape hatch: drops `--disable-builtin-mcps` from the argv AND suppresses the connected-server failure. See below. |
 
 ```powershell
 ralphy config set copilot.exec_model gpt-5
@@ -133,6 +134,25 @@ fallback (ADR-0041 D4).
 The two effort keys have **no per-run flag**: they are persisted-only, because
 whether Ralphy's `--plan-effort`/`--exec-effort` become valid for every adapter is
 still open (#227).
+
+### The builtin-MCP escape hatch
+
+By default Ralphy passes `--disable-builtin-mcps` and then *verifies* it in band:
+Copilot's `session.mcp_servers_loaded` receipt must report every builtin server
+off, and a **missing** receipt fails the run too (fail closed — an unverifiable
+kill switch is not a verified one, ADR-0041 D7).
+
+Setting `copilot.allow_builtin_mcp_servers_i_understand_the_risk` to `true` does
+both halves of the opposite: it drops `--disable-builtin-mcps` from the argv *and*
+suppresses the connected-server failure. Suppressing only the check would grant
+you nothing.
+
+What you are handing back: Copilot's bundled GitHub MCP server holds **your**
+GitHub credential, so an agent that reaches it can open a pull request without
+ever running `git push` — outside the branch-and-hand-over discipline every other
+part of Ralphy enforces. The key name is deliberately long: length is the safety
+feature, so it cannot be set by accident. It is persisted-only, with no per-run
+flag, for the same reason.
 
 **Effort is a request, not an instruction.** Copilot's effort vocabulary is
 per-model — the catalog publishes each model's own supported list, and a level
