@@ -492,3 +492,51 @@ fn large_output_is_captured_complete() {
         "the full >64KB stream is captured with no truncation"
     );
 }
+
+/// The charter channel, proved end to end (#229 / ADR-0041 D2). Every headless
+/// adapter pipes a >23 KB charter on stdin because argv cannot carry it on
+/// Windows; a write that stops short would truncate the agent's instructions with
+/// no error anywhere. Markers on BOTH the first and last line, so a truncation at
+/// either end fails: a head-only assertion passes on a payload cut in half.
+#[test]
+fn stdin_payload_over_24kb_round_trips() {
+    const HEAD: &str = "RALPHY-STDIN-HEAD";
+    const TAIL: &str = "RALPHY-STDIN-TAIL";
+
+    let mut payload = String::from(HEAD);
+    payload.push('\n');
+    let mut i = 0usize;
+    while payload.len() < 24_576 {
+        payload.push_str(&format!("filler line {i} — padding the charter to size\n"));
+        i += 1;
+    }
+    payload.push_str(TAIL);
+    payload.push('\n');
+    assert!(payload.len() > 24_576, "payload is {} bytes", payload.len());
+
+    let log_path = temp_log("stdin-24kb");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("echo-stdin"),
+        &payload,
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .run()
+    .expect("the echo child should not error");
+
+    assert!(r.exited_cleanly, "child exited cleanly: {:?}", r.exit_code);
+    assert_eq!(
+        r.stdout.lines().next(),
+        Some(HEAD),
+        "the FIRST line survived the write"
+    );
+    assert_eq!(
+        r.stdout.lines().rfind(|l| !l.trim().is_empty()),
+        Some(TAIL),
+        "the LAST line survived the write"
+    );
+
+    let _ = std::fs::remove_file(&log_path);
+}

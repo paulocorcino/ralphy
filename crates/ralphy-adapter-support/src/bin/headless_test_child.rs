@@ -21,6 +21,10 @@
 //!   `sleep` for the idle watchdog: a child that keeps talking must **survive** a
 //!   window far shorter than its total runtime, proving the watchdog measures
 //!   silence and not elapsed time.
+//! - `echo-stdin` — read ALL of stdin and write it back verbatim, then exit 0.
+//!   The charter channel every headless adapter depends on (ADR-0041 D2): the
+//!   only way to prove a >24 KB prompt survives the write end to end is to have a
+//!   real child read it and hand it back.
 //! - `degraded-chatty` — emit a [`DEGRADED_MARKER`] line every [`CHATTY_TICK`] for
 //!   ~60s: a child talking at the chatty cadence but only ever printing degraded
 //!   banners. Exercises the API-degraded path — a matched degraded line must NOT
@@ -97,6 +101,14 @@ fn main() {
                 let _ = std::io::stdout().flush();
                 std::thread::sleep(CHATTY_TICK);
             }
+        }
+        "echo-stdin" => {
+            // Read to EOF before writing a byte: a partial read would silently
+            // truncate exactly the way this mode exists to detect.
+            let mut buf = String::new();
+            let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+            let _ = std::io::stdout().write_all(buf.as_bytes());
+            let _ = std::io::stdout().flush();
         }
         "large" => {
             // A repeating byte pattern, written in one shot, so the test can assert
