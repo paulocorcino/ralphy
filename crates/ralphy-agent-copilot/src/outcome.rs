@@ -143,10 +143,11 @@ impl CopilotAgent {
 mod tests {
     use super::*;
 
-    /// D11 bails BEFORE any child is spawned — the assertion is on the extracted
-    /// helper precisely so it needs no real process.
+    /// The VERDICT half of D11. Named for what it actually exercises: it drives
+    /// the extracted helper, not `run_copilot`. The wiring half is pinned
+    /// separately by `preflight_runs_before_the_child_is_spawned`.
     #[test]
-    fn run_copilot_preflight_bails_before_spawn() {
+    fn preflight_rejects_continue_on_auto_mode() {
         let err = preflight(Some(r#"{"continueOnAutoMode": true}"#))
             .expect_err("continueOnAutoMode must abort before the spawn");
         assert!(err.to_string().contains("continueOnAutoMode"), "{err}");
@@ -155,6 +156,24 @@ mod tests {
         assert!(preflight(None).is_ok());
         assert!(preflight(Some("{}")).is_ok());
         assert!(preflight(Some("not json")).is_ok());
+    }
+
+    /// The WIRING half: no test constructs a real `copilot` child, so deleting
+    /// the `preflight(..)` line in `run_copilot` would keep the suite green and
+    /// make D11 a silent no-op. Pin the call AND its position — it is only a
+    /// preflight if it precedes `HeadlessCall::new`. Fragments are assembled with
+    /// `concat!` so the assertion cannot match ITSELF.
+    #[test]
+    fn preflight_runs_before_the_child_is_spawned() {
+        let src = include_str!("outcome.rs");
+        let call = concat!("preflight(", "config.as_deref())?;");
+        let spawn = concat!("HeadlessCall::", "new(cmd,");
+        let at_call = src.find(call).expect("run_copilot must call preflight");
+        let at_spawn = src.find(spawn).expect("the HeadlessCall site moved");
+        assert!(
+            at_call < at_spawn,
+            "D11 must be asserted BEFORE the child is spawned, not after"
+        );
     }
 
     const ANSWER: &str = r#"{"type":"assistant.message","id":"a1","data":{"model":"claude-sonnet-5","content":"all green\nRALPHY_DONE_EXIT","toolRequests":[],"outputTokens":75}}"#;

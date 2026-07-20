@@ -23,7 +23,14 @@ use std::path::{Path, PathBuf};
 /// `copilot_final_text`: a live probe (`copilot 1.0.71`, 2026-07-20) emitted the
 /// receipt three times with every copy carrying `"ephemeral":true`, so filtering
 /// ephemerals would find nothing and fail closed on every run.
-pub(crate) fn builtin_mcp_violation(stdout: &str) -> Option<String> {
+///
+/// `require_receipt` separates the two halves. A CONNECTED builtin is always a
+/// violation. An ABSENT receipt is only one for a run that reached normal
+/// completion: a run killed by a usage limit, a crash or the wall clock can die
+/// before the receipt is ever emitted, and fail-closing there would overwrite the
+/// typed `Limit`/`Timeout` outcome with "receipt missing" — trading a correct
+/// stop-and-report for a wrong error.
+pub(crate) fn builtin_mcp_violation(stdout: &str, require_receipt: bool) -> Option<String> {
     let mut saw_receipt = false;
     for line in stdout.lines() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -32,24 +39,38 @@ pub(crate) fn builtin_mcp_violation(stdout: &str) -> Option<String> {
         if v.get("type").and_then(|t| t.as_str()) != Some("session.mcp_servers_loaded") {
             continue;
         }
-        saw_receipt = true;
-        let servers = v
+        // A receipt only counts as SEEN once its payload is readable: a renamed
+        // or missing `data.servers` is vendor drift, and treating it as a pass
+        // would re-arm the credentialled server while the run reports green.
+        let Some(servers) = v
             .get("data")
             .and_then(|d| d.get("servers"))
-            .and_then(|s| s.as_array());
-        for server in servers.into_iter().flatten() {
+            .and_then(|s| s.as_array())
+        else {
+            continue;
+        };
+        saw_receipt = true;
+        for server in servers {
             let field = |k: &str| server.get(k).and_then(|x| x.as_str()).unwrap_or_default();
-            if field("source") == "builtin" && field("status") == "connected" {
-                let name = field("name");
-                return Some(format!(
-                    "Copilot's builtin MCP server `{name}` is CONNECTED despite \
-                     --disable-builtin-mcps; it holds the operator's GitHub credential \
-                     and can open a PR without `git push` (ADR-0041 D7)"
-                ));
+            if field("source") != "builtin" {
+                continue;
             }
+            // An ALLOW-list, not a `== "connected"` deny-list: an unrecognized
+            // status is exactly the case where the kill switch is unproven, and
+            // this guard's whole doctrine is that unproven means failed.
+            let status = field("status");
+            if status == "disabled" {
+                continue;
+            }
+            let name = field("name");
+            return Some(format!(
+                "Copilot's builtin MCP server `{name}` is not disabled (status \
+                 `{status}`) despite --disable-builtin-mcps; it holds the operator's \
+                 GitHub credential and can open a PR on its own (ADR-0041 D7)"
+            ));
         }
     }
-    if !saw_receipt {
+    if require_receipt && !saw_receipt {
         return Some(
             "no session.mcp_servers_loaded receipt in the Copilot stream — the \
              builtin-MCP kill switch is unverifiable, failing closed (ADR-0041 D7)"
@@ -153,14 +174,39 @@ mod tests {
             r#"{"type":"assistant.message","data":{"text":"hi"}}"#,
             receipt("connected")
         );
-        let msg = builtin_mcp_violation(&stream).expect("connected must fail");
+        let msg = builtin_mcp_violation(&stream, true).expect("connected must fail");
         assert!(msg.contains("github-mcp-server"), "{msg}");
+        // A connected server fails even on a run that died early — the safety
+        // verdict is not conditional on a clean exit.
+        assert!(builtin_mcp_violation(&stream, false).is_some());
     }
 
     #[test]
     fn builtin_mcp_receipt_all_disabled_passes() {
         let stream = format!("{}\nnot json at all\n", receipt("disabled"));
-        assert_eq!(builtin_mcp_violation(&stream), None);
+        assert_eq!(builtin_mcp_violation(&stream, true), None);
+    }
+
+    /// `disabled` is the ONLY known-off status: anything else means the kill
+    /// switch is unproven, and unproven fails.
+    #[test]
+    fn builtin_mcp_unknown_status_fails_closed() {
+        for status in ["connecting", "degraded", ""] {
+            let msg = builtin_mcp_violation(&receipt(status), true)
+                .unwrap_or_else(|| panic!("status {status:?} must not pass"));
+            assert!(msg.contains("github-mcp-server"), "{msg}");
+        }
+    }
+
+    /// A receipt whose payload Ralphy cannot read is not a receipt: vendor drift
+    /// in `data.servers` must not silently count as "verified off".
+    #[test]
+    fn builtin_mcp_receipt_with_unreadable_payload_fails_closed() {
+        let drifted = r#"{"type":"session.mcp_servers_loaded","data":{"mcpServers":[]}}"#;
+        assert!(
+            builtin_mcp_violation(drifted, true).is_some(),
+            "an unreadable receipt payload must fail closed"
+        );
     }
 
     #[test]
@@ -171,8 +217,19 @@ mod tests {
             r#"{"type":"result","data":{"text":"done"}}"#,
             "\n"
         );
-        let msg = builtin_mcp_violation(stream).expect("an absent receipt must fail closed");
+        let msg = builtin_mcp_violation(stream, true).expect("an absent receipt must fail closed");
         assert!(msg.contains("failing closed"), "{msg}");
+    }
+
+    /// The MEDIUM-1 fix: a run that died before emitting the receipt (a usage
+    /// limit, a crash, the wall clock) must NOT be turned into "receipt missing"
+    /// — that would overwrite the typed Limit/Timeout outcome with a wrong error.
+    #[test]
+    fn absent_receipt_is_not_a_violation_for_a_run_that_died_early() {
+        assert_eq!(
+            builtin_mcp_violation("error: usage limit reached\n", false),
+            None
+        );
     }
 
     /// The live capture: every copy of the receipt carries `"ephemeral":true`, so
@@ -185,6 +242,6 @@ mod tests {
             fixture.contains(r#""ephemeral":true"#),
             "the live receipt is ephemeral; the guard must not filter on it"
         );
-        assert_eq!(builtin_mcp_violation(fixture), None);
+        assert_eq!(builtin_mcp_violation(fixture, true), None);
     }
 }

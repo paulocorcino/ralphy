@@ -145,11 +145,11 @@ impl CopilotAgent {
     /// D7's in-band receipt guard, the single seam both phases call. `Err` aborts
     /// the run: a connected builtin MCP is a safety-envelope violation, not a work
     /// outcome. Skipped entirely under the escape hatch.
-    pub(crate) fn check_builtin_mcps(&self, stdout: &str) -> Result<()> {
+    pub(crate) fn check_builtin_mcps(&self, stdout: &str, require_receipt: bool) -> Result<()> {
         if self.allow_builtin_mcps {
             return Ok(());
         }
-        match guards::builtin_mcp_violation(stdout) {
+        match guards::builtin_mcp_violation(stdout, require_receipt) {
             Some(msg) => Err(anyhow::anyhow!("{msg}")),
             None => Ok(()),
         }
@@ -318,7 +318,7 @@ impl Agent for CopilotAgent {
         // handlers the wrapper applies to `r.log`, turning a logged-out run into
         // "MCP receipt missing".
         if let Some((r, _)) = session.as_ref() {
-            self.check_builtin_mcps(&r.stdout)
+            self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
                 .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
         }
 
@@ -390,8 +390,12 @@ impl Agent for CopilotAgent {
         )?;
 
         // Same ordering invariant as `plan`: after the session wrapper, so
-        // auth/limit errors keep precedence over the receipt verdict (D7).
-        self.check_builtin_mcps(&r.stdout)
+        // auth errors keep precedence over the receipt verdict (D7). The LIMIT
+        // half of that precedence is carried by `require_receipt`, not by
+        // ordering: a limit is classified below, so fail-closing here on a run
+        // that died before emitting the receipt would overwrite `Limit`/`Timeout`
+        // with "receipt missing". A CONNECTED server still fails unconditionally.
+        self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
             .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
@@ -505,22 +509,40 @@ mod tests {
         );
         let strict = CopilotAgent::new(None, PathBuf::from("/run"));
         let err = strict
-            .check_builtin_mcps(stream)
+            .check_builtin_mcps(stream, true)
             .expect_err("a connected builtin must fail the run by default");
         assert!(err.to_string().contains("github-mcp-server"), "{err}");
 
         let permissive =
             CopilotAgent::new(None, PathBuf::from("/run")).with_allow_builtin_mcps(true);
         assert!(
-            permissive.check_builtin_mcps(stream).is_ok(),
+            permissive.check_builtin_mcps(stream, true).is_ok(),
             "the operator's explicit hatch must suppress the failure"
         );
         // …and the hatch does not blanket-suppress: it is not a "skip all checks"
         // switch for a stream that never carried a receipt either way.
-        assert!(permissive.check_builtin_mcps("").is_ok());
+        assert!(permissive.check_builtin_mcps("", true).is_ok());
         assert!(
-            strict.check_builtin_mcps("").is_err(),
+            strict.check_builtin_mcps("", true).is_err(),
             "an absent receipt still fails closed by default"
+        );
+    }
+
+    /// The guard is only worth its tests if it is actually WIRED. Every D7 test
+    /// calls the predicate directly, and no test here builds a `Workspace`, so
+    /// `plan`/`execute` are invisible to the suite — deleting both call sites
+    /// would leave everything green and silently turn ADR-0041 D7 into a no-op.
+    /// This pins the call sites in the source, the same mechanism
+    /// `no_direct_command_new` and `runstate/capture.rs` use. Fragments are
+    /// assembled with `concat!` so the assertion cannot match ITSELF.
+    #[test]
+    fn the_receipt_guard_is_wired_into_both_phases() {
+        let src = include_str!("lib.rs");
+        let call = concat!("self.check_builtin_mcps(", "&r.stdout, r.exited_cleanly)");
+        assert_eq!(
+            src.matches(call).count(),
+            2,
+            "D7's guard must be called on BOTH the plan and the execute path"
         );
     }
 
