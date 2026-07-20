@@ -594,7 +594,7 @@ pub(crate) enum ProtocolGate {
 }
 
 /// Deterministic protocol lint (ADR-0015): before anything else, structurally
-/// lint the plan the executor claims is finished — every step ticked, the
+/// lint the plan the executor claims is finished — no step left open, the
 /// charter's closing sections present, no planner placeholder left in the
 /// ledger. Presence and shape only, never truthfulness. On a violation the
 /// session is handed back to the executor ONCE via `protocol-failure.md` (the

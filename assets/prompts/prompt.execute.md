@@ -107,7 +107,11 @@ issue with the failure report published for the human reviewer.
      `- [!]` is legitimate only for a step whose verification you ATTEMPTED and
      whose literal blocker (or surprise) is recorded under `## Notes &
      decisions` — the same bar as a `[review-only]` downgrade. A step marked
-     `- [!]` with no recorded attempt is a silent tick in disguise.
+     `- [!]` with no recorded attempt is a silent tick in disguise, and the
+     shape is enforced: the completion lint REJECTS a bare `- [!]` — the step
+     line itself must end with the reason, `— blocked: <the literal blocker>`
+     or `— noticed: <the surprise>`, and a malformed one costs you the
+     protocol bounce.
    - BATCH tightly-coupled steps: when 2–3 consecutive steps change the same
      functions, or one produces exactly what the next consumes (add variant →
      map it → wire it), implement the group and pay ONE format+test cycle and
@@ -130,7 +134,8 @@ issue with the failure report published for the human reviewer.
        RALPHY_DONE_EXIT
 
    COMPLETION LINT: the runner accepts the token only after a deterministic
-   lint of `.ralphy/plan.md` — no step left `- [ ]`, `## Handoff`, `## Plan
+   lint of `.ralphy/plan.md` — no step left `- [ ]`, every `- [!]` carrying
+   its inline `— blocked:`/`— noticed:` reason, `## Handoff`, `## Plan
    friction`, and `## Self-review findings` present with real content, and no
    planner placeholder `evidence:` text left in the `## Acceptance ledger`.
    Each artifact is specified in its own section below; complete them all

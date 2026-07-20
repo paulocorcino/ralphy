@@ -291,7 +291,8 @@ on one.
   the probe, the command, the artifact — and never restate executor
   bookkeeping (done-token, checkbox, or ledger-tag policy) inside a step's
   text: the executor prompt owns it, and a step whose recorded attempt fails
-  ends `- [!]`, which does not hold the token.
+  ends `- [!]` with its reason inline on the step line
+  (`— blocked: <the literal error>`), which does not hold the token.
 - Anchor every claim about existing code, not just steps: any "already
   exists / already present" statement in `## Feasible` or `## Decisions` must
   cite the file and function you read in THIS pass. Before planning, check

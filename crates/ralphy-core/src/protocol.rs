@@ -3,7 +3,7 @@
 //! When the executor signals completion (the adapter-defined done sentinel),
 //! the runner runs these structural checks over the plan before accepting the
 //! self-report. The lint asserts
-//! PRESENCE AND SHAPE only — every step ticked, the charter's closing sections
+//! PRESENCE AND SHAPE only — no step left open, the charter's closing sections
 //! written, no planner placeholder left in the acceptance ledger. It never
 //! judges the truthfulness of what a section says; that stays with the human at
 //! merge. Pure functions over markdown strings — no I/O, no `gh` calls.
@@ -47,6 +47,9 @@ impl ProtocolReport {
 /// Run the structural protocol lint over a plan markdown (ADR-0015):
 ///   - every `## Steps` checkbox is resolved — no `- [ ]` left (`- [x]`
 ///     checked and `- [!]` noticed both count as resolved);
+///   - every `- [!]` noticed step carries its reason inline on the step line
+///     (`— blocked: <text>` or `— noticed: <text>`) — a bare `- [!]` would be
+///     a silent tick in disguise;
 ///   - `## Handoff` and `## Plan friction` sections present and non-blank;
 ///   - `## Self-review findings` present when the steps carry a self-review
 ///     step (the charter forbids ticking that step without the artifact);
@@ -61,6 +64,17 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
     let unticked = steps
         .lines()
         .filter(|l| l.trim_start().starts_with("- [ ]"))
+        .count();
+
+    // A noticed step resolves the open-step check, but only with its reason
+    // inline on the same line — the attempted verification's literal blocker
+    // (or the surprise). Shape only: any non-empty text after the tag passes.
+    let reason_re =
+        Regex::new(r"(?i)(?:\u{2014}|--)\s*(?:blocked|noticed):\s*\S").expect("valid regex");
+    let bare_noticed = steps
+        .lines()
+        .filter(|l| l.trim_start().starts_with("- [!]"))
+        .filter(|l| !reason_re.is_match(l))
         .count();
 
     let handoff_present = !section(plan_md, r"(?im)^##\s+Handoff\s*$")
@@ -88,9 +102,19 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
     ProtocolReport {
         checks: vec![
             ProtocolCheck {
-                label: "every plan step ticked",
+                label: "no plan step left open",
                 passed: unticked == 0,
                 detail: (unticked > 0).then(|| format!("{unticked} step(s) still `- [ ]`")),
+            },
+            ProtocolCheck {
+                label: "every `- [!]` noticed step carries its inline reason",
+                passed: bare_noticed == 0,
+                detail: (bare_noticed > 0).then(|| {
+                    format!(
+                        "{bare_noticed} `- [!]` step(s) without an inline \
+                         `\u{2014} blocked:`/`\u{2014} noticed:` reason"
+                    )
+                }),
             },
             ProtocolCheck {
                 label: "## Handoff present",
@@ -185,6 +209,10 @@ pub fn failure_brief(stamp: &str, report: &ProtocolReport, done_signal: &str) ->
         "\nFix each failed check HONESTLY, then emit `{done_signal}` again:\n\
          - Tick a step `- [x]` ONLY when its work is genuinely done and committed; if \
            work remains, finish it (or split the step and finish the rest) first.\n\
+         - A `- [!]` noticed step must end with its reason on the SAME line \
+           (`\u{2014} blocked: <the literal error>` or `\u{2014} noticed: <the surprise>`), \
+           backed by an attempt recorded under `## Notes & decisions` \u{2014} never use \
+           `- [!]` to dodge work a command could still verify.\n\
          - Write any missing `## Handoff` / `## Plan friction` / `## Self-review \
            findings` section with real content, as the charter specifies — not filler.\n\
          - Replace planner placeholder `evidence:` text in the `## Acceptance ledger` \
@@ -213,6 +241,7 @@ mod tests {
 
 ## Steps
 - [x] do the thing
+- [!] manual scrollback check \u{2014} blocked: headless harness, no terminal window
 - [x] Self-review: spawn the reviewer skill
 - [x] green-build gate
 
@@ -238,7 +267,7 @@ mod tests {
     fn clean_plan_passes_every_check() {
         let report = lint(CLEAN_PLAN);
         assert!(report.passed(), "failed: {:?}", report.failed_labels());
-        assert_eq!(report.checks.len(), 5);
+        assert_eq!(report.checks.len(), 6);
     }
 
     #[test]
@@ -246,9 +275,50 @@ mod tests {
         let md = CLEAN_PLAN.replace("- [x] do the thing", "- [ ] do the thing");
         let report = lint(&md);
         assert!(!report.passed());
-        assert_eq!(report.failed_labels(), vec!["every plan step ticked"]);
+        assert_eq!(report.failed_labels(), vec!["no plan step left open"]);
         let check = &report.checks[0];
         assert!(check.detail.as_deref().unwrap().contains("1 step(s)"));
+    }
+
+    #[test]
+    fn bare_noticed_step_fails_reasoned_one_passes() {
+        // A `- [!]` with no inline reason is a silent tick in disguise.
+        let md = CLEAN_PLAN.replace(
+            "- [!] manual scrollback check \u{2014} blocked: headless harness, no terminal window",
+            "- [!] manual scrollback check",
+        );
+        let report = lint(&md);
+        assert_eq!(
+            report.failed_labels(),
+            vec!["every `- [!]` noticed step carries its inline reason"]
+        );
+        assert!(report.checks[1]
+            .detail
+            .as_deref()
+            .unwrap()
+            .contains("1 `- [!]` step(s)"));
+
+        // Both tags and both dash spellings pass; the reason text itself is
+        // never judged (shape only).
+        for reason in [
+            "\u{2014} blocked: no interactive terminal in this harness",
+            "\u{2014} noticed: width table says 1, conhost renders 2",
+            "-- blocked: docker daemon unreachable",
+            "-- Noticed: flaky only on Windows",
+        ] {
+            let ok = CLEAN_PLAN.replace(
+                "\u{2014} blocked: headless harness, no terminal window",
+                reason,
+            );
+            assert!(lint(&ok).passed(), "should pass with reason: {reason}");
+        }
+
+        // A tag with nothing after it is still bare.
+        let empty = CLEAN_PLAN.replace(
+            "\u{2014} blocked: headless harness, no terminal window",
+            "\u{2014} blocked:",
+        );
+        assert!(!lint(&empty).passed(), "empty reason must fail");
     }
 
     #[test]
@@ -350,11 +420,11 @@ mod tests {
     fn comment_block_marks_pass_fail_and_warns_on_violation() {
         let clean = comment_block(&lint(CLEAN_PLAN));
         assert!(clean.starts_with("## Protocol lint"));
-        assert!(clean.contains("\u{2713} every plan step ticked"));
+        assert!(clean.contains("\u{2713} no plan step left open"));
         assert!(!clean.contains('\u{26a0}'), "no warning on a clean lint");
 
         let dirty = comment_block(&lint("## Steps\n- [ ] never done\n"));
-        assert!(dirty.contains("\u{2717} every plan step ticked"));
+        assert!(dirty.contains("\u{2717} no plan step left open"));
         assert!(
             dirty.contains('\u{26a0}'),
             "violation close carries the warning"
@@ -367,7 +437,7 @@ mod tests {
         let report = lint("## Steps\n- [ ] pending\n");
         let brief = failure_brief("stamp-7", &report, "DONE_TOKEN");
         assert!(brief.contains("Ralphy run stamp-7"));
-        assert!(brief.contains("\u{2717} every plan step ticked"));
+        assert!(brief.contains("\u{2717} no plan step left open"));
         // The brief quotes the injected completion token, not a hardcoded one.
         assert!(brief.contains("`DONE_TOKEN`"));
         assert!(brief.contains("HONESTLY"));
