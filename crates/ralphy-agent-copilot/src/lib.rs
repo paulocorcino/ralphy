@@ -27,6 +27,7 @@ use tracing::info;
 mod auth;
 mod catalog;
 mod command;
+mod effort;
 mod outcome;
 mod settings;
 mod usage;
