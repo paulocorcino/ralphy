@@ -357,6 +357,24 @@ mod tests {
         assert_eq!(n, 29, "this slice must introduce no new run flag");
     }
 
+    /// The effort clamp is persisted-only too: `copilot.plan_effort` /
+    /// `copilot.exec_effort` are `settings.json` keys, and whether Ralphy grows an
+    /// adapter-wide effort flag is #227's open question, not this slice's.
+    #[test]
+    fn no_new_run_flags_for_copilot_effort() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        let run = cli
+            .get_subcommands()
+            .find(|s| s.get_name() == "run")
+            .expect("the `run` subcommand must be registered");
+        let n = run
+            .get_arguments()
+            .filter(|a| a.get_long().is_some())
+            .count();
+        assert_eq!(n, 29, "the effort clamp must introduce no new run flag");
+    }
+
     #[test]
     fn init_subcommand_is_registered() {
         use clap::CommandFactory;

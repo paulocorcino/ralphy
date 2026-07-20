@@ -5,10 +5,14 @@
 //! `branch_mode`, the Claude-only run defaults under `claude.*`
 //! (`plan_model`, `plan_effort`, `default_exec_model`, `exec_effort`,
 //! `max_minutes_per_issue`), and the Copilot per-phase model overrides under
-//! `copilot.*` (`plan_model`, `exec_model`, #232). The model/effort/budget
-//! knobs are Claude-only today — a Codex equivalent is deferred. Each resolves
-//! with the same precedence: per-run flag > `settings.json` > hardcoded default
-//! (Copilot's default is `None`, omitting `--model`).
+//! `copilot.*` (`plan_model`, `exec_model`, #232; `plan_effort`, `exec_effort`,
+//! #233 — a requested level, CLAMPED per model by the adapter before it reaches
+//! argv). The budget knob stays Claude-only today — a Codex equivalent is
+//! deferred. Each resolves with the same precedence: per-run flag then
+//! `settings.json` then a hardcoded default — except the two Copilot effort keys,
+//! which have no flag at all (#227 owns whether `--plan-effort`/`--exec-effort`
+//! become every adapter's vocabulary). Copilot's default is `None`, omitting the
+//! flag.
 
 use std::path::PathBuf;
 
@@ -100,6 +104,8 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.max_minutes_per_issue",
     "copilot.plan_model",
     "copilot.exec_model",
+    "copilot.plan_effort",
+    "copilot.exec_effort",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -219,6 +225,8 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         }
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = Some(value.to_owned()))?,
+        "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = Some(value.to_owned()))?,
+        "copilot.exec_effort" => with_copilot(&mut s, |c| c.exec_effort = Some(value.to_owned()))?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -255,6 +263,8 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
+        "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,
+        "copilot.exec_effort" => with_copilot(&mut s, |c| c.exec_effort = None)?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -294,6 +304,8 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     }
     print_str("copilot.plan_model", copilot.plan_model);
     print_str("copilot.exec_model", copilot.exec_model);
+    print_str("copilot.plan_effort", copilot.plan_effort);
+    print_str("copilot.exec_effort", copilot.exec_effort);
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -342,6 +354,8 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
         "copilot.plan_model": copilot.plan_model,
         "copilot.exec_model": copilot.exec_model,
+        "copilot.plan_effort": copilot.plan_effort,
+        "copilot.exec_effort": copilot.exec_effort,
     }))
 }
 
@@ -509,6 +523,34 @@ mod tests {
         let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
         assert_eq!(c.plan_model, None);
         assert_eq!(c.exec_model, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The two effort keys land in the same `copilot` section and surface through
+    /// `config_json` — the shape the daemon's `config` verb reads.
+    #[test]
+    fn copilot_effort_config_round_trip() {
+        let (ws, dir) = tmp_ws("copilot-effort-round-trip");
+
+        set(&ws, "copilot.plan_effort", "high").unwrap();
+        set(&ws, "copilot.exec_effort", "low").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_effort.as_deref(), Some("high"));
+        assert_eq!(c.exec_effort.as_deref(), Some("low"));
+        let j = config_json(&ws).unwrap();
+        assert_eq!(j["copilot.plan_effort"], serde_json::json!("high"));
+        assert_eq!(j["copilot.exec_effort"], serde_json::json!("low"));
+
+        unset(&ws, "copilot.plan_effort").unwrap();
+        unset(&ws, "copilot.exec_effort").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_effort, None);
+        assert_eq!(c.exec_effort, None);
+        let j = config_json(&ws).unwrap();
+        assert_eq!(j["copilot.plan_effort"], serde_json::Value::Null);
 
         fs::remove_dir_all(&dir).ok();
     }

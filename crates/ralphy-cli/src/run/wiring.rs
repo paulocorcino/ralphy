@@ -39,6 +39,12 @@ pub(crate) struct ResolvedClaude {
 pub(crate) struct ResolvedCopilot {
     pub(crate) plan_model: Option<String>,
     pub(crate) exec_model: Option<String>,
+    /// The per-phase reasoning-effort REQUESTS (ADR-0041 D5a). Persisted-only —
+    /// there is no `--*-effort` flag for Copilot: whether Ralphy's existing
+    /// `--plan-effort`/`--exec-effort` become every adapter's vocabulary is #227's
+    /// open question, and the adapter clamps whatever arrives here per model.
+    pub(crate) plan_effort: Option<String>,
+    pub(crate) exec_effort: Option<String>,
 }
 
 /// Resolve the two Copilot per-phase model overrides (ADR-0041 D4). Each phase
@@ -53,6 +59,8 @@ pub(crate) fn resolve_copilot(
     ResolvedCopilot {
         plan_model: config::resolve_optional_model(plan_flag, persisted.plan_model.clone()),
         exec_model: config::resolve_optional_model(exec_flag, persisted.exec_model.clone()),
+        plan_effort: persisted.plan_effort.clone(),
+        exec_effort: persisted.exec_effort.clone(),
     }
 }
 
@@ -175,6 +183,8 @@ pub(crate) fn build_agent(
         CliAgent::Copilot => Box::new(
             CopilotAgent::new(copilot.exec_model.clone(), run_dir)
                 .with_plan_model(copilot.plan_model.clone())
+                .with_plan_effort(copilot.plan_effort.clone())
+                .with_exec_effort(copilot.exec_effort.clone())
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
@@ -465,5 +475,27 @@ mod tests {
         );
         assert_eq!(resolved.plan_model, Some("p".into()));
         assert_eq!(resolved.exec_model, Some("e".into()));
+    }
+
+    /// The effort axis is persisted-only: the two model flags must not leak into
+    /// it, and an unset section carries no effort (#227 owns the flag question).
+    #[test]
+    fn resolve_copilot_effort_comes_from_settings_only() {
+        let persisted = ralphy_agent_copilot::CopilotSettings {
+            plan_effort: Some("high".into()),
+            exec_effort: Some("low".into()),
+            ..Default::default()
+        };
+        let resolved = resolve_copilot(Some("p".into()), Some("e".into()), &persisted);
+        assert_eq!(resolved.plan_effort, Some("high".into()));
+        assert_eq!(resolved.exec_effort, Some("low".into()));
+
+        let bare = resolve_copilot(
+            Some("p".into()),
+            Some("e".into()),
+            &ralphy_agent_copilot::CopilotSettings::default(),
+        );
+        assert_eq!(bare.plan_effort, None, "a model flag is not an effort");
+        assert_eq!(bare.exec_effort, None);
     }
 }
