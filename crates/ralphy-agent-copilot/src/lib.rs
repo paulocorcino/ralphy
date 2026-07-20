@@ -31,6 +31,7 @@ mod effort;
 mod guards;
 mod outcome;
 mod settings;
+mod skills;
 mod usage;
 
 /// The free model catalog the preflight learns from one `copilot` subprocess
