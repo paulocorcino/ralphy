@@ -51,9 +51,9 @@ pub use effort::is_known_effort;
 
 /// `true` (ADR-0041 D12): `copilot --attachment <path>` attaches an image or
 /// native document to the initial prompt in non-interactive mode, so a triage
-/// attachment fetched per ADR-0025 §4 has a real delivery channel. The flag is
-/// unused in this slice; the constant advertises the capability the later triage
-/// slice will exercise.
+/// attachment fetched per ADR-0025 §4 has a real delivery channel.
+/// `build_copilot_command` emits one `--attachment <path>` per image; the
+/// triage/`tasks.rs` slice is what will supply a non-empty slice.
 pub const ACCEPTS_IMAGES: bool = true;
 
 use auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
@@ -297,6 +297,7 @@ impl Agent for CopilotAgent {
                 effort.as_deref(),
                 ws.repo_root(),
                 self.allow_builtin_mcps,
+                &[],
             );
             ralphy_core::emit::planning(
                 "copilot",
@@ -397,6 +398,7 @@ impl Agent for CopilotAgent {
                 effort.as_deref(),
                 ws.repo_root(),
                 self.allow_builtin_mcps,
+                &[],
             );
             ralphy_core::emit::executing(
                 "copilot",
@@ -656,6 +658,7 @@ mod tests {
             None,
             std::path::Path::new("/repo"),
             false,
+            &[],
         );
         let args = argv(&cmd);
         let i = args.iter().position(|a| a == "--model").unwrap();
@@ -672,6 +675,7 @@ mod tests {
             None,
             std::path::Path::new("/repo"),
             false,
+            &[],
         );
         let args = argv(&cmd);
         let i = args.iter().position(|a| a == "--model").unwrap();
@@ -688,6 +692,7 @@ mod tests {
                 None,
                 std::path::Path::new("/repo"),
                 false,
+                &[],
             );
             let args = argv(&cmd);
             assert!(!args.iter().any(|a| a == "--model"), "argv: {args:?}");
@@ -720,6 +725,7 @@ mod tests {
             effort.as_deref(),
             std::path::Path::new("/repo"),
             false,
+            &[],
         );
         let args = argv(&cmd);
         let i = args
@@ -745,6 +751,7 @@ mod tests {
                 effort.as_deref(),
                 std::path::Path::new("/repo"),
                 false,
+                &[],
             );
             let args = argv(&cmd);
             assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");

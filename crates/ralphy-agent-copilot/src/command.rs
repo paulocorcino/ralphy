@@ -2,7 +2,7 @@
 //! argv, mints the session id, and shrinks the blast radius Copilot ships with
 //! on by default (ADR-0041 D7/D8).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use ralphy_adapter_support::resolve_program;
@@ -61,12 +61,16 @@ pub(crate) fn mint_session_id() -> String {
 /// band — the D7 receipt (`session.mcp_servers_loaded` must report every builtin
 /// server off, and an absent receipt fails closed) and D11's `continueOnAutoMode`,
 /// checked as a preflight before any child is spawned.
+///
+/// `images` (D12): one `--attachment <path>` per entry, valid only in
+/// non-interactive mode (which is Ralphy's mode); an empty slice emits nothing.
 pub(crate) fn build_copilot_command(
     session_id: &str,
     model: Option<&str>,
     effort: Option<&str>,
     work_dir: &Path,
     allow_builtin_mcps: bool,
+    images: &[PathBuf],
 ) -> Command {
     let mut cmd = Command::new(resolve_program("copilot"));
     cmd.current_dir(work_dir)
@@ -87,6 +91,9 @@ pub(crate) fn build_copilot_command(
     }
     if let Some(e) = effort {
         cmd.arg("--effort").arg(e);
+    }
+    for p in images {
+        cmd.arg("--attachment").arg(p);
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -124,7 +131,7 @@ mod tests {
     #[test]
     fn defaults_are_unchanged_from_229() {
         let id = mint_session_id();
-        let cmd = build_copilot_command(&id, None, None, Path::new("/repo"), false);
+        let cmd = build_copilot_command(&id, None, None, Path::new("/repo"), false, &[]);
         assert_eq!(stem(&cmd), "copilot");
 
         let args = argv(&cmd);
@@ -185,6 +192,7 @@ mod tests {
             None,
             Path::new("/repo"),
             false,
+            &[],
         );
         let args = argv(&cmd);
         let i = args
@@ -207,6 +215,7 @@ mod tests {
             Some("high"),
             Path::new("/repo"),
             false,
+            &[],
         );
         let args = argv(&cmd);
         let i = args
@@ -221,7 +230,7 @@ mod tests {
     /// flags are not negotiable.
     #[test]
     fn escape_hatch_drops_disable_builtin_mcps_from_argv() {
-        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), true);
+        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), true, &[]);
         let args = argv(&cmd);
         assert!(
             !args.iter().any(|a| a == "--disable-builtin-mcps"),
@@ -238,6 +247,37 @@ mod tests {
                 "the hatch must not widen {flag}: {args:?}"
             );
         }
+    }
+
+    /// D12: one `--attachment <path>` per image, in order, alongside the D7
+    /// blast-radius flags.
+    #[test]
+    fn build_command_attaches_each_image() {
+        let images = [PathBuf::from("/t/a.png"), PathBuf::from("/t/b.png")];
+        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), false, &images);
+        let args = argv(&cmd);
+        assert_eq!(
+            args.iter().filter(|a| *a == "--attachment").count(),
+            2,
+            "argv: {args:?}"
+        );
+        let positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "--attachment")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(args[positions[0] + 1], "/t/a.png", "argv: {args:?}");
+        assert_eq!(args[positions[1] + 1], "/t/b.png", "argv: {args:?}");
+        assert!(args.iter().any(|a| a == "--no-ask-user"), "argv: {args:?}");
+    }
+
+    /// D12: an empty slice emits no `--attachment` at all.
+    #[test]
+    fn build_command_no_images_emits_no_attachment_flag() {
+        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), false, &[]);
+        let args = argv(&cmd);
+        assert!(!args.iter().any(|a| a == "--attachment"), "argv: {args:?}");
     }
 
     #[test]
