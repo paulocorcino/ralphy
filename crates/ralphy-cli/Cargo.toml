@@ -32,6 +32,7 @@ unicode-width = "0.2"
 ralphy-core.workspace = true
 ralphy-agent-claude.workspace = true
 ralphy-agent-codex.workspace = true
+ralphy-agent-copilot.workspace = true
 ralphy-agent-kimi.workspace = true
 ralphy-agent-opencode.workspace = true
 ralphy-adapter-support.workspace = true

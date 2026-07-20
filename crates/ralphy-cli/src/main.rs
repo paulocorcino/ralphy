@@ -70,7 +70,7 @@ pub(crate) fn consolidate_defaults(
 ) -> (Option<&'static str>, Option<&'static str>) {
     match agent {
         CliAgent::Claude => (Some("opus"), Some("medium")),
-        CliAgent::Codex | CliAgent::Kimi | CliAgent::OpenCode => (None, None),
+        CliAgent::Codex | CliAgent::Copilot | CliAgent::Kimi | CliAgent::OpenCode => (None, None),
     }
 }
 
@@ -94,6 +94,10 @@ fn consolidate_with_agent(
         CliAgent::Codex => {
             ralphy_agent_codex::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
+        // `tasks.rs` is a later slice (ADR-0040 Tier 1): the variant makes this
+        // match non-exhaustive at compile time, and an honest bail beats silently
+        // falling back to another vendor.
+        CliAgent::Copilot => anyhow::bail!("the copilot adapter does not support one-shot consolidate yet (tasks.rs is a later slice, ADR-0040 Tier 1)"),
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }

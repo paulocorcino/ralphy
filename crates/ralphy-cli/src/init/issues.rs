@@ -244,6 +244,9 @@ pub(crate) fn draft_with_agent(
             ralphy_agent_codex::draft_issues(repo, out_path, req, model, effort, timeout)
         }
 
+        // `tasks.rs` is a later slice (ADR-0040 Tier 1).
+        Agent::Copilot => anyhow::bail!("the copilot adapter does not support one-shot draft-issues yet (tasks.rs is a later slice, ADR-0040 Tier 1)"),
+
         Agent::Kimi => ralphy_agent_kimi::draft_issues(repo, out_path, req, model, effort, timeout),
 
         Agent::Opencode => {

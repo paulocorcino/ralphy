@@ -140,6 +140,8 @@ fn triage_with_agent(
         Agent::Codex => {
             ralphy_agent_codex::triage_issues(repo, out_path, req, model, effort, timeout)
         }
+        // `tasks.rs` is a later slice (ADR-0040 Tier 1).
+        Agent::Copilot => anyhow::bail!("the copilot adapter does not support one-shot triage yet (tasks.rs is a later slice, ADR-0040 Tier 1)"),
         Agent::Kimi => {
             ralphy_agent_kimi::triage_issues(repo, out_path, req, model, effort, timeout)
         }

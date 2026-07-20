@@ -9,17 +9,25 @@ use ralphy_core::git;
 pub enum Agent {
     Claude,
     Codex,
+    Copilot,
     Kimi,
     Opencode,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 4] = [Agent::Claude, Agent::Codex, Agent::Kimi, Agent::Opencode];
+    pub const ALL: [Agent; 5] = [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Copilot,
+        Agent::Kimi,
+        Agent::Opencode,
+    ];
 
     pub fn cli_name(&self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            Agent::Copilot => "copilot",
             Agent::Kimi => "kimi",
             Agent::Opencode => "opencode",
         }
@@ -32,6 +40,7 @@ impl Agent {
         match self {
             Agent::Claude => ralphy_agent_claude::ACCEPTS_IMAGES,
             Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
+            Agent::Copilot => ralphy_agent_copilot::ACCEPTS_IMAGES,
             Agent::Kimi => ralphy_agent_kimi::ACCEPTS_IMAGES,
             Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
         }
@@ -176,6 +185,19 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
             cmd.env_remove("OPENAI_API_KEY");
         }
 
+        Agent::Copilot => {
+            // `--allow-all-tools` is REQUIRED for non-interactive mode; without it
+            // the probe would hang waiting for a permission prompt. Logged out →
+            // exit 1 (`No authentication information found.` on stderr).
+            cmd.args(["-p", hello, "--allow-all-tools", "--output-format", "json"]);
+            // The probe must prove the OPERATOR's `copilot login` session, not an
+            // ambient token: any of these three would authenticate the child and
+            // make a logged-out operator look logged in (spike §5, ADR-0041 D8).
+            cmd.env_remove("COPILOT_GITHUB_TOKEN");
+            cmd.env_remove("GH_TOKEN");
+            cmd.env_remove("GITHUB_TOKEN");
+        }
+
         Agent::Kimi => {
             // `hello` is passed as the VALUE of `-p`, never a positional word:
             // Typer parses a bare positional as a subcommand (`No such command`,
@@ -229,8 +251,12 @@ mod tests {
     fn accepts_images_reflects_crate_consts() {
         assert!(Agent::Claude.accepts_images());
         assert!(Agent::Codex.accepts_images());
+        assert!(Agent::Copilot.accepts_images());
         assert!(!Agent::Kimi.accepts_images());
         assert!(!Agent::Opencode.accepts_images());
+        // The hardcoded ALL array length must track the enum: a new variant that
+        // never joins ALL is invisible to `ralphy init`'s agent report.
+        assert_eq!(Agent::ALL.len(), 5);
     }
 
     // (a) All-green: evaluate_gate returns empty vec when ≥1 agent is logged in.

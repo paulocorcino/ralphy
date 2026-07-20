@@ -139,6 +139,10 @@ fn diagnose_with_agent(
             ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
 
+        // `tasks.rs` is a later slice (ADR-0040 Tier 1) — bail rather than
+        // silently diagnosing with another vendor.
+        Agent::Copilot => anyhow::bail!("the copilot adapter does not support one-shot diagnose yet (tasks.rs is a later slice, ADR-0040 Tier 1)"),
+
         Agent::Kimi => ralphy_agent_kimi::diagnose_repo(repo, neutral_cwd, model, effort, timeout),
 
         Agent::Opencode => {
@@ -208,7 +212,7 @@ fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> 
 fn init_model_for(agent: Agent) -> Option<&'static str> {
     match agent {
         Agent::Claude => Some("sonnet"),
-        Agent::Codex | Agent::Opencode | Agent::Kimi => None,
+        Agent::Codex | Agent::Copilot | Agent::Opencode | Agent::Kimi => None,
     }
 }
 

@@ -1620,6 +1620,7 @@ dependencies = [
  "ralphy-adapter-support",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
+ "ralphy-agent-copilot",
  "ralphy-agent-kimi",
  "ralphy-agent-opencode",
  "ralphy-core",

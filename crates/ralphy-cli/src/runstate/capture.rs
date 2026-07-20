@@ -428,15 +428,16 @@ mod tests {
     /// per site.
     ///
     /// The round-trips in `super::super::roundtrip` prove the two HELPERS; they
-    /// cannot prove that each of the nine callers passes the right arguments —
-    /// there are 9 sites and only 2 helpers. Two drifts live in exactly that gap
+    /// cannot prove that each caller passes the right arguments — the table below
+    /// is the authoritative site count, against only 2 helpers. Two drifts live in
+    /// exactly that gap
     /// and compile silently:
     ///
     /// * `model` and `effort` are ADJACENT `&str` parameters, so swapping them at
     ///   one site labels that adapter's phase with its effort. Fragments are
     ///   matched IN ORDER, which is what pins argument POSITION — the named
     ///   `model = …` / `effort = …` bindings the pre-Fase-1b `info!`s carried.
-    /// * only the 2 claude sites pass a real `budget_min`; the other 7 pass `0`.
+    /// * only the 2 claude sites pass a real `budget_min`; every other site passes `0`.
     ///   Editing a claude site down to `0` — it then reads exactly like the codex
     ///   line two files over — silently zeroes the per-issue countdown in the TUI
     ///   and the Telegram card (both files carry a "keep stable" comment saying so).
@@ -487,6 +488,22 @@ mod tests {
             1,
             &["\"codex exec\"", "&model", "DEFAULT_CODEX_EFFORT"],
             &["\"codex exec\"", "0", "&model", "effort"],
+        ),
+        (
+            "crates/ralphy-agent-copilot/src/lib.rs",
+            1,
+            1,
+            &[
+                "\"copilot\"",
+                "self.model.as_deref().unwrap_or(\"\")",
+                "\"\"",
+            ],
+            &[
+                "\"copilot\"",
+                "0",
+                "self.model.as_deref().unwrap_or(\"\")",
+                "\"\"",
+            ],
         ),
         (
             "crates/ralphy-agent-kimi/src/lib.rs",
@@ -596,11 +613,13 @@ mod tests {
         "crates/ralphy-cli/src/run/report.rs",
         "crates/ralphy-adapter-support/src/headless.rs",
         "crates/ralphy-agent-claude/src/interactive.rs",
-        // The five adapter sources that owned the nine per-adapter phase strings
-        // until Fase 1b collapsed them into `emit::planning`/`emit::executing`.
+        // The adapter sources that owned the per-adapter phase strings until
+        // Fase 1b collapsed them into `emit::planning`/`emit::executing`, plus
+        // every adapter added since.
         "crates/ralphy-agent-claude/src/lib.rs",
         "crates/ralphy-agent-claude/src/headless.rs",
         "crates/ralphy-agent-codex/src/lib.rs",
+        "crates/ralphy-agent-copilot/src/lib.rs",
         "crates/ralphy-agent-kimi/src/lib.rs",
         "crates/ralphy-agent-opencode/src/lib.rs",
         // The two files that USED to own the shared constants: they are now
