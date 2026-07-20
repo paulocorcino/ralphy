@@ -28,6 +28,12 @@ them here.
   [ADR-0022](./docs/adr/0022-file-split-conventions.md): `foo.rs` + `foo/`
   layout (never `mod.rs`), tests migrate with the code, split by existing
   responsibility only.
+- **English is the canonical written language.** ADRs, docs, GitHub issues and
+  PRs, commit messages and code comments are written in English, whatever
+  language the request arrived in. A conversation with a maintainer may be in
+  any language; the artifact is English. Issues in particular are work orders an
+  agent consumes, and they quote English ADRs, identifiers and paths — prose in
+  a second language makes one document speak two per sentence.
 - **Contributing to this repo:** commit on a branch; a human reviews and merges.
   Do not push or open a PR unless explicitly asked. (This mirrors Ralphy's own
   product ethos — it never pushes and never opens PRs.)
