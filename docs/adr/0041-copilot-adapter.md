@@ -402,6 +402,14 @@ image's pixels. The flag is documented "only valid in non-interactive mode",
 which is precisely Ralphy's mode, and may be repeated. Vision is near-universal
 in the catalog — true for every picker-enabled model but one.
 
+**Enforced** (#236): `build_copilot_command` (`command.rs`) takes an
+`images: &[PathBuf]` parameter and emits `--attachment <path>` once per entry;
+an empty slice emits nothing. Both production call sites (`plan`, `execute`)
+pass `&[]` today — image attachments are fetched only on the triage path
+(`ralphy-cli/src/triage.rs` → `TriageRequest::image_paths`), which Copilot
+reaches through `tasks.rs`, still out of scope. This slice builds the channel;
+the triage/`tasks.rs` slice is what will feed it.
+
 ## What this ADR deliberately does not decide
 
 - **Hooks** as a deterministic completion signal. Event names and payload schema
