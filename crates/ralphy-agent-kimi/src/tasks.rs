@@ -1,4 +1,4 @@
-//! One-shot headless `kimi --print` sessions for the `init`/`triage` flows
+//! One-shot headless `kimi` sessions for the `init`/`triage` flows
 //! (ADR-0012 stages 2 & 8, ADR-0017, ADR-0028) — repo diagnosis, backlog → issues
 //! drafting, and agent-triage drafting. None of these publish to GitHub; the cli
 //! applies the drafted artifact after the operator confirms.
@@ -18,7 +18,7 @@ use ralphy_core::{
 use crate::auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
 use crate::command::{build_kimi_init_command, resolve_init_kimi_model};
 
-/// Run a one-shot headless `kimi --print` repo-diagnosis session (ADR-0012 stage 2)
+/// Run a one-shot headless `kimi` repo-diagnosis session (ADR-0012 stage 2)
 /// from `neutral_cwd` — a directory OUTSIDE the target repo. The target `repo` is
 /// passed as data in the prompt; the session writes its JSON report to
 /// `<neutral_cwd>/diagnosis.json`, which this function reads, validates against
@@ -36,13 +36,13 @@ pub fn diagnose_repo(
     let model = resolve_init_kimi_model(model);
     let prompt = build_diagnose_prompt(repo, &out_path);
 
-    info!(%model, "diagnosing repo with kimi --print");
-    let cmd = build_kimi_init_command(&model, neutral_cwd);
+    info!(%model, "diagnosing repo with kimi");
+    let cmd = build_kimi_init_command(&model, neutral_cwd, &prompt);
     let log_path = neutral_cwd.join("diagnose.log");
     run_init_session(
         JsonSession {
             cmd,
-            prompt: &prompt,
+            prompt: "",
             timeout,
             log_path: &log_path,
             out_path: &out_path,
@@ -63,7 +63,7 @@ pub fn diagnose_repo(
     )
 }
 
-/// Run a one-shot headless `kimi --print` backlog/milestone → issues session
+/// Run a one-shot headless `kimi` backlog/milestone → issues session
 /// (ADR-0012 stage 8). Unlike [`diagnose_repo`] this runs IN the repo cwd — it
 /// needs the repo's domain glossary/ADRs and (on the milestone path) writes a PRD
 /// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
@@ -82,13 +82,13 @@ pub fn draft_issues(
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
 
-    info!(%model, mode = req.mode.as_str(), "drafting issues with kimi --print");
-    let cmd = build_kimi_init_command(&model, repo);
+    info!(%model, mode = req.mode.as_str(), "drafting issues with kimi");
+    let cmd = build_kimi_init_command(&model, repo, &prompt);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     run_init_session(
         JsonSession {
             cmd,
-            prompt: &prompt,
+            prompt: "",
             timeout,
             log_path: &log_path,
             out_path,
@@ -109,9 +109,8 @@ pub fn draft_issues(
     )
 }
 
-/// Run a one-shot headless `kimi --print` knowledge-consolidation session in
-/// `ws`'s repo cwd: pipe the shared consolidation charter on stdin and wait up to
-/// `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
+/// Run a one-shot headless `kimi` knowledge-consolidation session in `ws`'s repo
+/// cwd: pass the shared consolidation charter on argv and wait up to `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
 /// which the caller verifies; the consumed notes are archived by the caller, not
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
 /// can dispatch on the selected agent. `effort` is unused: Kimi has no
@@ -127,12 +126,12 @@ pub fn consolidate_knowledge(
     std::fs::create_dir_all(run_dir).ok();
     let model = resolve_init_kimi_model(model);
 
-    info!(%model, "consolidating knowledge with kimi --print");
-    let cmd = build_kimi_init_command(&model, ws.repo_root());
+    info!(%model, "consolidating knowledge with kimi");
+    let cmd = build_kimi_init_command(&model, ws.repo_root(), PROMPT_CONSOLIDATE);
     run_text_session(
         TextSession {
             cmd,
-            prompt: PROMPT_CONSOLIDATE,
+            prompt: "",
             timeout,
             log_path: &run_dir.join("consolidate.log"),
             spawn_err: "failed to spawn the `kimi` CLI (is it installed and on PATH?)",
@@ -144,7 +143,7 @@ pub fn consolidate_knowledge(
     Ok(())
 }
 
-/// Run a one-shot headless `kimi --print` agent-triage session (ADR-0017). Mirrors
+/// Run a one-shot headless `kimi` agent-triage session (ADR-0017). Mirrors
 /// [`draft_issues`] but drives the triage charter over each `triage-agent` issue's
 /// body + full comment thread, writing a [`TriageDraft`] JSON to `out_path` for
 /// the cli to apply after the operator confirms. Never publishes to GitHub.
@@ -166,13 +165,13 @@ pub fn triage_issues(
         req.attachments_manifest
     );
 
-    info!(%model, "triaging issues with kimi --print");
-    let cmd = build_kimi_init_command(&model, repo);
+    info!(%model, "triaging issues with kimi");
+    let cmd = build_kimi_init_command(&model, repo, &prompt);
     let log_path = repo.join(".ralphy").join("triage.log");
     run_init_session(
         JsonSession {
             cmd,
-            prompt: &prompt,
+            prompt: "",
             timeout,
             log_path: &log_path,
             out_path,

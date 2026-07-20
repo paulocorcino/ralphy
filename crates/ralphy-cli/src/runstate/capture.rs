@@ -509,8 +509,8 @@ mod tests {
             "crates/ralphy-agent-kimi/src/lib.rs",
             1,
             1,
-            &["\"kimi --print\"", "&model", "\"\""],
-            &["\"kimi --print\"", "0", "&model", "\"\""],
+            &["\"kimi\"", "&model", "\"\""],
+            &["\"kimi\"", "0", "&model", "\"\""],
         ),
         (
             "crates/ralphy-agent-opencode/src/lib.rs",

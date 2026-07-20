@@ -1,11 +1,11 @@
-//! The Kimi CLI adapter: drives `kimi --print` behind the core [`Agent`] contract.
+//! The Kimi CLI adapter: drives headless `kimi -p` behind the core [`Agent`] contract.
 //! Everything Kimi-specific — the binary, the model flag, the headless invocation,
 //! the `stream-json` final-text parser, and the signal→[`Outcome`] mapping — is
 //! confined here. See docs/adr/0028.
 //!
 //! Like the Codex and OpenCode adapters (and unlike Claude's live PTY session),
 //! Kimi needs no interactive session: `plan` and `execute` both run headless
-//! `kimi --print` with the charter piped on stdin, and completion is detected from
+//! `kimi -p <charter>` with the charter on argv, and completion is detected from
 //! the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the final
 //! assistant message in Kimi's `stream-json` stream, the process exit code, and a
 //! HEAD-diff commit check — mapped onto the same core [`Outcome`].
@@ -34,8 +34,8 @@ mod tasks;
 mod usage;
 
 /// `false`, settled at validation (ADR-0028 / 0028-kimi-validation). The model
-/// advertises `image_in`/`video_in`, but `kimi --print` exposes **no** attachment
-/// or image flag — its only input is a text/stream-json charter on stdin — so
+/// advertises `image_in`/`video_in`, but headless `kimi` exposes **no** attachment
+/// or image flag — its only input is the `-p` text charter on argv — so
 /// there is no verified multimodal path to deliver a fetched image on. Setting
 /// `true` would make triage attachment-fetch (ADR-0025 §4) pull images the adapter
 /// cannot hand to the CLI. Stays `false` until Kimi ships a `--print` image channel.
@@ -132,13 +132,20 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            ralphy_core::emit::planning("kimi --print", &model, "");
+            let cmd = build_kimi_command(
+                &model,
+                ws.repo_root(),
+                &skills_dir,
+                ralphy_adapter_support::PLAN_CHARTER,
+            );
+            ralphy_core::emit::planning("kimi", &model, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
-            let r = self.run_kimi(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
+            // 0.28 has no stdin prompt channel: the charter rides `-p` on argv and
+            // the piped stdin `HeadlessCall` requires is simply closed empty.
+            let r = self.run_kimi(cmd, "", timeout)?;
             let after = snapshot();
             Ok((r, (before, after)))
         };
@@ -198,11 +205,20 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            ralphy_core::emit::executing("kimi --print", 0, &model, "");
+            // The full charter is too large for the argv ceiling, so it goes to disk
+            // and `-p` carries only the pointer at it (ADR-0028 Amendment (b)).
+            fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
+                .context("writing .ralphy/exec.md")?;
+            let cmd = build_kimi_command(
+                &model,
+                ws.repo_root(),
+                &skills_dir,
+                ralphy_adapter_support::EXEC_CHARTER,
+            );
+            ralphy_core::emit::executing("kimi", 0, &model, "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
-            let r = self.run_kimi(cmd, PROMPT_EXECUTE, timeout)?;
+            let r = self.run_kimi(cmd, "", timeout)?;
             let after = snapshot();
             Ok((r, (before, after)))
         };
@@ -313,6 +329,24 @@ mod tests {
             PROMPT_PLAN_KIMI
         );
         assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_KIMI.len());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// The exec side mirrors the plan side: the full charter goes to
+    /// `.ralphy/exec.md` and only the pointer rides argv.
+    #[test]
+    fn execute_writes_exec_md_charter() {
+        let base = std::env::temp_dir().join(format!("ralphy-kimi-exec-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+
+        let exec_md = ws.ralphy_dir().join("exec.md");
+        fs::write(&exec_md, PROMPT_EXECUTE).unwrap();
+        assert_eq!(fs::read_to_string(&exec_md).unwrap(), PROMPT_EXECUTE);
+        assert!(ralphy_adapter_support::EXEC_CHARTER.len() * 50 < PROMPT_EXECUTE.len());
 
         let _ = fs::remove_dir_all(&base);
     }

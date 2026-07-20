@@ -153,7 +153,7 @@ fn roundtrip_executing() {
 /// sentinel the other 3 adapters emit.
 #[test]
 fn roundtrip_executing_absent_model_and_effort() {
-    let ev = one(|| ralphy_core::emit::executing("kimi --print", 0, "", ""));
+    let ev = one(|| ralphy_core::emit::executing("kimi", 0, "", ""));
     assert_eq!(
         decode(&ev),
         Some(RunEvent::Executing {
