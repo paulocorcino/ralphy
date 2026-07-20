@@ -119,6 +119,31 @@ impl PriceTable {
                 cache_creation: 0.95,
             },
         );
+        // Copilot's catalog ids (ADR-0041 D10). Copilot bills in AI CREDITS, not
+        // tokens; there is no documented nano-AIU→USD rate, so these rows price the
+        // rows at the UNDERLYING vendor's list price — ADR-0034's counterfactual
+        // "what would this have cost on metered API". Indicative, not asserted.
+        // The Anthropic ids Copilot spells with a dot (`claude-haiku-4.5`) need no
+        // row: `resolve`'s dot→dash fallback reuses the family entries above.
+        t.insert(
+            "claude-sonnet-5".to_string(),
+            ModelPrice {
+                input: 3.0,
+                output: 15.0,
+                cache_read: 0.3,
+                cache_creation: 3.75,
+            },
+        );
+        // Copilot's id for Moonshot's K2.7 Code — same K2-family figures as `k2p6`.
+        t.insert(
+            "kimi-k2.7-code".to_string(),
+            ModelPrice {
+                input: 0.95,
+                output: 4.0,
+                cache_read: 0.16,
+                cache_creation: 0.95,
+            },
+        );
         PriceTable(t)
     }
 
@@ -169,10 +194,18 @@ impl PriceTable {
     /// while the table (and Anthropic's published price list) uses the undated
     /// family id, so without this fallback every dated id reports as unpriced
     /// (`~$?`) even when its family is in the table.
+    ///
+    /// A dotted id falls back to its dashed form too: Copilot's catalog spells the
+    /// Anthropic families `claude-haiku-4.5` where the table (and Anthropic) use
+    /// `claude-haiku-4-5` — punctuation only. Normalization never invents a price:
+    /// an id whose dashed form is also absent still resolves to `None`.
     fn resolve(&self, model: &str) -> Option<&ModelPrice> {
+        let stripped = strip_release_date(model);
         self.0
             .get(model)
-            .or_else(|| self.0.get(strip_release_date(model)))
+            .or_else(|| self.0.get(stripped))
+            .or_else(|| self.0.get(&dots_to_dashes(model)))
+            .or_else(|| self.0.get(&dots_to_dashes(stripped)))
     }
 
     /// Load the effective table: the shipped [`defaults`](Self::defaults) overlaid
@@ -211,6 +244,12 @@ fn strip_release_date(model: &str) -> &str {
         Some((head, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => head,
         _ => model,
     }
+}
+
+/// A model id with `.` rewritten to `-`, the punctuation-only difference between
+/// Copilot's catalog ids and the table's family keys.
+fn dots_to_dashes(model: &str) -> String {
+    model.replace('.', "-")
 }
 
 /// Resolve the operator's pricing-override file: `$RALPHY_PRICING_FILE` when set,
@@ -298,6 +337,35 @@ mod tests {
                 .cost_usd("kimi-code/kimi-for-coding", &tokens)
                 .is_some(),
             "the native Kimi adapter's `kimi-code/kimi-for-coding` must be priced (ADR-0028)"
+        );
+    }
+
+    #[test]
+    fn copilot_model_ids_resolve_to_a_price() {
+        // The ids Copilot's catalog reports. `claude-haiku-4.5` differs from the
+        // table's `claude-haiku-4-5` by punctuation only and must price identically
+        // — but normalization must not turn an unknown dotted id into a price.
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        assert!(
+            table.cost_usd("claude-sonnet-5", &tokens).is_some(),
+            "Copilot's account-default `claude-sonnet-5` must be priced"
+        );
+        assert!(
+            table.cost_usd("kimi-k2.7-code", &tokens).is_some(),
+            "Copilot's `kimi-k2.7-code` must be priced"
+        );
+        let dotted = table
+            .cost_usd("claude-haiku-4.5", &tokens)
+            .expect("the dotted Anthropic id resolves via dot→dash");
+        let dashed = table.cost_usd("claude-haiku-4-5", &tokens).unwrap();
+        assert!(
+            (dotted - dashed).abs() < 1e-9,
+            "dotted and dashed forms must price identically: {dotted} vs {dashed}"
+        );
+        assert!(
+            table.cost_usd("zzz-not.real", &tokens).is_none(),
+            "normalization must not price a genuinely unknown model"
         );
     }
 

@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{
     run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg, PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Workspace};
 use tracing::info;
 
 mod auth;
