@@ -1,0 +1,312 @@
+# The Copilot adapter: a fifth vendor that defaults to the operator's own selection
+
+Ralphy gains a fifth agent CLI vendor, `copilot` (GitHub Copilot CLI), as a new
+isolated crate `ralphy-agent-copilot` implementing the same PTY-free `Agent`
+trait ([ADR-0002](./0002-core-agnostic-adapter-boundary.md)). It is selected
+**per run** by `--agent copilot`; the core keeps taking a single `&dyn Agent`
+and never learns which vendor it holds ([ADR-0004](./0004-codex-adapter.md) D1).
+
+The template is **OpenCode, not Codex**. Copilot shares OpenCode's two defining
+traits: a SQLite session store rather than a file tree, and a model axis the
+adapter must *not* decide for the operator. Where Copilot is richer — a minted
+session id, a real terminal envelope, per-call usage rows with prices, an
+in-band receipt for its own kill switches — the adapter takes the win.
+
+Grounded in **GitHub Copilot CLI 1.0.71** on Windows 11, probed hands-on across
+two rounds against `C:\Dev\FinCal`. Full evidence — command surface, stream
+schema, session store, catalog, cost traps — is in
+[docs/research/copilot-cli-adapter-spike.md](../research/copilot-cli-adapter-spike.md);
+this ADR records the decisions, the spike records the observations.
+
+Status: **proposed** — decisions settled, **implementation not started and
+explicitly gated**. Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040;
+applies the [ADR-0040](./0040-agent-adapter-onboarding-contract.md) onboarding
+contract for the first time.
+
+## D1 — Selection is per run, via `--agent copilot`; the core is untouched
+
+`CliAgent` gains a `Copilot` variant and `build_agent` boxes `CopilotAgent` as
+`Box<dyn Agent>`. Same stance as ADR-0004 D1 / ADR-0005 D1 / ADR-0028 D1, not
+re-litigated.
+
+ADR-0040 names the trap and it is load-bearing here: there are **three
+independent agent enums** that share no definition, and
+`crates/ralphy-daemon/src/dispatch.rs::agent_flag` knows only three vendors —
+Kimi was never added, so Kimi is unreachable from the workbench today. Copilot
+must be wired into **all three**, and the pre-existing Kimi gap is tracked
+separately rather than silently fixed here.
+
+## D2 — The prompt goes in on stdin, and this is not negotiable
+
+```
+copilot --allow-all-tools --output-format json --session-id <uuid> \
+        --no-remote --no-remote-export --disable-builtin-mcps --no-ask-user \
+        [--model <id>] [--effort <level>]   < <charter on stdin>
+```
+
+No `-p`. Ralphy's `prompt.execute.md` is 23 884 bytes *before* the issue body is
+appended, against a Windows argv ceiling of ~32 KB — argv is a latent truncation
+bug with no margin. The spike verified stdin end-to-end: a 24 250-byte payload
+piped in returned markers planted on **both** its first and last line, with
+`input_tokens = 31594` in the usage row.
+
+This matches Kimi (ADR-0028 D2), which also feeds the charter on stdin, for a
+different reason. Two of five vendors now require it; a third (Claude) tolerates
+it. Argv is the exception, not the rule.
+
+## D3 — Completion: the sentinel for intent, with a real envelope as the net
+
+Copilot is the only vendor that ends its stream with an unambiguous "the run is
+over" record:
+
+```json
+{"type":"result","sessionId":"…","exitCode":0,
+ "usage":{"premiumRequests":1,"totalApiDurationMs":2919,"codeChanges":{…}}}
+```
+
+The ladder stays the shared one ([ADR-0023](./0023-shared-outcome-classifier.md)):
+
+- `RALPHY_BLOCKED_EXIT <reason>` in the final `assistant.message` → `Blocked`.
+- exit 0 **and** a HEAD-diff commit **and** `RALPHY_DONE_EXIT` → `Done`.
+- the per-issue wall timeout → `Timeout`.
+- anything else → `Stuck`.
+
+The final assistant text is the last `assistant.message` with
+`data.toolRequests: []` — the same shape as Kimi. Records carrying
+`ephemeral: true` are the streaming deltas; **a parser that drops them loses
+nothing.**
+
+### `codeChanges` is a false friend and must not be read as progress
+
+In probe P2 the agent created, staged and committed a file — HEAD advanced,
+`git show --stat` confirms it — and the envelope still reported
+`codeChanges: {linesAdded: 0, linesRemoved: 0, filesModified: []}`, because the
+work went through the **shell** tool rather than the write tool. `codeChanges`
+counts the vendor's own write-tool activity, not repository change. **The
+HEAD-diff `committed` guard remains load-bearing exactly as for the other four
+vendors.** This is the single most dangerous record in Copilot's stream and the
+adapter must never consult it.
+
+## D4 — Model is `Option<String>`, omitted when unset; omission means "the operator's current"
+
+`model: Option<String>`, passed as `--model <id>` only when `Some`. This is the
+OpenCode D4 shape ([ADR-0005](./0005-opencode-adapter.md),
+[ADR-0010](./0010-settings-and-opencode-model-default.md)) reused verbatim,
+including `resolve_opencode_model`'s precedence rule (flag → persisted → `None`).
+It is **not** the Kimi/Codex shape of a hardcoded default id.
+
+Two independent reasons, both evidenced:
+
+1. **A hardcoded id is not portable across plans.** Model pinning is a plan
+   entitlement. On a free account `--model` rejects *every* id including the
+   ones the CLI itself routes to; on a paid account the same flag works. An
+   adapter with a baked-in default works on one and hard-fails **every single
+   run** on the other.
+2. **Omission is the semantics the operator expects.** Probe P3 passed no
+   `--model` and got the account's own default (`[INFO] Using default model:
+   claude-sonnet-5`) with **no `session.auto_mode_resolved` event** — so
+   omitting the flag is not a degraded fallback into auto mode, it is "whatever
+   I have selected is what runs."
+
+So the default posture is: **`--agent copilot` with nothing else runs the
+operator's current model, for both plan and execute.** Pinning is available per
+phase through the CLI flags that *already exist* — `--plan-model`,
+`--exec-model` ([cli.rs](../../crates/ralphy-cli/src/cli.rs)) — and through a
+persisted `CopilotSettings` section, mirroring `ClaudeSettings` field-for-field
+but with `None` defaults instead of hardcoded `opus`/`sonnet`. **No new CLI
+flags are introduced.**
+
+## D5 — Effort is `Option<String>`, omitted when unset; never defaulted
+
+`--effort <level>` only when `Some`. A fixed `medium` — the Codex
+`DEFAULT_CODEX_EFFORT` shape — is **rejected**, because effort is not a
+universal axis:
+
+```
+$ copilot … --model kimi-k2.7-code --effort medium
+Error: Model "kimi-k2.7-code" does not support reasoning effort configuration.
+exit = 1
+$ copilot … --model kimi-k2.7-code          # same run, flag omitted
+exit = 0
+```
+
+Four picker-enabled models — `kimi-k2.7-code`, `claude-haiku-4.5`,
+`claude-sonnet-4.5`, `gemini-2.5-pro` — carry
+`capabilities.supports.reasoning_effort: null` and fail pre-flight on every run
+if the flag is sent.
+
+This is **the same rule ADR-0005 D3 settled for OpenCode's `--variant`** —
+*omitted when unset so the adapter never sends a value the provider rejects* —
+reached independently from a different vendor's evidence. Two vendors, one rule;
+it is now the house default for any optional passthrough knob.
+
+Corollary the adapter must respect: an *unsupported level* on a *supporting*
+model is **silently coerced**, not rejected — `--effort minimal` on
+`claude-sonnet-5` exits 0 and the usage row records `medium`. Only the binary
+"does this model do effort at all" is validated. **The requested effort is not
+necessarily the effort that ran**; `assistant_usage_events.reasoning_effort` is
+the only truth, read post-hoc.
+
+## D6 — No complexity routing in v1
+
+`plan()` returns `recommended_model: None`. Neither routing axis survives
+contact with Copilot:
+
+- Routing to a **model id** is not portable — ids are plan-gated (D4), and the
+  documented list in `copilot help config` demonstrably diverges from the
+  entitled one.
+- Routing to **effort** breaks on the four models that reject the flag (D5).
+
+There is also a cost argument. `request_multiplier` is per-model and
+**independent of the rate card**: `gemini-3.5-flash` billed **14 premium
+requests** for one trivial call while costing *less* per token than
+`claude-sonnet-5`. Cost cannot be inferred from the catalog, so an adapter that
+picks models on the operator's behalf cannot reason about what it is spending.
+
+Consequence for the prompt assets: the Copilot planning charter must **not**
+emit the `## Execution model:` line, or the plan would promise a routing the
+executor ignores. This reuses the existing per-adapter plan-prompt slot
+mechanism — the same one that produced `prompt.plan.opencode.md`
+([ADR-0005](./0005-opencode-adapter.md)) — rather than inventing a mechanism.
+
+Deferred, not rejected: if routing is wanted later, the honest form is to route
+**effort only, gated on the resolved model's catalog entry** — never blind.
+
+## D7 — Blast radius is forced closed by default, asserted in-band, and escapable on purpose
+
+Copilot ships capabilities that violate Ralphy's never-push / never-open-a-PR
+ethos, **on by default**. The sharp edge is the bundled `github-mcp-server`,
+which holds the operator's GitHub credential and lets an agent under a
+`--allow-all-tools` charter **open a PR without ever shelling out to `git
+push`** — bypassing every guard Ralphy has, all of which operate on the working
+tree and the process boundary. That is not an extra capability; it is a route
+around the product's ethos.
+
+The adapter therefore always passes `--disable-builtin-mcps --no-remote
+--no-remote-export --no-auto-update --no-ask-user`. Probes confirmed this costs
+nothing functionally (exit 0, tool use, a real commit).
+
+**The kill switch is verifiable, so it is verified.** `--disable-builtin-mcps`
+does not merely omit the server, it emits a receipt:
+
+```json
+{"type":"session.mcp_servers_loaded",
+ "data":{"servers":[{"name":"github-mcp-server","status":"disabled",
+                     "source":"builtin","transport":"http"}]}}
+```
+
+The adapter **fails the run if it ever observes `status: "connected"`** for a
+builtin server. No other vendor offers this; hardening elsewhere is asserted
+only by the flags passed.
+
+This is defaulted, not mandated. The operator's recorded posture is *ship the
+strongest configuration as the recommended default, but opt-in — never deny
+capability to the operator*. So `CopilotSettings` carries an explicit,
+deliberately verbose escape hatch for the operator who genuinely wants the MCP
+surface. Forcing it with no opt-out would have been the exception; it is not
+needed, because the receipt makes the default honest rather than merely hopeful.
+
+## D8 — The three GitHub token env vars are scrubbed from the child
+
+Copilot's precedence is `COPILOT_GITHUB_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN`.
+Ralphy's own GitHub work runs through `gh`, and CI/automation contexts routinely
+export `GH_TOKEN`/`GITHUB_TOKEN`. If any is set when Ralphy spawns Copilot, the
+child **silently authenticates as that identity**, overriding the operator's
+`copilot login`, and the run *succeeds under the wrong account*.
+
+All three are removed from the child's environment. This is the direct analog of
+the `ANTHROPIC_API_KEY` scrub, and worse in one respect: that failure is loud,
+this one is silent. An operator who wants token-based auth sets it in
+`CopilotSettings`, where the intent is recorded rather than inherited by
+accident.
+
+## D9 — Skills reuse the Codex pattern, targeting `.agents/skills`
+
+Copilot auto-discovers `.github/skills/`, `.agents/skills/` and
+`.claude/skills/`, but **not** `.ralphy/skills` where Ralphy materializes. This
+is exactly Codex's situation, and Codex already solved it: materialize into
+`.ralphy/skills` via `materialize_assets`, then expose each skill into
+`.agents/skills/<name>` by symlink with a Windows copy fallback, merging precise
+per-entry lines into `.agents/skills/.gitignore` so user-owned sibling skills
+survive and the tree stays clean for the next run's clean-tree check.
+
+The adapter does **not** re-implement this. `link_or_copy_dir` and
+`ensure_gitignore_entries` are currently private to `ralphy-agent-codex`; they
+are lifted into `ralphy-adapter-support` and both adapters call the shared
+version. Two vendors needing the identical dance is the threshold for promoting
+it out of a vendor crate.
+
+Rejected: materializing directly into `.agents/skills` — `materialize_assets`
+does a clear-and-replace `remove_dir_all(dest_dir)` and writes a blanket `*`
+gitignore, which would wipe the operator's own skills. Also rejected:
+`copilot skill add`, which mutates global user state outside the repo.
+
+Copilot then gives what Codex never had — a **load receipt**:
+`session.skills_loaded` lists every discovered skill with its resolved path, so
+the adapter can assert the Ralphy skills actually loaded instead of assuming it.
+
+## D10 — Usage: mint the session id, read the store by primary key
+
+The adapter generates a UUID and passes `--session-id <uuid>`, so ADR-0008 D10's
+snapshot-diff is unnecessary — usage lookup is a primary-key read against
+`assistant_usage_events` in `~/.copilot/session-store.db`. This is the OpenCode
+topology (a database), not the Claude/Codex/Kimi file-tree one, so
+`list_session_files` / `session_files_appeared` do not apply.
+
+Rows are **incremental — sum them, do not keep-last**. `turn_index` is *not* a
+per-call key (two distinct calls both carried `turn_index: 0`); only `id` is.
+Field mapping needs no invention: `input_tokens→input`, `output_tokens→output`,
+`cache_read_tokens→cache_read`, `cache_write_tokens→cache_creation`,
+`model→model`. `reasoning_tokens` has no `Usage` slot and appears to be a subset
+of `output_tokens`.
+
+Reading discipline (ADR-0033's stateless-scan family): the store is WAL-mode, so
+a reader must account for `-wal`/`-shm` — copying the `.db` alone returns an
+empty store — and must never write to the live database.
+
+Two currencies coexist: the stream reports **AI credits**
+(`result.usage.premiumRequests`) while the database reports **tokens**. `Usage`
+is token-denominated, so **the database is the source of truth** and the
+envelope is a cross-check only. `token_details_json` carries the actual rate
+card per call, which satisfies [ADR-0034](./0034-robust-read-time-pricing.md)
+read-time pricing for free.
+
+## D11 — Limits map to `Limit(None)` plus the synthetic cadence
+
+No quota exhaustion was induced, so the surface of an exhausted limit is
+unobserved: no semantic exit code equivalent to Kimi's 75 was found, no
+`Retry-After`, no documented reset hint. The only defensible mapping is
+`Limit(None)` with [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)'s
+synthetic cadence. Claiming a reset time the vendor never gave would be worse
+than admitting there isn't one.
+
+One guard is not optional. Copilot's `continueOnAutoMode` config key silently
+switches model and retries on eligible rate-limit errors — **a vendor-internal
+retry that hides the limit from the caller**, the same failure mode that makes
+OpenCode burn a full 60-minute timeout while reporting `saw_error = false`. It
+defaults to `false`; the adapter asserts it stays false rather than trusting the
+default.
+
+## D12 — `ACCEPTS_IMAGES` is true
+
+`--attachment <path>` is verified end-to-end: a real PNG plus a prompt asking
+for the most prominent word in the image returned a word that exists only in the
+image's pixels. The flag is documented "only valid in non-interactive mode",
+which is precisely Ralphy's mode, and may be repeated. Vision is near-universal
+in the catalog — true for every picker-enabled model but one.
+
+## What this ADR deliberately does not decide
+
+- **Hooks** as a deterministic completion signal. Event names and payload schema
+  are undocumented and unexercised. The sentinel already works (D3), so this is
+  an optimisation with no forcing function.
+- **Native plan mode** (`--plan`, `--mode plan`). The other four vendors all
+  rejected native plan mode; no evidence yet that Copilot's differs enough to
+  revisit.
+- **Background tasks** outliving process exit. `session.background_tasks_changed`
+  fired six times in one probe and no disabling flag was found. Ralphy's
+  per-issue budget assumes the process boundary is the run boundary; if that
+  assumption is false, it is false for the budget, not for the adapter's shape.
+- **The `COPILOT_PROVIDER_*` BYOK family.** Setting `COPILOT_PROVIDER_BASE_URL`
+  bypasses GitHub auth and model routing entirely — and with them every
+  assumption in this document. Out of scope, not supported.
