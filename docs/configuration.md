@@ -117,15 +117,35 @@ OpenCode effort is set per-run with `--exec-variant` (not persisted).
 | --- | --- | --- | --- | --- |
 | `copilot.plan_model` | `--plan-model` | any model id Copilot offers | none | The persisted planning-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
 | `copilot.exec_model` | `--exec-model` | any model id Copilot offers | none | The persisted execution-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
+| `copilot.plan_effort` | none | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | none | The reasoning effort *requested* for the planning phase. When unset, `--effort` is omitted (ADR-0041 D5). |
+| `copilot.exec_effort` | none | same | none | The reasoning effort *requested* for the execution phase. When unset, `--effort` is omitted (ADR-0041 D5). |
 
 ```powershell
 ralphy config set copilot.exec_model gpt-5
+ralphy config set copilot.exec_effort high
 ```
 
 Resolution per phase: `--plan-model`/`--exec-model` (per-run) > `copilot.plan_model`/
 `copilot.exec_model` (persisted) > omit `--model` — an omitted `--model` runs the
 account's own current selection, the correct default rather than a degraded
 fallback (ADR-0041 D4).
+
+The two effort keys have **no per-run flag**: they are persisted-only, because
+whether Ralphy's `--plan-effort`/`--exec-effort` become valid for every adapter is
+still open (#227).
+
+**Effort is a request, not an instruction.** Copilot's effort vocabulary is
+per-model — the catalog publishes each model's own supported list, and a level
+outside it is rejected. So Ralphy clamps the requested level DOWN to the greatest
+level the phase's model actually supports, never up: `xhigh` on a model offering
+`low`/`medium`/`high` is sent as `high`, and on a model offering
+`low`/`medium`/`high`/`max` it is *still* sent as `high` rather than escalating to
+`max` (ADR-0041 D5a). A model that takes no effort argument at all never receives
+the flag, however loudly it was requested; the same holds when the catalog is
+unavailable or the pinned model is unknown to it — the flag is omitted and the
+model's own default decides. After the phase runs, Ralphy compares the request
+against the level the vendor actually recorded in its session store and logs a
+warning on a divergence.
 
 ## Events sink keys (`events.*`)
 

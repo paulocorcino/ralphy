@@ -18,10 +18,14 @@ schema, session store, catalog, cost traps — is in
 [docs/research/copilot-cli-adapter-spike.md](../research/copilot-cli-adapter-spike.md);
 this ADR records the decisions, the spike records the observations.
 
-Status: **proposed** — decisions settled, **implementation not started and
-explicitly gated**. Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040;
-applies the [ADR-0040](./0040-agent-adapter-onboarding-contract.md) onboarding
-contract for the first time.
+Status: **proposed** — decisions settled, implementation landing in slices.
+Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040; applies the
+[ADR-0040](./0040-agent-adapter-onboarding-contract.md) onboarding contract for
+the first time.
+
+Implementation status: D5/D5a shipped in #233 (`ralphy-agent-copilot`'s
+`effort.rs`, the persisted `copilot.plan_effort`/`copilot.exec_effort` keys, and
+the post-hoc check against the vendor's `assistant_usage_events.reasoning_effort`).
 
 ## D1 — Selection is per run, via `--agent copilot`; the core is untouched
 
