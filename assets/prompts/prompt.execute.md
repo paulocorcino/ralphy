@@ -104,6 +104,10 @@ issue with the failure report published for the human reviewer.
      surprise, a caveat, a partial that a human should see) with `- [!]` instead
      of a tick, rather than silently ticking it or leaving it open — `- [!]` is a
      first-class "done but noticed" marker the run surfaces on the event stream.
+     `- [!]` is legitimate only for a step whose verification you ATTEMPTED and
+     whose literal blocker (or surprise) is recorded under `## Notes &
+     decisions` — the same bar as a `[review-only]` downgrade. A step marked
+     `- [!]` with no recorded attempt is a silent tick in disguise.
    - BATCH tightly-coupled steps: when 2–3 consecutive steps change the same
      functions, or one produces exactly what the next consumes (add variant →
      map it → wire it), implement the group and pay ONE format+test cycle and
@@ -118,14 +122,15 @@ issue with the failure report published for the human reviewer.
      edit of `.ralphy/plan.md`), at the moment you commit — never a guessed
      string-replace from a script. A silently-failed replace leaves the step
      open, which blocks the completion lint AND keeps the cost gate locked.
-3. When EVERY step is `- [x]` and the project's tests are green, print this on
+3. When EVERY step is resolved — `- [x]` checked, or `- [!]` noticed with its
+   blocker recorded — and the project's tests are green, print this on
    its own line and then STOP — the runner reads this token to mark the issue
    done:
 
        RALPHY_DONE_EXIT
 
    COMPLETION LINT: the runner accepts the token only after a deterministic
-   lint of `.ralphy/plan.md` — every step ticked, `## Handoff`, `## Plan
+   lint of `.ralphy/plan.md` — no step left `- [ ]`, `## Handoff`, `## Plan
    friction`, and `## Self-review findings` present with real content, and no
    planner placeholder `evidence:` text left in the `## Acceptance ledger`.
    Each artifact is specified in its own section below; complete them all
@@ -257,8 +262,8 @@ planner). As you complete each step, update the matching ledger line:
 
 **The ledger does NOT gate `RALPHY_DONE_EXIT`.** The green gate stays keyed to
 the plan's machine-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT`
-when every machine-verifiable "Done when" condition is green and every step is
-`- [x]`, regardless of the ledger's review-only entries.
+when every machine-verifiable "Done when" condition is green and no step is
+left `- [ ]`, regardless of the ledger's review-only entries.
 
 ## Write the handoff
 

@@ -45,7 +45,8 @@ impl ProtocolReport {
 }
 
 /// Run the structural protocol lint over a plan markdown (ADR-0015):
-///   - every `## Steps` checkbox is ticked (`- [x]`, no `- [ ]` left);
+///   - every `## Steps` checkbox is resolved — no `- [ ]` left (`- [x]`
+///     checked and `- [!]` noticed both count as resolved);
 ///   - `## Handoff` and `## Plan friction` sections present and non-blank;
 ///   - `## Self-review findings` present when the steps carry a self-review
 ///     step (the charter forbids ticking that step without the artifact);
