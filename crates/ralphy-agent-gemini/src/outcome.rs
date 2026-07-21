@@ -37,8 +37,11 @@ pub(crate) struct GeminiFold {
     pub(crate) vendor_error: Option<String>,
     /// Per-model token usage parsed from `result.stats` (ADR-0043 D9).
     /// `None` when the terminal record carried no `stats` key at all —
-    /// including when it never carried a `result` record — distinct from
-    /// `Some(vec![])`, so "no usage" is never rewritten as "zero usage".
+    /// including when it never carried a `result` record. `Some` whenever a
+    /// `stats` key was present, ALWAYS with at least one item — `usage::
+    /// parse_stream_stats` never returns an empty `Vec` — so the split is
+    /// "no usage figures at all" vs. "a usage figure, possibly zero-valued",
+    /// never a genuinely empty `Some(vec![])`.
     pub(crate) usage: Option<Vec<Usage>>,
 }
 

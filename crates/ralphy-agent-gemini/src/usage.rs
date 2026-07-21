@@ -126,6 +126,19 @@ mod tests {
         }
     }
 
+    /// An empty `stats` object (no fields at all, so no `models` key either)
+    /// still returns exactly one zero-valued record, never an empty `Vec` —
+    /// the fallback arm always pushes one item. This is what makes
+    /// `GeminiFold.usage`'s `None` vs `Some` split meaningful: `Some` is
+    /// never the genuinely-empty state a naive reading of "zero usage" might
+    /// expect (self-review #263 finding).
+    #[test]
+    fn an_empty_stats_object_still_returns_one_record_not_an_empty_vec() {
+        let items = parse_stream_stats(&serde_json::json!({}));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0], Usage::default());
+    }
+
     /// A record with no `models` key falls back to the flattened top-level
     /// fields, attributed `model: None` so `fold_usage`'s fallback resolves it
     /// to the requested model's price key instead.

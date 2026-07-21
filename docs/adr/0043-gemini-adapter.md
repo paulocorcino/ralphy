@@ -417,12 +417,14 @@ The session id is minted by Ralphy via `--session-id`, which accepts any
 the [ADR-0008](./0008-token-usage-tracking.md) D10 snapshot-diff is unnecessary.
 
 **Implementation (#263):** `src/usage.rs::parse_stream_stats` implements the
-three traps above. `outcome::GeminiFold.usage: Option<Vec<Usage>>` keeps "the
-terminal record carried no `stats` key" (`None`) distinguishable from "the run
-measured zero tokens" (`Some(vec![])`); `phase_usage` folds the `Some` case
-through `Usage::fold_usage`, falling back to the model-only zero-usage stub
-otherwise. Every `stats.models` key is folded through `price_key` before it
-becomes a `Usage.model`, so the ledger key and the price key stay one string.
+three traps above; it never returns an empty `Vec` (a `stats: {}` object still
+yields one zero-valued record). `outcome::GeminiFold.usage: Option<Vec<Usage>>`
+keeps "the terminal record carried no `stats` key at all" (`None`)
+distinguishable from "a `stats` key was present" (`Some`, always non-empty);
+`phase_usage` folds the `Some` case through `Usage::fold_usage`, falling back
+to the model-only zero-usage stub otherwise. Every `stats.models` key is
+folded through `price_key` before it becomes a `Usage.model`, so the ledger
+key and the price key stay one string.
 
 ## D10 — `scan_gemini` reports a lower bound, and says so
 
