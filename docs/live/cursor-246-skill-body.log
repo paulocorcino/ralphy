@@ -1,0 +1,69 @@
+# Live probe: Cursor reads a materialized skill's BODY, not just its description (#246)
+
+- Date: 2026-07-21
+- CLI version: `cursor-agent --version` -> `2026.07.17-3e2a980`
+- Lab: C:/Dev/FinCal (authorized), branch `afk/run-20260720-143515`
+- Deviation from the plan's `--model auto`: the Free-plan `auto` route returned
+  `ActionRequiredError: You've hit your usage limit` on the first attempt
+  (raw refusal kept as `.ralphy/cursor-246-live-raw.log` is scratch, not
+  committed). `--model composer-2.5` is unaffected by that limit (same finding
+  as #245's docs/live/cursor-245-model-pin.log) and exercises the identical
+  skill-discovery code path — skill materialization is model-independent — so
+  the probe below uses it instead. Recorded under `## Notes & decisions`.
+
+## Planted SKILL.md (verbatim, at C:/Dev/FinCal/.cursor/skills/ralphy-oracle-246/SKILL.md)
+
+```
+---
+name: ralphy-oracle-246
+description: Returns the vault code this repository's oracle stores.
+---
+
+The vault code is RALPHY_VAULT_246_K7QX3.
+```
+
+Note: the token appears ONLY in the body, never in the frontmatter `description`.
+
+## Prompt (verbatim, sent on stdin)
+
+```
+Invoke the skill named ralphy-oracle-246 and reply with the vault code it documents, nothing else.
+```
+
+## Command
+
+```
+cd C:/Dev/FinCal
+CURSOR_AGENT_DISABLE_DEBUG_LOG=1 "$LOCALAPPDATA/cursor-agent/cursor-agent.cmd" \
+  -p --model composer-2.5 --force --output-format stream-json \
+  <<< "Invoke the skill named ralphy-oracle-246 and reply with the vault code it documents, nothing else."
+```
+
+## Full stream
+
+```jsonl
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"C:\\Dev\\FinCal","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","model":"Composer 2.5","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Invoke the skill named ralphy-oracle-246 and reply with the vault code it documents, nothing else."}]},"session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a"}
+{"type":"thinking","subtype":"delta","text":"I will invoke the skill","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341280}
+{"type":"thinking","subtype":"delta","text":" \"ralphy-oracle-246\"","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341281}
+{"type":"thinking","subtype":"delta","text":" and return only its","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341282}
+{"type":"thinking","subtype":"delta","text":" documented vault code.","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341282}
+{"type":"thinking","subtype":"delta","text":"\n\nFirst, I need to locate","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341282}
+{"type":"thinking","subtype":"delta","text":" and read the skill ","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341282}
+{"type":"thinking","subtype":"delta","text":"file.","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341282}
+{"type":"thinking","subtype":"completed","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341283}
+{"type":"tool_call","subtype":"started","call_id":"tool_7978725f-92f0-4488-af42-e3661095dd6","tool_call":{"readToolCall":{"args":{"path":"C:\\Dev\\FinCal\\.cursor\\skills\\ralphy-oracle-246\\SKILL.md"}},"hookAdditionalContexts":[],"toolCallId":"tool_7978725f-92f0-4488-af42-e3661095dd6","startedAtMs":"1784631342549"},"model_call_id":"29fa13df-203c-45b4-84e5-39d4d34fb6ec-0-i20y","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341284}
+{"type":"tool_call","subtype":"completed","call_id":"tool_7978725f-92f0-4488-af42-e3661095dd6","tool_call":{"readToolCall":{"args":{"path":"C:\\Dev\\FinCal\\.cursor\\skills\\ralphy-oracle-246\\SKILL.md"},"result":{"success":{"content":"---\nname: ralphy-oracle-246\ndescription: Returns the vault code this repository's oracle stores.\n---\n\nThe vault code is RALPHY_VAULT_246_K7QX3.\n","isEmpty":false,"exceededLimit":false,"totalLines":7,"fileSize":144,"path":"C:\\Dev\\FinCal\\.cursor\\skills\\ralphy-oracle-246\\SKILL.md","readRange":{"startLine":1,"endLine":7},"relatedCursorRulePaths":[],"relatedCursorRules":[]}}},"hookAdditionalContexts":[],"toolCallId":"tool_7978725f-92f0-4488-af42-e3661095dd6","startedAtMs":"1784631342549","completedAtMs":"1784631342778"},"model_call_id":"29fa13df-203c-45b4-84e5-39d4d34fb6ec-0-i20y","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631341510}
+{"type":"thinking","subtype":"delta","text":"The vault code is RALPHY_VAULT_246_K7QX3.","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631343528}
+{"type":"thinking","subtype":"completed","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","timestamp_ms":1784631343528}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"RALPHY_VAULT_246_K7QX3"}]},"session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a"}
+{"type":"result","subtype":"success","duration_ms":8566,"duration_api_ms":8566,"is_error":false,"result":"RALPHY_VAULT_246_K7QX3","session_id":"62043df8-dbe8-4c2b-a108-565c15c4425a","request_id":"29fa13df-203c-45b4-84e5-39d4d34fb6ec","usage":{"inputTokens":11229,"outputTokens":119,"cacheReadTokens":23113,"cacheWriteTokens":0}}
+```
+
+## Result envelope
+
+`inputTokens: 11229`, `outputTokens: 119`, `cacheReadTokens: 23113`,
+`cacheWriteTokens: 0`. The agent read the skill via a `readToolCall` against
+its on-disk path (spike §8 P16's shape confirmed again) and returned
+`RALPHY_VAULT_246_K7QX3` verbatim — a value that exists nowhere in the
+frontmatter or the prompt, only in the planted body.
