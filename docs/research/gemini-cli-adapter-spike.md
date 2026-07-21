@@ -1463,6 +1463,42 @@ finding in this spike that is a business risk rather than an engineering one.
   (ADR-0041 D12), Ralphy must **interpolate paths into the prompt string**.
   Attachment delivery is therefore coupled to prompt construction, not argv.
 
+### 🔬 P26 — the process tree is five deep, and `kill_tree` already handles it
+
+The three Tier 1 budget builders (`with_max_minutes_per_issue`,
+`with_idle_minutes`, `with_run_deadline`) all end in killing the child, and
+Gemini is Node — so the question was whether a shell-tool grandchild survives.
+
+A run told to `ping -n 120 127.0.0.1` produced this, with the shell still
+running:
+
+```
+29936 cmd.exe    C:\WINDOWS\system32\cmd.exe /c "…\npm\gemini.cmd"    <- what Ralphy spawns
+└─ 45392 node.exe   …\@google\gemini-cli\…                            <- the npm shim's node
+   └─ 26212 node.exe   C:\nodejs\node.exe --max-old-space-size=16344  <- self-relaunch
+      └─ 2788 pwsh.exe                                                <- the shell tool
+         └─ 28964 PING.EXE   -n 120 127.0.0.1                         <- the grandchild
+```
+
+`taskkill /F /T /PID 29936` — literally what
+[`ralphy_proc_util::kill_tree`](../../crates/ralphy-proc-util/src/lib.rs#L55)
+issues on Windows — reported all five terminated, depth-first, and a follow-up
+sweep found **no survivors**. **No new termination machinery is needed.**
+
+Three incidental facts worth keeping:
+
+- **Gemini's shell tool spawns `pwsh.exe`**, not `cmd.exe`.
+- The **self-relaunch is real and visible**: the shim's node re-execs node with
+  `--max-old-space-size=16344` (a 16 GB heap ceiling). This is the mechanism
+  behind the `RELAUNCH_EXIT_CODE = 199` sentinel found in source (§3) — the
+  wrapper loops rather than exiting, which is why 199 should never be observed.
+- **The tree is five levels deep**, so a `child.kill()` on the direct child would
+  leave four processes running. The existing `kill_tree` is not optional here.
+
+*(A first reading of this probe wrongly reported the `PING.EXE` as orphaned —
+the process filter used to draw the tree omitted `pwsh.exe`, hiding the link.
+Recorded because the false positive is easy to reproduce.)*
+
 - 🔬 **`@` is live syntax in the prompt — but it fails safe (P25).** Since issue
   bodies routinely contain `@mentions`, this was worth pinning. A prompt reading
   *"Thanks @paulocorcino and @octocat … see @nonexistent-file.md … foo@bar.com"*
@@ -1602,6 +1638,7 @@ auth `gemini-api-key`, CLI `0.51.0` on Windows.
 | P12 | Windows spawn shape vs `gemini.cmd` | C10 | ✅ **already solved** by `ralphy-proc-util::resolve_program`; **but two WSL gaps found** (§10) |
 | P24 | `ACCEPTS_IMAGES` — headless vision via `@path` | C10 | ✅ **pass** — `true`, delivered in the prompt string, not argv |
 | P25 | `@mention` safety in issue-body text | C10 | ✅ **fails safe** — unresolvable `@tokens` pass through literally |
+| P26 | process-tree kill / orphan sweep | C1/C10 | ✅ **pass** — 5-deep tree, `taskkill /F /T` clears it all; no new machinery needed |
 | P17 | does description-matching alone activate a skill, without naming it? | C8 | ⬜ open |
 | P23 | `GEMINI_CLI_HOME` isolation under **OAuth** auth (credential is file-based there) | C5 | ⬜ open |
 

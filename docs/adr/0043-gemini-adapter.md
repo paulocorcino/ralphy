@@ -48,9 +48,10 @@ hardcoded — currently `5`, and it must account for Cursor as well as Gemini),
 and `daemon/src/session.rs::Agent`. ADR-0041 D1 recorded that Kimi was missing
 from the third; that is now fixed, and this adapter must not recreate the gap.
 
-**Sequencing note:** [ADR-0042](./0042-cursor-adapter.md) is also *proposed* and
-unimplemented. Whichever of the two lands first bumps the array and adds its
-variant; the second must rebase on the result rather than assume `5`.
+**Sequencing:** [ADR-0042](./0042-cursor-adapter.md) (Cursor) **goes first** — the
+maintainer's call. Cursor bumps `ALL` from `5` to `6` and adds its variant to all
+three enums; this adapter rebases on that result and takes `7`, rather than
+assuming any of the three counts.
 
 Two edit sites ADR-0040 did not list are load-bearing here and are added to it
 by amendment: **`crates/ralphy-cli/src/config.rs`** (~10 distinct places — the
@@ -509,6 +510,27 @@ business risk rather than an engineering one, and because the distinction must
 survive future refactors: **any change that talks to a Google endpoint directly,
 rather than through the `gemini` binary, invalidates this decision** and needs a
 new one.
+
+## D18 — Termination reuses `kill_tree` unchanged; the budget builders need nothing new
+
+The three budget builders (`with_max_minutes_per_issue`, `with_idle_minutes`,
+`with_run_deadline`) all end in killing the child, and Gemini is Node — so the
+concern was a shell-tool grandchild outliving the run. It does not.
+
+The tree is **five levels deep** —
+`cmd.exe` → node (npm shim) → node (self-relaunched with a 16 GB heap) →
+`pwsh.exe` (the shell tool) → the command itself — and
+`ralphy_proc_util::kill_tree`'s `taskkill /F /T` clears all five, verified with a
+120-second `ping` still running at kill time and a follow-up sweep finding no
+survivors.
+
+Two consequences: **no new termination machinery**, and `kill_tree` is
+**mandatory rather than defensive** here — a plain `child.kill()` on the direct
+child would strand four processes, including a live shell.
+
+Note the self-relaunch is also the mechanism behind the `199` sentinel in D3's
+table: the wrapper re-execs and loops rather than exiting, which is why that code
+should never be observed.
 
 ## What this ADR deliberately does not decide
 
