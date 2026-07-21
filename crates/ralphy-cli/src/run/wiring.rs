@@ -287,18 +287,23 @@ pub(crate) fn operating_branch(
     }
 }
 
-/// Pure predicate layer: returns `Err(message)` for the first agent whose
-/// `cli_name()` the `locate` closure reports absent, else `Ok(())`. The
-/// `locate` indirection lets unit tests inject a fake resolver with no PATH
-/// dependency.
+/// Pure predicate layer: returns `Err(message)` for the first agent the `locate`
+/// closure reports absent, else `Ok(())`. The `locate` indirection lets unit
+/// tests inject a fake resolver with no PATH dependency.
+///
+/// The closure takes the AGENT, not its `cli_name()`: for Cursor the selector and
+/// the binary are different names (`cursor` vs `cursor-agent`/`agent`, ADR-0042
+/// D14), so a name-keyed resolver looks for a binary that does not exist and
+/// aborts every Cursor run at the preflight. The message still names the
+/// selector, which is what the operator typed.
 pub(crate) fn check_agents_present(
     executor: CliAgent,
     planner: CliAgent,
-    locate: impl Fn(&str) -> bool,
+    locate: impl Fn(CliAgent) -> bool,
 ) -> Result<(), String> {
     for which in [executor, planner] {
         let cli = which.cli_name();
-        if !locate(cli) {
+        if !locate(which) {
             return Err(format!(
                 "the `{cli}` CLI was not found on PATH, PATHEXT, or ~/.local/bin. \
                 Install it, or select another agent with --agent / --plan-agent."
@@ -308,11 +313,13 @@ pub(crate) fn check_agents_present(
     Ok(())
 }
 
-/// Thin wrapper that wires `check_agents_present` to the real `locate_program`
-/// resolver and maps the string error into `anyhow`.
+/// Thin wrapper that wires `check_agents_present` to the real resolvers and maps
+/// the string error into `anyhow`. Each vendor is probed through the SAME locator
+/// its adapter spawns through, so detection and execution can never disagree.
 pub(crate) fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<()> {
-    check_agents_present(executor, planner, |n| {
-        ralphy_adapter_support::locate_program(n).is_some()
+    check_agents_present(executor, planner, |a| match a {
+        CliAgent::Cursor => ralphy_agent_cursor::locate_cursor().is_some(),
+        _ => ralphy_adapter_support::locate_program(a.cli_name()).is_some(),
     })
     .map_err(|e| anyhow::anyhow!(e))
 }
@@ -466,12 +473,32 @@ mod tests {
     #[test]
     fn check_agents_present_gates_planner() {
         // executor (Claude) is present; planner (Codex) is absent → Err naming codex.
-        let result = check_agents_present(CliAgent::Claude, CliAgent::Codex, |n| n == "claude");
+        let result =
+            check_agents_present(CliAgent::Claude, CliAgent::Codex, |a| a == CliAgent::Claude);
         let err = result.unwrap_err();
         assert!(
             err.contains("codex"),
             "message must name the absent planner: {err}"
         );
+    }
+
+    /// The regression the live probe caught: Cursor's SELECTOR is `cursor` but its
+    /// binary is `cursor-agent`/`agent` and is on `PATH` on neither platform
+    /// (ADR-0042 D14). A name-keyed resolver reports it absent and aborts the run
+    /// before the adapter — which resolves it fine — is ever reached.
+    #[test]
+    fn check_agents_present_probes_cursor_by_agent_not_by_selector_name() {
+        let by_binary = |a: CliAgent| match a {
+            // Stands in for `locate_cursor`, which finds the real install.
+            CliAgent::Cursor => true,
+            // Stands in for `locate_program`, which never finds a `cursor` binary.
+            _ => false,
+        };
+        assert!(check_agents_present(CliAgent::Cursor, CliAgent::Cursor, by_binary).is_ok());
+
+        // And the message still names the SELECTOR the operator typed.
+        let err = check_agents_present(CliAgent::Cursor, CliAgent::Cursor, |_| false).unwrap_err();
+        assert!(err.contains("cursor"), "{err}");
     }
 
     #[test]

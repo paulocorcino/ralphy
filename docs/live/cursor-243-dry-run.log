@@ -1,0 +1,14 @@
+# Live probe — issue #243, --agent cursor against C:\Dev\FinCal
+date: 2026-07-21T05:33:13Z
+cursor-agent: 2026.07.16-899851b
+ralphy under test: target/debug/ralphy.exe @ 1877dca
+
+## Probe A — the refusal path (AC 4): no .cursorindexingignore in the lab
+$ ls -a C:/Dev/FinCal | grep -i cursorindexing   # (nothing)
+(absent — as required for this probe)
+$ ls $TMP/cursor-agent-logs-*/ | wc -l   # BEFORE
+51
+
+$ ralphy run --repo C:/Dev/FinCal --only-issue 112 --agent cursor --base-branch origin/master --dry-run --verbose
+exit=1
+Error: the `cursor` CLI was not found on PATH, PATHEXT, or ~/.local/bin. Install it, or select another agent with --agent / --plan-agent.
