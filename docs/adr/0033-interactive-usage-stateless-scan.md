@@ -81,6 +81,13 @@ The response carries **two record kinds**:
   `{ agent, model, session_id, project, actor_email, tokens
   {input, output, cache_read, cache_creation}, first_ts, last_ts }`,
   plus the responding daemon's `daemon_id` on the envelope.
+  `tokens` is that object **or `null` when the vendor records no token count
+  anywhere** — the key is always present, and `null` means *unavailable*,
+  never *zero*. Cursor is the first such vendor (ADR-0042 D11: it bills in
+  dollar-denominated credits and keeps no per-session totals in either
+  store); a zeroed object would ship `0` on the wire and read as "this
+  session spent nothing", so absence is encoded as absence. Consumers must
+  handle `null` for every vendor, not only Cursor (#250).
 
 Tokens only, no USD — pricing stays a read-time projection wherever the data
 is consumed (ADR-0008 D2/D8).

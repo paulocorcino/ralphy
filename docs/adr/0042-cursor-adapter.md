@@ -481,6 +481,14 @@ graph in two tables) and `~/.cursor/projects/<cwd-slug>/agent-transcripts/…jso
   unavailable.** It is still written — Tier 4 is not skipped — but it does not
   invent a number. An operator's *interactive* Cursor sessions are invisible to
   `ralphy usage`, and that is the honest answer.
+  **Implemented** (#250): `crates/ralphy-usage-scan/src/cursor.rs` —
+  `scan_cursor` unions `chats/<hash>/<sid>/meta.json` with
+  `projects/<slug>/agent-transcripts/<sid>/` (measured: 6 ids live only in each,
+  so either store alone hides sessions), keyed by session id with the `chats`
+  record preferred. Every record carries `model: "unknown"` and
+  `tokens: None`, serialized as JSON `null` by `/api/usage` — the ADR-0033 §3
+  record contract was amended for this, and `InteractiveRecord.tokens` is now
+  `Option<Tokens>` for ALL vendors so absence cannot be read as zero.
 - Note the unit mismatch: Cursor bills **dollar-denominated credits** at
   per-1M-token rates on a monthly anniversary reset. Ralphy's token counts are
   not Cursor's bill.
