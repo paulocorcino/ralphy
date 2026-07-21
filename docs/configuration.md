@@ -219,6 +219,39 @@ Practical consequence: a per-issue token budget tuned against another vendor
 (one with no foreign-skill harvest) reads wrong for Cursor — expect materially
 higher input-token floors on this vendor, independent of the task.
 
+## Gemini run defaults (`gemini.*`)
+
+| Key | Flag | Values | Default |
+| --- | --- | --- | --- |
+| `gemini.plan_model` | `--plan-model` | any id in `ralphy_agent_gemini::PINNABLE_MODELS` | none — the vendor routes |
+| `gemini.exec_model` | `--exec-model` | any id in `ralphy_agent_gemini::PINNABLE_MODELS` | none — the vendor routes |
+
+```powershell
+ralphy config set gemini.plan_model gemini-2.5-pro
+ralphy config set gemini.exec_model gemini-3.5-flash
+```
+
+### The router tax
+
+Leave both unset and Ralphy omits `-m` entirely, which is not free: the CLI then
+asks a **router** which engine should serve the turn, and that question is itself
+a billed API call (the spike observed `gemini-3.1-flash-lite` in the
+`utility_router` role beside the answering engine). Every turn therefore costs
+**two requests instead of one**. Pinning a model per phase removes the routing
+call — which is why `ralphy init` prints the note when it finds this CLI
+installed (ADR-0043 D8).
+
+Validation is applied at `config set` time only. A `--plan-model`/`--exec-model`
+flag is passed through unfiltered on purpose: the vendor's id set is mutable by
+server-side experiment flags, so a stale local list must never block an id the
+CLI has just started serving. If the id really is unknown, the vendor answers
+`ModelNotFoundError … { code: 404 }` and the adapter turns it into a named stop
+quoting the id you asked for, not an unexplained failure.
+
+A run left unpinned is recorded under the model key `gemini-routed`, which
+carries **no price row** — a routed run reports an unpriced model rather than
+being attributed to an engine it may never have used.
+
 ## Events sink keys (`events.*`)
 
 Stored in the **global** `~/.ralphy/events.toml`, not `settings.json`. See

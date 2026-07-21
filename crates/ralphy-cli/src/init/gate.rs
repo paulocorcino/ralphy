@@ -147,6 +147,17 @@ pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
         }
     }
 
+    // The router tax is a COST, not a blocker: unpinned, this vendor spends a
+    // second, billed routing call per turn (ADR-0043 D8/#257). Surfaced here so it
+    // is read before the first run rather than on a bill.
+    if f.agents_present.contains(&Agent::Gemini) {
+        out.push_str(
+            "note: gemini routes the model when none is pinned, spending a second, paid \
+             routing call (one extra API request) per turn — pin gemini.plan_model / \
+             gemini.exec_model with `ralphy config set` to halve request consumption\n",
+        );
+    }
+
     let blocker_count = fails.len();
     if blocker_count == 0 {
         out.push_str("result: all checks passed\n");
@@ -528,5 +539,29 @@ mod tests {
             report.contains("codex: not logged in"),
             "expected 'codex: not logged in' in:\n{report}"
         );
+    }
+    /// #257: the router tax is priced into the operator's first read of `init`,
+    /// and only when this vendor is actually installed.
+    #[test]
+    fn the_report_surfaces_geminis_router_tax() {
+        let with_gemini = EnvFindings {
+            python: true,
+            gh_authenticated: true,
+            github_remote: true,
+            agents_present: vec![Agent::Gemini],
+            agents_logged_in: vec![Agent::Gemini],
+        };
+        let report = format_report(&with_gemini, &evaluate_gate(&with_gemini));
+        assert!(report.contains("gemini.exec_model"), "{report}");
+        assert!(report.contains("halve request consumption"), "{report}");
+
+        let without = EnvFindings {
+            agents_present: vec![Agent::Claude],
+            agents_logged_in: vec![Agent::Claude],
+            ..with_gemini
+        };
+        let report = format_report(&without, &evaluate_gate(&without));
+        assert!(!report.contains("gemini.exec_model"), "{report}");
+        assert!(!report.contains("halve request consumption"), "{report}");
     }
 }

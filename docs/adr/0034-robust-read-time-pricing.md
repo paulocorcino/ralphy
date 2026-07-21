@@ -220,3 +220,41 @@ source, either way.
   off the hot path); D2 (tokens-truth, USD read-time) and D1 (no network in the
   run) are upheld. ADR-0033's scan gains `provider` and shares the counting
   normalization.
+
+## Amendment (#257, 2026-07-21): the Gemini rows and their mandatory key transform
+
+Five Gemini rows join `PriceTable::defaults` — `gemini-3.1-pro-preview`,
+`gemini-3-flash-preview`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`,
+`gemini-2.5-flash` — at the indicative ai.google.dev list prices captured in
+`docs/research/gemini-cli-adapter-spike.md` §4. `gemini-3.5-flash` is NOT added:
+the row Cursor already contributed carries the same figures and the key is now
+shared by two vendors.
+
+**`ralphy_agent_gemini::price_key` is the mandatory transform** between a model
+id a Gemini run recorded and a `PriceTable` lookup. It is not cosmetic:
+
+- `gemini-3-flash` is the CLI's constant for an engine served by the **3.5**
+  backend, while the identically spelled row in this table is Cursor's catalogue
+  price for Google's *preview* Flash — **3× apart**. Looking up the raw id prices
+  a Gemini run at a third of its cost. `price_key` renames it; the table keeps one
+  correct row per vendor.
+- `gemini-3-pro-preview` is retired for pinning but still costs out, as its
+  successor `gemini-3.1-pro-preview` — a historical run record must price.
+- The routing aliases (`auto`, `pro`, `flash`, `flash-lite`, `auto-gemini-3`,
+  `auto-gemini-2.5`) fold onto the sentinel **`gemini-routed`**, deliberately
+  **unpriced**. `auto` is already a Cursor row (grok-4.5 rates), so passing it
+  through would attribute a Gemini run to another vendor's engine.
+
+`gemini-3.1-pro-preview-customtools` gets **no row**: it has no published price
+(spike Trap 3), and this table reports unpriced (`~$?`) rather than guessing —
+even though it is the model that actually served two probe runs.
+
+The adapter already applies the transform to `Usage::model`. **#263, which parses
+the stream's usage envelope, must apply it to every key it writes into
+`stats.models`** — an unmapped id there re-opens the 3× misattribution.
+
+Known under-bill: these are flat per-model scalars, and Pro prices differently
+above a 200 k prompt (Ralphy's charter alone is ~30 k of it), so a long Pro run
+is under-billed. Tiered pricing is out of scope here (PRD #252) and lands with the
+`ralphy-pricing` crate this ADR already specifies.
+
