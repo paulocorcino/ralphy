@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
-    scan_claude, scan_codex, scan_copilot, scan_kimi, scan_opencode, ClaudeScan, CodexScan,
-    CopilotScan, KimiScan, OpenCodeScan, RegisteredRepo,
+    scan_claude, scan_codex, scan_copilot, scan_cursor, scan_kimi, scan_opencode, ClaudeScan,
+    CodexScan, CopilotScan, CursorScan, KimiScan, OpenCodeScan, RegisteredRepo,
 };
 
 use crate::registry::RegistryStore;
@@ -185,34 +185,39 @@ pub fn kimi_code_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".kimi-code"))
 }
 
-/// The Cursor interactive chat store: `$RALPHY_CURSOR_DIR` when set (tests point
-/// it at a temp dir), else `$XDG_CONFIG_HOME/cursor/chats`, else
-/// `<home>/.cursor/chats`. Mirrors [`kimi_dir_path`].
+/// The Cursor interactive session store root: `$RALPHY_CURSOR_DIR` when set (tests
+/// point it at a temp dir), else `$XDG_CONFIG_HOME/cursor`, else `<home>/.cursor`.
+/// This is the `.cursor` BASE — `scan_cursor` walks BOTH its `chats/` and
+/// `projects/` subtrees, so one base resolver keeps ONE env override instead of
+/// two. Mirrors [`codex_dir_path`].
 ///
 /// It deliberately does NOT read `$CURSOR_CONFIG_DIR`: that is the variable
 /// Ralphy points at its own per-run scratch directory (ADR-0042 D17), so honouring
 /// it here would resolve Ralphy's throwaway state instead of the OPERATOR's own
 /// sessions — which is the only thing this store is read for (D11, #250).
-pub fn cursor_chats_dir_path() -> anyhow::Result<PathBuf> {
+pub fn cursor_dir_path() -> anyhow::Result<PathBuf> {
     if let Some(dir) = std::env::var_os("RALPHY_CURSOR_DIR") {
         return Ok(PathBuf::from(dir));
     }
     if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME") {
-        return Ok(PathBuf::from(dir).join("cursor").join("chats"));
+        return Ok(PathBuf::from(dir).join("cursor"));
     }
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
-        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the Cursor chats store"))?;
-    Ok(PathBuf::from(home).join(".cursor").join("chats"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("no home directory resolved for the Cursor session store")
+        })?;
+    Ok(PathBuf::from(home).join(".cursor"))
 }
 
-/// Scan the Claude, Codex, OpenCode, Kimi AND Copilot stores for interactive usage
-/// records, excluding sessions the ledger already owns (their `session_id` appears
-/// in `run_records`), and serialize each to JSON (ADR-0033 §2/§6).
-/// `registry.repos` supplies the project/actor attribution. Read-only: no scan
-/// writes (the Copilot scan reads a private copy, never the live store). The
-/// Codex records are chained after the Claude ones, then the OpenCode ones, then
-/// the Kimi ones, then the Copilot ones.
+/// Scan the Claude, Codex, OpenCode, Kimi, Copilot AND Cursor stores for
+/// interactive usage records, excluding sessions the ledger already owns (their
+/// `session_id` appears in `run_records`), and serialize each to JSON
+/// (ADR-0033 §2/§6). `registry.repos` supplies the project/actor attribution.
+/// Read-only: no scan writes (the Copilot scan reads a private copy, never the
+/// live store). The Codex records are chained after the Claude ones, then the
+/// OpenCode ones, then the Kimi ones, then the Copilot ones, then the Cursor
+/// ones — whose `tokens` is always `null` (ADR-0042 D11: no count exists).
 // One positional per store path/handle; grouping them into a struct would only
 // move the argument list, not shrink it (mirrors `router`/`usage_route`).
 #[allow(clippy::too_many_arguments)]
@@ -223,6 +228,7 @@ pub fn interactive_records(
     kimi_dir: &Path,
     kimi_code_dir: &Path,
     copilot_db: &Path,
+    cursor_dir: &Path,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -271,12 +277,19 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
+    let cursor = scan_cursor(&CursorScan {
+        cursor_dir,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
     claude
         .iter()
         .chain(codex.iter())
         .chain(opencode.iter())
         .chain(kimi.iter())
         .chain(copilot.iter())
+        .chain(cursor.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()
 }
@@ -339,7 +352,7 @@ mod tests {
     /// state instead of the operator's sessions — so the scratch var must not divert
     /// it, while the test-only `$RALPHY_CURSOR_DIR` still wins.
     #[test]
-    fn cursor_chats_dir_path_ignores_the_scratch_config_dir() {
+    fn cursor_dir_path_ignores_the_scratch_config_dir() {
         let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let restore = (
             std::env::var_os("CURSOR_CONFIG_DIR"),
@@ -350,9 +363,9 @@ mod tests {
         std::env::set_var("CURSOR_CONFIG_DIR", "C:/tmp/ralphy-scratch");
         std::env::remove_var("RALPHY_CURSOR_DIR");
         std::env::remove_var("XDG_CONFIG_HOME");
-        let got = cursor_chats_dir_path().unwrap();
+        let got = cursor_dir_path().unwrap();
         assert!(
-            got.ends_with(PathBuf::from(".cursor").join("chats")),
+            got.ends_with(".cursor"),
             "the scratch config dir must not divert the resolver, got {got:?}"
         );
         assert!(
@@ -362,7 +375,7 @@ mod tests {
 
         std::env::set_var("RALPHY_CURSOR_DIR", "C:/tmp/override");
         assert_eq!(
-            cursor_chats_dir_path().unwrap(),
+            cursor_dir_path().unwrap(),
             PathBuf::from("C:/tmp/override"),
             "the test override must still win"
         );
@@ -383,15 +396,10 @@ mod tests {
     }
 
     /// ADR-0040 Tier 4 anti-drift: a vendor that reaches the daemon's launch enum
-    /// must at least have a store-path RESOLVER here. Source-text pin over this
-    /// very file, so it reds the moment a seventh `Agent::ALL` variant lands
-    /// without one.
-    ///
-    /// It deliberately does NOT claim the store is reachable from the usage
-    /// endpoint: a resolver with no caller is exactly Cursor's current state, since
-    /// `interactive_records` gains its argument with #250's `scan_cursor`. The
-    /// stronger pin — every resolver actually chained into `interactive_records` —
-    /// belongs to that issue, once there is a scan to chain.
+    /// must have a store-path RESOLVER here AND have its scan actually chained into
+    /// [`interactive_records`]. Source-text pin over this very file, so it reds the
+    /// moment a seventh `Agent::ALL` variant lands with a resolver nobody calls —
+    /// the state Cursor was left in by #248 and that #250 closed.
     #[test]
     fn every_launchable_vendor_has_a_store_path_resolver() {
         let src = include_str!("usage.rs");
@@ -407,6 +415,12 @@ mod tests {
                 "no `pub fn {token}…_path(` resolver in usage.rs — {agent:?} reached \
                  the daemon's launch enum without one, so nothing can even locate \
                  its interactive store"
+            );
+            assert!(
+                src.contains(&format!("scan_{token}(&")),
+                "no `scan_{token}(&` call in usage.rs — {agent:?} has a store-path \
+                 resolver but its scan is never chained into `interactive_records`, \
+                 so /api/usage reports none of its interactive sessions"
             );
         }
     }

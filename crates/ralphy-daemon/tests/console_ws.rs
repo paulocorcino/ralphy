@@ -82,6 +82,7 @@ async fn console_ws_spawns_shell_in_chosen_repo_and_lists_as_console_kind() {
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         std::time::Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),

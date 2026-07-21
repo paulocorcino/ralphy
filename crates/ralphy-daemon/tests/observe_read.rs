@@ -42,6 +42,7 @@ async fn serve_repo() -> (String, String) {
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
@@ -98,6 +99,7 @@ async fn serve_git_repo() -> (String, String) {
     let app = router(
         None,
         registry_path,
+        std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),

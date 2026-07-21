@@ -128,6 +128,7 @@ async fn console_session_reattaches_with_scrollback_then_closes() {
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         std::time::Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),

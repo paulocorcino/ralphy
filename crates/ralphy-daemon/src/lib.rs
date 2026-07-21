@@ -143,6 +143,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let kimi_dir = usage::kimi_dir_path()?;
     let kimi_code_dir = usage::kimi_code_dir_path()?;
     let copilot_db = usage::copilot_db_path()?;
+    let cursor_dir = usage::cursor_dir_path()?;
     axum::serve(
         listener,
         router(
@@ -155,6 +156,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             kimi_dir,
             kimi_code_dir,
             copilot_db,
+            cursor_dir,
             start,
             shutdown_rx,
             auth_state,
@@ -189,6 +191,7 @@ pub fn router(
     kimi_dir: PathBuf,
     kimi_code_dir: PathBuf,
     copilot_db: PathBuf,
+    cursor_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
@@ -250,6 +253,7 @@ pub fn router(
                 let kimi_dir = kimi_dir.clone();
                 let kimi_code_dir = kimi_code_dir.clone();
                 let copilot_db = copilot_db.clone();
+                let cursor_dir = cursor_dir.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
@@ -261,6 +265,7 @@ pub fn router(
                         kimi_dir,
                         kimi_code_dir,
                         copilot_db,
+                        cursor_dir,
                         registry,
                         daemon_id,
                         q.0.since,
@@ -1431,6 +1436,7 @@ async fn usage_route(
     kimi_dir: PathBuf,
     kimi_code_dir: PathBuf,
     copilot_db: PathBuf,
+    cursor_dir: PathBuf,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -1452,6 +1458,7 @@ async fn usage_route(
         &kimi_dir,
         &kimi_code_dir,
         &copilot_db,
+        &cursor_dir,
         &store,
         &runs,
         since.as_deref(),
@@ -1966,6 +1973,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2144,6 +2152,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2170,6 +2179,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2235,6 +2245,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2282,6 +2293,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2354,6 +2366,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2412,6 +2425,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2457,6 +2471,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2514,6 +2529,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
             claude_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2596,6 +2612,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2659,6 +2676,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             db.clone(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2732,6 +2750,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             db.clone(),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2785,6 +2804,7 @@ mod tests {
             kimi_dir.path().to_path_buf(),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2812,6 +2832,67 @@ mod tests {
         assert!(
             !body_string.contains("usd"),
             "no pricing in the payload; got: {body_string}"
+        );
+    }
+
+    /// `/api/usage` also carries Cursor interactive records, and their `tokens` is
+    /// JSON `null` — the key is PRESENT and is not `0` (ADR-0042 D11: Cursor keeps
+    /// no token count anywhere, so "unavailable" must not serialize as "spent
+    /// nothing"). Proves the `cursor_dir` router arg is threaded end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_cursor_interactive_records() {
+        let cursor_dir = tempfile::tempdir().unwrap();
+        let sid = "33333333-3333-3333-3333-333333333333";
+        let sess = cursor_dir.path().join("chats").join("aaaa").join(sid);
+        std::fs::create_dir_all(&sess).unwrap();
+        std::fs::write(
+            sess.join("meta.json"),
+            r#"{"schemaVersion":1,"createdAtMs":1784593842510,"hasConversation":true,"updatedAtMs":1784593855173,"cwd":"C:\\Dev\\FinCal"}"#,
+        )
+        .unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            cursor_dir.path().to_path_buf(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        let record = interactive
+            .iter()
+            .find(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("cursor")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some(sid)
+            })
+            .unwrap_or_else(|| panic!("no cursor record for {sid}; got: {body_string}"));
+        assert!(
+            record.get("tokens").is_some(),
+            "the tokens key must be PRESENT, not omitted; got: {record}"
+        );
+        assert!(
+            record["tokens"].is_null(),
+            "tokens must be null (unavailable), never 0; got: {record}"
         );
     }
 
@@ -2854,6 +2935,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -2882,6 +2964,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2927,6 +3010,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2949,6 +3033,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -3000,6 +3085,7 @@ mod tests {
         };
         router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -3388,6 +3474,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3483,6 +3570,7 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),

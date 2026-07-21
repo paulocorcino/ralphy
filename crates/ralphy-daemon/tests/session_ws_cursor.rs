@@ -72,6 +72,7 @@ async fn cursor_session_refuses_an_unprotected_repo_and_spawns_a_protected_one()
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
