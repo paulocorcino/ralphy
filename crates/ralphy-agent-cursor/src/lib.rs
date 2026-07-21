@@ -1,7 +1,12 @@
 //! The Cursor Agent CLI adapter. See docs/adr/0042.
 
+mod command;
 mod guards;
 mod settings;
+
+/// Locating the vendor's binary, which is on `PATH` on neither platform
+/// (ADR-0042 D14) — `ralphy init`'s presence gate goes through this.
+pub use command::locate_cursor;
 
 /// Persisted settings for `--agent cursor` (ADR-0042 D6). See [`CursorSettings`].
 pub use settings::CursorSettings;
