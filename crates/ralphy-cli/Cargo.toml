@@ -34,6 +34,7 @@ ralphy-agent-claude.workspace = true
 ralphy-agent-codex.workspace = true
 ralphy-agent-copilot.workspace = true
 ralphy-agent-cursor.workspace = true
+ralphy-agent-gemini.workspace = true
 ralphy-agent-kimi.workspace = true
 ralphy-agent-opencode.workspace = true
 ralphy-adapter-support.workspace = true

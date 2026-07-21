@@ -161,11 +161,70 @@ pub fn locate_program_with(
     if let Some(found) = find_program(name, path_var, pathext) {
         return Some(found);
     }
-    let mut cand = home?.join(".local").join("bin").join(name);
+    let home = home?;
+    let mut cand = home.join(".local").join("bin").join(name);
     if cfg!(windows) {
         cand.set_extension("exe");
     }
-    is_executable_file(&cand).then_some(cand)
+    if is_executable_file(&cand) {
+        return Some(cand);
+    }
+    // Last resort: a version-managed Node install, whose global bin is off `PATH`
+    // in a non-login shell (ADR-0043 D16).
+    nvm_candidates(&home, name)
+        .into_iter()
+        .find(|c| is_executable_file(c))
+}
+
+/// True when `dir` is a Windows drive mounted into a Linux filesystem —
+/// `/mnt/<letter>/…`, the WSL interop layout.
+///
+/// Under WSL the Windows `PATH` leaks into the Linux one, so a vendor CLI
+/// installed on Windows (`/mnt/c/Users/x/AppData/Roaming/npm/gemini`) is found by
+/// a plain `PATH` search and then fails to execute as a Linux program — or worse,
+/// executes the Windows binary against Linux paths (ADR-0043 D16). A Linux search
+/// must skip those directories and keep looking.
+///
+/// Pure over its input and OS-independent, so both directions unit-test on every
+/// platform; the `cfg!(unix)` decision of whether to APPLY it lives at the call
+/// site in [`find_program`].
+pub fn is_windows_mount_path(dir: &Path) -> bool {
+    let mut comps = dir.components();
+    let Some(std::path::Component::RootDir) = comps.next() else {
+        return false;
+    };
+    let Some(std::path::Component::Normal(mnt)) = comps.next() else {
+        return false;
+    };
+    if mnt != "mnt" {
+        return false;
+    }
+    matches!(comps.next(),
+        Some(std::path::Component::Normal(drive))
+            if drive.to_str().is_some_and(|d| d.len() == 1 && d.chars().all(|c| c.is_ascii_alphabetic())))
+}
+
+/// Every `<home>/.nvm/versions/node/*/bin/<name>`, sorted by version directory.
+///
+/// A version-managed Node install puts npm's global bin under the active Node
+/// version rather than on a stable path, and a non-login shell (which is what a
+/// daemon or a CI step gets) often carries neither the nvm shims nor the active
+/// version's bin on `PATH` (ADR-0043 D16). Sorting makes the answer deterministic
+/// rather than filesystem-order dependent.
+///
+/// Pure over its inputs — it only reads the directory listing — so it unit-tests
+/// against a temp home on every platform.
+pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
+    let versions = home.join(".nvm").join("versions").join("node");
+    let Ok(entries) = std::fs::read_dir(&versions) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path().join("bin").join(name))
+        .collect();
+    out.sort();
+    out
 }
 
 /// The home directory, from the platform's usual env var (`USERPROFILE` on
@@ -215,6 +274,12 @@ pub fn find_program(
         Vec::new()
     };
     for dir in std::env::split_paths(&path_var) {
+        // Under WSL the Windows PATH leaks in: a `/mnt/c/…` hit is a Windows
+        // binary that cannot run as a Linux program (ADR-0043 D16). Skip it and
+        // keep searching rather than returning an unrunnable path.
+        if cfg!(unix) && is_windows_mount_path(&dir) {
+            continue;
+        }
         let direct = dir.join(name);
         // On Windows a file is only executable when its extension is in PATHEXT,
         // so a bare extensionless `direct` must be skipped — npm ships agent CLIs
@@ -370,6 +435,70 @@ mod tests {
             "must return the .cmd, not the extensionless shim: {got:?}"
         );
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// ADR-0043 D16: a `/mnt/<drive>/…` directory is a Windows mount, and a Linux
+    /// `PATH` search must skip it. The helper is pure and OS-independent so both
+    /// directions are asserted on Windows and Linux CI alike.
+    #[test]
+    fn a_windows_mount_path_is_rejected_off_windows() {
+        assert!(is_windows_mount_path(Path::new(
+            "/mnt/c/Users/x/AppData/Roaming/npm"
+        )));
+        assert!(is_windows_mount_path(Path::new("/mnt/d")));
+        // `/mnt/data` is an ordinary Linux mount: the second component must be a
+        // SINGLE letter, or every `/mnt/*` volume would be skipped.
+        assert!(!is_windows_mount_path(Path::new("/mnt/data")));
+        assert!(!is_windows_mount_path(Path::new("/usr/local/bin")));
+        assert!(!is_windows_mount_path(Path::new("/mnt")));
+        // Relative paths never qualify — the layout is rooted by definition.
+        assert!(!is_windows_mount_path(Path::new("mnt/c/npm")));
+    }
+
+    /// ADR-0043 D16: npm's global bin under a version-managed Node install is off
+    /// `PATH` in a non-login shell, so the locator has to look there by hand.
+    #[test]
+    fn nvm_candidates_cover_a_version_managed_install() {
+        let home = tempfile::tempdir().unwrap();
+        assert!(
+            nvm_candidates(home.path(), "gemini").is_empty(),
+            "no .nvm at all is not an error"
+        );
+
+        for v in ["v20.11.0", "v22.22.2"] {
+            let bin = home.path().join(".nvm/versions/node").join(v).join("bin");
+            fs::create_dir_all(&bin).unwrap();
+            let exe = bin.join("gemini");
+            fs::write(&exe, b"#!/usr/bin/env node\n").unwrap();
+            mark_executable(&exe);
+        }
+
+        let got = nvm_candidates(home.path(), "gemini");
+        assert_eq!(got.len(), 2, "{got:?}");
+        // Sorted, so the answer does not depend on filesystem order.
+        let mut sorted = got.clone();
+        sorted.sort();
+        assert_eq!(got, sorted);
+        assert!(
+            got.iter().all(|p| p.ends_with("bin/gemini")
+                || p.ends_with("bin\\gemini")
+                || p.file_name().and_then(|n| n.to_str()) == Some("gemini")),
+            "{got:?}"
+        );
+
+        // …and the locator actually reaches them: `PATH` is empty, `~/.local/bin`
+        // holds nothing, so only the nvm fallback can answer. (Windows gates
+        // executability on PATHEXT, so the extensionless fixture only resolves on
+        // Unix — the CANDIDATE list above is what this asserts cross-platform.)
+        if cfg!(unix) {
+            let found = locate_program_with(
+                "gemini",
+                Some(std::ffi::OsString::new()),
+                None,
+                Some(home.path().to_path_buf()),
+            );
+            assert_eq!(found, got.first().cloned(), "the nvm fallback must be hit");
+        }
     }
 
     #[test]

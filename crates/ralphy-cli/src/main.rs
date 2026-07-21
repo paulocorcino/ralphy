@@ -73,6 +73,7 @@ pub(crate) fn consolidate_defaults(
         CliAgent::Codex
         | CliAgent::Copilot
         | CliAgent::Cursor
+        | CliAgent::Gemini
         | CliAgent::Kimi
         | CliAgent::OpenCode => (None, None),
     }
@@ -103,6 +104,11 @@ fn consolidate_with_agent(
         }
         CliAgent::Cursor => {
             ralphy_agent_cursor::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        // The one-shot verbs are another slice of #252; the enum is matched
+        // exhaustively, so the arm must exist to compile (ADR-0043).
+        CliAgent::Gemini => {
+            anyhow::bail!("`ralphy consolidate` is not yet wired for --agent gemini")
         }
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)

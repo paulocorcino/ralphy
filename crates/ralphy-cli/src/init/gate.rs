@@ -11,6 +11,7 @@ pub enum Agent {
     Codex,
     Copilot,
     Cursor,
+    Gemini,
     Kimi,
     Opencode,
 }
@@ -26,13 +27,14 @@ impl Agent {
     /// A NEWCOMER GOES LAST, for the same reason: appending preserves every
     /// current no-flag choice, whereas inserting one before `Copilot` would change
     /// it on a machine already logged into that newcomer.
-    pub const ALL: [Agent; 6] = [
+    pub const ALL: [Agent; 7] = [
         Agent::Claude,
         Agent::Codex,
         Agent::Kimi,
         Agent::Opencode,
         Agent::Copilot,
         Agent::Cursor,
+        Agent::Gemini,
     ];
 
     pub fn cli_name(&self) -> &'static str {
@@ -41,6 +43,7 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
             Agent::Cursor => "cursor",
+            Agent::Gemini => "gemini",
             Agent::Kimi => "kimi",
             Agent::Opencode => "opencode",
         }
@@ -55,6 +58,7 @@ impl Agent {
             Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
             Agent::Copilot => ralphy_agent_copilot::ACCEPTS_IMAGES,
             Agent::Cursor => ralphy_agent_cursor::ACCEPTS_IMAGES,
+            Agent::Gemini => ralphy_agent_gemini::ACCEPTS_IMAGES,
             Agent::Kimi => ralphy_agent_kimi::ACCEPTS_IMAGES,
             Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
         }
@@ -245,6 +249,13 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         // in — the precise failure this arm exists to avoid.
         Agent::Cursor => return cursor_logged_in(ralphy_agent_cursor::probe_cursor_login()),
 
+        // The third early return, for the same reason as Cursor's but keyed on a
+        // CODE rather than a JSON field: this vendor answers authentication with
+        // exit 41 (ADR-0043 D6), and the shared `status().success()` tail would
+        // report every non-zero exit — a bad flag, a config error — as "logged
+        // out". The probe (`--list-sessions`) costs no model call.
+        Agent::Gemini => return ralphy_agent_gemini::probe_gemini_login(),
+
         Agent::Kimi => {
             // The kimi-code 0.28 headless contract (ADR-0028 D5), same argv shape the
             // adapter builds: `hello` is the VALUE of `-p`, never a positional word.
@@ -297,7 +308,7 @@ mod tests {
         assert!(!Agent::Opencode.accepts_images());
         // The hardcoded ALL array length must track the enum: a new variant that
         // never joins ALL is invisible to `ralphy init`'s agent report.
-        assert_eq!(Agent::ALL.len(), 6);
+        assert_eq!(Agent::ALL.len(), 7);
     }
 
     /// `init`/`triage` auto-selection takes the FIRST logged-in agent in `ALL`, and
@@ -312,7 +323,7 @@ mod tests {
     fn newcomers_go_last_in_all() {
         assert_eq!(
             &Agent::ALL[Agent::ALL.len() - 2..],
-            &[Agent::Copilot, Agent::Cursor]
+            &[Agent::Cursor, Agent::Gemini]
         );
     }
 

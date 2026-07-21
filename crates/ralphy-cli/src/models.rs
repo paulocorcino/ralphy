@@ -11,6 +11,7 @@ fn agent_slug(a: crate::CliAgent) -> &'static str {
         crate::CliAgent::Codex => "codex",
         crate::CliAgent::Copilot => "copilot",
         crate::CliAgent::Cursor => "cursor",
+        crate::CliAgent::Gemini => "gemini",
         crate::CliAgent::Kimi => "kimi",
         crate::CliAgent::OpenCode => "opencode",
     }

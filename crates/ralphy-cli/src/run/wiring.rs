@@ -12,6 +12,7 @@ use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
 use ralphy_agent_copilot::CopilotAgent;
 use ralphy_agent_cursor::CursorAgent;
+use ralphy_agent_gemini::GeminiAgent;
 use ralphy_agent_kimi::KimiAgent;
 use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{github, Agent, BranchMode};
@@ -230,6 +231,13 @@ pub(crate) fn build_agent(
             CursorAgent::new(cursor.exec_model.clone(), run_dir)
                 .with_plan_model(cursor.plan_model.clone())
                 .with_allow_indexing(cursor.allow_indexing)
+                .with_run_deadline(run_deadline)
+                .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+                .with_idle_minutes(headless_idle),
+        ),
+        CliAgent::Gemini => Box::new(
+            GeminiAgent::new(args.exec_model.clone(), run_dir)
+                .with_plan_model(args.plan_model.clone())
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
@@ -662,5 +670,62 @@ mod tests {
             Some(0),
         );
         assert_eq!(agent.name(), "cursor");
+    }
+
+    /// `--agent gemini` must reach a REAL adapter, not fall through to another
+    /// vendor: the composition root's match is the last place the wiring can go
+    /// silently wrong (ADR-0043 D1).
+    #[test]
+    fn build_agent_builds_a_gemini_agent() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from(["ralphy", "run", "--agent", "gemini"])
+            .expect("`--agent gemini` must parse");
+        let crate::cli::Command::Run(args) = cli.command else {
+            panic!("expected the run subcommand");
+        };
+        assert_eq!(args.agent, CliAgent::Gemini);
+
+        let claude = ResolvedClaude {
+            plan_model: String::new(),
+            plan_effort: String::new(),
+            exec_effort: String::new(),
+            default_exec_model: String::new(),
+            max_minutes_per_issue: 30,
+            remote_control: false,
+        };
+        let agent = build_agent(
+            CliAgent::Gemini,
+            &args,
+            PathBuf::from("/run"),
+            None,
+            None,
+            &claude,
+            &resolve_copilot(None, None, &Default::default()),
+            &resolve_cursor(None, None, &Default::default()),
+            Some(0),
+        );
+        assert_eq!(agent.name(), "gemini");
+    }
+
+    /// `--plan-agent gemini` selects this vendor for the planning phase alone.
+    #[test]
+    fn plan_agent_gemini_is_accepted() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from([
+            "ralphy",
+            "run",
+            "--agent",
+            "claude",
+            "--plan-agent",
+            "gemini",
+        ])
+        .expect("`--plan-agent gemini` must parse");
+        let crate::cli::Command::Run(args) = cli.command else {
+            panic!("expected the run subcommand");
+        };
+        assert_eq!(
+            resolve_plan_agent(args.plan_agent, args.agent),
+            CliAgent::Gemini
+        );
     }
 }

@@ -1,0 +1,25 @@
+[package]
+name = "ralphy-agent-gemini"
+version = "0.1.0-rc13"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Gemini CLI adapter for Ralphy: drives headless `gemini` behind the core Agent contract."
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+# The operator's policy documents are TOML; Ralphy parses them to keep only the
+# restrictive rules (ADR-0043 D5).
+toml.workspace = true
+ralphy-core.workspace = true
+ralphy-adapter-support.workspace = true
+# The vendor locator lives here so the daemon can share it without importing
+# `ralphy-core` (ADR-0032 §10, ADR-0043 D16).
+ralphy-proc-util.workspace = true
+# The login probe runs in a throwaway cwd, so it is a regular dep, not a dev one
+# (see `auth::probe_gemini_login`).
+tempfile.workspace = true

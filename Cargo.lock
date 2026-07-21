@@ -1599,6 +1599,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-agent-gemini"
+version = "0.1.0-rc13"
+dependencies = [
+ "anyhow",
+ "ralphy-adapter-support",
+ "ralphy-core",
+ "ralphy-proc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 0.8.23",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ralphy-agent-kimi"
 version = "0.1.0-rc13"
 dependencies = [
@@ -1643,6 +1659,7 @@ dependencies = [
  "ralphy-agent-codex",
  "ralphy-agent-copilot",
  "ralphy-agent-cursor",
+ "ralphy-agent-gemini",
  "ralphy-agent-kimi",
  "ralphy-agent-opencode",
  "ralphy-core",
