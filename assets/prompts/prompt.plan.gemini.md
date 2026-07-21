@@ -58,6 +58,12 @@ on one.
 1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` and
    `.ralphy/knowledge/KNOWLEDGE.md` (when present), and the relevant project
    docs.
+   Ralphy's skills are materialized into the configuration root Ralphy owns for
+   this run and are discovered BY NAME (`reviewer`, `setup-pocock`,
+   `staged-plan`) — the operator's own `~/.gemini/skills` is never read, so a
+   step that wants a skill must name it exactly. Delegation to subagents is
+   denied for the whole run, so a named skill activates and runs inside the
+   turn that names it, never handed off.
 2. Decide whether the issue is well-specified enough to implement
    autonomously, end to end, with a clear "done" criterion that the project's
    tests (or a build) can verify.
@@ -145,6 +151,15 @@ on one.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
+   - [ ] Self-review: activate the `reviewer` skill IN THIS TURN — never as a
+         subagent, since delegation to subagents is denied for the whole run —
+         over ONLY the commits made for this issue, not the whole branch. For a
+         small mechanical diff (single crate, no new control flow,
+         follow-a-pattern edits), a direct adversarial re-read by the executor
+         itself is the lighter variant instead of the full skill invocation.
+         Record findings under `## Self-review findings`. Resolve every HIGH
+         finding before finishing; if one cannot be fixed autonomously, record
+         it under `## Notes & decisions` and block.
    - [ ] the project's format and test commands pass with no new warnings
    ```
 
@@ -322,6 +337,21 @@ on one.
   green on ONE minimal unit — then fan out the rest. A session can stall at
   any step: easy-first ordering leaves valuable-but-unverifiable residue;
   skeleton-first leaves a spine that stands alone.
+- The penultimate step is a self-review over ONLY the commits you made for
+  this issue — include it by DEFAULT. Activate the `reviewer` skill IN THIS
+  TURN — never as a subagent, since delegation to subagents is denied for the
+  whole run — hunting for what tests can't catch, with the findings recorded
+  under `## Self-review findings`. Scale the depth to the diff: a
+  multi-file/multi-crate change with real domain logic earns the skill's full
+  pass; a small mechanical change (single crate/package, no new control flow,
+  follow-a-pattern edits) earns a direct adversarial re-read by the executor
+  itself instead.
+  Omit the step entirely only when the change carries no domain logic at all
+  (pure data/fixtures/docs), and record that omission as a `## Decisions`
+  bullet with a one-line why. The step buys a real review: the executor must
+  record the findings in the plan, so do not include it as ritual.
+  Resolve every HIGH finding before declaring done.
+- The LAST step is always a green-build/test gate.
 - Write the plan telegraphically: its readers are the executor session and
   the runner, not a human browsing for pleasure. Compress connective prose —
   articles, hedges, narrative lead-ins — but NEVER referents: exact file
