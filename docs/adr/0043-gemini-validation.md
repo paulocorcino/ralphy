@@ -175,8 +175,10 @@ if (settings.security?.disableYoloMode || settings.admin?.secureModeEnabled) {
 root, which is why the adapter now overrides that arm's sentence only when the
 admin needle is present.
 
-**The five needles** the in-flight tier matches (`revocation::NEEDLES`), each
-copied verbatim from the bundle:
+**The needles** the in-flight tier matches (`revocation::NEEDLES` — eight
+literals across five variants), each copied verbatim from the bundle. Only the
+first three are **hard stops**; the last two are notices the CLI prints while
+continuing, so they must never outrank a limit or an exit-class diagnosis:
 
 | Needle | Meaning |
 | --- | --- |
