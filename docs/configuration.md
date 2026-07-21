@@ -192,8 +192,9 @@ variable, no `.cursor-plugin/plugin.json` manifest (ADR-0042 D12). This is the
 cheapest skill delivery of any vendor Ralphy drives.
 
 Because every run executes against an isolated, scratch `CURSOR_CONFIG_DIR`
-(D17), the operator's own `~/.cursor/skills/` is **not visible** to a Ralphy
-run. Only the repository-local root is read.
+(D17), the operator's own `~/.cursor/skills/` — Cursor's OWN user-level root,
+which the vendor resolves relative to `CURSOR_CONFIG_DIR` — is **not visible**
+to a Ralphy run. Only the repository-local root is read.
 
 ### The foreign harvest is real, and it is not suppressed
 
@@ -207,9 +208,12 @@ call (ADR-0042 D12; spike §8 Phase 4).
 Isolating `HOME`/`CURSOR_CONFIG_DIR` further would suppress the harvest, but
 it would also isolate the vendor credential, forcing a second login — a worse
 trade for the operator than the token cost. Ralphy documents the behavior
-here and does not fight it. **D17's config isolation does not help**: the
-foreign roots are resolved from the repository and `HOME`, not from
-`CURSOR_CONFIG_DIR`, so they are harvested regardless.
+here and does not fight it. **D17's isolation covers only Cursor's OWN root,
+not the foreign ones**: unlike `~/.cursor/skills/` above, the foreign roots
+(`.claude/skills`, `.codex/skills` and their `~/` equivalents) are resolved
+from the repository path and the real `HOME`, never from `CURSOR_CONFIG_DIR`
+— so scoping `CURSOR_CONFIG_DIR` narrows what Cursor treats as *its own*
+skills, and has no effect on what it harvests from *other* vendors.
 
 Practical consequence: a per-issue token budget tuned against another vendor
 (one with no foreign-skill harvest) reads wrong for Cursor — expect materially

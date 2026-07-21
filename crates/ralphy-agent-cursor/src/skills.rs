@@ -173,11 +173,42 @@ mod tests {
                 "materialize wrote outside the workspace: {path:?}"
             );
         }
+    }
 
-        let needle = concat!("home", "_dir");
-        assert!(
-            !include_str!("skills.rs").contains(needle),
-            "the user-level root must be reachable only through link_or_copy_dir"
+    /// A source-text grep for the literal "home_dir" cannot catch a regression
+    /// that reaches the user-level root through a different call shape, and it
+    /// only ever checked `skills.rs`'s own text — not the actual location a
+    /// leak would land. This observes the REAL location instead: snapshot
+    /// `<home>/.cursor/skills` before and after, on this machine, where a
+    /// regression calling `ralphy_adapter_support::home_dir()` (already used
+    /// elsewhere in this crate, `command.rs`'s config-dir seeding) would
+    /// actually write.
+    #[test]
+    fn materialize_never_writes_under_the_real_home_directory() {
+        let (_dir, ws) = workspace("home-safety");
+        let Some(home) = ralphy_adapter_support::home_dir() else {
+            return; // no HOME/USERPROFILE resolvable in this environment
+        };
+        let home_skills = home.join(".cursor").join("skills");
+
+        fn snapshot(dir: &std::path::Path) -> Option<Vec<std::ffi::OsString>> {
+            let mut names: Vec<_> = fs::read_dir(dir)
+                .ok()?
+                .flatten()
+                .map(|e| e.file_name())
+                .collect();
+            names.sort();
+            Some(names)
+        }
+
+        let before = snapshot(&home_skills);
+        materialize_cursor_skills(&ws).expect("materialize");
+        let after = snapshot(&home_skills);
+
+        assert_eq!(
+            before, after,
+            "materialize_cursor_skills must never write under the operator's real \
+             home-level skills root: {home_skills:?}"
         );
     }
 
