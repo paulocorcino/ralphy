@@ -10,7 +10,9 @@
 //! argv). Cursor carries exactly one key,
 //! `cursor.allow_codebase_indexing_i_understand_the_risk` (#243, ADR-0042 D6) —
 //! it has no persisted model keys, because `--model` is mandatory on that vendor
-//! and so has no "unset" state to persist. The budget knob stays Claude-only today — a Codex equivalent is
+//! and so has no "unset" state to persist. Gemini carries the two per-phase pins
+//! `gemini.plan_model` / `gemini.exec_model` (#257, ADR-0043 D8), validated
+//! against the vendor's id set at `set` time only. The budget knob stays Claude-only today — a Codex equivalent is
 //! deferred. Each resolves with the same precedence: per-run flag then
 //! `settings.json` then a hardcoded default — except the two Copilot effort keys,
 //! which have no flag at all (#227 owns whether `--plan-effort`/`--exec-effort`
@@ -24,6 +26,7 @@ use clap::{Args, Subcommand};
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
+use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
@@ -112,6 +115,8 @@ const SUPPORTED_KEYS: &[&str] = &[
     "copilot.exec_effort",
     "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
     "cursor.allow_codebase_indexing_i_understand_the_risk",
+    "gemini.plan_model",
+    "gemini.exec_model",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -128,7 +133,7 @@ model/effort/budget defaults are Claude-only today \
 Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
 copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
 hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
-which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243)";
+which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \ngemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \nroutes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -176,6 +181,13 @@ fn with_cursor(s: &mut Settings, f: impl FnOnce(&mut CursorSettings)) -> Result<
     let mut c: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
     f(&mut c);
     s.set_agent_settings(CursorSettings::SECTION, &c)
+}
+
+/// Load-mutate-store the Gemini section; same contract as [`with_claude`].
+fn with_gemini(s: &mut Settings, f: impl FnOnce(&mut GeminiSettings)) -> Result<()> {
+    let mut g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
+    f(&mut g);
+    s.set_agent_settings(GeminiSettings::SECTION, &g)
 }
 
 pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
@@ -271,6 +283,26 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
         // run upload the operator's repository to the vendor. Ralphy never denies
         // the capability — it denies a SILENT one.
+        // Validated HERE and only here: a persisted id is refused at
+        // configuration time rather than mid-run, while `--plan-model`/
+        // `--exec-model` stay unfiltered so a stale local list cannot block an id
+        // the vendor has started serving (ADR-0043 D8).
+        "gemini.plan_model" | "gemini.exec_model" => {
+            if !ralphy_agent_gemini::is_pinnable_model(value) {
+                bail!(
+                    "{key} must be a Gemini model id the CLI still serves, got '{value}'; valid: {}",
+                    ralphy_agent_gemini::PINNABLE_MODELS.join(", ")
+                );
+            }
+            let plan = key == "gemini.plan_model";
+            with_gemini(&mut s, |g| {
+                if plan {
+                    g.plan_model = Some(value.to_owned());
+                } else {
+                    g.exec_model = Some(value.to_owned());
+                }
+            })?
+        }
         "cursor.allow_codebase_indexing_i_understand_the_risk" => {
             let b = value
                 .parse::<bool>()
@@ -323,6 +355,8 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "cursor.allow_codebase_indexing_i_understand_the_risk" => with_cursor(&mut s, |c| {
             c.allow_codebase_indexing_i_understand_the_risk = false
         })?,
+        "gemini.plan_model" => with_gemini(&mut s, |g| g.plan_model = None)?,
+        "gemini.exec_model" => with_gemini(&mut s, |g| g.exec_model = None)?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -340,6 +374,7 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
     let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
     let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
+    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
@@ -373,6 +408,8 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         "cursor.allow_codebase_indexing_i_understand_the_risk = {}",
         cursor.allow_codebase_indexing_i_understand_the_risk
     );
+    print_str("gemini.plan_model", gemini.plan_model);
+    print_str("gemini.exec_model", gemini.exec_model);
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -399,6 +436,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
     let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
     let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
+    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
     let slug = git::project_slug(ws.repo_root());
     let events = crate::events::config::EventsStore::load().unwrap_or_default();
     let entry = events.entry(&slug);
@@ -428,6 +466,8 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
             copilot.allow_builtin_mcp_servers_i_understand_the_risk,
         "cursor.allow_codebase_indexing_i_understand_the_risk":
             cursor.allow_codebase_indexing_i_understand_the_risk,
+        "gemini.plan_model": gemini.plan_model,
+        "gemini.exec_model": gemini.exec_model,
     }))
 }
 
@@ -636,6 +676,52 @@ mod tests {
         let s = Settings::load(&ws).unwrap();
         let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
         assert!(!c.allow_codebase_indexing_i_understand_the_risk);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// ADR-0043 D8 (#257): the two Gemini per-phase pins persist, print, emit and
+    /// clear — and an id the CLI no longer serves is refused HERE, before a spawn.
+    #[test]
+    fn gemini_config_round_trip() {
+        let (ws, dir) = tmp_ws("gemini-config-round-trip");
+
+        set(&ws, "gemini.plan_model", "gemini-2.5-pro").unwrap();
+        set(&ws, "gemini.exec_model", "gemini-3.5-flash").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(g.plan_model.as_deref(), Some("gemini-2.5-pro"));
+        assert_eq!(g.exec_model.as_deref(), Some("gemini-3.5-flash"));
+
+        let json = config_json(&ws).unwrap();
+        assert_eq!(
+            json["gemini.exec_model"],
+            serde_json::json!("gemini-3.5-flash")
+        );
+        assert_eq!(
+            json["gemini.plan_model"],
+            serde_json::json!("gemini-2.5-pro")
+        );
+        get(&ws, false).unwrap();
+
+        // The retired id is refused at configuration time, naming what was asked.
+        let err = set(&ws, "gemini.exec_model", "gemini-3-pro-preview")
+            .expect_err("a retired id must not be pinnable");
+        assert!(err.to_string().contains("gemini-3-pro-preview"), "{err}");
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(
+            g.exec_model.as_deref(),
+            Some("gemini-3.5-flash"),
+            "the refused write must leave the stored value alone"
+        );
+
+        unset(&ws, "gemini.plan_model").unwrap();
+        unset(&ws, "gemini.exec_model").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(g.plan_model, None);
+        assert_eq!(g.exec_model, None);
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -1103,6 +1189,8 @@ mod tests {
                 "copilot.plan_effort" | "copilot.exec_effort" => "high",
                 "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
                 "cursor.allow_codebase_indexing_i_understand_the_risk" => "true",
+                // Validated against the vendor's id set, so `x` is refused.
+                "gemini.plan_model" | "gemini.exec_model" => "gemini-3.5-flash",
                 _ => "x",
             }
         };
