@@ -32,6 +32,7 @@ use tracing::info;
 mod auth;
 mod command;
 mod guards;
+mod model;
 mod outcome;
 mod settings;
 
@@ -46,7 +47,13 @@ pub use command::locate_cursor;
 /// Persisted settings for `--agent cursor` (ADR-0042 D6). See [`CursorSettings`].
 pub use settings::CursorSettings;
 
+/// The vendor's id grammar, normalized to the billing family (ADR-0042 D5) — the
+/// price table's key. Vendor-specific by ADR-0004, so it lives here and
+/// `PriceTable::resolve` stays neutral.
+pub use model::model_family;
+
 use command::{build_cursor_command, mint_session_id};
+use model::model_refusal_stop;
 use outcome::{classify_cursor_outcome, fold_cursor_stream};
 
 /// `false` (ADR-0042 D15): no attachment channel appears anywhere in Cursor's
@@ -185,7 +192,7 @@ impl Agent for CursorAgent {
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());
-            ralphy_core::emit::planning("cursor", model.unwrap_or(""), "");
+            ralphy_core::emit::planning("cursor", model.unwrap_or(command::AUTO_MODEL), "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -217,7 +224,10 @@ impl Agent for CursorAgent {
             // D13 is open: no limit signature has ever been observed on this
             // vendor, so a limit surfaces as an ordinary failure rather than a
             // guessed phrase match that would park the queue on a false positive.
-            |_log| None,
+            // A `--model` refusal, though, IS observed and IS actionable: the
+            // closure fires only when no plan file was written, which is exactly
+            // the refusal shape (zero records, exit 1).
+            |log| model_refusal_stop(log, model),
         )?;
 
         if let Some((r, _)) = session.as_ref() {
@@ -233,11 +243,12 @@ impl Agent for CursorAgent {
             // Cursor's model axis is a plan entitlement, not a complexity tier (D5).
             recommended_model: None,
             path: plan_path,
-            // Usage accounting is its own slice of #242: `result.usage` is the only
+            // TOKEN accounting is its own slice of #242: `result.usage` is the only
             // accounting this vendor has (D11), and reporting a number without that
             // slice's sum-vs-keep-last fixture test is exactly the failure ADR-0040
-            // C6 warns about.
-            usage: Default::default(),
+            // C6 warns about. What IS reported here is the model Ralphy REQUESTED,
+            // so a pinned run is distinguishable from a routed one.
+            usage: requested_model_usage(model),
             // `None` = a finalized plan was RESUMED and no `cursor-agent` ran.
             session_id: session.map(|_| session_id),
         })
@@ -257,7 +268,7 @@ impl Agent for CursorAgent {
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());
-            ralphy_core::emit::executing("cursor", 0, model.unwrap_or(""), "");
+            ralphy_core::emit::executing("cursor", 0, model.unwrap_or(command::AUTO_MODEL), "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_cursor(cmd, PROMPT_EXECUTE, timeout, ws.repo_root())?;
             Ok((r, ()))
@@ -274,6 +285,13 @@ impl Agent for CursorAgent {
             run,
             auth::is_cursor_auth_error,
         )?;
+
+        // BEFORE classification, on every return of this path: a `--model` refusal
+        // leaves the same zero-record, exit-1 shape as a truncation, so classifying
+        // first would report it as `Stuck` and lose the one sentence that fixes it.
+        if let Some(e) = model_refusal_stop(&r.log, model) {
+            return Err(e);
+        }
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
@@ -297,10 +315,22 @@ impl Agent for CursorAgent {
         );
         Ok(Execution {
             outcome,
-            // See `plan`: usage accounting is its own slice of #242.
-            usage: Default::default(),
+            // See `plan`: token accounting is its own slice of #242.
+            usage: requested_model_usage(model),
             session_id: Some(session_id),
         })
+    }
+}
+
+/// Attribute the model Ralphy REQUESTED, normalized to its billing family. Token
+/// counts stay zero until #249, and `cost_usd_by_model` skips zero-token entries,
+/// so this adds an attribution without a spurious cost. No pin is attributed as
+/// the literal `auto` — the vendor's own name for the routed path, and what an
+/// absent `--model` would have sent anyway (D4).
+fn requested_model_usage(model: Option<&str>) -> ralphy_core::Usage {
+    ralphy_core::Usage {
+        model: Some(model_family(model.unwrap_or(command::AUTO_MODEL))),
+        ..Default::default()
     }
 }
 
@@ -327,6 +357,21 @@ fn note_vendor_error(fold: &outcome::CursorFold) {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    /// Story 21: a pinned run must be distinguishable from a routed one in the run
+    /// report, and the routed one must not read as "not reported".
+    #[test]
+    fn the_requested_model_is_attributed_and_auto_is_named() {
+        assert_eq!(
+            requested_model_usage(Some("composer-2.5-fast"))
+                .model
+                .as_deref(),
+            Some("composer-2.5")
+        );
+        assert_eq!(requested_model_usage(None).model.as_deref(), Some("auto"));
+        // Token counts stay zero until #249, so no cost is fabricated.
+        assert_eq!(requested_model_usage(None).input, 0);
+    }
 
     #[test]
     fn accepts_images_is_false() {

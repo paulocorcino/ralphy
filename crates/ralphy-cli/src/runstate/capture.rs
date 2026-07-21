@@ -509,8 +509,13 @@ mod tests {
             "crates/ralphy-agent-cursor/src/lib.rs",
             1,
             1,
-            &["\"cursor\"", "model.unwrap_or(\"\")", "\"\""],
-            &["\"cursor\"", "0", "model.unwrap_or(\"\")", "\"\""],
+            &["\"cursor\"", "model.unwrap_or(command::AUTO_MODEL)", "\"\""],
+            &[
+                "\"cursor\"",
+                "0",
+                "model.unwrap_or(command::AUTO_MODEL)",
+                "\"\"",
+            ],
         ),
         (
             "crates/ralphy-agent-kimi/src/lib.rs",

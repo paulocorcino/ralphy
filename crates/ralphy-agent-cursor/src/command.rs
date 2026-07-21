@@ -20,7 +20,7 @@ pub(crate) fn mint_session_id() -> String {
 /// The model value Ralphy sends when it has no preference. **Never omission**: on
 /// this vendor an absent `--model` does not mean "the account default", it means
 /// "whatever the last invocation left in `cli-config.json`" (ADR-0042 D4).
-const AUTO_MODEL: &str = "auto";
+pub(crate) const AUTO_MODEL: &str = "auto";
 
 /// The vendor's own name for the two shims it installs for one binary (D14).
 const NAMES: [&str; 2] = ["cursor-agent", "agent"];
