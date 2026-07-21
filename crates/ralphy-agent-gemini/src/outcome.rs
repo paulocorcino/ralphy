@@ -162,6 +162,10 @@ pub(crate) enum ExitClass {
     Untrusted,
     Cancelled,
     Limit,
+    /// The CLI's internal self-relaunch sentinel (ADR-0043 D3/D18). Reaching a
+    /// caller means the wrapper's re-exec did NOT complete — a distinct diagnosis
+    /// from an unmapped upstream HTTP code, which is why it is not [`Self::Other`].
+    Relaunch,
     /// A code the taxonomy does not assign. **Not** an error to reach: the CLI's
     /// `extractErrorCode()` forwards any numeric `.code`/`.status` it finds
     /// straight to `process.exit()`, so an upstream HTTP status is reachable here.
@@ -194,6 +198,21 @@ impl ExitClass {
                 "gemini rejected the command line (exit 42) — the installed CLI \
                  does not accept the argv this adapter builds",
             ),
+            // A budget stop, not a crash: the session ended because it ran out of
+            // turns, and reporting it as an unexplained `Stuck` hides the one fact
+            // that tells an operator to raise the ceiling rather than debug a hang.
+            ExitClass::TurnLimit => Some(
+                "gemini stopped at its turn ceiling (exit 53) — a budget stop, not \
+                 a crash",
+            ),
+            ExitClass::ToolFailure => Some(
+                "gemini failed executing a tool (exit 54) — the failure is in the \
+                 workspace, not in the model",
+            ),
+            ExitClass::Relaunch => Some(
+                "gemini exited on its internal relaunch sentinel (exit 199) — the \
+                 CLI's self re-exec did not complete",
+            ),
             _ => None,
         }
     }
@@ -212,6 +231,7 @@ pub(crate) fn classify_exit(code: Option<i32>) -> ExitClass {
         Some(54) => ExitClass::ToolFailure,
         Some(55) => ExitClass::Untrusted,
         Some(130) => ExitClass::Cancelled,
+        Some(199) => ExitClass::Relaunch,
         Some(429) => ExitClass::Limit,
         _ => ExitClass::Other,
     }
@@ -399,6 +419,7 @@ mod tests {
             (Some(54), ExitClass::ToolFailure),
             (Some(55), ExitClass::Untrusted),
             (Some(130), ExitClass::Cancelled),
+            (Some(199), ExitClass::Relaunch),
             (Some(429), ExitClass::Limit),
             (Some(999), ExitClass::Other),
             (None, ExitClass::Other),
@@ -603,6 +624,149 @@ mod tests {
             classify_gemini_outcome(&ok, "", true, false, true, Some(0)),
             Outcome::Blocked(_)
         ));
+    }
+
+    /// The two stops that mean "the session ran out of budget" and "a tool broke",
+    /// which both reached the operator as a mute `Stuck` before their sentences
+    /// existed. A budget stop and a crash call for opposite reactions — raise the
+    /// ceiling versus debug the run — so collapsing them is a real loss.
+    #[test]
+    fn a_turn_ceiling_is_a_budget_stop_not_a_failure() {
+        let fold = fold_gemini_stream("");
+        for (code, needle) in [(53, "turn ceiling"), (54, "tool")] {
+            match classify_gemini_outcome(&fold, "", false, false, false, Some(code)) {
+                Outcome::Blocked(reason) => assert!(
+                    reason.to_ascii_lowercase().contains(needle),
+                    "exit {code} must name {needle:?}, got {reason:?}"
+                ),
+                other => panic!("exit {code} must be a named stop, got {other:?}"),
+            }
+        }
+        // The discriminating control: exit 1 is the vendor's generic/model failure
+        // and must keep falling through the ladder, or every non-zero exit becomes
+        // a `Blocked` and the distinction this test buys is worthless.
+        assert!(!matches!(
+            classify_gemini_outcome(&fold, "", false, false, false, Some(1)),
+            Outcome::Blocked(_)
+        ));
+    }
+
+    /// D18: the `199` sentinel should never be observed, because the CLI's wrapper
+    /// re-execs itself. Observing it means that re-exec broke — a diagnosis worth
+    /// its own sentence rather than a fold into the unmapped catch-all.
+    #[test]
+    fn the_relaunch_sentinel_is_mapped() {
+        assert_eq!(classify_exit(Some(199)), ExitClass::Relaunch);
+        match classify_gemini_outcome(&fold_gemini_stream(""), "", false, false, false, Some(199)) {
+            Outcome::Blocked(reason) => assert!(
+                reason.contains("199") && reason.to_ascii_lowercase().contains("relaunch"),
+                "the sentinel must name itself, got {reason:?}"
+            ),
+            other => panic!("exit 199 must be a named stop, got {other:?}"),
+        }
+    }
+
+    /// The `fold.status != Some("error")` half of `succeeded`, which no other test
+    /// discriminates: a clean exit code alone must not make a run green when the
+    /// terminal envelope says the session errored.
+    #[test]
+    fn the_envelope_status_is_honoured_when_present() {
+        let stream = |status: &str| {
+            format!(
+                "{}\n{}\n",
+                msg("assistant", "work is done\nRALPHY_DONE_EXIT"),
+                serde_json::json!({"type": "result", "status": status})
+            )
+        };
+        assert_ne!(
+            classify_gemini_outcome(
+                &fold_gemini_stream(&stream("error")),
+                "",
+                true,
+                false,
+                true,
+                Some(0)
+            ),
+            Outcome::Done,
+            "an errored envelope must not be reported as a completed run"
+        );
+        // Same stream, same clean exit — only the status differs, so the assertion
+        // above cannot be passing for some unrelated reason.
+        assert_eq!(
+            classify_gemini_outcome(
+                &fold_gemini_stream(&stream("success")),
+                "",
+                true,
+                false,
+                true,
+                Some(0)
+            ),
+            Outcome::Done
+        );
+    }
+
+    /// The vendor prints this preamble on stderr on EVERY run, successful ones
+    /// included (spike §"stderr is never empty", 2026-07-20) — note the YOLO line
+    /// arrives TWICE. A health check keyed on a non-empty stderr, or a limit
+    /// matcher loose enough to catch "not available", would report every healthy
+    /// run as degraded.
+    #[test]
+    fn the_startup_preamble_is_not_a_degraded_run() {
+        const PREAMBLE: &str = "Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended…\n\
+             YOLO mode is enabled. All tool calls will be automatically approved.\n\
+             YOLO mode is enabled. All tool calls will be automatically approved.\n\
+             Ripgrep is not available. Falling back to GrepTool.\n";
+        let fold = fold_gemini_stream(&format!(
+            "{}\n{}\n",
+            msg("assistant", "all green\nRALPHY_DONE_EXIT"),
+            serde_json::json!({"type": "result", "status": "success"})
+        ));
+        assert_eq!(
+            classify_gemini_outcome(&fold, PREAMBLE, true, false, true, Some(0)),
+            Outcome::Done,
+            "the routine preamble must not cost a healthy run its Done"
+        );
+        assert_eq!(gemini_limit_note(PREAMBLE), None);
+        assert!(!crate::auth::is_gemini_auth_error(PREAMBLE));
+    }
+
+    /// D-both-channels: under `stream-json` the well-typed error object rides
+    /// stdout while the readable prose goes to stderr, so a classifier that reads
+    /// either one alone is blind to exactly the failures it must name.
+    #[test]
+    fn both_channels_feed_the_diagnosis() {
+        // (a) stdout only: the typed error object is read into the fold.
+        let stdout_only = fold_gemini_stream(
+            r#"{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: An unknown error occurred.]"}}"#,
+        );
+        let vendor = stdout_only
+            .vendor_error
+            .as_deref()
+            .expect("the typed error object must reach the fold");
+        assert!(
+            vendor.contains("unknown"),
+            "the vendor's own sentence must be preserved, got {vendor:?}"
+        );
+
+        // (b) stderr only: stdout carries NO record at all — the shape a
+        // pre-provider failure leaves — and the diagnosis has to come from the
+        // combined log plus the exit code.
+        let empty = fold_gemini_stream("");
+        assert!(!empty.saw_result && empty.vendor_error.is_none());
+        match classify_gemini_outcome(
+            &empty,
+            "FatalTurnLimitedError: reached the maximum number of turns\n",
+            false,
+            false,
+            false,
+            Some(53),
+        ) {
+            Outcome::Blocked(reason) => assert!(
+                reason.to_ascii_lowercase().contains("turn ceiling"),
+                "a stderr-only failure must still be named, got {reason:?}"
+            ),
+            other => panic!("expected a named stop, got {other:?}"),
+        }
     }
 
     /// D2, live: standard input is PREPENDED to the argv prompt and joined with a

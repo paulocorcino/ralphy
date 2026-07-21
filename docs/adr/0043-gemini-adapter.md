@@ -113,6 +113,7 @@ confirmed live:
 | `54` | `FatalToolExecutionError` | tool failure, distinct from model failure |
 | `55` | `FatalUntrustedWorkspaceError` | actionable stop; D5 should prevent it |
 | `130` | `FatalCancellationError` | Ralphy killed it — not a crash |
+| `199` | — | internal self-relaunch sentinel; should never be observed (D18) |
 
 **The set is not closed.** `extractErrorCode()` passes any numeric `.code` or
 `.status` straight to `process.exit()`, so a raw HTTP `429` is a reachable exit

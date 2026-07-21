@@ -417,6 +417,50 @@ mod tests {
         );
     }
 
+    /// The executor is PLAN-AGNOSTIC: it consumes whatever `.ralphy/plan.md` the
+    /// planning pass left, whichever adapter wrote it, and it bounds the commit by
+    /// reading HEAD around the child rather than trusting the stream (which carries
+    /// no file-change accounting for work done through the shell).
+    ///
+    /// Pinned on the source because both properties are ABSENCES — a `_plan` never
+    /// inspected, and a `before_sha` read before the spawn — and an absence is what
+    /// a behavioural test cannot see.
+    #[test]
+    fn execute_is_plan_agnostic_and_bounds_the_commit() {
+        // Split on the test module, NOT on `#[cfg(test)]`: an earlier one guards
+        // `issue_deadline`, which would truncate the production half before
+        // `execute` and make every assertion below vacuously unreachable.
+        // Split on the test module, NOT on `#[cfg(test)]`: an earlier one guards
+        // `issue_deadline`, which would truncate the production half before
+        // `execute` and make every assertion below vacuously unreachable.
+        let prod = include_str!("lib.rs")
+            .split("\nmod tests {")
+            .next()
+            .unwrap();
+        const SIG: &str = "fn execute(&self, _plan: &Plan, ws: &Workspace)";
+        // …and scope the ordering assertions to `execute`'s own body: `plan` above
+        // it has its own `let run = ||`, which a whole-file `find` reaches first.
+        let src = &prod[prod
+            .find(SIG)
+            .expect("the plan artifact's author is never inspected")..];
+        assert_eq!(
+            src.matches("self.run_gemini(cmd, PROMPT_EXECUTE, timeout)")
+                .count(),
+            1,
+            "the execute path sends the shared vendor-neutral charter, once"
+        );
+        let at = |needle: &str| src.find(needle).unwrap_or_else(|| panic!("{needle:?}"));
+        assert!(
+            at("let before_sha") < at("let run = ||"),
+            "HEAD must be sampled BEFORE the child can commit anything"
+        );
+        assert!(
+            at("run_exec_session(") < at("let after_sha"),
+            "…and again only after the session has ended"
+        );
+        assert!(at("let after_sha") < at("let committed = before_sha != after_sha;"));
+    }
+
     /// ADR-0040 Tier 1: adapter tests are inline `#[cfg(test)] mod tests`, never a
     /// `tests/` directory — an integration dir would re-link the crate and lose
     /// access to the `pub(crate)` seams every test here asserts on.
