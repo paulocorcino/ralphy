@@ -150,10 +150,14 @@ on one.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
-   - [ ] Self-review: spawn the `reviewer` skill as an independent subagent over
-         ONLY the commits you made for this issue (this run's branch may already
-         carry earlier issues — review just your own commits, not the whole
-         branch); for a small mechanical diff, write this step as a direct
+   - [ ] Self-review: spawn an independent subagent (the agent/task tool)
+         instructed to apply the `reviewer` skill over ONLY the commits you made
+         for this issue (this run's branch may already carry earlier issues —
+         review just your own commits, not the whole branch). Spawning means
+         DELEGATION: never invoke the skill in your own context — that loads
+         the whole review protocol into this session for you to execute
+         yourself, at many times the cost. For a small mechanical diff, write
+         this step as a direct
          adversarial re-read of the diff instead (see the self-review rule
          below). Resolve every HIGH finding before finishing; if one cannot be
          fixed autonomously, record it under `## Notes & decisions` and block
@@ -202,10 +206,24 @@ on one.
   gate that a misconfigured proxy can still pass is not an oracle. If the
   exact value is unknown at planning time, the plan's probe step must
   capture it and pin it before any step depends on it.
+- Pin invariants, not fragile literals: specify each test assertion as the
+  RELATION that matters, never an incidental count or snippet. An ordering
+  property ("the gate runs before the spawn") outlives a call count ("called
+  exactly 4 times" still passes with the call moved below the spawn). A
+  substring pinned into hard-wrapped prose (an ADR sentence, a doc paragraph)
+  must not cross a line break — keep needles short or split them at the wrap.
+  A fixture feeding a temporal assertion (ordering, `since` filtering) must
+  sit clearly in the past, with the assertion pinning the exact instant, not
+  a prefix of today. And before specifying an "X appears nowhere in <scope>"
+  assertion, search that scope THIS pass for pre-existing unrelated matches
+  and narrow the scope to where the assertion is true today.
 - Price the environment, never assume it: when any step depends on external
-  infrastructure (containers, databases, network services, an external repo),
+  infrastructure (containers, databases, network services, an external repo,
+  a vendor CLI backed by a remote service),
   add an explicit early step that PROBES it (e.g. `docker info`, compose
-  config validation, endpoint reachability) and budget repair work as its own
+  config validation, endpoint reachability; for a vendor CLI, one minimal
+  END-TO-END call — `--version` proves the install, not that the backing
+  service answers) and budget repair work as its own
   step(s) — "the lab comes up" is work to verify, not a given precondition. A
   plan that treats infrastructure as free is the single most common way plans
   understate effort.
@@ -338,7 +356,9 @@ on one.
 - The penultimate step is a self-review over this issue's commits — include
   it by DEFAULT, but SCALE it to the expected diff:
   - changes with real domain logic or a multi-file/multi-crate surface get the
-    full independent review: spawn the `reviewer` skill as a subagent;
+    full independent review: spawn a subagent instructed to apply the
+    `reviewer` skill — delegation, never the skill invoked in the executor's
+    own context;
   - small mechanical changes (single crate/package, no new control flow,
     follow-a-pattern edits) get a lighter step: a direct adversarial re-read
     of the final diff by the executor itself, hunting for what tests can't

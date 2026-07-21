@@ -13,10 +13,14 @@
    executor needs — not the difficulty of the raw issue.>
 
 <!-- slot: self-review-step -->
-   - [ ] Self-review: spawn the `reviewer` skill as an independent subagent over
-         ONLY the commits you made for this issue (this run's branch may already
-         carry earlier issues — review just your own commits, not the whole
-         branch); for a small mechanical diff, write this step as a direct
+   - [ ] Self-review: spawn an independent subagent (the agent/task tool)
+         instructed to apply the `reviewer` skill over ONLY the commits you made
+         for this issue (this run's branch may already carry earlier issues —
+         review just your own commits, not the whole branch). Spawning means
+         DELEGATION: never invoke the skill in your own context — that loads
+         the whole review protocol into this session for you to execute
+         yourself, at many times the cost. For a small mechanical diff, write
+         this step as a direct
          adversarial re-read of the diff instead (see the self-review rule
          below). Resolve every HIGH finding before finishing; if one cannot be
          fixed autonomously, record it under `## Notes & decisions` and block
@@ -25,7 +29,9 @@
 - The penultimate step is a self-review over this issue's commits — include
   it by DEFAULT, but SCALE it to the expected diff:
   - changes with real domain logic or a multi-file/multi-crate surface get the
-    full independent review: spawn the `reviewer` skill as a subagent;
+    full independent review: spawn a subagent instructed to apply the
+    `reviewer` skill — delegation, never the skill invoked in the executor's
+    own context;
   - small mechanical changes (single crate/package, no new control flow,
     follow-a-pattern edits) get a lighter step: a direct adversarial re-read
     of the final diff by the executor itself, hunting for what tests can't

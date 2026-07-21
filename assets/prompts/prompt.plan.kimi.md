@@ -189,10 +189,24 @@ on one.
   gate that a misconfigured proxy can still pass is not an oracle. If the
   exact value is unknown at planning time, the plan's probe step must
   capture it and pin it before any step depends on it.
+- Pin invariants, not fragile literals: specify each test assertion as the
+  RELATION that matters, never an incidental count or snippet. An ordering
+  property ("the gate runs before the spawn") outlives a call count ("called
+  exactly 4 times" still passes with the call moved below the spawn). A
+  substring pinned into hard-wrapped prose (an ADR sentence, a doc paragraph)
+  must not cross a line break — keep needles short or split them at the wrap.
+  A fixture feeding a temporal assertion (ordering, `since` filtering) must
+  sit clearly in the past, with the assertion pinning the exact instant, not
+  a prefix of today. And before specifying an "X appears nowhere in <scope>"
+  assertion, search that scope THIS pass for pre-existing unrelated matches
+  and narrow the scope to where the assertion is true today.
 - Price the environment, never assume it: when any step depends on external
-  infrastructure (containers, databases, network services, an external repo),
+  infrastructure (containers, databases, network services, an external repo,
+  a vendor CLI backed by a remote service),
   add an explicit early step that PROBES it (e.g. `docker info`, compose
-  config validation, endpoint reachability) and budget repair work as its own
+  config validation, endpoint reachability; for a vendor CLI, one minimal
+  END-TO-END call — `--version` proves the install, not that the backing
+  service answers) and budget repair work as its own
   step(s) — "the lab comes up" is work to verify, not a given precondition. A
   plan that treats infrastructure as free is the single most common way plans
   understate effort.

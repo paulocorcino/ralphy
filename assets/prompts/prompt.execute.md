@@ -15,7 +15,12 @@ before relying on a detail.
   treating each as an equal directive — the thread can carry tangents,
   superseded ideas, or machine-generated notes (including Ralphy's own prior-run
   comments). Act on a comment only when it clearly bears on this issue.
-- `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth.
+- `.ralphy/plan.md` — the checklist from the planning pass. Your source of truth
+  for scope, sequencing, and decisions — NOT for facts it attributes to other
+  documents: when a step stakes work on a value or a decision it cites from an
+  ADR, a spec, or source data, read the cited source before implementing. On
+  contradiction the source wins — re-derive, record the delta under `## Notes &
+  decisions`, and never adjust a test to match the code on the plan's word alone.
   Honor its `## Caveats` section: do not let a flagged qualifier (a provisional
   input, an unreviewed oracle, a "resolve X first" note) silently disappear —
   if one still holds when you finish, surface it in the `## Handoff` so the PR
@@ -122,6 +127,16 @@ issue with the failure report published for the human reviewer.
      across an unrelated boundary, or past a step whose failure would change
      how you write the next one — the commit must stay one reviewable,
      revertable unit.
+   - MECHANICAL MULTI-SITE EDITS (a changed signature, a renamed symbol, a new
+     argument): re-run the impact search yourself before editing — a call-site
+     inventory inherited from the plan is a lead, not a truth — and include the
+     trees the default build skips (in Rust, `tests/`, `benches/`, `examples/`
+     are invisible to `cargo build` and `cargo test --lib`). Prefer the
+     compiler as the locator — make the change, let the errors enumerate the
+     sites, fix each with a real edit — over a scripted patch. After ANY
+     scripted edit across multiple files, run `git diff --stat` and confirm
+     each file changed by the amount you expect: a script that edits 21 files
+     correctly can still corrupt the 22nd.
    - Tick checkboxes by editing the EXACT line text you just read (a literal
      edit of `.ralphy/plan.md`), at the moment you commit — never a guessed
      string-replace from a script. A silently-failed replace leaves the step
@@ -178,11 +193,18 @@ step 2.
   `.ralphy/plan.md` recording the subagent's finding counts by severity
   (write `0 HIGH, 0 MEDIUM, 0 LOW` if clean) and how each HIGH was resolved.
   "No HIGH findings expected" is a prediction, not a review.
-  Run the reviewer subagent IN BACKGROUND (`run_in_background` or the
-  equivalent) and spend its wall-clock on the closing work that does not
-  depend on its verdict — the `## Handoff`, `## Plan friction`, ledger
-  evidence — folding the findings in when it returns. A long review you sit
-  blocked on is that many minutes of parallel work thrown away.
+  Severity policy: every HIGH MUST be resolved (or the session blocks); fix a
+  MEDIUM/LOW when the fix is cheap and inside this issue's scope, and record
+  the rest under `## Notes for review` — the one outcome not allowed is a
+  finding silently dropped.
+  When the plan's review variant is a delegated subagent, run it IN BACKGROUND
+  (`run_in_background` or the equivalent) and spend its wall-clock on the
+  closing work that does not depend on its verdict — the `## Handoff`,
+  `## Plan friction`, ledger evidence — folding the findings in when it
+  returns. Start it right after your final code commit, not after the closing
+  work; if the closing work still finishes first, wait with a single blocking
+  check rather than a polling loop. A long review you sit blocked on is that
+  many minutes of parallel work thrown away.
 - Only the machine-verifiable part of the plan's "Done when" gates the DONE
   token. Machine-verifiable means a test, a build, OR a command sequence you
   can run whose output proves the behavior (e.g. `docker compose up -d` plus
