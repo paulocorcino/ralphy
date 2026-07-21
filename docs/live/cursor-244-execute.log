@@ -177,3 +177,42 @@ Stopped: #108 finished non-green (Stuck). Branch handed back.
 Left repo checked out on 'afk/run-20260721-032114' for inspection.
 ➜  git merge afk/run-20260721-032114
 run: in 0 cr 0 cw 0 out 0 · $? · project: paulocorcino/FinCal in 19.3M cr 503.1M cw 0 out 2.8M · $4.47+?
+
+--- addendum 2026-07-21: the vendor's own record of the block ---
+
+The run log above records only the adapter's verdict (`outcome=Stuck`,
+`exit_code=Some(1)`). The vendor's side of both attempts survived in the Cursor
+session store, which is NOT cleaned with the lab workspace:
+
+    ~/.cursor/projects/C-Users-PICHAU-AppData-Local-Temp-fincal-lab-244/agent-transcripts/
+
+Three transcripts, matching the three cursor-agent invocations:
+
+  70395a43  03:19  planning     {"type":"turn_ended","status":"success"}
+  5a0ed2d9  03:19  execution    quota error, mid-turn (see below)
+  eb380690  03:21  execution    quota error, immediately (single-line file)
+
+Both execution turns died on the same structured record — the literal bytes:
+
+    {"type":"turn_ended","status":"error","error":"You've hit your usage limit Get Cursor Pro for more Agent usage, unlimited Tab, and more."}
+
+Captured as fixtures:
+  crates/ralphy-agent-cursor/fixtures/usage-limit-2026-07-21.jsonl         (eb380690, bare)
+  crates/ralphy-agent-cursor/fixtures/usage-limit-midturn-2026-07-21.jsonl (5a0ed2d9, after a Shell git-merge tool_use)
+
+Two findings this changes:
+
+1. The carrier is NOT `ActionRequiredError`. ADR-0042 (§ the outcome ladder) and
+   docs/research/cursor-cli-adapter-spike.md anticipated the quota signal
+   arriving as that error class in stderr prose. It does not: it arrives as the
+   `error` field of a well-formed `turn_ended` stream record, on stdout, in the
+   protocol the fold already parses. `ActionRequiredError` is a different
+   scenario (named-model rejection on a Free plan, § spike table).
+
+2. The ladder folds `turn_ended` without reading `status`/`error`, so an
+   explicit, self-describing vendor refusal degrades to a mute `Stuck`. It
+   should be a `Blocked` carrying the vendor's own sentence. Same shape as the
+   opencode silent-quota case: the vendor said why, the adapter dropped it.
+
+Not fixed here — the fixtures and this note are the evidence the #244 handoff
+was missing. The ladder change is a follow-up.
