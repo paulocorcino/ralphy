@@ -1,0 +1,373 @@
+# The Cursor adapter: a sixth vendor whose defaults must be refused before it runs
+
+Ralphy gains a sixth agent CLI vendor, `cursor` (Cursor Agent CLI), as a new
+isolated crate `ralphy-agent-cursor` implementing the same PTY-free `Agent`
+trait ([ADR-0002](./0002-core-agnostic-adapter-boundary.md)). It is selected
+**per run** by `--agent cursor`; the core keeps taking a single `&dyn Agent` and
+never learns which vendor it holds ([ADR-0004](./0004-codex-adapter.md) D1).
+
+The template is **Copilot**. Cursor shares Copilot's three defining traits: a
+minted session id, a real terminal envelope, and a model axis that is a *plan
+entitlement* rather than a CLI feature. Where Cursor is richer — a free
+machine-readable auth answer, stdin proven at 26 KB, per-edit diffs in the
+stream — the adapter takes the win. Where it is worse, it is worse in a way no
+previous vendor was: **an ordinary run uploads the repository to the vendor's
+servers, and the CLI writes back into the operator's config.** Half the
+decisions below exist to refuse a default.
+
+Grounded in **Cursor Agent CLI `2026.07.16-899851b` (Windows)** and
+**`2026.07.17-3e2a980` (WSL)**, on a **Free** account, probed hands-on across
+fifteen probes against `C:\Dev\FinCal` and two disposable control repos. Full
+evidence — command surface, stream schema, session store, the indexing A/B, the
+config write-back incident — is in
+[docs/research/cursor-cli-adapter-spike.md](../research/cursor-cli-adapter-spike.md);
+this ADR records the decisions, the spike records the observations.
+
+Status: **proposed** — decisions settled, **implementation not authorized**.
+Consistent with ADR-0002/0004/0005/0008/0013/0023/0030/0033/0034/0040; second
+application of the [ADR-0040](./0040-agent-adapter-onboarding-contract.md)
+onboarding contract, and the source of its Amendment 1.
+
+## D1 — Selection is per run, via `--agent cursor`; the core is untouched
+
+`CliAgent` gains a `Cursor` variant and `build_agent` boxes `CursorAgent` as
+`Box<dyn Agent>`. Same stance as ADR-0004 D1 / ADR-0005 D1 / ADR-0028 D1 /
+ADR-0041 D1, not re-litigated.
+
+ADR-0040's canary applies: **three independent agent enums** share no
+definition. `daemon/src/session.rs::Agent` is the one that fails silently —
+`agent_flag` is exhaustive over the daemon's own enum, so a missing variant
+compiles and only fails at runtime as `ArgvError::BadParam("agent")`. Add the
+variant first and let the compiler walk the rest.
+
+## D2 — The prompt goes in on stdin
+
+```
+agent -p --model <id|auto> --force --output-format stream-json
+      --resume <minted-uuid>   < <charter on stdin>
+```
+
+No prompt argument. Ralphy's `prompt.plan.staged.md` is 25 917 bytes before any
+issue body, against a Windows argv ceiling of ~32 KB. The spike verified stdin
+end to end: a **26 372-byte** payload piped in with no `-p` text returned markers
+planted on **both** its first and last line, `inputTokens: 19264`. Cursor's own
+docs confirm print mode is inferred from piped stdin.
+
+Three of six vendors now require stdin (Kimi ADR-0028 D2, Copilot ADR-0041 D2,
+Cursor). Argv is the exception.
+
+## D3 — Completion: the sentinel for intent, the envelope as the net; the `stop` hook is rejected
+
+Cursor documents a `stop` hook — *"called when the agent loop ends"* — which
+would have given deterministic completion without text scraping. **It does not
+fire in the headless CLI.** A project `hooks.json` registering `stop`,
+`beforeShellExecution` and `afterFileEdit` was exercised by a run that performed
+both a shell call and a file edit; only `beforeShellExecution` fired, twice.
+
+So completion stays the shared ladder ([ADR-0023](./0023-shared-outcome-classifier.md)),
+fed by:
+
+```json
+{"type":"result","subtype":"success","is_error":false,"duration_ms":25253,
+ "result":"…\nRALPHY_DONE_…","session_id":"…","request_id":"…",
+ "usage":{"inputTokens":19264,"outputTokens":1303,"cacheReadTokens":5248,"cacheWriteTokens":0}}
+```
+
+- `DONE_SENTINEL` as the last line of `result.result` — verified surviving three
+  runs including WSL.
+- `result.is_error` and `subtype` as the structural signals.
+- **Absence of the `result` record is itself a failure signal.** Cursor documents
+  that on error the stream *"may end early without a terminal event"*, with the
+  message on stderr and a non-zero exit.
+
+Exit codes carry no semantics beyond 0/1 — there is no Kimi-style
+`75 = RETRYABLE` — and `agent ls` returns 0 on a crash, so the exit code is
+corroboration, never the primary signal.
+
+## D4 — `--model` is always passed explicitly, including `auto`
+
+**This is a correctness requirement, not a style choice.** A `--model` that the
+account cannot use is *rejected* and **still persists**: one failed probe wrote
+`model`, `selectedModel`, `modelParameters` and `modelSelectionHistory` into
+`~/.cursor/cli-config.json` and flipped `hasChangedDefaultModel`. Every
+subsequent run that omitted `--model` inherited that model and failed the same
+way. Purging the keys was not enough — the next failing run rewrote them; only
+an explicit `--model auto` cleared the state.
+
+Therefore:
+
+- Model resolution is `Option<String>`, exactly as ADR-0041 D5 requires for
+  Copilot — **but `None` maps to `--model auto` on argv, never to omitting the
+  flag.** On this vendor, omitting a flag does not mean "default", it means
+  "whatever the last invocation left behind".
+- No hardcoded model id. `--list-models` reports **170 ids on a Free account**
+  and the account can use exactly one of them: every named model is refused with
+  `ActionRequiredError: Named models unavailable Free plans can only use Auto.`
+  The listing is a catalogue, not an entitlement (ADR-0040 C4; the Copilot trap
+  reproduced).
+- The free, deterministic rejection — `Cannot use this model: <id>. Available
+  models: …` from an invalid id, before any paid call — is the actionable stop
+  and the cheapest enumeration.
+
+## D5 — Pricing normalizes the model id to its family
+
+Cursor bakes reasoning effort into the id
+(`<family>[-thinking]-<none|low|medium|high|xhigh|max>[-fast]`), so
+`claude-opus-4-8` alone yields 16 ids and the bracket-override syntax
+(`claude-opus-4-8[context=1m,effort=high,fast=false]`) leaves the reachable set
+open-ended. Enumerating 170 literals in `PriceTable::default` (ADR-0034) is not
+maintainable and would still miss the bracket forms.
+
+`agent_slug` normalizes to the family key before the price lookup — strip a
+trailing effort suffix, a `-fast` suffix, a `-thinking` marker and any bracket
+expression. Unknown families still log "unknown model"; unknown *efforts* do not.
+
+**This collides with [ADR-0004](./0004-codex-adapter.md)'s amendment**, where a
+tier routes the model (sol/terra/luna) at a fixed medium effort. On Cursor the
+effort *is* the id, so the tier→model mapping and the effort are one string.
+The ADR-0004 mapping stays authoritative for *which family* a tier selects; the
+effort suffix is this adapter's concern and is not exported to the tier vocabulary.
+
+## D6 — Ralphy refuses to run Cursor in a repository that has not opted out of the codebase upload
+
+An ordinary headless run spawns a background service that walks the workspace
+and syncs a merkle tree of it to Cursor's servers. The first FinCal run produced
+**476 `Syncing merkle` / `Applying change` lines** — from a task explicitly
+forbidden to read files or run commands, with the operator's `ghostMode: true`
+and `privacyMode: 1` already set, and it indexed the **parent repository**, not
+the working directory it was given.
+
+A controlled A/B on two fresh 12-file repositories settles the opt-out:
+
+| Repo | Ignore file | `Applying change` |
+|---|---|---|
+| `cursorlab-a` | none | **15** |
+| `cursorlab-b` | `.cursorindexingignore` = `*` | **0** |
+
+The decision:
+
+- **`.cursorindexingignore` is the opt-out.** `.cursorignore` also stops the
+  upload but **denies the agent's edit tool** — and in the probe the agent
+  routed around the denial via its shell tool, which is precisely the leak
+  Cursor's own docs admit. Ralphy never writes or requires `.cursorignore`.
+- **Ralphy does not create the file.** Writing into the operator's repository to
+  disable a vendor's data flow is a decision Ralphy makes *for* the operator
+  about their own code; that is not Ralphy's call, and the file would surface in
+  their `git status` unexplained.
+- **Ralphy refuses to start** when `--agent cursor` is selected and the working
+  tree has no `.cursorindexingignore`. The preflight is an ADR-0013 stop with an
+  actionable message naming the file, the one-line content, and what it prevents.
+- The escape hatch is an explicit opt-in setting for an operator who *wants* the
+  indexing (`cursor.allow_codebase_indexing_i_understand_the_risk`), mirroring
+  ADR-0041 D7's shape. Ralphy never denies the operator a capability
+  ([security posture](./0032-daemon-mode-supervised-launcher.md) precedent) —
+  it denies a *silent* one.
+
+This is the strictest stance Ralphy takes toward any vendor, and it is
+proportionate: no other vendor transmits the repository as a side effect of
+answering a question.
+
+## D7 — The argv refuses the rest of the blast radius
+
+Every run is spawned with, and only with, the autonomy it needs:
+
+| Flag | Stance | Why |
+|---|---|---|
+| `--force` | **set** | required for non-interactive; note it is *"unless explicitly denied"* by the operator's `permissions.deny` (D8) |
+| `--auto-review` | **never** | a server-side classifier that prompts for anything it deems unsafe — prompting is fatal headless, and it ships tool-call decisions to a Cursor service |
+| `--approve-mcps` | **never** | `.cursor/mcp.json` is repo-local, so a cloned repository can propose MCP servers |
+| `-w/--worktree`, `--worktree-base` | **never** | Ralphy owns its branches; `.cursor/worktrees.json` executes repo-local setup scripts |
+| `--mode plan` / `--plan` | **never** | see D9 |
+| `--trust` | **not set** | never needed across nine runs; revisit only if an untrusted-workspace prompt is ever observed |
+| `--sandbox` | **left to the operator** | available on both platforms (`cursorsandbox.exe` ships on Windows too), unexercised by this spike; forcing a sandbox mode is a capability decision Ralphy has no evidence to make |
+
+Two capabilities are documented as out of reach and are **not** guarded, with
+the reasoning recorded so a future reader does not re-open it: `agent worker`
+requires triple opt-in (a team admin enabling self-hosted agents, an explicit
+`worker start`, and a session requesting self-hosted routing), and the plugin
+marketplace requires an explicit `--plugin-dir` with a `.cursor-plugin/plugin.json`
+manifest.
+
+## D8 — Auth detection reads the CLI's own structured answer
+
+Cursor is the first vendor to answer authentication **free, deterministically
+and machine-readably**:
+
+```console
+$ agent status --format json
+{"status":"unauthenticated","isAuthenticated":false,"hasAccessToken":false,"hasRefreshToken":false,"message":"Not logged in"}
+```
+
+`is_cursor_auth_error` is therefore two-tier:
+
+1. **Preflight (ADR-0013):** `status --format json` → `isAuthenticated`. This is
+   still *behavioural* detection — the CLI's own answer, not inspection of its
+   credential file at `%APPDATA%\Cursor\auth.json` — so the house style holds.
+   **The exit code must be ignored: `status` exits 0 while logged out.**
+2. **In-flight:** stderr markers, because a token can expire mid-run. Three
+   distinct strings exist and a naive matcher misses one:
+   - listing path — `Authentication required. Run 'agent login', pass --api-key/--auth-token, …`
+   - execution path — `Authentication required. Please run 'agent login' first, …`
+   - **invalid key — `⚠ Warning: The provided API key is invalid.`**, which does
+     **not** contain `Authentication required`.
+
+   The predicate matches `Authentication required` **or** `The provided API key
+   is invalid`.
+
+`CURSOR_AUTH_ERROR_MSG` names `agent login` verbatim — the string the CLI itself
+prints, regardless of which of its two binary names was invoked.
+
+**Env hygiene:** `CURSOR_API_KEY` and `CURSOR_AUTH_TOKEN` are left alone (Ralphy
+sets neither, and scrubbing them would break an operator who authenticates that
+way), but `CURSOR_CONFIG_DIR` and `XDG_CONFIG_HOME` are **passed through
+untouched** — an operator isolating Cursor's config is exercising the only
+defence against the D4 write-back, and Ralphy must not defeat it.
+
+## D9 — Native plan mode is rejected; Ralphy's planner writes its own plan
+
+`--mode plan` is hard read-only, and it says so in terms that override the
+charter:
+
+> *"Plan mode is active. The user indicated that they do not want you to execute
+> yet — you MUST NOT make any edits, run any non-readonly tools … This
+> supersedes any other instructions you have received (for example, to make
+> edits)."*
+
+Asked to write `.ralphy/plan.md`, it refused and the file was not created.
+Ralphy's contract is that the planner **writes the plan itself**
+([ADR-0009](./0009-split-planner-executor.md)), so the native mode cannot
+satisfy it. The planning pass runs in the ordinary execution mode with the
+planning charter, exactly as every other vendor. ADR-0040 predicted this answer;
+it is recorded as measured, not assumed.
+
+## D10 — Ralphy mints the session id
+
+```console
+$ agent create-chat
+868f1553-01ac-4335-89c6-6c1f101d6009
+$ agent -p --resume 868f1553-… …
+{"type":"system","subtype":"init",…,"session_id":"868f1553-01ac-4335-89c6-6c1f101d6009",…}
+```
+
+The minted id is adopted. Ralphy knows the session id before spawning, so store
+lookup is a primary-key read and the [ADR-0008](./0008-token-usage-tracking.md)
+D10 snapshot-diff is unnecessary. Cursor's docs never promise this — it is
+verified, not documented, so the adapter treats a mismatch between the minted id
+and `system/init.session_id` as a hard error rather than assuming adoption.
+
+## D11 — Usage is captured from the stream; the interactive gap is stated, not faked
+
+**No local store records tokens.** Cursor keeps two on-disk stores —
+`~/.cursor/chats/<cwd-hash>/<sid>/store.db` (SQLite, a content-addressed blob
+graph in two tables) and `~/.cursor/projects/<cwd-slug>/agent-transcripts/…jsonl`
+— and neither carries a token count, a cost, or a credit. The only accounting is
+`result.usage` in the live stream, which dies with the process.
+
+- `usage.rs` captures `inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheWriteTokens`
+  from the terminal envelope. Cache read and write are already separated, so
+  [ADR-0008](./0008-token-usage-tracking.md) D2 holds with no folding.
+  Cumulative-vs-incremental is moot: one `result` record per run.
+- Model attribution is **not** in the stream (`system/init` reports the
+  *requested* model, `"Auto"`); the resolved id lives only in a request blob as
+  `providerOptions.cursor.modelName`. The adapter records the requested model
+  and marks the resolved one unavailable rather than walking the blob graph.
+- **`scan_cursor` (ADR-0033) enumerates sessions and reports tokens as
+  unavailable.** It is still written — Tier 4 is not skipped — but it does not
+  invent a number. An operator's *interactive* Cursor sessions are invisible to
+  `ralphy usage`, and that is the honest answer.
+- Note the unit mismatch: Cursor bills **dollar-denominated credits** at
+  per-1M-token rates on a monthly anniversary reset. Ralphy's token counts are
+  not Cursor's bill.
+
+**This decision is provisional and is validated at execution time**, per
+[0042-cursor-validation.md](./0042-cursor-validation.md).
+
+## D12 — Skills materialize into the repo-local Cursor root; the foreign harvest is accepted and documented
+
+Cursor auto-discovers `SKILL.md` recursively under `.agents/skills`,
+`.cursor/skills`, `~/.agents/skills`, `~/.cursor/skills` and — deliberately, per
+its own docs — `.claude/skills`, `~/.claude/skills`, `.codex/skills`,
+`~/.codex/skills`. Marker skills planted in three of these roots were all found;
+`--plugin-dir` was not, because it requires a `.cursor-plugin/plugin.json`
+manifest.
+
+- **`skills.rs` materializes into `<repo>/.cursor/skills/`.** No flag, no env
+  var, no manifest — the root is read by default. This is the cheapest skill
+  delivery of any vendor.
+- **The foreign harvest is accepted.** In the probe the CLI injected **78
+  skills** — the operator's entire personal Claude Code library and every plugin
+  skill — into a single request, and a trivial "reply OK" run cost
+  **18 212 input tokens** as a result. There is no CLI-side allowlist; the IDE's
+  third-party toggle is confirmed not to apply to `cursor-cli`. Isolating
+  `HOME`/`CURSOR_CONFIG_DIR` would suppress it but would also isolate the
+  credential, forcing a second login — a worse trade for the operator.
+  The adapter documents the behaviour and its token cost, and does not fight it.
+
+## D13 — Limits: pending
+
+⬜ **Open.** C7 is the one ADR-0040 question the spike did not close. A
+deliberate free-tier exhaustion run is in progress; this decision is written
+when it lands. What is known: Cursor publishes no numeric free-tier quota, no
+machine-readable limit signal and no exit codes, and its cap message is
+editor-framed. The `ActionRequiredError` class already carries a plan
+entitlement refusal (D4) and is the leading candidate to carry the quota refusal
+too, which would make a **class match** — not a phrase match — the right shape
+(the OpenCode `usage_limit_regex` precedent, ADR-0040 C7).
+
+Absent a reliable reset hint, `Limit(None)` and
+[ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)'s synthetic
+~30-minute cadence apply automatically.
+
+## D14 — Binary resolution probes two names in three places
+
+Cursor installs **two names for one binary** — `agent` and `cursor-agent` — as
+`.cmd` + `.ps1` shims on Windows (`%LOCALAPPDATA%\cursor-agent\`) and a single
+file on Linux (`~/.local/bin/cursor-agent`), and it is **on `PATH` on neither**.
+Cursor's own CI recipe names a third location, `$HOME/.cursor/bin`.
+
+`ralphy-proc-util::resolve_program` already handles `.cmd` shims through
+`PATHEXT` (the opencode precedent), but it resolves **through `PATH`** — so this
+vendor needs an explicit probe list, the Kimi precedent (`~/.kimi-code/bin/kimi`).
+The adapter tries, in order: `PATH` for both names, then
+`%LOCALAPPDATA%\cursor-agent\agent.cmd` / `cursor-agent.cmd` on Windows, then
+`~/.local/bin/cursor-agent` and `~/.cursor/bin/cursor-agent` elsewhere.
+
+A Windows run is three hops — `.cmd` → `powershell.exe -NoProfile
+-ExecutionPolicy Bypass -File cursor-agent.ps1` → the bundled `node.exe` — which
+is why `CREATE_NO_WINDOW` and the existing `.cmd` routing both matter.
+
+## D15 — `ACCEPTS_IMAGES` is `false`
+
+No attachment channel appears anywhere in the headless surface
+([ADR-0025](./0025-triage-attachment-evidence-fetch.md)). A model that
+advertises vision without a headless delivery path is `false`.
+
+## D16 — Overlay slots
+
+`assets/prompts/plan/overlay.cursor.md` exists even where slots are empty — the
+assembly test is the anti-drift gate (ADR-0040 Tier 2). Filled:
+
+- **`execution-model`** — the charter arrives on stdin as a single turn; there
+  is no resume-with-more-instructions idiom in Ralphy's use of this vendor.
+- **`skill-invocation`** — skills are discovered from `<repo>/.cursor/skills/`
+  by name, alongside up to ~78 unrelated skills harvested from other vendors'
+  directories; the plan must name the skill it wants precisely.
+- **`mode-rules`** — the vendor's own plan mode is not in use (D9); the planning
+  pass runs in execution mode and *must* write `.ralphy/plan.md` itself.
+
+The remaining five slots are deliberately empty.
+
+## Consequences
+
+- **Cursor is the first vendor Ralphy will refuse to run by default.** D6 turns
+  a preflight into a policy gate. That is a new precedent and it should stay
+  narrow: it is justified by a data flow the operator cannot see, not by taste.
+- **The blast radius is priced in tokens too.** 78 harvested skills make a
+  trivial run cost 18 KB of input. Any per-issue budget
+  ([ADR-0038](./0038-per-issue-budget-vs-idle-watchdog.md)) tuned on another
+  vendor will read wrong here.
+- **`--model auto` on every argv** is the kind of line a future reader deletes as
+  redundant. D4 exists so that reader finds the reason first.
+- Tier 4 ships a `scan_cursor` that reports no tokens. That is a capability
+  regression relative to every other vendor, and it is the vendor's, not
+  Ralphy's.
