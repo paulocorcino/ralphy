@@ -6,6 +6,7 @@ members = [
     "crates/ralphy-agent-claude",
     "crates/ralphy-agent-codex",
     "crates/ralphy-agent-copilot",
+    "crates/ralphy-agent-cursor",
     "crates/ralphy-agent-kimi",
     "crates/ralphy-agent-opencode",
     "crates/ralphy-pty",
@@ -47,6 +48,7 @@ ralphy-core = { path = "crates/ralphy-core" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-agent-codex = { path = "crates/ralphy-agent-codex" }
 ralphy-agent-copilot = { path = "crates/ralphy-agent-copilot" }
+ralphy-agent-cursor = { path = "crates/ralphy-agent-cursor" }
 ralphy-agent-kimi = { path = "crates/ralphy-agent-kimi" }
 ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
