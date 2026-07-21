@@ -30,16 +30,18 @@
 //!   banners. Exercises the API-degraded path — a matched degraded line must NOT
 //!   rearm the idle beacon, so this child is idle-reaped **despite** talking,
 //!   unlike `chatty`.
-//! - `heartbeat <path>` — append `"tick\n"` to `<path>` every [`CHATTY_TICK`] for
-//!   ~60s. The leaf of the survival tree: it writes to a FILE, never to stdout, so
-//!   its liveness is observable *after* the runner has closed the pipes — the file
-//!   growing past a kill is the only evidence a descendant outlived it. Writing to
-//!   a file rather than stdout is also what keeps the idle beacon un-rearmed, which
-//!   is what makes the idle-kill path reachable at all.
+//! - `heartbeat <path>` — append `"leaf tick\n"` to `<path>` every [`CHATTY_TICK`]
+//!   for ~60s. The leaf of the survival tree: it writes to a FILE, never to stdout,
+//!   so its liveness is observable *after* the runner has closed the pipes — the
+//!   file growing past a kill is the only evidence a descendant outlived it.
+//!   Writing to a file rather than stdout is also what keeps the idle beacon
+//!   un-rearmed, which is what makes the idle-kill path reachable at all.
 //! - `heartbeat-tree <path>` / `heartbeat-tree-inner <path>` — spawn the next level
 //!   down (`heartbeat-tree-inner`, then `heartbeat`) with stdout INHERITED, then
-//!   sleep ~60s. Three levels below the runner, mirroring the depth of the Node
-//!   process tree the vendor CLIs run under (ADR-0043 D18).
+//!   beat as `L1` / `L2` into the same file. Three levels below the runner,
+//!   mirroring the depth of the Node process tree the vendor CLIs run under
+//!   (ADR-0043 D18) — and every level writes, so a teardown that orphaned an
+//!   INTERMEDIATE node is caught too, not only one that orphaned the leaf.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless.rs` via the shared constants below.
@@ -64,15 +66,46 @@ pub const CHATTY_TICK: Duration = Duration::from_millis(100);
 /// degraded/retry banner the caller's `degraded_line` predicate matches on.
 pub const DEGRADED_MARKER: &str = "Waiting for API response";
 
-/// Spawn a copy of ourselves one level deeper in `next` mode, forwarding the
-/// heartbeat path, then sleep past any test's patience. stdout is INHERITED so the
-/// whole tree holds the runner's pipe open — only a process-tree kill closes it.
-fn spawn_next_level(next: &str) {
+/// Append `<label> tick\n` to the heartbeat file every [`CHATTY_TICK`] for ~60s.
+///
+/// EVERY level of the tree runs this, not only the leaf: a teardown that reaped
+/// the leaf but orphaned an intermediate node would otherwise leave nothing
+/// observable, and both survival tests would pass while the tree they are named
+/// after still had a live member.
+fn beat(label: &str) {
     let path = std::env::args().nth(2).unwrap_or_default();
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).arg(next).arg(&path).spawn();
+    let line = format!("{label} tick\n");
+    for _ in 0..600 {
+        // Reopen-append per tick and flush: the test reads the file's length from
+        // another process while this one is still running, so a buffered write
+        // would look like a frozen descendant.
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = f.write_all(line.as_bytes());
+            let _ = f.flush();
+        }
+        std::thread::sleep(CHATTY_TICK);
     }
-    std::thread::sleep(Duration::from_secs(60));
+}
+
+/// Spawn a copy of ourselves one level deeper in `next` mode, forwarding the
+/// heartbeat path, then beat as `label`. stdout is INHERITED so the whole tree
+/// holds the runner's pipe open — only a process-tree kill closes it.
+fn spawn_next_level(next: &str, label: &str) {
+    let path = std::env::args().nth(2).unwrap_or_default();
+    match std::env::current_exe()
+        .map(|exe| std::process::Command::new(exe).arg(next).arg(&path).spawn())
+    {
+        Ok(Ok(_)) => {}
+        // Loud, because a silent spawn failure surfaces downstream as "the leaf
+        // never wrote", which reads as a kill-logic regression instead of an
+        // environment problem.
+        other => eprintln!("failed to spawn {next}: {other:?}"),
+    }
+    beat(label);
 }
 
 fn main() {
@@ -123,25 +156,9 @@ fn main() {
                 std::thread::sleep(CHATTY_TICK);
             }
         }
-        "heartbeat" => {
-            let path = std::env::args().nth(2).unwrap_or_default();
-            for _ in 0..600 {
-                // Reopen-append per tick and flush: the test reads the file's
-                // length from another process while this one is still running, so
-                // buffered writes would look like a frozen descendant.
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path)
-                {
-                    let _ = f.write_all(b"tick\n");
-                    let _ = f.flush();
-                }
-                std::thread::sleep(CHATTY_TICK);
-            }
-        }
-        "heartbeat-tree" => spawn_next_level("heartbeat-tree-inner"),
-        "heartbeat-tree-inner" => spawn_next_level("heartbeat"),
+        "heartbeat" => beat("leaf"),
+        "heartbeat-tree" => spawn_next_level("heartbeat-tree-inner", "L1"),
+        "heartbeat-tree-inner" => spawn_next_level("heartbeat", "L2"),
         "echo-stdin" => {
             // Read to EOF before writing a byte: a partial read would silently
             // truncate exactly the way this mode exists to detect.

@@ -430,26 +430,35 @@ mod tests {
         // Split on the test module, NOT on `#[cfg(test)]`: an earlier one guards
         // `issue_deadline`, which would truncate the production half before
         // `execute` and make every assertion below vacuously unreachable.
-        // Split on the test module, NOT on `#[cfg(test)]`: an earlier one guards
-        // `issue_deadline`, which would truncate the production half before
-        // `execute` and make every assertion below vacuously unreachable.
         let prod = include_str!("lib.rs")
             .split("\nmod tests {")
             .next()
             .unwrap();
         const SIG: &str = "fn execute(&self, _plan: &Plan, ws: &Workspace)";
-        // …and scope the ordering assertions to `execute`'s own body: `plan` above
-        // it has its own `let run = ||`, which a whole-file `find` reaches first.
-        let src = &prod[prod
+        // …and scope every assertion to `execute`'s own body: `plan` above it has
+        // its own `let run = ||`, which a whole-file `find` reaches first.
+        let start = prod
             .find(SIG)
-            .expect("the plan artifact's author is never inspected")..];
+            .unwrap_or_else(|| panic!("execute's signature must read exactly {SIG:?}"));
+        let src = &prod[start..];
+        // The underscore is a convention, not a compiler guarantee — `_plan.…` is
+        // legal Rust. The pin is that the binding is never MENTIONED again inside
+        // the body, which is the only thing that makes the executor plan-agnostic.
+        let body_end = src.find("\n    }\n").unwrap_or(src.len());
+        assert!(
+            !src[SIG.len()..body_end].contains("_plan"),
+            "the plan artifact is never read: `_plan` must not appear in execute's body"
+        );
         assert_eq!(
             src.matches("self.run_gemini(cmd, PROMPT_EXECUTE, timeout)")
                 .count(),
             1,
             "the execute path sends the shared vendor-neutral charter, once"
         );
-        let at = |needle: &str| src.find(needle).unwrap_or_else(|| panic!("{needle:?}"));
+        let at = |needle: &str| {
+            src.find(needle)
+                .unwrap_or_else(|| panic!("execute's body must still contain {needle:?}"))
+        };
         assert!(
             at("let before_sha") < at("let run = ||"),
             "HEAD must be sampled BEFORE the child can commit anything"

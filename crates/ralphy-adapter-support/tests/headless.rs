@@ -360,21 +360,24 @@ fn heartbeat_cmd(beat: &std::path::Path) -> Command {
     cmd
 }
 
-/// Assert the tree really ran and then really stopped: the heartbeat grew while it
-/// was alive (otherwise the whole test passes vacuously against a leaf that never
-/// started), and its byte length is UNCHANGED after a further 1.5 s — a surviving
-/// descendant would have appended ~15 more ticks in that window.
+/// Assert the tree really ran and then really stopped: ALL THREE levels wrote
+/// while it was alive (otherwise the whole test passes vacuously against a tree
+/// that never got built), and the file's byte length is UNCHANGED after a further
+/// 1.5 s — any surviving member would have appended ~15 more ticks in that window.
 fn assert_heartbeat_grew_then_froze(beat: &std::path::Path) {
-    let len_at_kill = std::fs::metadata(beat).map(|m| m.len()).unwrap_or(0);
-    assert!(
-        len_at_kill > 0,
-        "the leaf must have written before the kill, or the freeze proves nothing"
-    );
+    let text = std::fs::read_to_string(beat).unwrap_or_default();
+    for label in ["L1", "L2", "leaf"] {
+        assert!(
+            text.contains(&format!("{label} tick")),
+            "level {label:?} never wrote, so its freeze proves nothing — got {text:?}"
+        );
+    }
+    let len_at_kill = text.len() as u64;
     std::thread::sleep(Duration::from_millis(1500));
     let len_after = std::fs::metadata(beat).map(|m| m.len()).unwrap_or(0);
     assert_eq!(
         len_after, len_at_kill,
-        "a descendant three levels down outlived the kill and kept writing"
+        "a member of the tree outlived the kill and kept writing"
     );
 }
 
@@ -392,13 +395,17 @@ fn a_wall_timeout_leaves_no_surviving_descendant() {
     let r = HeadlessCall::new(
         heartbeat_cmd(&beat),
         "ignored prompt",
-        Duration::from_millis(800),
+        // 2 s, not the tighter margin the tree would also survive: the kill lands
+        // one 500 ms poll tick LATE, and everything before it must fit three
+        // sequential process creations on a contended CI runner. The tree sleeps
+        // 60 s either way, so a wider window costs the suite nothing.
+        Duration::from_secs(2),
         &log_path,
     )
     .run()
     .expect("a wall-timed tree run should not error");
 
-    assert!(r.timed_out, "the tree outlived its 800ms wall timeout");
+    assert!(r.timed_out, "the tree outlived its 2s wall timeout");
     assert_heartbeat_grew_then_froze(&beat);
 
     let _ = std::fs::remove_file(&log_path);

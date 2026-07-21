@@ -97,9 +97,9 @@ not always present: a **pre-flight** failure (auth) emits no `result` record at
 all, while a **mid-run** failure does. A parser that waits for the envelope hangs
 on the one case it most needs to detect.
 
-Gemini offers the richest exit-code taxonomy of any vendor — ten codes, six of
-them undocumented, recovered from the bundled `FatalError` hierarchy and two
-confirmed live:
+Gemini offers the richest exit-code taxonomy of any vendor — eleven codes, seven
+of them undocumented, recovered from the bundled `FatalError` hierarchy (plus the
+non-`FatalError` relaunch sentinel `199`, see D18) and three confirmed live:
 
 | Code | Class | Ralphy's reading |
 |---|---|---|
