@@ -271,10 +271,19 @@ pub(crate) fn classify_gemini_outcome(
         blocked: ralphy_adapter_support::blocked_reason(&fold.final_text).or_else(|| {
             // D5: an actionable refusal is a NAMED stop, never a silent
             // degradation into `Stuck`.
+            //
+            // A revocation the vendor ANNOUNCED outranks the exit code's generic
+            // sentence: exit 52 is also Ralphy's own malformed root, and blaming
+            // that for an enterprise Strict Mode is a worse diagnosis than the one
+            // this arm exists to fix. Gated on `!succeeded` in both directions — a
+            // demotion on a run that still went green must not cost it its `Done`.
             (!succeeded)
-                .then(|| class.actionable_stop())
+                .then(|| {
+                    crate::revocation::detect_revocation(log)
+                        .map(|r| r.message(exit_code, log))
+                        .or_else(|| class.actionable_stop().map(str::to_string))
+                })
                 .flatten()
-                .map(str::to_string)
         }),
         // D11: `Limit(None)`. The inner slot is the parsed RESET HINT
         // (`CompletionSignals::limit`), and this vendor publishes none — so
@@ -728,6 +737,126 @@ mod tests {
         );
         assert_eq!(gemini_limit_note(PREAMBLE), None);
         assert!(!crate::auth::is_gemini_auth_error(PREAMBLE));
+    }
+
+    /// The verbatim sentences the shipped 0.51.0 bundle prints for each of the
+    /// three silent revocations (read 2026-07-21; see the module doc of
+    /// `revocation.rs` for the exact bundle sites).
+    const ADMIN_LOG: &str = "YOLO mode is disabled by your administrator. To enable it, please \
+         request an update to the settings at: https://goo.gle/manage-gemini-cli";
+    const UNTRUSTED_LOG: &str = "Gemini CLI is not running in a trusted directory. To proceed, \
+         either use `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` environment \
+         variable, or trust this directory in interactive mode.";
+    const DEMOTION_LOG: &str = "YOLO mode is enabled. All tool calls will be automatically \
+         approved.\nApproval mode overridden to \"default\" because the current folder is not \
+         trusted.";
+
+    /// #255 AC1: an enterprise control that disables autonomous mode is a NAMED
+    /// stop reproducing that control's own name — not exit 52's ordinary
+    /// "check ralphy's owned root", which would blame Ralphy for the enterprise.
+    #[test]
+    fn strict_mode_is_a_named_stop_not_a_config_error() {
+        let fold = fold_gemini_stream("");
+        match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52)) {
+            Outcome::Blocked(reason) => {
+                for needle in ["secureModeEnabled", "disableYoloMode"] {
+                    assert!(reason.contains(needle), "{needle} missing from {reason:?}");
+                }
+                assert!(
+                    !reason.contains(".ralphy/gemini-home"),
+                    "the enterprise stop must not be diagnosed as ralphy's own root: {reason:?}"
+                );
+            }
+            other => panic!("the admin stop must be a named block, got {other:?}"),
+        }
+        // The discriminating control: exit 52 with an UNRELATED log keeps the
+        // ordinary diagnosis, so the override is scoped to the admin needle.
+        match classify_gemini_outcome(
+            &fold,
+            "Error: bad settings\n",
+            false,
+            false,
+            false,
+            Some(52),
+        ) {
+            Outcome::Blocked(reason) => assert!(
+                reason.contains(".ralphy/gemini-home"),
+                "an ordinary exit 52 keeps its own sentence, got {reason:?}"
+            ),
+            other => panic!("exit 52 must stay a named stop, got {other:?}"),
+        }
+    }
+
+    /// #255 AC3: the untrusted-workspace stop is recognised by its dedicated exit
+    /// code AND surfaces the vendor's own remediation clause, so the operator gets
+    /// the fix rather than a Ralphy paraphrase of it.
+    #[test]
+    fn the_untrusted_stop_surfaces_the_vendors_own_sentence() {
+        let fold = fold_gemini_stream("");
+        match classify_gemini_outcome(&fold, UNTRUSTED_LOG, false, false, false, Some(55)) {
+            Outcome::Blocked(reason) => {
+                for needle in ["exit 55", "--skip-trust"] {
+                    assert!(reason.contains(needle), "{needle} missing from {reason:?}");
+                }
+            }
+            other => panic!("exit 55 must be a named stop, got {other:?}"),
+        }
+        // The code alone is sufficient: an empty log still names exit 55.
+        match classify_gemini_outcome(&fold, "", false, false, false, Some(55)) {
+            Outcome::Blocked(reason) => assert!(reason.contains("55"), "{reason:?}"),
+            other => panic!("exit 55 must be a named stop, got {other:?}"),
+        }
+    }
+
+    /// #255 AC4: the demotion notice is a REVOCATION, not preamble noise — the
+    /// session kept running but is no longer autonomous. The invariant control is
+    /// that the same notice on a run that still went green keeps its `Done`.
+    #[test]
+    fn the_demotion_notice_is_a_revocation_not_noise() {
+        assert_eq!(
+            crate::revocation::detect_revocation(DEMOTION_LOG),
+            Some(crate::revocation::Revocation::Demoted)
+        );
+        match classify_gemini_outcome(
+            &fold_gemini_stream(""),
+            DEMOTION_LOG,
+            false,
+            false,
+            false,
+            Some(1),
+        ) {
+            Outcome::Blocked(reason) => assert!(
+                reason.contains("no longer autonomous"),
+                "the demotion must be named, got {reason:?}"
+            ),
+            other => panic!("a failed demoted run must be a named stop, got {other:?}"),
+        }
+        // The invariant: a green run keeps its Done even when it was demoted —
+        // without this, the routine preamble of an untrusted-but-successful run
+        // would cost every such run its completion.
+        let green = fold_gemini_stream(&format!(
+            "{}\n{}\n",
+            msg("assistant", "all green\nRALPHY_DONE_EXIT"),
+            serde_json::json!({"type": "result", "status": "success"})
+        ));
+        assert_eq!(
+            classify_gemini_outcome(&green, DEMOTION_LOG, true, false, true, Some(0)),
+            Outcome::Done,
+            "a revocation must never flip a run that succeeded"
+        );
+        // …and a revocation must not shadow a provider throttle, which needs its
+        // own retry schedule rather than a block.
+        assert_eq!(
+            classify_gemini_outcome(
+                &fold_gemini_stream(""),
+                &format!("{DEMOTION_LOG}\nError: 429 Too Many Requests"),
+                false,
+                false,
+                false,
+                Some(1),
+            ),
+            Outcome::Limit(None)
+        );
     }
 
     /// D-both-channels: under `stream-json` the well-typed error object rides
