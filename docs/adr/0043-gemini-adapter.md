@@ -478,6 +478,17 @@ allowance. This decision is therefore the most likely in this ADR to need
 revising, and it is deliberately the cheapest one to revise — `Limit(None)`
 requires no reset parsing to be correct.
 
+**Implementation note (#264):** the textual predicate is gated on the run NOT
+having succeeded — `!succeeded && gemini_limit_note(log).is_some()`. The CLI's
+own `retryWithBackoff` absorbs transient 429s silently, so the same phrase can
+appear in the combined log of a run that still finished green, and
+`ralphy_adapter_support::classify` ranks `limit` above `done`; an ungated
+textual match would park a finished run for ADR-0030's ~30-minute cadence for
+nothing. The exit code stays ungated — `429` can never coexist with
+`succeeded`, so gating it would buy nothing. Ralphy still adds no retry site of
+its own: one `self.run_gemini` call per phase (plan, execute), and the wait
+after a real `Limit(None)` is entirely ADR-0030's synthetic cadence.
+
 ## D12 — The native plan mode is rejected
 
 `--approval-mode plan` runs cleanly headless, and is still unusable: it writes

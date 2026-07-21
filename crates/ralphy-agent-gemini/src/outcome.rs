@@ -277,7 +277,15 @@ pub(crate) fn classify_gemini_outcome(
         class == ExitClass::Success && fold.saw_result && fold.status.as_deref() != Some("error");
     // This vendor reserves NO exit code for quota (D11), so the text is the only
     // signal a real exhaustion has; `429` alone would never fire.
-    let limited = class == ExitClass::Limit || gemini_limit_note(log).is_some();
+    //
+    // Gated on `!succeeded`: the CLI's own `retryWithBackoff` absorbs transient
+    // 429s, so a banner in the log of a run that still went green is the
+    // vendor's retry, not an exhaustion — and `limit` outranks `done` in
+    // `ralphy_adapter_support::classify`, so an ungated match parks a finished
+    // run for ~30 min (#264). Exit `429` stays ungated: it can never coexist
+    // with `succeeded`, so gating it would cost nothing but add a distinction
+    // with no observable difference.
+    let limited = class == ExitClass::Limit || (!succeeded && gemini_limit_note(log).is_some());
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(&fold.final_text),
         blocked: ralphy_adapter_support::blocked_reason(&fold.final_text).or_else(|| {
@@ -643,6 +651,88 @@ mod tests {
             ),
             Outcome::Limit(None)
         );
+    }
+
+    /// D11 (#264): the CLI's own `retryWithBackoff` absorbs transient 429s
+    /// silently, so a run that still finishes green can carry the throttle
+    /// banner in its combined log. `limit` outranks `done` in
+    /// `ralphy_adapter_support::classify`, so an ungated textual match parks a
+    /// finished run for ~30 min — the gate is on `!succeeded`, not on the
+    /// predicate itself.
+    #[test]
+    fn a_vendor_absorbed_transient_throttle_does_not_park_a_green_run() {
+        let green = fold_gemini_stream(&format!(
+            "{}\n{}\n",
+            msg("assistant", "all green\nRALPHY_DONE_EXIT"),
+            serde_json::json!({"type": "result", "status": "success"})
+        ));
+        let log = "Attempt 1 failed with status 429 Too Many Requests. Retrying with backoff...\n";
+        // The phrase DOES match — it is the gate, not the predicate, that changed.
+        assert!(gemini_limit_note(log).is_some());
+        assert_eq!(
+            classify_gemini_outcome(&green, log, true, false, true, Some(0), None),
+            Outcome::Done,
+            "a vendor-absorbed retry banner on a green run must not become a limit"
+        );
+        // Discriminating control: the same phrase on a run that did NOT succeed
+        // is still a limit.
+        assert_eq!(
+            classify_gemini_outcome(
+                &fold_gemini_stream(""),
+                log,
+                false,
+                false,
+                false,
+                Some(1),
+                None
+            ),
+            Outcome::Limit(None)
+        );
+        // The exit code stays ungated even on an otherwise-green fold.
+        assert_eq!(
+            classify_gemini_outcome(&green, "", false, false, false, Some(429), None),
+            Outcome::Limit(None)
+        );
+    }
+
+    /// The two stops must stay distinct: a turn-ceiling stop (exit 53) is a
+    /// budget stop, not a quota stop, and neither `gemini_limit_note` nor
+    /// `classify_gemini_outcome` may conflate them. Converse arm pins that a
+    /// real quota sentence at exit 1 is a limit and never `Blocked`.
+    #[test]
+    fn a_turn_ceiling_stop_is_not_a_quota_stop() {
+        let fold = fold_gemini_stream("");
+        let turn_log = "FatalTurnLimitedError: reached the maximum number of turns\n";
+        assert_eq!(gemini_limit_note(turn_log), None);
+        match classify_gemini_outcome(&fold, turn_log, false, false, false, Some(53), None) {
+            Outcome::Blocked(reason) => assert!(
+                reason.to_ascii_lowercase().contains("turn ceiling"),
+                "got {reason:?}"
+            ),
+            other => panic!("exit 53 must be a named stop, got {other:?}"),
+        }
+        assert_ne!(
+            classify_gemini_outcome(&fold, turn_log, false, false, false, Some(53), None),
+            Outcome::Limit(None)
+        );
+
+        let quota_log = "Error: quota exceeded for this project\n";
+        let outcome = classify_gemini_outcome(&fold, quota_log, false, false, false, Some(1), None);
+        assert_eq!(outcome, Outcome::Limit(None));
+        assert!(!matches!(outcome, Outcome::Blocked(_)));
+    }
+
+    /// D11's ⚠ stance is the decision most likely to need revising — pinned so a
+    /// future edit to the ADR cannot silently drop the disclaimer this plan's
+    /// caveats rely on.
+    #[test]
+    fn the_limit_stance_is_documented_as_the_one_most_likely_to_be_revised() {
+        const ADR: &str = include_str!("../../../docs/adr/0043-gemini-adapter.md");
+        // The prose is hard-wrapped in the file, so match phrases that do not
+        // straddle a line break rather than one contiguous sentence.
+        assert!(ADR.contains("most likely in this ADR to need"));
+        assert!(ADR.contains("requires no reset parsing to be correct"));
+        assert!(ADR.contains("Ralphy adds no retry layer"));
     }
 
     /// D5: an actionable refusal is a NAMED stop, never a silent degradation into

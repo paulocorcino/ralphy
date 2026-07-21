@@ -639,6 +639,50 @@ mod tests {
         assert!(at("let after_sha") < at("let committed = before_sha != after_sha;"));
     }
 
+    /// D11 (#264): Ralphy adds no retry layer of its own — a `Limit(None)` stops
+    /// the phase and the queue's synthetic cadence (ADR-0030) is what resumes
+    /// it, never a loop inside the adapter. Pinned on the source, because an
+    /// absent retry site is invisible to a behavioural test: one child spawn per
+    /// phase (plan, execute), and no loop/while/retry between it and the
+    /// session runner that follows.
+    #[test]
+    fn ralphy_adds_no_retry_of_its_own() {
+        let prod = include_str!("lib.rs")
+            .split("\nmod tests {")
+            .next()
+            .unwrap();
+        assert_eq!(
+            prod.matches("self.run_gemini(").count(),
+            2,
+            "one child per phase — plan and execute; a third site would be a Ralphy-side retry"
+        );
+        let starts: Vec<usize> = prod.match_indices("let run = ||").map(|(i, _)| i).collect();
+        assert_eq!(
+            starts.len(),
+            2,
+            "plan and execute each define their own `run` closure"
+        );
+        let ends = [
+            prod[starts[0]..]
+                .find("run_plan_session(")
+                .map(|i| starts[0] + i)
+                .expect("plan's closure is followed by run_plan_session"),
+            prod[starts[1]..]
+                .find("run_exec_session(")
+                .map(|i| starts[1] + i)
+                .expect("execute's closure is followed by run_exec_session"),
+        ];
+        for (start, end) in starts.iter().zip(ends.iter()) {
+            let slice = &prod[*start..*end];
+            for needle in ["loop {", "while ", "retry"] {
+                assert!(
+                    !slice.contains(needle),
+                    "no {needle:?} between a phase's spawn and its session runner: found in {slice:?}"
+                );
+            }
+        }
+    }
+
     /// ADR-0040 Tier 1: adapter tests are inline `#[cfg(test)] mod tests`, never a
     /// `tests/` directory — an integration dir would re-link the crate and lose
     /// access to the `pub(crate)` seams every test here asserts on.
