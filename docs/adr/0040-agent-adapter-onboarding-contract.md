@@ -17,6 +17,12 @@ Status: **accepted**. Amends nothing. First application:
 [docs/research/copilot-cli-adapter-spike.md](../research/copilot-cli-adapter-spike.md).
 **Amendment 1** (2026-07-20, from the Cursor spike) adds §C11 and four
 sharpenings — see the end of this file.
+**Amendment 2** (2026-07-20, from the Gemini spike) corrects the wiring
+inventory against measured drift: Tier 1's size and file list, and two Tier 3
+sites this ADR never named (`config.rs`, `run.rs`). Measured by enumerating every
+file referencing **Copilot** — the most recently *implemented* vendor
+([ADR-0041](./0041-copilot-adapter.md)) — outside its own crate: **24 files**.
+Evidence in [the Gemini spike, §C](../research/gemini-cli-adapter-spike.md).
 
 ## How to use this ADR
 
@@ -195,8 +201,9 @@ or deliberately left to the operator.
 An adapter is not done when its crate compiles. These are the edit sites,
 verified at the time of writing. Ordered by how easy they are to forget.
 
-**Tier 1 — the crate** (`crates/ralphy-agent-<vendor>`, ~1 300 LOC, deps:
-`anyhow, tracing, serde_json, include_dir, ralphy-core, ralphy-adapter-support`):
+**Tier 1 — the crate** (`crates/ralphy-agent-<vendor>`, **~3 600 LOC over ~11
+files** measured against `ralphy-agent-copilot`, deps: `anyhow, tracing,
+serde_json, include_dir, ralphy-core, ralphy-adapter-support`):
 
 | File | Owns |
 |---|---|
@@ -207,6 +214,8 @@ verified at the time of writing. Ordered by how easy they are to forget.
 | `usage.rs` | Store locator (`home_scoped_path`), record parser, fold via `Usage::fold_usage`, `session_id` extractor |
 | `tasks.rs` | The four one-shots: `diagnose_repo`, `draft_issues`, `triage_issues`, `consolidate_knowledge` |
 | `skills.rs` | `include_dir!` + `materialize_assets`, if the vendor supports skills |
+| `settings.rs` | The vendor's persisted settings struct + `SECTION`, if it has any operator-tunable axis. **Pairs with `config.rs` in Tier 3** — one is useless without the other |
+| `catalog.rs` · `effort.rs` · `guards.rs` | Vendor-shaped extras: a model catalog read at runtime, a reasoning-effort vocabulary, in-band assertions that a kill switch actually took. Present in Copilot; each is optional, but **budget for two or three of them** |
 
 **Tier 2 — the prompt**: `assets/prompts/plan/overlay.<vendor>.md`, regenerate
 (`RALPHY_REGEN_PROMPTS=1 cargo test -p ralphy-core --test prompt_assembly`),
@@ -217,12 +226,23 @@ and they do not share a definition):
 
 `cli.rs` `CliAgent` + `cli_name` · `init/gate.rs` `Agent` + `ALL` (**the array
 length is hardcoded — bump it**) + `cli_name` + `accepts_images` +
-`agent_logged_in`'s argv arm · `run/wiring.rs` `build_agent` · four one-shot
+`agent_logged_in`'s argv arm · `run/wiring.rs` `build_agent` · **`run.rs`**
+(loads the vendor's settings section and threads the resolved values through —
+distinct from `wiring.rs`) · **`config.rs`** (see below) · four one-shot
 dispatch matches (`init/run.rs`, `init/issues.rs`, `triage.rs`, and
 `main.rs::consolidate_with_agent`) · `main.rs::consolidate_defaults` ·
 `models.rs` `agent_slug` (+ `plan_action` only if the vendor can list models) ·
 `pricing.rs` `PriceTable::default` · `runstate/capture.rs` `EMIT_CALL_SHAPES`
 and `MIGRATED_EMITTERS` (ADR-0039) · workspace + CLI `Cargo.toml`.
+
+**`crates/ralphy-cli/src/config.rs` is the most-forgotten file in this tier**,
+because it is not a single match arm but **~10 distinct edit points in one
+file**: the `<Vendor>Settings` import, the `KEYS` array, the `KEYS` help blurb, a
+`with_<vendor>` load-mutate-store helper, and arms in `set`, `unset`, the human
+`print`, and the JSON emitter — plus its own round-trip tests. Any vendor with a
+tunable axis (a per-phase model, a reasoning effort, an escape hatch) lands here,
+and a vendor wired everywhere *except* here compiles cleanly and silently
+ignores the operator's `ralphy config set`.
 
 **Tier 4 — usage scan and daemon**: `usage-scan/src/<vendor>.rs` +
 `<Vendor>Scan` + the `pub mod`/`pub use` · `daemon/src/usage.rs` path resolver
@@ -257,8 +277,9 @@ covers the process plumbing.
 - **The logged-out probe is destructive of its own evidence.** C5 must be run
   before the operator authenticates, or that signature costs a logout to recover.
 - **Three agent enums and five tiers** is the real cost of a vendor, and most of
-  it is outside the adapter crate. Anyone estimating "just write the adapter" is
-  estimating Tier 1 only — roughly half the work.
+  it is outside the adapter crate. Measured against Copilot: **~11 files inside
+  the crate and 24 outside it**. Anyone estimating "just write the adapter" is
+  estimating Tier 1 only — well under half the work.
 - This ADR is expected to **drift**, because the wiring inventory tracks live
   code. Drift is repaired by amending this file, which is cheaper than the
   current alternative of re-reading four adapters.
