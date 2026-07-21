@@ -185,6 +185,21 @@ pub(crate) fn build_cursor_command(
     cmd
 }
 
+/// The one-shot builder (`init` / `triage` / `consolidate` / `diagnose`).
+///
+/// Identical argv and environment hygiene to [`build_cursor_command`] — the same
+/// D4/D7/D17/D18 stance applies to a one-shot, which walks the same repository the
+/// run path does. The only difference is the session id: a one-shot is never
+/// resumed and nothing looks it up afterwards, so it gets a fresh minted id rather
+/// than one the caller has to thread through.
+pub(crate) fn build_cursor_init_command(
+    model: Option<&str>,
+    cwd: &Path,
+    config_dir: &Path,
+) -> Command {
+    build_cursor_command(&mint_session_id(), model, cwd, config_dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,6 +261,49 @@ mod tests {
             let i = args.iter().position(|a| a == "--resume").unwrap();
             assert_eq!(args[i + 1], "s1", "argv: {args:?}");
         }
+    }
+
+    /// The one-shots inherit the run builder's hygiene wholesale: a `ralphy init`
+    /// against a repository is the same blast radius as a run, so a divergence here
+    /// would silently exempt four verbs from D4/D7/D17/D18.
+    #[test]
+    fn the_init_builder_matches_the_run_builders_hygiene() {
+        let scratch = Path::new("/run/cfg");
+        let cmd = build_cursor_init_command(None, Path::new("/repo"), scratch);
+        let args = argv(&cmd);
+
+        let i = args
+            .iter()
+            .position(|a| a == "--model")
+            .unwrap_or_else(|| panic!("--model must never be omitted: {args:?}"));
+        assert_eq!(args[i + 1], "auto", "argv: {args:?}");
+        assert!(args.iter().any(|a| a == "--force"), "argv: {args:?}");
+        let i = args.iter().position(|a| a == "--output-format").unwrap();
+        assert_eq!(args[i + 1], "stream-json", "argv: {args:?}");
+        for flag in [
+            "--auto-review",
+            "--approve-mcps",
+            "-w",
+            "--worktree",
+            "--worktree-base",
+            "--sandbox",
+            "--mode",
+            "--plan",
+        ] {
+            assert!(
+                !args.iter().any(|a| a == flag),
+                "refused flag {flag} reached a one-shot argv: {args:?}"
+            );
+        }
+
+        assert_eq!(
+            env_of(&cmd, "CURSOR_CONFIG_DIR").map(PathBuf::from),
+            Some(scratch.to_path_buf())
+        );
+        assert_eq!(
+            env_of(&cmd, "CURSOR_AGENT_DISABLE_DEBUG_LOG").as_deref(),
+            Some("1")
+        );
     }
 
     /// D2: the charter is piped. `-p` is the print-mode switch and takes no value,

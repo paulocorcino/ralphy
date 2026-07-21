@@ -623,6 +623,10 @@ mod tests {
         let spawners = [
             concat!("HeadlessCall::", "new("),
             concat!("run_", "headless("),
+            // The one-shots spawn through the shared harness, not `HeadlessCall`
+            // directly — without these two the whole of `tasks.rs` is invisible here.
+            concat!("run_init_", "session("),
+            concat!("run_text_", "session("),
         ];
         let mut sites: Vec<String> = Vec::new();
         for (name, body) in &files {
@@ -637,9 +641,23 @@ mod tests {
             .collect();
         assert_eq!(
             short,
-            vec!["auth.rs", "command.rs", "outcome.rs"],
+            vec!["auth.rs", "command.rs", "outcome.rs", "tasks.rs"],
             "a NEW child-spawning file appeared — decide its D6/D17/D18 stance and \
              extend this test; a spawn that skips them is the failure this slice exists to prevent"
+        );
+
+        // `tasks.rs` holds four spawn paths, and D6/D17 must cover EVERY one — the
+        // count is what catches a fifth verb added without its preflight.
+        let tasks = &files
+            .iter()
+            .find(|(n, _)| n.ends_with("tasks.rs"))
+            .expect("tasks.rs")
+            .1;
+        assert_eq!(
+            tasks.matches(concat!("one_shot_", "preflight(")).count(),
+            // 4 call sites + the fn's own definition.
+            5,
+            "every one-shot must gate and seed before it spawns"
         );
 
         // `command.rs` only BUILDS the command; the run path's gate is pinned above.

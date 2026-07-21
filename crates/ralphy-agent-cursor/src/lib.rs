@@ -15,8 +15,9 @@
 //!   operator's own, so a `--model` never reassigns the default model of their
 //!   interactive Cursor sessions (D4/D17).
 //!
-//! Token usage, skills materialization and the one-shot verbs are each their own
-//! slice of #242 and are deliberately absent here.
+//! The same two gates cover the one-shot verbs in [`tasks`], which run outside the
+//! `Agent` contract entirely. Token usage is its own slice of #242 and is
+//! deliberately absent here.
 
 use std::fs;
 use std::path::PathBuf;
@@ -36,6 +37,7 @@ mod model;
 mod outcome;
 mod settings;
 mod skills;
+mod tasks;
 
 /// Whether the operator is logged into Cursor, from the vendor's own structured
 /// answer (ADR-0042 D8) — what `ralphy init`'s gate reports.
@@ -47,6 +49,10 @@ pub use command::locate_cursor;
 
 /// Persisted settings for `--agent cursor` (ADR-0042 D6). See [`CursorSettings`].
 pub use settings::CursorSettings;
+
+/// The four one-shot verbs (`init`/`triage`/`consolidate`/`diagnose`), each behind
+/// D6's indexing gate. See [`tasks`].
+pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 
 /// The vendor's id grammar, normalized to the billing family (ADR-0042 D5) — the
 /// price table's key. Vendor-specific by ADR-0004, so it lives here and
