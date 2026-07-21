@@ -204,13 +204,22 @@ pub fn is_windows_mount_path(dir: &Path) -> bool {
             if drive.to_str().is_some_and(|d| d.len() == 1 && d.chars().all(|c| c.is_ascii_alphabetic())))
 }
 
-/// Every `<home>/.nvm/versions/node/*/bin/<name>`, sorted by version directory.
+/// Every `<home>/.nvm/versions/node/*/bin/<name>`, NEWEST version first.
 ///
 /// A version-managed Node install puts npm's global bin under the active Node
 /// version rather than on a stable path, and a non-login shell (which is what a
 /// daemon or a CI step gets) often carries neither the nvm shims nor the active
-/// version's bin on `PATH` (ADR-0043 D16). Sorting makes the answer deterministic
-/// rather than filesystem-order dependent.
+/// version's bin on `PATH` (ADR-0043 D16).
+///
+/// The order is load-bearing, not cosmetic: `locate_program_with` takes the FIRST
+/// hit, and a plain lexicographic sort hands it `v10.24.0` over `v9.11.2` and
+/// `v20` over `v22` — systematically the older runtime. Ordering on the parsed
+/// numeric components picks the newest and stays deterministic rather than
+/// filesystem-order dependent.
+///
+/// Unix-shaped by construction; nvm-windows' `%APPDATA%\nvm\vX\` layout differs
+/// and is not covered, so this fallback is inert on Windows — where npm's global
+/// bin is on `PATH` anyway.
 ///
 /// Pure over its inputs — it only reads the directory listing — so it unit-tests
 /// against a temp home on every platform.
@@ -219,12 +228,31 @@ pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(&versions) else {
         return Vec::new();
     };
-    let mut out: Vec<PathBuf> = entries
+    let mut found: Vec<(Vec<u64>, PathBuf)> = entries
         .filter_map(|e| e.ok())
-        .map(|e| e.path().join("bin").join(name))
+        .map(|e| {
+            let dir = e.path();
+            let key = dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(version_key)
+                .unwrap_or_default();
+            (key, dir.join("bin").join(name))
+        })
         .collect();
-    out.sort();
-    out
+    // Newest first; the path breaks ties so the order is total.
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    found.into_iter().map(|(_, p)| p).collect()
+}
+
+/// The numeric components of a version directory name like `v22.22.2`, for
+/// ordering. A non-numeric segment contributes `0`, so an unparsable name sorts
+/// low rather than panicking or winning.
+fn version_key(name: &str) -> Vec<u64> {
+    name.trim_start_matches('v')
+        .split('.')
+        .map(|p| p.parse::<u64>().unwrap_or(0))
+        .collect()
 }
 
 /// The home directory, from the platform's usual env var (`USERPROFILE` on
@@ -465,7 +493,9 @@ mod tests {
             "no .nvm at all is not an error"
         );
 
-        for v in ["v20.11.0", "v22.22.2"] {
+        // Deliberately spanning the decade boundary a lexicographic sort gets
+        // wrong (`v10` sorts before `v9` as strings).
+        for v in ["v9.11.2", "v22.22.2"] {
             let bin = home.path().join(".nvm/versions/node").join(v).join("bin");
             fs::create_dir_all(&bin).unwrap();
             let exe = bin.join("gemini");
@@ -475,16 +505,25 @@ mod tests {
 
         let got = nvm_candidates(home.path(), "gemini");
         assert_eq!(got.len(), 2, "{got:?}");
-        // Sorted, so the answer does not depend on filesystem order.
-        let mut sorted = got.clone();
-        sorted.sort();
-        assert_eq!(got, sorted);
+        // NEWEST first: a lexicographic sort would put v10 before v9 and v20
+        // before v22, handing the locator the older runtime every time.
         assert!(
-            got.iter().all(|p| p.ends_with("bin/gemini")
-                || p.ends_with("bin\\gemini")
-                || p.file_name().and_then(|n| n.to_str()) == Some("gemini")),
-            "{got:?}"
+            got[0].to_string_lossy().contains("v22.22.2"),
+            "newest version must come first: {got:?}"
         );
+        assert!(got[1].to_string_lossy().contains("v9.11.2"), "{got:?}");
+        // Every candidate is `<version>/bin/<name>` — the `bin` segment is what a
+        // path built from the wrong join would silently lose.
+        for p in &got {
+            assert_eq!(p.file_name().and_then(|n| n.to_str()), Some("gemini"));
+            assert_eq!(
+                p.parent()
+                    .and_then(|d| d.file_name())
+                    .and_then(|n| n.to_str()),
+                Some("bin"),
+                "{p:?}"
+            );
+        }
 
         // …and the locator actually reaches them: `PATH` is empty, `~/.local/bin`
         // holds nothing, so only the nvm fallback can answer. (Windows gates

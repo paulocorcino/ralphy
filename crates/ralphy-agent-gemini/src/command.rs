@@ -125,6 +125,11 @@ pub(crate) fn allowed_auth_vars(auth_type: Option<&str>) -> &'static [&'static s
             "GOOGLE_GENAI_USE_VERTEXAI",
             "GOOGLE_CLOUD_PROJECT",
             "GOOGLE_CLOUD_LOCATION",
+            // Application Default Credentials: a Vertex operator authenticating
+            // with a service-account key file has this as their ONLY credential
+            // pointer. Scrubbing it drops them to exit 41 on every run — the
+            // "wrongly dropped" direction the allowlist is supposed to avoid.
+            "GOOGLE_APPLICATION_CREDENTIALS",
         ],
         // `oauth-personal` and `cloud-shell` authenticate out of band; no
         // environment variable is theirs to forward.
@@ -138,19 +143,30 @@ pub(crate) fn allowed_auth_vars(auth_type: Option<&str>) -> &'static [&'static s
 /// The namespaces are matched by PREFIX (`GEMINI_`, `GOOGLE_GENAI_`,
 /// `GOOGLE_CLOUD_`) plus two exact names, so a variable the vendor adds later is
 /// scrubbed by default rather than forwarded by default.
+///
+/// Matching is CASE-INSENSITIVE, unconditionally. Windows environment lookup is
+/// case-insensitive — Node resolves `process.env.GOOGLE_GENAI_USE_VERTEXAI`
+/// against a variable stored as `google_genai_use_vertexai` — so a case-sensitive
+/// filter would let exactly that spelling survive the scrub while remaining fully
+/// effective for the child. Harmless on Unix, where such a name is a different
+/// variable the vendor does not read.
 pub(crate) fn scrubbed_names<'a>(
     parent: impl Iterator<Item = &'a str>,
     keep: &[&str],
 ) -> Vec<String> {
     parent
         .filter(|n| {
-            n.starts_with("GEMINI_")
-                || n.starts_with("GOOGLE_GENAI_")
-                || n.starts_with("GOOGLE_CLOUD_")
-                || *n == "GOOGLE_API_KEY"
-                || *n == "GOOGLE_APPLICATION_CREDENTIALS"
+            let u = n.to_ascii_uppercase();
+            u.starts_with("GEMINI_")
+                || u.starts_with("GOOGLE_GENAI_")
+                || u.starts_with("GOOGLE_CLOUD_")
+                || u == "GOOGLE_API_KEY"
+                || u == "GOOGLE_APPLICATION_CREDENTIALS"
         })
-        .filter(|n| !keep.contains(n))
+        .filter(|n| {
+            let u = n.to_ascii_uppercase();
+            !keep.iter().any(|k| k.eq_ignore_ascii_case(&u))
+        })
         .map(str::to_string)
         .collect()
 }
@@ -310,20 +326,41 @@ mod tests {
             "GEMINI_CLI_HOME must name the owned root"
         );
 
-        // The operator's real root, whatever it is on this host, must not be
-        // reachable through anything this builder set.
-        let operator = crate::root::operator_root().expect("a home dir on the test host");
-        let operator_s = operator.display().to_string();
-        for a in argv(&cmd) {
-            assert!(!a.contains(&operator_s), "operator root reached argv: {a}");
-        }
-        for (k, v) in cmd.get_envs() {
-            let v = v
-                .map(|v| v.to_string_lossy().into_owned())
-                .unwrap_or_default();
+        // Asserting "the operator's root is absent" against THIS function would be
+        // tautological — it never sees `operator_root()`. What can go wrong is one
+        // level up, at the only place the `home` argument is chosen: a call site
+        // that passed the operator's root, or `root::operator_root()` directly,
+        // would isolate nothing. Pin that instead, on the source.
+        // (The whole file, not the production half: `lib.rs` carries a `#[cfg(test)]`
+        // helper ABOVE these call sites, so splitting on that marker would cut the
+        // very lines under assertion. Its test module calls no builder.)
+        let lib = include_str!("lib.rs");
+        assert_eq!(
+            lib.matches(concat!("build_gemini_", "command(")).count(),
+            2,
+            "exactly two call sites (plan, execute) — a third would need its own \
+             root argument audited"
+        );
+        // Both pass the root `prepare_root` just ensured, and nothing else.
+        assert_eq!(
+            lib.matches("&root.home,").count(),
+            2,
+            "both call sites must point the child at the root ralphy just ensured"
+        );
+        // The operator's root IS read there — for the non-secret auth pointer and
+        // their deny rules — but it must never become a child's `home`.
+        assert_eq!(
+            lib.matches(concat!("operator_", "root()")).count(),
+            1,
+            "one read of the operator's root, bound once"
+        );
+        for handed_to_child in [
+            concat!("build_gemini_", "command(\n                &session_id,\n                model,\n                ws.repo_root(),\n                &operator"),
+            concat!("root::operator_", "root()?,"),
+        ] {
             assert!(
-                !v.contains(&operator_s),
-                "operator root reached env {k:?}: {v}"
+                !lib.contains(handed_to_child),
+                "lib.rs must never hand the operator's own root to a child (D4)"
             );
         }
     }
@@ -385,6 +422,30 @@ mod tests {
         );
     }
 
+    /// Windows resolves `process.env` case-insensitively, so a variable stored as
+    /// `google_genai_use_vertexai` is fully effective for the Node child — and a
+    /// case-sensitive filter would let exactly that spelling through the scrub.
+    #[test]
+    fn the_scrub_is_case_insensitive() {
+        let scrubbed = scrubbed_names(
+            [
+                "google_genai_use_vertexai",
+                "Google_Cloud_Project",
+                "gemini_api_key",
+                "PATH",
+            ]
+            .into_iter(),
+            allowed_auth_vars(Some("gemini-api-key")),
+        );
+        assert_eq!(
+            scrubbed,
+            ["google_genai_use_vertexai", "Google_Cloud_Project"],
+            "lowercase auth variables must be scrubbed, and the allowlist must \
+             match case-insensitively too"
+        );
+        assert!(!scrubbed.iter().any(|n| n == "PATH"));
+    }
+
     /// The allowlist per auth mode, including the two that own no variable at all.
     #[test]
     fn the_allowlist_follows_the_declared_auth_mode() {
@@ -397,7 +458,10 @@ mod tests {
             [
                 "GOOGLE_GENAI_USE_VERTEXAI",
                 "GOOGLE_CLOUD_PROJECT",
-                "GOOGLE_CLOUD_LOCATION"
+                "GOOGLE_CLOUD_LOCATION",
+                // ADC: a service-account key file is a Vertex operator's ONLY
+                // credential pointer. Dropping it is exit 41 on every run.
+                "GOOGLE_APPLICATION_CREDENTIALS"
             ]
         );
         for mode in [
@@ -411,22 +475,21 @@ mod tests {
                 "{mode:?} owns no forwardable variable"
             );
         }
-        // A vertex-ai operator keeps their three and loses the key namespace.
+        // A vertex-ai operator keeps their own four — INCLUDING the ADC pointer —
+        // and loses the API-key namespace that would silently reroute the run.
         let scrubbed = scrubbed_names(
             [
                 "GOOGLE_GENAI_USE_VERTEXAI",
                 "GOOGLE_CLOUD_PROJECT",
-                "GEMINI_API_KEY",
                 "GOOGLE_APPLICATION_CREDENTIALS",
+                "GEMINI_API_KEY",
+                "GOOGLE_API_KEY",
                 "HOME",
             ]
             .into_iter(),
             allowed_auth_vars(Some("vertex-ai")),
         );
-        assert_eq!(
-            scrubbed,
-            ["GEMINI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]
-        );
+        assert_eq!(scrubbed, ["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
     }
 
     /// D2: a charter the vendor would silently truncate must fail loudly.

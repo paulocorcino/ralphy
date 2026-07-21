@@ -304,6 +304,7 @@ mod tests {
         assert!(Agent::Codex.accepts_images());
         assert!(Agent::Copilot.accepts_images());
         assert!(!Agent::Cursor.accepts_images());
+        assert!(Agent::Gemini.accepts_images());
         assert!(!Agent::Kimi.accepts_images());
         assert!(!Agent::Opencode.accepts_images());
         // The hardcoded ALL array length must track the enum: a new variant that

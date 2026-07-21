@@ -55,6 +55,46 @@ fn record_text(obj: &Value) -> String {
     }
 }
 
+/// The vendor's own sentence for why it stopped, from whichever shape a record
+/// carries it.
+///
+/// `error` is an OBJECT on the wire, not a string:
+/// `{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error…]"}}`
+/// and `{"session_id":…,"error":{"type":"Error","message":"Please set an Auth
+/// method…","code":41}}` (spike §, records observed 2026-07-20). A bare
+/// `as_str()` on it is `None`, which is how this reduced to a mute stop.
+fn record_error(obj: &Value) -> Option<String> {
+    let e = obj.get("error")?;
+    if let Some(s) = e.as_str() {
+        return Some(s.to_string());
+    }
+    let msg = e.get("message").and_then(Value::as_str)?;
+    match e.get("type").and_then(Value::as_str) {
+        Some(t) if !t.is_empty() => Some(format!("{t}: {msg}")),
+        _ => Some(msg.to_string()),
+    }
+}
+
+/// The phrases that mean "the provider throttled or exhausted the account"
+/// (ADR-0043 D11). Matched over the COMBINED log, because this vendor reserves no
+/// exit code for quota: without this a real exhaustion arrives as a mute `Stuck`
+/// and the queue burns its no-progress budget on an account-wide throttle.
+///
+/// Substring matching over a lowercased haystack rather than a regex — the four
+/// phrases carry no alternation a regex would buy.
+pub(crate) fn gemini_limit_note(text: &str) -> Option<String> {
+    let hay = text.to_ascii_lowercase();
+    [
+        "rate limit",
+        "quota exceeded",
+        "too many requests",
+        "resource exhausted",
+    ]
+    .into_iter()
+    .find(|p| hay.contains(p))
+    .map(|p| format!("gemini reported a provider limit ({p})"))
+}
+
 /// Reduce one call's stdout to a [`GeminiFold`].
 ///
 /// Tolerant by construction: non-JSON lines are skipped (the CLI interleaves
@@ -79,7 +119,12 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
             }
             // The delta join: append, never match. A sentinel split after `RAL`
             // is only recoverable because the pieces are concatenated first.
-            "message" if role == "assistant" || role.is_empty() => {
+            //
+            // The role gate is exact: `PROMPT_EXECUTE` itself contains
+            // `RALPHY_DONE_EXIT`, and the vendor echoes it back as the
+            // `role:"user"` record, so folding anything but the assistant's own
+            // words would report every execute call as instantly done.
+            "message" if role == "assistant" => {
                 fold.final_text.push_str(&record_text(&obj));
             }
             "result" => {
@@ -90,22 +135,14 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
                 if let Some(m) = obj.get("model").and_then(Value::as_str) {
                     fold.model = Some(m.to_string());
                 }
-                for key in ["error", "message"] {
-                    if let Some(e) = obj.get(key).and_then(Value::as_str) {
-                        fold.vendor_error = Some(e.to_string());
-                        break;
-                    }
-                }
-            }
-            "error" => {
-                for key in ["error", "message"] {
-                    if let Some(e) = obj.get(key).and_then(Value::as_str) {
-                        fold.vendor_error = Some(e.to_string());
-                        break;
-                    }
-                }
             }
             _ => {}
+        }
+        // Independent of `type`: the auth-failure record the spike captured
+        // carries `error` with NO `type` field at all, so a type-keyed arm drops
+        // exactly the record whose sentence the operator needs.
+        if fold.vendor_error.is_none() {
+            fold.vendor_error = record_error(&obj);
         }
     }
     fold
@@ -129,6 +166,37 @@ pub(crate) enum ExitClass {
     /// `extractErrorCode()` forwards any numeric `.code`/`.status` it finds
     /// straight to `process.exit()`, so an upstream HTTP status is reachable here.
     Other,
+}
+
+impl ExitClass {
+    /// The operator-facing sentence for an exit that is ACTIONABLE rather than
+    /// merely failed (ADR-0043 D5's "detected, not worked around").
+    ///
+    /// Without this, an enterprise Strict Mode that stripped `--approval-mode
+    /// yolo`, a sandbox the host cannot start, and a malformed policy document
+    /// all collapse into an unexplained `Stuck` — indistinguishable from a
+    /// confused agent, and the one shape a human could fix in a minute.
+    pub(crate) fn actionable_stop(self) -> Option<&'static str> {
+        match self {
+            ExitClass::Untrusted => Some(
+                "gemini refused the workspace as untrusted (exit 55) — an admin \
+                 policy or enterprise Strict Mode is overriding `--skip-trust`",
+            ),
+            ExitClass::Sandbox => Some(
+                "gemini could not start its sandbox (exit 44) — ralphy sets no \
+                 sandbox mode, so this comes from the operator's own settings",
+            ),
+            ExitClass::Config => Some(
+                "gemini rejected its configuration (exit 52) — check ralphy's \
+                 owned root under `.ralphy/gemini-home/.gemini/`",
+            ),
+            ExitClass::BadArgv => Some(
+                "gemini rejected the command line (exit 42) — the installed CLI \
+                 does not accept the argv this adapter builds",
+            ),
+            _ => None,
+        }
+    }
 }
 
 /// Classify the child's exit code. Total by construction — see [`ExitClass::Other`].
@@ -158,8 +226,14 @@ pub(crate) fn classify_exit(code: Option<i32>) -> ExitClass {
 /// unless the code says success AND the envelope arrived saying so — the
 /// pessimistic direction, because an unreproduced status must not be assumed
 /// benign.
+///
+/// `log` is the child's stdout+stderr COMBINED: under `stream-json` the
+/// actionable diagnosis (a model-not-found error, the auth sentence, a provider
+/// throttle) goes to **stderr** while stdout carries only records, so a
+/// classifier reading stdout alone is blind to exactly the failures it must name.
 pub(crate) fn classify_gemini_outcome(
     fold: &GeminiFold,
+    log: &str,
     exited_cleanly: bool,
     timed_out: bool,
     committed: bool,
@@ -169,12 +243,26 @@ pub(crate) fn classify_gemini_outcome(
     let cancelled = class == ExitClass::Cancelled;
     let succeeded =
         class == ExitClass::Success && fold.saw_result && fold.status.as_deref() != Some("error");
+    // This vendor reserves NO exit code for quota (D11), so the text is the only
+    // signal a real exhaustion has; `429` alone would never fire.
+    let limited = class == ExitClass::Limit || gemini_limit_note(log).is_some();
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(&fold.final_text),
-        blocked: ralphy_adapter_support::blocked_reason(&fold.final_text),
-        // D11 is open: quota exhaustion has never been observed on this vendor, so
-        // only the documented rate-limit code claims a limit.
-        limit: (class == ExitClass::Limit).then(|| fold.vendor_error.clone()),
+        blocked: ralphy_adapter_support::blocked_reason(&fold.final_text).or_else(|| {
+            // D5: an actionable refusal is a NAMED stop, never a silent
+            // degradation into `Stuck`.
+            (!succeeded)
+                .then(|| class.actionable_stop())
+                .flatten()
+                .map(str::to_string)
+        }),
+        // D11: `Limit(None)`. The inner slot is the parsed RESET HINT
+        // (`CompletionSignals::limit`), and this vendor publishes none — so
+        // ADR-0030's synthetic cadence applies. Putting the vendor's prose here
+        // would make `runner/phases.rs` read it as a scheduled reset and abandon
+        // the issue after two no-commit limits. The sentence goes to
+        // `note_vendor_error` instead.
+        limit: limited.then_some(None),
         committed,
         // A cancellation IS Ralphy stopping the child, so it lands on `Timeout`
         // rather than falling through the ladder to `Stuck`.
@@ -190,10 +278,16 @@ impl GeminiAgent {
     /// [`HeadlessCall`] site (ADR-0040 Tier 1).
     ///
     /// **Cross-path invariant:** `root::ensure` and `policy::write_policy` run
-    /// BEFORE every spawn, on every path — plan, execute and the login probe —
+    /// BEFORE every spawn on both TURN-DRIVING paths — `plan` and `execute` —
     /// never once at construction. A child spawned against a root that does not
     /// exist yet falls back to the operator's own, which is precisely the
     /// isolation D4 exists to guarantee.
+    ///
+    /// The login probe (`auth::probe_gemini_login`) is deliberately weaker: it
+    /// calls `root::ensure` but carries no policy document, because its argv
+    /// (`--list-sessions`) grants no tool and makes no model call — there is
+    /// nothing for a policy to deny. The D4 containment it does need is the
+    /// `GEMINI_CLI_HOME` it sets.
     ///
     /// The prompt is fully built by the caller before this is reached: the vendor
     /// gives stdin a 500 ms grace timer after spawn, and `HeadlessCall` writes the
@@ -263,7 +357,7 @@ mod tests {
         // Neither is reported as a green run.
         for f in [&fold, &empty] {
             assert_ne!(
-                classify_gemini_outcome(f, false, false, false, Some(1)),
+                classify_gemini_outcome(f, "", false, false, false, Some(1)),
                 Outcome::Done
             );
         }
@@ -324,17 +418,17 @@ mod tests {
         );
         let fold = fold_gemini_stream(&stdout);
         assert_eq!(
-            classify_gemini_outcome(&fold, true, false, true, Some(0)),
+            classify_gemini_outcome(&fold, "", true, false, true, Some(0)),
             Outcome::Done
         );
         assert_ne!(
-            classify_gemini_outcome(&fold, false, false, true, Some(54)),
+            classify_gemini_outcome(&fold, "", false, false, true, Some(54)),
             Outcome::Done,
             "exit 54 (tool failure) must not be reported as a completed run"
         );
         // A cancellation is Ralphy stopping the child, not a crash.
         assert_eq!(
-            classify_gemini_outcome(&fold, false, false, true, Some(130)),
+            classify_gemini_outcome(&fold, "", false, false, true, Some(130)),
             Outcome::Timeout
         );
     }
@@ -368,6 +462,147 @@ mod tests {
             !lib_src.contains(concat!("HeadlessCall::", "new(")),
             "lib.rs must go through run_gemini, not spawn its own child"
         );
+    }
+
+    /// The vendor writes `error` as an OBJECT, in two shapes — one under a
+    /// `result` record, one with NO `type` field at all. A fold that read it as a
+    /// string, or that keyed on `type`, dropped both and the stop went mute.
+    #[test]
+    fn the_vendor_error_object_is_read_in_both_observed_shapes() {
+        let under_result = r#"{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: quota]"}}"#;
+        let fold = fold_gemini_stream(under_result);
+        assert_eq!(
+            fold.vendor_error.as_deref(),
+            Some("unknown: [API Error: quota]"),
+            "the `error` object under a `result` record must be read"
+        );
+        assert!(fold.saw_result);
+
+        // The auth record: no `type` key whatsoever.
+        let typeless = r#"{"session_id":"s1","error":{"type":"Error","message":"Please set an Auth method in your settings.json","code":41}}"#;
+        let fold = fold_gemini_stream(typeless);
+        assert_eq!(
+            fold.vendor_error.as_deref(),
+            Some("Error: Please set an Auth method in your settings.json"),
+            "a typeless record carrying `error` must not be dropped"
+        );
+        // A bare string `error` still works, and a record with none is silent.
+        assert_eq!(
+            fold_gemini_stream(r#"{"type":"error","error":"boom"}"#)
+                .vendor_error
+                .as_deref(),
+            Some("boom")
+        );
+        assert_eq!(
+            fold_gemini_stream(r#"{"type":"result"}"#).vendor_error,
+            None
+        );
+    }
+
+    /// The role gate must be EXACT. `PROMPT_EXECUTE` itself contains the sentinel
+    /// and the vendor echoes the whole prompt back as the `role:"user"` record —
+    /// folding anything but the assistant's own words reports every execute call
+    /// as instantly done.
+    #[test]
+    fn the_echoed_user_prompt_never_counts_as_the_agents_answer() {
+        const SENTINEL_PROMPT: &str = "…do the work then print RALPHY_DONE_EXIT";
+        let terminal = serde_json::json!({"type": "result", "status": "success"});
+        // Both discriminating shapes: the echoed `role:"user"` record, and a
+        // ROLE-LESS `message` record — a fold that widened to `role.is_empty()`
+        // would report the second as the agent's own answer.
+        let roleless =
+            serde_json::json!({"type": "message", "content": SENTINEL_PROMPT}).to_string();
+        for stdout in [
+            format!("{}\n{terminal}\n", msg("user", SENTINEL_PROMPT)),
+            format!("{roleless}\n{terminal}\n"),
+        ] {
+            let fold = fold_gemini_stream(&stdout);
+            assert!(
+                fold.final_text.is_empty(),
+                "only the assistant's own words are the answer: {:?}",
+                fold.final_text
+            );
+            assert_ne!(
+                classify_gemini_outcome(&fold, "", true, false, false, Some(0)),
+                Outcome::Done
+            );
+        }
+    }
+
+    /// D11: this vendor reserves no exit code for quota, so the TEXT is the only
+    /// signal a real exhaustion has — and the limit must carry `None`, because the
+    /// inner slot is a parsed reset hint the vendor never publishes. Putting prose
+    /// there makes the runner read it as a schedule and abandon the issue.
+    #[test]
+    fn a_provider_throttle_is_a_limit_with_no_reset_hint() {
+        // The fold MUST carry a vendor sentence: that is the value an
+        // implementation would be tempted to smuggle into the reset slot, and a
+        // fold without one cannot tell the two apart.
+        let fold = fold_gemini_stream(
+            r#"{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: 429 quota exceeded]"}}"#,
+        );
+        assert!(fold.vendor_error.is_some(), "the fixture must carry prose");
+        for phrase in [
+            "Error: 429 Too Many Requests",
+            "RESOURCE_EXHAUSTED: quota exceeded for this project",
+            "you have hit a rate limit",
+        ] {
+            assert!(gemini_limit_note(phrase).is_some(), "{phrase}");
+            assert_eq!(
+                classify_gemini_outcome(&fold, phrase, false, false, false, Some(1)),
+                Outcome::Limit(None),
+                "a textual throttle must be a limit with NO reset hint: {phrase}"
+            );
+        }
+        // The documented 429 exit reaches the same place with no text at all.
+        assert_eq!(
+            classify_gemini_outcome(&fold, "", false, false, false, Some(429)),
+            Outcome::Limit(None)
+        );
+        // …and ordinary prose is not a limit.
+        assert_eq!(gemini_limit_note("everything is fine"), None);
+        assert_ne!(
+            classify_gemini_outcome(&fold, "everything is fine", false, false, false, Some(1)),
+            Outcome::Limit(None)
+        );
+    }
+
+    /// D5: an actionable refusal is a NAMED stop, never a silent degradation into
+    /// `Stuck`. Without this an enterprise Strict Mode that stripped the autonomy
+    /// flag is indistinguishable from a confused agent.
+    #[test]
+    fn an_actionable_exit_stops_with_a_sentence_not_a_mute_stuck() {
+        let fold = fold_gemini_stream("");
+        for (code, needle) in [
+            (55, "untrusted"),
+            (44, "sandbox"),
+            (52, "configuration"),
+            (42, "command line"),
+        ] {
+            match classify_gemini_outcome(&fold, "", false, false, false, Some(code)) {
+                Outcome::Blocked(reason) => assert!(
+                    reason.to_ascii_lowercase().contains(needle),
+                    "exit {code} must name its cause, got {reason:?}"
+                ),
+                other => panic!("exit {code} must be a named stop, got {other:?}"),
+            }
+        }
+        // A plain failure keeps falling through the ladder — this must not turn
+        // every non-zero exit into a `Blocked`.
+        assert!(!matches!(
+            classify_gemini_outcome(&fold, "", false, false, false, Some(1)),
+            Outcome::Blocked(_)
+        ));
+        // …and a SUCCESSFUL run never carries a stop sentence.
+        let ok = fold_gemini_stream(&format!(
+            "{}\n{}\n",
+            msg("assistant", "done"),
+            serde_json::json!({"type": "result", "status": "success"})
+        ));
+        assert!(!matches!(
+            classify_gemini_outcome(&ok, "", true, false, true, Some(0)),
+            Outcome::Blocked(_)
+        ));
     }
 
     /// D2, live: standard input is PREPENDED to the argv prompt and joined with a

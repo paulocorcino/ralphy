@@ -26,7 +26,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{
     run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg, PLAN_CHARTER, PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
 
 mod auth;
@@ -131,9 +131,10 @@ impl GeminiAgent {
     /// path: the owned configuration root (D4) and the sovereign policy document
     /// (D5). Returns what `build_gemini_command` needs to point the child at them.
     ///
-    /// Deliberately NOT done once at construction — `plan`, `execute` and the
-    /// login probe each call it, so a root deleted between phases is recreated
-    /// rather than silently falling back to the operator's own.
+    /// Deliberately NOT done once at construction — `plan` and `execute` each
+    /// call it before their spawn, so a root deleted between phases is recreated
+    /// rather than silently falling back to the operator's own. (The login probe
+    /// calls `root::ensure` directly and carries no policy; see `run_gemini`.)
     fn prepare_root(&self, base: &Path) -> Result<(root::GeminiRoot, PathBuf, Option<String>)> {
         let root = root::ensure(base)?;
         tracing::debug!(
@@ -198,14 +199,18 @@ impl Agent for GeminiAgent {
             },
             run,
             auth::is_gemini_auth_error,
-            // D11 is open: quota exhaustion has never been observed on this
-            // vendor, so a limit surfaces as an ordinary failure rather than a
-            // guessed phrase match that would park the queue on a false positive.
-            |_log| None,
+            // A usage limit during planning is not a generic failure: surface it
+            // as a typed `PlanLimit` so the runner routes it through the same
+            // stop-and-report / auto-resume path as an execute-time
+            // `Outcome::Limit`, rather than aborting the run with "produced no
+            // plan". This vendor reserves NO exit code for quota (D11), so the
+            // text is the only signal there is, and no reset hint is recoverable
+            // — the ADR-0030 synthetic cadence sets the wait.
+            |log| outcome::gemini_limit_note(log).map(|_| PlanLimit { reset: None }.into()),
         )?;
 
         if let Some((r, ())) = session.as_ref() {
-            note_vendor_error(&fold_gemini_stream(&r.stdout));
+            note_vendor_error(&fold_gemini_stream(&r.stdout), &r.log);
         }
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -261,9 +266,15 @@ impl Agent for GeminiAgent {
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let fold = fold_gemini_stream(&r.stdout);
-        note_vendor_error(&fold);
-        let outcome: Outcome =
-            classify_gemini_outcome(&fold, r.exited_cleanly, r.timed_out, committed, r.exit_code);
+        note_vendor_error(&fold, &r.log);
+        let outcome: Outcome = classify_gemini_outcome(
+            &fold,
+            &r.log,
+            r.exited_cleanly,
+            r.timed_out,
+            committed,
+            r.exit_code,
+        );
         info!(
             ?outcome,
             exited_cleanly = r.exited_cleanly,
@@ -307,9 +318,17 @@ fn phase_usage(model: Option<&str>) -> Usage {
 /// Surface the vendor's own reason for stopping, verbatim. Never changes the
 /// outcome — what it buys is that the stop is not mute: a refusal reads as itself
 /// in the run log instead of as an unexplained `Stuck`.
-fn note_vendor_error(fold: &outcome::GeminiFold) {
+///
+/// `log` is stdout+stderr COMBINED, and it is consulted as a second tier because
+/// under `stream-json` the diagnosis routinely goes to stderr while stdout
+/// carries only records — reading the fold alone is how a self-describing
+/// failure becomes mute.
+fn note_vendor_error(fold: &outcome::GeminiFold, log: &str) {
     if let Some(msg) = fold.vendor_error.as_deref() {
         tracing::warn!("gemini stopped the turn: {msg}");
+    }
+    if let Some(note) = outcome::gemini_limit_note(log) {
+        tracing::warn!("{note}");
     }
 }
 

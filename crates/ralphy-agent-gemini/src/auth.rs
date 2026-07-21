@@ -46,6 +46,12 @@ pub(crate) fn is_gemini_auth_error(text: &str) -> bool {
 /// A missing binary, a wedged probe or a timeout all read as "not authenticated":
 /// the gate's job is to tell the operator what to fix.
 pub fn probe_gemini_login() -> bool {
+    // Before any side effect: `ralphy init` walks every agent in `Agent::ALL`, so
+    // materialising Ralphy's gemini root here would create it on every machine,
+    // including for operators who have never installed this vendor.
+    if crate::command::locate_gemini().is_none() {
+        return false;
+    }
     let Some(base) = ralphy_proc_util::home_dir().map(|h| h.join(".ralphy")) else {
         return false;
     };
@@ -145,25 +151,55 @@ mod tests {
     }
 
     /// D17: the credential is never read, copied or replayed — the probe reaches
-    /// the vendor only through the shared headless runner. Fragments assembled
-    /// with `concat!` so the assertion cannot match itself.
+    /// the vendor only through the shared headless runner, and the ONE file
+    /// anything in this crate reads out of the operator's root is
+    /// `settings.json` (the non-secret auth-mode pointer, via
+    /// `root::operator_auth_type`).
+    ///
+    /// The ban list is over the whole crate, not just this file: pinning a naming
+    /// taboo in `auth.rs` alone would be satisfied by moving the read one module
+    /// over, which is exactly what the invariant must not permit. Fragments
+    /// assembled with `concat!` so the assertion cannot match itself.
     #[test]
     fn the_auth_probe_reads_no_credential() {
-        let production = include_str!("auth.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let crate_src = [
+            include_str!("auth.rs"),
+            include_str!("root.rs"),
+            include_str!("command.rs"),
+            include_str!("policy.rs"),
+            include_str!("outcome.rs"),
+            include_str!("lib.rs"),
+        ]
+        .map(|s| s.split("#[cfg(test)]").next().unwrap().to_string())
+        .join("\n");
         for banned in [
             "oauth_creds",
             "google_accounts",
             "keytar",
-            concat!("read_to", "_string("),
+            "access_token",
+            "refresh_token",
         ] {
             assert!(
-                !production.contains(banned),
+                !crate_src.contains(banned),
                 "the credential is never read (D17); found {banned}"
             );
         }
+        // Every read of the operator's root names `settings.json` and nothing
+        // else — a second filename here would be a second thing being read.
+        let operator_reads: Vec<&str> = crate_src
+            .match_indices("root?.join(")
+            .map(|(i, _)| &crate_src[i..crate_src[i..].find(')').unwrap() + i])
+            .collect();
+        assert_eq!(
+            operator_reads,
+            [concat!("root?.", "join(\"settings.json\"")],
+            "only the non-secret auth pointer may be read from the operator's root"
+        );
+
+        let production = include_str!("auth.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
         assert!(
             production.contains(concat!("run_", "headless(")),
             "the probe must reach the vendor through the shared runner"
