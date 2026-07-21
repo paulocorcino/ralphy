@@ -151,3 +151,68 @@ which is what D4 needed to know.
    `Usage::default()` with the model attributed; the stream's usage envelope is
    not parsed. That is a separate slice of #252, and stating the gap is the
    deliverable (ADR-0040 Amendment 1).
+
+## #255: the three silent revocations of autonomy
+
+Read from the shipped `@google/gemini-cli` **0.51.0** bundle (2026-07-21), which
+is authoritative over the documentation — the docs state the yolo/trust
+interaction differently from the code that enforces it.
+
+**The Strict Mode gate.** `bundle/gemini-EVKJWIDN.js:21186` (identical in
+`gemini-FJJIUT3T.js` and `gemini-PPWSIUOX.js`):
+
+```js
+if (settings.security?.disableYoloMode || settings.admin?.secureModeEnabled) {
+  if (approvalMode === "yolo") {
+    // debugLogger.error('YOLO mode is disabled by "secureModeEnabled" setting.')
+    // debugLogger.error('YOLO mode is disabled by the "disableYolo" setting.')
+    throw new FatalConfigError(getAdminErrorMessage("YOLO mode", void 0));
+  }
+}
+```
+
+`FatalConfigError` is **exit 52** — the same code as Ralphy's own malformed
+root, which is why the adapter now overrides that arm's sentence only when the
+admin needle is present.
+
+**The five needles** the in-flight tier matches (`revocation::NEEDLES`), each
+copied verbatim from the bundle:
+
+| Needle | Meaning |
+| --- | --- |
+| `YOLO mode is disabled by your administrator` / `YOLO mode is disabled by …` | autonomy disabled (exit 52) |
+| `Gemini CLI is not running in a trusted directory` | untrusted workspace (exit 55) |
+| `The enforced authentication type is …` / `… is enforced, but no authentication is configured.` | administrator-enforced auth |
+| `MCP servers are disabled by administrator.` / `… not allowlisted by your administrator` | administrator-governed tool servers |
+| `Approval mode overridden to "default" because the current folder is not trusted.` | demotion — the session keeps running but is no longer autonomous |
+
+**Live confirmation (2026-07-21, this host).** `gemini -p hello` from a repository
+root, without `--skip-trust`, exits **55** and prints on stderr:
+
+```
+Gemini CLI is not running in a trusted directory. To proceed, either use
+`--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` environment variable,
+or trust this directory in interactive mode. For more details, see
+https://geminicli.com/docs/cli/trusted-folders/#headless-and-automated-environments
+```
+
+The line arrives wrapped in `ESC[31m … ESC[0m`; `revocation::vendor_line` strips
+CSI sequences so the escape bytes never reach the run report. A fresh temporary
+directory is *trusted* and exits 0 — the refusal is per-folder, not global — and
+under an empty `GEMINI_CLI_HOME` the **auth** gate (exit 41) preempts the trust
+gate, so a trust probe must run against a root that is already authenticated.
+
+**The system-settings paths** the pre-spawn tier reads
+(`bundle/docs/cli/enterprise.md`, `bundle/docs/reference/policy-engine.md`):
+`%ProgramData%\gemini-cli\`, `/etc/gemini-cli/`,
+`/Library/Application Support/GeminiCli/` — each holding `settings.json` and
+`policies/`. `GEMINI_CLI_SYSTEM_SETTINGS_PATH` is deliberately NOT honoured:
+`command::scrubbed_names` strips every `GEMINI_`-prefixed variable from the
+child, so an inherited override would reach Ralphy but never the vendor.
+
+**The gap that remains.** Enterprise controls pushed from Google's management
+console are fetched at runtime by `startAdminControlsPolling` /
+`fetchAdminControls` (`bundle/chunk-AWR3APYV.js`) into `settings.admin` — they
+are **never on disk**. The pre-spawn file tier therefore cannot see them; only
+the in-flight sentence can. Neither tier subsumes the other, and no managed host
+was available to observe the server-pushed case directly.

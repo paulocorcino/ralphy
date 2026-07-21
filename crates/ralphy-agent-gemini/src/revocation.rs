@@ -96,11 +96,36 @@ pub(crate) fn detect_revocation(log: &str) -> Option<Revocation> {
 /// including the remediation clause Ralphy would otherwise have to restate and
 /// keep in sync (the trust refusal names `--skip-trust`; the Strict-Mode stop
 /// names the management console URL).
-pub(crate) fn vendor_line<'a>(log: &'a str, needle: &str) -> Option<&'a str> {
+///
+/// ANSI colour is STRIPPED. Observed live 2026-07-21: the trust refusal arrives on
+/// stderr wrapped in `ESC[31m … ESC[0m`, so a raw copy would paste escape bytes
+/// into the run report and the GitHub issue the runner publishes.
+pub(crate) fn vendor_line(log: &str, needle: &str) -> Option<String> {
     log.lines()
         .find(|l| l.to_ascii_lowercase().contains(needle))
-        .map(str::trim)
+        .map(strip_ansi)
+        .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
+}
+
+/// Drop CSI escape sequences (`ESC [ … <final byte>`), which is the only form this
+/// vendor's colouring uses.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut it = line.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '\u{1b}' && it.peek() == Some(&'[') {
+            it.next();
+            for c in it.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 impl Revocation {
@@ -378,6 +403,23 @@ mod tests {
         assert!(line.contains("--skip-trust"), "{line:?}");
         assert!(!line.contains("256-color"), "{line:?}");
         assert_eq!(vendor_line(log, "no such phrase"), None);
+
+        // The LIVE capture (2026-07-21, `gemini -p hello` from a repo root, exit
+        // 55): the vendor colours this line, and the escape bytes must not reach
+        // the run report the runner publishes on the issue.
+        const LIVE: &str = "\u{1b}[31mGemini CLI is not running in a trusted directory. To \
+             proceed, either use `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` \
+             environment variable, or trust this directory in interactive mode. For more \
+             details, see https://geminicli.com/docs/cli/trusted-folders/\u{1b}[0m";
+        let live = vendor_line(LIVE, "not running in a trusted directory").expect("matches");
+        assert!(!live.contains('\u{1b}'), "escape bytes survived: {live:?}");
+        assert!(live.starts_with("Gemini CLI is not running"), "{live:?}");
+        assert!(live.ends_with("trusted-folders/"), "{live:?}");
+        assert_eq!(
+            detect_revocation(LIVE),
+            Some(Revocation::UntrustedWorkspace),
+            "colour must not defeat detection"
+        );
     }
 
     /// AC5: every enterprise-tier control the settings file carries is detected and
