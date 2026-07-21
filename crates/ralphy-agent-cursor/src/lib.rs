@@ -353,6 +353,48 @@ mod tests {
         assert!(clamped.issue_deadline() <= rd);
     }
 
+    /// ADR-0042 D3: this vendor opens with ~8.1 s of silence and shows inter-record
+    /// gaps up to ~7.4 s, so a watchdog in seconds would reap healthy runs. Unlike
+    /// `max_minutes_per_issue`, `IssueBudget::new` leaves `idle_minutes` at `0` —
+    /// the CLI wiring layer (`run/wiring.rs`) applies `DEFAULT_IDLE_MINUTES` before
+    /// handing a `CursorAgent` to a run, so this pins the CONSTANT the wiring
+    /// relies on plus the plumbing, rather than a fresh agent's own field.
+    #[test]
+    fn the_idle_watchdog_default_tolerates_the_vendor_cadence() {
+        // Read through a binding: a bare constant assertion is constant-folded and
+        // clippy rejects it (see `accepts_images_is_false`).
+        let idle_minutes: u64 = ralphy_core::DEFAULT_IDLE_MINUTES;
+        assert!(
+            idle_minutes * 60 >= 60,
+            "measured ~8.1s opening silence, ~7.4s inter-record gaps"
+        );
+        let agent = CursorAgent::new(None, PathBuf::from("/run"))
+            .with_idle_minutes(ralphy_core::DEFAULT_IDLE_MINUTES);
+        assert_eq!(agent.budget.idle_minutes, ralphy_core::DEFAULT_IDLE_MINUTES);
+    }
+
+    /// A source-text pin in the style of `outcome.rs::the_gate_runs_before_any_child_is_spawned`:
+    /// the operator-visible degraded-tool-call note must be raised on BOTH the
+    /// `plan` and `execute` paths, and on `execute` only after the fold has run —
+    /// deleting either call keeps the suite green unless this pin catches it.
+    #[test]
+    fn execute_notes_the_degraded_calls() {
+        let src = include_str!("lib.rs");
+        let call = concat!("note_degraded(", "&fold);");
+        assert_eq!(
+            src.matches(call).count(),
+            2,
+            "note_degraded(&fold) must be called on both the plan and execute paths"
+        );
+        let fold_call = concat!("fold_cursor_stream(", "&r.stdout);");
+        let last_fold = src.rfind(fold_call).expect("execute's fold call site");
+        let last_note = src.rfind(call).expect("execute's note_degraded call site");
+        assert!(
+            last_note > last_fold,
+            "execute must fold the stream before it can note the degraded calls"
+        );
+    }
+
     /// D17: the scratch dir is per RUN and under the run dir, never the operator's.
     #[test]
     fn the_config_dir_lives_under_the_run_dir() {

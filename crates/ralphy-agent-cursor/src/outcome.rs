@@ -573,4 +573,53 @@ mod tests {
             );
         }
     }
+
+    /// Every committed fixture must be read by a test via `include_str!`, not
+    /// re-inlined as a literal record — the fixture rule this whole slice exists
+    /// to enforce. Recursive over `src/` so a future ADR-0022 split cannot hide a
+    /// fixture from the check.
+    #[test]
+    fn every_fixture_is_read_by_a_test() {
+        fn sources(dir: &Path, out: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).expect("readable src dir") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    sources(&path, out);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    out.push(std::fs::read_to_string(&path).expect("read source"));
+                }
+            }
+        }
+        let mut sources_text = Vec::new();
+        sources(
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+            &mut sources_text,
+        );
+
+        let fixtures_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures"));
+        for entry in std::fs::read_dir(fixtures_dir).expect("readable fixtures dir") {
+            let path = entry.expect("entry").path();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("fixture file name");
+            let needle = format!(concat!("include_str!(", "\"../fixtures/{}\")"), name);
+            assert!(
+                sources_text.iter().any(|src| src.contains(&needle)),
+                "fixture {name} is committed but no test reads it via {needle}"
+            );
+        }
+
+        let result_literal = concat!("\"type\"", ": \"result\"");
+        let outcome_src = include_str!("outcome.rs");
+        let test_half = outcome_src
+            .split("#[cfg(test)]")
+            .nth(1)
+            .expect("this file has a test module");
+        assert!(
+            test_half.matches(result_literal).count() <= 2,
+            "a new record shape must be captured as a fixture, not inlined — \
+             the two never-reproduced synthetic tests are the only exception"
+        );
+    }
 }
