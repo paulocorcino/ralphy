@@ -259,6 +259,20 @@ daemon from importing the core, hence from importing the adapter crate — put t
 locator (and any spawn-time policy gate the interactive launch must also honour)
 in `ralphy-proc-util` and have the adapter delegate to it (ADR-0042 D19).
 
+A vendor whose containment is an **owned configuration root** (Gemini:
+`GEMINI_CLI_HOME` + a `--policy` document, ADR-0043 D4/D6) needs two more things,
+because the interactive launch bypasses the adapter entirely. First,
+`SessionSpec` carries `args` AND `env`, applied on the `Session::spawn` path only
+— a launch spec that sets one and not the other yields a child the operator
+believes is contained and is not. Second, the daemon cannot GENERATE that root
+(ADR-0032 §10 bars importing the adapter, and duplicating the generator would
+drift from the operator's imported rules), so the session route **fails closed**:
+it refuses the upgrade with a `400` naming the remedy when the root is absent,
+BEFORE `spec_for` and before any spawn. The layout constants it duplicates are
+pinned against the adapter's own source
+(`session.rs::the_gemini_root_layout_matches_the_adapters_own`), the same way the
+Cursor opt-in key is.
+
 Treat `session::Agent` as the canary, not `agent_flag`. This tier has *already
 been missed once*: Kimi shipped a full adapter and a `daemon/src/usage.rs` path
 resolver while remaining absent from the daemon enum, so the daemon could

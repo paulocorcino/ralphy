@@ -431,3 +431,35 @@ model on its own initiative (the same `read_file` mechanism this section
 observed, this time succeeding because the path is in-workspace already). This
 was flagged at D14 and remains out of scope for #260; nothing here widens or
 narrows it.
+
+## Daemon reachability (#261)
+
+Gemini is reachable from the daemon and the workbench: `Agent::Gemini` is the
+seventh variant of `daemon/src/session.rs`'s launch enum, appears in all three
+`app.js` regions on `Alt+Shift+7`, and `ralphy_usage_scan::scan_gemini`
+enumerates `~/.gemini/tmp/<basename>/chats/` into `/api/usage`'s `interactive`
+array.
+
+**What #261 proved.** The interactive launch is contained the same way a CLI run
+is: `spec_for` sets `GEMINI_CLI_HOME=<repo>/.ralphy/gemini-home` and passes
+`--policy <that root>/.gemini/ralphy-policy.toml`, and
+`tests/session_ws_gemini.rs` reads the env var back OFF THE LIVE CHILD over the
+PTY rather than asserting on the spec. When that policy document is absent the
+session route refuses the upgrade with a `400` naming the remedy, before
+`spec_for` and before any spawn — the daemon may not import the adapter
+(ADR-0032 §10), so it cannot generate the document and must not launch without
+it. Consequence the operator will meet: a repo where `ralphy run --agent gemini`
+has never run cannot open a Gemini console from the workbench, because
+`ralphy init`'s probe calls `root::ensure` directly and writes no policy.
+
+**What it did NOT prove.** No live Gemini turn ran on this host — the provider
+path remains dead here (#253), so the workbench smoke drives the house
+`session_test_child` through `RALPHY_DAEMON_AGENT_OVERRIDE`. The scan's fixtures
+are the spike's captured records, cross-checked against the 12 live session logs
+this host now carries; no delegating run exists here, so the subagent recursion
+is proved against the documented nested layout only.
+
+**The store figure is a LOWER BOUND** (D10): the `utility_router` call's tokens
+are never written to disk, so what `/api/usage` reports for Gemini is a floor.
+`scan_gemini`'s module doc states it; the operator-facing LABEL is #262's
+deliverable and is deliberately not invented here.
