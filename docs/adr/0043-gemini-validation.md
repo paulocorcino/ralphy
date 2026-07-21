@@ -296,3 +296,58 @@ spending an unrelated, unbounded coding session. See `.ralphy/plan.md`'s
 `## Notes & decisions` and Step 9(b) for the full reasoning; the acceptance
 ledger's third criterion is `[review-only]` pending a human re-run against an
 issue with no prior plan on this vendor.
+
+## #259: the four one-shots
+
+`ralphy init` (diagnose), `ralphy init --issues`, `ralphy triage` and `ralphy
+consolidate` now run under `--agent gemini`. They are not a second code path
+onto the same vendor — they reuse the run path's seams by construction:
+
+- **One root rule.** A one-shot's configuration root sits at
+  `<repo>/.ralphy/gemini-home` when the target is a repository — the same base
+  a queue run uses, so a diagnosis and the run that follows it share one
+  installation identity and one session store. With **no workspace** (D6
+  explicitly allows `draft_issues` and `consolidate_knowledge` there) it falls
+  back to `<home>/.ralphy`, which is exactly what `auth::probe_gemini_login`
+  already ensures, so a machine ends with one root and not two. A home that
+  cannot be named degrades to the system temp dir with a `warn!`, never a bail:
+  the cost is identity persistence, and it is logged.
+- **One `prepare_root`, one command builder.** `prepare_root` is a free
+  function both paths call; the one-shots reach `build_gemini_command` through
+  a single `tasks::one_shot_command`, pinned on the source
+  (`the_child_is_pointed_at_the_owned_root_and_never_the_operators` counts one
+  builder call and five `one_shot_command` mentions in `tasks.rs`). ADR-0040
+  Tier 1 names two builders per vendor; here the argv IS the isolation
+  (`--policy`, `--approval-mode yolo`, `--skip-trust`, `GEMINI_CLI_HOME`), and
+  a second builder would be the drift the pin exists to forbid. The
+  administrator-tier `AutonomyDisabled` bail is inherited the same way — it
+  lives inside `prepare_root`, ahead of every spawn on every path.
+- **The advisory receipt is the one thing they skip.** `skills` are still
+  materialized into the root (inside `prepare_root`); the model-free
+  `gemini skills list` receipt moved out to `report_skill_discovery`, which
+  only the turn-driving paths pay. It is an extra child spawn per verb and
+  answers nothing a one-shot acts on.
+- **The ladder is exit-code-first here too.** `tasks::one_shot_stop` repeats
+  `plan()`'s precedence — hard-stop revocation, provider limit, informational
+  revocation, `ExitClass::actionable_stop()`, wall timeout — which is why the
+  verbs cannot go through `run_text_session`: that runner discards the child's
+  exit status, and this vendor's most actionable diagnoses (exit 44/52/53/54/55)
+  live only there. `strip_bom` was promoted to `pub` in
+  `ralphy-adapter-support` so the artifact BOM guard stays one implementation.
+
+**Live, this pass (2026-07-21).** The #253 blocker has HEALED: `gemini -p
+hello` returns on this host. A real end-to-end one-shot ran —
+`ralphy consolidate --repo C:/Dev/FinCal --agent gemini --max-minutes 12`,
+exit `0`, KNOWLEDGE.md rewritten and 3 notes archived, log at
+`<lab>/.ralphy/runs/20260721-153046/consolidate.log`. The turn's session record
+landed in the OWNED store
+(`<lab>/.ralphy/gemini-home/.gemini/tmp/fincal/chats/session-…jsonl`), which is
+the same store a queue run writes, so usage accounting is at parity (both still
+report zero counts until the stream's usage envelope is parsed).
+
+**Trap observed on that run.** The child's `read_file` tool REFUSED every path
+under `.ralphy/` — "is ignored by configured ignore patterns" — because the
+vendor honours the repo's `.gitignore` for file reads. The session recovered on
+its own via the shell and produced a correct `KNOWLEDGE.md`, so the verb passes;
+but any future one-shot whose artifact must be READ back out of `.ralphy/` by
+the child itself should expect that refusal rather than a missing file.
