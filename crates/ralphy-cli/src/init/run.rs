@@ -142,12 +142,9 @@ fn diagnose_with_agent(
         Agent::Copilot => {
             ralphy_agent_copilot::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
-        // The one-shot verbs are their own slice of #242: #243 lands the run loop
-        // only. An explicit, actionable bail is honest where a silent fallback to
-        // another vendor would not be.
-        Agent::Cursor => anyhow::bail!(
-            "ralphy: the one-shot verbs are not yet wired for --agent cursor (its own slice of #242); use another vendor"
-        ),
+        Agent::Cursor => {
+            ralphy_agent_cursor::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
 
         Agent::Kimi => ralphy_agent_kimi::diagnose_repo(repo, neutral_cwd, model, effort, timeout),
 

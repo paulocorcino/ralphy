@@ -145,12 +145,9 @@ fn triage_with_agent(
         Agent::Copilot => {
             ralphy_agent_copilot::triage_issues(repo, out_path, req, model, effort, timeout)
         }
-        // The one-shot verbs are their own slice of #242: #243 lands the run loop
-        // only. An explicit, actionable bail is honest where a silent fallback to
-        // another vendor would not be.
-        Agent::Cursor => anyhow::bail!(
-            "ralphy: the one-shot verbs are not yet wired for --agent cursor (its own slice of #242); use another vendor"
-        ),
+        Agent::Cursor => {
+            ralphy_agent_cursor::triage_issues(repo, out_path, req, model, effort, timeout)
+        }
         Agent::Kimi => {
             ralphy_agent_kimi::triage_issues(repo, out_path, req, model, effort, timeout)
         }

@@ -101,13 +101,9 @@ fn consolidate_with_agent(
         CliAgent::Copilot => {
             ralphy_agent_copilot::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
-        // The one-shot verbs are their own slice of #242: this one lands the run
-        // loop only. An explicit bail is honest where a silent fallback to another
-        // vendor would not be.
-        CliAgent::Cursor => anyhow::bail!(
-            "ralphy: the one-shot verbs are not yet wired for --agent cursor \
-             (its own slice of #242); use another vendor"
-        ),
+        CliAgent::Cursor => {
+            ralphy_agent_cursor::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
@@ -305,5 +301,41 @@ mod tests {
             );
         }
         assert_eq!(consolidate_defaults(CliAgent::Copilot), (None, None));
+    }
+
+    /// #247, the same pin one vendor over: each `Agent::Cursor`/`CliAgent::Cursor`
+    /// arm must make its REAL call, and the "not yet wired" bail must be gone from
+    /// every dispatch source — checking only for the bail's absence would pass on an
+    /// arm silently swapped to another vendor's same-signature function.
+    #[test]
+    fn cursor_one_shots_are_wired() {
+        let stale_bail = concat!("not yet wired for ", "--agent cursor");
+        let cases: [(&str, &str); 4] = [
+            (
+                include_str!("init/run.rs"),
+                concat!("ralphy_agent_cursor::", "diagnose_repo("),
+            ),
+            (
+                include_str!("init/issues.rs"),
+                concat!("ralphy_agent_cursor::", "draft_issues("),
+            ),
+            (
+                include_str!("triage.rs"),
+                concat!("ralphy_agent_cursor::", "triage_issues("),
+            ),
+            (
+                include_str!("main.rs"),
+                concat!("ralphy_agent_cursor::", "consolidate_knowledge("),
+            ),
+        ];
+        for (src, real_call) in cases {
+            assert!(!src.contains(stale_bail), "stale one-shot bail found");
+            assert!(
+                src.contains(real_call),
+                "expected {real_call} in dispatch source"
+            );
+        }
+        // D5: the model axis is an entitlement, not a tier — no per-verb default.
+        assert_eq!(consolidate_defaults(CliAgent::Cursor), (None, None));
     }
 }
