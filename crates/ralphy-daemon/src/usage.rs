@@ -542,4 +542,36 @@ mod tests {
         let records = run_records(dir.path(), None);
         assert_eq!(records.len(), 2, "malformed middle line is skipped");
     }
+
+    /// #262's whole deliverable is the LABEL, and it lives in JS/HTML that no
+    /// Rust gate compiles: deleting the ternary or the caveat leaves the suite
+    /// green while the operator reads a floor as a total (ADR-0043 D10). Pins
+    /// both renderers into the served assets, like `dispatch.rs`'s workbench-trio
+    /// pin does for the agent list.
+    #[test]
+    fn the_workbench_labels_a_lower_bound_record() {
+        let js = include_str!("../assets/ui/app.js");
+        let start = js
+            .find("usageTokens(rec) {")
+            .expect("app.js: usageTokens moved");
+        let body = &js[start..start + 400];
+        assert!(
+            body.contains("rec.lower_bound"),
+            "usageTokens must branch on lower_bound: {body}"
+        );
+        assert!(
+            body.contains("\"\u{2265} \"") && body.contains("\" (lower bound)\""),
+            "usageTokens must render `\u{2265} n (lower bound)`: {body}"
+        );
+
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains("usage.interactive.some(r =&gt; r.lower_bound)"),
+            "index.html must show the caveat note only when a record is a floor"
+        );
+        assert!(
+            html.contains("a &#8805; figure is a lower bound"),
+            "index.html must explain what the \u{2265} means"
+        );
+    }
 }

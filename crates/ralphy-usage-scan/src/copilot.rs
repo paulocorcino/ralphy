@@ -516,6 +516,10 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].tokens.as_ref().unwrap().input, 10);
+        assert!(
+            !records[0].lower_bound,
+            "Copilot writes every token to disk — this is a total, not a floor"
+        );
         assert_eq!(records[0].project, None, "no cwd column, no attribution");
         assert_eq!(records[0].actor_email, None);
     }

@@ -486,6 +486,10 @@ mod tests {
         assert_eq!(records[0].tokens.as_ref().unwrap().cache_read, 5);
         assert_eq!(records[0].session_id, "SESS");
         assert_eq!(records[0].agent, "kimi");
+        assert!(
+            !records[0].lower_bound,
+            "Kimi writes every token to disk — this is a total, not a floor"
+        );
     }
 
     #[test]

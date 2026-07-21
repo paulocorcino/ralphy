@@ -360,6 +360,10 @@ mod tests {
         assert_eq!(records[0].tokens.as_ref().unwrap().cache_read, 800);
         assert_eq!(records[0].tokens.as_ref().unwrap().cache_creation, 0);
         assert_eq!(records[0].tokens.as_ref().unwrap().output, 200);
+        assert!(
+            !records[0].lower_bound,
+            "Codex writes every token to disk — this is a total, not a floor"
+        );
     }
 
     #[test]

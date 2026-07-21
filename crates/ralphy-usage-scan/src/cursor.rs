@@ -317,6 +317,10 @@ mod tests {
             .find(|r| r.session_id == "22222222-2222-2222-2222-222222222222")
             .expect("the transcripts-only session must be enumerated");
         assert_eq!(only.tokens, None);
+        assert!(
+            !only.lower_bound,
+            "the transcripts site flags no floor either"
+        );
     }
 
     #[test]

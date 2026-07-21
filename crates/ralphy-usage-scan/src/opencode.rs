@@ -270,6 +270,10 @@ mod tests {
         assert_eq!(r.tokens.as_ref().unwrap().cache_creation, 0);
         assert_eq!(r.model, "k2p6");
         assert_eq!(r.agent, "opencode");
+        assert!(
+            !r.lower_bound,
+            "OpenCode writes every token to disk — this is a total, not a floor"
+        );
     }
 
     #[test]
