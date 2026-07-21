@@ -119,6 +119,61 @@ impl PriceTable {
                 cache_creation: 0.95,
             },
         );
+        // ── Cursor (ADR-0042 D5) ─────────────────────────────────────────────
+        // Rates from cursor.com/docs/models, per 1M tokens, keyed by the family
+        // `ralphy_agent_cursor::model_family` folds a pinned id onto. Three
+        // caveats ride these rows:
+        //  - Cursor bills in CREDITS, not tokens, so every figure here is
+        //    ADR-0034's counterfactual "what the metered API would have cost".
+        //  - Where Cursor publishes no cache-write column, `cache_creation`
+        //    repeats the input rate — the convention `gpt-5.5`/`k2p6` already use.
+        //  - `claude-opus-4-8` is NOT repriced: Cursor lists it at a third of
+        //    Anthropic's list price, and that key is shared across vendors and
+        //    pinned by ADR-0008 D8's oracle. A Cursor run pinning Opus therefore
+        //    reports the metered-API counterfactual, not a Cursor bill.
+        for (model, input, output, cache_read, cache_creation) in [
+            // `auto` is the routed path, priced at the family the spike observed
+            // it routing to (`cursor-grok-4.5`) so an unpinned run costs out
+            // instead of logging an unknown model.
+            ("auto", 2.0, 6.0, 0.5, 2.0),
+            ("composer-2.5", 0.5, 2.5, 0.2, 0.5),
+            ("cursor-grok-4.5", 2.0, 6.0, 0.5, 2.0),
+            ("glm-5.2", 1.4, 4.4, 0.26, 1.4),
+            ("gemini-3-flash", 0.5, 3.0, 0.05, 0.5),
+            ("gemini-3.1-pro", 2.0, 12.0, 0.2, 2.0),
+            ("gemini-3.5-flash", 1.5, 9.0, 0.15, 1.5),
+            ("gpt-5.6-sol", 5.0, 30.0, 0.5, 6.25),
+            ("gpt-5.6-terra", 2.5, 15.0, 0.25, 3.125),
+            ("gpt-5.6-luna", 1.0, 6.0, 0.1, 1.25),
+            ("gpt-5.1", 1.25, 10.0, 0.125, 1.25),
+            ("gpt-5.2", 1.75, 14.0, 0.175, 1.75),
+            ("gpt-5.3-codex", 1.75, 14.0, 0.175, 1.75),
+            ("gpt-5.4", 2.5, 15.0, 0.25, 2.5),
+            ("gpt-5.4-mini", 0.75, 4.5, 0.075, 0.75),
+            ("gpt-5.4-nano", 0.2, 1.25, 0.02, 0.2),
+            ("claude-opus-4-7", 5.0, 25.0, 0.5, 6.25),
+            ("claude-fable-5", 10.0, 50.0, 1.0, 12.5),
+            ("claude-4.6-sonnet", 3.0, 15.0, 0.3, 3.75),
+            ("claude-4.6-opus", 5.0, 25.0, 0.5, 6.25),
+            ("claude-4.5-sonnet", 3.0, 15.0, 0.3, 3.75),
+            ("claude-4.5-haiku", 1.0, 5.0, 0.1, 1.25),
+            // Reachable in the live catalogue but absent from the pricing page —
+            // priced at their published sibling's rate so no reachable id logs an
+            // unknown model. Indicative even by this table's standards.
+            ("claude-4.5-opus", 5.0, 25.0, 0.5, 6.25),
+            ("claude-4-sonnet", 3.0, 15.0, 0.3, 3.75),
+            ("gpt-5-mini", 0.75, 4.5, 0.075, 0.75),
+        ] {
+            t.insert(
+                model.to_string(),
+                ModelPrice {
+                    input,
+                    output,
+                    cache_read,
+                    cache_creation,
+                },
+            );
+        }
         PriceTable(t)
     }
 }
@@ -127,6 +182,51 @@ impl PriceTable {
 mod tests {
     use super::*;
     use crate::pricing::tests::one_million_each;
+
+    /// The Cursor axis end to end: the adapter's own normalizer feeds the lookup,
+    /// so the price key and the vendor's id grammar can never drift apart.
+    #[test]
+    fn cursor_families_resolve_to_a_price() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        for id in [
+            "composer-2.5-fast",
+            "auto",
+            "cursor-grok-4.5-low",
+            "glm-5.2-high",
+            "gpt-5.6-sol-max",
+            "gemini-3-flash",
+            "claude-opus-4-8[context=1m,effort=high,fast=false]",
+            // An unknown EFFORT must not make a known family unknown.
+            "composer-2.5-xhigh",
+        ] {
+            let family = ralphy_agent_cursor::model_family(id);
+            assert!(
+                table.cost_usd(&family, &tokens).is_some(),
+                "{id} normalized to {family}, which the defaults do not price"
+            );
+        }
+        // An exact oracle on one row: `is_some()` alone stays green with
+        // `cache_read` and `cache_creation` transposed.
+        let composer = table
+            .cost_usd(
+                &ralphy_agent_cursor::model_family("composer-2.5-fast"),
+                &tokens,
+            )
+            .expect("composer is priced");
+        assert!(
+            (composer - (0.5 + 2.5 + 0.2 + 0.5)).abs() < 1e-9,
+            "composer-2.5 priced field-by-field; got {composer}"
+        );
+        // An unknown FAMILY still logs an unknown model.
+        assert_eq!(
+            table.cost_usd(
+                &ralphy_agent_cursor::model_family("definitely-not-a-real-model-high"),
+                &tokens
+            ),
+            None
+        );
+    }
 
     #[test]
     fn cost_usd_prices_opus_and_unknown_is_none_never_zero() {
