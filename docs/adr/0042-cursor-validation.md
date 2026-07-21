@@ -98,11 +98,11 @@ This is the phase the plan exists for. Four measurements, in order:
    `~/.cursor/chats/<hash>/<sid>/store.db` and the `agent-transcripts` JSONL
    contain no token count. If a future CLI build has added one, D11 is rewritten
    rather than worked around.
-2. **Resumed session.** Run, then `--resume` the same chat for a second turn.
-   Does the second envelope report that turn's tokens, or the session's running
-   total? The spike had exactly one `result` per run and could not tell. **Get
-   this backwards and the bill is silently multiplied or divided** (ADR-0040
-   C6); write the test so the wrong choice fails.
+2. **Resumed session — now a regression check, not an open question.** Settled
+   ahead of implementation by driving the CLI directly: turn 1 reported
+   `input 18 336 / cacheRead 128`, turn 2 reported `input 102 / cacheRead 18 432`.
+   Records are **incremental and are summed**. The validation re-runs this on a
+   real workload only to confirm the semantics did not change under load.
 3. **`ralphy usage` after an interactive session.** Run `agent` interactively by
    hand, then `ralphy usage`. Expect `scan_cursor` to enumerate the session and
    report tokens as **unavailable** — an explicit gap, never a zero and never an

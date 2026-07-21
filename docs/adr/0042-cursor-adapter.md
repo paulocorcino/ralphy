@@ -93,7 +93,8 @@ sees success writes an `outcome.rs` against half a contract:
 |---|---|---|---|---|
 | **Tool call fails** (`exit 42` via the shell tool) | **0** | full stream | **`subtype:"success"`, `is_error:false`** | empty |
 | **Preflight rejection** (`--workspace C:\definitely\not\here`) | 1 | **zero records** | none | `Error: Workspace directory does not exist: …` |
-| **Killed mid-run** | — | partial stream | **none** | **empty** |
+| **Killed mid-run** (`kill -9`) | — | partial stream | **none** | **empty** |
+| **Interrupted** (`SIGINT`) | **130** | partial stream | **none** | `Aborting operation...` |
 | **Auth / entitlement** (§D4, D8) | 1 | zero records | none | prose |
 
 Three rules follow:
@@ -107,6 +108,12 @@ Three rules follow:
 3. **Partial records with no envelope and an empty stderr is truncation** — the
    process died. This is the one case where stderr says nothing at all, so an
    adapter that classifies on stderr alone sees a silent success.
+4. **An interrupt is distinguishable from a crash.** `SIGINT` exits **130** and
+   prints `Aborting operation...`; a hard kill leaves an empty stderr. This is
+   the one semantic exit code the vendor has, and it matters because it is the
+   shape Ralphy's own budget and idle watchdogs produce when *they* stop the
+   child ([ADR-0038](./0038-per-issue-budget-vs-idle-watchdog.md)) — "we stopped
+   it" must not be reported as "it crashed".
 
 **Never reproduced:** `is_error: true`, or any `subtype` other than `"success"`.
 Neither could be forced with the levers available on a Free account. The parser
@@ -333,7 +340,19 @@ graph in two tables) and `~/.cursor/projects/<cwd-slug>/agent-transcripts/…jso
 - `usage.rs` captures `inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheWriteTokens`
   from the terminal envelope. Cache read and write are already separated, so
   [ADR-0008](./0008-token-usage-tracking.md) D2 holds with no folding.
-  Cumulative-vs-incremental is moot: one `result` record per run.
+- **Records are incremental, so they are summed — measured, not assumed.** Two
+  invocations against one minted session id:
+
+  | Turn | `inputTokens` | `outputTokens` | `cacheReadTokens` |
+  |---|---|---|---|
+  | 1 | 18 336 | 16 | 128 |
+  | 2 | **102** | 16 | **18 432** |
+
+  Turn 2 reports its own 102 input tokens, not `18 336 + 102`; the first turn's
+  context reappears as cache read. This is the **Kimi shape (sum)**, not the
+  Codex shape (keep-last) — and it is the one place ADR-0040 C6 warns that
+  guessing silently multiplies or divides the bill. The adapter's test asserts
+  the sum against these two fixtures so the wrong choice fails.
 - Model attribution is **not** in the stream (`system/init` reports the
   *requested* model, `"Auto"`); the resolved id lives only in a request blob as
   `providerOptions.cursor.modelName`. The adapter records the requested model
@@ -346,8 +365,10 @@ graph in two tables) and `~/.cursor/projects/<cwd-slug>/agent-transcripts/…jso
   per-1M-token rates on a monthly anniversary reset. Ralphy's token counts are
   not Cursor's bill.
 
-**This decision is provisional and is validated at execution time**, per
-[0042-cursor-validation.md](./0042-cursor-validation.md).
+**The cumulative-vs-incremental question is settled** (above). What remains for
+[0042-cursor-validation.md](./0042-cursor-validation.md) is narrower: whether
+summing per-invocation usage across a whole issue matches what Cursor's own
+dashboard bills, given the credit/token unit mismatch.
 
 ## D12 — Skills materialize into the repo-local Cursor root; the foreign harvest is accepted and documented
 
