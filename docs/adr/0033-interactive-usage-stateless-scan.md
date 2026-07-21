@@ -79,7 +79,8 @@ The response carries **two record kinds**:
   `session_id`), the durable per-phase facts.
 - `interactive` — aggregated **per session × model**:
   `{ agent, model, session_id, project, actor_email, tokens
-  {input, output, cache_read, cache_creation}, first_ts, last_ts }`,
+  {input, output, cache_read, cache_creation}, first_ts, last_ts,
+  lower_bound }`,
   plus the responding daemon's `daemon_id` on the envelope.
   `tokens` is that object **or `null` when the vendor records no token count
   anywhere** — the key is always present, and `null` means *unavailable*,
@@ -88,6 +89,11 @@ The response carries **two record kinds**:
   store); a zeroed object would ship `0` on the wire and read as "this
   session spent nothing", so absence is encoded as absence. Consumers must
   handle `null` for every vendor, not only Cursor (#250).
+  `lower_bound` is `true` when the vendor makes a complete figure impossible,
+  so the counts are a **floor, not the bill** — Gemini is the first such vendor
+  (ADR-0043 D10: its `utility_router` call is never written to disk). A
+  consumer must label such a record; the workbench renders it `≥ n (lower
+  bound)` (#262). Every other vendor sets `false`.
 
 Tokens only, no USD — pricing stays a read-time projection wherever the data
 is consumed (ADR-0008 D2/D8).
