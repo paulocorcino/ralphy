@@ -33,6 +33,7 @@ mod auth;
 mod command;
 mod outcome;
 mod policy;
+mod revocation;
 mod root;
 
 /// Whether the operator is authenticated, from the vendor's own exit code
