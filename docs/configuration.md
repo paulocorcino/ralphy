@@ -258,6 +258,30 @@ A run left unpinned is recorded under the model key `gemini-routed`, which
 carries **no price row** — a routed run reports an unpriced model rather than
 being attributed to an engine it may never have used.
 
+### Skills live in Ralphy's own root
+
+Ralphy's bundled skills (`reviewer`, `setup-pocock`, `staged-plan`) are
+materialized into `<repo>/.ralphy/gemini-home/.gemini/skills/` — the vendor's
+USER tier, inside the configuration root ADR-0043 D4 already owns. The
+operator's own `~/.gemini/skills` is neither read nor written.
+
+Confirm discovery by hand:
+
+```powershell
+$env:GEMINI_CLI_HOME = "<repo>/.ralphy/gemini-home"
+gemini skills list
+```
+
+which prints all three names at exit `0` with no model call. Ralphy itself
+runs this same probe once per phase and logs a warning naming any skill that
+did not appear, rather than failing the run.
+
+**Workspace-tier shadowing.** The vendor's own discovery order puts the
+WORKSPACE tier (`<repo>/.gemini/skills`, `<repo>/.agents/skills`) above the
+user tier Ralphy writes to. A repository that ships its own skill under one of
+those paths with a name colliding with `reviewer`, `setup-pocock` or
+`staged-plan` shadows Ralphy's — not worked around here, just recorded.
+
 ## Events sink keys (`events.*`)
 
 Stored in the **global** `~/.ralphy/events.toml`, not `settings.json`. See

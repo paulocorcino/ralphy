@@ -238,3 +238,61 @@ pair sharing one stem, per `identifySessionsToDelete` in
 `chunk-HR7S6IG5.js`) so a prune cannot orphan half a pair, and scoped to
 `<cli_dir>/tmp/*/chats/session-*` only, never the root's top level, so an
 `installation_id` or an OAuth credential file cannot be touched by it.
+
+## #258: skills in the owned root
+
+Read this pass (2026-07-21), against the same host as #253's blocker note
+above, one thing has changed: **the model-call blocker no longer reproduces.**
+`gemini -p hello --skip-trust`, run in `C:\Dev\ralphy` (untrusted for this
+CLI, hence `--skip-trust`), exited `0` with a real completion ("Hello! I am
+Gemini CLI…") — not the `fetch failed` / unbounded-retry loop #253 recorded.
+`gemini --version` still reports `0.51.0`. No cause was investigated (upstream
+fix, transient network state, or something host-local); the fact is recorded
+here so a future session does not re-trust the #253 note as still current
+without re-probing.
+
+**`gemini skills list` needs neither `--skip-trust` nor
+`GEMINI_CLI_TRUST_WORKSPACE`.** In a fresh, untrusted scratch cwd it exits `0`
+printing two noise lines first — `Skipping project agents due to untrusted
+folder…` and `Project hooks disabled because the folder is not trusted.` —
+then the listing; both are informational, not failures. `--skip-trust` placed
+AFTER the `skills list` subcommand is a yargs parse error ("Unknown
+arguments: skip-trust, skipTrust"); placed BEFORE the subcommand it routes
+through the CLI's main entry point, which then demands authentication (exit
+`41`) — a check the plain `skills list` invocation never reaches. So
+`skills::probe_skill_discovery` builds bare `["skills","list"]` with no trust
+flag, matching the plan's original design.
+
+**The listing shape**, captured against a root produced by
+`skills::materialize_gemini_skills` (all three embedded skills copied
+verbatim into `<root>/.gemini/skills/`):
+
+```
+Discovered Agent Skills:
+
+reviewer [Enabled]
+  Description: <the skill's SKILL.md frontmatter description>
+  Location:    <root>\.gemini\skills\reviewer\SKILL.md
+
+setup-pocock [Enabled]
+  ...
+staged-plan [Enabled]
+  ...
+```
+
+Exit `0`. Each entry's name appears both as the heading and inside `Location`,
+so `present_skills`'s substring match is doubly satisfied per skill — a
+weak "did it exit 0" check would have missed a materialization that copied
+zero skills, but a substring scan of this shape cannot.
+
+**Not executed this pass: a real executor turn capturing `activate_skill`.**
+Not because liveness failed — it did not. `C:/Dev/FinCal` (the lab) carries a
+finalized `.ralphy/plan.md` for its own in-progress issue #108, and
+`resume.rs::plan_is_finalized_for` keys resume on the plan's own issue number,
+so probing a different FinCal issue would trigger a real planning pass first
+rather than a cheap resume-to-execute. No bounded, safe path to a live
+executor turn existed this pass without either disturbing #108's state or
+spending an unrelated, unbounded coding session. See `.ralphy/plan.md`'s
+`## Notes & decisions` and Step 9(b) for the full reasoning; the acceptance
+ledger's third criterion is `[review-only]` pending a human re-run against an
+issue with no prior plan on this vendor.
