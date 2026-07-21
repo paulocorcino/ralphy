@@ -656,6 +656,18 @@ Environment: `CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`, `CURSOR_CONFIG_DIR`,
 | P20 | usage across a resumed session | ✅ **incremental** — turn 1 `input 18 336/cacheRead 128`, turn 2 `input 102/cacheRead 18 432`; records are summed |
 | P21 | `SIGINT` vs hard kill | ✅ exit **130** + `Aborting operation...` on stderr, no envelope; a hard kill leaves stderr empty |
 | P22 | `permissions.deny` vs `--force` | ✅ deny wins, **does not hang**; third tool-result discriminator `permissionDenied`; run still reports `success` |
+| P23 | **entitlement boundary on Free** | ✅ `composer-2.5` and `composer-2.5-fast` **run**; 8 other ids refused, incl. `cursor-grok-4.5-*` which `auto` itself routes to. The error text *"only Auto"* is wrong |
+| P24 | **write-back on a successful pin** | ✅ persists identically to a rejected one — `about` then reported the operator's default as "Composer 2.5"; nine probes left nine entries in `modelSelectionHistory` |
+| P25 | `CURSOR_CONFIG_DIR` isolation | ✅ still `authenticated` (credential lives outside), pinned run exit 0, operator's config untouched; scratch dir received `cli-config.json`, `statsig-cache.json`, `chats/` |
+| P26 | debug log | ✅ **on by default**, `<tmpdir>/cursor-agent-logs-<user>/…`; 51 files / 514 KB from this spike; `analytics.track` events emitted alongside `Telemetry disabled: privacy`; off switch `CURSOR_AGENT_DISABLE_DEBUG_LOG` found in the bundle, not in docs |
+| P27 | rate card hunt | ❌ **no pricing anywhere in the debug log** — the ADR-0040 deliberate-failure technique does not pay out on this vendor; `PriceTable` numbers must come from Cursor's published rates |
+
+P23 corrects an earlier claim in this document. The first pass concluded "on Free
+every named model is refused; only `auto` runs", which is what the vendor's own
+error message says. It is false: the first-party Composer family is nameable.
+**The correction came from the operator's intuition, not from the probe design** —
+a reminder that a vendor's error text is evidence about the vendor's wording, not
+about its behaviour.
 
 Residual gap after P17: **`is_error: true` and any `subtype` other than
 `"success"` were never reproduced** — no lever on a Free account forces them,

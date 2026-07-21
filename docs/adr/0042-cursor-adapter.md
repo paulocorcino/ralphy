@@ -134,13 +134,20 @@ That is the shell's buffering, not the CLI's; Ralphy reads a pipe and is fine.)
 
 ## D4 — `--model` is always passed explicitly, including `auto`
 
-**This is a correctness requirement, not a style choice.** A `--model` that the
-account cannot use is *rejected* and **still persists**: one failed probe wrote
-`model`, `selectedModel`, `modelParameters` and `modelSelectionHistory` into
-`~/.cursor/cli-config.json` and flipped `hasChangedDefaultModel`. Every
-subsequent run that omitted `--model` inherited that model and failed the same
-way. Purging the keys was not enough — the next failing run rewrote them; only
-an explicit `--model auto` cleared the state.
+**This is a correctness requirement, not a style choice.** `--model` writes back
+into `~/.cursor/cli-config.json` — `model`, `selectedModel`, `modelParameters`,
+`modelSelectionHistory` and `hasChangedDefaultModel` — and it does so **whether
+the run succeeded or was rejected**. A rejected probe left a model the account
+cannot use as the persistent default, and every later run that omitted
+`--model` inherited it and failed the same way; purging the keys was not enough,
+because the next failing run rewrote them. A *successful* pin persists just as
+firmly: after one `--model composer-2.5` run, `agent about` reported the
+operator's default as "Composer 2.5", and a nine-id probe left all nine in
+`modelSelectionHistory`.
+
+So the hazard is not "a typo breaks Ralphy" — it is **Ralphy silently
+reassigning the model of the operator's own interactive Cursor sessions, on
+every run**. D17 is the containment.
 
 Therefore:
 
@@ -149,13 +156,30 @@ Therefore:
   flag.** On this vendor, omitting a flag does not mean "default", it means
   "whatever the last invocation left behind".
 - No hardcoded model id. `--list-models` reports **170 ids on a Free account**
-  and the account can use exactly one of them: every named model is refused with
-  `ActionRequiredError: Named models unavailable Free plans can only use Auto.`
-  The listing is a catalogue, not an entitlement (ADR-0040 C4; the Copilot trap
-  reproduced).
+  and the entitlement is far narrower — but **not as narrow as the error message
+  claims**. Nine ids were probed:
+
+  | Result | Ids |
+  |---|---|
+  | **runs, exit 0** | `composer-2.5`, `composer-2.5-fast` |
+  | refused, exit 1 | `claude-opus-4-8-thinking-max`, `gpt-5.6-sol-max`, `cursor-grok-4.5-low`, `gpt-5-mini`, `gemini-3-flash`, `kimi-k2.7-code`, `glm-5.2-high`, `gpt-5.4-nano-low` |
+
+  The refusal says *"Free plans can only use Auto"*, and that is **wrong**:
+  Cursor's own **Composer** family is nameable and runnable on Free. What is
+  refused is naming a *third-party* model — including `cursor-grok-4.5-high`,
+  which is precisely what `auto` **routes to on that same account**. So the
+  restriction is on naming, not on reaching, and it exempts the vendor's
+  first-party family.
+
+  Three sources disagree — the listing (170), the error text ("only Auto") and
+  the entitlement (Composer + auto) — and only a real request resolves it. An
+  adapter that trusted the error text would wrongly tell a Free operator they
+  cannot pin any model, when they can pin two. Hence `Option<String>` and no
+  default, the ADR-0041 precedent with an extra twist.
 - The free, deterministic rejection — `Cannot use this model: <id>. Available
   models: …` from an invalid id, before any paid call — is the actionable stop
-  and the cheapest enumeration.
+  and the cheapest enumeration. Note it is a *different* error from the
+  entitlement refusal, and only the former is free.
 
 ## D5 — Pricing normalizes the model id to its family
 
@@ -169,6 +193,17 @@ maintainable and would still miss the bracket forms.
 `agent_slug` normalizes to the family key before the price lookup — strip a
 trailing effort suffix, a `-fast` suffix, a `-thinking` marker and any bracket
 expression. Unknown families still log "unknown model"; unknown *efforts* do not.
+
+**The vendor normalizes the same way, which is the corroboration.** A run
+invoked with `--model composer-2.5-fast` persisted `modelId: "composer-2.5"` —
+the `-fast` suffix is a *parameter*, not part of the identity. Ralphy's
+normalization is therefore matching the vendor's own model, not inventing one.
+
+⚠ **What D5 does not yet have is numbers.** No rate card was recovered: the
+CLI's debug log (D18) carries no pricing, and Cursor bills in dollar-denominated
+credits over per-1M-token rates published only in its docs. Family
+normalization without a populated price table still logs an empty cost, so the
+implementing slice must source the rates.
 
 **This collides with [ADR-0004](./0004-codex-adapter.md)'s amendment**, where a
 tier routes the model (sol/terra/luna) at a fixed medium effort. On Cursor the
@@ -452,6 +487,44 @@ Absent a reliable reset hint, `Limit(None)` and
 [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)'s synthetic
 ~30-minute cadence apply automatically.
 
+## D17 — Runs execute against an isolated `CURSOR_CONFIG_DIR`, seeded from the operator's own
+
+D4 establishes that every `--model` — successful or rejected — rewrites the
+operator's persistent default. Left alone, Ralphy would reassign the model of
+its operator's interactive Cursor sessions on every single run. That is
+unacceptable for a tool whose whole posture is "never change something the
+operator did not ask for".
+
+`CURSOR_CONFIG_DIR` is the containment, and it is cheap because of where the
+credential lives:
+
+| Under an isolated `CURSOR_CONFIG_DIR` | Result |
+|---|---|
+| `agent status --format json` | **still `authenticated`** — the credential is at `%APPDATA%\Cursor\auth.json`, outside the config dir |
+| `-p --model composer-2.5-fast` | **exit 0**, ran normally |
+| the operator's `~/.cursor/cli-config.json` | **untouched** — the pin did not leak |
+| the isolated dir | received `cli-config.json`, `statsig-cache.json` and a `chats/` tree |
+
+So: **each run gets a scratch config directory**, and Ralphy's chat records stay
+out of the operator's chat list as a bonus.
+
+**Seeded, not empty.** An empty scratch directory would also discard the
+operator's `permissions.deny` policy, and D7 says that policy is deliberate and
+Ralphy respects it. So the adapter **copies the operator's `cli-config.json`
+into the scratch directory before spawning and never copies anything back**.
+Policy flows in; mutations die with the run.
+
+Two consequences to state rather than discover:
+
+- The user-level skill root `~/.cursor/skills/` is not visible to an isolated
+  run. This does not affect D12, which materializes into the *repository-local*
+  root — but an operator with personal Cursor skills will find them absent under
+  Ralphy, and that is a behaviour change worth documenting.
+- The session store moves with the config dir, so D11's locator resolves it from
+  the scratch path, not from `~/.cursor`. `scan_cursor` (Tier 4) still reads the
+  operator's real `~/.cursor` — it is scanning *their* interactive sessions, not
+  Ralphy's.
+
 ## D14 — Binary resolution probes two names in three places
 
 Cursor installs **two names for one binary** — `agent` and `cursor-agent` — as
@@ -469,6 +542,36 @@ The adapter tries, in order: `PATH` for both names, then
 A Windows run is three hops — `.cmd` → `powershell.exe -NoProfile
 -ExecutionPolicy Bypass -File cursor-agent.ps1` → the bundled `node.exe` — which
 is why `CREATE_NO_WINDOW` and the existing `.cmd` routing both matter.
+
+## D18 — The debug log is on by default, and Ralphy turns it off
+
+The CLI writes a debug log for **every** invocation, unasked, to the OS temp
+directory: `<tmpdir>/cursor-agent-logs-<user>/session-<iso>-<pid>-<n>.log`. This
+spike alone produced **51 files, 514 KB**. Each records the working directory,
+the repository context, the resolved user id, the file-index scan and a stream
+of `analytics.track` events — the latter emitted even while the same log line
+says `telem-lifecycle Telemetry disabled: privacy`.
+
+`CURSOR_AGENT_DISABLE_DEBUG_LOG` is the off switch, found in the CLI bundle
+rather than in any documentation. **Ralphy sets it**, for the same reason it
+sets nothing else gratuitously: a queue run is not an interactive session, it
+can produce hundreds of invocations, and silently filling the operator's temp
+directory with logs naming their repositories is a side effect they did not ask
+for. An operator debugging the vendor can unset it.
+
+The same bundle scan surfaced the vendor's real environment surface, none of it
+in `--help` — worth recording because several are levers a future decision may
+want: `CURSOR_CONFIG_DIR`, `CURSOR_DATA_DIR`, `CURSOR_PLUGIN_ROOT`,
+`CURSOR_WORKTREES_ROOT`, `CURSOR_ALLOWED_WRITE_SUBDIRS`,
+`CURSOR_FORCED_SHELL_EGRESS` (plus allow/deny domain and writable-path
+variants), `CURSOR_API_ENDPOINT` / `CURSOR_API_BASE_URL`,
+`CURSOR_LOCAL_AGENT_BASE_URL`, `CURSOR_AGENT_CLI_AUTHLESS_MODE`,
+`CURSOR_ENABLE_BEDROCK`, `CURSOR_RIPGREP_PATH`, `CURSOR_STATSIG_OVERRIDES`.
+
+`CURSOR_ALLOWED_WRITE_SUBDIRS` in particular is a write-scoping lever Ralphy has
+no equivalent for on any other vendor. It is **not** used today — no evidence
+was gathered on its semantics — but it is the first thing to reach for if the
+blast radius ever needs narrowing further.
 
 ## D15 — `ACCEPTS_IMAGES` is `false`
 
