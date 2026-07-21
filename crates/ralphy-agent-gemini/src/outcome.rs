@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
-use ralphy_core::Outcome;
+use ralphy_core::{Outcome, Usage};
 use serde_json::Value;
 
 use crate::GeminiAgent;
@@ -35,6 +35,11 @@ pub(crate) struct GeminiFold {
     pub(crate) saw_result: bool,
     /// The vendor's own sentence for why it stopped.
     pub(crate) vendor_error: Option<String>,
+    /// Per-model token usage parsed from `result.stats` (ADR-0043 D9).
+    /// `None` when the terminal record carried no `stats` key at all —
+    /// including when it never carried a `result` record — distinct from
+    /// `Some(vec![])`, so "no usage" is never rewritten as "zero usage".
+    pub(crate) usage: Option<Vec<Usage>>,
 }
 
 /// Pull the human-readable text out of a record's `content`, which the vendor
@@ -134,6 +139,9 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
                 }
                 if let Some(m) = obj.get("model").and_then(Value::as_str) {
                     fold.model = Some(m.to_string());
+                }
+                if let Some(stats) = obj.get("stats") {
+                    fold.usage = Some(crate::usage::parse_stream_stats(stats));
                 }
             }
             _ => {}
@@ -406,6 +414,19 @@ mod tests {
                 Outcome::Done
             );
         }
+    }
+
+    /// D9: absence must never be rewritten as zero. A `result` record with no
+    /// `stats` key, and a stream with no `result` record at all, both leave
+    /// `usage` at `None` — distinct from `Some(vec![])`, which is what a run
+    /// that truly saw zero usage would carry.
+    #[test]
+    fn an_envelope_without_stats_carries_no_usage() {
+        let stats_less = fold_gemini_stream(r#"{"type":"result","status":"success"}"#);
+        assert!(stats_less.usage.is_none());
+
+        let no_result = fold_gemini_stream(&msg("assistant", "partial work"));
+        assert!(no_result.usage.is_none());
     }
 
     /// A non-ASCII charter — including an astral-plane character — must survive

@@ -39,6 +39,7 @@ mod root;
 mod settings;
 mod skills;
 mod tasks;
+mod usage;
 
 /// The four one-shot verbs (`ralphy diagnose`, `init --issues`, `triage`,
 /// `consolidate`), which pay the same owned root and policy document a run pays.
@@ -323,8 +324,14 @@ impl Agent for GeminiAgent {
             },
         )?;
 
+        let fold = session
+            .as_ref()
+            .map(|(r, ())| fold_gemini_stream(&r.stdout));
         if let Some((r, ())) = session.as_ref() {
-            note_vendor_error(&fold_gemini_stream(&r.stdout), &r.log);
+            note_vendor_error(
+                fold.as_ref().expect("fold is Some whenever session is"),
+                &r.log,
+            );
         }
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -334,7 +341,7 @@ impl Agent for GeminiAgent {
             // complexity tier: nothing here recommends one.
             recommended_model: None,
             path: plan_path,
-            usage: phase_usage(model),
+            usage: phase_usage(fold.as_ref(), model),
             // `None` = a finalized plan was RESUMED and no `gemini` ran.
             session_id: session.map(|_| session_id),
         })
@@ -408,7 +415,7 @@ impl Agent for GeminiAgent {
         );
         Ok(Execution {
             outcome,
-            usage: phase_usage(model),
+            usage: phase_usage(Some(&fold), model),
             session_id: Some(session_id),
         })
     }
@@ -418,23 +425,23 @@ impl Agent for GeminiAgent {
 /// the routed path, and what an absent flag selects.
 const DEFAULT_MODEL: &str = "auto";
 
-/// Token usage for one phase.
+/// Token usage for one phase, from the streamed envelope (ADR-0043 D9).
 ///
-/// **Zero counts, deliberately** (ADR-0040 Amendment 1: stating the gap is the
-/// deliverable). Usage accounting for this vendor is a separate slice of #252;
-/// the stream's usage envelope is not parsed here, and inventing a partial number
-/// would feed the cost report a figure nobody can reconcile. The model is still
-/// attributed so the run report can tell a pinned run from a routed one, and
-/// `cost_usd_by_model` skips zero-token entries, so no spurious cost appears.
-fn phase_usage(model: Option<&str>) -> Usage {
-    tracing::debug!(
-        "gemini: the stream's usage envelope is not parsed yet (usage is a later slice)"
-    );
-    Usage {
-        // The ledger key and the price key must be ONE string, or a routed run
-        // costs out against another vendor's `auto` row (ADR-0034 amendment).
-        model: Some(price_key(model.unwrap_or(DEFAULT_MODEL))),
-        ..Default::default()
+/// When `fold` carried a `stats` key (`fold.usage` is `Some` and non-empty),
+/// the figures come from [`usage::parse_stream_stats`], folded through
+/// [`Usage::fold_usage`] so the ledger key and the price key stay one string
+/// (ADR-0034 amendment). Otherwise — no fold at all (a resumed plan) or a
+/// terminal record that carried no `stats` — only the requested model is
+/// attributed, at zero tokens, so a pinned run still tells a routed one apart
+/// in the report without inventing a number nobody can reconcile.
+fn phase_usage(fold: Option<&outcome::GeminiFold>, model: Option<&str>) -> Usage {
+    let key = price_key(model.unwrap_or(DEFAULT_MODEL));
+    match fold.and_then(|f| f.usage.as_ref()) {
+        Some(items) if !items.is_empty() => Usage::fold_usage(items, Some(&key)),
+        _ => Usage {
+            model: Some(key),
+            ..Default::default()
+        },
     }
 }
 
@@ -498,21 +505,35 @@ mod tests {
     #[test]
     fn phase_usage_attributes_the_price_key_not_the_raw_id() {
         // Unpinned: the routed sentinel, which is deliberately unpriced.
-        assert_eq!(phase_usage(None).model.as_deref(), Some("gemini-routed"));
         assert_eq!(
-            phase_usage(Some("auto")).model.as_deref(),
+            phase_usage(None, None).model.as_deref(),
+            Some("gemini-routed")
+        );
+        assert_eq!(
+            phase_usage(None, Some("auto")).model.as_deref(),
             Some("gemini-routed")
         );
         // The 3× trap: the CLI's constant is served by the 3.5 backend.
         assert_eq!(
-            phase_usage(Some("gemini-3-flash")).model.as_deref(),
+            phase_usage(None, Some("gemini-3-flash")).model.as_deref(),
             Some("gemini-3.5-flash")
         );
         // A concrete id is attributed verbatim.
         assert_eq!(
-            phase_usage(Some("gemini-2.5-pro")).model.as_deref(),
+            phase_usage(None, Some("gemini-2.5-pro")).model.as_deref(),
             Some("gemini-2.5-pro")
         );
+    }
+
+    /// D9: a fold that saw a terminal record but no `stats` key reports no
+    /// usage rather than zero usage — `phase_usage` must not paper over the
+    /// `None`/`Some(vec![])` distinction `outcome::GeminiFold.usage` carries.
+    #[test]
+    fn phase_usage_reports_no_usage_when_the_envelope_carried_none() {
+        let fold = fold_gemini_stream(r#"{"type":"result","status":"success"}"#);
+        let usage = phase_usage(Some(&fold), None);
+        assert_eq!(usage.total(), 0);
+        assert_eq!(usage.model.as_deref(), Some("gemini-routed"));
     }
 
     #[test]
@@ -627,5 +648,27 @@ mod tests {
             !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).exists(),
             "adapter tests stay inline (ADR-0040 Tier 1)"
         );
+    }
+
+    /// Run accounting comes ONLY from the streamed envelope (ADR-0043 D9); the
+    /// vendor's session store is `ralphy-usage-scan`'s territory for
+    /// *interactive* usage (ADR-0043 D10, #261/#262), never the adapter's own.
+    /// Scoped to the run-accounting files only — `ralphy-usage-scan`'s
+    /// `scan_gemini` legitimately reads the store's session directory and must
+    /// stay green.
+    #[test]
+    fn run_accounting_never_reads_the_session_store() {
+        // Built from parts so this pin does not trip on its own doc comment.
+        let needle = ["chat", "s/"].concat();
+        for src in [
+            include_str!("lib.rs"),
+            include_str!("usage.rs"),
+            include_str!("outcome.rs"),
+        ] {
+            assert!(
+                !src.contains(&needle),
+                "found a session-store path reference"
+            );
+        }
     }
 }
