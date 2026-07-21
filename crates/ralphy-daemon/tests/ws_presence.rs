@@ -57,6 +57,7 @@ async fn ws_pushes_live_presence_heartbeat() {
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         start,
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
@@ -96,6 +97,7 @@ async fn ws_loop_stops_on_shutdown() {
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(anvil()),
+        PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),

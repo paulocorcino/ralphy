@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
-    scan_claude, scan_codex, scan_copilot, scan_cursor, scan_kimi, scan_opencode, ClaudeScan,
-    CodexScan, CopilotScan, CursorScan, KimiScan, OpenCodeScan, RegisteredRepo,
+    scan_claude, scan_codex, scan_copilot, scan_cursor, scan_gemini, scan_kimi, scan_opencode,
+    ClaudeScan, CodexScan, CopilotScan, CursorScan, GeminiScan, KimiScan, OpenCodeScan,
+    RegisteredRepo,
 };
 
 use crate::registry::RegistryStore;
@@ -210,14 +211,37 @@ pub fn cursor_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".cursor"))
 }
 
-/// Scan the Claude, Codex, OpenCode, Kimi, Copilot AND Cursor stores for
+/// The Gemini interactive session store root: `$RALPHY_GEMINI_DIR` when set (tests
+/// point it at a temp dir), else `<home>/.gemini`. This is the `.gemini` BASE —
+/// `scan_gemini` walks its `tmp/<basename>/chats/` subtree. Mirrors
+/// [`cursor_dir_path`].
+///
+/// It deliberately does NOT read `$GEMINI_CLI_HOME`: that is the variable Ralphy
+/// points at its OWN owned configuration root (ADR-0043 D4), so honouring it here
+/// would resolve Ralphy's per-repo state instead of the OPERATOR's own interactive
+/// sessions — the only thing this store is read for.
+pub fn gemini_dir_path() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("RALPHY_GEMINI_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("no home directory resolved for the Gemini session store")
+        })?;
+    Ok(PathBuf::from(home).join(".gemini"))
+}
+
+/// Scan the Claude, Codex, OpenCode, Kimi, Copilot, Cursor AND Gemini stores for
 /// interactive usage records, excluding sessions the ledger already owns (their
 /// `session_id` appears in `run_records`), and serialize each to JSON
 /// (ADR-0033 §2/§6). `registry.repos` supplies the project/actor attribution.
 /// Read-only: no scan writes (the Copilot scan reads a private copy, never the
 /// live store). The Codex records are chained after the Claude ones, then the
 /// OpenCode ones, then the Kimi ones, then the Copilot ones, then the Cursor
-/// ones — whose `tokens` is always `null` (ADR-0042 D11: no count exists).
+/// ones — whose `tokens` is always `null` (ADR-0042 D11: no count exists) — then
+/// the Gemini ones, whose counts are a LOWER BOUND (ADR-0043 D10: the router's
+/// tokens never reach disk).
 // One positional per store path/handle; grouping them into a struct would only
 // move the argument list, not shrink it (mirrors `router`/`usage_route`).
 #[allow(clippy::too_many_arguments)]
@@ -229,6 +253,7 @@ pub fn interactive_records(
     kimi_code_dir: &Path,
     copilot_db: &Path,
     cursor_dir: &Path,
+    gemini_dir: &Path,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -283,6 +308,12 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
+    let gemini = scan_gemini(&GeminiScan {
+        gemini_dir,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
     claude
         .iter()
         .chain(codex.iter())
@@ -290,6 +321,7 @@ pub fn interactive_records(
         .chain(kimi.iter())
         .chain(copilot.iter())
         .chain(cursor.iter())
+        .chain(gemini.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()
 }
@@ -391,6 +423,48 @@ mod tests {
         match restore.2 {
             Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
             None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        drop(guard);
+    }
+
+    /// ADR-0043 D4 points `$GEMINI_CLI_HOME` at Ralphy's OWN owned root. If this
+    /// resolver honoured it, the daemon would report Ralphy's per-repo state instead
+    /// of the operator's sessions — so it must not divert the resolver, while the
+    /// test-only `$RALPHY_GEMINI_DIR` still wins.
+    #[test]
+    fn gemini_dir_path_ignores_ralphys_own_cli_home() {
+        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let restore = (
+            std::env::var_os("GEMINI_CLI_HOME"),
+            std::env::var_os("RALPHY_GEMINI_DIR"),
+        );
+
+        std::env::set_var("GEMINI_CLI_HOME", "C:/tmp/ralphy-owned-root");
+        std::env::remove_var("RALPHY_GEMINI_DIR");
+        let got = gemini_dir_path().unwrap();
+        assert!(
+            got.ends_with(".gemini"),
+            "Ralphy's own CLI home must not divert the resolver, got {got:?}"
+        );
+        assert!(
+            !got.starts_with("C:/tmp/ralphy-owned-root"),
+            "resolved Ralphy's own owned root, got {got:?}"
+        );
+
+        std::env::set_var("RALPHY_GEMINI_DIR", "C:/tmp/override");
+        assert_eq!(
+            gemini_dir_path().unwrap(),
+            PathBuf::from("C:/tmp/override"),
+            "the test override must still win"
+        );
+
+        match restore.0 {
+            Some(v) => std::env::set_var("GEMINI_CLI_HOME", v),
+            None => std::env::remove_var("GEMINI_CLI_HOME"),
+        }
+        match restore.1 {
+            Some(v) => std::env::set_var("RALPHY_GEMINI_DIR", v),
+            None => std::env::remove_var("RALPHY_GEMINI_DIR"),
         }
         drop(guard);
     }

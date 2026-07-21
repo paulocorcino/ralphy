@@ -49,6 +49,7 @@ async fn run_command_argv_reaches_the_child() {
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
         std::path::PathBuf::from("does-not-exist"),
+        std::path::PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         ralphy_daemon::auth::AuthState::localhost(),

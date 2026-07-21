@@ -144,6 +144,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     let kimi_code_dir = usage::kimi_code_dir_path()?;
     let copilot_db = usage::copilot_db_path()?;
     let cursor_dir = usage::cursor_dir_path()?;
+    let gemini_dir = usage::gemini_dir_path()?;
     axum::serve(
         listener,
         router(
@@ -157,6 +158,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
             kimi_code_dir,
             copilot_db,
             cursor_dir,
+            gemini_dir,
             start,
             shutdown_rx,
             auth_state,
@@ -192,6 +194,7 @@ pub fn router(
     kimi_code_dir: PathBuf,
     copilot_db: PathBuf,
     cursor_dir: PathBuf,
+    gemini_dir: PathBuf,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
@@ -254,6 +257,7 @@ pub fn router(
                 let kimi_code_dir = kimi_code_dir.clone();
                 let copilot_db = copilot_db.clone();
                 let cursor_dir = cursor_dir.clone();
+                let gemini_dir = gemini_dir.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
@@ -266,6 +270,7 @@ pub fn router(
                         kimi_code_dir,
                         copilot_db,
                         cursor_dir,
+                        gemini_dir,
                         registry,
                         daemon_id,
                         q.0.since,
@@ -1437,6 +1442,7 @@ async fn usage_route(
     kimi_code_dir: PathBuf,
     copilot_db: PathBuf,
     cursor_dir: PathBuf,
+    gemini_dir: PathBuf,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -1459,6 +1465,7 @@ async fn usage_route(
         &kimi_code_dir,
         &copilot_db,
         &cursor_dir,
+        &gemini_dir,
         &store,
         &runs,
         since.as_deref(),
@@ -1974,6 +1981,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2153,6 +2161,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2179,6 +2188,7 @@ mod tests {
 
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2246,6 +2256,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2293,6 +2304,7 @@ mod tests {
         let resp = router(
             None,
             registry_path,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2367,6 +2379,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2426,6 +2439,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2471,6 +2485,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2529,6 +2544,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
             claude_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2613,6 +2629,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2676,6 +2693,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             db.clone(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2751,6 +2769,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             db.clone(),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2802,6 +2821,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             kimi_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -2862,6 +2882,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             cursor_dir.path().to_path_buf(),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2894,6 +2915,74 @@ mod tests {
             record["tokens"].is_null(),
             "tokens must be null (unavailable), never 0; got: {record}"
         );
+    }
+
+    /// `/api/usage` also carries Gemini interactive records, with REAL counts —
+    /// unlike Cursor's `null`, the Gemini store keeps per-turn tokens (a lower
+    /// bound, ADR-0043 D10). Proves the `gemini_dir` router arg is threaded
+    /// end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_gemini_interactive_records() {
+        let gemini_dir = tempfile::tempdir().unwrap();
+        let chats = gemini_dir.path().join("tmp").join("fincal").join("chats");
+        std::fs::create_dir_all(&chats).unwrap();
+        std::fs::write(
+            gemini_dir
+                .path()
+                .join("tmp")
+                .join("fincal")
+                .join(".project_root"),
+            "c:\\dev\\fincal",
+        )
+        .unwrap();
+        std::fs::write(
+            chats.join("session-x.jsonl"),
+            "{\"sessionId\":\"ralphy-probe-p1p2p3p4p6\",\"startTime\":\"2026-07-21T00:56:00Z\",\"lastUpdated\":\"2026-07-21T01:00:00Z\",\"kind\":\"main\"}\n\
+             {\"id\":\"78d80d17\",\"type\":\"gemini\",\"content\":\"OK\",\"tokens\":{\"input\":20637,\"output\":30,\"cached\":0,\"thoughts\":257,\"tool\":0,\"total\":20924},\"model\":\"gemini-3.1-pro-preview-customtools\"}\n",
+        )
+        .unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            gemini_dir.path().to_path_buf(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        let record = interactive
+            .iter()
+            .find(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("gemini")
+                    && r.get("session_id").and_then(|v| v.as_str())
+                        == Some("ralphy-probe-p1p2p3p4p6")
+            })
+            .unwrap_or_else(|| panic!("no gemini record; got: {body_string}"));
+        // `total - input`, not the bare `output` field — the arithmetic survives
+        // the whole route, not just the scan's own unit test.
+        assert_eq!(record["tokens"]["output"].as_u64(), Some(287), "{record}");
+        assert_eq!(record["tokens"]["input"].as_u64(), Some(20637), "{record}");
     }
 
     #[test]
@@ -2936,6 +3025,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -2964,6 +3054,7 @@ mod tests {
         };
         let resp = router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -3011,6 +3102,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -3033,6 +3125,7 @@ mod tests {
     async fn bearer_policy_rejects_wrong_token() {
         let resp = router(
             None,
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -3085,6 +3178,7 @@ mod tests {
         };
         router(
             Some(id),
+            PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
@@ -3475,6 +3569,7 @@ mod tests {
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3570,6 +3665,7 @@ mod tests {
         ] {
             let resp = router(
                 None,
+                PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),

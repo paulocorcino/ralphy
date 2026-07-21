@@ -34,6 +34,7 @@ fn fresh_router() -> axum::Router {
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         Instant::now(),
         rx,
         AuthState::localhost(),
