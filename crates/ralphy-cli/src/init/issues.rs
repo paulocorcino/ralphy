@@ -247,9 +247,8 @@ pub(crate) fn draft_with_agent(
         Agent::Copilot => {
             ralphy_agent_copilot::draft_issues(repo, out_path, req, model, effort, timeout)
         }
-        // The one-shot verbs are another slice of #252 (ADR-0043).
         Agent::Gemini => {
-            anyhow::bail!("`ralphy init --issues` is not yet wired for --agent gemini")
+            ralphy_agent_gemini::draft_issues(repo, out_path, req, model, effort, timeout)
         }
         Agent::Cursor => {
             ralphy_agent_cursor::draft_issues(repo, out_path, req, model, effort, timeout)

@@ -142,8 +142,9 @@ fn diagnose_with_agent(
         Agent::Copilot => {
             ralphy_agent_copilot::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
-        // The one-shot verbs are another slice of #252 (ADR-0043).
-        Agent::Gemini => anyhow::bail!("`ralphy diagnose` is not yet wired for --agent gemini"),
+        Agent::Gemini => {
+            ralphy_agent_gemini::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
         Agent::Cursor => {
             ralphy_agent_cursor::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
