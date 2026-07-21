@@ -38,6 +38,7 @@ mod outcome;
 mod settings;
 mod skills;
 mod tasks;
+mod usage;
 
 /// Whether the operator is logged into Cursor, from the vendor's own structured
 /// answer (ADR-0042 D8) — what `ralphy init`'s gate reports.
@@ -344,7 +345,7 @@ impl Agent for CursorAgent {
 /// so this adds an attribution without a spurious cost. No pin is attributed as
 /// the literal `auto` — the vendor's own name for the routed path, and what an
 /// absent `--model` would have sent anyway (D4).
-fn requested_model_usage(model: Option<&str>) -> ralphy_core::Usage {
+pub(crate) fn requested_model_usage(model: Option<&str>) -> ralphy_core::Usage {
     ralphy_core::Usage {
         model: Some(model_family(model.unwrap_or(command::AUTO_MODEL))),
         ..Default::default()
