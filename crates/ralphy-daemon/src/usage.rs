@@ -185,6 +185,27 @@ pub fn kimi_code_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".kimi-code"))
 }
 
+/// The Cursor interactive chat store: `$RALPHY_CURSOR_DIR` when set (tests point
+/// it at a temp dir), else `$XDG_CONFIG_HOME/cursor/chats`, else
+/// `<home>/.cursor/chats`. Mirrors [`kimi_dir_path`].
+///
+/// It deliberately does NOT read `$CURSOR_CONFIG_DIR`: that is the variable
+/// Ralphy points at its own per-run scratch directory (ADR-0042 D17), so honouring
+/// it here would resolve Ralphy's throwaway state instead of the OPERATOR's own
+/// sessions — which is the only thing this store is read for (D11, #250).
+pub fn cursor_chats_dir_path() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("RALPHY_CURSOR_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME") {
+        return Ok(PathBuf::from(dir).join("cursor").join("chats"));
+    }
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the Cursor chats store"))?;
+    Ok(PathBuf::from(home).join(".cursor").join("chats"))
+}
+
 /// Scan the Claude, Codex, OpenCode, Kimi AND Copilot stores for interactive usage
 /// records, excluding sessions the ledger already owns (their `session_id` appears
 /// in `run_records`), and serialize each to JSON (ADR-0033 §2/§6).
@@ -311,6 +332,76 @@ mod tests {
             None => std::env::remove_var("COPILOT_HOME"),
         }
         drop(guard);
+    }
+
+    /// D17 points `$CURSOR_CONFIG_DIR` at Ralphy's per-run SCRATCH directory. If
+    /// this resolver honoured it, the daemon would report on Ralphy's own throwaway
+    /// state instead of the operator's sessions — so the scratch var must not divert
+    /// it, while the test-only `$RALPHY_CURSOR_DIR` still wins.
+    #[test]
+    fn cursor_chats_dir_path_ignores_the_scratch_config_dir() {
+        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let restore = (
+            std::env::var_os("CURSOR_CONFIG_DIR"),
+            std::env::var_os("RALPHY_CURSOR_DIR"),
+            std::env::var_os("XDG_CONFIG_HOME"),
+        );
+
+        std::env::set_var("CURSOR_CONFIG_DIR", "C:/tmp/ralphy-scratch");
+        std::env::remove_var("RALPHY_CURSOR_DIR");
+        std::env::remove_var("XDG_CONFIG_HOME");
+        let got = cursor_chats_dir_path().unwrap();
+        assert!(
+            got.ends_with(PathBuf::from(".cursor").join("chats")),
+            "the scratch config dir must not divert the resolver, got {got:?}"
+        );
+        assert!(
+            !got.starts_with("C:/tmp/ralphy-scratch"),
+            "resolved Ralphy's own scratch state, got {got:?}"
+        );
+
+        std::env::set_var("RALPHY_CURSOR_DIR", "C:/tmp/override");
+        assert_eq!(
+            cursor_chats_dir_path().unwrap(),
+            PathBuf::from("C:/tmp/override"),
+            "the test override must still win"
+        );
+
+        match restore.0 {
+            Some(v) => std::env::set_var("CURSOR_CONFIG_DIR", v),
+            None => std::env::remove_var("CURSOR_CONFIG_DIR"),
+        }
+        match restore.1 {
+            Some(v) => std::env::set_var("RALPHY_CURSOR_DIR", v),
+            None => std::env::remove_var("RALPHY_CURSOR_DIR"),
+        }
+        match restore.2 {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        drop(guard);
+    }
+
+    /// ADR-0040 Tier 4 anti-drift: a vendor that reaches the daemon's launch enum
+    /// must also have a store-path resolver here, or its interactive sessions are
+    /// invisible to the usage endpoint. Source-text pin over this very file, so it
+    /// reds the moment a seventh `Agent::ALL` variant lands without one.
+    #[test]
+    fn every_launchable_vendor_has_a_store_path_resolver() {
+        let src = include_str!("usage.rs");
+        for agent in crate::session::Agent::ALL {
+            let token = crate::dispatch::agent_flag(agent);
+            let found = src.lines().any(|l| {
+                l.trim_start()
+                    .strip_prefix("pub fn ")
+                    .is_some_and(|rest| rest.starts_with(token) && rest.contains("_path("))
+            });
+            assert!(
+                found,
+                "no `pub fn {token}…_path(` resolver in usage.rs — {agent:?} can be \
+                 launched from the workbench but its store is unreachable"
+            );
+        }
     }
 
     #[test]

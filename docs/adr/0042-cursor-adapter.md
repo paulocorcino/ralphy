@@ -43,6 +43,11 @@ definition. `daemon/src/session.rs::Agent` is the one that fails silently —
 compiles and only fails at runtime as `ArgvError::BadParam("agent")`. Add the
 variant first and let the compiler walk the rest.
 
+**Deferral LIFTED by #248** (see D19). The daemon now carries
+`session::Agent::Cursor`, resolves the binary through the shared vendor locator
+rather than a bare `PATH` name, and enforces D6 on the interactive launch. The
+paragraph below is kept as the record of what #243 deferred and why.
+
 **Deferred, deliberately, by #243.** The first slice did NOT add
 `daemon/src/session.rs::Agent::Cursor`, so `from_query("cursor")` returns `None`
 and the workbench rejects `agent=cursor` with `BadParam`. The reason is D14: the
@@ -645,6 +650,30 @@ assembly test is the anti-drift gate (ADR-0040 Tier 2). Filled:
   pass runs in execution mode and *must* write `.ralphy/plan.md` itself.
 
 The remaining five slots are deliberately empty.
+
+## D19 — The locator and the indexing gate live in `ralphy-proc-util`
+
+`locate_cursor` / `locate_cursor_with` (D14) and `indexing_gate` (D6) are in
+`crates/ralphy-proc-util/src/cursor.rs`. `ralphy-agent-cursor` keeps both entry
+points and delegates, so its public API (`pub use command::locate_cursor`) is
+unchanged.
+
+The forcing constraint is [ADR-0032](./0032-daemon-mode.md) §10: the daemon
+never imports `ralphy-core`, and this adapter crate does — so a
+daemon → `ralphy-agent-cursor` edge is out. But the workbench's interactive
+launch spawns `cursor-agent` directly, and it needs BOTH: the locator (a bare
+`PATH` name does not resolve this vendor) and the gate (a refusal the operator
+can reach around by opening a console is not a refusal). `ralphy-proc-util` is
+core-free, is already the daemon's program resolver, and already carries
+vendor-shaped path knowledge (`CODEX_HOME`, `opencode.cmd`).
+
+One implementation, because a product-stance refusal that two crates can
+disagree about is worse than no refusal: the disagreement is invisible until an
+upload has already happened. The daemon reads the opt-in flag by reparsing
+`<repo>/.ralphy/settings.json` (`registry.rs`'s precedent for `repos.toml`),
+defaulting to `false` on every failure path; a source-text pin
+(`session::tests::the_optin_key_matches_the_adapters_own_schema`) reds if this
+crate renames the key or the section.
 
 ## Consequences
 

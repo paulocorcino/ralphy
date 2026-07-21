@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::OsString;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::JoinHandle;
@@ -43,11 +43,24 @@ pub enum Agent {
     Claude,
     Codex,
     Copilot,
+    Cursor,
     Kimi,
     OpenCode,
 }
 
 impl Agent {
+    /// Every launchable vendor. The anti-drift tests (the workbench trio, the
+    /// usage-store resolvers) enumerate the daemon's vendors from here, so a
+    /// seventh variant reds them instead of passing silently.
+    pub const ALL: [Agent; 6] = [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Copilot,
+        Agent::Cursor,
+        Agent::Kimi,
+        Agent::OpenCode,
+    ];
+
     /// Parse the `agent=` query value. Unknown values yield `None` so the route
     /// can reject them rather than launching a surprise program.
     pub fn from_query(value: &str) -> Option<Agent> {
@@ -55,6 +68,7 @@ impl Agent {
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
             "copilot" => Some(Agent::Copilot),
+            "cursor" => Some(Agent::Cursor),
             "kimi" => Some(Agent::Kimi),
             "opencode" => Some(Agent::OpenCode),
             _ => None,
@@ -69,10 +83,28 @@ impl Agent {
             // The GitHub Copilot CLI ships as `copilot`, the same name the
             // adapter resolves for its headless calls (ADR-0041).
             Agent::Copilot => "copilot",
+            // Cursor ships one binary under two names (`cursor-agent`, `agent`)
+            // across three install roots and is on `PATH` under NEITHER
+            // (ADR-0042 D14) — so this name is only the fallback that makes a
+            // spawn failure legible; [`Agent::resolve_program`] does the real work.
+            Agent::Cursor => "cursor-agent",
             // `kimi-code` ships its binary as `kimi` — the same name the adapter
             // resolves for its headless calls (ADR-0028 D5).
             Agent::Kimi => "kimi",
             Agent::OpenCode => "opencode",
+        }
+    }
+
+    /// What a `Command` should be constructed with. Every vendor but Cursor is
+    /// found on `PATH` (plus the `~/.local/bin` fallback); Cursor needs its own
+    /// locator, shared with the run path so detection and execution cannot
+    /// disagree (ADR-0042 D14/D19).
+    fn resolve_program(self) -> OsString {
+        match self {
+            Agent::Cursor => ralphy_proc_util::cursor::locate_cursor()
+                .map(PathBuf::into_os_string)
+                .unwrap_or_else(|| self.program_name().into()),
+            _ => ralphy_proc_util::resolve_program(self.program_name()),
         }
     }
 }
@@ -89,7 +121,7 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
-        None => ralphy_proc_util::resolve_program(agent.program_name()),
+        None => agent.resolve_program(),
     };
     SessionSpec {
         program,
@@ -98,6 +130,33 @@ pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec
         rows,
         cols,
     }
+}
+
+/// Whether the operator opted in to Cursor's codebase upload for `repo_root`,
+/// read from `<repo_root>/.ralphy/settings.json`'s
+/// `["cursor"]["allow_codebase_indexing_i_understand_the_risk"]`.
+///
+/// The schema is `ralphy-agent-cursor`'s `CursorSettings`, but the daemon may not
+/// import the core (ADR-0032 §10), so it reparses the file — the same precedent
+/// `registry.rs` sets for `repos.toml`. `the_optin_key_matches_the_adapters_own_schema`
+/// reds if the adapter renames either key.
+///
+/// INVARIANT: every failure path — no file, unreadable, malformed JSON, wrong
+/// type — yields `false`. Refusal is the safe default: an unreadable settings
+/// file must never be what opens the upload.
+pub fn cursor_indexing_allowed(repo_root: &Path) -> bool {
+    let path = repo_root.join(".ralphy").join("settings.json");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| {
+            v.get("cursor")?
+                .get("allow_codebase_indexing_i_understand_the_risk")?
+                .as_bool()
+        })
+        .unwrap_or(false)
 }
 
 /// The platform's default interactive shell for the free console (issue #167).
@@ -632,6 +691,7 @@ mod tests {
             ("claude", Agent::Claude, "claude"),
             ("codex", Agent::Codex, "codex"),
             ("copilot", Agent::Copilot, "copilot"),
+            ("cursor", Agent::Cursor, "cursor-agent"),
             ("kimi", Agent::Kimi, "kimi"),
             ("opencode", Agent::OpenCode, "opencode"),
         ] {
@@ -651,5 +711,113 @@ mod tests {
             None,
             "an unknown value stays unparsed rather than launching a surprise program"
         );
+    }
+
+    /// Serializes the tests below, which mutate process-global env vars.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// ADR-0042 D14: the Cursor CLI is on `PATH` under NEITHER of its two names, so
+    /// `resolve_program`'s PATH search would fall back to the bare `cursor-agent`
+    /// and the spawn would fail on a machine where Cursor IS installed. The daemon
+    /// must go through the vendor locator instead.
+    #[test]
+    fn cursor_resolves_off_path_through_the_vendor_locator() {
+        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let restore = [
+            ("PATH", std::env::var_os("PATH")),
+            ("HOME", std::env::var_os("HOME")),
+            ("USERPROFILE", std::env::var_os("USERPROFILE")),
+            ("LOCALAPPDATA", std::env::var_os("LOCALAPPDATA")),
+            (AGENT_OVERRIDE_ENV, std::env::var_os(AGENT_OVERRIDE_ENV)),
+        ];
+
+        let home = tempfile::tempdir().unwrap();
+        let empty_path = tempfile::tempdir().unwrap();
+        // The cfg-free install shape (`~/.cursor/bin/cursor-agent`, no extension) —
+        // the one branch of the locator that matches identically on both platforms.
+        let seeded = home.path().join(".cursor").join("bin").join("cursor-agent");
+        std::fs::create_dir_all(seeded.parent().unwrap()).unwrap();
+        std::fs::write(&seeded, "").unwrap();
+
+        std::env::set_var("PATH", empty_path.path());
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("USERPROFILE", home.path());
+        std::env::remove_var("LOCALAPPDATA");
+        std::env::remove_var(AGENT_OVERRIDE_ENV);
+
+        let spec = spec_for(Agent::Cursor, PathBuf::from("."), 24, 80);
+        assert_eq!(
+            spec.program,
+            seeded.clone().into_os_string(),
+            "must resolve the installed binary, not the bare `cursor-agent` name"
+        );
+
+        // The test seam still wins for Cursor — it must not be bypassed for the one
+        // vendor with its own locator, or every integration test loses its stand-in.
+        std::env::set_var(AGENT_OVERRIDE_ENV, "stand-in");
+        assert_eq!(
+            spec_for(Agent::Cursor, PathBuf::from("."), 24, 80).program,
+            OsString::from("stand-in")
+        );
+
+        for (name, value) in restore {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        drop(guard);
+    }
+
+    /// The daemon reparses the adapter's settings file rather than importing the
+    /// core (ADR-0032 §10), so the two schemas can drift silently. This is the pin:
+    /// rename either name in the adapter and the daemon's gate reds here.
+    #[test]
+    fn the_optin_key_matches_the_adapters_own_schema() {
+        let src = include_str!("../../ralphy-agent-cursor/src/settings.rs");
+        assert!(
+            src.contains("allow_codebase_indexing_i_understand_the_risk"),
+            "the adapter renamed the opt-in key the daemon reparses"
+        );
+        assert!(
+            src.contains(r#"SECTION: &'static str = "cursor""#),
+            "the adapter renamed the settings section the daemon reparses"
+        );
+    }
+
+    /// The refusal is the safe default: only an explicit `true` opens the upload.
+    #[test]
+    fn cursor_indexing_allowed_defaults_to_false() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(
+            !cursor_indexing_allowed(d.path()),
+            "no .ralphy/ at all must not opt in"
+        );
+
+        let settings = d.path().join(".ralphy").join("settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        for (body, want) in [
+            ("{}", false),
+            (
+                r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":true}}"#,
+                true,
+            ),
+            (
+                r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":"yes"}}"#,
+                false,
+            ),
+            (
+                r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":false}}"#,
+                false,
+            ),
+            ("not json", false),
+        ] {
+            std::fs::write(&settings, body).unwrap();
+            assert_eq!(
+                cursor_indexing_allowed(d.path()),
+                want,
+                "settings.json = {body}"
+            );
+        }
     }
 }

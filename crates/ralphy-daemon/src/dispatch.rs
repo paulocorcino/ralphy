@@ -94,11 +94,12 @@ impl BranchMode {
 /// The `--agent`/`--plan-agent` CLI flag value for an [`Agent`]. Owned here rather
 /// than widening `session::Agent`'s public API (`program_name` is private and
 /// PATH-named); the CLI-flag mapping belongs to the dispatch registry.
-fn agent_flag(a: Agent) -> &'static str {
+pub(crate) fn agent_flag(a: Agent) -> &'static str {
     match a {
         Agent::Claude => "claude",
         Agent::Codex => "codex",
         Agent::Copilot => "copilot",
+        Agent::Cursor => "cursor",
         Agent::Kimi => "kimi",
         Agent::OpenCode => "opencode",
     }
@@ -1045,6 +1046,88 @@ mod tests {
                 "--branch-mode",
                 "new"
             ]
+        );
+    }
+
+    #[test]
+    fn spawn_argv_carries_cursor_through_to_the_agent_flag() {
+        // ADR-0042 D1 deferred the daemon on purpose; #248 lifts it. The flag value
+        // is the CLI's `--agent cursor`, NOT the binary name `cursor-agent`.
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "cursor", "branchMode": "new" })
+            )
+            .unwrap(),
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "cursor",
+                "--branch-mode",
+                "new"
+            ]
+        );
+    }
+
+    /// The ADR-0040 canary: `from_query` (what the workbench sends IN) and
+    /// `agent_flag` (what the CLI receives OUT) are hand-maintained in two places,
+    /// so a vendor added to one and not the other silently refuses a launch.
+    #[test]
+    fn agent_flag_round_trips_through_from_query() {
+        for a in Agent::ALL {
+            assert_eq!(
+                Agent::from_query(agent_flag(a)),
+                Some(a),
+                "{a:?}'s CLI flag does not parse back through from_query"
+            );
+        }
+    }
+
+    /// The workbench's vendor list is hand-maintained in THREE places in `app.js`
+    /// and nothing compiles it — Kimi shipped missing from all three (issue #228).
+    /// Pins every `Agent::ALL` flag value into each of the three structures.
+    #[test]
+    fn the_workbench_trio_lists_every_launchable_agent() {
+        let js = include_str!("../assets/ui/app.js");
+
+        /// The text between `open` and the next `close`, starting at the first
+        /// occurrence of `open`. Panics loudly if the region moved — a silently
+        /// empty slice would make every `contains` below vacuous.
+        fn region<'a>(js: &'a str, open: &str, close: &str) -> &'a str {
+            let start = js
+                .find(open)
+                .unwrap_or_else(|| panic!("app.js region {open:?} not found"));
+            let rest = &js[start + open.len()..];
+            let end = rest
+                .find(close)
+                .unwrap_or_else(|| panic!("app.js region {open:?} never closed by {close:?}"));
+            &rest[..end]
+        }
+
+        let agents = region(js, "agents: [", "]");
+        let console_items = region(js, "consoleItems() {", "];");
+        // Anchored on `Digit1` because `const map = {` alone also matches an
+        // unrelated map earlier in the file.
+        let accelerators = region(js, "const map = { Digit1", "};");
+
+        for a in Agent::ALL {
+            let flag = agent_flag(a);
+            let quoted = format!("\"{flag}\"");
+            for (name, hay) in [
+                ("agents:", agents),
+                ("consoleItems()", console_items),
+                ("the accelerator map", accelerators),
+            ] {
+                assert!(
+                    hay.contains(&quoted),
+                    "{flag} missing from app.js's {name} — the workbench cannot launch it"
+                );
+            }
+        }
+        assert!(
+            accelerators.contains(r#"Digit6: "cursor""#),
+            "cursor has no keyboard accelerator in app.js"
         );
     }
 

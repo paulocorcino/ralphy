@@ -644,6 +644,18 @@ async fn session_ws_upgrade(
     let Some(entry) = store.entry(repo) else {
         return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
     };
+    // ADR-0042 D6: an ordinary Cursor run uploads the enclosing repository. The
+    // run path is gated in the adapter, but this interactive launch spawns
+    // `cursor-agent` directly — so the refusal has to happen here too, BEFORE the
+    // spec is built and anything is spawned. The UI is not a way around it.
+    if agent == session::Agent::Cursor {
+        let root = Path::new(&entry.path);
+        if let Err(e) =
+            ralphy_proc_util::cursor::indexing_gate(root, session::cursor_indexing_allowed(root))
+        {
+            return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
+        }
+    }
     let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
     match sessions.spawn_attached(
         repo.to_string(),
