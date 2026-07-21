@@ -38,6 +38,11 @@ mod revocation;
 mod root;
 mod settings;
 mod skills;
+mod tasks;
+
+/// The four one-shot verbs (`ralphy diagnose`, `init --issues`, `triage`,
+/// `consolidate`), which pay the same owned root and policy document a run pays.
+pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 
 /// The vendor's id grammar (ADR-0043 D8): which ids may be pinned, and the
 /// price-table key each one bills under — the MANDATORY transform between a
@@ -138,70 +143,99 @@ impl GeminiAgent {
     }
 }
 
-impl GeminiAgent {
-    /// Everything that must exist on disk BEFORE a child is spawned, on every
-    /// path: the owned configuration root (D4) and the sovereign policy document
-    /// (D5). Returns what `build_gemini_command` needs to point the child at them.
-    ///
-    /// Deliberately NOT done once at construction — `plan` and `execute` each
-    /// call it before their spawn, so a root deleted between phases is recreated
-    /// rather than silently falling back to the operator's own. (The login probe
-    /// calls `root::ensure` directly and carries no policy; see `run_gemini`.)
-    ///
-    /// It is also where the administrator's own tier is READ and REPORTED (D5).
-    /// Both `plan` and `execute` propagate this with `?` from inside their `run`
-    /// closure, so an autonomy-disabling control stops the run before any child
-    /// exists — on every path, since nothing between `root::ensure` and the bail
-    /// can swallow it. `auth::probe_gemini_login` deliberately does NOT gain the
-    /// check: it makes no model call and must still answer `ralphy init`'s
-    /// onboarding gate on a managed machine.
-    fn prepare_root(&self, base: &Path) -> Result<(root::GeminiRoot, PathBuf, Option<String>)> {
-        let root = root::ensure(base)?;
-        let admin = revocation::read_admin_tier();
-        for control in &admin {
-            tracing::warn!("gemini: {}", control.message());
-        }
-        if let Some(stop) = admin
-            .iter()
-            .find(|c| matches!(c, revocation::AdminControl::AutonomyDisabled(_)))
-        {
-            anyhow::bail!("{}", stop.message());
-        }
-        tracing::debug!(
-            home = %root.home.display(),
-            settings = %root.settings.display(),
-            "gemini: owned configuration root ready (D4)"
-        );
-        let operator = root::operator_root();
-        let auth_type = root::operator_auth_type(operator.as_deref());
+/// What [`prepare_root`] leaves ready on disk, and what a child needs to be
+/// pointed at it: the owned root (D4), the sovereign policy document (D5), the
+/// operator's declared auth mode (D7's allowlist selector) and the skill names
+/// materialized into the root (D13).
+pub(crate) struct PreparedRoot {
+    pub(crate) root: root::GeminiRoot,
+    pub(crate) policy_path: PathBuf,
+    pub(crate) auth_type: Option<String>,
+    pub(crate) skills: Vec<String>,
+}
 
-        // D13/D53-55: materialize Ralphy's own skills into the owned root, then
-        // confirm discovery with a model-free receipt. Advisory only — a spawn
-        // failure, timeout or missing name logs and never fails the run (a
-        // diagnostic that can abort a run is worse than the setup problem it
-        // reports).
-        let materialized = skills::materialize_gemini_skills(&root)?;
-        let owned_home = &root.home;
-        match skills::probe_skill_discovery(owned_home, auth_type.as_deref(), &materialized) {
-            Some(found) => {
-                tracing::info!(skills = ?found, "gemini: skills discovered (D13)");
-                for missing in materialized.iter().filter(|s| !found.contains(s)) {
-                    tracing::warn!(
-                        skill = %missing,
-                        root = %root.cli_dir().display(),
-                        "gemini: skill not found by `gemini skills list` — re-run it \
-                         by hand against this root to diagnose"
-                    );
-                }
+/// Everything that must exist on disk BEFORE a child is spawned, on every
+/// path: the owned configuration root (D4) and the sovereign policy document
+/// (D5). Returns what `build_gemini_command` needs to point the child at them.
+///
+/// Deliberately NOT done once at construction — `plan` and `execute` each
+/// call it before their spawn, and each one-shot verb ([`tasks`]) calls it
+/// before its own, so a root deleted between phases is recreated rather than
+/// silently falling back to the operator's own. (The login probe calls
+/// `root::ensure` directly and carries no policy; see `run_gemini`.)
+///
+/// It is also where the administrator's own tier is READ and REPORTED (D5).
+/// Both `plan` and `execute` propagate this with `?` from inside their `run`
+/// closure, so an autonomy-disabling control stops the run before any child
+/// exists — on every path, since nothing between `root::ensure` and the bail
+/// can swallow it, and since the one-shots reach their spawn through this same
+/// function rather than a second copy of it. `auth::probe_gemini_login`
+/// deliberately does NOT gain the check: it makes no model call and must still
+/// answer `ralphy init`'s onboarding gate on a managed machine.
+pub(crate) fn prepare_root(base: &Path) -> Result<PreparedRoot> {
+    let root = root::ensure(base)?;
+    let admin = revocation::read_admin_tier();
+    for control in &admin {
+        tracing::warn!("gemini: {}", control.message());
+    }
+    if let Some(stop) = admin
+        .iter()
+        .find(|c| matches!(c, revocation::AdminControl::AutonomyDisabled(_)))
+    {
+        anyhow::bail!("{}", stop.message());
+    }
+    tracing::debug!(
+        home = %root.home.display(),
+        settings = %root.settings.display(),
+        "gemini: owned configuration root ready (D4)"
+    );
+    let operator = root::operator_root();
+    let auth_type = root::operator_auth_type(operator.as_deref());
+
+    // D13/D53-55: materialize Ralphy's own skills into the owned root. The
+    // discovery RECEIPT is a separate, advisory step (`report_skill_discovery`)
+    // the turn-driving paths pay and the one-shots skip — it spawns an extra
+    // child per call and answers nothing a one-shot acts on.
+    let skills = skills::materialize_gemini_skills(&root)?;
+
+    let imported = policy::import_deny_rules(operator.map(|r| r.join("policies")).as_deref());
+    let policy_path = policy::write_policy(&root, &policy::ralphy_policy(&imported))?;
+    Ok(PreparedRoot {
+        root,
+        policy_path,
+        auth_type,
+        skills,
+    })
+}
+
+/// Confirm the materialized skills are discoverable with a model-free receipt
+/// (D13). Advisory only — a spawn failure, timeout or missing name logs and
+/// never fails the run (a diagnostic that can abort a run is worse than the
+/// setup problem it reports).
+fn report_skill_discovery(
+    root: &root::GeminiRoot,
+    auth_type: Option<&str>,
+    materialized: &[String],
+) {
+    // Bound, not passed inline: `command.rs`'s D4 pin counts the borrows of the
+    // root's home in this file to prove the only ones handed to a CHILD are the
+    // two the run path just ensured, and this receipt is not one of them.
+    let owned_home = &root.home;
+    match skills::probe_skill_discovery(owned_home, auth_type, materialized) {
+        Some(found) => {
+            tracing::info!(skills = ?found, "gemini: skills discovered (D13)");
+            for missing in materialized.iter().filter(|s| !found.contains(s)) {
+                tracing::warn!(
+                    skill = %missing,
+                    root = %root.cli_dir().display(),
+                    "gemini: skill not found by `gemini skills list` — re-run it \
+                     by hand against this root to diagnose"
+                );
             }
-            None => tracing::warn!(
-                "gemini: skill discovery receipt unavailable (spawn error or timeout)"
-            ),
         }
-
-        let imported = policy::import_deny_rules(operator.map(|r| r.join("policies")).as_deref());
-        let policy_path = policy::write_policy(&root, &policy::ralphy_policy(&imported))?;
-        Ok((root, policy_path, auth_type))
+        None => {
+            tracing::warn!("gemini: skill discovery receipt unavailable (spawn error or timeout)")
+        }
     }
 }
 
@@ -222,7 +256,13 @@ impl Agent for GeminiAgent {
         check_stdin_ceiling(PLAN_CHARTER)?;
 
         let run = || {
-            let (root, policy_path, auth_type) = self.prepare_root(&ralphy_dir)?;
+            let PreparedRoot {
+                root,
+                policy_path,
+                auth_type,
+                skills,
+            } = prepare_root(&ralphy_dir)?;
+            report_skill_discovery(&root, auth_type.as_deref(), &skills);
             let cmd = build_gemini_command(
                 &session_id,
                 model,
@@ -311,7 +351,13 @@ impl Agent for GeminiAgent {
         check_stdin_ceiling(PROMPT_EXECUTE)?;
 
         let run = || {
-            let (root, policy_path, auth_type) = self.prepare_root(&ralphy_dir)?;
+            let PreparedRoot {
+                root,
+                policy_path,
+                auth_type,
+                skills,
+            } = prepare_root(&ralphy_dir)?;
+            report_skill_discovery(&root, auth_type.as_deref(), &skills);
             let cmd = build_gemini_command(
                 &session_id,
                 model,

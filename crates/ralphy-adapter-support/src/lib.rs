@@ -42,7 +42,7 @@ pub use detect::{auth_error, detect_limit, scan_json_lines};
 
 mod json_session;
 pub use json_session::{
-    run_init_session, run_json_session, run_text_session, JsonSession, TextSession,
+    run_init_session, run_json_session, run_text_session, strip_bom, JsonSession, TextSession,
 };
 
 mod resume;

@@ -332,6 +332,7 @@ mod tests {
             include_str!("policy.rs"),
             include_str!("auth.rs"),
             include_str!("skills.rs"),
+            include_str!("tasks.rs"),
             include_str!("lib.rs"),
         ]
         .map(|s| {
@@ -434,6 +435,25 @@ mod tests {
                 "lib.rs must never hand the operator's own root to a child (D4)"
             );
         }
+
+        // The one-shot path (#259) funnels through ONE helper for the same
+        // reason: four verbs each choosing their own `home` argument is four
+        // places the operator's root could be handed to a child. Production
+        // source only — the module's own tests legitimately call both.
+        let tasks = include_str!("tasks.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert_eq!(
+            tasks.matches(concat!("one_shot_", "command(")).count(),
+            5,
+            "one definition + the four verbs — a fifth caller needs its own audit"
+        );
+        assert_eq!(
+            tasks.matches(concat!("build_gemini_", "command(")).count(),
+            1,
+            "no verb may grow its own root argument: the builder is called once"
+        );
     }
 
     /// D7's failure direction, exactly: an inherited VertexAI flag from unrelated

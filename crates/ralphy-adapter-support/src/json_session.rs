@@ -128,7 +128,11 @@ pub fn run_json_session<T>(
 /// Strip a single leading UTF-8 BOM (`\u{feff}`) from a decoded artifact. A BOM is
 /// not whitespace, so `trim_start` misses it; left in place it makes `serde_json`
 /// fail at "line 1 column 1". Returns the input unchanged when no BOM is present.
-fn strip_bom(s: &str) -> &str {
+///
+/// `pub` so an adapter that reads its own artifact outside [`run_json_session`]
+/// (Gemini's one-shots, whose ladder is exit-code-first and cannot go through the
+/// shared tail) shares this guard rather than growing a second copy of it.
+pub fn strip_bom(s: &str) -> &str {
     s.strip_prefix('\u{feff}').unwrap_or(s)
 }
 
