@@ -31,10 +31,20 @@ use tracing::info;
 
 mod auth;
 mod command;
+mod model;
 mod outcome;
 mod policy;
 mod revocation;
 mod root;
+mod settings;
+
+/// The vendor's id grammar (ADR-0043 D8): which ids may be pinned, and the
+/// price-table key each one bills under — the MANDATORY transform between a
+/// model id the run recorded and a `PriceTable` lookup.
+pub use model::{is_pinnable_model, price_key, PINNABLE_MODELS};
+
+/// The per-phase model pins persisted under `gemini.*` in `.ralphy/settings.json`.
+pub use settings::GeminiSettings;
 
 /// Whether the operator is authenticated, from the vendor's own exit code
 /// (ADR-0043 D6) — what `ralphy init`'s gate reports.
@@ -312,6 +322,7 @@ impl Agent for GeminiAgent {
             r.timed_out,
             committed,
             r.exit_code,
+            model,
         );
         info!(
             ?outcome,
@@ -348,7 +359,9 @@ fn phase_usage(model: Option<&str>) -> Usage {
         "gemini: the stream's usage envelope is not parsed yet (usage is a later slice)"
     );
     Usage {
-        model: Some(model.unwrap_or(DEFAULT_MODEL).to_string()),
+        // The ledger key and the price key must be ONE string, or a routed run
+        // costs out against another vendor's `auto` row (ADR-0034 amendment).
+        model: Some(price_key(model.unwrap_or(DEFAULT_MODEL))),
         ..Default::default()
     }
 }

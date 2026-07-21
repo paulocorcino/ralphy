@@ -258,6 +258,7 @@ pub(crate) fn classify_gemini_outcome(
     timed_out: bool,
     committed: bool,
     exit_code: Option<i32>,
+    model: Option<&str>,
 ) -> Outcome {
     let class = classify_exit(exit_code);
     let cancelled = class == ExitClass::Cancelled;
@@ -291,6 +292,11 @@ pub(crate) fn classify_gemini_outcome(
                     rev.filter(|r| r.is_hard_stop())
                         .map(|r| r.message(exit_code, log))
                         .or_else(|| class.actionable_stop().map(str::to_string))
+                        // More specific than the exit code's generic sentence,
+                        // but never ahead of a hard-stop revocation (#255).
+                        .or_else(|| {
+                            crate::model::unknown_model_stop(log, model).map(|e| e.to_string())
+                        })
                         .or_else(|| rev.map(|r| r.message(exit_code, log)))
                 })
                 .flatten()
@@ -396,7 +402,7 @@ mod tests {
         // Neither is reported as a green run.
         for f in [&fold, &empty] {
             assert_ne!(
-                classify_gemini_outcome(f, "", false, false, false, Some(1)),
+                classify_gemini_outcome(f, "", false, false, false, Some(1), None),
                 Outcome::Done
             );
         }
@@ -458,17 +464,17 @@ mod tests {
         );
         let fold = fold_gemini_stream(&stdout);
         assert_eq!(
-            classify_gemini_outcome(&fold, "", true, false, true, Some(0)),
+            classify_gemini_outcome(&fold, "", true, false, true, Some(0), None),
             Outcome::Done
         );
         assert_ne!(
-            classify_gemini_outcome(&fold, "", false, false, true, Some(54)),
+            classify_gemini_outcome(&fold, "", false, false, true, Some(54), None),
             Outcome::Done,
             "exit 54 (tool failure) must not be reported as a completed run"
         );
         // A cancellation is Ralphy stopping the child, not a crash.
         assert_eq!(
-            classify_gemini_outcome(&fold, "", false, false, true, Some(130)),
+            classify_gemini_outcome(&fold, "", false, false, true, Some(130), None),
             Outcome::Timeout
         );
     }
@@ -563,7 +569,7 @@ mod tests {
                 fold.final_text
             );
             assert_ne!(
-                classify_gemini_outcome(&fold, "", true, false, false, Some(0)),
+                classify_gemini_outcome(&fold, "", true, false, false, Some(0), None),
                 Outcome::Done
             );
         }
@@ -589,20 +595,28 @@ mod tests {
         ] {
             assert!(gemini_limit_note(phrase).is_some(), "{phrase}");
             assert_eq!(
-                classify_gemini_outcome(&fold, phrase, false, false, false, Some(1)),
+                classify_gemini_outcome(&fold, phrase, false, false, false, Some(1), None),
                 Outcome::Limit(None),
                 "a textual throttle must be a limit with NO reset hint: {phrase}"
             );
         }
         // The documented 429 exit reaches the same place with no text at all.
         assert_eq!(
-            classify_gemini_outcome(&fold, "", false, false, false, Some(429)),
+            classify_gemini_outcome(&fold, "", false, false, false, Some(429), None),
             Outcome::Limit(None)
         );
         // …and ordinary prose is not a limit.
         assert_eq!(gemini_limit_note("everything is fine"), None);
         assert_ne!(
-            classify_gemini_outcome(&fold, "everything is fine", false, false, false, Some(1)),
+            classify_gemini_outcome(
+                &fold,
+                "everything is fine",
+                false,
+                false,
+                false,
+                Some(1),
+                None
+            ),
             Outcome::Limit(None)
         );
     }
@@ -619,7 +633,7 @@ mod tests {
             (52, "configuration"),
             (42, "command line"),
         ] {
-            match classify_gemini_outcome(&fold, "", false, false, false, Some(code)) {
+            match classify_gemini_outcome(&fold, "", false, false, false, Some(code), None) {
                 Outcome::Blocked(reason) => assert!(
                     reason.to_ascii_lowercase().contains(needle),
                     "exit {code} must name its cause, got {reason:?}"
@@ -630,7 +644,7 @@ mod tests {
         // A plain failure keeps falling through the ladder — this must not turn
         // every non-zero exit into a `Blocked`.
         assert!(!matches!(
-            classify_gemini_outcome(&fold, "", false, false, false, Some(1)),
+            classify_gemini_outcome(&fold, "", false, false, false, Some(1), None),
             Outcome::Blocked(_)
         ));
         // …and a SUCCESSFUL run never carries a stop sentence.
@@ -640,7 +654,7 @@ mod tests {
             serde_json::json!({"type": "result", "status": "success"})
         ));
         assert!(!matches!(
-            classify_gemini_outcome(&ok, "", true, false, true, Some(0)),
+            classify_gemini_outcome(&ok, "", true, false, true, Some(0), None),
             Outcome::Blocked(_)
         ));
     }
@@ -653,7 +667,7 @@ mod tests {
     fn a_turn_ceiling_is_a_budget_stop_not_a_failure() {
         let fold = fold_gemini_stream("");
         for (code, needle) in [(53, "turn ceiling"), (54, "tool")] {
-            match classify_gemini_outcome(&fold, "", false, false, false, Some(code)) {
+            match classify_gemini_outcome(&fold, "", false, false, false, Some(code), None) {
                 Outcome::Blocked(reason) => assert!(
                     reason.to_ascii_lowercase().contains(needle),
                     "exit {code} must name {needle:?}, got {reason:?}"
@@ -665,7 +679,7 @@ mod tests {
         // and must keep falling through the ladder, or every non-zero exit becomes
         // a `Blocked` and the distinction this test buys is worthless.
         assert!(!matches!(
-            classify_gemini_outcome(&fold, "", false, false, false, Some(1)),
+            classify_gemini_outcome(&fold, "", false, false, false, Some(1), None),
             Outcome::Blocked(_)
         ));
     }
@@ -676,7 +690,15 @@ mod tests {
     #[test]
     fn the_relaunch_sentinel_is_mapped() {
         assert_eq!(classify_exit(Some(199)), ExitClass::Relaunch);
-        match classify_gemini_outcome(&fold_gemini_stream(""), "", false, false, false, Some(199)) {
+        match classify_gemini_outcome(
+            &fold_gemini_stream(""),
+            "",
+            false,
+            false,
+            false,
+            Some(199),
+            None,
+        ) {
             Outcome::Blocked(reason) => assert!(
                 reason.contains("199") && reason.to_ascii_lowercase().contains("relaunch"),
                 "the sentinel must name itself, got {reason:?}"
@@ -704,7 +726,8 @@ mod tests {
                 true,
                 false,
                 true,
-                Some(0)
+                Some(0),
+                None
             ),
             Outcome::Done,
             "an errored envelope must not be reported as a completed run"
@@ -718,7 +741,8 @@ mod tests {
                 true,
                 false,
                 true,
-                Some(0)
+                Some(0),
+                None
             ),
             Outcome::Done
         );
@@ -741,7 +765,7 @@ mod tests {
             serde_json::json!({"type": "result", "status": "success"})
         ));
         assert_eq!(
-            classify_gemini_outcome(&fold, PREAMBLE, true, false, true, Some(0)),
+            classify_gemini_outcome(&fold, PREAMBLE, true, false, true, Some(0), None),
             Outcome::Done,
             "the routine preamble must not cost a healthy run its Done"
         );
@@ -767,7 +791,7 @@ mod tests {
     #[test]
     fn strict_mode_is_a_named_stop_not_a_config_error() {
         let fold = fold_gemini_stream("");
-        match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52)) {
+        match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52), None) {
             Outcome::Blocked(reason) => {
                 for needle in ["secureModeEnabled", "disableYoloMode"] {
                     assert!(reason.contains(needle), "{needle} missing from {reason:?}");
@@ -788,6 +812,7 @@ mod tests {
             false,
             false,
             Some(52),
+            None,
         ) {
             Outcome::Blocked(reason) => assert!(
                 reason.contains(".ralphy/gemini-home"),
@@ -803,7 +828,7 @@ mod tests {
     #[test]
     fn the_untrusted_stop_surfaces_the_vendors_own_sentence() {
         let fold = fold_gemini_stream("");
-        match classify_gemini_outcome(&fold, UNTRUSTED_LOG, false, false, false, Some(55)) {
+        match classify_gemini_outcome(&fold, UNTRUSTED_LOG, false, false, false, Some(55), None) {
             Outcome::Blocked(reason) => {
                 for needle in [
                     "exit 55",
@@ -823,7 +848,7 @@ mod tests {
         }
         // The code alone is sufficient: an empty log carries no vendor sentence,
         // and the exit-class diagnosis still names the code.
-        match classify_gemini_outcome(&fold, "", false, false, false, Some(55)) {
+        match classify_gemini_outcome(&fold, "", false, false, false, Some(55), None) {
             Outcome::Blocked(reason) => {
                 assert!(reason.contains("exit 55"), "{reason:?}");
                 assert!(!reason.contains("gemini said:"), "{reason:?}");
@@ -853,6 +878,7 @@ mod tests {
             false,
             false,
             Some(1),
+            None,
         ) {
             Outcome::Blocked(reason) => assert!(
                 reason.contains("no longer autonomous"),
@@ -869,7 +895,7 @@ mod tests {
             serde_json::json!({"type": "result", "status": "success"})
         ));
         assert_eq!(
-            classify_gemini_outcome(&green, DEMOTION_LOG, true, false, true, Some(0)),
+            classify_gemini_outcome(&green, DEMOTION_LOG, true, false, true, Some(0), None),
             Outcome::Done,
             "a revocation must never flip a run that succeeded"
         );
@@ -883,6 +909,7 @@ mod tests {
                 false,
                 false,
                 Some(1),
+                None,
             ),
             Outcome::Limit(None)
         );
@@ -910,7 +937,7 @@ mod tests {
             (53, "turn ceiling"),
             (52, "check ralphy's"),
         ] {
-            match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(code)) {
+            match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(code), None) {
                 Outcome::Blocked(reason) => assert!(
                     reason.to_ascii_lowercase().contains(needle),
                     "exit {code} lost its own diagnosis to a routine notice: {reason:?}"
@@ -920,16 +947,65 @@ mod tests {
         }
         // …and the notice is still surfaced where nothing better exists: exit 1
         // has no sentence of its own, so the control is named rather than mute.
-        match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(1)) {
+        match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(1), None) {
             Outcome::Blocked(reason) => assert!(reason.contains("administrator"), "{reason:?}"),
             other => panic!("a bare failure carrying a notice must be named, got {other:?}"),
         }
         // A HARD stop still outranks the exit class — that is the whole point of
         // the exit-52 override, and this proves the split is not a blanket demotion.
-        match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52)) {
+        match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52), None) {
             Outcome::Blocked(reason) => assert!(reason.contains("secureModeEnabled"), "{reason:?}"),
             other => panic!("expected the enterprise stop, got {other:?}"),
         }
+    }
+
+    /// A pinned id the vendor does not serve is a NAMED stop that quotes the id —
+    /// but it sits below a hard-stop revocation in the chain (#255's ordering).
+    #[test]
+    fn a_model_404_is_named_but_yields_to_a_hard_stop() {
+        const NOT_FOUND: &str = "ModelNotFoundError: models/no-such-model is not found for API \
+                                 version v1beta, or is not supported for generateContent. \
+                                 { code: 404 }";
+        let fold = fold_gemini_stream("");
+        // Exit 1 has no sentence of its own: the 404 names the stop.
+        match classify_gemini_outcome(
+            &fold,
+            NOT_FOUND,
+            false,
+            false,
+            false,
+            Some(1),
+            Some("no-such-model"),
+        ) {
+            Outcome::Blocked(reason) => {
+                assert!(reason.contains("no-such-model"), "{reason:?}");
+                assert!(reason.contains("ModelNotFoundError"), "{reason:?}");
+            }
+            other => panic!("a model 404 must be a named stop, got {other:?}"),
+        }
+        // A hard-stop revocation still wins — the model is not why the run died.
+        let both = format!("{ADMIN_LOG}\n{NOT_FOUND}");
+        match classify_gemini_outcome(
+            &fold,
+            &both,
+            false,
+            false,
+            false,
+            Some(52),
+            Some("no-such-model"),
+        ) {
+            Outcome::Blocked(reason) => assert!(reason.contains("secureModeEnabled"), "{reason:?}"),
+            other => panic!("expected the enterprise stop, got {other:?}"),
+        }
+        // A GREEN run is never blocked by a 404 quoted in its own transcript.
+        let green = fold_gemini_stream(
+            r#"{"type":"message","role":"assistant","content":"RALPHY_DONE_EXIT"}
+{"type":"result","status":"success"}"#,
+        );
+        assert!(!matches!(
+            classify_gemini_outcome(&green, NOT_FOUND, true, false, true, Some(0), None),
+            Outcome::Blocked(_)
+        ));
     }
 
     /// D-both-channels: under `stream-json` the well-typed error object rides
@@ -962,6 +1038,7 @@ mod tests {
             false,
             false,
             Some(53),
+            None,
         ) {
             Outcome::Blocked(reason) => assert!(
                 reason.to_ascii_lowercase().contains("turn ceiling"),
