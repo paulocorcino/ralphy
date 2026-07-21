@@ -247,7 +247,11 @@ id a Gemini run recorded and a `PriceTable` lookup. It is not cosmetic:
 
 `gemini-3.1-pro-preview-customtools` gets **no row**: it has no published price
 (spike Trap 3), and this table reports unpriced (`~$?`) rather than guessing —
-even though it is the model that actually served two probe runs.
+even though it is the model that actually served two probe runs. The two Gemma
+ids (`gemma-4-31b-it`, `gemma-4-26b-a4b-it`) are unpriced for the same reason:
+they are pinnable and pass through `price_key` verbatim, and no list price was
+captured for them. Three families are therefore intentionally `~$?` —
+`gemini-routed`, `-customtools`, and the Gemma pair.
 
 The adapter already applies the transform to `Usage::model`. **#263, which parses
 the stream's usage envelope, must apply it to every key it writes into

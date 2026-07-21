@@ -983,6 +983,24 @@ mod tests {
             }
             other => panic!("a model 404 must be a named stop, got {other:?}"),
         }
+        // …and an exit class WITH its own sentence still outranks it: the 404 sits
+        // BELOW `actionable_stop` in the chain, so exit 44 keeps "sandbox".
+        // Without this leg the test passes under either ordering.
+        match classify_gemini_outcome(
+            &fold,
+            NOT_FOUND,
+            false,
+            false,
+            false,
+            Some(44),
+            Some("no-such-model"),
+        ) {
+            Outcome::Blocked(reason) => assert!(
+                reason.to_ascii_lowercase().contains("sandbox"),
+                "exit 44 must keep its own diagnosis: {reason:?}"
+            ),
+            other => panic!("expected the sandbox stop, got {other:?}"),
+        }
         // A hard-stop revocation still wins — the model is not why the run died.
         let both = format!("{ADMIN_LOG}\n{NOT_FOUND}");
         match classify_gemini_outcome(

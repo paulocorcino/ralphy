@@ -223,8 +223,8 @@ higher input-token floors on this vendor, independent of the task.
 
 | Key | Flag | Values | Default |
 | --- | --- | --- | --- |
-| `gemini.plan_model` | `--plan-model` | any id in `ralphy_agent_gemini::PINNABLE_MODELS` | none — the vendor routes |
-| `gemini.exec_model` | `--exec-model` | any id in `ralphy_agent_gemini::PINNABLE_MODELS` | none — the vendor routes |
+| `gemini.plan_model` | `--plan-model` | a model id the CLI serves; `ralphy config set` lists the accepted set when it refuses one | none — the vendor routes |
+| `gemini.exec_model` | `--exec-model` | same | none — the vendor routes |
 
 ```powershell
 ralphy config set gemini.plan_model gemini-2.5-pro
@@ -241,8 +241,14 @@ a billed API call (the spike observed `gemini-3.1-flash-lite` in the
 call — which is why `ralphy init` prints the note when it finds this CLI
 installed (ADR-0043 D8).
 
-Validation is applied at `config set` time only. A `--plan-model`/`--exec-model`
-flag is passed through unfiltered on purpose: the vendor's id set is mutable by
+**The routing aliases do not remove the tax.** `auto`, `pro`, `flash` and
+`flash-lite` are accepted as pins, but each still names a *router* rather than an
+engine — the routing call is still made, and the run is still recorded as
+`gemini-routed`. Pin a concrete id (`gemini-2.5-pro`, `gemini-3.5-flash`, …) to
+actually drop to one request per turn.
+
+Validation is applied at `config set` time only, and only to the persisted keys.
+A `--plan-model`/`--exec-model` flag is passed through unfiltered on purpose: the vendor's id set is mutable by
 server-side experiment flags, so a stale local list must never block an id the
 CLI has just started serving. If the id really is unknown, the vendor answers
 `ModelNotFoundError … { code: 404 }` and the adapter turns it into a named stop

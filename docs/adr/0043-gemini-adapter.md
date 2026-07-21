@@ -365,6 +365,26 @@ strings through verbatim, so a typo costs a round trip and returns
 `ModelNotFoundError … code: 404` on stderr with `type:"unknown"` on stdout.
 There is no cheap actionable stop to build on; the 404 text is matched instead.
 
+**Amendment (#257): one carve-out, at `config set` only.** `ralphy config set
+gemini.plan_model|gemini.exec_model` validates against
+`ralphy_agent_gemini::PINNABLE_MODELS` and refuses an id outside it, naming the
+value. The `--plan-model`/`--exec-model` flags remain **unfiltered**, exactly as
+the paragraph above requires, and so does argv.
+
+The split is deliberate, and so is its asymmetry. A *persisted* id is a
+long-lived decision that silently 404s **every** run until someone reads a log —
+the worst failure shape this vendor has, and the one place a local check pays for
+itself. A *flag* is a single run the operator is watching, and blocking one on a
+hand-copied list is how a stale constant table refuses an id the vendor has just
+started serving. The escape hatch for a newly-served id is therefore the flag,
+which is never filtered.
+
+The stale-list hazard is real and accepted, not denied: `PINNABLE_MODELS` is
+copied from `packages/core/src/config/models.ts` @ v0.51.0, the constants there
+are `let`-mutable by server-side experiment flags, and a newly-served id cannot be
+*persisted* until Ralphy ships a release. That is a bounded, visible cost (one
+error message naming the valid set) against an unbounded, invisible one.
+
 ## D9 — Usage comes from the stream envelope, never the session store
 
 `result.stats` is the source of truth. The store is not, and this is not a

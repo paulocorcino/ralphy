@@ -418,6 +418,31 @@ mod tests {
         assert_eq!(bare.phase_model(Phase::Execute), None);
     }
 
+    /// The ledger key and the price key must be ONE string (ADR-0034 amendment,
+    /// #257). Attributing the RAW id would cost a routed run out against another
+    /// vendor's `auto` row, and a `gemini-3-flash` run at a third of its price —
+    /// so the fold through `price_key` is asserted here, not just in the table's
+    /// own tests.
+    #[test]
+    fn phase_usage_attributes_the_price_key_not_the_raw_id() {
+        // Unpinned: the routed sentinel, which is deliberately unpriced.
+        assert_eq!(phase_usage(None).model.as_deref(), Some("gemini-routed"));
+        assert_eq!(
+            phase_usage(Some("auto")).model.as_deref(),
+            Some("gemini-routed")
+        );
+        // The 3× trap: the CLI's constant is served by the 3.5 backend.
+        assert_eq!(
+            phase_usage(Some("gemini-3-flash")).model.as_deref(),
+            Some("gemini-3.5-flash")
+        );
+        // A concrete id is attributed verbatim.
+        assert_eq!(
+            phase_usage(Some("gemini-2.5-pro")).model.as_deref(),
+            Some("gemini-2.5-pro")
+        );
+    }
+
     #[test]
     fn gemini_honours_max_minutes_per_issue() {
         assert_eq!(

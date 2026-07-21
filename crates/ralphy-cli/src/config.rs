@@ -133,7 +133,9 @@ model/effort/budget defaults are Claude-only today \
 Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
 copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
 hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
-which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \ngemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \nroutes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
+which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \
+gemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \
+routes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -280,14 +282,16 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
                 c.allow_builtin_mcp_servers_i_understand_the_risk = b
             })?
         }
-        // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
-        // run upload the operator's repository to the vendor. Ralphy never denies
-        // the capability — it denies a SILENT one.
         // Validated HERE and only here: a persisted id is refused at
         // configuration time rather than mid-run, while `--plan-model`/
         // `--exec-model` stay unfiltered so a stale local list cannot block an id
-        // the vendor has started serving (ADR-0043 D8).
+        // the vendor has started serving (ADR-0043 D8 amendment, #257).
+        //
+        // The stored value is TRIMMED: `is_pinnable_model` trims before matching,
+        // so persisting the raw string would accept ` gemini-2.5-pro `, report it
+        // valid from `config get`, and 404 on every run.
         "gemini.plan_model" | "gemini.exec_model" => {
+            let value = value.trim();
             if !ralphy_agent_gemini::is_pinnable_model(value) {
                 bail!(
                     "{key} must be a Gemini model id the CLI still serves, got '{value}'; valid: {}",
@@ -303,6 +307,9 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
                 }
             })?
         }
+        // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
+        // run upload the operator's repository to the vendor. Ralphy never denies
+        // the capability — it denies a SILENT one.
         "cursor.allow_codebase_indexing_i_understand_the_risk" => {
             let b = value
                 .parse::<bool>()
@@ -703,6 +710,13 @@ mod tests {
             serde_json::json!("gemini-2.5-pro")
         );
         get(&ws, false).unwrap();
+
+        // A padded value is trimmed on the way in, not stored raw to 404 later.
+        set(&ws, "gemini.exec_model", "  gemini-2.5-flash  ").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(g.exec_model.as_deref(), Some("gemini-2.5-flash"));
+        set(&ws, "gemini.exec_model", "gemini-3.5-flash").unwrap();
 
         // The retired id is refused at configuration time, naming what was asked.
         let err = set(&ws, "gemini.exec_model", "gemini-3-pro-preview")
