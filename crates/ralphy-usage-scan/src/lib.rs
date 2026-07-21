@@ -5,7 +5,7 @@
 //!
 //! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]),
 //! **OpenCode** ([`opencode`]), **Kimi** ([`kimi`]), **Copilot**
-//! ([`copilot`]), and **Cursor** ([`cursor`]) modules. The
+//! ([`copilot`]), **Cursor** ([`cursor`]), and **Gemini** ([`gemini`]) modules. The
 //! one-module-per-vendor shape (§7) leaves room for more to follow. The [`kimi`]
 //! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
 //! attribution lives in `kimi.rs`, not here; this file owns only the shared
@@ -18,6 +18,7 @@ pub mod claude;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
+pub mod gemini;
 pub mod kimi;
 pub mod opencode;
 
@@ -25,6 +26,7 @@ pub use claude::scan_claude;
 pub use codex::scan_codex;
 pub use copilot::{scan_copilot, session_reasoning_effort, session_tokens};
 pub use cursor::scan_cursor;
+pub use gemini::scan_gemini;
 pub use kimi::scan_kimi;
 pub use opencode::scan_opencode;
 
@@ -134,6 +136,20 @@ pub struct KimiScan<'a> {
 /// `since` lower bound on `last_ts`.
 pub struct CursorScan<'a> {
     pub cursor_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Gemini scan reads, mirroring [`CursorScan`]: `gemini_dir` is the
+/// `.gemini` base, under which the scan enumerates `tmp/<basename>/chats/` — the
+/// direct `*.jsonl` session logs AND the nested `<parent-sid>/*.jsonl` subagent
+/// ones (ADR-0043 D10). Each project directory maps back to a repo through its
+/// `.project_root` sibling, so no path hash has to be reversed. Plus the
+/// run-owned ids to exclude, the repo registry for attribution, and an optional
+/// `since` lower bound on `last_ts`.
+pub struct GeminiScan<'a> {
+    pub gemini_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
     pub repos: &'a [RegisteredRepo],
     pub since: Option<&'a str>,
