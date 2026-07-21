@@ -90,10 +90,32 @@ pub(crate) fn one_shot_command(
     ))
 }
 
-/// The one-shot's stop ladder, in the SAME order `plan()` uses: a hard-stop
-/// revocation outranks a provider limit, which outranks an informational
-/// revocation notice, which outranks the exit-code taxonomy, which outranks the
-/// wall timeout. `None` means nothing actionable was found.
+/// Whether a one-shot's child SUCCEEDED: a natural exit `0` that was not killed.
+///
+/// This is the gate [`one_shot_stop`] must not be consulted past. Two of the
+/// ladder's rungs key on free text in the combined log, and on this vendor that
+/// text is routine rather than diagnostic: a managed host prints "disabled by
+/// administrator" in EVERY log, and `draft_issues`/`triage_issues` pipe the
+/// model's own prose through stdout, so a backlog that merely MENTIONS a rate
+/// limit would otherwise be reported as one. Both run-path counterparts gate the
+/// same way — `plan()`'s ladder is `run_plan_session`'s `on_missing`, consulted
+/// only when no plan was written, and `classify_gemini_outcome`'s is
+/// `(!succeeded).then(…)` ("a revocation must never flip a run that succeeded").
+fn one_shot_succeeded(out: &ralphy_adapter_support::HeadlessOutput) -> bool {
+    out.exit.map(|s| s.success()).unwrap_or(false) && !out.timed_out
+}
+
+/// The one-shot's stop ladder for a session that did NOT succeed, in the SAME
+/// order `plan()` uses: a hard-stop revocation, then the wall timeout, then a
+/// provider limit, then an informational revocation notice, then the exit-code
+/// taxonomy. `None` means the failure carries no sentence better than the
+/// caller's own.
+///
+/// The timeout sits second rather than last (where a naive reading of `plan()`'s
+/// ladder would put it): on a timeout `exit` is `None`, so the exit-code rung is
+/// inert, and a routine administrator notice in the log would otherwise be
+/// reported instead of the reap. Both shared session runners bail on a timeout
+/// immediately after auth for the same reason.
 ///
 /// It is exit-code FIRST in the sense that matters (D3): the vendor's own exit
 /// taxonomy is consulted here rather than discarded, which is why the one-shots
@@ -102,6 +124,7 @@ pub(crate) fn one_shot_stop(log: &str, exit_code: Option<i32>, timed_out: bool) 
     let rev = revocation::detect_revocation(log);
     rev.filter(|r| r.is_hard_stop())
         .map(|r| r.message(exit_code, log))
+        .or_else(|| timed_out.then(|| "gemini session hit the wall timeout".to_string()))
         .or_else(|| outcome::gemini_limit_note(log))
         .or_else(|| rev.map(|r| r.message(exit_code, log)))
         .or_else(|| {
@@ -109,19 +132,24 @@ pub(crate) fn one_shot_stop(log: &str, exit_code: Option<i32>, timed_out: bool) 
                 .actionable_stop()
                 .map(str::to_string)
         })
-        .or_else(|| timed_out.then(|| "gemini session hit the wall timeout".to_string()))
 }
 
 /// Drive one headless `gemini` child to completion, persist its combined log, and
-/// turn the result into an error through [`one_shot_stop`].
+/// — only when the child did NOT succeed — turn the failure into the sentence
+/// [`one_shot_stop`] chose.
 ///
 /// **Cross-path invariant:** the log is written on EVERY return path after the
-/// child ran — including each ladder bail — so a failing one-shot never leaves the
+/// child ran — including each bail — so a failing one-shot never leaves the
 /// operator without the log its own error message points at.
+///
+/// The prompt's stdin ceiling (D2) is checked by each VERB before it prepares a
+/// root, not here: by the time this is reached the root, the skills and the
+/// policy document have already been written, and a charter Ralphy refuses to
+/// send must cost none of that.
 fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) -> Result<()> {
-    // D2 first: a truncated charter is a session running without its rules.
-    check_stdin_ceiling(prompt)?;
     let out = ralphy_adapter_support::run_headless(cmd, prompt, timeout).context(SPAWN_ERR)?;
+    let succeeded = one_shot_succeeded(&out);
+    let (code, timed_out) = (out.exit.and_then(|s| s.code()), out.timed_out);
     let mut log = out.stdout;
     log.push_str(&out.stderr);
     let _ = fs::write(log_path, &log);
@@ -129,10 +157,19 @@ fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) 
     if is_gemini_auth_error(&log) {
         bail!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display());
     }
-    if let Some(msg) = one_shot_stop(&log, out.exit.and_then(|s| s.code()), out.timed_out) {
-        bail!("{msg} (see {})", log_path.display());
+    if succeeded {
+        return Ok(());
     }
-    Ok(())
+    match one_shot_stop(&log, code, timed_out) {
+        Some(msg) => bail!("{msg} (see {})", log_path.display()),
+        // A non-zero exit the taxonomy does not name is still a failure: saying so
+        // beats returning `Ok` and letting the caller report a missing artifact.
+        None => bail!(
+            "the gemini session failed (exit {}) — see {}",
+            code.map_or_else(|| "killed".to_string(), |c| c.to_string()),
+            log_path.display()
+        ),
+    }
 }
 
 /// Ensure the artifact's and the log's parent dirs exist, then drop any stale
@@ -191,6 +228,9 @@ pub fn diagnose_repo(
     let out_path = neutral_cwd.join("diagnosis.json");
     let log_path = neutral_cwd.join("diagnose.log");
     let prompt = build_diagnose_prompt(repo, &out_path);
+    // D2 before any side effect: a charter ralphy refuses to send must cost
+    // neither a materialized root nor a written policy document.
+    check_stdin_ceiling(&prompt)?;
     clear_stale_artifact(&out_path, &log_path);
 
     info!(?model, "diagnosing repo with gemini");
@@ -221,6 +261,7 @@ pub fn draft_issues(
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
+    check_stdin_ceiling(&prompt)?;
     clear_stale_artifact(out_path, &log_path);
 
     info!(
@@ -262,6 +303,7 @@ pub fn triage_issues(
         req.attachments_manifest
     );
     let log_path = repo.join(".ralphy").join("triage.log");
+    check_stdin_ceiling(&prompt)?;
     clear_stale_artifact(out_path, &log_path);
 
     info!(?model, "triaging issues with gemini");
@@ -287,6 +329,7 @@ pub fn consolidate_knowledge(
     timeout: Duration,
 ) -> Result<()> {
     let _ = effort;
+    check_stdin_ceiling(PROMPT_CONSOLIDATE)?;
     fs::create_dir_all(run_dir).ok();
     let log_path = run_dir.join("consolidate.log");
 
@@ -323,7 +366,15 @@ mod tests {
             "in a workspace the one-shot shares the run's root"
         );
 
+        // `git rev-parse` walks UP, so a `TMPDIR` that happens to sit inside a
+        // checkout makes the no-workspace branch unreachable. Assert the
+        // precondition rather than the fallback in that case: a red here on a
+        // correct implementation would be worse than a stated skip.
         let plain = tempfile::tempdir().expect("tempdir");
+        if ralphy_core::git::is_repo(plain.path()) {
+            assert_eq!(one_shot_base(plain.path()), plain.path().join(".ralphy"));
+            return;
+        }
         assert_eq!(
             one_shot_base(plain.path()),
             ralphy_proc_util::home_dir()
@@ -372,8 +423,10 @@ mod tests {
             .unwrap_or_else(|| panic!("autonomy must be requested: {args:?}"));
         assert_eq!(args[j + 1], "yolo", "argv: {args:?}");
 
-        // AC5: the turn lands in the SAME session store a queue run writes, under
-        // the same owned root, so `ralphy usage` reads one store and not two.
+        // AC5, the half an argv CAN carry: the turn is an addressable session
+        // under the owned `GEMINI_CLI_HOME` asserted above, which is where the
+        // vendor puts its session record. That the record actually LANDS there is
+        // a live observation, not an argv property — see ADR-0043's #259 section.
         let k = args
             .iter()
             .position(|a| a == "--session-id")
@@ -422,5 +475,103 @@ mod tests {
         assert!(one_shot_stop("", None, true)
             .expect("a timeout is a stop")
             .contains("wall timeout"));
+        // On a timeout the child was KILLED, so `exit` is `None` and the
+        // exit-code rung is inert — a routine administrator notice in the log
+        // must not be reported in the reap's place.
+        let reaped = one_shot_stop("MCP server disabled by administrator\n", None, true)
+            .expect("a timeout is a stop");
+        assert!(reaped.contains("wall timeout"), "{reaped}");
+    }
+
+    /// The gate the ladder must not be consulted past (HIGH, self-review): two of
+    /// its rungs key on FREE TEXT, and on this vendor that text is routine. A
+    /// managed host prints the tool-server notice in every log, and a backlog or
+    /// triage thread may merely MENTION a rate limit — neither may cost a session
+    /// that exited 0 its artifact.
+    ///
+    /// Pinned on the source because the alternative is spawning a real child: the
+    /// production path must consult `one_shot_stop` only AFTER the success gate,
+    /// and must return early on success.
+    #[test]
+    fn a_successful_one_shot_is_never_failed_by_its_own_log() {
+        // The rungs are live on these strings — which is exactly why the gate
+        // must exist.
+        assert!(one_shot_stop("MCP server disabled by administrator\n", Some(0), false).is_some());
+        assert!(one_shot_stop("the backlog mentions a rate limit\n", Some(0), false).is_some());
+
+        let src = include_str!("tasks.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let body = &src[src
+            .find("fn run_one_shot(")
+            .expect("run_one_shot must exist")..];
+        let at = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("run_one_shot must contain {needle:?}"))
+        };
+        assert!(
+            at("if succeeded {") < at(concat!("one_shot_", "stop(&log")),
+            "the success gate must precede the ladder, or a green session's own \
+             words can fail it"
+        );
+        assert!(
+            at("return Ok(())") < at(concat!("one_shot_", "stop(&log")),
+            "a successful session must return before the ladder is consulted"
+        );
+        // …and the log is persisted before ANY bail, so every error message's
+        // `(see <log>)` points at a file that exists.
+        assert!(
+            at("fs::write(log_path") < at("bail!("),
+            "the combined log must be written before the first bail"
+        );
+    }
+
+    /// A stale artifact is the one failure mode with a GitHub-visible blast
+    /// radius: a drafting session that writes nothing would otherwise hand the cli
+    /// the PREVIOUS run's draft to publish.
+    #[test]
+    fn a_stale_artifact_never_survives_into_a_new_session() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let out = d.path().join("nested").join("draft.json");
+        let log = d.path().join("logs").join("init-issues.log");
+        fs::create_dir_all(out.parent().unwrap()).unwrap();
+        fs::write(&out, r#"{"issues":["a previous run's draft"]}"#).unwrap();
+
+        clear_stale_artifact(&out, &log);
+        assert!(!out.exists(), "the previous run's draft must be gone");
+        assert!(
+            log.parent().unwrap().is_dir(),
+            "the log's parent is created"
+        );
+        assert!(out.parent().unwrap().is_dir(), "the artifact's parent too");
+    }
+
+    /// `diagnose_repo`'s child runs in the throwaway `neutral_cwd`, but its owned
+    /// root belongs to the TARGET: a root under a directory the caller deletes
+    /// would make every diagnosis a fresh installation. Pinned on the source — no
+    /// test here spawns a child, so nothing else would catch the swap.
+    #[test]
+    fn each_verb_roots_itself_at_the_target_not_the_scratch_cwd() {
+        let src = include_str!("tasks.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            src.contains(concat!(
+                "one_shot_",
+                "command(&one_shot_base(repo), neutral_cwd,"
+            )),
+            "diagnose_repo must root at the target repo while running in the neutral cwd"
+        );
+        assert_eq!(
+            src.matches(concat!("one_shot_", "command(&one_shot_base("))
+                .count(),
+            4,
+            "every verb derives its base through one_shot_base, none hand-rolls one"
+        );
+        // The artifact BOM guard is the shared one, which is why `strip_bom` was
+        // promoted to `pub` rather than copied here.
+        assert!(src.contains("ralphy_adapter_support::strip_bom("));
     }
 }

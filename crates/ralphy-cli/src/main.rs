@@ -347,32 +347,49 @@ mod tests {
     /// arm must make its REAL call, and the "not yet wired" bail must be gone from
     /// every dispatch source — checking only for the bail's absence would pass on an
     /// arm silently swapped to another vendor's same-signature function.
+    ///
+    /// Stronger than its siblings on purpose (self-review, #259): the call is
+    /// asserted INSIDE the Gemini arm, not merely somewhere in the file. A
+    /// whole-file `contains` is satisfied by the gemini call sitting in another
+    /// vendor's arm — which is the exact swap the doc comment claims to catch.
     #[test]
     fn gemini_one_shots_are_wired() {
         let stale_bail = concat!("not yet wired for ", "--agent gemini");
-        let cases: [(&str, &str); 4] = [
+        let cases: [(&str, &str, &str); 4] = [
             (
                 include_str!("init/run.rs"),
+                concat!("Agent::", "Gemini =>"),
                 concat!("ralphy_agent_gemini::", "diagnose_repo("),
             ),
             (
                 include_str!("init/issues.rs"),
+                concat!("Agent::", "Gemini =>"),
                 concat!("ralphy_agent_gemini::", "draft_issues("),
             ),
             (
                 include_str!("triage.rs"),
+                concat!("Agent::", "Gemini =>"),
                 concat!("ralphy_agent_gemini::", "triage_issues("),
             ),
             (
                 include_str!("main.rs"),
+                concat!("CliAgent::", "Gemini =>"),
                 concat!("ralphy_agent_gemini::", "consolidate_knowledge("),
             ),
         ];
-        for (src, real_call) in cases {
+        for (src, arm, real_call) in cases {
             assert!(!src.contains(stale_bail), "stale one-shot bail found");
+            // The dispatch arm, and only it: from the `Gemini =>` marker to the
+            // next arm's `=>`. A call that drifted into a neighbouring vendor's
+            // arm is outside this window and reds.
+            let start = src
+                .find(arm)
+                .unwrap_or_else(|| panic!("no {arm} dispatch arm"))
+                + arm.len();
+            let end = src[start..].find(" =>").map_or(src.len(), |i| start + i);
             assert!(
-                src.contains(real_call),
-                "expected {real_call} in dispatch source"
+                src[start..end].contains(real_call),
+                "expected {real_call} inside the {arm} arm, not merely in the file"
             );
         }
         // ADR-0043 D8: the model axis is an account entitlement, not a complexity
