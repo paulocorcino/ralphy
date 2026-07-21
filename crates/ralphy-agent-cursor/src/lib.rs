@@ -1,8 +1,13 @@
 //! The Cursor Agent CLI adapter. See docs/adr/0042.
 
+mod auth;
 mod command;
 mod guards;
 mod settings;
+
+/// Whether the operator is logged into Cursor, from the vendor's own structured
+/// answer (ADR-0042 D8) — what `ralphy init`'s gate reports.
+pub use auth::{cursor_status_verdict, probe_cursor_login, CURSOR_AUTH_ERROR_MSG};
 
 /// Locating the vendor's binary, which is on `PATH` on neither platform
 /// (ADR-0042 D14) — `ralphy init`'s presence gate goes through this.
