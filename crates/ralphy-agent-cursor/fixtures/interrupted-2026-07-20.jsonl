@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/mnt/c/Dev/ralphy","session_id":"2f4c27dc-7639-41bd-acc3-a45adbae9442","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Count slowly from 1 to 60, writing two sentences about each number. Be thorough and take your time. End with RALPHY_DONE_5E1D."}]},"session_id":"2f4c27dc-7639-41bd-acc3-a45adbae9442"}
