@@ -272,16 +272,26 @@ pub(crate) fn classify_gemini_outcome(
             // D5: an actionable refusal is a NAMED stop, never a silent
             // degradation into `Stuck`.
             //
-            // A revocation the vendor ANNOUNCED outranks the exit code's generic
-            // sentence: exit 52 is also Ralphy's own malformed root, and blaming
-            // that for an enterprise Strict Mode is a worse diagnosis than the one
-            // this arm exists to fix. Gated on `!succeeded` in both directions — a
-            // demotion on a run that still went green must not cost it its `Done`.
+            // A revocation the vendor announced outranks the exit code's generic
+            // sentence ONLY when it is a hard stop: exit 52 is also Ralphy's own
+            // malformed root, and blaming that for an enterprise Strict Mode is a
+            // worse diagnosis than the one this arm exists to fix.
+            //
+            // The informational variants go LAST, below `actionable_stop`. On a
+            // managed host the "MCP servers are disabled by administrator" notice
+            // is in every log, so letting it pre-empt would report every exit 44
+            // or 54 as a tool-server control — strictly worse than the sentence
+            // the exit code already had.
+            //
+            // Gated on `!succeeded` throughout: a demotion on a run that still
+            // went green must not cost it its `Done`.
             (!succeeded)
                 .then(|| {
-                    crate::revocation::detect_revocation(log)
+                    let rev = crate::revocation::detect_revocation(log);
+                    rev.filter(|r| r.is_hard_stop())
                         .map(|r| r.message(exit_code, log))
                         .or_else(|| class.actionable_stop().map(str::to_string))
+                        .or_else(|| rev.map(|r| r.message(exit_code, log)))
                 })
                 .flatten()
         }),
@@ -795,17 +805,36 @@ mod tests {
         let fold = fold_gemini_stream("");
         match classify_gemini_outcome(&fold, UNTRUSTED_LOG, false, false, false, Some(55)) {
             Outcome::Blocked(reason) => {
-                for needle in ["exit 55", "--skip-trust"] {
+                for needle in [
+                    "exit 55",
+                    "--skip-trust",
+                    // These three come ONLY from the new path: the pre-existing
+                    // `ExitClass::Untrusted` sentence already carried `exit 55`
+                    // and `--skip-trust`, so asserting those alone would pass
+                    // against a reverted production change.
+                    "gemini said:",
+                    "GEMINI_CLI_TRUST_WORKSPACE",
+                    "interactive mode",
+                ] {
                     assert!(reason.contains(needle), "{needle} missing from {reason:?}");
                 }
             }
             other => panic!("exit 55 must be a named stop, got {other:?}"),
         }
-        // The code alone is sufficient: an empty log still names exit 55.
+        // The code alone is sufficient: an empty log carries no vendor sentence,
+        // and the exit-class diagnosis still names the code.
         match classify_gemini_outcome(&fold, "", false, false, false, Some(55)) {
-            Outcome::Blocked(reason) => assert!(reason.contains("55"), "{reason:?}"),
+            Outcome::Blocked(reason) => {
+                assert!(reason.contains("exit 55"), "{reason:?}");
+                assert!(!reason.contains("gemini said:"), "{reason:?}");
+            }
             other => panic!("exit 55 must be a named stop, got {other:?}"),
         }
+        // The observed code is reported, never a canonical one substring-matched
+        // against it: exit 5 must not be laundered into the hard-coded 55.
+        let five = crate::revocation::Revocation::UntrustedWorkspace.message(Some(5), "");
+        assert!(five.contains("exit 5)"), "{five:?}");
+        assert!(!five.contains("exit 55"), "{five:?}");
     }
 
     /// #255 AC4: the demotion notice is a REVOCATION, not preamble noise — the
@@ -857,6 +886,50 @@ mod tests {
             ),
             Outcome::Limit(None)
         );
+    }
+
+    /// The self-review's HIGH finding, from the other side of the seam: on a
+    /// managed host the administrator's tool-server notice is in EVERY log, so an
+    /// informational revocation must never outrank a diagnosis that is actually
+    /// about why this run stopped.
+    #[test]
+    fn an_informational_notice_never_outranks_the_exit_class() {
+        const NOTICE: &str = "MCP servers are disabled by administrator. Check admin settings or \
+                              contact your admin.";
+        assert_eq!(
+            crate::revocation::detect_revocation(NOTICE),
+            Some(crate::revocation::Revocation::AdminToolServers)
+        );
+        assert!(!crate::revocation::Revocation::AdminToolServers.is_hard_stop());
+        let fold = fold_gemini_stream("");
+        // Every exit class with its own sentence keeps it, notice or no notice.
+        for (code, needle) in [
+            (44, "sandbox"),
+            (54, "tool"),
+            (42, "command line"),
+            (53, "turn ceiling"),
+            (52, "check ralphy's"),
+        ] {
+            match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(code)) {
+                Outcome::Blocked(reason) => assert!(
+                    reason.to_ascii_lowercase().contains(needle),
+                    "exit {code} lost its own diagnosis to a routine notice: {reason:?}"
+                ),
+                other => panic!("exit {code} must stay a named stop, got {other:?}"),
+            }
+        }
+        // …and the notice is still surfaced where nothing better exists: exit 1
+        // has no sentence of its own, so the control is named rather than mute.
+        match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(1)) {
+            Outcome::Blocked(reason) => assert!(reason.contains("administrator"), "{reason:?}"),
+            other => panic!("a bare failure carrying a notice must be named, got {other:?}"),
+        }
+        // A HARD stop still outranks the exit class — that is the whole point of
+        // the exit-52 override, and this proves the split is not a blanket demotion.
+        match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52)) {
+            Outcome::Blocked(reason) => assert!(reason.contains("secureModeEnabled"), "{reason:?}"),
+            other => panic!("expected the enterprise stop, got {other:?}"),
+        }
     }
 
     /// D-both-channels: under `stream-json` the well-typed error object rides

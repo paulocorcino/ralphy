@@ -129,28 +129,60 @@ fn strip_ansi(line: &str) -> String {
 }
 
 impl Revocation {
-    /// The needle used to pull the vendor's own line back out of the log — the
-    /// broadest spelling of this variant, so either capitalisation matches.
-    fn line_needle(self) -> &'static str {
+    /// Whether this revocation ENDS the run, as opposed to merely announcing that
+    /// the administrator governs something.
+    ///
+    /// The distinction is load-bearing in both callers. `AdminToolServers` and
+    /// `Demoted` are printed as ROUTINE NOTICES — on a managed host where the
+    /// administrator disabled MCP servers, that line is in every single log — so
+    /// letting them pre-empt anything would mean a real provider throttle loses
+    /// its retry schedule, and a genuine exit 44/54 loses its own diagnosis, on
+    /// every run that host ever makes. Only a stop may outrank another verdict.
+    pub(crate) fn is_hard_stop(self) -> bool {
+        matches!(
+            self,
+            Revocation::AutonomyDisabled
+                | Revocation::UntrustedWorkspace
+                | Revocation::EnforcedAuth
+        )
+    }
+
+    /// The exit code this revocation OWNS, for the paths that carry none (the
+    /// planning phase reads a log, not a status).
+    fn canonical_exit(self) -> Option<i32> {
         match self {
-            Revocation::AutonomyDisabled => "yolo mode is disabled by",
-            Revocation::UntrustedWorkspace => "not running in a trusted directory",
-            Revocation::EnforcedAuth => "enforced",
-            Revocation::AdminToolServers => "administrator",
-            Revocation::Demoted => r#"approval mode overridden to "default""#,
+            // `FatalConfigError`.
+            Revocation::AutonomyDisabled => Some(52),
+            Revocation::UntrustedWorkspace => Some(55),
+            _ => None,
         }
+    }
+
+    /// The vendor's own sentence for THIS control — searched by the same needles
+    /// that detected it, in the same order.
+    ///
+    /// Deliberately not a broader word like `enforced` or `administrator`:
+    /// `vendor_line` returns the FIRST matching line, so a loose needle quotes an
+    /// unrelated earlier line and attributes it to this control.
+    fn vendor_sentence(self, log: &str) -> Option<String> {
+        NEEDLES
+            .iter()
+            .filter(|(_, r)| *r == self)
+            .find_map(|(n, _)| vendor_line(log, n))
     }
 
     /// The operator-facing sentence: what was revoked, which control did it, and —
     /// when the log carried one — the vendor's own words verbatim.
     pub(crate) fn message(self, exit_code: Option<i32>, log: &str) -> String {
         let mut msg = match self {
-            Revocation::AutonomyDisabled => "gemini's autonomous mode is disabled by an enterprise \
+            Revocation::AutonomyDisabled => {
+                "gemini's autonomous mode is disabled by an enterprise \
                  control (`admin.secureModeEnabled` or `security.disableYoloMode`) — the run stops \
                  here and ralphy does not work around it"
-                .to_string(),
-            Revocation::UntrustedWorkspace => "gemini refused the workspace as untrusted (exit 55) \
-                 — the folder-trust check outranks `--skip-trust`, so ralphy does not work around it"
+                    .to_string()
+            }
+            Revocation::UntrustedWorkspace => "gemini refused the workspace as untrusted — the \
+                 folder-trust check outranks `--skip-trust`, so ralphy does not work around it"
                 .to_string(),
             Revocation::EnforcedAuth => "gemini's administrator enforces an authentication method \
                  (`security.auth.enforcedType`) this run does not satisfy — reported, never worked \
@@ -164,14 +196,13 @@ impl Revocation {
                  call"
                 .to_string(),
         };
-        // Never twice: `UntrustedWorkspace` already names its dedicated code.
-        if let Some(c) = exit_code {
-            let tag = format!("exit {c}");
-            if !msg.contains(&tag) {
-                msg.push_str(&format!(" (exit {c})"));
-            }
+        // The OBSERVED code wins over the canonical one — a substring guard here
+        // would suppress a true `exit 5` against a hard-coded `exit 55`, and tell
+        // the operator the wrong number.
+        if let Some(c) = exit_code.or_else(|| self.canonical_exit()) {
+            msg.push_str(&format!(" (exit {c})"));
         }
-        if let Some(line) = vendor_line(log, self.line_needle()) {
+        if let Some(line) = self.vendor_sentence(log) {
             msg.push_str(&format!(" — gemini said: {line}"));
         }
         msg

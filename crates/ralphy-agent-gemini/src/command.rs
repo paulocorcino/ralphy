@@ -321,10 +321,16 @@ mod tests {
             "the trust prompt is fatal headless: {args:?}"
         );
 
+        // The WHOLE crate, like the D17 scan in `auth.rs`: pinning the taboo in
+        // the file that builds the argv would be satisfied by adding a fallback
+        // one module over, which is exactly what must not be possible.
         let code: String = [
             include_str!("command.rs"),
             include_str!("outcome.rs"),
             include_str!("revocation.rs"),
+            include_str!("root.rs"),
+            include_str!("policy.rs"),
+            include_str!("auth.rs"),
             include_str!("lib.rs"),
         ]
         .map(|s| {
@@ -343,10 +349,15 @@ mod tests {
             "exactly one place asks for an approval mode — a second would be the \
              work-around this issue forbids"
         );
-        for downgrade in ["auto_edit", concat!("--", "yolo\"")] {
+        // `auto_edit` is the DOWNGRADE — the approval mode a work-around would
+        // fall back to. `--yolo` is the vendor's deprecated EQUIVALENT, banned
+        // for a different reason (D12: one spelling, the current one), and it is
+        // listed here because both are second ways to state the request.
+        for banned in ["auto_edit", concat!("--", "yolo\"")] {
             assert!(
-                !code.contains(downgrade),
-                "no weaker autonomy spelling may exist in production source: {downgrade}"
+                !code.contains(banned),
+                "no second spelling of the autonomy request may exist in production \
+                 source: {banned}"
             );
         }
     }

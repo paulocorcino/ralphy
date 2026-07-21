@@ -226,16 +226,24 @@ impl Agent for GeminiAgent {
             // text is the only signal there is, and no reset hint is recoverable
             // — the ADR-0030 synthetic cadence sets the wait.
             //
-            // A REVOCATION is checked first and is deliberately not a limit: a
-            // Strict-Mode stop or a demoted approval mode will not heal on a
-            // retry, so scheduling one would burn the issue's whole budget
-            // re-asking a question the administrator already answered.
+            // A revocation that is a HARD STOP is checked first and is
+            // deliberately not a limit: Strict Mode or a refused workspace will
+            // not heal on a retry, so scheduling one would burn the issue's whole
+            // budget re-asking a question the administrator already answered.
+            //
+            // The informational variants must NOT pre-empt the limit. On a
+            // managed host the tool-server notice is in every plan log, so
+            // ordering them first would permanently misroute every plan-phase
+            // quota exhaustion on that host into an untyped hard error, losing
+            // ADR-0030's stop-and-report / auto-resume path.
             |log| {
-                revocation::detect_revocation(log)
+                let rev = revocation::detect_revocation(log);
+                rev.filter(|r| r.is_hard_stop())
                     .map(|r| anyhow::anyhow!("{}", r.message(None, log)))
                     .or_else(|| {
                         outcome::gemini_limit_note(log).map(|_| PlanLimit { reset: None }.into())
                     })
+                    .or_else(|| rev.map(|r| anyhow::anyhow!("{}", r.message(None, log))))
             },
         )?;
 
