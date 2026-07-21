@@ -204,10 +204,39 @@ Ralphy's posture: the operator's *"never do this"* is respected, their
 *"always allow this"* is not a grant Ralphy may accept on their behalf while
 running unattended.
 
+### 🔬 The root is persistent and per-workspace, not per-run
+
+This is the lifetime, and it is measured rather than assumed — the distinction
+matters because "scratch config root" reads as *create, use, discard*, and that
+would be wrong here.
+
+- **The root carries installation identity.** `installation_id` is minted *inside*
+  it and is stable within it: a root kept across two runs held
+  `b54f6a30-…` both times, while a freshly created root minted a different
+  `d58afb66-…`. **A per-run root would mint a new install identity on every
+  turn** — needless fingerprint churn against the vendor.
+- **Nothing forces a discard.** The CLI **does not rewrite Ralphy's
+  `settings.json`** — after two runs it was byte-identical to what was written.
+  There is no vendor mutation to contain, which is the opposite of the situation
+  that motivates [ADR-0042](./0042-cursor-adapter.md) D17.
+- **Discarding buys nothing either.** A cold root still saw **8 138 cached
+  tokens** on its first call: implicit context caching is server-side and
+  indifferent to local root age.
+
+So the module's shape is **idempotent reconciliation**, not construction:
+`ensure(workspace) -> Root`, safe to call on every run, writing only what has
+drifted. A run leaves behind four stable files (`installation_id`,
+`projects.json`, `settings.json`, `.project_root`) plus its session JSONL;
+session growth is bounded by setting `general.sessionRetention` in the same file.
+
 Consequences and limits, stated plainly:
 
 - The root is Ralphy state, under its existing conventions, and is **created and
   owned by the adapter**, never merged with the operator's.
+- 🔬 **Skills and hooks both resolve from the relocated root**, so D4's claim that
+  it *is* the user scope is verified, not assumed: `gemini skills list` reported
+  the skill from the relocated path, `activate_skill` loaded its body, and an
+  `AfterAgent` hook declared there fired with a 1 278-byte payload.
 - The operator's user-scope skills at `~/.gemini/skills/` are invisible to a
   Ralphy run — the same behaviour change ADR-0042 D17 documents for Cursor, and
   worth surfacing in `ralphy init` for the same reason.
@@ -236,7 +265,28 @@ three independent ways it is revoked, none visible on the command line:
    `Approval mode overridden to "default"` and demotes the run.
 
 So the adapter always passes `--approval-mode yolo` **and** `--skip-trust`
-(against #3 and exit 55), and ships its own `--policy` file from the owned root.
+(against #3 and exit 55), and ships its own `--policy` file on argv.
+
+### 🔬 `--policy` outranks the user tier — measured, not inferred
+
+The open question was which tier an argv policy lands in. It was settled by
+staging a conflict: a **user-tier** rule inside the run's own root
+(`policies/allow-shell.toml`, `decision = "allow"`, `priority = 900` → final
+`4.900`) against an **argv** rule (`decision = "deny"`, `priority = 100`).
+
+The deny won. The model reported no shell tool existed at all.
+
+So argv policy is **sovereign over anything the operator's configuration can
+say** — which is what makes D5 a real mitigation rather than a hopeful one, and
+it holds independently of D4. Note the two combine: D4 removes user-tier policy
+from the picture, and `--policy` would beat it even if it did not.
+
+⚠ Untested, and presumed to remain true: an **admin**-tier deny (base 5) is
+expected to outrank argv. Admin controls stay out of reach by design.
+
+The policy denies `run_shell_command` only where a run should not shell out, and
+**always denies `invoke_agent`** — see D15's correction for why that, and not a
+settings key, is the control.
 
 `--yolo` is not used: the documentation marks it deprecated in favour of
 `--approval-mode=yolo`, even though `--help` does not.
@@ -456,12 +506,32 @@ forces:
 
 | Setting | Value | Why |
 |---|---|---|
-| `experimental.enableAgents` | `false` | **Remote A2A agents are enabled by default** and are defined by repo-local `.gemini/agents/*.md` with an arbitrary `agent_card_url`. A cloned repo could point the agent at a third-party endpoint. This also disables the local subagents that D5 saw attempting a policy escape, and that bill independently. |
+| `experimental.enableAgents` | `false` | Set defensively, **but not relied upon** — see the correction below. Remote A2A agents are on by default and are defined by repo-local `.gemini/agents/*.md` with an arbitrary `agent_card_url`, so a cloned repo could aim delegation at a third-party endpoint. |
 | `privacy.usageStatisticsEnabled` | `false` | On by default. Ralphy does not opt the operator's supervised runs into vendor analytics. |
 | `telemetry.enabled` | left `false` | Already the default; if ever enabled, `logPrompts` defaults to `true` and would ship prompt text. |
 | `experimental.autoMemory` | left `false` | Already off; would spend background model calls mining transcripts. |
 | `tools.sandbox` | left off | The Windows native sandbox sets **persistent** low-integrity ACLs that survive the session. |
 | `experimental.worktrees` | left off | Ralphy owns its branches. |
+
+### 🔬 Correction: `experimental.enableAgents: false` does **not** disable delegation
+
+An earlier draft treated that setting as the control for subagents and remote
+agents. **Measured, it does not work.** With
+`{"experimental":{"enableAgents":false}}` in the run's own root, the model still
+called `invoke_agent{agent_name: "generalist"}` and the tool returned
+`status: "success"` — the subagent ran.
+
+**The working control is the D5 policy deny, and it is strictly better.** With
+`toolName = "invoke_agent"`, `decision = "deny"` passed via `--policy`, the tool
+was **removed from the model's schema entirely**: the model reported that
+`invoke_agent` *"is not defined or available in the current environment's tool
+schema"* and went searching the codebase for what the name meant.
+
+That property is the reason to prefer the policy — a global deny excludes the
+tool from the model's memory rather than refusing it at call time, so the model
+cannot burn turns arguing with a refusal it never sees. The blast radius is
+therefore closed by **one mechanism, not two**, and the settings key above is set
+defensively but never relied upon.
 
 `--approve-mcps` has no equivalent here and no MCP servers are configured in the
 owned root, so the repo-local `.gemini/mcp.json` vector is closed by D4 rather

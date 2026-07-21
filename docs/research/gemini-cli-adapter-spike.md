@@ -513,6 +513,21 @@ for, and the first vendor to offer it since Claude's Stop hook.
 
 Order observed: `SessionStart` → `BeforeAgent` → `AfterAgent` → `SessionEnd`.
 
+### 🔬 A broken hook is loud; a wrong-scope hook is silent (P29)
+
+The two failure modes are distinguishable, which matters for diagnosing a hook
+that "does nothing". A hook whose command is malformed reports itself:
+
+```
+Hook system message: Warning: [eval]:1  … SyntaxError: Invalid or unexpected token
+Hook execution for AfterAgent: 0 succeeded, 1 failed (probe), total duration: 404ms
+[WARNING] Hook(s) [probe] failed for event AfterAgent.
+```
+
+A hook declared in the wrong scope produces **nothing at all** — no warning, no
+stderr line — because it was never loaded. So: *silence means the scope is
+wrong; noise means the script is wrong.*
+
 ### 🔬 The catch: **workspace-scope hooks are silently ignored**
 
 The identical hook block was probed twice with the same command strings:
@@ -1639,6 +1654,10 @@ auth `gemini-api-key`, CLI `0.51.0` on Windows.
 | P24 | `ACCEPTS_IMAGES` — headless vision via `@path` | C10 | ✅ **pass** — `true`, delivered in the prompt string, not argv |
 | P25 | `@mention` safety in issue-body text | C10 | ✅ **fails safe** — unresolvable `@tokens` pass through literally |
 | P26 | process-tree kill / orphan sweep | C1/C10 | ✅ **pass** — 5-deep tree, `taskkill /F /T` clears it all; no new machinery needed |
+| P27 | **root lifetime** — is a relocated root scratch or persistent? | C5/C9 | ✅ **persistent** — `installation_id` minted per root and stable within it; CLI never rewrites our `settings.json`; cold root still hits the server cache |
+| P28 | **`--policy` vs a user-tier rule** | C9 | ✅ **argv wins** — user `allow`@900 (final 4.900) lost to argv `deny`@100; the tool vanished from the model's schema |
+| P29 | skills + hooks from the **relocated** root | C8/C3 | ✅ **both work** — `skills list` and `activate_skill` resolve there; an `AfterAgent` hook declared there fired (1 278-byte payload) |
+| P30 | does `experimental.enableAgents: false` stop delegation? | C9 | ❌ **no** — `invoke_agent` still ran and returned success. The policy deny is the only working control |
 | P17 | does description-matching alone activate a skill, without naming it? | C8 | ⬜ open |
 | P23 | `GEMINI_CLI_HOME` isolation under **OAuth** auth (credential is file-based there) | C5 | ⬜ open |
 
