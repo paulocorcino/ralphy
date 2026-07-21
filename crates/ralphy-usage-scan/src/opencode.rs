@@ -148,6 +148,7 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
                 tokens: Some(agg.tokens),
                 first_ts: ms_to_rfc3339(agg.first_ms),
                 last_ts: ms_to_rfc3339(agg.last_ms),
+                lower_bound: false,
             }
         })
         .collect();

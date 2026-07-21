@@ -88,6 +88,7 @@ fn scan_chats(
                     tokens: None,
                     first_ts: ms_to_rfc3339(ms("createdAtMs")),
                     last_ts: ms_to_rfc3339(ms("updatedAtMs")),
+                    lower_bound: false,
                 },
             );
         }
@@ -136,6 +137,7 @@ fn scan_transcripts(
                     tokens: None,
                     first_ts: ts.clone(),
                     last_ts: ts,
+                    lower_bound: false,
                 },
             );
         }
@@ -277,6 +279,10 @@ mod tests {
             "`last_ts` must come from `updatedAtMs` — it is what `since` filters on"
         );
         assert_eq!(records[0].first_ts, META_FIRST_TS);
+        assert!(
+            !records[0].lower_bound,
+            "only a vendor that hides spend on disk (ADR-0043 D10) flags a floor"
+        );
     }
 
     #[test]

@@ -56,6 +56,10 @@ pub struct InteractiveRecord {
     pub tokens: Option<Tokens>,
     pub first_ts: String,
     pub last_ts: String,
+    /// `true` means the vendor makes a complete figure impossible, so these
+    /// counts are a FLOOR, not the bill (ADR-0043 D10). A consumer MUST label
+    /// such a record — never present it as a total.
+    pub lower_bound: bool,
 }
 
 /// A repo the daemon knows about, as the scan needs it: the `owner/repo` slug it

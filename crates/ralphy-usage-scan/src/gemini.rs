@@ -24,8 +24,9 @@
 //! LOWER BOUND: every run also makes a silent `utility_router` model call whose
 //! tokens are NEVER written to disk (ADR-0043 D10, measured at 20–35% of the
 //! envelope total). What this scan reports is therefore a floor, not the bill.
-//! Labelling that floor for the operator is #262's deliverable, not this
-//! module's.
+//! Every record this module emits carries `lower_bound: true` so the operator is
+//! never shown the floor as a total; the workbench's Usage modal renders it as
+//! `≥ n (lower bound)` (`assets/ui/app.js::usageTokens`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -76,6 +77,7 @@ pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
                     tokens: Some(tokens),
                     first_ts: fold.first_ts.clone(),
                     last_ts: fold.last_ts.clone(),
+                    lower_bound: true,
                 });
             }
         }
@@ -337,6 +339,24 @@ mod tests {
         );
         assert_eq!(records[0].first_ts, "2026-07-21T00:56:00Z");
         assert_eq!(records[0].last_ts, "2026-07-21T01:00:00Z");
+    }
+
+    /// ADR-0043 D10: the silent `utility_router` call is never on disk, so every
+    /// Gemini record is a floor and must say so to its consumers.
+    #[test]
+    fn the_record_is_flagged_a_lower_bound() {
+        let tmp = tempfile::tempdir().unwrap();
+        seed(
+            tmp.path(),
+            "fincal",
+            "c:\\dev\\fincal",
+            "session-x.jsonl",
+            &format!("{HEADER}\n{TURN}\n"),
+        );
+
+        let records = scan(tmp.path());
+        assert_eq!(records.len(), 1, "{records:?}");
+        assert!(records[0].lower_bound);
     }
 
     /// ADR-0040 C6's bill-multiplier trap in the opposite direction: a keep-last

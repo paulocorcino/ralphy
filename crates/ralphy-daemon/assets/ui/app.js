@@ -1069,11 +1069,15 @@ function shell() {
     // Sum a record's token buckets into one total for the compact list. A null
     // `tokens` means the vendor keeps no count anywhere (Cursor, ADR-0042 D11) —
     // render that as "unavailable", never as 0, which would read as "spent
-    // nothing".
+    // nothing". A `lower_bound` record is a FLOOR, not the bill (Gemini hides its
+    // router's tokens, ADR-0043 D10) — carry the caveat on the number itself, so
+    // it cannot be read without it.
     usageTokens(rec) {
       const t = rec && rec.tokens;
       if (!t) return "unavailable";
-      return (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
+      const total =
+        (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
+      return rec.lower_bound ? "≥ " + total + " (lower bound)" : total;
     },
 
     // --- about (read-only) ------------------------------------------------

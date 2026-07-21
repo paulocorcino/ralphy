@@ -297,6 +297,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
                 tokens: Some(agg.tokens),
                 first_ts: agg.first_ts.map(|d| d.to_rfc3339()).unwrap_or_default(),
                 last_ts: agg.last_ts.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                lower_bound: false,
             }
         })
         .collect();

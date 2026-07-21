@@ -99,6 +99,7 @@ pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
                     }),
                     first_ts: agg.first_ts.unwrap_or_default(),
                     last_ts: agg.last_ts.unwrap_or_default(),
+                    lower_bound: false,
                 });
             }
         }

@@ -2614,6 +2614,14 @@ mod tests {
             !body_string.contains("usd"),
             "no pricing in the payload; got: {body_string}"
         );
+
+        // A vendor that writes every token to disk reports a total, not a floor:
+        // a blanket `lower_bound: true` would mislabel the whole modal.
+        let claude = interactive
+            .iter()
+            .find(|r| r.get("session_id").and_then(|v| v.as_str()) == Some("int-sess"))
+            .unwrap();
+        assert_eq!(claude["lower_bound"].as_bool(), Some(false), "{claude}");
     }
 
     /// `/api/usage` also carries Codex interactive records: a rollout under the
@@ -3003,6 +3011,9 @@ mod tests {
         // the whole route, not just the scan's own unit test.
         assert_eq!(record["tokens"]["output"].as_u64(), Some(287), "{record}");
         assert_eq!(record["tokens"]["input"].as_u64(), Some(20637), "{record}");
+        // ADR-0043 D10: the served record must carry the floor label, or the UI
+        // has nothing to render `≥ n (lower bound)` from.
+        assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
     }
 
     #[test]

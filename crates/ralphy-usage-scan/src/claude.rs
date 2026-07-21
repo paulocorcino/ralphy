@@ -180,6 +180,7 @@ fn parse_transcript(
                 }),
                 first_ts: group.first_ts.unwrap_or_default(),
                 last_ts: group.last_ts.unwrap_or_default(),
+                lower_bound: false,
             }
         })
         .collect()

@@ -871,6 +871,9 @@
                 </template>
               </tbody>
             </table>
+            <div class="usage-empty" x-show="usage.interactive.some(r =&gt; r.lower_bound)">
+              a &#8805; figure is a lower bound — the vendor never writes its router's tokens to disk
+            </div>
           </section>
         </div>
         <div class="modal-foot">
