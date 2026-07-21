@@ -16,8 +16,9 @@
 //!   interactive Cursor sessions (D4/D17).
 //!
 //! The same two gates cover the one-shot verbs in [`tasks`], which run outside the
-//! `Agent` contract entirely. Token usage is its own slice of #242 and is
-//! deliberately absent here.
+//! `Agent` contract entirely. Token usage is captured in [`usage`] from the
+//! stream's terminal `result` record and summed per invocation — records are
+//! incremental, not cumulative (ADR-0042 D11).
 
 use std::fs;
 use std::path::PathBuf;
@@ -64,6 +65,7 @@ use command::{build_cursor_command, mint_session_id};
 use model::model_refusal_stop;
 use outcome::{classify_cursor_outcome, fold_cursor_stream};
 use skills::materialize_cursor_skills;
+use usage::parse_cursor_usage;
 
 /// `false` (ADR-0042 D15): no attachment channel appears anywhere in Cursor's
 /// headless surface, so a triage attachment fetched per ADR-0025 §4 has no
@@ -240,11 +242,19 @@ impl Agent for CursorAgent {
             |log| model_refusal_stop(log, model),
         )?;
 
+        // A RESUMED plan (no child ran, `session` is `None`) must keep the
+        // zero-token attributed value, never a stale one.
+        let plan_usage = session
+            .as_ref()
+            .map(|(r, _)| parse_cursor_usage(&r.stdout, model))
+            .unwrap_or_else(|| requested_model_usage(model));
+
         if let Some((r, _)) = session.as_ref() {
             let fold = fold_cursor_stream(&r.stdout);
             Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
             note_degraded(&fold);
             note_vendor_error(&fold);
+            note_usage_provenance(&self.config_dir(), &session_id);
         }
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -253,12 +263,9 @@ impl Agent for CursorAgent {
             // Cursor's model axis is a plan entitlement, not a complexity tier (D5).
             recommended_model: None,
             path: plan_path,
-            // TOKEN accounting is its own slice of #242: `result.usage` is the only
-            // accounting this vendor has (D11), and reporting a number without that
-            // slice's sum-vs-keep-last fixture test is exactly the failure ADR-0040
-            // C6 warns about. What IS reported here is the model Ralphy REQUESTED,
-            // so a pinned run is distinguishable from a routed one.
-            usage: requested_model_usage(model),
+            // `result.usage` is the only accounting this vendor has (D11); see
+            // `usage.rs` for the stream capture and the incremental-sum rule.
+            usage: plan_usage,
             // `None` = a finalized plan was RESUMED and no `cursor-agent` ran.
             session_id: session.map(|_| session_id),
         })
@@ -317,6 +324,7 @@ impl Agent for CursorAgent {
         Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
         note_degraded(&fold);
         note_vendor_error(&fold);
+        note_usage_provenance(&self.config_dir(), &session_id);
         let outcome: Outcome =
             classify_cursor_outcome(&fold, r.exited_cleanly, r.timed_out, committed, r.exit_code);
         info!(
@@ -333,8 +341,8 @@ impl Agent for CursorAgent {
         );
         Ok(Execution {
             outcome,
-            // See `plan`: token accounting is its own slice of #242.
-            usage: requested_model_usage(model),
+            // See `plan`: `result.usage` is the stream's own accounting (D11).
+            usage: parse_cursor_usage(&r.stdout, model),
             session_id: Some(session_id),
         })
     }
@@ -369,6 +377,18 @@ fn note_vendor_error(fold: &outcome::CursorFold) {
     if let Some(msg) = fold.vendor_error.as_deref() {
         tracing::warn!("cursor stopped the turn: {msg}");
     }
+}
+
+/// State the credit/token unit mismatch once per phase (story 33). The
+/// on-disk store lookup is informational only — the vendor's stores hold no
+/// token count either way, so a `None` result ("no on-disk record") is
+/// normal, not an error, and this never turns an `Err` return into a
+/// different outcome.
+fn note_usage_provenance(config_dir: &std::path::Path, session_id: &str) {
+    let store = usage::cursor_session_store(config_dir, session_id)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "no on-disk record".to_string());
+    tracing::warn!("{} (session store: {store})", usage::CURSOR_CREDIT_NOTE);
 }
 
 #[cfg(test)]
@@ -446,6 +466,34 @@ mod tests {
         let agent = CursorAgent::new(None, PathBuf::from("/run"))
             .with_idle_minutes(ralphy_core::DEFAULT_IDLE_MINUTES);
         assert_eq!(agent.budget.idle_minutes, ralphy_core::DEFAULT_IDLE_MINUTES);
+    }
+
+    /// Story 33: both phases must report the stream's OWN usage, not the
+    /// requested-model-only attribution — deleting either call site keeps the
+    /// suite green unless this pin catches it (#249).
+    #[test]
+    fn both_phases_report_stream_usage() {
+        let src = include_str!("lib.rs");
+        let call = concat!("parse_cursor_usage(", "&r.stdout,");
+        assert_eq!(
+            src.matches(call).count(),
+            2,
+            "both phases must report the stream's own usage (#249)"
+        );
+    }
+
+    /// Story 33: both phases must state the credit/token unit mismatch —
+    /// deleting either call site keeps the suite green unless this pin catches
+    /// it.
+    #[test]
+    fn every_run_notes_the_credit_unit_mismatch() {
+        let src = include_str!("lib.rs");
+        let call = concat!("note_usage_provenance(", "&self");
+        assert_eq!(
+            src.matches(call).count(),
+            2,
+            "story 33: both phases must state the credit/token unit mismatch"
+        );
     }
 
     /// A source-text pin in the style of `outcome.rs::the_gate_runs_before_any_child_is_spawned`:

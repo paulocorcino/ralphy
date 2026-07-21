@@ -490,6 +490,13 @@ graph in two tables) and `~/.cursor/projects/<cwd-slug>/agent-transcripts/…jso
 summing per-invocation usage across a whole issue matches what Cursor's own
 dashboard bills, given the credit/token unit mismatch.
 
+**Implemented** (#249): `crates/ralphy-agent-cursor/src/usage.rs` —
+`parse_cursor_usage` sums the terminal `result.usage` records, wired into both
+`plan()` and `execute()`; `cursor_session_store` locates the run's own scratch
+store; `CURSOR_CREDIT_NOTE` states the credit/token unit mismatch once per
+phase via `note_usage_provenance`. Tests assert the sum against the two live
+P20 fixtures.
+
 ## D12 — Skills materialize into the repo-local Cursor root; the foreign harvest is accepted and documented
 
 Cursor auto-discovers `SKILL.md` recursively under `.agents/skills`,
