@@ -136,8 +136,26 @@ impl GeminiAgent {
     /// call it before their spawn, so a root deleted between phases is recreated
     /// rather than silently falling back to the operator's own. (The login probe
     /// calls `root::ensure` directly and carries no policy; see `run_gemini`.)
+    ///
+    /// It is also where the administrator's own tier is READ and REPORTED (D5).
+    /// Both `plan` and `execute` propagate this with `?` from inside their `run`
+    /// closure, so an autonomy-disabling control stops the run before any child
+    /// exists — on every path, since nothing between `root::ensure` and the bail
+    /// can swallow it. `auth::probe_gemini_login` deliberately does NOT gain the
+    /// check: it makes no model call and must still answer `ralphy init`'s
+    /// onboarding gate on a managed machine.
     fn prepare_root(&self, base: &Path) -> Result<(root::GeminiRoot, PathBuf, Option<String>)> {
         let root = root::ensure(base)?;
+        let admin = revocation::read_admin_tier();
+        for control in &admin {
+            tracing::warn!("gemini: {}", control.message());
+        }
+        if let Some(stop) = admin
+            .iter()
+            .find(|c| matches!(c, revocation::AdminControl::AutonomyDisabled(_)))
+        {
+            anyhow::bail!("{}", stop.message());
+        }
         tracing::debug!(
             home = %root.home.display(),
             settings = %root.settings.display(),
@@ -207,7 +225,18 @@ impl Agent for GeminiAgent {
             // plan". This vendor reserves NO exit code for quota (D11), so the
             // text is the only signal there is, and no reset hint is recoverable
             // — the ADR-0030 synthetic cadence sets the wait.
-            |log| outcome::gemini_limit_note(log).map(|_| PlanLimit { reset: None }.into()),
+            //
+            // A REVOCATION is checked first and is deliberately not a limit: a
+            // Strict-Mode stop or a demoted approval mode will not heal on a
+            // retry, so scheduling one would burn the issue's whole budget
+            // re-asking a question the administrator already answered.
+            |log| {
+                revocation::detect_revocation(log)
+                    .map(|r| anyhow::anyhow!("{}", r.message(None, log)))
+                    .or_else(|| {
+                        outcome::gemini_limit_note(log).map(|_| PlanLimit { reset: None }.into())
+                    })
+            },
         )?;
 
         if let Some((r, ())) = session.as_ref() {
