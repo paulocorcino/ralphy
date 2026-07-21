@@ -675,9 +675,14 @@ async fn session_ws_upgrade(
     if agent == session::Agent::Gemini
         && !session::gemini_policy_path(Path::new(&entry.path)).is_file()
     {
+        // The remedy names ONLY the run verb: `ralphy init`'s login probe calls
+        // `root::ensure` directly and writes no policy document
+        // (`ralphy-agent-gemini/src/lib.rs` — `write_policy` is reached only from
+        // `prepare_root`), so naming it here would send the operator round a loop
+        // that ends in this same refusal.
         return (
             StatusCode::BAD_REQUEST,
-            "gemini: no owned configuration root in this repo — run `ralphy init` or `ralphy run --agent gemini` here first",
+            "gemini: no owned configuration root in this repo — run `ralphy run --agent gemini` here first (`ralphy init` alone does not write the policy document)",
         )
             .into_response();
     }

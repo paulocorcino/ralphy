@@ -9,11 +9,17 @@
 //! records are SUMMED, never kept-last (ADR-0040 C6: getting this backwards
 //! multiplies the bill).
 //!
-//! Billable output is `tokens.total − tokens.input`, not `tokens.output`:
-//! `total` already contains `thoughts` (20637 + 30 + 257 = 20924 on the spike's
-//! captured record), so the bare `output` field under-reports every reasoning
-//! turn. `cache_read` is `tokens.cached`, which `tokens.input` already contains
-//! — it is reported, never added again.
+//! Two arithmetic rules, both verified against live records on the build host:
+//!
+//! - Billable output is `tokens.total − tokens.input`, not `tokens.output`:
+//!   `total` already contains `thoughts` (20637 + 30 + 257 = 20924 on the spike's
+//!   captured record), so the bare `output` field under-reports every reasoning
+//!   turn.
+//! - `tokens.input` INCLUDES the cached subset (live: `input: 14134` with
+//!   `cached: 8133`), but [`Tokens`](crate::Tokens)' four buckets are DISJOINT —
+//!   consumers SUM them. So the reported `input` is `input − cached` and
+//!   `cache_read` is `cached`, mirroring `codex.rs`. Reporting the raw `input`
+//!   beside `cache_read` would bill every cache hit twice.
 //!
 //! LOWER BOUND: every run also makes a silent `utility_router` model call whose
 //! tokens are NEVER written to disk (ADR-0043 D10, measured at 20–35% of the
@@ -150,7 +156,7 @@ fn fold_session(lines: &str) -> Option<Fold> {
             session_id.get_or_insert_with(|| id.to_string());
         }
         if let Some(start) = value.get("startTime").and_then(|v| v.as_str()) {
-            if first_ts.is_empty() || start < first_ts.as_str() {
+            if first_ts.is_empty() || earlier(start, &first_ts) {
                 first_ts = start.to_string();
             }
         }
@@ -160,7 +166,7 @@ fn fold_session(lines: &str) -> Option<Fold> {
             .flatten()
             .filter_map(|v| v.as_str())
         {
-            if updated > last_ts.as_str() {
+            if last_ts.is_empty() || earlier(&last_ts, updated) {
                 last_ts = updated.to_string();
             }
         }
@@ -171,13 +177,22 @@ fn fold_session(lines: &str) -> Option<Fold> {
             continue;
         };
         let n = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let (input, total) = (n("input"), n("total"));
+        let (input, cached) = (n("input"), n("cached"));
+        // A record with no `total` cannot be differenced — reconstruct the sum
+        // from the parts instead, or the turn would report input-only spend.
+        let total = match tokens.get("total").and_then(|v| v.as_u64()) {
+            Some(t) => t,
+            None => input + n("output") + n("thoughts"),
+        };
         let agg = by_model.entry(model.to_string()).or_default();
-        agg.input += input;
+        // `input` INCLUDES `cached` in this store (live: 14134 = 8133 cached +
+        // 6001 fresh, and 14134 + 37 output + 218 thoughts = 14389 total), but
+        // `Tokens`' four buckets are DISJOINT — a consumer sums them. Subtract the
+        // cached subset out, exactly as `codex.rs` does for `input_tokens`.
+        agg.input += input.saturating_sub(cached);
         // `total` already carries `thoughts`; the bare `output` field does not.
         agg.output += total.saturating_sub(input);
-        // `input` already carries `cached` — reported, never added again.
-        agg.cache_read += n("cached");
+        agg.cache_read += cached;
     }
 
     let session_id = session_id?;
@@ -190,6 +205,20 @@ fn fold_session(lines: &str) -> Option<Fold> {
         first_ts,
         last_ts,
     })
+}
+
+/// True when `a` names a strictly earlier instant than `b`. Compared as parsed
+/// instants, falling back to a byte compare when either side is unparseable: this
+/// store mixes `…Z` (the header) with whatever a future writer emits, and `Z`
+/// sorts AFTER `+00:00` lexicographically, which would pick the wrong span end.
+fn earlier(a: &str, b: &str) -> bool {
+    match (
+        chrono::DateTime::parse_from_rfc3339(a),
+        chrono::DateTime::parse_from_rfc3339(b),
+    ) {
+        (Ok(a), Ok(b)) => a < b,
+        _ => a < b,
+    }
 }
 
 /// `(project slug, git actor email)` for the registered repo whose path is
@@ -253,6 +282,12 @@ mod tests {
     /// A format change reds against the same bytes the spike observed.
     const TURN: &str = r#"{"id":"78d80d17","type":"gemini","content":"OK","tokens":{"input":20637,"output":30,"cached":0,"thoughts":257,"tool":0,"total":20924},"model":"gemini-3.1-pro-preview-customtools"}"#;
 
+    /// A turn with a REAL cache hit, copied verbatim off this host's live store
+    /// (`~/.gemini/tmp/*/chats/`). The arithmetic that matters:
+    /// `14134 + 37 + 218 = 14389`, so `total` carries `thoughts`, AND
+    /// `cached: 8133 < input: 14134`, so `input` carries the cached subset.
+    const CACHED_TURN: &str = r#"{"id":"c1","type":"gemini","content":"OK","tokens":{"input":14134,"output":37,"cached":8133,"thoughts":218,"tool":0,"total":14389},"model":"gemini-3.5-flash"}"#;
+
     /// A subagent turn on its own model, from the same spike observation
     /// (17 595 tokens on `gemini-3.5-flash`).
     const SUBAGENT: &str = r#"{"sessionId":"78d80d17-sub","startTime":"2026-07-21T00:58:00Z","lastUpdated":"2026-07-21T00:59:00Z","kind":"subagent"}
@@ -306,6 +341,11 @@ mod tests {
 
     /// ADR-0040 C6's bill-multiplier trap in the opposite direction: a keep-last
     /// implementation returns `20637`/`287` here and reds.
+    ///
+    /// The two turns are DIFFERENT records on DIFFERENT models, so this also reds
+    /// a fold that folds one turn and multiplies by the turn count, and one that
+    /// mis-keys the per-model aggregate — both of which two byte-identical turns
+    /// would satisfy.
     #[test]
     fn usage_is_summed_not_kept_last() {
         let tmp = tempfile::tempdir().unwrap();
@@ -314,14 +354,89 @@ mod tests {
             "fincal",
             "c:\\dev\\fincal",
             "session-x.jsonl",
-            &format!("{HEADER}\n{TURN}\n{TURN}\n"),
+            &format!("{HEADER}\n{TURN}\n{TURN}\n{CACHED_TURN}\n"),
+        );
+
+        let mut records = scan(tmp.path());
+        // One session, two models → two records, both under the same session id.
+        assert_eq!(records.len(), 2, "{records:?}");
+        records.sort_by(|a, b| a.model.cmp(&b.model));
+        assert!(records
+            .iter()
+            .all(|r| r.session_id == "ralphy-probe-p1p2p3p4p6"));
+
+        let pro = records[0].tokens.clone().unwrap();
+        assert_eq!(records[0].model, "gemini-3.1-pro-preview-customtools");
+        assert_eq!(pro.input, 41274, "two identical turns SUM");
+        assert_eq!(pro.output, 574);
+
+        let flash = records[1].tokens.clone().unwrap();
+        assert_eq!(records[1].model, "gemini-3.5-flash");
+        assert_eq!(
+            (flash.input, flash.output, flash.cache_read),
+            (6001, 255, 8133),
+            "the third turn's model must keep its OWN aggregate"
+        );
+    }
+
+    /// `Tokens`' four buckets are DISJOINT — every consumer sums them
+    /// (`app.js` renders `input + output + cache_read + cache_creation`). This
+    /// store's `input` INCLUDES `cached`, so the cached subset must be subtracted
+    /// out of `input`, the way `codex.rs` does. A fold that reports the raw
+    /// `input` alongside `cache_read` bills the cached tokens twice; one that
+    /// drops `cache_read` loses them. Both red here, and no `cached: 0` fixture
+    /// can discriminate either.
+    #[test]
+    fn a_cache_hit_is_reported_once_not_folded_into_input_as_well() {
+        let tmp = tempfile::tempdir().unwrap();
+        seed(
+            tmp.path(),
+            "fincal",
+            "c:\\dev\\fincal",
+            "session-x.jsonl",
+            &format!("{HEADER}\n{CACHED_TURN}\n"),
         );
 
         let records = scan(tmp.path());
         assert_eq!(records.len(), 1, "{records:?}");
         let tokens = records[0].tokens.clone().unwrap();
-        assert_eq!(tokens.input, 41274);
-        assert_eq!(tokens.output, 574);
+        assert_eq!(
+            tokens,
+            Tokens {
+                input: 6001,      // 14134 − 8133: the FRESH prompt only
+                output: 255,      // 14389 − 14134: output + thoughts
+                cache_read: 8133, // reported here, and only here
+                cache_creation: 0,
+            }
+        );
+        // The whole turn is still accounted for: nothing was lost by splitting it.
+        assert_eq!(
+            tokens.input + tokens.output + tokens.cache_read,
+            14389,
+            "the disjoint buckets must still sum to the store's own `total`"
+        );
+    }
+
+    /// A turn with no `total` cannot be differenced. Reconstructing the sum from
+    /// the parts keeps its output; a bare `saturating_sub` clamps output to 0 and
+    /// silently reports input-only spend.
+    #[test]
+    fn a_turn_missing_total_reconstructs_its_output_from_the_parts() {
+        let tmp = tempfile::tempdir().unwrap();
+        seed(
+            tmp.path(),
+            "fincal",
+            "c:\\dev\\fincal",
+            "session-x.jsonl",
+            &format!(
+                "{HEADER}\n{}\n",
+                r#"{"id":"n1","type":"gemini","tokens":{"input":100,"output":7,"cached":0,"thoughts":11},"model":"m"}"#
+            ),
+        );
+
+        let tokens = scan(tmp.path())[0].tokens.clone().unwrap();
+        assert_eq!(tokens.input, 100);
+        assert_eq!(tokens.output, 18, "output + thoughts, not a clamped 0");
     }
 
     #[test]

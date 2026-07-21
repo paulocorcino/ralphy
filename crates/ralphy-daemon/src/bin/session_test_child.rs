@@ -13,9 +13,10 @@
 //! - The main loop reads stdin lines: `quit` exits 0; `spawn-grandchild` spawns a
 //!   copy of itself in `sleep` mode inheriting this stdout (the pipe write-end
 //!   stays open after the direct child dies, so only a process-tree kill reaches
-//!   EOF); `env <NAME>` prints `ENV:<NAME>=<value>` — the only way a test can
-//!   observe the environment the launcher actually gave the child; any other line
-//!   echoes as `GOT:<line>`.
+//!   EOF); `env <NAME>` prints `ENV:<NAME>=<value>` and `argv` prints
+//!   `ARGV:<args…>` — the only way a test can observe the environment and the
+//!   command line the launcher actually gave the child, rather than the spec it
+//!   built; any other line echoes as `GOT:<line>`.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
 use std::io::{BufRead, Write};
@@ -27,6 +28,8 @@ pub const CWD_MARKER: &str = "CWD:";
 pub const GOT_MARKER: &str = "GOT:";
 /// Prefix of the line reporting one environment variable (`ENV:<NAME>=<value>`).
 pub const ENV_MARKER: &str = "ENV:";
+/// Prefix of the line reporting the child's own argv (`ARGV:<a> <b> …`).
+pub const ARGV_MARKER: &str = "ARGV:";
 /// Prefix of the line reporting the current terminal size (`SIZE <cols>x<rows>`).
 pub const SIZE_MARKER: &str = "SIZE";
 
@@ -78,6 +81,11 @@ fn main() {
                 if let Ok(exe) = std::env::current_exe() {
                     let _ = std::process::Command::new(exe).arg("sleep").spawn();
                 }
+            }
+            "argv" => {
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                println!("{ARGV_MARKER}{}", args.join(" "));
+                let _ = std::io::stdout().flush();
             }
             other if other.starts_with("env ") => {
                 let name = other["env ".len()..].trim();

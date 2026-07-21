@@ -5,9 +5,10 @@
 //!
 //! Two legs against one live loopback daemon: the URL is refused with `400` and no
 //! session while the repo has no owned root, then — once the policy document
-//! exists — it launches and the child reports back the `GEMINI_CLI_HOME` it was
-//! actually given, which is the only observation that proves the containment
-//! reached the process rather than only the spec.
+//! exists — it launches and the child reports back BOTH halves of the containment
+//! it was actually given: the `GEMINI_CLI_HOME` in its environment and the
+//! `--policy` in its own argv. Reading them off the CHILD, not the spec, is what
+//! makes this prove the containment reached the process.
 
 use std::time::{Duration, Instant};
 
@@ -112,13 +113,30 @@ async fn gemini_session_refuses_a_rootless_repo_and_launches_under_the_owned_one
     let home = dir.path().join(".ralphy").join("gemini-home");
     let cli_dir = home.join(".gemini");
     std::fs::create_dir_all(&cli_dir).unwrap();
-    std::fs::write(cli_dir.join("ralphy-policy.toml"), "# policy\n").unwrap();
+    let policy = cli_dir.join("ralphy-policy.toml");
+    std::fs::write(&policy, "# policy\n").unwrap();
 
     let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
         .await
         .expect("a repo with an owned root must upgrade");
 
+    // BOTH halves of the containment are read back off the LIVE child, not off the
+    // spec: the env var it was spawned with, and its own argv. A regression that
+    // dropped `spec.args` would leave the root right and the policy gone.
     ws.send(terminal(b"env GEMINI_CLI_HOME\r")).await.unwrap();
+    ws.send(terminal(b"argv\r")).await.unwrap();
+
+    // The PTY wraps and reflows, so every comparison runs on a separator-
+    // normalized, whitespace-stripped view.
+    fn flatten(s: &str) -> String {
+        s.replace('\\', "/")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    }
+    let want_env = flatten(&format!("ENV:GEMINI_CLI_HOME={}", home.to_string_lossy()));
+    let want_argv = flatten(&format!("ARGV:--policy {}", policy.to_string_lossy()));
+
     let got = tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();
         while let Some(msg) = ws.next().await {
@@ -136,7 +154,11 @@ async fn gemini_session_refuses_a_rootless_repo_and_launches_under_the_owned_one
                     ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
                 }
                 acc.push_str(&String::from_utf8_lossy(&data));
-                if acc.contains("ENV:GEMINI_CLI_HOME=") && acc.contains('\n') {
+                // Wait for the COMPLETE value of each, not merely the marker: the
+                // echo of the typed command already puts a newline in `acc`, so a
+                // "marker plus any newline" condition returns on a partial read.
+                let flat = flatten(&acc);
+                if flat.contains(&want_env) && flat.contains(&want_argv) {
                     return acc;
                 }
             }
@@ -144,23 +166,16 @@ async fn gemini_session_refuses_a_rootless_repo_and_launches_under_the_owned_one
         acc
     })
     .await
-    .expect("the gemini session's env round-trip must complete within 10s");
+    .expect("the gemini session's env + argv round-trip must complete within 10s");
 
-    // The PTY wraps and reflows, so compare on a separator-normalized, whitespace-
-    // stripped view rather than on the raw line.
-    let flat: String = got
-        .replace('\\', "/")
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    let want = format!(
-        "ENV:GEMINI_CLI_HOME={}",
-        home.to_string_lossy().replace('\\', "/")
-    );
-    let want: String = want.chars().filter(|c| !c.is_whitespace()).collect();
+    let flat = flatten(&got);
     assert!(
-        flat.contains(&want),
-        "the workbench child must run under the repo's OWN gemini root; wanted {want}, got:\n{got}"
+        flat.contains(&want_env),
+        "the workbench child must run under the repo's OWN gemini root; wanted {want_env}, got:\n{got}"
+    );
+    assert!(
+        flat.contains(&want_argv),
+        "the workbench child must carry --policy pointing at the owned root's document; wanted {want_argv}, got:\n{got}"
     );
 
     ws.send(terminal(b"quit\r")).await.unwrap();

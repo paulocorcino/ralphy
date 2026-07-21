@@ -452,6 +452,19 @@ it. Consequence the operator will meet: a repo where `ralphy run --agent gemini`
 has never run cannot open a Gemini console from the workbench, because
 `ralphy init`'s probe calls `root::ensure` directly and writes no policy.
 
+**A gap this issue OPENS, deliberately unclosed.** A workbench-launched Gemini
+console runs under `GEMINI_CLI_HOME=<repo>/.ralphy/gemini-home`, so the CLI writes
+its session log to `<repo>/.ralphy/gemini-home/.gemini/tmp/<basename>/chats/`. The
+usage scan reads `<home>/.gemini` and deliberately ignores `GEMINI_CLI_HOME` (D4 —
+otherwise it would report Ralphy's own state as the operator's). So a console
+opened from the workbench appears in NEITHER the run ledger (no run wrote it) nor
+the interactive scan. Every other vendor escapes this because its interactive
+launch uses the operator's own config root; Gemini is the first vendor whose
+containment moves the store. Closing it means scanning each registered repo's
+owned root as a second source and labelling those records as Ralphy-launched
+rather than operator-interactive — a `ralphy usage` surface decision, so it
+belongs with #262, not here.
+
 **What it did NOT prove.** No live Gemini turn ran on this host — the provider
 path remains dead here (#253), so the workbench smoke drives the house
 `session_test_child` through `RALPHY_DAEMON_AGENT_OVERRIDE`. The scan's fixtures
