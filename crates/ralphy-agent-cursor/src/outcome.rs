@@ -210,6 +210,48 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
 /// "it crashed".
 const INTERRUPTED: i32 = 130;
 
+/// `Some(sentence)` when `fold.vendor_error` names a quota/rate-limit CLASS —
+/// case-insensitive `usage limit`, `rate limit`, `quota`, `too many requests`,
+/// `resource exhausted` (ADR-0040 C7 precedent; the measured sentence is
+/// editor-framed marketing prose and will be reworded). `None` otherwise.
+///
+/// Reads `vendor_error` ONLY, never the merged stdout+stderr `log`:
+/// `vendor_error` is populated exclusively from a `turn_ended` record whose
+/// `status != "success"` (`fold_cursor_stream` above), so a transcript quoting
+/// the sentence in a GREEN run's `final_text` can never reach it — unlike
+/// `model_refusal_stop`, which reads the merged log and needs a line-start
+/// gate against exactly that false positive.
+pub(crate) fn cursor_limit_note(fold: &CursorFold) -> Option<String> {
+    const LIMIT_CLASSES: &[&str] = &[
+        "usage limit",
+        "rate limit",
+        "quota",
+        "too many requests",
+        "resource exhausted",
+    ];
+    let msg = fold.vendor_error.as_deref()?;
+    let lower = msg.to_lowercase();
+    LIMIT_CLASSES
+        .iter()
+        .any(|class| lower.contains(class))
+        .then(|| msg.to_string())
+}
+
+/// The operator-facing note for a quota stop: the vendor's own sentence, plus,
+/// when the call already committed real work, the HEAD-diff range so the
+/// operator can find it before the issue resumes on ADR-0030's synthetic wait.
+pub(crate) fn limit_stop_note(fold: &CursorFold, committed_range: Option<&str>) -> Option<String> {
+    let msg = cursor_limit_note(fold)?;
+    let mut note = format!("cursor stopped on a usage limit: {msg}");
+    if let Some(range) = committed_range {
+        note.push_str(&format!(
+            " — work already committed ({range}) is kept on the branch for \
+             inspection; the issue stays open"
+        ));
+    }
+    Some(note)
+}
+
 /// Extract Cursor's [`CompletionSignals`] and delegate the precedence ordering to
 /// the shared ladder (ADR-0023 D1/D2).
 ///
@@ -232,12 +274,16 @@ pub(crate) fn classify_cursor_outcome(
     let interrupted = exit_code == Some(INTERRUPTED);
     let succeeded =
         fold.saw_envelope && !fold.is_error && fold.subtype.as_deref() == Some("success");
+    let limited = !succeeded && cursor_limit_note(fold).is_some();
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(&fold.final_text),
         blocked: ralphy_adapter_support::blocked_reason(&fold.final_text),
-        // D13 is open: no limit signature has ever been observed on this vendor, so
-        // a limit surfaces as an ordinary failure rather than a guessed phrase match.
-        limit: None,
+        // D13: `Limit(None)`. The inner slot is the parsed RESET HINT, and this
+        // vendor publishes none, so ADR-0030's synthetic cadence applies. The
+        // sentence goes to the run log via `limit_stop_note`, not into the slot —
+        // putting it there would make `runner/phases.rs` read it as a scheduled
+        // reset and abandon the issue after two no-commit limits.
+        limit: limited.then_some(None),
         committed,
         // An interrupt IS Ralphy stopping the child, so it lands on `Timeout`
         // rather than falling through the ladder to `Stuck`.
@@ -511,6 +557,107 @@ mod tests {
         assert_ne!(
             classify_cursor_outcome(&fold, false, false, true, Some(1)),
             Outcome::Done
+        );
+    }
+
+    /// #266: a quota stop classifies as `Limit(None)` — no reset hint is ever
+    /// published, so ADR-0030's synthetic cadence schedules the resumption.
+    #[test]
+    fn a_quota_stop_is_a_limit_with_no_reset_hint() {
+        let fold = fold_cursor_stream(USAGE_LIMIT);
+        assert!(
+            cursor_limit_note(&fold)
+                .as_deref()
+                .is_some_and(|m| m.contains("You've hit your usage limit")),
+            "{:?}",
+            cursor_limit_note(&fold)
+        );
+        assert_eq!(
+            classify_cursor_outcome(&fold, false, false, false, Some(1)),
+            Outcome::Limit(None)
+        );
+
+        let midturn = fold_cursor_stream(USAGE_LIMIT_MIDTURN);
+        assert!(
+            cursor_limit_note(&midturn)
+                .as_deref()
+                .is_some_and(|m| m.contains("You've hit your usage limit")),
+            "{:?}",
+            cursor_limit_note(&midturn)
+        );
+        assert_eq!(
+            classify_cursor_outcome(&midturn, false, false, true, Some(1)),
+            Outcome::Limit(None)
+        );
+    }
+
+    /// #266: the note names the partial work when the call already committed,
+    /// and stays silent about it when nothing landed.
+    #[test]
+    fn a_midturn_quota_stop_names_the_partial_work() {
+        let midturn = fold_cursor_stream(USAGE_LIMIT_MIDTURN);
+        let note = limit_stop_note(&midturn, Some("abc1234..def5678"))
+            .expect("a quota stop must produce a note");
+        assert!(note.contains("abc1234..def5678"), "{note}");
+        assert!(note.contains("kept on the branch"), "{note}");
+
+        let bare = fold_cursor_stream(USAGE_LIMIT);
+        let note = limit_stop_note(&bare, None).expect("a quota stop must produce a note");
+        assert!(note.contains("usage limit"), "{note}");
+        assert!(!note.contains("kept on the branch"), "{note}");
+    }
+
+    /// #266: `vendor_error` is the only carrier — a working run whose transcript
+    /// merely QUOTES the sentence must not classify as a limit.
+    #[test]
+    fn a_quoted_quota_sentence_in_a_green_transcript_is_not_a_limit() {
+        let stdout = format!(
+            "{INIT}\n{}\n",
+            envelope(
+                "success",
+                false,
+                "You've hit your usage limit\nRALPHY_DONE_EXIT"
+            )
+        );
+        let fold = fold_cursor_stream(&stdout);
+        assert_eq!(cursor_limit_note(&fold), None);
+        assert_eq!(
+            classify_cursor_outcome(&fold, true, false, true, Some(0)),
+            Outcome::Done
+        );
+    }
+
+    /// #266: a quota stop is distinct from #245's entitlement refusal and from
+    /// Ralphy's own budget/idle-watchdog stop.
+    #[test]
+    fn a_quota_stop_is_not_an_entitlement_refusal_nor_a_watchdog_stop() {
+        const ENTITLEMENT: &str = include_str!("../fixtures/model-entitlement-2026-07-21.err");
+        assert_eq!(cursor_limit_note(&fold_cursor_stream(ENTITLEMENT)), None);
+
+        let fold = fold_cursor_stream(INTERRUPTED_STREAM);
+        assert_eq!(
+            classify_cursor_outcome(&fold, false, false, false, Some(130)),
+            Outcome::Timeout
+        );
+    }
+
+    /// #266: the ADR closes D13 — pin that the rewritten section documents the
+    /// carrier and drops the "pending" marker. Phrases are kept short so they
+    /// cannot straddle the ADR's ~78-col hard wrap (`.ralphy/knowledge/issue-264.md`).
+    #[test]
+    fn the_limit_stance_is_documented() {
+        let adr = include_str!("../../../docs/adr/0042-cursor-adapter.md");
+        assert!(
+            !adr.contains("Limits: pending"),
+            "D13 must no longer read pending"
+        );
+        assert!(
+            adr.contains("turn_ended"),
+            "D13 must name the measured carrier"
+        );
+        assert!(
+            adr.contains("Limit(None)"),
+            "D13 must name the classified outcome"
         );
     }
 
