@@ -331,6 +331,7 @@ mod tests {
             include_str!("root.rs"),
             include_str!("policy.rs"),
             include_str!("auth.rs"),
+            include_str!("skills.rs"),
             include_str!("lib.rs"),
         ]
         .map(|s| {

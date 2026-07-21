@@ -37,6 +37,7 @@ mod policy;
 mod revocation;
 mod root;
 mod settings;
+mod skills;
 
 /// The vendor's id grammar (ADR-0043 D8): which ids may be pinned, and the
 /// price-table key each one bills under — the MANDATORY transform between a
@@ -173,6 +174,31 @@ impl GeminiAgent {
         );
         let operator = root::operator_root();
         let auth_type = root::operator_auth_type(operator.as_deref());
+
+        // D13/D53-55: materialize Ralphy's own skills into the owned root, then
+        // confirm discovery with a model-free receipt. Advisory only — a spawn
+        // failure, timeout or missing name logs and never fails the run (a
+        // diagnostic that can abort a run is worse than the setup problem it
+        // reports).
+        let materialized = skills::materialize_gemini_skills(&root)?;
+        let owned_home = &root.home;
+        match skills::probe_skill_discovery(owned_home, auth_type.as_deref(), &materialized) {
+            Some(found) => {
+                tracing::info!(skills = ?found, "gemini: skills discovered (D13)");
+                for missing in materialized.iter().filter(|s| !found.contains(s)) {
+                    tracing::warn!(
+                        skill = %missing,
+                        root = %root.cli_dir().display(),
+                        "gemini: skill not found by `gemini skills list` — re-run it \
+                         by hand against this root to diagnose"
+                    );
+                }
+            }
+            None => tracing::warn!(
+                "gemini: skill discovery receipt unavailable (spawn error or timeout)"
+            ),
+        }
+
         let imported = policy::import_deny_rules(operator.map(|r| r.join("policies")).as_deref());
         let policy_path = policy::write_policy(&root, &policy::ralphy_policy(&imported))?;
         Ok((root, policy_path, auth_type))
