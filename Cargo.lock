@@ -1590,6 +1590,7 @@ dependencies = [
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
+ "ralphy-proc-util",
  "serde",
  "serde_json",
  "tempfile",
@@ -1713,6 +1714,10 @@ dependencies = [
 [[package]]
 name = "ralphy-proc-util"
 version = "0.1.0-rc13"
+dependencies = [
+ "anyhow",
+ "tempfile",
+]
 
 [[package]]
 name = "ralphy-pty"

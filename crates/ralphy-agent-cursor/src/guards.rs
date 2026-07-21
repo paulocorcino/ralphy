@@ -12,39 +12,11 @@
 //! operator's own repository is their decision, and an unexplained new file in
 //! their `git status` is not Ralphy's to leave. The gate only READS.
 
-use std::path::{Path, PathBuf};
+//! The rule itself lives in `ralphy_proc_util::cursor` (ADR-0042 D19) so the
+//! daemon's interactive launch enforces the SAME refusal without importing the
+//! core; this module is the run path's entry point onto it.
 
-/// The opt-out file the vendor honours, and the only one Ralphy will accept. Its
-/// sibling (the plain ignore file) also stops the upload but DENIES the agent's
-/// edit tool, and the agent then routes around the denial through its shell tool
-/// — so Ralphy neither writes nor requires it (D6).
-const OPT_OUT_FILE: &str = ".cursorindexingignore";
-
-/// The persisted key that overrides the refusal, quoted verbatim in the message
-/// so the operator can copy it into `ralphy config set`.
-const OPT_IN_KEY: &str = "cursor.allow_codebase_indexing_i_understand_the_risk";
-
-/// Every enclosing repository root, outermost LAST. Empty when the path is not
-/// inside a repository at all — `draft_issues` and `consolidate_knowledge` may
-/// legitimately run there, and D6 lets them through: there is nothing to upload
-/// and nowhere to put the file.
-///
-/// The walk does NOT stop at the first `.git`. D6 records, as measured evidence,
-/// that a run indexed the **parent repository** rather than the working directory
-/// it was given — so for a repo checked out inside another (or a submodule), an
-/// opt-out in the inner root alone would let the outer tree upload silently. Every
-/// root found must carry the file.
-fn repo_roots(start: &Path) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    let mut cur: Option<&Path> = Some(start);
-    while let Some(dir) = cur {
-        if dir.join(".git").exists() {
-            roots.push(dir.to_path_buf());
-        }
-        cur = dir.parent();
-    }
-    roots
-}
+use std::path::Path;
 
 /// D6's preflight. `Ok(())` when the child may be spawned; `Err` with an
 /// actionable ADR-0013 stop otherwise.
@@ -52,31 +24,7 @@ fn repo_roots(start: &Path) -> Vec<PathBuf> {
 /// Three ways to pass: the operator opted in (`allow_indexing`), the cwd is
 /// outside any repository, or the repository root carries the opt-out file.
 pub(crate) fn indexing_gate(work_dir: &Path, allow_indexing: bool) -> anyhow::Result<()> {
-    if allow_indexing {
-        return Ok(());
-    }
-    // The OUTERMOST unprotected root is the one worth naming: it is the largest
-    // tree that would be uploaded, and protecting it is what the operator must do.
-    let Some(root) = repo_roots(work_dir)
-        .into_iter()
-        .rfind(|r| !r.join(OPT_OUT_FILE).exists())
-    else {
-        return Ok(());
-    };
-    anyhow::bail!(
-        "ralphy: refusing to run `cursor` in {} — an ordinary Cursor run walks this \
-         repository and syncs a copy of it to Cursor's servers, whatever the task asked for.\n\
-         Opt out by creating {}/{} containing one line:\n\
-         \n    *\n\n\
-         Ralphy will not create that file for you: it lands in your repository and your \
-         `git status`, so it is your call.\n\
-         If you WANT the indexing, opt in instead:\n\
-         \n    ralphy config set {} true\n",
-        root.display(),
-        root.display(),
-        OPT_OUT_FILE,
-        OPT_IN_KEY,
-    )
+    ralphy_proc_util::cursor::indexing_gate(work_dir, allow_indexing)
 }
 
 #[cfg(test)]

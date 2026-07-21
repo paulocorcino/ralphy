@@ -25,58 +25,15 @@ pub(crate) const AUTO_MODEL: &str = "auto";
 /// The vendor's own name for the two shims it installs for one binary (D14).
 const NAMES: [&str; 2] = ["cursor-agent", "agent"];
 
-/// Locate the Cursor CLI. Pure over its inputs so the four install shapes unit-test
-/// against temp trees with an empty `PATH` (ADR-0040 C10).
-///
-/// The order is deliberate: `cursor-agent` is unambiguous, while a bare `agent` on
-/// `PATH` could be an unrelated binary, so the specific name and the two known
-/// install roots are tried first and `agent` is the last resort.
-/// `~/.local/bin/cursor-agent` needs no explicit probe — `locate_program_with`
-/// already falls back there.
-pub(crate) fn locate_cursor_with(
-    path_var: Option<OsString>,
-    pathext: Option<OsString>,
-    home: Option<PathBuf>,
-    localappdata: Option<PathBuf>,
-) -> Option<PathBuf> {
-    if let Some(found) = ralphy_adapter_support::locate_program_with(
-        NAMES[0],
-        path_var.clone(),
-        pathext.clone(),
-        home.clone(),
-    ) {
-        return Some(found);
-    }
-    // `%LOCALAPPDATA%\cursor-agent\` holds `.cmd` + `.ps1` shims for both names.
-    if let Some(root) = localappdata.as_ref().map(|p| p.join("cursor-agent")) {
-        for name in NAMES {
-            let cand = root.join(format!("{name}.cmd"));
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    // Cursor's own CI recipe names this third location.
-    if let Some(bin) = home.as_ref().map(|h| h.join(".cursor").join("bin")) {
-        for cand in [bin.join("cursor-agent.cmd"), bin.join("cursor-agent")] {
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    ralphy_adapter_support::locate_program_with(NAMES[1], path_var, pathext, home)
-}
-
 /// Locate the Cursor CLI against the real environment. `None` means the vendor is
 /// not installed — `ralphy init`'s gate reports presence through this, never
 /// through `locate_program("cursor")`, which would look for the wrong binary name.
+///
+/// The search itself lives in `ralphy-proc-util` (ADR-0042 D19): the daemon's
+/// interactive launch needs the same resolution and may not import the core, which
+/// this crate does.
 pub fn locate_cursor() -> Option<PathBuf> {
-    locate_cursor_with(
-        std::env::var_os("PATH"),
-        std::env::var_os("PATHEXT"),
-        ralphy_adapter_support::home_dir(),
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
-    )
+    ralphy_proc_util::cursor::locate_cursor()
 }
 
 /// What a `Command` is constructed with. Falls back to the bare name so the spawn
@@ -412,75 +369,12 @@ mod tests {
         assert!(!target.join("cli-config.json").exists());
     }
 
-    /// D14: the vendor is on `PATH` on neither platform, under either of its two
-    /// names. Each known install shape must resolve with an EMPTY `PATH`.
+    /// D14's install shapes are covered where the search now lives:
+    /// `ralphy_proc_util::cursor::tests::locate_cursor_finds_each_install_shape`.
+    /// What stays this crate's business is that the delegation is wired at all.
     #[test]
-    fn locate_cursor_finds_each_install_shape() {
-        // A file the platform would actually run: on Unix `locate_program_with`
-        // requires an execute bit, and on Windows a bare name needs `PATHEXT`.
-        fn touch_exe(p: &Path) {
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(p, "").unwrap();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
-            }
-        }
-
-        // 1 & 2: both shim names under %LOCALAPPDATA%\cursor-agent\.
-        for name in ["cursor-agent.cmd", "agent.cmd"] {
-            let lad = tempfile::tempdir().unwrap();
-            let home = tempfile::tempdir().unwrap();
-            let want = lad.path().join("cursor-agent").join(name);
-            touch_exe(&want);
-            let got = locate_cursor_with(
-                Some(OsString::new()),
-                None,
-                Some(home.path().to_path_buf()),
-                Some(lad.path().to_path_buf()),
-            );
-            assert_eq!(got.as_deref(), Some(want.as_path()), "shape: {name}");
-        }
-
-        // 3: the XDG shape, reached through `locate_program_with`'s own fallback.
-        {
-            let home = tempfile::tempdir().unwrap();
-            let mut want = home.path().join(".local").join("bin").join("cursor-agent");
-            if cfg!(windows) {
-                want.set_extension("exe");
-            }
-            touch_exe(&want);
-            let got = locate_cursor_with(
-                Some(OsString::new()),
-                None,
-                Some(home.path().to_path_buf()),
-                None,
-            );
-            assert_eq!(got.as_deref(), Some(want.as_path()), "shape: ~/.local/bin");
-        }
-
-        // 4: Cursor's own CI recipe location.
-        {
-            let home = tempfile::tempdir().unwrap();
-            let want = home.path().join(".cursor").join("bin").join("cursor-agent");
-            touch_exe(&want);
-            let got = locate_cursor_with(
-                Some(OsString::new()),
-                None,
-                Some(home.path().to_path_buf()),
-                None,
-            );
-            assert_eq!(got.as_deref(), Some(want.as_path()), "shape: ~/.cursor/bin");
-        }
-
-        // Nothing installed anywhere resolves to nothing — the gate reports absence
-        // rather than spawning a name that is not there.
-        let home = tempfile::tempdir().unwrap();
-        assert_eq!(
-            locate_cursor_with(Some(OsString::new()), None, Some(home.path().into()), None),
-            None
-        );
+    fn locate_cursor_delegates_to_the_shared_vendor_locator() {
+        assert_eq!(locate_cursor(), ralphy_proc_util::cursor::locate_cursor());
     }
 
     #[test]

@@ -5,6 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
+pub mod cursor;
+
 /// Put `cmd`'s child into its own process group (Unix) so a later [`kill_tree`]
 /// can signal the whole tree via the negative pgid, not just the direct child.
 /// A no-op off Unix — Windows walks the tree by PID with `taskkill /T` instead,

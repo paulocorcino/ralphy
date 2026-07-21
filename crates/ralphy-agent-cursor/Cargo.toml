@@ -15,6 +15,9 @@ uuid.workspace = true
 include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
+# The vendor locator and the D6 indexing gate live here so the daemon can share
+# them without importing `ralphy-core` (ADR-0032 §10, ADR-0042 D19).
+ralphy-proc-util.workspace = true
 # The login probe runs in a throwaway cwd + config dir, so it is a regular dep,
 # not a dev one (ADR-0042 D6/D17 — see `auth::probe_cursor_login`).
 tempfile.workspace = true

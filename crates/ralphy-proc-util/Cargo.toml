@@ -5,3 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Leaf crate for Ralphy process/path resolution: PATH/PATHEXT program search and ~/.local/bin fallback, shared below core and the adapters."
+
+[dependencies]
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
