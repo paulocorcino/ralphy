@@ -131,6 +131,21 @@ this is a fixed tax on every call.
   produces a recommended Cursor-specific default rather than leaving the
   operator to discover it.
 
+## Phase 4b — the limit, whenever it arrives (D13)
+
+D13 is open by choice: a burst of 25 consecutive Free-tier runs (351 058 input
+tokens) never tripped a quota, and chasing the ceiling was not worth the time it
+would take. So the detector is written against the `ActionRequiredError` class
+rather than a captured phrase, and **this validation is where the real string
+finally lands** — a long queue run against FinCal will hit the ceiling on its
+own schedule.
+
+The note records, whenever it happens: the exact stderr line, the exit code,
+whether any reset hint accompanies it, and whether the `result` envelope is
+present or the stream simply ends. Until then, `Limit(None)` plus ADR-0030's
+synthetic cadence is the behaviour, and the detector is marked **unvalidated**
+in the adapter's own tests rather than pretending otherwise.
+
 ## Phase 5 — cross-platform parity
 
 Repeat Phase 1 on WSL against the same issue. The two installs differ by a

@@ -305,9 +305,15 @@ manifest.
 
 ## D13 — Limits: pending
 
-⬜ **Open.** C7 is the one ADR-0040 question the spike did not close. A
-deliberate free-tier exhaustion run is in progress; this decision is written
-when it lands. What is known: Cursor publishes no numeric free-tier quota, no
+⬜ **Open, with a bound.** C7 is the one ADR-0040 question the spike did not
+close. An exhaustion run was started and **stopped deliberately** after
+**25 consecutive runs on the Free tier, 351 058 input tokens, zero failures** —
+about six minutes of continuous driving at ~13 s per run. That is a useful
+negative: the Free tier's ceiling is **not** low enough to be tripped by a short
+burst, so a Ralphy queue will not discover it in the first few issues. It says
+nothing about where the ceiling is.
+
+What is known: Cursor publishes no numeric free-tier quota, no
 machine-readable limit signal and no exit codes, and its cap message is
 editor-framed. The `ActionRequiredError` class already carries a plan
 entitlement refusal (D4) and is the leading candidate to carry the quota refusal
