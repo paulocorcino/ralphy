@@ -117,7 +117,15 @@ pub struct CopilotScan<'a> {
 /// format is decided by which root a `wire.jsonl` lives under. Plus the run-owned
 /// ids to exclude, the repo registry for attribution, and an optional `since`
 /// lower bound on `last_ts`.
-/// Everything the Cursor scan reads, mirroring [`KimiScan`]'s two-root shape but
+pub struct KimiScan<'a> {
+    pub kimi_dir: &'a Path,
+    pub kimi_code_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Cursor scan reads, mirroring [`KimiScan`]'s two-store shape but
 /// with ONE base: `cursor_dir` is the `.cursor` base, under which the scan walks
 /// BOTH `chats/<hash>/<sid>/meta.json` and
 /// `projects/<slug>/agent-transcripts/<sid>/` and unions them by session id
@@ -126,14 +134,6 @@ pub struct CopilotScan<'a> {
 /// `since` lower bound on `last_ts`.
 pub struct CursorScan<'a> {
     pub cursor_dir: &'a Path,
-    pub run_session_ids: &'a HashSet<String>,
-    pub repos: &'a [RegisteredRepo],
-    pub since: Option<&'a str>,
-}
-
-pub struct KimiScan<'a> {
-    pub kimi_dir: &'a Path,
-    pub kimi_code_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
     pub repos: &'a [RegisteredRepo],
     pub since: Option<&'a str>,
