@@ -141,6 +141,7 @@ impl PriceTable {
             ("glm-5.2", 1.4, 4.4, 0.26, 1.4),
             ("gemini-3-flash", 0.5, 3.0, 0.05, 0.5),
             ("gemini-3.1-pro", 2.0, 12.0, 0.2, 2.0),
+            // Shared by two vendors: the Gemini CLI's `gemini-3-flash` folds here.
             ("gemini-3.5-flash", 1.5, 9.0, 0.15, 1.5),
             ("gpt-5.6-sol", 5.0, 30.0, 0.5, 6.25),
             ("gpt-5.6-terra", 2.5, 15.0, 0.25, 3.125),
@@ -163,6 +164,26 @@ impl PriceTable {
             ("claude-4.5-opus", 5.0, 25.0, 0.5, 6.25),
             ("claude-4-sonnet", 3.0, 15.0, 0.3, 3.75),
             ("gpt-5-mini", 0.75, 4.5, 0.075, 0.75),
+            // ── Gemini (ADR-0043 D8; spike §4 price table) ────────────────────
+            // Indicative ai.google.dev list prices per 1M tokens, keyed by what
+            // `ralphy_agent_gemini::price_key` folds a pinned id onto. Four notes:
+            //  - `gemini-3.5-flash` is NOT repeated here: the Cursor row above
+            //    carries the same 1.5/9.0/0.15 figures and the key is now shared
+            //    by two vendors.
+            //  - Cursor's own `gemini-3-flash` row above is Google's *preview*
+            //    Flash at a third of these rates; the Gemini CLI's identically
+            //    spelled constant is served by the 3.5 backend, which is why
+            //    `price_key` renames it rather than this table repricing it.
+            //  - `gemini-routed` and `gemini-3.1-pro-preview-customtools` get NO
+            //    row on purpose: neither has a published price, and unpriced
+            //    beats guessed.
+            //  - `cache_creation` repeats the input rate (no published
+            //    cache-write premium), the convention `gpt-5.5`/`k2p6` already use.
+            ("gemini-3.1-pro-preview", 2.0, 12.0, 0.2, 2.0),
+            ("gemini-3-flash-preview", 0.5, 3.0, 0.05, 0.5),
+            ("gemini-3.1-flash-lite", 0.25, 1.5, 0.025, 0.25),
+            ("gemini-2.5-pro", 1.25, 10.0, 0.125, 1.25),
+            ("gemini-2.5-flash", 0.3, 2.5, 0.03, 0.3),
         ] {
             t.insert(
                 model.to_string(),
@@ -182,6 +203,48 @@ impl PriceTable {
 mod tests {
     use super::*;
     use crate::pricing::tests::one_million_each;
+
+    /// The Gemini axis end to end (ADR-0043 D8): the lookup goes through the
+    /// adapter's own `price_key`, so the table and the vendor's id grammar cannot
+    /// drift apart — and the two ids that collide with a Cursor row of the same
+    /// spelling stay un-conflated.
+    #[test]
+    fn gemini_ids_price_through_the_adapters_key() {
+        let table = PriceTable::defaults();
+        let t = one_million_each();
+        let cost = |key: &str| table.cost_usd(key, &t);
+
+        // The 3× trap: the CLI's `gemini-3-flash` is served by the 3.5 backend…
+        let cli_flash = cost(&ralphy_agent_gemini::price_key("gemini-3-flash"))
+            .expect("the CLI's flash must price");
+        assert!((cli_flash - 12.15).abs() < 1e-9, "got {cli_flash}");
+        // …while the raw row of that spelling is Cursor's preview Flash.
+        let cursor_flash = cost("gemini-3-flash").expect("Cursor's row must survive");
+        assert!((cursor_flash - 4.05).abs() < 1e-9, "got {cursor_flash}");
+        assert!(
+            cli_flash > cursor_flash,
+            "the two must stay distinct rows, not one conflated price"
+        );
+
+        // The routing model the CLI actually dispatches to is priced.
+        let lite = cost("gemini-3.1-flash-lite").expect("the routing model must price");
+        assert!((lite - 2.025).abs() < 1e-9, "got {lite}");
+
+        // No published price ⇒ no row: unpriced beats guessed. `cost_usd` reports
+        // `None`, which the report renders as `~$?`, never `0`.
+        assert_eq!(cost("gemini-3.1-pro-preview-customtools"), None);
+        // And a routed run never borrows another vendor's `auto` row.
+        assert_eq!(cost(&ralphy_agent_gemini::price_key("auto")), None);
+        assert!(
+            cost("auto").is_some(),
+            "Cursor's own `auto` row must be untouched"
+        );
+
+        // Retired for pinning, still priced — as its successor.
+        let retired = cost(&ralphy_agent_gemini::price_key("gemini-3-pro-preview"));
+        assert!(retired.is_some(), "a historical run record must cost out");
+        assert_eq!(retired, cost("gemini-3.1-pro-preview"));
+    }
 
     /// The Cursor axis end to end: the adapter's own normalizer feeds the lookup,
     /// so the price key and the vendor's id grammar can never drift apart.
