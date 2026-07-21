@@ -7,7 +7,10 @@
 //! `max_minutes_per_issue`), and the Copilot per-phase model overrides under
 //! `copilot.*` (`plan_model`, `exec_model`, #232; `plan_effort`, `exec_effort`,
 //! #233 — a requested level, CLAMPED per model by the adapter before it reaches
-//! argv). The budget knob stays Claude-only today — a Codex equivalent is
+//! argv). Cursor carries exactly one key,
+//! `cursor.allow_codebase_indexing_i_understand_the_risk` (#243, ADR-0042 D6) —
+//! it has no persisted model keys, because `--model` is mandatory on that vendor
+//! and so has no "unset" state to persist. The budget knob stays Claude-only today — a Codex equivalent is
 //! deferred. Each resolves with the same precedence: per-run flag then
 //! `settings.json` then a hardcoded default — except the two Copilot effort keys,
 //! which have no flag at all (#227 owns whether `--plan-effort`/`--exec-effort`
@@ -20,6 +23,7 @@ use anyhow::{anyhow, bail, Result};
 use clap::{Args, Subcommand};
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
+use ralphy_agent_cursor::CursorSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
 
@@ -107,6 +111,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "copilot.plan_effort",
     "copilot.exec_effort",
     "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
+    "cursor.allow_codebase_indexing_i_understand_the_risk",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -123,7 +128,7 @@ model/effort/budget defaults are Claude-only today \
 Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
 copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
 hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
-which can open a PR on its own, #234)";
+which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -164,6 +169,13 @@ fn with_copilot(s: &mut Settings, f: impl FnOnce(&mut CopilotSettings)) -> Resul
     let mut c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
     f(&mut c);
     s.set_agent_settings(CopilotSettings::SECTION, &c)
+}
+
+/// Load-mutate-store the Cursor section; same contract as [`with_claude`].
+fn with_cursor(s: &mut Settings, f: impl FnOnce(&mut CursorSettings)) -> Result<()> {
+    let mut c: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
+    f(&mut c);
+    s.set_agent_settings(CursorSettings::SECTION, &c)
 }
 
 pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
@@ -256,6 +268,17 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
                 c.allow_builtin_mcp_servers_i_understand_the_risk = b
             })?
         }
+        // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
+        // run upload the operator's repository to the vendor. Ralphy never denies
+        // the capability — it denies a SILENT one.
+        "cursor.allow_codebase_indexing_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_cursor(&mut s, |c| {
+                c.allow_codebase_indexing_i_understand_the_risk = b
+            })?
+        }
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -297,6 +320,9 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => with_copilot(&mut s, |c| {
             c.allow_builtin_mcp_servers_i_understand_the_risk = false
         })?,
+        "cursor.allow_codebase_indexing_i_understand_the_risk" => with_cursor(&mut s, |c| {
+            c.allow_codebase_indexing_i_understand_the_risk = false
+        })?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -313,6 +339,7 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
     let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
+    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
@@ -342,6 +369,10 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk = {}",
         copilot.allow_builtin_mcp_servers_i_understand_the_risk
     );
+    println!(
+        "cursor.allow_codebase_indexing_i_understand_the_risk = {}",
+        cursor.allow_codebase_indexing_i_understand_the_risk
+    );
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -367,6 +398,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
     let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
+    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
     let slug = git::project_slug(ws.repo_root());
     let events = crate::events::config::EventsStore::load().unwrap_or_default();
     let entry = events.entry(&slug);
@@ -394,6 +426,8 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "copilot.exec_effort": copilot.exec_effort,
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk":
             copilot.allow_builtin_mcp_servers_i_understand_the_risk,
+        "cursor.allow_codebase_indexing_i_understand_the_risk":
+            cursor.allow_codebase_indexing_i_understand_the_risk,
     }))
 }
 
@@ -561,6 +595,47 @@ mod tests {
         let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
         assert_eq!(c.plan_model, None);
         assert_eq!(c.exec_model, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// ADR-0042 D6's escape hatch (#243): the one Cursor key. Same bool discipline
+    /// as Copilot's hatch, guarding a bigger capability — `true` lets a run proceed
+    /// in a repository whose contents the vendor will walk and sync to its servers.
+    #[test]
+    fn cursor_config_round_trip() {
+        const KEY: &str = "cursor.allow_codebase_indexing_i_understand_the_risk";
+        let (ws, dir) = tmp_ws("cursor-config-round-trip");
+
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(
+            !c.allow_codebase_indexing_i_understand_the_risk,
+            "the hatch is off until the operator sets it"
+        );
+
+        set(&ws, KEY, "true").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(
+            c.allow_codebase_indexing_i_understand_the_risk,
+            "the opt-in must persist and reload"
+        );
+        assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
+
+        let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
+        assert!(err.to_string().contains("'true' or 'false'"), "{err}");
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(
+            c.allow_codebase_indexing_i_understand_the_risk,
+            "the refused write must leave the stored value alone"
+        );
+
+        unset(&ws, KEY).unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(!c.allow_codebase_indexing_i_understand_the_risk);
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -1027,6 +1102,7 @@ mod tests {
                 // Validated against Copilot's effort vocabulary, so `x` is refused.
                 "copilot.plan_effort" | "copilot.exec_effort" => "high",
                 "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
+                "cursor.allow_codebase_indexing_i_understand_the_risk" => "true",
                 _ => "x",
             }
         };

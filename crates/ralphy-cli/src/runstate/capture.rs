@@ -506,6 +506,13 @@ mod tests {
             ],
         ),
         (
+            "crates/ralphy-agent-cursor/src/lib.rs",
+            1,
+            1,
+            &["\"cursor\"", "model.unwrap_or(\"\")", "\"\""],
+            &["\"cursor\"", "0", "model.unwrap_or(\"\")", "\"\""],
+        ),
+        (
             "crates/ralphy-agent-kimi/src/lib.rs",
             1,
             1,
@@ -620,6 +627,7 @@ mod tests {
         "crates/ralphy-agent-claude/src/headless.rs",
         "crates/ralphy-agent-codex/src/lib.rs",
         "crates/ralphy-agent-copilot/src/lib.rs",
+        "crates/ralphy-agent-cursor/src/lib.rs",
         "crates/ralphy-agent-kimi/src/lib.rs",
         "crates/ralphy-agent-opencode/src/lib.rs",
         // The two files that USED to own the shared constants: they are now

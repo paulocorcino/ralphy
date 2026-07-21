@@ -23,7 +23,10 @@ config write-back incident — is in
 [docs/research/cursor-cli-adapter-spike.md](../research/cursor-cli-adapter-spike.md);
 this ADR records the decisions, the spike records the observations.
 
-Status: **proposed** — decisions settled, **implementation not authorized**.
+Status: **accepted** — issue #243 (under PRD #242) landed the first slice:
+`ralphy-agent-cursor`, the `--agent cursor` wiring, D6's indexing gate and D17's
+config isolation. Usage accounting, skills materialization, the one-shot verbs
+and Tier 4 are later slices.
 Consistent with ADR-0002/0004/0005/0008/0013/0023/0030/0033/0034/0040; second
 application of the [ADR-0040](./0040-agent-adapter-onboarding-contract.md)
 onboarding contract, and the source of its Amendment 1.
