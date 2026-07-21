@@ -85,8 +85,7 @@ async fn cursor_session_refuses_an_unprotected_repo_and_spawns_a_protected_one()
     // --- Leg 1: no opt-out file → the upgrade is refused and nothing is spawned.
     let err = tokio_tungstenite::connect_async(&url)
         .await
-        .err()
-        .expect("an unprotected repo must NOT upgrade");
+        .expect_err("an unprotected repo must NOT upgrade");
     let (status, body) = match err {
         tokio_tungstenite::tungstenite::Error::Http(resp) => {
             let status = resp.status();
