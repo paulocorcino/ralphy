@@ -538,26 +538,40 @@ manifest.
 re-verifies P16 (a planted skill's BODY, not its description, is read) under
 Ralphy's own materialization rather than a hand-planted probe skill.
 
-## D13 — Limits: pending
+## D13 — Quota stops are `Limit(None)` plus the synthetic cadence, and Ralphy adds no retry
 
-⬜ **Open, with a bound.** C7 is the one ADR-0040 question the spike did not
-close. An exhaustion run was started and **stopped deliberately** after
-**25 consecutive runs on the Free tier, 351 058 input tokens, zero failures** —
-about six minutes of continuous driving at ~13 s per run. That is a useful
-negative: the Free tier's ceiling is **not** low enough to be tripped by a short
-burst, so a Ralphy queue will not discover it in the first few issues. It says
-nothing about where the ceiling is.
+**Implemented** (#266): `outcome::cursor_limit_note` / `outcome::limit_stop_note`
+in `crates/ralphy-agent-cursor/src/outcome.rs`, over the fixtures
+`usage-limit-2026-07-21.jsonl` and `usage-limit-midturn-2026-07-21.jsonl`.
 
-What is known: Cursor publishes no numeric free-tier quota, no
-machine-readable limit signal and no exit codes, and its cap message is
-editor-framed. The `ActionRequiredError` class already carries a plan
-entitlement refusal (D4) and is the leading candidate to carry the quota refusal
-too, which would make a **class match** — not a phrase match — the right shape
-(the OpenCode `usage_limit_regex` precedent, ADR-0040 C7).
+C7 was the one ADR-0040 question the spike did not close, and it closed on a
+measurement rather than a guess: on 2026-07-21 a live execute pass hit the
+refusal twice, once bare and once mid-turn after a real commit. The carrier
+was NOT the `ActionRequiredError` stderr prose D4's entitlement refusal uses —
+it is the terminal `turn_ended` record's `error` field, a well-formed
+structured stop the docs never named. `CursorFold::vendor_error` reads it.
+
+The earlier exhaustion probe (25 consecutive Free-tier runs, 351 058 input
+tokens, zero failures, ~13 s per run) is still a useful negative: it shows the
+ceiling is not low enough for a short burst to trip, but it never reached the
+measured refusal above, so the true ceiling remains unobserved.
+
+`cursor_limit_note` matches a **class**, not the observed phrasing (the
+OpenCode `usage_limit_regex` precedent, ADR-0040 C7): case-insensitive
+`usage limit`, `rate limit`, `quota`, `too many requests`,
+`resource exhausted`, read from `vendor_error` only — never the merged
+stdout+stderr log, which on a working run can quote the sentence back through
+its own transcript.
 
 Absent a reliable reset hint, `Limit(None)` and
 [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)'s synthetic
-~30-minute cadence apply automatically.
+~30-minute cadence apply automatically — the cheapest decision to revise, since
+it requires no reset parsing to be correct. Ralphy adds no adapter-side retry:
+whatever reaches the classifier already exhausted the vendor's own retries, and
+the ADR-0030 wait is a *scheduled resumption* of the queue, not a retry of the
+refused call. On the plan path, a `--model` refusal is checked BEFORE the
+limit: it will not heal on a retry, so scheduling a wait for it would burn the
+issue's budget re-asking an already-answered question.
 
 ## D17 — Runs execute against an isolated `CURSOR_CONFIG_DIR`, seeded from the operator's own
 

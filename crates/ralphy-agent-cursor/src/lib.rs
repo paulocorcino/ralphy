@@ -28,7 +28,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{
     run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg, PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Workspace};
 use tracing::info;
 
 mod auth;
@@ -233,13 +233,19 @@ impl Agent for CursorAgent {
             },
             run,
             auth::is_cursor_auth_error,
-            // D13 is open: no limit signature has ever been observed on this
-            // vendor, so a limit surfaces as an ordinary failure rather than a
-            // guessed phrase match that would park the queue on a false positive.
-            // A `--model` refusal, though, IS observed and IS actionable: the
-            // closure fires only when no plan file was written, which is exactly
-            // the refusal shape (zero records, exit 1).
-            |log| model_refusal_stop(log, model),
+            // A `--model` refusal is checked FIRST and outranks a quota stop: an
+            // entitlement refusal will not heal on a retry, so scheduling
+            // ADR-0030's ~30-minute wait for it would burn the issue's budget
+            // re-asking an already-answered question (same ordering as
+            // `ralphy-agent-gemini/src/lib.rs`). The closure fires only when no
+            // plan file was written, which is exactly the zero-record refusal
+            // and quota-stop shape (D13, #266).
+            |log| {
+                model_refusal_stop(log, model).or_else(|| {
+                    outcome::cursor_limit_note(&outcome::fold_cursor_stream(log))
+                        .map(|_| PlanLimit { reset: None }.into())
+                })
+            },
         )?;
 
         // A RESUMED plan (no child ran, `session` is `None`) must keep the
@@ -325,6 +331,20 @@ impl Agent for CursorAgent {
         note_degraded(&fold);
         note_vendor_error(&fold);
         note_usage_provenance(&self.config_dir(), &session_id);
+        // #266: on a quota stop, name any work this call already committed so it
+        // is not silently discarded. `7.min(len)` guards the empty-sha default
+        // both shas fall back to (`unwrap_or_default()` above) from panicking on
+        // the slice.
+        let range = committed.then(|| {
+            format!(
+                "{}..{}",
+                &before_sha[..7.min(before_sha.len())],
+                &after_sha[..7.min(after_sha.len())]
+            )
+        });
+        if let Some(n) = outcome::limit_stop_note(&fold, range.as_deref()) {
+            tracing::warn!("{n}");
+        }
         let outcome: Outcome =
             classify_cursor_outcome(&fold, r.exited_cleanly, r.timed_out, committed, r.exit_code);
         info!(
@@ -372,7 +392,10 @@ fn note_degraded(fold: &outcome::CursorFold) {
 /// Surface the vendor's own reason for stopping, verbatim. The outcome is already
 /// non-green when this fires — what it buys is that the stop is not mute: an
 /// account-quota refusal reads as itself in the run log instead of as an
-/// unexplained `Stuck`. Turning that sentence into a limit outcome is #266.
+/// unexplained `Stuck`. A quota-class refusal is ALSO classified `Limit(None)`
+/// and logged again via `limit_stop_note` (#266) — the two calls are
+/// deliberately redundant on that path: this one fires unconditionally so a
+/// future non-quota `vendor_error` stays visible.
 fn note_vendor_error(fold: &outcome::CursorFold) {
     if let Some(msg) = fold.vendor_error.as_deref() {
         tracing::warn!("cursor stopped the turn: {msg}");
@@ -587,6 +610,70 @@ mod tests {
             PROMPT_PLAN_CURSOR.contains("you MUST write `.ralphy/plan.md` yourself"),
             "D9: the planner writes its own plan on this vendor"
         );
+    }
+
+    /// #266: the plan path routes a quota stop to `PlanLimit`, and a hard
+    /// `--model` refusal is checked FIRST — it will not heal on a retry, so
+    /// scheduling a wait for it would burn the issue's budget re-asking an
+    /// already-answered question.
+    #[test]
+    fn the_plan_path_routes_a_quota_stop_to_plan_limit() {
+        let src = include_str!("lib.rs");
+        let refusal = concat!("model_refusal_stop(", "log, model)");
+        let limit = concat!("PlanLimit { reset: ", "None }");
+        let at_refusal = src
+            .find(refusal)
+            .expect("plan()'s on_missing must check the model refusal");
+        let at_limit = src
+            .find(limit)
+            .expect("plan()'s on_missing must route a quota stop to PlanLimit");
+        assert!(
+            at_refusal < at_limit,
+            "a hard refusal must be checked before the limit"
+        );
+    }
+
+    /// #266: whatever reaches Ralphy already exhausted the vendor's own retries —
+    /// no production path may re-spawn on a quota stop. Pins BOTH halves: the
+    /// crate's single `HeadlessCall` site stays singular, and no production
+    /// source loops around a limit check.
+    #[test]
+    fn no_adapter_side_retry_of_a_quota_stop() {
+        fn sources(dir: &std::path::Path, out: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).expect("readable src dir") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    sources(&path, out);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    let body = std::fs::read_to_string(&path).expect("read source");
+                    out.push(body.split("#[cfg(test)]").next().unwrap_or("").to_string());
+                }
+            }
+        }
+        let mut production = Vec::new();
+        sources(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+            &mut production,
+        );
+        let spawn = concat!("HeadlessCall::", "new(cmd,");
+        let spawn_count: usize = production.iter().map(|s| s.matches(spawn).count()).sum();
+        assert_eq!(
+            spawn_count, 1,
+            "the crate's single HeadlessCall site must stay singular"
+        );
+        // Scoped to the files that call `cursor_limit_note`, not the whole crate:
+        // `model.rs` has its own unrelated fixpoint `loop {}` (decoration
+        // stripping), which is not a retry and must not trip this pin.
+        let limit_call = "cursor_limit_note(";
+        for body in &production {
+            if body.contains(limit_call) {
+                assert!(
+                    !body.contains("loop {") && !body.contains("while "),
+                    "no production path may loop around a limit check — a quota \
+                     stop already exhausted the vendor's own retries"
+                );
+            }
+        }
     }
 
     /// ADR-0040 Tier 1: adapter tests are inline `#[cfg(test)] mod tests`, never a
