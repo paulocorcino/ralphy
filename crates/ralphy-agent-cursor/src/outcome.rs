@@ -252,6 +252,17 @@ mod tests {
 
     const INIT: &str = r#"{"type":"system","subtype":"init","apiKeySource":"login","cwd":"C:\\Dev\\FinCal","session_id":"868f1553-01ac-4335-89c6-6c1f101d6009","model":"Auto","permissionMode":"force"}"#;
 
+    const PERMISSION_DENIED: &str = include_str!("../fixtures/permission-denied-2026-07-20.jsonl");
+    const TOOL_FAILURE: &str = include_str!("../fixtures/tool-failure-2026-07-20.jsonl");
+    const KILLED: &str = include_str!("../fixtures/killed-2026-07-20.jsonl");
+    const KILLED_ERR: &str = include_str!("../fixtures/killed-2026-07-20.err");
+    const INTERRUPTED_STREAM: &str = include_str!("../fixtures/interrupted-2026-07-20.jsonl");
+    const INTERRUPTED_ERR: &str = include_str!("../fixtures/interrupted-2026-07-20.err");
+    const PREFLIGHT_REJECTION: &str =
+        include_str!("../fixtures/preflight-rejection-2026-07-20.jsonl");
+    const PREFLIGHT_REJECTION_ERR: &str =
+        include_str!("../fixtures/preflight-rejection-2026-07-20.err");
+
     fn envelope(subtype: &str, is_error: bool, result: &str) -> String {
         serde_json::json!({
             "type": "result",
@@ -291,53 +302,18 @@ mod tests {
         );
     }
 
-    /// D3 rule 1: the discriminator is inside the tool record, and the run reports
-    /// success regardless. The outcome must not read it.
+    /// D6/D3: the permission-denied fixture's envelope is a genuine `subtype:
+    /// "success"` stream whose text carries the spike's decoy token, not Ralphy's
+    /// `DONE_SENTINEL` — so committing something is not the same as buying a green
+    /// close.
     #[test]
-    fn a_failed_tool_call_still_folds_to_a_successful_run() {
-        let failed = r#"{"type":"tool_call","subtype":"completed","tool_call":{"shellToolCall":{"args":{"command":"exit 42"},"result":{"failure":{"command":"exit 42","exitCode":42,"signal":null,"aborted":false}}}}}"#;
-        let stdout = format!(
-            "{INIT}\n{failed}\n{}\n",
-            envelope("success", false, "done\nRALPHY_DONE_EXIT")
-        );
-        let fold = fold_cursor_stream(&stdout);
-        assert!(
-            !fold.failed_tool_calls.is_empty(),
-            "the failure must be recorded"
-        );
-        assert!(
-            fold.failed_tool_calls[0].contains("exit 42"),
-            "{:?}",
-            fold.failed_tool_calls
-        );
-        assert!(!fold.is_error, "a failed tool call is not a failed run");
-        assert_eq!(
-            classify_cursor_outcome(&fold, true, false, true, Some(0)),
-            Outcome::Done
-        );
-        assert!(
-            fold.degraded_note().is_some(),
-            "but it IS surfaced as degraded"
-        );
-    }
-
-    /// D7's third discriminator: the operator's deny list wins over `--force`, the
-    /// denial is immediate and headless-safe, and the run still reports success.
-    #[test]
-    fn a_permission_denied_call_is_recorded_and_the_run_still_succeeds() {
-        let denied = r#"{"type":"tool_call","subtype":"completed","tool_call":{"shellToolCall":{"result":{"permissionDenied":{"command":"git status --short","workingDirectory":"C:\\Dev\\FinCal","error":"Command blocked by permissions configuration","isReadonly":false}}}}}"#;
-        let stdout = format!(
-            "{INIT}\n{denied}\n{}\n",
-            envelope("success", false, "done\nRALPHY_DONE_EXIT")
-        );
-        let fold = fold_cursor_stream(&stdout);
+    fn a_permission_denied_run_is_green_and_names_the_blocked_command() {
+        let fold = fold_cursor_stream(PERMISSION_DENIED);
+        assert_eq!(fold.subtype.as_deref(), Some("success"));
+        assert!(!fold.is_error);
         assert_eq!(
             fold.denied_tool_calls,
             vec!["git status --short".to_string()]
-        );
-        assert_eq!(
-            classify_cursor_outcome(&fold, true, false, true, Some(0)),
-            Outcome::Done
         );
         let note = fold
             .degraded_note()
@@ -345,16 +321,43 @@ mod tests {
         assert!(note.contains("git status --short"), "{note}");
     }
 
-    /// D3 rule 2: zero records + exit 1. Distinguishable from a dead child by the
-    /// record count, which is why the fold tracks "saw anything at all".
+    /// Companion to the pin above, over the SAME fixture: a real success envelope
+    /// whose text never carries `DONE_SENTINEL` must not classify `Done`, even with
+    /// `committed = true` — commits alone never buy a green close.
     #[test]
-    fn zero_records_and_exit_1_is_a_preflight_rejection() {
-        let fold = fold_cursor_stream("");
-        assert!(!fold.saw_envelope);
-        assert!(fold.saw_no_records(), "no record of any kind arrived");
+    fn an_envelope_without_the_sentinel_is_not_done() {
+        let fold = fold_cursor_stream(PERMISSION_DENIED);
+        assert_ne!(
+            classify_cursor_outcome(&fold, true, false, true, Some(0)),
+            Outcome::Done,
+            "commits alone never buy a green close"
+        );
+    }
+
+    /// D3 rule 1: the discriminator is inside the tool record, and the run reports
+    /// success regardless. The outcome must not read it — proved by clearing the
+    /// tool-call vectors and reclassifying to the SAME `Outcome`.
+    #[test]
+    fn a_failed_tool_call_does_not_change_the_outcome() {
+        let mut fold = fold_cursor_stream(TOOL_FAILURE);
+        assert!(
+            fold.failed_tool_calls[0].contains("exit 42"),
+            "{:?}",
+            fold.failed_tool_calls
+        );
+        assert_eq!(fold.subtype.as_deref(), Some("success"));
+        assert!(!fold.is_error, "a failed tool call is not a failed run");
+        assert!(
+            fold.degraded_note().is_some(),
+            "but it IS surfaced as degraded"
+        );
+        let before = classify_cursor_outcome(&fold, true, false, true, Some(0));
+        fold.failed_tool_calls.clear();
+        fold.denied_tool_calls.clear();
+        let after = classify_cursor_outcome(&fold, true, false, true, Some(0));
         assert_eq!(
-            classify_cursor_outcome(&fold, false, false, false, Some(1)),
-            Outcome::Stuck
+            before, after,
+            "the outcome never reads the tool-call vectors"
         );
     }
 
@@ -362,9 +365,8 @@ mod tests {
     /// where stderr says nothing at all, so an adapter classifying on stderr alone
     /// sees a silent success. Here the missing envelope is what fails it.
     #[test]
-    fn partial_records_with_no_envelope_is_truncation() {
-        let stdout = format!("{INIT}\n{{\"type\":\"assistant\",\"message\":{{\"content\":[]}}\n");
-        let fold = fold_cursor_stream(&stdout);
+    fn a_truncated_stream_has_records_but_no_envelope() {
+        let fold = fold_cursor_stream(KILLED);
         assert!(!fold.saw_envelope, "the run died before the envelope");
         assert!(
             !fold.saw_no_records(),
@@ -374,13 +376,28 @@ mod tests {
             classify_cursor_outcome(&fold, false, false, false, Some(1)),
             Outcome::Stuck
         );
-        // Even with a sentinel somehow present, no envelope means not Done.
-        let mut with_sentinel = fold_cursor_stream(&stdout);
-        with_sentinel.final_text = "RALPHY_DONE_EXIT".into();
-        assert_ne!(
-            classify_cursor_outcome(&with_sentinel, true, false, true, Some(0)),
-            Outcome::Done,
-            "absence of the envelope is itself a failure signal (D3)"
+        assert!(KILLED_ERR.is_empty(), "the empty-stderr half of D3 rule 3");
+    }
+
+    /// D3 rule 2: zero records + exit 1. Distinguishable from a truncated run (the
+    /// killed fixture) by the record count, which is why the fold tracks "saw
+    /// anything at all".
+    #[test]
+    fn a_preflight_rejection_has_zero_records() {
+        let fold = fold_cursor_stream(PREFLIGHT_REJECTION);
+        assert!(!fold.saw_envelope);
+        assert!(fold.saw_no_records(), "no record of any kind arrived");
+        assert!(
+            !fold_cursor_stream(KILLED).saw_no_records(),
+            "the killed fixture DID see records — that's the discriminator"
+        );
+        assert_eq!(
+            classify_cursor_outcome(&fold, false, false, false, Some(1)),
+            Outcome::Stuck
+        );
+        assert!(
+            PREFLIGHT_REJECTION_ERR.contains("Workspace directory does not exist"),
+            "{PREFLIGHT_REJECTION_ERR}"
         );
     }
 
@@ -413,14 +430,18 @@ mod tests {
     /// ADR-0038: exit 130 is what Ralphy's own budget and idle watchdogs produce.
     /// Reporting that as `Stuck` would blame the agent for a stop Ralphy chose.
     #[test]
-    fn an_interrupt_is_not_reported_as_a_crash() {
-        let stdout = format!("{INIT}\n");
-        let fold = fold_cursor_stream(&stdout);
+    fn an_interrupt_is_reported_as_interrupted() {
+        let fold = fold_cursor_stream(INTERRUPTED_STREAM);
         let outcome = classify_cursor_outcome(&fold, false, false, false, Some(130));
         assert_eq!(
             outcome,
             Outcome::Timeout,
             "`Aborting operation...` is a stop, not a crash"
+        );
+        assert_eq!(
+            INTERRUPTED_ERR.trim(),
+            "Aborting operation...",
+            "{INTERRUPTED_ERR:?}"
         );
         // A hard kill (no exit code at all, empty stderr) stays Stuck.
         assert_eq!(
