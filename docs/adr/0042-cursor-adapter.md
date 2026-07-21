@@ -513,6 +513,11 @@ manifest.
   credential, forcing a second login — a worse trade for the operator.
   The adapter documents the behaviour and its token cost, and does not fight it.
 
+**Implemented** (#246): `crates/ralphy-agent-cursor/src/skills.rs` +
+`docs/configuration.md`'s Cursor section; `docs/live/cursor-246-skill-body.log`
+re-verifies P16 (a planted skill's BODY, not its description, is read) under
+Ralphy's own materialization rather than a hand-planted probe skill.
+
 ## D13 — Limits: pending
 
 ⬜ **Open, with a bound.** C7 is the one ADR-0040 question the spike did not

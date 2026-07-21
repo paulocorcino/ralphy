@@ -173,6 +173,48 @@ every effort-capable model Copilot publishes today starts at `low`, so
 "nothing supported at or below the request → use the lowest supported level").
 If you want the model's own default, leave the key unset.
 
+## Cursor run defaults (`cursor.*`)
+
+| Key | Meaning |
+| --- | --- |
+| `cursor.allow_codebase_indexing_i_understand_the_risk` | **Danger.** Opts back into Cursor's default behavior of uploading the enclosing repository to its servers (ADR-0042 D6). Off by default: Ralphy refuses to spawn `cursor-agent` in a repository lacking `.cursorindexingignore`, and never writes that file for you. |
+
+```powershell
+ralphy config set cursor.allow_codebase_indexing_i_understand_the_risk true
+```
+
+### Skills land with no flag, env var or manifest
+
+Unlike Copilot (`.agents/skills`), Cursor auto-discovers `SKILL.md` files
+recursively under several roots, and Ralphy materializes its bundled skills
+into `<repo>/.cursor/skills/` on every run — no `--plugin-dir`, no environment
+variable, no `.cursor-plugin/plugin.json` manifest (ADR-0042 D12). This is the
+cheapest skill delivery of any vendor Ralphy drives.
+
+Because every run executes against an isolated, scratch `CURSOR_CONFIG_DIR`
+(D17), the operator's own `~/.cursor/skills/` is **not visible** to a Ralphy
+run. Only the repository-local root is read.
+
+### The foreign harvest is real, and it is not suppressed
+
+Cursor's skill discovery is not scoped to `.cursor/skills` alone: it also
+walks `.claude/skills`, `.codex/skills` and their `~/` equivalents — with no
+CLI-side allowlist. A trivial "reply OK" probe against an account with a
+personal Claude Code skills library measured **78 foreign skills** injected
+into a single request, at a cost of **18 212 input tokens** for that one
+call (ADR-0042 D12; spike §8 Phase 4).
+
+Isolating `HOME`/`CURSOR_CONFIG_DIR` further would suppress the harvest, but
+it would also isolate the vendor credential, forcing a second login — a worse
+trade for the operator than the token cost. Ralphy documents the behavior
+here and does not fight it. **D17's config isolation does not help**: the
+foreign roots are resolved from the repository and `HOME`, not from
+`CURSOR_CONFIG_DIR`, so they are harvested regardless.
+
+Practical consequence: a per-issue token budget tuned against another vendor
+(one with no foreign-skill harvest) reads wrong for Cursor — expect materially
+higher input-token floors on this vendor, independent of the task.
+
 ## Events sink keys (`events.*`)
 
 Stored in the **global** `~/.ralphy/events.toml`, not `settings.json`. See
