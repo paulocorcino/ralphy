@@ -434,6 +434,13 @@ Two constraints:
   never written. `scan_gemini` reports it as such rather than presenting a total
   it knows is short.
 
+The label is carried, not implied: every record `scan_gemini` emits sets
+`lower_bound: true` on the [ADR-0033](./0033-interactive-usage-stateless-scan.md)
+`InteractiveRecord` (every other vendor sets `false`), it is serialized by
+`/api/usage`, and the workbench's Usage modal renders such a record's Tokens cell
+as `≥ n (lower bound)` — on the number itself, so it cannot be read without its
+caveat.
+
 ## D11 — Limits map to `Limit(None)` plus the synthetic cadence, and Ralphy adds no retry
 
 Gemini reserves **no exit code for quota** despite having ten semantic codes,
