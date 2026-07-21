@@ -327,13 +327,25 @@ onto the same vendor — they reuse the run path's seams by construction:
   `gemini skills list` receipt moved out to `report_skill_discovery`, which
   only the turn-driving paths pay. It is an extra child spawn per verb and
   answers nothing a one-shot acts on.
-- **The ladder is exit-code-first here too.** `tasks::one_shot_stop` repeats
-  `plan()`'s precedence — hard-stop revocation, provider limit, informational
-  revocation, `ExitClass::actionable_stop()`, wall timeout — which is why the
+- **The ladder is exit-code-first here too — and gated on failure.**
+  `tasks::one_shot_stop` orders hard-stop revocation, wall timeout, provider
+  limit, informational revocation, `ExitClass::actionable_stop()`. It is why the
   verbs cannot go through `run_text_session`: that runner discards the child's
   exit status, and this vendor's most actionable diagnoses (exit 44/52/53/54/55)
   live only there. `strip_bom` was promoted to `pub` in
   `ralphy-adapter-support` so the artifact BOM guard stays one implementation.
+
+  The **gate** matters as much as the order, and a first pass got it wrong: two
+  rungs key on FREE TEXT in the combined log, and on this vendor that text is
+  routine rather than diagnostic. A managed host prints "disabled by
+  administrator" in every log, and `draft_issues`/`triage_issues` pipe the
+  model's own prose through stdout under `--output-format stream-json`, so a
+  backlog that merely MENTIONS a rate limit would be reported as one. The ladder
+  is therefore consulted only when the child did NOT succeed — matching
+  `plan()`, whose ladder is `run_plan_session`'s `on_missing` and runs only when
+  no plan was written, and `classify_gemini_outcome`, whose is
+  `(!succeeded).then(…)`. The wall timeout sits SECOND rather than last because
+  a reaped child has `exit == None`, which makes the exit-code rung inert.
 
 **Live, this pass (2026-07-21).** The #253 blocker has HEALED: `gemini -p
 hello` returns on this host. A real end-to-end one-shot ran —
