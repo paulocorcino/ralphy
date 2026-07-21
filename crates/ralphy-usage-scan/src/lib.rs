@@ -4,8 +4,8 @@
 //! daemon calls it on request and serializes the result.
 //!
 //! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]),
-//! **OpenCode** ([`opencode`]), **Kimi** ([`kimi`]), and **Copilot**
-//! ([`copilot`]) modules. The
+//! **OpenCode** ([`opencode`]), **Kimi** ([`kimi`]), **Copilot**
+//! ([`copilot`]), and **Cursor** ([`cursor`]) modules. The
 //! one-module-per-vendor shape (§7) leaves room for more to follow. The [`kimi`]
 //! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
 //! attribution lives in `kimi.rs`, not here; this file owns only the shared
@@ -17,12 +17,14 @@ use std::path::Path;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
+pub mod cursor;
 pub mod kimi;
 pub mod opencode;
 
 pub use claude::scan_claude;
 pub use codex::scan_codex;
 pub use copilot::{scan_copilot, session_reasoning_effort, session_tokens};
+pub use cursor::scan_cursor;
 pub use kimi::scan_kimi;
 pub use opencode::scan_opencode;
 
@@ -115,6 +117,20 @@ pub struct CopilotScan<'a> {
 /// format is decided by which root a `wire.jsonl` lives under. Plus the run-owned
 /// ids to exclude, the repo registry for attribution, and an optional `since`
 /// lower bound on `last_ts`.
+/// Everything the Cursor scan reads, mirroring [`KimiScan`]'s two-root shape but
+/// with ONE base: `cursor_dir` is the `.cursor` base, under which the scan walks
+/// BOTH `chats/<hash>/<sid>/meta.json` and
+/// `projects/<slug>/agent-transcripts/<sid>/` and unions them by session id
+/// (ADR-0042 D11 — neither store alone enumerates every session). Plus the
+/// run-owned ids to exclude, the repo registry for attribution, and an optional
+/// `since` lower bound on `last_ts`.
+pub struct CursorScan<'a> {
+    pub cursor_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
 pub struct KimiScan<'a> {
     pub kimi_dir: &'a Path,
     pub kimi_code_dir: &'a Path,
