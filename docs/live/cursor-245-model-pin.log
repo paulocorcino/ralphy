@@ -1,0 +1,105 @@
+# Live evidence - issue #245, 2026-07-21, C:/Dev/FinCal, cursor-agent 2026.07.17-3e2a980
+# Account: subscriptionTier "Free" (cursor-agent about --format json).
+#
+# == A. The first-party pin, direct against the vendor ==
+# command: CURSOR_AGENT_DISABLE_DEBUG_LOG=1 cursor-agent.cmd -p "Reply with the single word OK. Do not use any tools." --model composer-2.5 --force --output-format stream-json
+# exit 0. The stream is reproduced below with the `thinking` deltas elided.
+# This is the criterion: a FREE plan CAN name the first-party model, and the
+# vendor's own `Named models unavailable Free plans can only use Auto` sentence
+# (see cursor-245-model-refusal.log) is wrong about that.
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"C:\\Dev\\FinCal","session_id":"1d26605e-7339-4efb-83c1-a52f042bae29","model":"Composer 2.5","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Reply with the single word OK. Do not use any tools."}]},"session_id":"1d26605e-7339-4efb-83c1-a52f042bae29"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"OK"}]},"session_id":"1d26605e-7339-4efb-83c1-a52f042bae29"}
+{"type":"result","subtype":"success","duration_ms":48544,"duration_api_ms":48544,"is_error":false,"result":"OK","session_id":"1d26605e-7339-4efb-83c1-a52f042bae29","request_id":"1c6d11c8-c32e-40fa-b071-2f9dc17c6cbd","usage":{"inputTokens":10966,"outputTokens":33,"cacheReadTokens":6003,"cacheWriteTokens":0}}
+
+# == B. The same pin end to end, through ralphy ==
+# command: ./target/debug/ralphy.exe run --repo C:/Dev/FinCal --only-issue 108 --agent cursor
+#          --base-branch origin/master --plan-model composer-2.5 --dry-run --verbose
+# 06:39:50 -> 07:32:16 (52 min). The planner ran to completion on the Free plan and
+# wrote a finalized plan for FinCal #108 (its trailer is in the transcript below).
+# NOTE: this binary predates the price rows of 62cf85f, which is why the tail still
+# warns 'unknown model' for glm-5.2 and gpt-5.6-sol - exactly the two families this
+# issue's table now carries. That warning is the before-picture of the criterion.
+[2m2026-07-21 06:39:32[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Dev/FinCal [3mstamp[0m[2m=[0m20260721-063932 [3mdry_run[0m[2m=[0mtrue
+🐙 Ralphy - v0.1.0-rc13
+FinCal · afk/run-20260720-143515 · https://github.com/paulocorcino/FinCal
+[2m2026-07-21 06:39:37[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#108 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"title":"Transferência: par vinculado neutro entre Contas","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missue #108
+[2m2026-07-21 06:39:37[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"cursor" [3mplan_agent[0m[2m=[0m"cursor" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0morigin/master [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-21 06:39:39[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260721-063932 [3mbase[0m[2m=[0morigin/master [3mwas[0m[2m=[0mafk/run-20260720-143515
+[2m2026-07-21 06:39:44[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m108 [3mtitle[0m[2m=[0mTransferência: par vinculado neutro entre Contas
+[2m2026-07-21 06:39:48[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m handoffs collected for planner [3mnumber[0m[2m=[0m108 [3mhandoffs[0m[2m=[0m2
+[2m2026-07-21 06:39:50[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m references collected for planner [3mnumber[0m[2m=[0m108 [3mreferences[0m[2m=[0m3
+[2m2026-07-21 06:39:50[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mcursor [3mmodel[0m[2m=[0mcomposer-2.5 [3meffort[0m[2m=[0m
+[2m2026-07-21 07:32:16[0m [33m WARN[0m [2mralphy_agent_cursor[0m[2m:[0m cursor: failed tool calls: git ls-tree -r afk/run-20260720-143515 --name-only | rg "screenshot.*108|transferencia.spec"; git show afk/run-20260720-143515:fcbf2e05 --stat
+[2m2026-07-21 07:32:16[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m108 [3mopen_steps[0m[2m=[0m8 [3mup[0m[2m=[0m0 [3mcr[0m[2m=[0m0 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3mmodel[0m[2m=[0m"" [3msteps_json[0m[2m=[0m[{"status":"open","text":"`git merge feat/opencode-v2 -m \"merge: establish app baseline from predecessors (#103-#107)\"` — brings `src/`, `prisma/`, `__tests__/`, `tests/`, `package.json`; run `npm install` if lockfile changes"},{"status":"open","text":"`git cherry-pick fcbf2e05 a022715b 524cf3f4 3e5d687a` — restores `src/lib/saldo.ts` `totaisReceitaDespesa`, `src/lib/transferencia-service.ts`, `src/lib/transferencia-actions.ts`, `src/components/transferencia-modal.tsx`, wiring in `app-shell.tsx`/`topbar.tsx`/`lancamento-chip.tsx`, `__tests__/transferencia-service.test.ts`, saldo neutrality test; resolve conflicts favoring cherry-picked transfer code"},{"status":"open","text":"in `src/lib/lancamento-service.ts` `editarLancamento` and `excluirLancamento`, after `findFirst`, if `existing.transferenciaId` throw `\"Use o formulário de Transferência para alterar este lançamento.\"` / `\"Exclua a Transferência inteira, não uma perna isolada.\"`; extend select to `{ id: true, transferenciaId: true }`"},{"status":"open","text":"in `__tests__/lancamento-service.test.ts`, add cases: `editarLancamento` with `transferenciaId: \"t1\"` rejects with `\"Use o formulário de Transferência para alterar este lançamento.\"` and `updateMany` not called; `excluirLancamento` with `transferenciaId: \"t1\"` rejects with `\"Exclua a Transferência inteira, não uma perna isolada.\"` and `deleteMany` not called"},{"status":"open","text":"in `__tests__/saldo.test.ts` neutrality block, append taxa assertion: with `rendaLiquidaCentavos = 500_000`, common despesa `100_000`, transfer pair `30_000`, assert `(rendaLiquidaCentavos - totaisReceitaDespesa(all).despesaCentavos) / rendaLiquidaCentavos === 0.8` (transfer must not change denominator/numerator vs despesa-only baseline `0.8`)"},{"status":"open","text":"add `tests/transferencia.spec.ts`: seed user with 2 contas (pattern from `tests/lancamentos.spec.ts`); create transfer R$ 300,00 origem→destino via \"＋ Nova Transferência\"; assert toast `\"Transferência criada.\"`; open `/agenda`, click `↔ R$ 300,00 Transferência, Efetivado`, expect dialog `\"Nova Transferência\"` prefilled (not `\"Editar Lançamento\"`); change valor to R$ 450,00, save `\"Transferência atualizada.\"`; delete via modal, assert `\"Transferência excluída.\"`; screenshot dialog to `docs/screenshots/108-transferencia-20260721.png` with `animations: \"disabled\"` and zero `[data-sonner-toast]` before capture"},{"status":"open","text":"in `playwright.config.ts` `testMatch`, add `\"transferencia.spec.ts\"`"},{"status":"open","text":"run KNOWLEDGE.md gate sequence; fix any failures; ensure `npx vitest run __tests__/transferencia-service.test.ts __tests__/saldo.test.ts` and `npx playwright test tests/transferencia.spec.ts` pass with literal assertions above"}]
+[2m2026-07-21 07:32:16[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m108 [3mplan_md[0m[2m=[0m# Plan for #108: Transferência: par vinculado neutro entre Contas
+
+## Feasible: yes
+Issue is fully specified (TRA-01/02: linked pair via `transferenciaId`, separate modal, atomic service writes). Predecessors #103/#104 delivered on `feat/opencode-v2` (`src/lib/lancamento-service.ts`, `src/lib/saldo.ts`, agenda chip semantics in `src/lib/agenda.ts` + `src/components/agenda/lancamento-chip.tsx`). Prior run `afk/run-20260720-143515` landed 4 #108 commits (`fcbf2e05`–`3e5d687a`) but this branch (`afk/run-20260721-063932`) was cut from docs-only `origin/master` — no `src/` yet. Residue: E2E + screenshot + `excluirLancamento`/`editarLancamento` guards against single-leg mutation.
+
+## Execution model: one piped turn
+Single session reads only `.ralphy/plan.md`, the issue, and the repo; all signatures, literal assertions (`expect(...).toBe(70_000)`, `expect(...).toEqual({ receitaCentavos: 0, despesaCentavos: 0 })`, `expect(...).toHaveBeenCalledTimes(2)`), and traps (merge baseline before coding, Playwright `animations: "disabled"`, `getByRole("textbox", { name: "Data" })`) are inline below.
+
+## Done when
+- `npx vitest run __tests__/transferencia-service.test.ts __tests__/saldo.test.ts` exits 0; saldo suite includes `totaisReceitaDespesa` neutrality test asserting `saldoAtual(..., "origem") === 70_000`, `saldoAtual(..., "destino") === 130_000`, `totaisReceitaDespesa(par) === { receitaCentavos: 0, despesaCentavos: 0 }`, and taxa-poupança sobra unchanged by transfer pair
+- `npx playwright test tests/transferencia.spec.ts` exits 0; spec creates via "＋ Nova Transferência", edits via agenda chip click (not Lançamento modal), deletes pair, captures `docs/screenshots/108-transferencia-20260721.png` with `animations: "disabled"`
+- KNOWLEDGE.md green gate passes in order: `python -m unittest discover -s dbkit/tests -p test_*_schema.py`, `python dbkit/tools/verify.py`, `npx prisma migrate dev`, `npm test`, `npm run lint`, `npm run build`, `npm run smoke:db`, `npm run test:e2e`
+- Review-only (omit if none): none
+
+## Acceptance ledger
+- [verified] Ação "Nova Transferência" (origem, destino, valor, data) cria o par vinculado com `transferenciaId` — evidence: `__tests__/transferencia-service.test.ts` `creates both legs sharing one transferenciaId inside a single transaction` asserts `origemCall[0].data.transferenciaId === destinoCall[0].data.transferenciaId`; Playwright create flow in `tests/transferencia.spec.ts`
+- [verified] O par é **neutro**: excluído de totais de Receita/Despesa e da Taxa de Poupança, mas afeta o saldo das duas Contas — evidence: `__tests__/saldo.test.ts` `move saldo entre duas Contas sem contar como Receita/Despesa` asserts `70_000`/`130_000`/`{ receitaCentavos: 0, despesaCentavos: 0 }` plus taxa-sobra assertion; `src/lib/saldo.ts` `totaisReceitaDespesa`
+- [verified] Renderizada com cor neutra (nunca verde/vermelho); nunca dentro do modal de Lançamento comum — evidence: existing `__tests__/agenda.test.ts` transfer semantic cases (`bg-[#dce9ff]`, `border-[#75777d]`); `lancamento-chip.tsx` routes `transferenciaId` to `useTransferenciaModal`, not `useLancamentoModal`
+- [verified] Clicar numa perna na Agenda reabre "Nova Transferência" pré-preenchido em edição (não o modal de Lançamento) — evidence: Playwright `tests/transferencia.spec.ts` clicks `↔` chip, expects dialog name "Nova Transferência" with prefilled origem/destino/valor
+- [verified] Editar reescreve as duas pernas atomicamente (mesma operação de serviço, nunca uma perna sem a outra) — evidence: `__tests__/transferencia-service.test.ts` `updates both legs atomically when exactly two legs are found` asserts `lancamento.update` called 2× inside `$transaction`
+- [verified] Excluir remove sempre o par inteiro, nunca uma perna isolada — evidence: `__tests__/transferencia-service.test.ts` `deletes the whole pair by transferenciaId`; `lancamento-service.ts` rejects `editarLancamento`/`excluirLancamento` when `transferenciaId` set
+- [verified] Queries filtram por `userId`; ambas as Contas são do próprio usuário — evidence: `transferencia-service.test.ts` `rejects an account belonging to another user` asserts `findFirst` where `{ id, userId }`
+- [verified] Evidência: teste de que a Transferência move saldo mas não entra em Receita/Despesa + teste de atomicidade da edição/exclusão do par + screenshot — evidence: vitest files above + committed `docs/screenshots/108-transferencia-20260721.png`
+
+## Verify
+python -m unittest discover -s dbkit/tests -p test_*_schema.py
+python dbkit/tools/verify.py
+npx vitest run __tests__/transferencia-service.test.ts __tests__/saldo.test.ts
+npx playwright test tests/transferencia.spec.ts
+npm test
+npm run lint
+npm run build
+npm run smoke:db
+npm run test:e2e
+
+## Decisions
+- Decision: merge `feat/opencode-v2` then cherry-pick `fcbf2e05 a022715b 524cf3f4 3e5d687a` from `afk/run-20260720-143515`. Why: current branch is docs-only; those 4 commits are the complete prior #108 implementation without #111 scope.
+- Decision: pair = DESPESA on origem + RECEITA on destino, shared `transferenciaId`, `categoriaId: null` (TRA-01). Why: matches issue + existing agenda fixtures (`tests/agenda.spec.ts` transfer rows).
+- Decision: sole write path `criarTransferencia`/`editarTransferencia`/`excluirTransferencia` in `src/lib/transferencia-service.ts` (TRA-02); block `editarLancamento`/`excluirLancamento` on `transferenciaId !== null`. Why: issue forbids single-leg mutation outside transfer service.
+- Decision: status via `defaultStatusForDate(data)` on create/edit, not hard-coded EFETIVADO. Why: consistent with #103 date→status rule; agenda already renders PENDENTE/EFETIVADO transfer chips.
+- Decision: neutrality helper `totaisReceitaDespesa` in `src/lib/saldo.ts` (skip rows with `transferenciaId`). Why: motor stays pure; taxa de poupança exclusion follows because sobra = renda − despesas and transfers never enter despesa totals.
+- Decision: separate `src/components/transferencia-modal.tsx` + `TransferenciaModalProvider` in `src/components/app-shell.tsx`; topbar button "＋ Nova Transferência". Why: issue explicitly forbids common Lançamento modal.
+
+## Caveats
+- Current worktree has no application code — only docs/scripts (`git ls-tree HEAD` vs `feat/opencode-v2` 94 commits ahead) (source: tree inspection this pass) — handled: step 1 merges `feat/opencode-v2` before any feature work.
+- Prior #108 attempt on `afk/run-20260720-143515` never added `tests/transferencia.spec.ts` or `docs/screenshots/108-*` (source: `git ls-tree afk/run-20260720-143515`) — handled: steps 6–7 author E2E + screenshot.
+- `excluirLancamento`/`editarLancamento` on prior branch still mutate transfer legs if called directly (source: `afk/run-20260720-143515:src/lib/lancamento-service.ts`) — handled: step 3 adds service guards + tests.
+- Taxa de Poupança UI (`src/lib/diagnostico.ts`) is #111 scope, not on `feat/opencode-v2` (source: branch diff) — handled: prove exclusion via `totaisReceitaDespesa` + explicit sobra/taxa arithmetic in `__tests__/saldo.test.ts`, not diagnostico page.
+- Playwright screenshot pixels unstable without `devIndicators: false` and `animations: "disabled"` (source: `KNOWLEDGE.md` "Next's development indicator") — handled: mirror `tests/lancamentos.spec.ts` pattern in new spec.
+
+## Steps
+- [ ] `git merge feat/opencode-v2 -m "merge: establish app baseline from predecessors (#103-#107)"` — brings `src/`, `prisma/`, `__tests__/`, `tests/`, `package.json`; run `npm install` if lockfile changes
+- [ ] `git cherry-pick fcbf2e05 a022715b 524cf3f4 3e5d687a` — restores `src/lib/saldo.ts` `totaisReceitaDespesa`, `src/lib/transferencia-service.ts`, `src/lib/transferencia-actions.ts`, `src/components/transferencia-modal.tsx`, wiring in `app-shell.tsx`/`topbar.tsx`/`lancamento-chip.tsx`, `__tests__/transferencia-service.test.ts`, saldo neutrality test; resolve conflicts favoring cherry-picked transfer code
+- [ ] in `src/lib/lancamento-service.ts` `editarLancamento` and `excluirLancamento`, after `findFirst`, if `existing.transferenciaId` throw `"Use o formulário de Transferência para alterar este lançamento."` / `"Exclua a Transferência inteira, não uma perna isolada."`; extend select to `{ id: true, transferenciaId: true }`
+- [ ] in `__tests__/lancamento-service.test.ts`, add cases: `editarLancamento` with `transferenciaId: "t1"` rejects with `"Use o formulário de Transferência para alterar este lançamento."` and `updateMany` not called; `excluirLancamento` with `transferenciaId: "t1"` rejects with `"Exclua a Transferência inteira, não uma perna isolada."` and `deleteMany` not called
+- [ ] in `__tests__/saldo.test.ts` neutrality block, append taxa assertion: with `rendaLiquidaCentavos = 500_000`, common despesa `100_000`, transfer pair `30_000`, assert `(rendaLiquidaCentavos - totaisReceitaDespesa(all).despesaCentavos) / rendaLiquidaCentavos === 0.8` (transfer must not change denominator/numerator vs despesa-only baseline `0.8`)
+- [ ] add `tests/transferencia.spec.ts`: seed user with 2 contas (pattern from `tests/lancamentos.spec.ts`); create transfer R$ 300,00 origem→destino via "＋ Nova Transferência"; assert toast `"Transferência criada."`; open `/agenda`, click `↔ R$ 300,00 Transferência, Efetivado`, expect dialog `"Nova Transferência"` prefilled (not `"Editar Lançamento"`); change valor to R$ 450,00, save `"Transferência atualizada."`; delete via modal, assert `"Transferência excluída."`; screenshot dialog to `docs/screenshots/108-transferencia-20260721.png` with `animations: "disabled"` and zero `[data-sonner-toast]` before capture
+- [ ] in `playwright.config.ts` `testMatch`, add `"transferencia.spec.ts"`
+- [ ] run KNOWLEDGE.md gate sequence; fix any failures; ensure `npx vitest run __tests__/transferencia-service.test.ts __tests__/saldo.test.ts` and `npx playwright test tests/transferencia.spec.ts` pass with literal assertions above
+
+<!-- ralphy-plan: issue=108 -->
+
+[2m2026-07-21 07:32:16[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"completed" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m1 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m0 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"status":"planned"}] [3mup[0m[2m=[0m0 [3mcr[0m[2m=[0m0 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3mduration_s[0m[2m=[0m3164
+[2m2026-07-21 07:32:16[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `glm-5.2` to pricing.toml to price it [3mmodel[0m[2m=[0m"glm-5.2"
+[2m2026-07-21 07:32:16[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `gpt-5.6-sol` to pricing.toml to price it [3mmodel[0m[2m=[0m"gpt-5.6-sol"
+[2m2026-07-21 07:32:16[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `k3` to pricing.toml to price it [3mmodel[0m[2m=[0m"k3"
+[2m2026-07-21 07:32:16[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m some tokens had no model attribution — not priced (shown as +?) [3mmodel[0m[2m=[0m"unknown"
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+0 commit(s) on 'afk/run-20260721-063932'
+DryRun: returned repo to 'afk/run-20260720-143515'; empty run branch removed.
+run: in 0 cr 0 cw 0 out 0 · $? · project: paulocorcino/FinCal in 19.3M cr 503.1M cw 0 out 2.8M · $4.47+?
