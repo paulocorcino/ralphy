@@ -218,3 +218,23 @@ console are fetched at runtime by `startAdminControlsPolling` /
 are **never on disk**. The pre-spawn file tier therefore cannot see them; only
 the in-flight sentence can. Neither tier subsumes the other, and no managed host
 was available to observe the server-pushed case directly.
+
+## #256: the root's lifetime
+
+Read this pass, against the same installed bundle (`gemini` 0.51.0, not the
+web): `cleanupExpiredSessions(config2, settings.merged).catch(...)` is called
+un-awaited at `gemini-EVKJWIDN.js:28963` — a headless run that exits in seconds
+may never see the vendor's own cleanup complete. `chunk-HR7S6IG5.js:12612-12652`
+defines the retention schema Ralphy now writes into `settings.json`'s
+`general.sessionRetention`: `enabled: boolean`, `maxAge: string` (default
+`"30d"`), `maxCount: number`, `minRetention: string` (default `"1d"`);
+`validateRetentionConfig` (`chunk-HR7S6IG5.js:10485`) rejects `maxAge <
+minRetention` and `maxCount < 1`. `30d` / `50` sit inside that window.
+
+Because the vendor's own mechanism is fire-and-forget, Ralphy does not rely on
+the setting alone: `root::ensure` prunes sessions itself, deterministically,
+every reconciliation — keyed on the file stem (a session is a `.json`+`.jsonl`
+pair sharing one stem, per `identifySessionsToDelete` in
+`chunk-HR7S6IG5.js`) so a prune cannot orphan half a pair, and scoped to
+`<cli_dir>/tmp/*/chats/session-*` only, never the root's top level, so an
+`installation_id` or an OAuth credential file cannot be touched by it.
