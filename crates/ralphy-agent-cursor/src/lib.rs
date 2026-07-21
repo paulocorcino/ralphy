@@ -35,6 +35,7 @@ mod guards;
 mod model;
 mod outcome;
 mod settings;
+mod skills;
 
 /// Whether the operator is logged into Cursor, from the vendor's own structured
 /// answer (ADR-0042 D8) — what `ralphy init`'s gate reports.
@@ -55,6 +56,7 @@ pub use model::model_family;
 use command::{build_cursor_command, mint_session_id};
 use model::model_refusal_stop;
 use outcome::{classify_cursor_outcome, fold_cursor_stream};
+use skills::materialize_cursor_skills;
 
 /// `false` (ADR-0042 D15): no attachment channel appears anywhere in Cursor's
 /// headless surface, so a triage attachment fetched per ADR-0025 §4 has no
@@ -189,6 +191,7 @@ impl Agent for CursorAgent {
         // `run_cursor` re-asserts it — that is the cross-path invariant, and this is
         // the event-hygiene one.
         guards::indexing_gate(ws.repo_root(), self.allow_indexing)?;
+        let _skills = materialize_cursor_skills(ws)?;
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());
@@ -265,6 +268,7 @@ impl Agent for CursorAgent {
         // See `plan`: the gate precedes the `executing` event, and `run_cursor`
         // re-asserts it on every spawn path.
         guards::indexing_gate(ws.repo_root(), self.allow_indexing)?;
+        let _skills = materialize_cursor_skills(ws)?;
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());

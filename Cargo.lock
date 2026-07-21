@@ -1587,6 +1587,7 @@ name = "ralphy-agent-cursor"
 version = "0.1.0-rc13"
 dependencies = [
  "anyhow",
+ "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "serde",
