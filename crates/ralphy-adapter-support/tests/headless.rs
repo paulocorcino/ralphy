@@ -341,6 +341,100 @@ fn healthy_child_with_a_degraded_matcher_survives() {
     let _ = std::fs::remove_file(&log_path);
 }
 
+// ── process-tree teardown: no descendant survives a kill ────────────────────
+
+/// A unique temp path for a per-test heartbeat file, written by the LEAF of the
+/// three-level helper tree.
+fn temp_heartbeat(tag: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "ralphy-headless-beat-{tag}-{}.txt",
+        std::process::id()
+    ))
+}
+
+/// Build the root of the three-level heartbeat tree, forwarding the leaf's
+/// heartbeat path as the second argv word.
+fn heartbeat_cmd(beat: &std::path::Path) -> Command {
+    let mut cmd = child_cmd("heartbeat-tree");
+    cmd.arg(beat);
+    cmd
+}
+
+/// Assert the tree really ran and then really stopped: the heartbeat grew while it
+/// was alive (otherwise the whole test passes vacuously against a leaf that never
+/// started), and its byte length is UNCHANGED after a further 1.5 s — a surviving
+/// descendant would have appended ~15 more ticks in that window.
+fn assert_heartbeat_grew_then_froze(beat: &std::path::Path) {
+    let len_at_kill = std::fs::metadata(beat).map(|m| m.len()).unwrap_or(0);
+    assert!(
+        len_at_kill > 0,
+        "the leaf must have written before the kill, or the freeze proves nothing"
+    );
+    std::thread::sleep(Duration::from_millis(1500));
+    let len_after = std::fs::metadata(beat).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(
+        len_after, len_at_kill,
+        "a descendant three levels down outlived the kill and kept writing"
+    );
+}
+
+#[test]
+fn a_wall_timeout_leaves_no_surviving_descendant() {
+    // `timeout_with_surviving_grandchild_still_returns_promptly` only proves the
+    // CALL returns — the reader reaching EOF says nothing about whether the
+    // grandchild is still running. This is the missing half: the leaf's own writes
+    // must stop, which is the only observation that outlives the closed pipes.
+    let log_path = temp_log("beat-wall");
+    let beat = temp_heartbeat("wall");
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+
+    let r = HeadlessCall::new(
+        heartbeat_cmd(&beat),
+        "ignored prompt",
+        Duration::from_millis(800),
+        &log_path,
+    )
+    .run()
+    .expect("a wall-timed tree run should not error");
+
+    assert!(r.timed_out, "the tree outlived its 800ms wall timeout");
+    assert_heartbeat_grew_then_froze(&beat);
+
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+}
+
+#[test]
+fn an_idle_kill_leaves_no_surviving_descendant() {
+    // The idle path tears the tree down through a different door than the wall
+    // clock, so it needs its own proof. The leaf writes to a FILE, never to stdout,
+    // so nothing it does rearms the idle beacon — that is what makes a tree which
+    // is demonstrably alive still reachable by the watchdog.
+    let log_path = temp_log("beat-idle");
+    let beat = temp_heartbeat("idle");
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+
+    let r = HeadlessCall::new(
+        heartbeat_cmd(&beat),
+        "ignored prompt",
+        // A wall timeout the tree would happily sleep out: only the watchdog can
+        // end this run.
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("an idle-watched tree run should not error");
+
+    assert!(r.idle_killed, "the idle watchdog fired, not the wall clock");
+    assert_heartbeat_grew_then_froze(&beat);
+
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+}
+
 #[test]
 fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
     // `0` is the operator's opt-out: the silent child now runs to the wall timeout

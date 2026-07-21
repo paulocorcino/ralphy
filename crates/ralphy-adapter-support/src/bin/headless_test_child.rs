@@ -30,6 +30,16 @@
 //!   banners. Exercises the API-degraded path — a matched degraded line must NOT
 //!   rearm the idle beacon, so this child is idle-reaped **despite** talking,
 //!   unlike `chatty`.
+//! - `heartbeat <path>` — append `"tick\n"` to `<path>` every [`CHATTY_TICK`] for
+//!   ~60s. The leaf of the survival tree: it writes to a FILE, never to stdout, so
+//!   its liveness is observable *after* the runner has closed the pipes — the file
+//!   growing past a kill is the only evidence a descendant outlived it. Writing to
+//!   a file rather than stdout is also what keeps the idle beacon un-rearmed, which
+//!   is what makes the idle-kill path reachable at all.
+//! - `heartbeat-tree <path>` / `heartbeat-tree-inner <path>` — spawn the next level
+//!   down (`heartbeat-tree-inner`, then `heartbeat`) with stdout INHERITED, then
+//!   sleep ~60s. Three levels below the runner, mirroring the depth of the Node
+//!   process tree the vendor CLIs run under (ADR-0043 D18).
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless.rs` via the shared constants below.
@@ -53,6 +63,17 @@ pub const CHATTY_TICK: Duration = Duration::from_millis(100);
 /// The line the `degraded-chatty` child emits every tick — a representative
 /// degraded/retry banner the caller's `degraded_line` predicate matches on.
 pub const DEGRADED_MARKER: &str = "Waiting for API response";
+
+/// Spawn a copy of ourselves one level deeper in `next` mode, forwarding the
+/// heartbeat path, then sleep past any test's patience. stdout is INHERITED so the
+/// whole tree holds the runner's pipe open — only a process-tree kill closes it.
+fn spawn_next_level(next: &str) {
+    let path = std::env::args().nth(2).unwrap_or_default();
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).arg(next).arg(&path).spawn();
+    }
+    std::thread::sleep(Duration::from_secs(60));
+}
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
@@ -102,6 +123,25 @@ fn main() {
                 std::thread::sleep(CHATTY_TICK);
             }
         }
+        "heartbeat" => {
+            let path = std::env::args().nth(2).unwrap_or_default();
+            for _ in 0..600 {
+                // Reopen-append per tick and flush: the test reads the file's
+                // length from another process while this one is still running, so
+                // buffered writes would look like a frozen descendant.
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                {
+                    let _ = f.write_all(b"tick\n");
+                    let _ = f.flush();
+                }
+                std::thread::sleep(CHATTY_TICK);
+            }
+        }
+        "heartbeat-tree" => spawn_next_level("heartbeat-tree-inner"),
+        "heartbeat-tree-inner" => spawn_next_level("heartbeat"),
         "echo-stdin" => {
             // Read to EOF before writing a byte: a partial read would silently
             // truncate exactly the way this mode exists to detect.
