@@ -10,6 +10,7 @@ pub enum Agent {
     Claude,
     Codex,
     Copilot,
+    Cursor,
     Kimi,
     Opencode,
 }
@@ -22,12 +23,16 @@ impl Agent {
     /// it would silently change which vendor drives a no-flag `ralphy init`/
     /// `triage` on a machine where multiple vendors are logged in, a behavior
     /// change no issue has asked for.
-    pub const ALL: [Agent; 5] = [
+    /// A NEWCOMER GOES LAST, for the same reason: appending preserves every
+    /// current no-flag choice, whereas inserting one before `Copilot` would change
+    /// it on a machine already logged into that newcomer.
+    pub const ALL: [Agent; 6] = [
         Agent::Claude,
         Agent::Codex,
         Agent::Kimi,
         Agent::Opencode,
         Agent::Copilot,
+        Agent::Cursor,
     ];
 
     pub fn cli_name(&self) -> &'static str {
@@ -35,6 +40,7 @@ impl Agent {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
+            Agent::Cursor => "cursor",
             Agent::Kimi => "kimi",
             Agent::Opencode => "opencode",
         }
@@ -48,6 +54,7 @@ impl Agent {
             Agent::Claude => ralphy_agent_claude::ACCEPTS_IMAGES,
             Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
             Agent::Copilot => ralphy_agent_copilot::ACCEPTS_IMAGES,
+            Agent::Cursor => ralphy_agent_cursor::ACCEPTS_IMAGES,
             Agent::Kimi => ralphy_agent_kimi::ACCEPTS_IMAGES,
             Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
         }
@@ -175,7 +182,14 @@ pub(crate) fn github_remote(repo: &Path) -> bool {
 // execution agree — a `claude` under `~/.local/bin` but off `PATH` is reported
 // present and is the binary actually run, rather than being falsely called absent.
 pub(crate) fn agent_present(a: &Agent) -> bool {
-    locate_program(a.cli_name()).is_some()
+    match a {
+        // The one vendor whose selector is not its binary name: Cursor installs as
+        // `cursor-agent`/`agent` and is on `PATH` on NEITHER platform (ADR-0042
+        // D14), so `locate_program("cursor")` would look for a binary that does
+        // not exist and report every Cursor operator as missing the CLI.
+        Agent::Cursor => ralphy_agent_cursor::locate_cursor().is_some(),
+        _ => locate_program(a.cli_name()).is_some(),
+    }
 }
 
 /// The Copilot login verdict, split out from the spawning probe so the mapping
@@ -185,6 +199,14 @@ pub(crate) fn agent_present(a: &Agent) -> bool {
 /// surfaced by the report the operator reads.
 fn copilot_logged_in(probe: anyhow::Result<ralphy_agent_copilot::CopilotCatalog>) -> bool {
     probe.is_ok()
+}
+
+/// The Cursor login verdict, split out from the spawning probe so the mapping is
+/// testable. The probe answers from `status --format json`'s `isAuthenticated`
+/// (ADR-0042 D8) — **never from the exit code, which is 0 while logged out**, so
+/// this arm must not fall through to the shared `status().success()` tail.
+fn cursor_logged_in(authenticated: bool) -> bool {
+    authenticated
 }
 
 pub(crate) fn agent_logged_in(a: &Agent) -> bool {
@@ -211,6 +233,13 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         // authenticate the child and make a logged-out operator look logged in) —
         // that now happens inside `fetch_catalog`.
         Agent::Copilot => return copilot_logged_in(ralphy_agent_copilot::fetch_catalog()),
+
+        // The second early return, for the opposite reason to Copilot's: Cursor
+        // answers authentication free and machine-readably, and its `status` verb
+        // exits **0 while logged out** (ADR-0042 D8). Falling through to the shared
+        // exit-status tail would report every logged-out Cursor operator as logged
+        // in — the precise failure this arm exists to avoid.
+        Agent::Cursor => return cursor_logged_in(ralphy_agent_cursor::probe_cursor_login()),
 
         Agent::Kimi => {
             // The kimi-code 0.28 headless contract (ADR-0028 D5), same argv shape the
@@ -259,11 +288,12 @@ mod tests {
         assert!(Agent::Claude.accepts_images());
         assert!(Agent::Codex.accepts_images());
         assert!(Agent::Copilot.accepts_images());
+        assert!(!Agent::Cursor.accepts_images());
         assert!(!Agent::Kimi.accepts_images());
         assert!(!Agent::Opencode.accepts_images());
         // The hardcoded ALL array length must track the enum: a new variant that
         // never joins ALL is invisible to `ralphy init`'s agent report.
-        assert_eq!(Agent::ALL.len(), 5);
+        assert_eq!(Agent::ALL.len(), 6);
     }
 
     /// `init`/`triage` auto-selection takes the FIRST logged-in agent in `ALL`, and
@@ -272,9 +302,60 @@ mod tests {
     /// reason to pin Copilot last is no longer a missing `tasks.rs` — it is
     /// auto-selection STABILITY: promoting Copilot would silently change which
     /// vendor drives a no-flag run, a behavior change no issue has asked for.
+    /// The rule generalizes: each newcomer is APPENDED, so no existing vendor's
+    /// auto-selection position ever moves.
     #[test]
-    fn copilot_stays_last_in_all() {
-        assert_eq!(Agent::ALL.last(), Some(&Agent::Copilot));
+    fn newcomers_go_last_in_all() {
+        assert_eq!(
+            &Agent::ALL[Agent::ALL.len() - 2..],
+            &[Agent::Copilot, Agent::Cursor]
+        );
+    }
+
+    /// D8's whole point: the verdict is the vendor's `isAuthenticated`, mapped
+    /// straight through — anything else (including a `status` that exited 0 while
+    /// logged out) is not logged in.
+    #[test]
+    fn cursor_logged_in_maps_an_authenticated_status_to_true_and_anything_else_to_false() {
+        assert!(cursor_logged_in(true));
+        assert!(!cursor_logged_in(false));
+        // And the verdict source itself ignores the exit code (adapter-side).
+        assert!(!ralphy_agent_cursor::cursor_status_verdict(
+            r#"{"status":"unauthenticated","isAuthenticated":false,"message":"Not logged in"}"#
+        ));
+    }
+
+    /// Source-text pin: `agent_logged_in` spawns real processes, so the routing is
+    /// what a test can hold. The Cursor arm must RETURN — falling through to the
+    /// shared `status().success()` tail would report every logged-out operator as
+    /// logged in. Needles assembled from fragments so this cannot match itself.
+    #[test]
+    fn cursor_login_probe_reads_the_status_json_not_the_exit_code() {
+        let src = include_str!("gate.rs");
+        let probe = src
+            .split_once("fn agent_logged_in")
+            .expect("the probe fn")
+            .1;
+        let probe = probe
+            .split_once(
+                "
+#[cfg(test)]",
+            )
+            .map(|(p, _)| p)
+            .unwrap_or(probe);
+        let arm = probe
+            .split_once(concat!("Agent::", "Cursor =>"))
+            .expect("the Cursor arm")
+            .1;
+        let arm = arm.split_once("Agent::").map(|(a, _)| a).unwrap_or(arm);
+        assert!(
+            arm.contains(concat!("return cursor_", "logged_in(")),
+            "the Cursor arm must RETURN, not fall through to the exit-status tail"
+        );
+        assert!(
+            arm.contains(concat!("probe_cursor", "_login()")),
+            "the verdict comes from the vendor's status json (D8)"
+        );
     }
 
     /// The Copilot login probe is the FREE catalog fetch (#231), not a paid

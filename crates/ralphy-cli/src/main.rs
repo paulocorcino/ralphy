@@ -70,7 +70,11 @@ pub(crate) fn consolidate_defaults(
 ) -> (Option<&'static str>, Option<&'static str>) {
     match agent {
         CliAgent::Claude => (Some("opus"), Some("medium")),
-        CliAgent::Codex | CliAgent::Copilot | CliAgent::Kimi | CliAgent::OpenCode => (None, None),
+        CliAgent::Codex
+        | CliAgent::Copilot
+        | CliAgent::Cursor
+        | CliAgent::Kimi
+        | CliAgent::OpenCode => (None, None),
     }
 }
 
@@ -97,6 +101,13 @@ fn consolidate_with_agent(
         CliAgent::Copilot => {
             ralphy_agent_copilot::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
+        // The one-shot verbs are their own slice of #242: this one lands the run
+        // loop only. An explicit bail is honest where a silent fallback to another
+        // vendor would not be.
+        CliAgent::Cursor => anyhow::bail!(
+            "ralphy: the one-shot verbs are not yet wired for --agent cursor \
+             (its own slice of #242); use another vendor"
+        ),
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }

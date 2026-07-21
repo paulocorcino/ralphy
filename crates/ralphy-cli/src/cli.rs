@@ -297,6 +297,10 @@ pub(crate) enum CliAgent {
     Codex,
     // One word `copilot` derives correctly from the variant name — no `#[value]` attr.
     Copilot,
+    // One word `cursor` derives correctly from the variant name — no `#[value]` attr.
+    // The binary is `cursor-agent`/`agent` (ADR-0042 D14); the SELECTOR is the
+    // vendor's name, as with every other adapter.
+    Cursor,
     // One word `kimi` derives correctly from the variant name — no `#[value]` attr.
     Kimi,
     // The ADR-0005 contract and the documented invocation are `--agent opencode`
@@ -312,6 +316,7 @@ impl CliAgent {
             CliAgent::Claude => "claude",
             CliAgent::Codex => "codex",
             CliAgent::Copilot => "copilot",
+            CliAgent::Cursor => "cursor",
             CliAgent::Kimi => "kimi",
             CliAgent::OpenCode => "opencode",
         }
@@ -617,6 +622,19 @@ mod tests {
             Some(CliAgent::Copilot)
         );
         assert_eq!(CliAgent::Copilot.cli_name(), "copilot");
+    }
+
+    #[test]
+    fn cli_agent_parses_cursor() {
+        // `--agent cursor` parses to the one-word variant and round-trips its
+        // cli_name. The SELECTOR is the vendor name even though the binary is
+        // `cursor-agent`/`agent` (ADR-0042 D14).
+        use clap::ValueEnum;
+        assert_eq!(
+            CliAgent::from_str("cursor", true).ok(),
+            Some(CliAgent::Cursor)
+        );
+        assert_eq!(CliAgent::Cursor.cli_name(), "cursor");
     }
 
     #[test]

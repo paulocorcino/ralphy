@@ -11,6 +11,7 @@ use anyhow::Result;
 use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
 use ralphy_agent_copilot::CopilotAgent;
+use ralphy_agent_cursor::CursorAgent;
 use ralphy_agent_kimi::KimiAgent;
 use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{github, Agent, BranchMode};
@@ -66,6 +67,35 @@ pub(crate) fn resolve_copilot(
         plan_effort: persisted.plan_effort.clone(),
         exec_effort: persisted.exec_effort.clone(),
         allow_builtin_mcps: persisted.allow_builtin_mcp_servers_i_understand_the_risk,
+    }
+}
+
+/// The Cursor per-phase model overrides and the D6 escape hatch, resolved once
+/// (flag, then settings.json, then `None`) so the executor and an optional split
+/// planner share one value.
+///
+/// `None` on either model does NOT omit `--model` — the adapter sends `auto`,
+/// because on this vendor an absent flag means "whatever the last invocation left
+/// behind" (ADR-0042 D4).
+pub(crate) struct ResolvedCursor {
+    pub(crate) plan_model: Option<String>,
+    pub(crate) exec_model: Option<String>,
+    /// D6's escape hatch, persisted-only: a per-run flag would make uploading the
+    /// operator's repository to a vendor a one-keystroke decision.
+    pub(crate) allow_indexing: bool,
+}
+
+/// Resolve the Cursor per-phase model overrides and the indexing opt-in
+/// (ADR-0042 D4/D6), mirroring [`resolve_copilot`].
+pub(crate) fn resolve_cursor(
+    plan_flag: Option<String>,
+    exec_flag: Option<String>,
+    persisted: &ralphy_agent_cursor::CursorSettings,
+) -> ResolvedCursor {
+    ResolvedCursor {
+        plan_model: config::resolve_optional_model(plan_flag, None),
+        exec_model: config::resolve_optional_model(exec_flag, None),
+        allow_indexing: persisted.allow_codebase_indexing_i_understand_the_risk,
     }
 }
 
@@ -151,6 +181,7 @@ pub(crate) fn build_agent(
     persisted_opencode_model: Option<String>,
     claude: &ResolvedClaude,
     copilot: &ResolvedCopilot,
+    cursor: &ResolvedCursor,
     idle_minutes: Option<u64>,
 ) -> Box<dyn Agent> {
     // The headless adapters drive one child shape, so they resolve the idle
@@ -191,6 +222,14 @@ pub(crate) fn build_agent(
                 .with_plan_effort(copilot.plan_effort.clone())
                 .with_exec_effort(copilot.exec_effort.clone())
                 .with_allow_builtin_mcps(copilot.allow_builtin_mcps)
+                .with_run_deadline(run_deadline)
+                .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+                .with_idle_minutes(headless_idle),
+        ),
+        CliAgent::Cursor => Box::new(
+            CursorAgent::new(cursor.exec_model.clone(), run_dir)
+                .with_plan_model(cursor.plan_model.clone())
+                .with_allow_indexing(cursor.allow_indexing)
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
@@ -520,5 +559,81 @@ mod tests {
             ..Default::default()
         };
         assert!(resolve_copilot(None, None, &persisted).allow_builtin_mcps);
+    }
+
+    #[test]
+    fn resolve_cursor_flag_wins() {
+        let resolved = resolve_cursor(
+            Some("composer-2.5".into()),
+            Some("composer-2.5-fast".into()),
+            &ralphy_agent_cursor::CursorSettings::default(),
+        );
+        assert_eq!(resolved.plan_model, Some("composer-2.5".into()));
+        assert_eq!(resolved.exec_model, Some("composer-2.5-fast".into()));
+    }
+
+    /// ADR-0042 has NO persisted Cursor model keys: `--model` is mandatory on this
+    /// vendor (D4), so there is no "unset" state to persist — the phase flags are
+    /// the whole model axis, and `None` becomes `--model auto` in the adapter.
+    /// This is the deliberate difference from `resolve_copilot`.
+    #[test]
+    fn resolve_cursor_takes_its_models_from_the_flags_only() {
+        let resolved = resolve_cursor(None, None, &ralphy_agent_cursor::CursorSettings::default());
+        assert_eq!(resolved.plan_model, None);
+        assert_eq!(resolved.exec_model, None);
+    }
+
+    /// D6's hatch reaches the agent only from settings.json, and defaults off — a
+    /// per-run flag would make uploading the repository a one-keystroke decision.
+    #[test]
+    fn resolve_cursor_allow_indexing_comes_from_settings_only() {
+        let bare = resolve_cursor(
+            Some("p".into()),
+            Some("e".into()),
+            &ralphy_agent_cursor::CursorSettings::default(),
+        );
+        assert!(!bare.allow_indexing, "the hatch defaults off");
+
+        let persisted = ralphy_agent_cursor::CursorSettings {
+            allow_codebase_indexing_i_understand_the_risk: true,
+        };
+        assert!(resolve_cursor(None, None, &persisted).allow_indexing);
+    }
+
+    /// `--agent cursor` must reach a REAL adapter, not fall through to another
+    /// vendor: the composition root's match is the last place the wiring can go
+    /// silently wrong (ADR-0042 D1).
+    #[test]
+    fn build_agent_builds_a_cursor_agent() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from(["ralphy", "run", "--agent", "cursor"])
+            .expect("`--agent cursor` must parse");
+        let crate::cli::Command::Run(args) = cli.command else {
+            panic!("expected the run subcommand");
+        };
+        assert_eq!(args.agent, CliAgent::Cursor);
+
+        let claude = ResolvedClaude {
+            plan_model: String::new(),
+            plan_effort: String::new(),
+            exec_effort: String::new(),
+            default_exec_model: String::new(),
+            max_minutes_per_issue: 30,
+            remote_control: false,
+        };
+        let copilot = resolve_copilot(None, None, &Default::default());
+        let cursor = resolve_cursor(None, None, &Default::default());
+        let agent = build_agent(
+            CliAgent::Cursor,
+            &args,
+            PathBuf::from("/run"),
+            None,
+            None,
+            &claude,
+            &copilot,
+            &cursor,
+            Some(0),
+        );
+        assert_eq!(agent.name(), "cursor");
     }
 }

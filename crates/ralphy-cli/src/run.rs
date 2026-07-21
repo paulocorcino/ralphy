@@ -250,6 +250,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             warn!(error = %e, "malformed copilot settings section — its persisted defaults ignored");
             Default::default()
         });
+    let cursor_settings: ralphy_agent_cursor::CursorSettings = settings
+        .agent_settings(ralphy_agent_cursor::CursorSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed cursor settings section — its persisted defaults ignored");
+            Default::default()
+        });
     let base_branch = config::resolve_str(
         args.base_branch.clone(),
         settings.base_branch.clone(),
@@ -379,6 +385,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.exec_model.clone(),
         &copilot_settings,
     );
+    let resolved_cursor = wiring::resolve_cursor(
+        args.plan_model.clone(),
+        args.exec_model.clone(),
+        &cursor_settings,
+    );
     // The idle watchdog knob stays an `Option` through the composition root: an
     // absent value is not "off", it is "let each execution path use the default
     // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
@@ -391,6 +402,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         persisted_opencode_model.clone(),
         &resolved_claude,
         &resolved_copilot,
+        &resolved_cursor,
         idle_minutes,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
@@ -405,6 +417,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 persisted_opencode_model,
                 &resolved_claude,
                 &resolved_copilot,
+                &resolved_cursor,
                 idle_minutes,
             ),
             executor,
