@@ -91,12 +91,12 @@ pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
                     actor_email: actor_email.clone(),
                     // Codex `input_tokens` INCLUDES the cached subset, so subtract
                     // it out; `cache_creation` is always 0 (no write split).
-                    tokens: Tokens {
+                    tokens: Some(Tokens {
                         input: agg.totals.input.saturating_sub(agg.totals.cached),
                         output: agg.totals.output,
                         cache_read: agg.totals.cached,
                         cache_creation: 0,
-                    },
+                    }),
                     first_ts: agg.first_ts.unwrap_or_default(),
                     last_ts: agg.last_ts.unwrap_or_default(),
                 });
@@ -351,10 +351,14 @@ mod tests {
             since: None,
         });
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].tokens.input, 200, "1000 - 800 cached");
-        assert_eq!(records[0].tokens.cache_read, 800);
-        assert_eq!(records[0].tokens.cache_creation, 0);
-        assert_eq!(records[0].tokens.output, 200);
+        assert_eq!(
+            records[0].tokens.as_ref().unwrap().input,
+            200,
+            "1000 - 800 cached"
+        );
+        assert_eq!(records[0].tokens.as_ref().unwrap().cache_read, 800);
+        assert_eq!(records[0].tokens.as_ref().unwrap().cache_creation, 0);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 200);
     }
 
     #[test]
@@ -384,7 +388,7 @@ mod tests {
             since: None,
         });
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].tokens.input, 300);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 300);
     }
 
     #[test]

@@ -463,7 +463,7 @@ mod tests {
         });
         let control = records
             .iter()
-            .find(|r| r.tokens.input + r.tokens.output > 0)
+            .find(|r| r.tokens.as_ref().is_some_and(|t| t.input + t.output > 0))
             .expect(
                 "the store holds no billed session — the zero-usage oracle would prove nothing",
             );

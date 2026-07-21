@@ -47,7 +47,9 @@ pub struct InteractiveRecord {
     pub session_id: String,
     pub project: Option<String>,
     pub actor_email: Option<String>,
-    pub tokens: Tokens,
+    /// `None` means the vendor keeps NO token count anywhere — unavailable,
+    /// never zero. Serialized as `null` so a consumer cannot mistake it for `0`.
+    pub tokens: Option<Tokens>,
     pub first_ts: String,
     pub last_ts: String,
 }

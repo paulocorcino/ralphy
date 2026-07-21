@@ -294,7 +294,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
                 session_id,
                 project,
                 actor_email,
-                tokens: agg.tokens,
+                tokens: Some(agg.tokens),
                 first_ts: agg.first_ts.map(|d| d.to_rfc3339()).unwrap_or_default(),
                 last_ts: agg.last_ts.map(|d| d.to_rfc3339()).unwrap_or_default(),
             }
@@ -514,7 +514,7 @@ mod tests {
             since: None,
         });
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].tokens.input, 10);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 10);
         assert_eq!(records[0].project, None, "no cwd column, no attribution");
         assert_eq!(records[0].actor_email, None);
     }
@@ -646,7 +646,7 @@ mod tests {
             since: None,
         });
         assert_eq!(records.len(), 1, "scan_copilot sees the uncheckpointed row");
-        assert_eq!(records[0].tokens.input, 100);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 100);
     }
 
     /// The store under test is a LIVE WAL store with its writer still open — the
@@ -777,7 +777,7 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].project.as_deref(), Some("o/ralphy"));
-        assert_eq!(records[0].tokens.input, 46258);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 46258);
     }
 
     #[test]
