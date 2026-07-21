@@ -196,21 +196,56 @@ pub(crate) fn apply_auth_env<I, S>(
     cmd.env("GEMINI_CLI_HOME", home);
 }
 
+/// Every character (other than `.`, handled separately below)
+/// `AT_COMMAND_PATH_REGEX_SOURCE` (`chunk-FAVXT6HW.js:66616`,
+/// `(?:(?:"(?:[^"]*)")|(?:\\.|[^ \t\n\r,;!?()\[\]{}.]|\.(?!$|[ \t\n\r])))+`)
+/// terminates an UNQUOTED `@`-match at, beyond the space this function
+/// originally escaped alone: any of these ends the match unless itself
+/// backslash-escaped (the regex's own `\\.` alternative).
+const POSIX_AT_TERMINATORS: [char; 14] = [
+    ' ', '\t', '\n', '\r', ',', ';', '!', '?', '(', ')', '[', ']', '{', '}',
+];
+
+/// Whether an UNESCAPED `.` at index `i` in `chars` would still end the
+/// regex's match: only when it is the last character, or immediately
+/// followed by whitespace — the regex's own `\.(?!$|[ \t\n\r])` alternative
+/// admits every other bare period (an ordinary `name.ext` needs no escaping).
+fn posix_period_needs_escape(chars: &[char], i: usize) -> bool {
+    matches!(chars.get(i + 1), None | Some(' ' | '\t' | '\n' | '\r'))
+}
+
 /// Format `path` as an `@`-reference the vendor's `resolveAtCommandPath`
 /// resolves into an inline image attachment (ADR-0043 D14).
 ///
 /// The escaping is per-platform because `unescapePath` (vendor bundle
 /// `chunk-AWR3APYV.js:243431`) strips surrounding double quotes ONLY on
-/// `win32` and otherwise applies `replace(/\\(.)/g, "$1")`, while
-/// `AT_COMMAND_PATH_REGEX_SOURCE` (`chunk-FAVXT6HW.js:66616`) terminates the
-/// match at an unescaped space: a quoted path on POSIX would be `stat`ed with
-/// its literal quotes, and an unquoted path with a space would truncate on
-/// both platforms.
+/// `win32` and otherwise applies `replace(/\\(.)/g, "$1")` to every
+/// backslash-escaped character. On POSIX every char in
+/// [`POSIX_AT_TERMINATORS`] is backslash-escaped, plus a bare trailing `.`
+/// (see [`posix_period_needs_escape`]) — not only the space alone: a fetched
+/// attachment keeps its ORIGINAL upload filename verbatim
+/// (`github/attachments.rs::filename_from_url`), and parentheses, commas,
+/// semicolons and brackets are valid unencoded characters in a URL path
+/// segment — any of them left unescaped truncates the regex match silently,
+/// with no error: `handleAtCommand`'s zero-match branch just returns the
+/// query text unresolved. Escaping a character the regex would have admitted
+/// unescaped is harmless: `unescapePath` strips the backslash either way.
 pub(crate) fn at_reference(path: &Path, windows: bool) -> String {
     if windows {
         format!("@\"{}\"", path.display())
     } else {
-        format!("@{}", path.display().to_string().replace(' ', "\\ "))
+        let raw = path.display().to_string();
+        let chars: Vec<char> = raw.chars().collect();
+        let mut escaped = String::new();
+        for (i, &c) in chars.iter().enumerate() {
+            let needs_escape = POSIX_AT_TERMINATORS.contains(&c)
+                || (c == '.' && posix_period_needs_escape(&chars, i));
+            if needs_escape {
+                escaped.push('\\');
+            }
+            escaped.push(c);
+        }
+        format!("@{escaped}")
     }
 }
 
@@ -692,6 +727,30 @@ mod tests {
 
         let posix_path = Path::new("/tmp/a b/red.png");
         assert_eq!(at_reference(posix_path, false), r"@/tmp/a\ b/red.png");
+    }
+
+    /// Self-review HIGH: a fetched attachment keeps its original upload
+    /// filename verbatim, and `AT_COMMAND_PATH_REGEX_SOURCE` terminates an
+    /// unquoted POSIX match at more than just a space — every character in
+    /// `POSIX_AT_TERMINATORS` must be individually backslash-escaped, not
+    /// only the space `at_reference_escapes_per_platform` already covers. The
+    /// ordinary `.png` extension stays unescaped: the regex admits a bare `.`
+    /// as long as it is not followed by whitespace or end-of-string.
+    #[test]
+    fn at_reference_escapes_every_posix_terminator_not_only_space() {
+        let path = Path::new("/tmp/screenshot (1), v2!.png");
+        assert_eq!(
+            at_reference(path, false),
+            r"@/tmp/screenshot\ \(1\)\,\ v2\!.png"
+        );
+    }
+
+    /// A bare TRAILING `.` (no extension) still ends the regex's unquoted
+    /// match — `\.(?!$|[ \t\n\r])` only admits a period NOT at end-of-string.
+    #[test]
+    fn at_reference_escapes_a_trailing_period() {
+        let path = Path::new("/tmp/notes.");
+        assert_eq!(at_reference(path, false), r"@/tmp/notes\.");
     }
 
     #[test]

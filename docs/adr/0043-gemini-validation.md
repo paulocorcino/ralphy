@@ -373,15 +373,24 @@ by `command::at_reference`, and widens the child's workspace with one
 (`command::attachment_dirs` / `add_include_directories`) — the triage verb
 only; the other three one-shots do not change.
 
-**D14 revised: the vendor's own `resolveAtCommandPath`/`AT_COMMAND_PATH_REGEX`
-machinery, cited when this decision was made, turned out to belong to the
-CLI's INTERACTIVE input handler, not the headless stdin turn this adapter
-drives.** A control probe piping `@"<abs path outside the repo>" …` on stdin
-with NO `--include-directories` produced no `resolved to file:` or `Skipping
-unauthorized absolute path` debug line at all — the `@…` text reached the
-model completely unprocessed, as ordinary user-message text. The MODEL then
-chose, on its own initiative, to call the `read_file` tool on that literal
-path, which failed with a different, tool-level error:
+**D14 clarified, not overturned: `resolveAtCommandPath` DOES run on the
+headless stdin path.** `runNonInteractive` (`gemini-EVKJWIDN.js:23199`) — the
+exact entry point behind `--output-format stream-json` — calls
+`handleAtCommand` unconditionally for non-slash input, which calls
+`resolveFilePaths` → `resolveAtCommandPath` (`chunk-AWR3APYV.js:379370`),
+which calls the SAME `config.validatePathAccess` (`chunk-AWR3APYV.js:379388`,
+`374624`) the `read_file` tool also calls. A control probe piping
+`@"<abs path outside the repo>" …` on stdin with NO `--include-directories`
+produced no `resolved to file:` or `Skipping unauthorized absolute path`
+debug line — not because the resolver is interactive-only, but because the
+headless call site passes a no-op `onDebugMessage: () => {}`
+(`gemini-EVKJWIDN.js:~23202`), so its internal logging is silently discarded.
+Denied access makes `handleAtCommand`'s zero-match branch fall back to
+returning the query text UNCHANGED, which is why the `@…` text then reached
+the model as ordinary prose. The MODEL, in turn, chose on its own initiative
+to call the `read_file` tool on that same literal path — the SAME
+`validatePathAccess` check denied it a second time, this time through a
+call site that DOES surface its error:
 
 ```
 "Path not in workspace: Attempted path \"C:\Users\PICHAU\...\swatch.png\"
@@ -389,13 +398,14 @@ resolves outside the allowed workspace directories: C:\Dev\ralphy or the
 project temp directory: C:\Users\PICHAU\.gemini\tmp\ralphy"
 ```
 
-This is `config.validatePathAccess` gating a TOOL CALL, not an at-command
-resolver gating a prompt rewrite — a different mechanism than D14 named, but
-the same fix: `--include-directories` widens exactly the boundary that check
-reads. Confirmed live, `gemini` 0.51.0, `--approval-mode yolo --skip-trust
---output-format stream-json --debug`, with a 64×64 solid-red PNG at
-`swatch.png` (a colour-neutral filename, to rule out the model guessing from
-`red.png`'s name) under `--include-directories <its parent>`:
+So one check (`validatePathAccess`) feeds two call sites — the at-command
+resolver (silent on denial, headless) and the model-initiated `read_file`
+tool (visible on denial) — and `--include-directories` is the single fix that
+widens the boundary both read. Confirmed live, `gemini` 0.51.0,
+`--approval-mode yolo --skip-trust --output-format stream-json --debug`, with
+a 64×64 solid-red PNG at `swatch.png` (a colour-neutral filename, to rule out
+the model guessing from `red.png`'s name) under `--include-directories <its
+parent>`:
 
 ```
 {"role":"user","content":"...@\"C:\\...\\swatch.png\"\nWhat single colour fills this image? Answer with one word.\nThanks @octocat, see @nonexistent-file.md, mail foo@bar.com."}
@@ -406,11 +416,13 @@ reads. Confirmed live, `gemini` 0.51.0, `--approval-mode yolo --skip-trust
 Exit `0`; answer `"Red"`; `"tool_calls":0` — the image reached the model
 INLINE, with no `read_file` fallback, which is stronger evidence of true
 multimodal delivery than a `resolved to file:` log line would have been (that
-line never appears in this vendor's headless stream at all). `@octocat` and
-`@nonexistent-file.md` survive verbatim in the emitted user record and never
-trigger a tool call or an error — confirming an at-mention with no
-`--include-directories` grant is left as inert text, exactly as D14 originally
-required, just via a different underlying gate.
+line is real on this path per the trace above, but its `onDebugMessage` is a
+no-op in headless mode, so it never reaches this adapter's captured output).
+`@octocat` and `@nonexistent-file.md` survive verbatim in the emitted user
+record and never trigger a tool call or an error — confirming an at-mention
+with no `--include-directories` grant is left as inert text, exactly as D14
+required, resolved silently by `resolveAtCommandPath`'s own zero-match
+fallback.
 
 **The residual `@README.md` hazard restated, unchanged by this work:** an issue
 body containing `@README.md` — a path that DOES exist in the TARGET repo,
