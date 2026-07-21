@@ -35,6 +35,16 @@ pub(crate) struct CursorFold {
     /// Whether the terminal `result` record arrived at all. `false` is a failure
     /// signal in its own right.
     pub(crate) saw_envelope: bool,
+    /// Whether a terminal `turn_ended` record arrived. It is a record in its own
+    /// right, so a run that ends on one is NOT the zero-record shape of a
+    /// preflight rejection, however empty the rest of the fold looks.
+    pub(crate) saw_turn_end: bool,
+    /// The vendor's own sentence for why it stopped, from `turn_ended.error`.
+    /// Measured on 2026-07-21 as the carrier of an account-quota refusal — where
+    /// ADR-0042 anticipated an `ActionRequiredError` in stderr prose. Reading it
+    /// is what keeps an explicit, self-describing refusal from degrading to a
+    /// mute `Stuck`. What Ralphy *does* with a quota stop is #266.
+    pub(crate) vendor_error: Option<String>,
     /// Tool calls whose result was `failure` rather than `success`. A failed tool
     /// call is **not** a failed run — the envelope still reports success — so these
     /// feed the degraded note, never the outcome.
@@ -49,6 +59,7 @@ impl CursorFold {
     /// rejection, not a truncation (D3 rule 2).
     pub(crate) fn saw_no_records(&self) -> bool {
         !self.saw_envelope
+            && !self.saw_turn_end
             && self.session_id.is_none()
             && self.failed_tool_calls.is_empty()
             && self.denied_tool_calls.is_empty()
@@ -157,6 +168,24 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
                     fold.session_id.get_or_insert_with(|| sid.to_string());
                 }
             }
+            // The OTHER terminal record. It carries its own verdict in `status`,
+            // and folding it without reading that field is how a vendor refusal
+            // that names its own cause arrives as a mute stop. Any status other
+            // than `success` is an error, in the same pessimistic direction as
+            // the envelope's unknown `subtype`.
+            ("turn_ended", _) => {
+                fold.saw_turn_end = true;
+                let status = obj
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if status != "success" {
+                    fold.is_error = true;
+                    if let Some(msg) = obj.get("error").and_then(Value::as_str) {
+                        fold.vendor_error = Some(msg.to_string());
+                    }
+                }
+            }
             // NOT gated on `subtype == "completed"`: the ADR never pins the subtype
             // of the `permissionDenied` record it quotes, and a hardcoded value here
             // would be the same silent-stop-discriminating failure the structural
@@ -262,6 +291,18 @@ mod tests {
         include_str!("../fixtures/preflight-rejection-2026-07-20.jsonl");
     const PREFLIGHT_REJECTION_ERR: &str =
         include_str!("../fixtures/preflight-rejection-2026-07-20.err");
+    /// The two quota refusals that blocked the live execute pass on 2026-07-21.
+    ///
+    /// PROVENANCE, because it is not the same as the fixtures above: these were
+    /// recovered from the vendor's session store
+    /// (`~/.cursor/projects/<slug>/agent-transcripts/`), the run's stdout having
+    /// not been captured. That store serialises the conversational records
+    /// differently from the stream — bare `{"role","message"}` objects with no
+    /// `type` field — and the fold skips those either way. What both files share
+    /// with the stream, byte for byte, is the terminal record under test.
+    const USAGE_LIMIT: &str = include_str!("../fixtures/usage-limit-2026-07-21.jsonl");
+    const USAGE_LIMIT_MIDTURN: &str =
+        include_str!("../fixtures/usage-limit-midturn-2026-07-21.jsonl");
 
     fn envelope(subtype: &str, is_error: bool, result: &str) -> String {
         serde_json::json!({
@@ -424,6 +465,68 @@ mod tests {
         assert_ne!(
             classify_cursor_outcome(&fold_cursor_stream(&errored), true, false, true, Some(0)),
             Outcome::Done
+        );
+    }
+
+    /// A vendor refusal that names its own cause must not arrive as a mute stop.
+    /// Measured: the account's allowance ran out and the vendor said so, in a
+    /// well-formed terminal record — not in the `ActionRequiredError` stderr prose
+    /// ADR-0042 anticipated. Reading `status` is the whole difference between
+    /// "Stuck, no idea" and the vendor's own sentence in the run log.
+    #[test]
+    fn a_turn_ended_in_error_carries_the_vendors_reason() {
+        let fold = fold_cursor_stream(USAGE_LIMIT);
+        assert!(fold.is_error, "status: error is an error");
+        assert!(
+            fold.vendor_error
+                .as_deref()
+                .is_some_and(|m| m.contains("usage limit")),
+            "{:?}",
+            fold.vendor_error
+        );
+        assert!(
+            !fold.saw_no_records(),
+            "the turn ended on a record — this is a refusal, not a preflight rejection"
+        );
+        assert_ne!(
+            classify_cursor_outcome(&fold, false, false, false, Some(1)),
+            Outcome::Done
+        );
+    }
+
+    /// The same refusal arriving mid-turn, after the agent had already merged
+    /// `origin/main` through its shell tool. Nothing about the tool work makes the
+    /// stop any less explicit, and no `result` envelope ever comes.
+    #[test]
+    fn a_midturn_refusal_reads_the_same_as_a_bare_one() {
+        let fold = fold_cursor_stream(USAGE_LIMIT_MIDTURN);
+        assert!(!fold.saw_envelope, "the stream ends on `turn_ended`");
+        assert_eq!(
+            fold.vendor_error,
+            fold_cursor_stream(USAGE_LIMIT).vendor_error,
+            "one refusal, one sentence, wherever in the turn it lands"
+        );
+        // Committed work does not buy a green close for a run the vendor refused
+        // to finish: the sentinel never arrived.
+        assert_ne!(
+            classify_cursor_outcome(&fold, false, false, true, Some(1)),
+            Outcome::Done
+        );
+    }
+
+    /// A `turn_ended` that says `success` is not an error, and — since the ladder
+    /// keys success off the `result` envelope — it does not manufacture one either.
+    #[test]
+    fn a_successful_turn_end_is_not_an_error() {
+        let stdout = r#"{"type":"turn_ended","status":"success"}"#;
+        let fold = fold_cursor_stream(stdout);
+        assert!(!fold.is_error);
+        assert_eq!(fold.vendor_error, None);
+        assert!(!fold.saw_envelope);
+        assert_ne!(
+            classify_cursor_outcome(&fold, true, false, true, Some(0)),
+            Outcome::Done,
+            "a turn end without the envelope is still a truncated stream"
         );
     }
 

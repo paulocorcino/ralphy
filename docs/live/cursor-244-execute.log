@@ -214,5 +214,8 @@ Two findings this changes:
    should be a `Blocked` carrying the vendor's own sentence. Same shape as the
    opencode silent-quota case: the vendor said why, the adapter dropped it.
 
-Not fixed here — the fixtures and this note are the evidence the #244 handoff
-was missing. The ladder change is a follow-up.
+The fixtures and this note are the evidence the #244 handoff was missing. The
+fold now reads `status`/`error` on `turn_ended` (#244, this branch): the refusal
+is no longer mute — it is logged verbatim, and the terminal record counts as a
+record, so a quota stop is not mistaken for a preflight rejection. Turning that
+sentence into a limit outcome with a resumption stance is #266.

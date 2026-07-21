@@ -224,6 +224,7 @@ impl Agent for CursorAgent {
             let fold = fold_cursor_stream(&r.stdout);
             Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
             note_degraded(&fold);
+            note_vendor_error(&fold);
         }
 
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
@@ -279,6 +280,7 @@ impl Agent for CursorAgent {
         let fold = fold_cursor_stream(&r.stdout);
         Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
         note_degraded(&fold);
+        note_vendor_error(&fold);
         let outcome: Outcome =
             classify_cursor_outcome(&fold, r.exited_cleanly, r.timed_out, committed, r.exit_code);
         info!(
@@ -308,6 +310,16 @@ impl Agent for CursorAgent {
 fn note_degraded(fold: &outcome::CursorFold) {
     if let Some(note) = fold.degraded_note() {
         tracing::warn!("cursor: {note}");
+    }
+}
+
+/// Surface the vendor's own reason for stopping, verbatim. The outcome is already
+/// non-green when this fires — what it buys is that the stop is not mute: an
+/// account-quota refusal reads as itself in the run log instead of as an
+/// unexplained `Stuck`. Turning that sentence into a limit outcome is #266.
+fn note_vendor_error(fold: &outcome::CursorFold) {
+    if let Some(msg) = fold.vendor_error.as_deref() {
+        tracing::warn!("cursor stopped the turn: {msg}");
     }
 }
 
@@ -392,6 +404,14 @@ mod tests {
         assert!(
             last_note > last_fold,
             "execute must fold the stream before it can note the degraded calls"
+        );
+        // Same pin for the vendor's own stop reason: dropping it is exactly the
+        // regression that made a quota refusal arrive as a mute `Stuck`.
+        let vendor_call = concat!("note_vendor_error(", "&fold);");
+        assert_eq!(
+            src.matches(vendor_call).count(),
+            2,
+            "note_vendor_error(&fold) must be called on both the plan and execute paths"
         );
     }
 
