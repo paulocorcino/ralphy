@@ -304,6 +304,17 @@ mod tests {
             env_of(&cmd, "CURSOR_AGENT_DISABLE_DEBUG_LOG").as_deref(),
             Some("1")
         );
+
+        // The two arguments a builder could silently ignore while still passing
+        // every assertion above. `cwd` is D6's premise — the gate is evaluated on
+        // the path the CHILD runs in, so a builder that dropped it would gate one
+        // directory and index another. `model` dropped would pin every one-shot to
+        // `auto` and discard the operator's `--model` on all four verbs.
+        assert_eq!(cmd.get_current_dir(), Some(Path::new("/repo")));
+        let pinned = build_cursor_init_command(Some("composer-2.5"), Path::new("/repo"), scratch);
+        let args = argv(&pinned);
+        let i = args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(args[i + 1], "composer-2.5", "argv: {args:?}");
     }
 
     /// D2: the charter is piped. `-p` is the print-mode switch and takes no value,

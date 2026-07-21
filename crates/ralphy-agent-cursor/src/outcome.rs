@@ -624,9 +624,13 @@ mod tests {
             concat!("HeadlessCall::", "new("),
             concat!("run_", "headless("),
             // The one-shots spawn through the shared harness, not `HeadlessCall`
-            // directly — without these two the whole of `tasks.rs` is invisible here.
+            // directly — without these the whole of `tasks.rs` is invisible here.
+            // `run_json_session` is the harness' third public entrypoint (the one
+            // the Claude adapter uses); it is listed so a future file reaching for
+            // it cannot slip past this scan.
             concat!("run_init_", "session("),
             concat!("run_text_", "session("),
+            concat!("run_json_", "session("),
         ];
         let mut sites: Vec<String> = Vec::new();
         for (name, body) in &files {
@@ -646,19 +650,39 @@ mod tests {
              extend this test; a spawn that skips them is the failure this slice exists to prevent"
         );
 
-        // `tasks.rs` holds four spawn paths, and D6/D17 must cover EVERY one — the
-        // count is what catches a fifth verb added without its preflight.
+        // D6/D17 must cover EVERY one-shot spawn — stated as a RELATION, not a
+        // literal count: a legitimate fifth verb must not red this, and a preflight
+        // moved BELOW its spawn must. Pairs each spawn with the preflight that
+        // precedes it, the same positional shape as the run path's pin above.
         let tasks = &files
             .iter()
             .find(|(n, _)| n.ends_with("tasks.rs"))
             .expect("tasks.rs")
             .1;
+        let preflight = concat!("one_shot_", "preflight(");
+        // Skip the fn's own definition; what remains are the call sites.
+        let calls: Vec<usize> = tasks
+            .match_indices(preflight)
+            .map(|(i, _)| i)
+            .skip(1)
+            .collect();
+        let mut spawns: Vec<usize> = spawners
+            .iter()
+            .flat_map(|s| tasks.match_indices(s).map(|(i, _)| i))
+            .collect();
+        spawns.sort_unstable();
+        assert!(!spawns.is_empty(), "tasks.rs must hold the one-shot spawns");
         assert_eq!(
-            tasks.matches(concat!("one_shot_", "preflight(")).count(),
-            // 4 call sites + the fn's own definition.
-            5,
-            "every one-shot must gate and seed before it spawns"
+            calls.len(),
+            spawns.len(),
+            "every one-shot spawn needs its own gate+seed call"
         );
+        for (call, spawn) in calls.iter().zip(&spawns) {
+            assert!(
+                call < spawn,
+                "a one-shot spawns at byte {spawn} before its preflight at {call}"
+            );
+        }
 
         // `command.rs` only BUILDS the command; the run path's gate is pinned above.
         let auth = &files

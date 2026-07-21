@@ -313,6 +313,31 @@ mod tests {
         assert!(config_dir.is_dir());
     }
 
+    /// Fail-closed at BOTH hops: a settings file that does not parse must land on
+    /// the refusal, never on the upload. The operator's mistake costs them a
+    /// misleading message, not their repository's contents.
+    #[test]
+    fn a_malformed_settings_file_fails_closed() {
+        let d = repo();
+        fs::create_dir_all(d.path().join(".ralphy")).unwrap();
+        fs::write(d.path().join(".ralphy").join("settings.json"), "{ not json").unwrap();
+        assert!(
+            !allow_indexing(d.path()),
+            "an unparseable settings file must not grant the opt-in"
+        );
+
+        // The other hop: valid JSON whose `cursor` section has the wrong shape.
+        fs::write(
+            d.path().join(".ralphy").join("settings.json"),
+            r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":"yes"}}"#,
+        )
+        .unwrap();
+        assert!(
+            !allow_indexing(d.path()),
+            "a malformed cursor section must not grant the opt-in"
+        );
+    }
+
     /// D6's rule is stated over the CHILD's working directory. `diagnose_repo`'s
     /// child runs in `neutral_cwd`, so that is what the gate must be given —
     /// passing `repo` instead would refuse a verb that uploads nothing. Source pin:
@@ -388,7 +413,15 @@ mod tests {
         for msg in &errs {
             assert!(msg.contains(".cursorindexingignore"), "{msg}");
         }
+        // `out_path` alone proves nothing — only the CHILD ever writes it, so it is
+        // absent whether or not the gate fired. `<repo>/.ralphy` does: the shared
+        // harness `create_dir_all`s each verb's log parent on its way to the spawn,
+        // so the directory's absence pins that the refusal preceded the harness.
         assert!(!out.exists(), "no artifact may be created before the gate");
+        assert!(
+            !repo_path.join(".ralphy").exists(),
+            "the refusal must precede the session harness, which creates the log dir"
+        );
         for dir in [
             repo_path.join(".ralphy").join("cursor-config"),
             nested.join("cursor-config"),
