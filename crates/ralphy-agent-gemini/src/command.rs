@@ -196,6 +196,64 @@ pub(crate) fn apply_auth_env<I, S>(
     cmd.env("GEMINI_CLI_HOME", home);
 }
 
+/// Format `path` as an `@`-reference the vendor's `resolveAtCommandPath`
+/// resolves into an inline image attachment (ADR-0043 D14).
+///
+/// The escaping is per-platform because `unescapePath` (vendor bundle
+/// `chunk-AWR3APYV.js:243431`) strips surrounding double quotes ONLY on
+/// `win32` and otherwise applies `replace(/\\(.)/g, "$1")`, while
+/// `AT_COMMAND_PATH_REGEX_SOURCE` (`chunk-FAVXT6HW.js:66616`) terminates the
+/// match at an unescaped space: a quoted path on POSIX would be `stat`ed with
+/// its literal quotes, and an unquoted path with a space would truncate on
+/// both platforms.
+pub(crate) fn at_reference(path: &Path, windows: bool) -> String {
+    if windows {
+        format!("@\"{}\"", path.display())
+    } else {
+        format!("@{}", path.display().to_string().replace(' ', "\\ "))
+    }
+}
+
+/// The block appended after `req.attachments_manifest` delivering each fetched
+/// attachment as an inline `@`-reference (ADR-0043 D14, this vendor only — the
+/// manifest itself stays vendor-neutral, ADR-0025 §6).
+pub(crate) fn attachment_block(image_paths: &[PathBuf]) -> String {
+    if image_paths.is_empty() {
+        return String::new();
+    }
+    let mut block = String::from(
+        "\n\n## Attached images\n\nEach path below is delivered to you as an inline \
+         image — describe it from the image itself, do not read it with a tool.\n\n",
+    );
+    for p in image_paths {
+        block.push_str(&at_reference(p, cfg!(windows)));
+        block.push('\n');
+    }
+    block
+}
+
+/// Each fetched attachment's parent directory, deduplicated, order preserved —
+/// what must be passed to `--include-directories` so the vendor's workspace
+/// boundary check (`config.validatePathAccess`) admits the `@`-reference.
+pub(crate) fn attachment_dirs(image_paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    for p in image_paths {
+        if let Some(parent) = p.parent() {
+            if !dirs.iter().any(|d: &PathBuf| d == parent) {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+    }
+    dirs
+}
+
+/// Push one `--include-directories <dir>` pair per entry in `dirs`.
+pub(crate) fn add_include_directories(cmd: &mut Command, dirs: &[PathBuf]) {
+    for dir in dirs {
+        cmd.arg("--include-directories").arg(dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,5 +680,39 @@ mod tests {
         assert_ne!(a, mint_session_id());
         assert_eq!(a.len(), 36, "not a hyphenated UUID: {a}");
         assert_eq!(a.matches('-').count(), 4, "not a hyphenated UUID: {a}");
+    }
+
+    /// `unescapePath` (`chunk-AWR3APYV.js:243431`) strips surrounding double
+    /// quotes ONLY on `win32`; POSIX gets a backslash-escaped space instead so
+    /// `AT_COMMAND_PATH_REGEX_SOURCE` does not terminate the match early.
+    #[test]
+    fn at_reference_escapes_per_platform() {
+        let windows_path = Path::new(r"C:\tmp\a b\red.png");
+        assert_eq!(at_reference(windows_path, true), r#"@"C:\tmp\a b\red.png""#);
+
+        let posix_path = Path::new("/tmp/a b/red.png");
+        assert_eq!(at_reference(posix_path, false), r"@/tmp/a\ b/red.png");
+    }
+
+    #[test]
+    fn attachment_block_is_empty_without_images() {
+        assert_eq!(attachment_block(&[]), "");
+
+        let png = PathBuf::from("/tmp/red.png");
+        let block = attachment_block(std::slice::from_ref(&png));
+        assert!(block.ends_with(&format!("{}\n", at_reference(&png, cfg!(windows)))));
+    }
+
+    #[test]
+    fn attachment_dirs_dedupes_per_issue_directory() {
+        let images = [
+            PathBuf::from("/tmp/1/a.png"),
+            PathBuf::from("/tmp/1/b.png"),
+            PathBuf::from("/tmp/2/c.png"),
+        ];
+        assert_eq!(
+            attachment_dirs(&images),
+            [PathBuf::from("/tmp/1"), PathBuf::from("/tmp/2")]
+        );
     }
 }

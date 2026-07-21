@@ -32,7 +32,7 @@ use ralphy_core::{
 };
 
 use crate::auth::{is_gemini_auth_error, GEMINI_AUTH_ERROR_MSG};
-use crate::command::{build_gemini_command, check_stdin_ceiling, mint_session_id};
+use crate::command::{self, build_gemini_command, check_stdin_ceiling, mint_session_id};
 use crate::{outcome, revocation, PreparedRoot};
 
 /// The spawn-failure sentence every verb shares, matching the run path's.
@@ -279,15 +279,24 @@ pub fn draft_issues(
     )
 }
 
+/// Assemble the triage charter: the core prompt, then `attachments_manifest`
+/// (the vendor-neutral textual inventory, ADR-0025 §6), then this vendor's own
+/// `@`-reference block per fetched image (ADR-0043 D14). The `@` syntax is
+/// this vendor's alone, so it is appended here rather than folded into the
+/// core-owned manifest.
+pub(crate) fn triage_prompt(repo: &Path, req: &TriageRequest, out_path: &Path) -> String {
+    format!(
+        "{}{}{}",
+        build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.attachments_manifest,
+        command::attachment_block(req.image_paths)
+    )
+}
+
 /// Run a one-shot headless `gemini` agent-triage session (ADR-0017). Mirrors
 /// [`draft_issues`] but drives the triage charter over each `triage-agent` issue's
 /// body + full comment thread, writing a [`TriageDraft`] JSON to `out_path` for the
 /// cli to apply after the operator confirms.
-///
-/// `req.image_paths` is unused HERE although this vendor accepts attachments
-/// (`ACCEPTS_IMAGES = true`, D14): wiring the `@<path>` interpolation is its own
-/// slice. Only `attachments_manifest` — the textual inventory the core charter
-/// builds — reaches the child, exactly as on every vendor.
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,
@@ -297,17 +306,14 @@ pub fn triage_issues(
     timeout: Duration,
 ) -> Result<TriageDraft> {
     let _ = effort;
-    let prompt = format!(
-        "{}{}",
-        build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
-        req.attachments_manifest
-    );
+    let prompt = triage_prompt(repo, req, out_path);
     let log_path = repo.join(".ralphy").join("triage.log");
     check_stdin_ceiling(&prompt)?;
     clear_stale_artifact(out_path, &log_path);
 
     info!(?model, "triaging issues with gemini");
-    let cmd = one_shot_command(&one_shot_base(repo), repo, model)?;
+    let mut cmd = one_shot_command(&one_shot_base(repo), repo, model)?;
+    command::add_include_directories(&mut cmd, &command::attachment_dirs(req.image_paths));
     run_one_shot(cmd, &prompt, timeout, &log_path)?;
     read_artifact(
         out_path,
@@ -573,5 +579,77 @@ mod tests {
         // The artifact BOM guard is the shared one, which is why `strip_bom` was
         // promoted to `pub` rather than copied here.
         assert!(src.contains("ralphy_adapter_support::strip_bom("));
+    }
+
+    /// AC2: an image fetched during triage reaches the charter as an
+    /// `@`-reference, appended after the manifest — never in its place.
+    #[test]
+    fn triage_prompt_carries_an_at_reference_per_fetched_image() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        ralphy_core::git::init(repo.path()).expect("git init");
+        let png = PathBuf::from("/tmp/attachments/1/red.png");
+        let req = TriageRequest {
+            issue_numbers: &[1],
+            queue_label: "triage-agent",
+            attachments_manifest: "\n\n## Attachments\n- #1: red.png\n",
+            image_paths: std::slice::from_ref(&png),
+        };
+        let out_path = repo.path().join("triage-draft.json");
+
+        let prompt = triage_prompt(repo.path(), &req, &out_path);
+        assert!(
+            prompt.contains(&command::at_reference(&png, cfg!(windows))),
+            "prompt: {prompt}"
+        );
+        assert!(
+            prompt.contains(req.attachments_manifest),
+            "the manifest text must survive verbatim: {prompt}"
+        );
+    }
+
+    /// AC2's argv half: the triage command widens its workspace by exactly
+    /// each distinct fetched-attachment directory, and no other verb does.
+    #[test]
+    fn the_triage_command_includes_every_attachment_directory() {
+        let base = tempfile::tempdir().expect("tempdir");
+        let work = tempfile::tempdir().expect("tempdir");
+        let images = [
+            PathBuf::from("/tmp/attachments/1/a.png"),
+            PathBuf::from("/tmp/attachments/1/b.png"),
+            PathBuf::from("/tmp/attachments/2/c.png"),
+        ];
+
+        let mut cmd = one_shot_command(base.path(), work.path(), None).expect("prepare + build");
+        command::add_include_directories(&mut cmd, &command::attachment_dirs(&images));
+
+        let args = argv(&cmd);
+        let positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "--include-directories")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(positions.len(), 2, "argv: {args:?}");
+        assert_eq!(
+            args[positions[0] + 1],
+            "/tmp/attachments/1",
+            "argv: {args:?}"
+        );
+        assert_eq!(
+            args[positions[1] + 1],
+            "/tmp/attachments/2",
+            "argv: {args:?}"
+        );
+
+        // Only `triage_issues` may widen the workspace this way.
+        let src = include_str!("tasks.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert_eq!(
+            src.matches(concat!("add_include_", "directories(")).count(),
+            1,
+            "the other three one-shot verbs must not widen their workspace"
+        );
     }
 }
