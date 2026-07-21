@@ -648,6 +648,14 @@ Environment: `CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`, `CURSOR_CONFIG_DIR`,
 | P13 | `--resume <create-chat id>` | ✅ adopted — `session_id` matches the minted UUID |
 | P14 | WSL parity | ✅ identical on 07.17 |
 | P15 | **`stop` hook in headless** | ❌ **does not fire**; only `beforeShellExecution` did |
+| P16 | **skill body actually loads** | ✅ secret present only in the body was returned; invocation appears as a `readToolCall` |
+| P17 | **failure taxonomy** | ✅ four shapes measured — tool failure ≠ run failure; preflight = 0 records + exit 1; kill = records, no envelope, **empty stderr** |
+| P18 | `--resume` with a never-existing UUID | ✅ accepted silently; `create-chat` is optional |
+| P19 | stream timing through a pipe | ✅ incremental — first record 8.1 s, gaps to ~7.4 s, envelope 22.0 s (a *file* redirect is block-buffered) |
+
+Residual gap after P17: **`is_error: true` and any `subtype` other than
+`"success"` were never reproduced** — no lever on a Free account forces them.
+The parser handles them defensively; an unknown `subtype` is not success.
 
 ### Reproduction
 

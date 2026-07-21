@@ -84,6 +84,46 @@ Exit codes carry no semantics beyond 0/1 — there is no Kimi-style
 `75 = RETRYABLE` — and `agent ls` returns 0 on a crash, so the exit code is
 corroboration, never the primary signal.
 
+### The failure taxonomy, measured
+
+Four failure shapes were forced deliberately, because a spike that only ever
+sees success writes an `outcome.rs` against half a contract:
+
+| Shape | Exit | stdout | Envelope | stderr |
+|---|---|---|---|---|
+| **Tool call fails** (`exit 42` via the shell tool) | **0** | full stream | **`subtype:"success"`, `is_error:false`** | empty |
+| **Preflight rejection** (`--workspace C:\definitely\not\here`) | 1 | **zero records** | none | `Error: Workspace directory does not exist: …` |
+| **Killed mid-run** | — | partial stream | **none** | **empty** |
+| **Auth / entitlement** (§D4, D8) | 1 | zero records | none | prose |
+
+Three rules follow:
+
+1. **A failed tool call is not a failed run.** The discriminator is inside the
+   tool record — `shellToolCall.result.failure{exitCode, signal, aborted, …}`
+   instead of `.success` — and the run reports `success` regardless. The
+   *degraded* predicate reads `failure` records; the outcome does not.
+2. **Zero records plus exit 1 is a preflight rejection**, not a truncation.
+   Ralphy can distinguish it from a dead child by the record count.
+3. **Partial records with no envelope and an empty stderr is truncation** — the
+   process died. This is the one case where stderr says nothing at all, so an
+   adapter that classifies on stderr alone sees a silent success.
+
+**Never reproduced:** `is_error: true`, or any `subtype` other than `"success"`.
+Neither could be forced with the levers available on a Free account. The parser
+must therefore handle them defensively — an unknown `subtype` is not success —
+and this is a residual gap the validation note must close if it ever observes one.
+
+### Output arrives incrementally, after an initial silence
+
+Timed through a real pipe, the first record (`system/init`) arrived at **8.1 s**,
+then records at 13.0 / 13.1 / 13.2 / 13.4 / 14.6 s, and the envelope at 22.0 s —
+so inter-record gaps reach ~7.4 s and the run opens with ~8 s of total silence.
+Any idle watchdog ([ADR-0038](./0038-per-issue-budget-vs-idle-watchdog.md))
+tuned tighter than that will kill healthy runs.
+
+(A redirect to a *file* is block-buffered and showed only 2 records after 14 s.
+That is the shell's buffering, not the CLI's; Ralphy reads a pipe and is fine.)
+
 ## D4 — `--model` is always passed explicitly, including `auto`
 
 **This is a correctness requirement, not a style choice.** A `--model` that the
@@ -162,6 +202,25 @@ The decision:
   ADR-0041 D7's shape. Ralphy never denies the operator a capability
   ([security posture](./0032-daemon-mode-supervised-launcher.md) precedent) —
   it denies a *silent* one.
+
+### The gate covers every invocation, not just `run`
+
+The indexing service is spawned by the CLI, not by Ralphy's run loop, so it
+fires for the **one-shots too**. `diagnose_repo` and `triage_issues` execute
+with their cwd inside the operator's repository and would upload it exactly as a
+run does — a gate that only guarded `ralphy run` would leave the whole triage
+surface open, which is the larger blast radius, not the smaller one.
+
+So the rule is stated in terms of the child's working directory, not the verb:
+
+> **Any `cursor` invocation whose cwd is inside a git repository requires
+> `.cursorindexingignore` in that repository's root.**
+
+`draft_issues` and `consolidate_knowledge` may run where there is no repository
+at all; those are allowed through, because there is nothing to upload and
+nowhere to put the file. The preflight resolves the repository root first and
+skips the check when there is none — it must not degrade into "refuse
+everything", which would make the one-shots unreachable.
 
 This is the strictest stance Ralphy takes toward any vendor, and it is
 proportionate: no other vendor transmits the repository as a side effect of
@@ -255,6 +314,14 @@ D10 snapshot-diff is unnecessary. Cursor's docs never promise this — it is
 verified, not documented, so the adapter treats a mismatch between the minted id
 and `system/init.session_id` as a hard error rather than assuming adoption.
 
+**And `create-chat` turns out to be optional.** `--resume` with a UUID that has
+never existed —
+`--resume 00000000-0000-0000-0000-000000000000` — was accepted silently, exit 0,
+with `system/init.session_id` echoing that exact UUID. So Ralphy generates its
+own UUID and passes it straight to `--resume`, saving a process spawn and a
+round trip per run. `create-chat` remains the documented path and stays in the
+adapter as the fallback if a future build starts validating the id.
+
 ## D11 — Usage is captured from the stream; the interactive gap is stated, not faked
 
 **No local store records tokens.** Cursor keeps two on-disk stores —
@@ -294,6 +361,13 @@ manifest.
 - **`skills.rs` materializes into `<repo>/.cursor/skills/`.** No flag, no env
   var, no manifest — the root is read by default. This is the cheapest skill
   delivery of any vendor.
+- **The body loads, not just the name — verified.** A skill was planted whose
+  frontmatter `description` deliberately did *not* contain a secret, while its
+  body did. Asked to invoke it, the agent returned `RALPHY_VAULT_9K3X7Q`
+  verbatim. The stream shows how: skill invocation appears as a **`readToolCall`**
+  — the agent reads `SKILL.md` off disk on demand. So descriptions are injected
+  eagerly (the token cost below) and bodies are pulled lazily, which is also why
+  a skill Ralphy writes just before spawning is picked up with no cache to bust.
 - **The foreign harvest is accepted.** In the probe the CLI injected **78
   skills** — the operator's entire personal Claude Code library and every plugin
   skill — into a single request, and a trivial "reply OK" run cost
