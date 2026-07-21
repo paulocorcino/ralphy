@@ -1066,9 +1066,13 @@ function shell() {
     closeUsage() {
       this.usageOpen = false;
     },
-    // Sum a run record's token buckets into one total for the compact list.
+    // Sum a record's token buckets into one total for the compact list. A null
+    // `tokens` means the vendor keeps no count anywhere (Cursor, ADR-0042 D11) —
+    // render that as "unavailable", never as 0, which would read as "spent
+    // nothing".
     usageTokens(rec) {
-      const t = (rec && rec.tokens) || {};
+      const t = rec && rec.tokens;
+      if (!t) return "unavailable";
       return (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
     },
 
