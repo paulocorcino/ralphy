@@ -50,26 +50,39 @@ pub(crate) fn is_first_party(family: &str) -> bool {
 /// same shape as a truncation, which is why they must be recognized by text.
 const REFUSALS: &[&str] = &["Cannot use this model:", "Named models unavailable"];
 
+/// The vendor prefixes the entitlement refusal with its own error class.
+const ERROR_CLASS: &str = "ActionRequiredError: ";
+
 /// `Some(err)` when `log` carries a `--model` refusal: the run did not fail, it was
 /// REFUSED, and the operator can fix it by editing one flag.
+///
+/// The caller passes the merged stdout+stderr `log`, which on a WORKING run also
+/// carries the assistant's whole transcript — including, in this very repository,
+/// the committed refusal fixtures. So a refusal is only recognized at the START of
+/// a line: the vendor writes its refusal bare on stderr, while stdout is
+/// stream-json, where every line begins with `{`. A transcript that merely quotes
+/// the sentence can never trip this.
 pub(crate) fn model_refusal_stop(log: &str, requested: Option<&str>) -> Option<anyhow::Error> {
     let pinned = requested.unwrap_or(crate::command::AUTO_MODEL);
     let (line, marker) = log.lines().find_map(|l| {
+        let l = l.trim();
+        let head = l.strip_prefix(ERROR_CLASS).unwrap_or(l);
         REFUSALS
             .iter()
-            .find(|m| l.contains(**m))
-            .map(|m| (l.trim(), *m))
+            .find(|m| head.starts_with(**m))
+            .map(|m| (l, *m))
     })?;
-    let mut msg = format!("cursor refused the pinned model `{pinned}`: {line}");
+    let mut msg = format!("cursor refused the model `{pinned}`: {line}");
     if marker == REFUSALS[1] {
         let family = model_family(pinned);
         msg.push_str(
-            "\nnote: a Free plan CAN name the first-party `composer-*` family; \
-             only third-party ids are refused",
+            "\nnote: a Free plan CAN name the first-party `composer-*` family — \
+             verified live; the vendor's own sentence is wrong about that. Other \
+             ids may genuinely need a paid plan.",
         );
         if is_first_party(&family) {
             msg.push_str(&format!(
-                " — `{family}` is first-party, so this refusal is unexpected"
+                " `{family}` is first-party, so this refusal is unexpected."
             ));
         }
     }
@@ -108,9 +121,11 @@ mod tests {
     }
 
     #[test]
-    fn every_catalogued_id_normalizes_to_a_family_the_catalogue_also_spells() {
-        // The whole live catalogue folds onto a small set of families, and no
-        // decoration eats a family name down to nothing.
+    fn every_catalogued_id_normalizes_to_a_prefix_of_itself() {
+        // Over the whole live catalogue: no decoration eats a family name down to
+        // nothing, and none of them rewrites the id into something unrelated. The
+        // resulting family need NOT itself be in the catalogue — the vendor spells
+        // several families only in decorated form (`gpt-5.5`, `claude-fable-5`).
         let ids: Vec<&str> = INVALID
             .split("Available models:")
             .nth(1)
@@ -183,5 +198,28 @@ mod tests {
     #[test]
     fn an_ordinary_log_is_not_a_refusal() {
         assert!(model_refusal_stop("{\"type\":\"result\"}\n", Some("composer-2.5")).is_none());
+    }
+
+    /// The merged stdout+stderr log of a WORKING run carries the transcript, and in
+    /// this repository the transcript can quote the refusal fixtures verbatim. A
+    /// quote must never stop a run that the vendor actually served.
+    #[test]
+    fn a_transcript_quoting_the_refusal_is_not_a_refusal() {
+        let transcript = format!(
+            "{}\n{}\n",
+            serde_json::json!({
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": INVALID}]}
+            }),
+            serde_json::json!({"type": "result", "subtype": "success"}),
+        );
+        assert!(
+            transcript.contains("Cannot use this model:"),
+            "the fixture must be inside the transcript for this test to mean anything"
+        );
+        assert!(
+            model_refusal_stop(&transcript, Some("composer-2.5")).is_none(),
+            "a quoted refusal is not a refusal"
+        );
     }
 }

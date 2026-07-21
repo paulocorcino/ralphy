@@ -286,16 +286,23 @@ impl Agent for CursorAgent {
             auth::is_cursor_auth_error,
         )?;
 
-        // BEFORE classification, on every return of this path: a `--model` refusal
-        // leaves the same zero-record, exit-1 shape as a truncation, so classifying
-        // first would report it as `Stuck` and lose the one sentence that fixes it.
-        if let Some(e) = model_refusal_stop(&r.log, model) {
-            return Err(e);
-        }
-
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let fold = fold_cursor_stream(&r.stdout);
+
+        // BEFORE classification: a refusal wears the same zero-record shape as a
+        // truncation (D3 rule 2), so classifying first would report it as `Stuck`
+        // and lose the one sentence that fixes it. Gated on that shape rather than
+        // on the text alone, because `r.log` is stdout+stderr MERGED and a working
+        // run's transcript can quote the sentence — in this very repository it can
+        // read the committed refusal fixtures. Two independent gates: the shape
+        // here, the line-start match in `model_refusal_stop`.
+        if fold.saw_no_records() {
+            if let Some(e) = model_refusal_stop(&r.log, model) {
+                return Err(e);
+            }
+        }
+
         Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
         note_degraded(&fold);
         note_vendor_error(&fold);

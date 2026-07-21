@@ -130,6 +130,26 @@ Three rules follow:
    child ([ADR-0038](./0038-per-issue-budget-vs-idle-watchdog.md)) — "we stopped
    it" must not be reported as "it crashed".
 
+**Amended by #245 — the model refusal is a fifth shape, and it is actionable.**
+Both `--model` refusals (`Cannot use this model: <id>. Available models: …` for
+an id outside the catalogue, `ActionRequiredError: Named models unavailable …`
+for one the plan does not entitle) wear the *preflight rejection* shape above:
+exit 1, zero records, prose on stderr. `model_refusal_stop`
+(`ralphy-agent-cursor/src/model.rs`) recognizes them and returns the vendor's own
+sentence, so the operator sees the flag to change instead of a bare `Stuck`.
+
+Two traps that fix carries, both load-bearing:
+- The adapter's `log` is stdout and stderr **merged**, and a working run's
+  transcript can quote the sentence (this repository commits the refusal
+  fixtures). The match is therefore anchored to the START of a line — stdout is
+  stream-json, whose lines all begin with `{` — and additionally gated on rule
+  2's zero-record shape.
+- The entitlement sentence is **wrong about its own product**: a Free plan CAN
+  name the first-party `composer-2.5`, verified live on 2026-07-21 (`exit 0`,
+  `"type":"result","subtype":"success"`). Only non-`composer` ids are refused,
+  which is why D4's exemption is expressed as "first-party is nameable" rather
+  than as a paid-tier allow-list.
+
 **Never reproduced:** `is_error: true`, or any `subtype` other than `"success"`.
 Neither could be forced with the levers available on a Free account. The parser
 must therefore handle them defensively — an unknown `subtype` is not success —
@@ -213,11 +233,24 @@ invoked with `--model composer-2.5-fast` persisted `modelId: "composer-2.5"` —
 the `-fast` suffix is a *parameter*, not part of the identity. Ralphy's
 normalization is therefore matching the vendor's own model, not inventing one.
 
-⚠ **What D5 does not yet have is numbers.** No rate card was recovered: the
-CLI's debug log (D18) carries no pricing, and Cursor bills in dollar-denominated
-credits over per-1M-token rates published only in its docs. Family
-normalization without a populated price table still logs an empty cost, so the
-implementing slice must source the rates.
+**Settled by #245.** The normalizer is
+`ralphy_agent_cursor::model_family` (`src/model.rs`), and the rates were sourced
+from cursor.com/docs/models into `crates/ralphy-cli/src/pricing/defaults.rs` —
+one row per reachable family. Two corrections to the sketch above:
+
+- The decoration order in the grammar is not fixed. The live catalogue spells
+  both `claude-opus-4-8-thinking-max` and `claude-4.6-sonnet-medium-thinking`
+  (and `gpt-5.5-extra-high`), so `model_family` strips to a *fixpoint* over a
+  longest-first decoration list rather than in the sequence D5 assumed.
+- Normalization happens at ATTRIBUTION, not at lookup: the adapter writes
+  `Usage.model = model_family(requested)`, so the ledger persists the family key
+  and `PriceTable::resolve` stays vendor-neutral (ADR-0004). The consequence is
+  deliberate and worth knowing: the raw effort suffix is not retained, so a
+  ledger row cannot distinguish `-max` from `-low` after the fact.
+
+Every Cursor USD figure remains ADR-0034's counterfactual — Cursor bills
+credits, not tokens — and `auto` is priced at the family the spike observed it
+routing to, which is a guess about a router, not a published rate.
 
 **This collides with [ADR-0004](./0004-codex-adapter.md)'s amendment**, where a
 tier routes the model (sol/terra/luna) at a fixed medium effort. On Cursor the
