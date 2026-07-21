@@ -12,3 +12,6 @@ $ ls $TMP/cursor-agent-logs-*/ | wc -l   # BEFORE
 $ ralphy run --repo C:/Dev/FinCal --only-issue 112 --agent cursor --base-branch origin/master --dry-run --verbose
 exit=1
 Error: the `cursor` CLI was not found on PATH, PATHEXT, or ~/.local/bin. Install it, or select another agent with --agent / --plan-agent.
+
+### Probe A, second attempt (after the d8ac69f preflight fix)
+$ ralphy run --repo C:/Dev/FinCal --only-issue 112 --agent cursor --base-branch origin/master --dry-run --verbose

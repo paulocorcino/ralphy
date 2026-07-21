@@ -36,7 +36,7 @@ pub(crate) fn is_cursor_auth_error(text: &str) -> bool {
 /// as authenticated. The verdict comes from `isAuthenticated` alone; an
 /// unparsable or absent answer is `false`, which fails toward telling the operator
 /// to log in rather than toward a spawn that cannot work.
-pub fn cursor_status_verdict(stdout: &str) -> bool {
+pub(crate) fn cursor_status_verdict(stdout: &str) -> bool {
     stdout
         .lines()
         .filter_map(|l| serde_json::from_str::<Value>(l).ok())
@@ -49,21 +49,44 @@ pub fn cursor_status_verdict(stdout: &str) -> bool {
 /// and what `ralphy init`'s gate reports. Behavioural detection: the vendor's own
 /// answer, never inspection of its credential file.
 ///
+/// This is the crate's SECOND child-spawning site, and it carries the same three
+/// refusals the run does, for the same reasons:
+/// - **cwd is a throwaway temp directory, never the operator's repository** (D6,
+///   the Copilot `fetch_catalog` precedent). D6's rule is stated over the child's
+///   cwd, and the indexing service is spawned by the CLI, not by Ralphy's run
+///   loop — so a probe run from inside a repository would upload it exactly as a
+///   run does. Outside any repository there is nothing to upload, which is the
+///   case D6 explicitly lets through rather than a gate being skipped.
+/// - **`CURSOR_CONFIG_DIR` points at a scratch dir** (D17), so the probe cannot
+///   write `statsig-cache.json` or anything else into `~/.cursor`.
+/// - **the debug log is off** (D18), so `ralphy init` does not leave a file in the
+///   operator's temp directory naming their repositories.
+///
 /// A missing binary, a wedged probe or a timeout all read as "not logged in": the
 /// gate's job is to tell the operator what to fix, and `agent login` is the right
-/// advice in every one of those states.
+/// advice in every one of those states. The credential itself lives outside the
+/// config dir (`%APPDATA%\Cursor\auth.json`), so the isolation does not make a
+/// logged-in operator look logged out — the spike measured exactly this.
 pub fn probe_cursor_login() -> bool {
+    let Ok(scratch) = tempfile::tempdir() else {
+        return false;
+    };
     let mut cmd = std::process::Command::new(crate::command::resolve_cursor_program());
-    cmd.arg("status")
+    cmd.current_dir(scratch.path())
+        .arg("status")
         .arg("--format")
         .arg("json")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    match ralphy_adapter_support::run_headless(cmd, "", Duration::from_secs(30)) {
+        .stderr(std::process::Stdio::piped())
+        .env("CURSOR_CONFIG_DIR", scratch.path().join("config"))
+        .env("CURSOR_AGENT_DISABLE_DEBUG_LOG", "1");
+    let verdict = match ralphy_adapter_support::run_headless(cmd, "", Duration::from_secs(30)) {
         Ok(out) if !out.timed_out => cursor_status_verdict(&out.stdout),
         _ => false,
-    }
+    };
+    drop(scratch);
+    verdict
 }
 
 #[cfg(test)]
@@ -99,8 +122,6 @@ mod tests {
     #[test]
     fn status_json_verdict_ignores_the_exit_code() {
         const LOGGED_OUT: &str = r#"{"status":"unauthenticated","isAuthenticated":false,"hasAccessToken":false,"hasRefreshToken":false,"message":"Not logged in"}"#;
-        let exit_code = 0;
-        assert_eq!(exit_code, 0, "the vendor exits 0 while logged out");
         assert!(
             !cursor_status_verdict(LOGGED_OUT),
             "exit 0 + isAuthenticated:false is NOT logged in"

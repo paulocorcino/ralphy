@@ -37,7 +37,7 @@ mod settings;
 
 /// Whether the operator is logged into Cursor, from the vendor's own structured
 /// answer (ADR-0042 D8) — what `ralphy init`'s gate reports.
-pub use auth::{cursor_status_verdict, probe_cursor_login, CURSOR_AUTH_ERROR_MSG};
+pub use auth::{probe_cursor_login, CURSOR_AUTH_ERROR_MSG};
 
 /// Locating the vendor's binary, which is on `PATH` on neither platform
 /// (ADR-0042 D14) — `ralphy init`'s presence gate goes through this.
@@ -177,6 +177,11 @@ impl Agent for CursorAgent {
         let log_path = self.run_dir.join("cursor.log");
         let session_id = mint_session_id();
         let model = self.phase_model(Phase::Plan);
+        // D6 BEFORE the emit, not just before the spawn: a refused run must not
+        // publish a `planning` event (ADR-0019/0039) for work that never began.
+        // `run_cursor` re-asserts it — that is the cross-path invariant, and this is
+        // the event-hygiene one.
+        guards::indexing_gate(ws.repo_root(), self.allow_indexing)?;
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());
@@ -245,6 +250,9 @@ impl Agent for CursorAgent {
         // through the shell reports zero (spike §2).
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let model = self.phase_model(Phase::Execute);
+        // See `plan`: the gate precedes the `executing` event, and `run_cursor`
+        // re-asserts it on every spawn path.
+        guards::indexing_gate(ws.repo_root(), self.allow_indexing)?;
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());

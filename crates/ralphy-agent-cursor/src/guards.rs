@@ -24,19 +24,26 @@ const OPT_OUT_FILE: &str = ".cursorindexingignore";
 /// so the operator can copy it into `ralphy config set`.
 const OPT_IN_KEY: &str = "cursor.allow_codebase_indexing_i_understand_the_risk";
 
-/// Walk `start` and its parents for a `.git` entry, returning the repository root.
-/// `None` when the path is not inside a repository at all — `draft_issues` and
-/// `consolidate_knowledge` may legitimately run there, and D6 lets them through:
-/// there is nothing to upload and nowhere to put the file.
-fn repo_root(start: &Path) -> Option<PathBuf> {
+/// Every enclosing repository root, outermost LAST. Empty when the path is not
+/// inside a repository at all — `draft_issues` and `consolidate_knowledge` may
+/// legitimately run there, and D6 lets them through: there is nothing to upload
+/// and nowhere to put the file.
+///
+/// The walk does NOT stop at the first `.git`. D6 records, as measured evidence,
+/// that a run indexed the **parent repository** rather than the working directory
+/// it was given — so for a repo checked out inside another (or a submodule), an
+/// opt-out in the inner root alone would let the outer tree upload silently. Every
+/// root found must carry the file.
+fn repo_roots(start: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
     let mut cur: Option<&Path> = Some(start);
     while let Some(dir) = cur {
         if dir.join(".git").exists() {
-            return Some(dir.to_path_buf());
+            roots.push(dir.to_path_buf());
         }
         cur = dir.parent();
     }
-    None
+    roots
 }
 
 /// D6's preflight. `Ok(())` when the child may be spawned; `Err` with an
@@ -48,12 +55,14 @@ pub(crate) fn indexing_gate(work_dir: &Path, allow_indexing: bool) -> anyhow::Re
     if allow_indexing {
         return Ok(());
     }
-    let Some(root) = repo_root(work_dir) else {
+    // The OUTERMOST unprotected root is the one worth naming: it is the largest
+    // tree that would be uploaded, and protecting it is what the operator must do.
+    let Some(root) = repo_roots(work_dir)
+        .into_iter()
+        .rfind(|r| !r.join(OPT_OUT_FILE).exists())
+    else {
         return Ok(());
     };
-    if root.join(OPT_OUT_FILE).exists() {
-        return Ok(());
-    }
     anyhow::bail!(
         "ralphy: refusing to run `cursor` in {} — an ordinary Cursor run walks this \
          repository and syncs a copy of it to Cursor's servers, whatever the task asked for.\n\
@@ -132,6 +141,31 @@ mod tests {
         );
     }
 
+    /// D6's measured evidence: a run indexed the PARENT repository, not the working
+    /// directory it was given. So an opt-out in an inner repository alone must not
+    /// pass — the outer tree is what would be uploaded.
+    #[test]
+    fn indexing_gate_requires_the_optout_in_every_enclosing_repository() {
+        let outer = repo();
+        let inner = outer.path().join("vendor").join("nested");
+        fs::create_dir_all(inner.join(".git")).unwrap();
+
+        // Inner opted out, outer not: still refused, and the message names the OUTER
+        // root — the larger tree, and the one the operator has to protect.
+        fs::write(inner.join(".cursorindexingignore"), "*\n").unwrap();
+        let err = indexing_gate(&inner, false)
+            .expect_err("an inner opt-out must not cover the enclosing repository");
+        assert!(
+            err.to_string()
+                .contains(&outer.path().display().to_string()),
+            "{err}"
+        );
+
+        // Both opted out: allowed.
+        fs::write(outer.path().join(".cursorindexingignore"), "*\n").unwrap();
+        assert!(indexing_gate(&inner, false).is_ok());
+    }
+
     /// D6 explicitly allows this: `draft_issues` / `consolidate_knowledge` may run
     /// where there is no repository, and the gate must not degrade into "refuse
     /// everything", which would make those verbs unreachable.
@@ -172,21 +206,35 @@ mod tests {
     /// every source file in the crate, not just this one.
     #[test]
     fn no_cursorignore_anywhere_in_the_crate() {
-        let needle = concat!(".cursor", "ignore");
-        let src_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src"));
-        let mut hits = Vec::new();
-        for entry in fs::read_dir(src_dir).expect("src/ is readable") {
-            let path = entry.expect("entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
-            let body = fs::read_to_string(&path).expect("read source");
-            // This test's own two fragments are the only legitimate occurrences,
-            // and they are never contiguous — so any hit is a real one.
-            if body.contains(needle) {
-                hits.push(path.display().to_string());
+        // Recursive: an ADR-0022 `foo.rs` + `foo/` split must not silently drop a
+        // file out of this scan.
+        fn scan(dir: &Path, needle: &str, hits: &mut Vec<String>) {
+            for entry in fs::read_dir(dir).expect("src/ is readable") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    scan(&path, needle, hits);
+                    continue;
+                }
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                // This test's own two fragments are the only legitimate occurrences,
+                // and they are never contiguous — so any hit is a real one.
+                if fs::read_to_string(&path)
+                    .expect("read source")
+                    .contains(needle)
+                {
+                    hits.push(path.display().to_string());
+                }
             }
         }
+        let needle = concat!(".cursor", "ignore");
+        let mut hits = Vec::new();
+        scan(
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+            needle,
+            &mut hits,
+        );
         assert!(
             hits.is_empty(),
             "the plain ignore file breaks the vendor's edit tool (D6); found in {hits:?}"

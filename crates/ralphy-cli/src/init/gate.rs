@@ -211,6 +211,10 @@ fn cursor_logged_in(authenticated: bool) -> bool {
 
 pub(crate) fn agent_logged_in(a: &Agent) -> bool {
     let hello = "hello";
+    // Built up front for the arms that fall through to the shared
+    // `status().success()` tail. The two early-returning arms below (Copilot,
+    // Cursor) never touch it — Cursor in particular could not use it, since
+    // `a.cli_name()` is not its binary name (ADR-0042 D14).
     let bin = resolve_program(a.cli_name());
     let mut cmd = std::process::Command::new(&bin);
     match a {
@@ -319,10 +323,6 @@ mod tests {
     fn cursor_logged_in_maps_an_authenticated_status_to_true_and_anything_else_to_false() {
         assert!(cursor_logged_in(true));
         assert!(!cursor_logged_in(false));
-        // And the verdict source itself ignores the exit code (adapter-side).
-        assert!(!ralphy_agent_cursor::cursor_status_verdict(
-            r#"{"status":"unauthenticated","isAuthenticated":false,"message":"Not logged in"}"#
-        ));
     }
 
     /// Source-text pin: `agent_logged_in` spawns real processes, so the routing is

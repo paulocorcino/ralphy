@@ -14,7 +14,6 @@ serde_json.workspace = true
 uuid.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
-include_dir.workspace = true
-
-[dev-dependencies]
+# The login probe runs in a throwaway cwd + config dir, so it is a regular dep,
+# not a dev one (ADR-0042 D6/D17 — see `auth::probe_cursor_login`).
 tempfile.workspace = true

@@ -428,8 +428,15 @@ mod tests {
     /// `concat!` so this assertion cannot match itself.
     #[test]
     fn no_direct_command_new() {
+        // Ban a STRING-LITERAL program name outright: `cursor-agent` and `agent`
+        // are both wrong here (neither is on `PATH`), so pinning one spelling would
+        // miss the other.
+        let production = include_str!("command.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
         assert!(
-            !include_str!("command.rs").contains(concat!("Command::", "new(\"cursor")),
+            !production.contains(concat!("Command::", "new(\"")),
             "resolve_cursor_program is the only way to name the binary"
         );
     }

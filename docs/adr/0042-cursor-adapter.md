@@ -43,6 +43,17 @@ definition. `daemon/src/session.rs::Agent` is the one that fails silently —
 compiles and only fails at runtime as `ArgvError::BadParam("agent")`. Add the
 variant first and let the compiler walk the rest.
 
+**Deferred, deliberately, by #243.** The first slice did NOT add
+`daemon/src/session.rs::Agent::Cursor`, so `from_query("cursor")` returns `None`
+and the workbench rejects `agent=cursor` with `BadParam`. The reason is D14: the
+daemon's `program_name` resolves a bare name on `PATH`, and this vendor is on
+`PATH` on neither platform — a variant returning `"cursor-agent"` would compile,
+pass review, and then fail to launch on the very machine this ADR was measured
+on. Wiring it needs `ralphy_agent_cursor::locate_cursor` reachable from the
+daemon, which is the workbench/Tier 4 slice's edit, not the run loop's. Until
+that slice lands, an explicit `BadParam` is the honest answer; the issue that
+undoes this supersedes this paragraph.
+
 ## D2 — The prompt goes in on stdin
 
 ```

@@ -149,7 +149,7 @@ fn triage_with_agent(
         // only. An explicit, actionable bail is honest where a silent fallback to
         // another vendor would not be.
         Agent::Cursor => anyhow::bail!(
-            "ralphy: the one-shot verbs are not yet wired for --agent cursor              (its own slice of #242); use another vendor"
+            "ralphy: the one-shot verbs are not yet wired for --agent cursor (its own slice of #242); use another vendor"
         ),
         Agent::Kimi => {
             ralphy_agent_kimi::triage_issues(repo, out_path, req, model, effort, timeout)

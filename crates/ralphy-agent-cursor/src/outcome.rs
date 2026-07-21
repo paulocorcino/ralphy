@@ -157,7 +157,12 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
                     fold.session_id.get_or_insert_with(|| sid.to_string());
                 }
             }
-            ("tool_call", "completed") => {
+            // NOT gated on `subtype == "completed"`: the ADR never pins the subtype
+            // of the `permissionDenied` record it quotes, and a hardcoded value here
+            // would be the same silent-stop-discriminating failure the structural
+            // walk below exists to avoid. The walk is a no-op on a record carrying
+            // no result discriminator, so scanning every `tool_call` costs nothing.
+            ("tool_call", _) => {
                 collect_tool_results(
                     &obj,
                     &mut fold.failed_tool_calls,
@@ -462,6 +467,73 @@ mod tests {
             1,
             "this is the crate's single HeadlessCall site (ADR-0040 Tier 1)"
         );
+    }
+
+    /// The pin above counts spawns in ONE file, which is structurally blind to a
+    /// child spawned from another module — and one exists (`auth::probe_cursor_login`).
+    /// So enumerate every spawn site in the crate and assert each one is accounted
+    /// for: either it is gated (the run path) or it runs in a throwaway cwd and
+    /// config dir, where D6 has nothing to refuse and D17 nothing to protect.
+    /// Recursive, so an ADR-0022 `foo.rs` + `foo/` split cannot silently drop a file.
+    #[test]
+    fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
+        fn sources(dir: &Path, out: &mut Vec<(String, String)>) {
+            for entry in std::fs::read_dir(dir).expect("readable src dir") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    sources(&path, out);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    let body = std::fs::read_to_string(&path).expect("read source");
+                    let production = body.split("#[cfg(test)]").next().unwrap_or("").to_string();
+                    out.push((path.display().to_string(), production));
+                }
+            }
+        }
+        let mut files = Vec::new();
+        sources(
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+            &mut files,
+        );
+
+        let ctor = concat!("Command::", "new(");
+        let spawners = [
+            concat!("HeadlessCall::", "new("),
+            concat!("run_", "headless("),
+        ];
+        let mut sites: Vec<String> = Vec::new();
+        for (name, body) in &files {
+            if body.contains(ctor) || spawners.iter().any(|s| body.contains(s)) {
+                sites.push(name.clone());
+            }
+        }
+        sites.sort();
+        let short: Vec<&str> = sites
+            .iter()
+            .map(|s| s.rsplit(['\\', '/']).next().unwrap_or(s))
+            .collect();
+        assert_eq!(
+            short,
+            vec!["auth.rs", "command.rs", "outcome.rs"],
+            "a NEW child-spawning file appeared — decide its D6/D17/D18 stance and \
+             extend this test; a spawn that skips them is the failure this slice exists to prevent"
+        );
+
+        // `command.rs` only BUILDS the command; the run path's gate is pinned above.
+        let auth = &files
+            .iter()
+            .find(|(n, _)| n.ends_with("auth.rs"))
+            .expect("auth.rs")
+            .1;
+        assert!(
+            auth.contains(concat!("current_", "dir(scratch.path())")),
+            "the login probe must run OUTSIDE the operator's repository (D6)"
+        );
+        for key in ["CURSOR_CONFIG_DIR", "CURSOR_AGENT_DISABLE_DEBUG_LOG"] {
+            assert!(
+                auth.contains(key),
+                "the login probe must set {key} like every other invocation (D17/D18)"
+            );
+        }
     }
 
     /// `shellToolCall.result.success` carries no file-change data at all, so a
