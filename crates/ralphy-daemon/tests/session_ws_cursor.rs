@@ -144,4 +144,38 @@ async fn cursor_session_refuses_an_unprotected_repo_and_spawns_a_protected_one()
     );
 
     ws.send(terminal(b"quit\r")).await.unwrap();
+
+    // --- Leg 3: no opt-out file, but the operator opted IN through the settings
+    // file the daemon reparses. Proves the route reads the opt-in from the
+    // REGISTERED repo's directory (not the cwd, not a default), and that the gate's
+    // escape hatch is reachable from the workbench and not only from the run path.
+    std::fs::remove_file(dir.path().join(".cursorindexingignore")).unwrap();
+    let settings = dir.path().join(".ralphy").join("settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    std::fs::write(
+        &settings,
+        r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":true}}"#,
+    )
+    .unwrap();
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("an explicit opt-in must reach the capability");
+    ws.send(terminal(b"quit\r")).await.unwrap();
+
+    // And flipping it back to `false` restores the refusal — so leg 3 proved the
+    // opt-in, not merely that the gate stopped firing for some other reason.
+    std::fs::write(
+        &settings,
+        r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":false}}"#,
+    )
+    .unwrap();
+    let err = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect_err("an explicit opt-OUT must refuse again");
+    match err {
+        tokio_tungstenite::tungstenite::Error::Http(resp) => {
+            assert_eq!(resp.status().as_u16(), 400)
+        }
+        other => panic!("expected an HTTP refusal, got {other:?}"),
+    }
 }

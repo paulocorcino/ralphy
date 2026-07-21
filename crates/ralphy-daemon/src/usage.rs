@@ -383,9 +383,15 @@ mod tests {
     }
 
     /// ADR-0040 Tier 4 anti-drift: a vendor that reaches the daemon's launch enum
-    /// must also have a store-path resolver here, or its interactive sessions are
-    /// invisible to the usage endpoint. Source-text pin over this very file, so it
-    /// reds the moment a seventh `Agent::ALL` variant lands without one.
+    /// must at least have a store-path RESOLVER here. Source-text pin over this
+    /// very file, so it reds the moment a seventh `Agent::ALL` variant lands
+    /// without one.
+    ///
+    /// It deliberately does NOT claim the store is reachable from the usage
+    /// endpoint: a resolver with no caller is exactly Cursor's current state, since
+    /// `interactive_records` gains its argument with #250's `scan_cursor`. The
+    /// stronger pin — every resolver actually chained into `interactive_records` —
+    /// belongs to that issue, once there is a scan to chain.
     #[test]
     fn every_launchable_vendor_has_a_store_path_resolver() {
         let src = include_str!("usage.rs");
@@ -398,8 +404,9 @@ mod tests {
             });
             assert!(
                 found,
-                "no `pub fn {token}…_path(` resolver in usage.rs — {agent:?} can be \
-                 launched from the workbench but its store is unreachable"
+                "no `pub fn {token}…_path(` resolver in usage.rs — {agent:?} reached \
+                 the daemon's launch enum without one, so nothing can even locate \
+                 its interactive store"
             );
         }
     }

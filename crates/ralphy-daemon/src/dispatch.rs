@@ -1114,13 +1114,16 @@ mod tests {
         for a in Agent::ALL {
             let flag = agent_flag(a);
             let quoted = format!("\"{flag}\"");
-            for (name, hay) in [
-                ("agents:", agents),
-                ("consoleItems()", console_items),
-                ("the accelerator map", accelerators),
+            for (name, hay, needle) in [
+                ("agents:", agents, quoted.clone()),
+                // `kind:` specifically, not a bare occurrence: the flag also appears
+                // as this row's `label:`, so a right label over a wrong or missing
+                // `kind` — the field the launch actually dispatches on — would pass.
+                ("consoleItems()", console_items, format!("kind: {quoted}")),
+                ("the accelerator map", accelerators, quoted.clone()),
             ] {
                 assert!(
-                    hay.contains(&quoted),
+                    hay.contains(&needle),
                     "{flag} missing from app.js's {name} — the workbench cannot launch it"
                 );
             }

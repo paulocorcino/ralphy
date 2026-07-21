@@ -658,7 +658,8 @@ The remaining five slots are deliberately empty.
 points and delegates, so its public API (`pub use command::locate_cursor`) is
 unchanged.
 
-The forcing constraint is [ADR-0032](./0032-daemon-mode.md) §10: the daemon
+The forcing constraint is
+[ADR-0032](./0032-daemon-mode-supervised-launcher.md) §10: the daemon
 never imports `ralphy-core`, and this adapter crate does — so a
 daemon → `ralphy-agent-cursor` edge is out. But the workbench's interactive
 launch spawns `cursor-agent` directly, and it needs BOTH: the locator (a bare
@@ -666,6 +667,14 @@ launch spawns `cursor-agent` directly, and it needs BOTH: the locator (a bare
 can reach around by opening a console is not a refusal). `ralphy-proc-util` is
 core-free, is already the daemon's program resolver, and already carries
 vendor-shaped path knowledge (`CODEX_HOME`, `opencode.cmd`).
+
+**Measured amendment to D14 (#248).** "On `PATH` under neither name" is not
+universal: the Windows installer puts `%LOCALAPPDATA%\cursor-agent` **on `PATH`**,
+so on such a host a plain `PATH` search for `cursor-agent` *does* find the
+vendor — by accident, and only for that one install shape and that one name. It
+is therefore not safe to test the daemon's routing by comparing the two
+resolvers' live answers (they agree here), and still less safe to rely on the
+accident in production. Both call sites pin the wiring at the source instead.
 
 One implementation, because a product-stance refusal that two crates can
 disagree about is worse than no refusal: the disagreement is invisible until an

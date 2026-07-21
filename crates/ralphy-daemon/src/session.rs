@@ -713,60 +713,70 @@ mod tests {
         );
     }
 
-    /// Serializes the tests below, which mutate process-global env vars.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// ADR-0042 D14: the Cursor CLI is on `PATH` under NEITHER of its two names, so
-    /// `resolve_program`'s PATH search would fall back to the bare `cursor-agent`
-    /// and the spawn would fail on a machine where Cursor IS installed. The daemon
-    /// must go through the vendor locator instead.
+    /// ADR-0042 D14: `cursor-agent` is not reliably on `PATH`, and where it IS it
+    /// is only because the installer added `%LOCALAPPDATA%\cursor-agent` — an
+    /// accident the daemon must not depend on. So the Cursor arm must go through
+    /// the shared vendor locator, which knows the two names and three install
+    /// roots, not through the plain `PATH` resolver.
+    ///
+    /// Deliberately mutates NO environment: blanking `PATH`/`HOME` to force the
+    /// resolvers apart would reach every other test in this binary (`registry.rs`
+    /// shells `git`; `identity.rs` resolves `HOME` under its own separate lock),
+    /// turning one test's setup into another's flake. Instead the wiring is pinned
+    /// at the source — rewriting the arm as `resolve_program` reds this on EVERY
+    /// host, including one where the two happen to agree — and the behaviour is
+    /// asserted against the locator's live answer.
     #[test]
     fn cursor_resolves_off_path_through_the_vendor_locator() {
-        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let restore = [
-            ("PATH", std::env::var_os("PATH")),
-            ("HOME", std::env::var_os("HOME")),
-            ("USERPROFILE", std::env::var_os("USERPROFILE")),
-            ("LOCALAPPDATA", std::env::var_os("LOCALAPPDATA")),
-            (AGENT_OVERRIDE_ENV, std::env::var_os(AGENT_OVERRIDE_ENV)),
-        ];
-
-        let home = tempfile::tempdir().unwrap();
-        let empty_path = tempfile::tempdir().unwrap();
-        // The cfg-free install shape (`~/.cursor/bin/cursor-agent`, no extension) —
-        // the one branch of the locator that matches identically on both platforms.
-        let seeded = home.path().join(".cursor").join("bin").join("cursor-agent");
-        std::fs::create_dir_all(seeded.parent().unwrap()).unwrap();
-        std::fs::write(&seeded, "").unwrap();
-
-        std::env::set_var("PATH", empty_path.path());
-        std::env::set_var("HOME", home.path());
-        std::env::set_var("USERPROFILE", home.path());
-        std::env::remove_var("LOCALAPPDATA");
-        std::env::remove_var(AGENT_OVERRIDE_ENV);
-
-        let spec = spec_for(Agent::Cursor, PathBuf::from("."), 24, 80);
-        assert_eq!(
-            spec.program,
-            seeded.clone().into_os_string(),
-            "must resolve the installed binary, not the bare `cursor-agent` name"
+        let src = include_str!("session.rs");
+        let production = src.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            production.contains("Agent::Cursor => ralphy_proc_util::cursor::locate_cursor()"),
+            "the Cursor arm must resolve through the shared vendor locator (D14/D19)"
         );
 
-        // The test seam still wins for Cursor — it must not be bypassed for the one
-        // vendor with its own locator, or every integration test loses its stand-in.
-        std::env::set_var(AGENT_OVERRIDE_ENV, "stand-in");
-        assert_eq!(
-            spec_for(Agent::Cursor, PathBuf::from("."), 24, 80).program,
-            OsString::from("stand-in")
-        );
+        // Env-free and non-vacuous on a host with Cursor installed: `spec_for` must
+        // yield the locator's real path, never the bare fallback name. Skipped when
+        // the stand-in override is exported into the whole test run — no test here
+        // sets it, but an operator's shell can.
+        if std::env::var_os(AGENT_OVERRIDE_ENV).is_none() {
+            assert_eq!(
+                spec_for(Agent::Cursor, PathBuf::from("."), 24, 80).program,
+                ralphy_proc_util::cursor::locate_cursor()
+                    .map(PathBuf::into_os_string)
+                    .unwrap_or_else(|| OsString::from("cursor-agent"))
+            );
+        }
+        // The `RALPHY_DAEMON_AGENT_OVERRIDE` seam is NOT bypassed for this vendor:
+        // proved end-to-end by `tests/session_ws_cursor.rs`, which launches the
+        // helper bin through `agent=cursor`.
+    }
 
-        for (name, value) in restore {
-            match value {
-                Some(v) => std::env::set_var(name, v),
-                None => std::env::remove_var(name),
+    /// `ALL` is hand-written, so a seventh variant added to the enum and to
+    /// `agent_flag` — but forgotten here — would leave every pin that iterates it
+    /// silently vacuous, which is exactly the ADR-0040 Tier 4 drift those pins
+    /// exist to catch. The `match` below is exhaustive, so the compiler forces the
+    /// count to be revisited.
+    #[test]
+    fn all_enumerates_every_enum_variant() {
+        fn tag(a: Agent) -> u8 {
+            match a {
+                Agent::Claude => 0,
+                Agent::Codex => 1,
+                Agent::Copilot => 2,
+                Agent::Cursor => 3,
+                Agent::Kimi => 4,
+                Agent::OpenCode => 5,
             }
         }
-        drop(guard);
+        let mut tags: Vec<u8> = Agent::ALL.iter().copied().map(tag).collect();
+        tags.sort_unstable();
+        tags.dedup();
+        assert_eq!(
+            tags,
+            (0..=5).collect::<Vec<u8>>(),
+            "Agent::ALL must list every variant exactly once"
+        );
     }
 
     /// The daemon reparses the adapter's settings file rather than importing the

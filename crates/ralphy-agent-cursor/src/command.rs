@@ -369,12 +369,36 @@ mod tests {
         assert!(!target.join("cli-config.json").exists());
     }
 
-    /// D14's install shapes are covered where the search now lives:
-    /// `ralphy_proc_util::cursor::tests::locate_cursor_finds_each_install_shape`.
-    /// What stays this crate's business is that the delegation is wired at all.
+    /// D14's four install shapes are covered where the search now lives
+    /// (`ralphy_proc_util::cursor::tests::locate_cursor_finds_each_install_shape`).
+    /// What stays this crate's business is that its own entry point really is that
+    /// search — the move's whole premise.
+    ///
+    /// Comparing the two calls would be tautological (one IS the other), and
+    /// seeding a fake install cannot discriminate either: `%LOCALAPPDATA%\
+    /// cursor-agent` is itself on `PATH` on a real install, so a plain `PATH`
+    /// search finds the vendor by accident and agrees with the locator. What
+    /// discriminates deterministically on every host is the delegation ITSELF —
+    /// rewrite this crate's `locate_cursor` as `locate_program("cursor")` and the
+    /// source pin reds.
     #[test]
     fn locate_cursor_delegates_to_the_shared_vendor_locator() {
+        let src = include_str!("command.rs");
+        let production = src.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            production.contains("ralphy_proc_util::cursor::locate_cursor()"),
+            "locate_cursor must BE the shared vendor search (ADR-0042 D19), not a \
+             second implementation that can disagree with the daemon's"
+        );
+        // …and it is actually reached: the public entry point answers whatever the
+        // shared search answers on this host, installed or not.
         assert_eq!(locate_cursor(), ralphy_proc_util::cursor::locate_cursor());
+        assert_eq!(
+            resolve_cursor_program(),
+            locate_cursor()
+                .map(PathBuf::into_os_string)
+                .unwrap_or_else(|| NAMES[0].into())
+        );
     }
 
     #[test]
