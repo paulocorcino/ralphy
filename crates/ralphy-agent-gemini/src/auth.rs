@@ -168,6 +168,7 @@ mod tests {
             include_str!("command.rs"),
             include_str!("policy.rs"),
             include_str!("outcome.rs"),
+            include_str!("revocation.rs"),
             include_str!("lib.rs"),
         ]
         .map(|s| s.split("#[cfg(test)]").next().unwrap().to_string())

@@ -292,6 +292,65 @@ mod tests {
         assert_eq!(args[i + 1], "gemini-3.1-pro", "argv: {args:?}");
     }
 
+    /// #255 AC1's other half: a detected revocation must never be answered by
+    /// QUIETLY ASKING FOR LESS. The argv keeps requesting full autonomy on every
+    /// invocation, and no second spelling of the request exists anywhere in the
+    /// crate's production source for a future fallback to reach for.
+    ///
+    /// Comment lines are stripped before the source scan: the doc comments here
+    /// and in `outcome.rs` legitimately NAME the flags they refuse, and counting
+    /// prose would make the pin unmaintainable rather than sharp.
+    #[test]
+    fn autonomy_argv_is_never_downgraded() {
+        let cmd = build_gemini_command(
+            "s1",
+            None,
+            Path::new("/repo"),
+            Path::new("/home"),
+            Path::new("/home/ralphy-policy.toml"),
+            None,
+        );
+        let args = argv(&cmd);
+        let i = args
+            .iter()
+            .position(|a| a == "--approval-mode")
+            .unwrap_or_else(|| panic!("autonomy must still be requested: {args:?}"));
+        assert_eq!(args[i + 1], "yolo", "argv: {args:?}");
+        assert!(
+            args.iter().any(|a| a == "--skip-trust"),
+            "the trust prompt is fatal headless: {args:?}"
+        );
+
+        let code: String = [
+            include_str!("command.rs"),
+            include_str!("outcome.rs"),
+            include_str!("revocation.rs"),
+            include_str!("lib.rs"),
+        ]
+        .map(|s| {
+            s.split("#[cfg(test)]")
+                .next()
+                .unwrap()
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .join("\n");
+        assert_eq!(
+            code.matches(concat!("--approval-", "mode")).count(),
+            1,
+            "exactly one place asks for an approval mode — a second would be the \
+             work-around this issue forbids"
+        );
+        for downgrade in ["auto_edit", concat!("--", "yolo\"")] {
+            assert!(
+                !code.contains(downgrade),
+                "no weaker autonomy spelling may exist in production source: {downgrade}"
+            );
+        }
+    }
+
     /// The child runs where Ralphy put it — a builder that dropped `work_dir`
     /// would plan one repository and edit another.
     #[test]
