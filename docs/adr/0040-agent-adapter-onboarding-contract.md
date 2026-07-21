@@ -15,6 +15,8 @@ and the *inventory*, and leaves every answer free.
 
 Status: **accepted**. Amends nothing. First application:
 [docs/research/copilot-cli-adapter-spike.md](../research/copilot-cli-adapter-spike.md).
+**Amendment 1** (2026-07-20, from the Cursor spike) adds §C11 and four
+sharpenings — see the end of this file.
 
 ## How to use this ADR
 
@@ -264,3 +266,85 @@ covers the process plumbing.
   like the other four remains a first-class citizen (ADR-0002); this contract
   only insists the differences were **found on purpose** rather than discovered
   in production.
+
+---
+
+## Amendment 1 — 2026-07-20, from the Cursor spike
+
+Source: [docs/research/cursor-cli-adapter-spike.md](../research/cursor-cli-adapter-spike.md).
+Cursor answered every C-question, and in doing so exposed one axis this contract
+did not ask about at all, plus four places where an existing question let a
+wrong answer through. Nothing below invalidates a prior spike; Copilot and Kimi
+simply happen to answer C11 with "no".
+
+### C11 — Persistent state the vendor owns and Ralphy can corrupt
+
+The contract assumed a run is a pure function of argv, env and cwd. It is not.
+Cursor keeps an operator config (`~/.cursor/cli-config.json`) that is **both an
+input and an output** of a run: `--model` writes four keys into it, and a run
+that *failed* keeps the write. Every subsequent invocation that passed no
+`--model` then inherited a model the account could not use and failed too —
+including invocations from a different tool sharing the same config.
+
+- Does the vendor keep a **config file the CLI itself writes**? Where, and which
+  flags mutate it?
+- **Does a failed run roll the mutation back?** Probe this deliberately: run a
+  flag that is rejected, then run again without it.
+- Which settings in that file **override or veto argv**? (Cursor's `--force` is
+  *"unless explicitly denied"* by a `permissions.deny` list the operator owns.)
+- Is there a **config-dir env var** (`CURSOR_CONFIG_DIR`, `XDG_CONFIG_HOME`)
+  that would let Ralphy run against isolated state instead of the operator's?
+- **Does the vendor push content onto the operator's disk mid-run?** Cursor
+  downloaded 17 vendor-authored skills — including PR-opening guidance and two
+  that mutate the operator's own configuration — on first authenticated run.
+
+The rule that follows: **an adapter must state every argv flag explicitly,
+including the ones whose value is "the default"**, because on a vendor with
+write-back, omitting a flag does not mean "default" — it means "whatever the
+last invocation left behind".
+
+### Sharpenings to existing questions
+
+**C9 — add: does a run transmit the repository off the machine?**
+Not "does the vendor have a cloud feature", but: does an ordinary headless run
+send source code to the vendor's servers, and can that be turned off? Cursor's
+first run uploaded a merkle tree of the **parent** repository — 476 sync lines —
+from a task forbidden to read files, with the vendor's own privacy flags on.
+Scoping cwd does not scope the upload. **Verify the opt-out by controlled A/B on
+two fresh repositories**, because a second run against an already-known repo is
+silent whether or not the opt-out works. And check the opt-out's collateral: one
+of Cursor's two ignore files also disables the agent's edit tool, which the
+agent then routed around via its shell.
+
+**C8 — add: whose skills does it read?**
+Ask which directories the vendor scans, then **plant a marker `SKILL.md` in each
+candidate root and have the agent list what it sees** — documentation is not
+evidence here. Cursor deliberately reads `~/.claude/skills`, `.claude/skills`,
+`~/.codex/skills` and `.codex/skills` for "backward compatibility", and injected
+78 skills — the operator's entire unrelated library — into a single request.
+This cuts both ways and both are findings: free materialization for Ralphy, and
+cross-vendor leakage with no CLI-side allowlist.
+
+**C3 — add: a documented hook is not a working hook.**
+Cursor documents a `stop` event ("called when the agent loop ends") that would
+have given deterministic completion. Registered alongside two other events in a
+project `hooks.json` and exercised by a real run, **only
+`beforeShellExecution` fired**. If a hook mechanism is the reason an adapter
+plans to skip `DONE_SENTINEL`, that hook must be observed firing **in the
+headless path**, not read about.
+
+**C10 — add: one vendor, several binary names, none on `PATH`.**
+Cursor installs as `agent` *and* `cursor-agent` (`.cmd` + `.ps1` on Windows,
+plus a `versions/` tree), off `PATH` on both platforms, and its own CI docs
+name a third install location. `resolve_program` resolves through `PATH`; a
+vendor that never lands there needs an explicit probe list, and the adapter must
+try **every** name the vendor ships.
+
+### One consequence for the wiring inventory
+
+C6 may legitimately answer **"there is no local usage store"**. Cursor reports
+tokens only in the live stream envelope and persists none of it, so
+`ralphy-usage-scan` (ADR-0033) cannot see interactive sessions for such a
+vendor. Tier 4's `usage-scan/src/<vendor>.rs` is still written — it enumerates
+sessions and reports tokens as unavailable. **Stating the gap is the deliverable;
+inventing a number is the failure.**
