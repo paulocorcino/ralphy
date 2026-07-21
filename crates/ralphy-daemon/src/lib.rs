@@ -666,6 +666,21 @@ async fn session_ws_upgrade(
             return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
         }
     }
+    // ADR-0043 D4/D6: a Gemini child is contained by an owned configuration root
+    // AND the policy document inside it. The daemon may not import the adapter
+    // (ADR-0032 §10), so it cannot GENERATE that document — and duplicating the
+    // generator would drift from the operator's imported deny rules. It therefore
+    // fails closed. INVARIANT: this refusal precedes `spec_for` and every spawn
+    // path, so no Gemini child is ever created outside the owned root.
+    if agent == session::Agent::Gemini
+        && !session::gemini_policy_path(Path::new(&entry.path)).is_file()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            "gemini: no owned configuration root in this repo — run `ralphy init` or `ralphy run --agent gemini` here first",
+        )
+            .into_response();
+    }
     let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
     match sessions.spawn_attached(
         repo.to_string(),

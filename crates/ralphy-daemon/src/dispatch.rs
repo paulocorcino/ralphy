@@ -100,6 +100,7 @@ pub(crate) fn agent_flag(a: Agent) -> &'static str {
         Agent::Codex => "codex",
         Agent::Copilot => "copilot",
         Agent::Cursor => "cursor",
+        Agent::Gemini => "gemini",
         Agent::Kimi => "kimi",
         Agent::OpenCode => "opencode",
     }
@@ -1070,6 +1071,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn spawn_argv_carries_gemini_through_to_the_agent_flag() {
+        assert_eq!(
+            spawn_argv(
+                Verb::Run,
+                &serde_json::json!({ "agent": "gemini", "branchMode": "new" })
+            )
+            .unwrap(),
+            vec![
+                "run",
+                "--if-idle",
+                "--agent",
+                "gemini",
+                "--branch-mode",
+                "new"
+            ]
+        );
+    }
+
     /// The ADR-0040 canary: `from_query` (what the workbench sends IN) and
     /// `agent_flag` (what the CLI receives OUT) are hand-maintained in two places,
     /// so a vendor added to one and not the other silently refuses a launch.
@@ -1131,6 +1151,10 @@ mod tests {
         assert!(
             accelerators.contains(r#"Digit6: "cursor""#),
             "cursor has no keyboard accelerator in app.js"
+        );
+        assert!(
+            accelerators.contains(r#"Digit7: "gemini""#),
+            "gemini has no keyboard accelerator in app.js"
         );
     }
 

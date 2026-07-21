@@ -33,6 +33,11 @@ pub struct SessionSpec {
     pub cwd: PathBuf,
     pub rows: u16,
     pub cols: u16,
+    /// Extra environment for the child, applied on the spawn path ONLY
+    /// ([`Session::spawn`]). A vendor whose containment lives in an env var —
+    /// Gemini's `GEMINI_CLI_HOME` (ADR-0043 D4) — is isolated by this and nothing
+    /// else, so no other construction site may skip it.
+    pub env: Vec<(OsString, OsString)>,
 }
 
 /// The agents the launcher can start. Maps to a concrete program via
@@ -44,19 +49,21 @@ pub enum Agent {
     Codex,
     Copilot,
     Cursor,
+    Gemini,
     Kimi,
     OpenCode,
 }
 
 impl Agent {
     /// Every launchable vendor. The anti-drift tests (the workbench trio, the
-    /// usage-store resolvers) enumerate the daemon's vendors from here, so a
-    /// seventh variant reds them instead of passing silently.
-    pub const ALL: [Agent; 6] = [
+    /// usage-store resolvers) enumerate the daemon's vendors from here, so an
+    /// eighth variant reds them instead of passing silently.
+    pub const ALL: [Agent; 7] = [
         Agent::Claude,
         Agent::Codex,
         Agent::Copilot,
         Agent::Cursor,
+        Agent::Gemini,
         Agent::Kimi,
         Agent::OpenCode,
     ];
@@ -69,6 +76,7 @@ impl Agent {
             "codex" => Some(Agent::Codex),
             "copilot" => Some(Agent::Copilot),
             "cursor" => Some(Agent::Cursor),
+            "gemini" => Some(Agent::Gemini),
             "kimi" => Some(Agent::Kimi),
             "opencode" => Some(Agent::OpenCode),
             _ => None,
@@ -88,6 +96,10 @@ impl Agent {
             // (ADR-0042 D14) — so this name is only the fallback that makes a
             // spawn failure legible; [`Agent::resolve_program`] does the real work.
             Agent::Cursor => "cursor-agent",
+            // npm installs the Gemini CLI as `gemini` (+ a `.CMD`/`.ps1` shim on
+            // Windows); the shared resolver already picks the `.CMD` (#253), so
+            // this vendor needs no bespoke locator.
+            Agent::Gemini => "gemini",
             // `kimi-code` ships its binary as `kimi` — the same name the adapter
             // resolves for its headless calls (ADR-0028 D5).
             Agent::Kimi => "kimi",
@@ -118,19 +130,63 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// program is resolved through `ralphy_proc_util::resolve_program` (Windows
 /// `.cmd`/`.exe` shims included), unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a
 /// program to run instead.
+///
+/// Gemini alone carries args and env: an interactive launch must land in the SAME
+/// owned configuration root and under the SAME policy document a `ralphy run`
+/// uses (ADR-0043 D4/D6), which is `GEMINI_CLI_HOME` plus the global `--policy`
+/// flag. The route refuses the launch when that document is absent, so this
+/// function never has to invent one.
 pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
         None => agent.resolve_program(),
     };
+    let (args, env) = match agent {
+        Agent::Gemini => (
+            vec![
+                OsString::from("--policy"),
+                gemini_policy_path(&cwd).into_os_string(),
+            ],
+            vec![(
+                OsString::from("GEMINI_CLI_HOME"),
+                gemini_home(&cwd).into_os_string(),
+            )],
+        ),
+        _ => (Vec::new(), Vec::new()),
+    };
     SessionSpec {
         program,
-        args: Vec::new(),
+        args,
         cwd,
         rows,
         cols,
+        env,
     }
 }
+
+/// Ralphy's owned Gemini configuration root inside a repo: `<repo>/.ralphy/`'s
+/// `gemini-home`. This is what `GEMINI_CLI_HOME` names — the CLI appends
+/// `.gemini` to it itself (ADR-0043 D4).
+///
+/// The daemon may not import `ralphy-agent-gemini` (ADR-0032 §10), so the layout
+/// is duplicated here; `the_gemini_root_layout_matches_the_adapters_own` reds if
+/// the adapter renames either component.
+pub fn gemini_home(repo_root: &Path) -> PathBuf {
+    repo_root.join(".ralphy").join(GEMINI_ROOT_DIR)
+}
+
+/// The policy document inside the owned root:
+/// `<repo>/.ralphy/gemini-home/.gemini/ralphy-policy.toml`. Its presence is what
+/// the session route gates a Gemini launch on.
+pub fn gemini_policy_path(repo_root: &Path) -> PathBuf {
+    gemini_home(repo_root)
+        .join(GEMINI_CLI_SUBDIR)
+        .join(GEMINI_POLICY_FILE)
+}
+
+const GEMINI_ROOT_DIR: &str = "gemini-home";
+const GEMINI_CLI_SUBDIR: &str = ".gemini";
+const GEMINI_POLICY_FILE: &str = "ralphy-policy.toml";
 
 /// Whether the operator opted in to Cursor's codebase upload for `repo_root`,
 /// read from `<repo_root>/.ralphy/settings.json`'s
@@ -199,6 +255,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
         cwd,
         rows,
         cols,
+        env: Vec::new(),
     }
 }
 
@@ -224,10 +281,13 @@ impl Session {
     /// runs on a dedicated `std::thread` (a blocking read must not sit on the
     /// tokio runtime); each chunk is sent non-blocking over the unbounded channel.
     pub fn spawn(spec: SessionSpec) -> Result<Session> {
-        let cmd = PtyCommand::new(spec.program)
+        let mut cmd = PtyCommand::new(spec.program)
             .args(spec.args)
             .cwd(&spec.cwd)
             .size(spec.rows, spec.cols);
+        for (k, v) in spec.env {
+            cmd = cmd.env(k, v);
+        }
         let pty = PtySession::spawn(cmd)?;
         let mut reader = pty.reader()?;
         let (tx, rx): (UnboundedSender<Vec<u8>>, UnboundedReceiver<Vec<u8>>) = unbounded_channel();
@@ -692,6 +752,7 @@ mod tests {
             ("codex", Agent::Codex, "codex"),
             ("copilot", Agent::Copilot, "copilot"),
             ("cursor", Agent::Cursor, "cursor-agent"),
+            ("gemini", Agent::Gemini, "gemini"),
             ("kimi", Agent::Kimi, "kimi"),
             ("opencode", Agent::OpenCode, "opencode"),
         ] {
@@ -765,8 +826,9 @@ mod tests {
                 Agent::Codex => 1,
                 Agent::Copilot => 2,
                 Agent::Cursor => 3,
-                Agent::Kimi => 4,
-                Agent::OpenCode => 5,
+                Agent::Gemini => 4,
+                Agent::Kimi => 5,
+                Agent::OpenCode => 6,
             }
         }
         let mut tags: Vec<u8> = Agent::ALL.iter().copied().map(tag).collect();
@@ -774,7 +836,7 @@ mod tests {
         tags.dedup();
         assert_eq!(
             tags,
-            (0..=5).collect::<Vec<u8>>(),
+            (0..=6).collect::<Vec<u8>>(),
             "Agent::ALL must list every variant exactly once"
         );
     }
@@ -793,6 +855,58 @@ mod tests {
             src.contains(r#"SECTION: &'static str = "cursor""#),
             "the adapter renamed the settings section the daemon reparses"
         );
+    }
+
+    /// Same drift risk as `the_optin_key_matches_the_adapters_own_schema`, one
+    /// layer down: the daemon duplicates the owned root's three path components
+    /// rather than importing `ralphy-agent-gemini` (ADR-0032 §10). Rename one in
+    /// the adapter and the daemon would silently point a launch — and its refusal
+    /// gate — at a directory the CLI never reads.
+    #[test]
+    fn the_gemini_root_layout_matches_the_adapters_own() {
+        let root = include_str!("../../ralphy-agent-gemini/src/root.rs");
+        assert!(
+            root.contains(r#"ROOT_DIR_NAME: &str = "gemini-home""#),
+            "the adapter renamed the owned root directory the daemon duplicates"
+        );
+        assert!(
+            root.contains(r#"CLI_SUBDIR: &str = ".gemini""#),
+            "the adapter renamed the CLI subdirectory the daemon duplicates"
+        );
+        let policy = include_str!("../../ralphy-agent-gemini/src/policy.rs");
+        assert!(
+            policy.contains(r#"POLICY_FILE: &str = "ralphy-policy.toml""#),
+            "the adapter renamed the policy document the daemon's launch gate checks"
+        );
+    }
+
+    /// A Gemini launch must carry BOTH halves of the containment: the env var the
+    /// CLI reads its root from, and the global flag the policy rides on. A spec
+    /// with one and not the other launches an unconstrained child.
+    #[test]
+    fn gemini_launches_under_the_owned_root_and_its_policy() {
+        let repo = PathBuf::from("C:/Dev/FinCal");
+        let spec = spec_for(Agent::Gemini, repo.clone(), 24, 80);
+        assert_eq!(
+            spec.env,
+            vec![(
+                OsString::from("GEMINI_CLI_HOME"),
+                gemini_home(&repo).into_os_string()
+            )]
+        );
+        assert_eq!(
+            spec.args,
+            vec![
+                OsString::from("--policy"),
+                gemini_policy_path(&repo).into_os_string()
+            ]
+        );
+        assert!(gemini_home(&repo).ends_with("gemini-home"));
+        assert!(gemini_policy_path(&repo).ends_with("ralphy-policy.toml"));
+
+        // Every other vendor keeps the bare interactive launch.
+        let bare = spec_for(Agent::Claude, repo, 24, 80);
+        assert!(bare.args.is_empty() && bare.env.is_empty());
     }
 
     /// The refusal is the safe default: only an explicit `true` opens the upload.

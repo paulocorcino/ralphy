@@ -13,7 +13,9 @@
 //! - The main loop reads stdin lines: `quit` exits 0; `spawn-grandchild` spawns a
 //!   copy of itself in `sleep` mode inheriting this stdout (the pipe write-end
 //!   stays open after the direct child dies, so only a process-tree kill reaches
-//!   EOF); any other line echoes as `GOT:<line>`.
+//!   EOF); `env <NAME>` prints `ENV:<NAME>=<value>` — the only way a test can
+//!   observe the environment the launcher actually gave the child; any other line
+//!   echoes as `GOT:<line>`.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
 use std::io::{BufRead, Write};
@@ -23,6 +25,8 @@ use std::time::Duration;
 pub const CWD_MARKER: &str = "CWD:";
 /// Prefix of the line echoing a received stdin line.
 pub const GOT_MARKER: &str = "GOT:";
+/// Prefix of the line reporting one environment variable (`ENV:<NAME>=<value>`).
+pub const ENV_MARKER: &str = "ENV:";
 /// Prefix of the line reporting the current terminal size (`SIZE <cols>x<rows>`).
 pub const SIZE_MARKER: &str = "SIZE";
 
@@ -74,6 +78,14 @@ fn main() {
                 if let Ok(exe) = std::env::current_exe() {
                     let _ = std::process::Command::new(exe).arg("sleep").spawn();
                 }
+            }
+            other if other.starts_with("env ") => {
+                let name = other["env ".len()..].trim();
+                // An unset variable prints an EMPTY value rather than nothing, so
+                // a test can tell "not set" from "the child never answered".
+                let value = std::env::var(name).unwrap_or_default();
+                println!("{ENV_MARKER}{name}={value}");
+                let _ = std::io::stdout().flush();
             }
             other => {
                 println!("{GOT_MARKER}{other}");
