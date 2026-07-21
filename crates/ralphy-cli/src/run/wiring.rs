@@ -100,6 +100,30 @@ pub(crate) fn resolve_cursor(
     }
 }
 
+/// The two Gemini per-phase model pins resolved once (flag, then settings.json,
+/// then `None`, ADR-0043 D8). `None` on either omits `-m` for that phase, which
+/// on this vendor means the ROUTER picks — and charges a second, billed routing
+/// call per turn.
+pub(crate) struct ResolvedGemini {
+    pub(crate) plan_model: Option<String>,
+    pub(crate) exec_model: Option<String>,
+}
+
+/// Resolve the two Gemini per-phase model pins, mirroring [`resolve_copilot`].
+/// The persisted values were validated at `config set` time; the flags are
+/// deliberately unfiltered (D8), so an id the vendor has just started serving is
+/// never blocked by a stale local list.
+pub(crate) fn resolve_gemini(
+    plan_flag: Option<String>,
+    exec_flag: Option<String>,
+    persisted: &ralphy_agent_gemini::GeminiSettings,
+) -> ResolvedGemini {
+    ResolvedGemini {
+        plan_model: config::resolve_optional_model(plan_flag, persisted.plan_model.clone()),
+        exec_model: config::resolve_optional_model(exec_flag, persisted.exec_model.clone()),
+    }
+}
+
 /// Build the run's issue queue and the explicitly-named ("forced") issue set. Two
 /// paths:
 ///   `--issues`: an explicit, ordered selection — fetch each number directly
@@ -183,6 +207,7 @@ pub(crate) fn build_agent(
     claude: &ResolvedClaude,
     copilot: &ResolvedCopilot,
     cursor: &ResolvedCursor,
+    gemini: &ResolvedGemini,
     idle_minutes: Option<u64>,
 ) -> Box<dyn Agent> {
     // The headless adapters drive one child shape, so they resolve the idle
@@ -236,8 +261,8 @@ pub(crate) fn build_agent(
                 .with_idle_minutes(headless_idle),
         ),
         CliAgent::Gemini => Box::new(
-            GeminiAgent::new(args.exec_model.clone(), run_dir)
-                .with_plan_model(args.plan_model.clone())
+            GeminiAgent::new(gemini.exec_model.clone(), run_dir)
+                .with_plan_model(gemini.plan_model.clone())
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
@@ -667,9 +692,44 @@ mod tests {
             &claude,
             &copilot,
             &cursor,
+            &resolve_gemini(None, None, &Default::default()),
             Some(0),
         );
         assert_eq!(agent.name(), "cursor");
+    }
+
+    /// ADR-0043 D8: each phase resolves independently — flag, then the persisted
+    /// `gemini.*` key, then `None` (omit `-m` and let the vendor route).
+    #[test]
+    fn gemini_models_resolve_flag_then_persisted_then_none() {
+        let persisted = ralphy_agent_gemini::GeminiSettings {
+            plan_model: Some("gemini-2.5-pro".into()),
+            exec_model: Some("gemini-3.5-flash".into()),
+        };
+
+        // The flag beats the persisted value, per phase.
+        let r = resolve_gemini(
+            Some("gemini-2.5-flash".into()),
+            Some("gemini-3.1-flash-lite".into()),
+            &persisted,
+        );
+        assert_eq!(r.plan_model.as_deref(), Some("gemini-2.5-flash"));
+        assert_eq!(r.exec_model.as_deref(), Some("gemini-3.1-flash-lite"));
+
+        // Absent flags fall through to the persisted keys.
+        let r = resolve_gemini(None, None, &persisted);
+        assert_eq!(r.plan_model.as_deref(), Some("gemini-2.5-pro"));
+        assert_eq!(r.exec_model.as_deref(), Some("gemini-3.5-flash"));
+
+        // An EMPTY flag is not a pin — it falls through rather than sending `-m ""`.
+        let r = resolve_gemini(Some(String::new()), Some(String::new()), &persisted);
+        assert_eq!(r.plan_model.as_deref(), Some("gemini-2.5-pro"));
+        assert_eq!(r.exec_model.as_deref(), Some("gemini-3.5-flash"));
+
+        // Neither set: `None`, which omits `-m` and lets the vendor route.
+        let r = resolve_gemini(None, None, &Default::default());
+        assert_eq!(r.plan_model, None);
+        assert_eq!(r.exec_model, None);
     }
 
     /// `--agent gemini` must reach a REAL adapter, not fall through to another
@@ -702,6 +762,7 @@ mod tests {
             &claude,
             &resolve_copilot(None, None, &Default::default()),
             &resolve_cursor(None, None, &Default::default()),
+            &resolve_gemini(None, None, &Default::default()),
             Some(0),
         );
         assert_eq!(agent.name(), "gemini");

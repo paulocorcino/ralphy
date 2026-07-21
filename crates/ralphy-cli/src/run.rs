@@ -256,6 +256,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             warn!(error = %e, "malformed cursor settings section — its persisted defaults ignored");
             Default::default()
         });
+    let gemini_settings: ralphy_agent_gemini::GeminiSettings = settings
+        .agent_settings(ralphy_agent_gemini::GeminiSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed gemini settings section — its persisted defaults ignored");
+            Default::default()
+        });
     let base_branch = config::resolve_str(
         args.base_branch.clone(),
         settings.base_branch.clone(),
@@ -390,6 +396,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.exec_model.clone(),
         &cursor_settings,
     );
+    let resolved_gemini = wiring::resolve_gemini(
+        args.plan_model.clone(),
+        args.exec_model.clone(),
+        &gemini_settings,
+    );
     // The idle watchdog knob stays an `Option` through the composition root: an
     // absent value is not "off", it is "let each execution path use the default
     // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
@@ -403,6 +414,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         &resolved_claude,
         &resolved_copilot,
         &resolved_cursor,
+        &resolved_gemini,
         idle_minutes,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
@@ -418,6 +430,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 &resolved_claude,
                 &resolved_copilot,
                 &resolved_cursor,
+                &resolved_gemini,
                 idle_minutes,
             ),
             executor,
