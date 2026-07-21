@@ -101,8 +101,9 @@ Three rules follow:
 
 1. **A failed tool call is not a failed run.** The discriminator is inside the
    tool record — `shellToolCall.result.failure{exitCode, signal, aborted, …}`
-   instead of `.success` — and the run reports `success` regardless. The
-   *degraded* predicate reads `failure` records; the outcome does not.
+   or `.permissionDenied{…}` instead of `.success` — and the run reports
+   `success` regardless. The *degraded* predicate reads both; the outcome does
+   not.
 2. **Zero records plus exit 1 is a preflight rejection**, not a truncation.
    Ralphy can distinguish it from a dead child by the record count.
 3. **Partial records with no envelope and an empty stderr is truncation** — the
@@ -246,6 +247,38 @@ Every run is spawned with, and only with, the autonomy it needs:
 | `--mode plan` / `--plan` | **never** | see D9 |
 | `--trust` | **not set** | never needed across nine runs; revisit only if an untrusted-workspace prompt is ever observed |
 | `--sandbox` | **left to the operator** | available on both platforms (`cursorsandbox.exe` ships on Windows too), unexercised by this spike; forcing a sandbox mode is a capability decision Ralphy has no evidence to make |
+
+### The operator's deny list wins over `--force`, and it is visible
+
+Measured: with `permissions.deny = ["Shell(git)"]` in the operator's config and
+`--force` on the command line, a run asked to execute `git status --short`
+produced
+
+```json
+{"result":{"permissionDenied":{"command":"git status --short",
+  "workingDirectory":"C:\\Dev\\FinCal",
+  "error":"Command blocked by permissions configuration","isReadonly":false}}}
+```
+
+Three things follow, and only the third needed a decision:
+
+1. **It does not hang.** The denial is immediate and headless-safe — no
+   interactive prompt appears, which was the real risk.
+2. **It is a third tool-result discriminator**, alongside `success` and
+   `failure`: `permissionDenied`, carrying the command, the cwd, the vendor's
+   own error string and whether the call was read-only.
+3. **The run still reports `subtype:"success"`, `is_error:false`, exit 0.** An
+   operator whose deny list blocks something Ralphy needs gets a green run that
+   quietly did less — and the earlier `.cursorignore` experiment showed the
+   agent will *route around* a denial through another tool when it can, so the
+   damage is not even consistently visible in the transcript.
+
+So `permissionDenied` records are surfaced by the **degraded predicate**, the
+same way failed tool calls are, and the run report names the blocked commands.
+Ralphy does not read, validate or edit `permissions.deny` at preflight: the deny
+list is the operator's deliberate policy, and a tool Ralphy never needed being
+denied is not a warning worth interrupting them for. The stance is *make it
+visible when it bites*, not *audit it in advance*.
 
 Two capabilities are documented as out of reach and are **not** guarded, with
 the reasoning recorded so a future reader does not re-open it: `agent worker`

@@ -653,9 +653,15 @@ Environment: `CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`, `CURSOR_CONFIG_DIR`,
 | P18 | `--resume` with a never-existing UUID | ✅ accepted silently; `create-chat` is optional |
 | P19 | stream timing through a pipe | ✅ incremental — first record 8.1 s, gaps to ~7.4 s, envelope 22.0 s (a *file* redirect is block-buffered) |
 
+| P20 | usage across a resumed session | ✅ **incremental** — turn 1 `input 18 336/cacheRead 128`, turn 2 `input 102/cacheRead 18 432`; records are summed |
+| P21 | `SIGINT` vs hard kill | ✅ exit **130** + `Aborting operation...` on stderr, no envelope; a hard kill leaves stderr empty |
+| P22 | `permissions.deny` vs `--force` | ✅ deny wins, **does not hang**; third tool-result discriminator `permissionDenied`; run still reports `success` |
+
 Residual gap after P17: **`is_error: true` and any `subtype` other than
-`"success"` were never reproduced** — no lever on a Free account forces them.
-The parser handles them defensively; an unknown `subtype` is not success.
+`"success"` were never reproduced** — no lever on a Free account forces them,
+including `SIGINT`, a hard kill, a failing tool, a denied tool and a preflight
+rejection. The parser handles them defensively; an unknown `subtype` is not
+success.
 
 ### Reproduction
 
