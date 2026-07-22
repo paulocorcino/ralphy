@@ -72,6 +72,14 @@ naming what it proves>
   `<!-- removed #<issue>: <fact> — never cited in last 5 closes -->` at the
   bottom of the file. Skip this rule entirely when `citations.jsonl` is absent
   or has fewer than 5 entries — the signal is too young to prune on.
+- Flag promotion candidates: a bullet whose provenance spans 3+ issues and
+  states a repo-wide convention or toolchain trap (not a lab or environment
+  one-off) has outgrown the cache — suffix it `(promote: CONTEXT.md or
+  docs/adr)` so a later session lifts it into versioned docs, which travel
+  everywhere while the cache travels only the dependency graph. You cannot
+  promote it yourself (this session edits nothing but KNOWLEDGE.md); keep the
+  suffix until the tree shows the promotion landed, then drop the bullet as a
+  duplicate of its versioned home.
 - When command variants differ, prefer the FUNCTIONALLY STRICTER one, not the
   majority wording: a gate that cannot fail is not a gate (e.g. `gofmt -l .`
   in a `&&` chain exits 0 even with unformatted files — `test -z "$(gofmt -l
