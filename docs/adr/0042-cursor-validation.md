@@ -1,163 +1,166 @@
-# Cursor adapter — live end-to-end validation plan
+# Cursor adapter — live end-to-end validation note
 
-Companion to [ADR-0042](./0042-cursor-adapter.md). Where the Kimi and OpenCode
-validation notes ([0028](./0028-kimi-validation.md), [0005](./0005-opencode-validation.md))
-record what *was* run, this file is written **before** the adapter exists: it is
-the plan the capstone run must execute, and it becomes the note once it has.
+Companion to [ADR-0042](./0042-cursor-adapter.md). Like the Kimi and OpenCode
+validation notes ([0028](./0028-kimi-validation.md), [0005](./0005-opencode-validation.md)),
+this records what *was* run. It began life as the plan the capstone had to execute
+and is now the note that execution produced.
 
 It exists because one decision was deliberately left provisional. **D11 (usage)
-cannot be settled from a spike.** The spike proved no local store carries
-tokens; whether capturing `result.usage` from the stream is *sufficient* — across
-a resumed session, a run that hits its budget, and a run the operator later
-inspects with `ralphy usage` — is a question only a real run against a real
-repository answers. Phase 3 is that question.
+could not be settled from a spike.** The spike proved no local store carries tokens;
+whether capturing `result.usage` from the stream is *sufficient* — across a resumed
+session, a run that hits its budget, and a run the operator later inspects — is a
+question only a real run against a real repository answers. Phase 3 answered it.
 
-Status: **plan — not executed.** Implementation is not authorized; this file is
-the acceptance contract that authorization will be measured against.
+Status: **accepted.** The capstone ran against `paulocorcino/FinCal` on 2026-07-22
+(issue [#251](https://github.com/paulocorcino/ralphy/issues/251)); every phase below
+executed and passed. The run surfaced four follow-up issues — verify-gate tokenizer
+[#268](https://github.com/paulocorcino/ralphy/issues/268) (fixed in `cca8d0a`/`ce54f92`),
+per-issue under-count [#269](https://github.com/paulocorcino/ralphy/issues/269), harvest
+budget [#270](https://github.com/paulocorcino/ralphy/issues/270), and logged-out
+stale-plan masking [#271](https://github.com/paulocorcino/ralphy/issues/271) — none of
+which invalidate the adapter; each is recorded in its phase.
 
-## Environment the run must have
+## Environment the run had
 
-- Cursor Agent CLI, **both** builds: `2026.07.16-899851b` (Windows,
-  `%LOCALAPPDATA%\cursor-agent\agent.cmd`) and `2026.07.17-3e2a980` (WSL,
-  `~/.local/bin/cursor-agent`) — **off `PATH` on both**, so the run is also the
-  proof of ADR-0042 D14's probe list.
+- Cursor Agent CLI **2026.07.17-3e2a980 on BOTH** Windows
+  (`%LOCALAPPDATA%\cursor-agent\agent.cmd`) and WSL (`~/.local/bin/cursor-agent`) — the
+  plan expected a `…07.16` Windows build, but the box had updated, so the "version skew"
+  Phase 5 was written to probe did not exist (it became a version-parity check). Both are
+  **off `PATH`** as D14 predicted, except `cursor-agent.cmd` is in fact resolvable on the
+  Windows PATH despite `which` missing it.
 - Auth: `agent login` (browser OAuth), credential at `%APPDATA%\Cursor\auth.json`.
-  Tier recorded from `about --format json` at the start of every phase — the
-  entitlement of D4 is tier-dependent and the note must say which tier it saw.
-- Model: `--model auto` passed **explicitly** (D4). `~/.cursor/cli-config.json`
-  is captured before and after every phase; a diff in the four model keys is a
-  finding, not noise.
-- Target repo: `C:\Dev\FinCal` (`paulocorcino/FinCal`), the same lab every other
-  vendor was validated against. Run branches cut as `afk/run-*`.
-- **`.cursorindexingignore` present in the working tree before the first run**,
-  and `~/.cursor/projects/<slug>/worker.log` inspected after every phase. A
-  non-zero `Applying change` count anywhere in this validation **fails the whole
-  note** — D6 is the decision this repository's contents pay for.
+- **Tier: Cursor Pro** (`about --format json` → `subscriptionTier: Pro`). Early phases
+  hit Free-tier quota exhaustion; the Pro upgrade unblocked Phases 1–5. Pro changes the
+  billing picture — see Phase 3 §4.
+- Model: `--model auto` passed explicitly (D4). The `auto` route priced cleanly through
+  the family normalization (`pricing/defaults.rs` prices `auto` directly).
+- Target repo: `C:\Dev\FinCal` (`paulocorcino/FinCal`), base branch **`master`**. Run
+  branches cut as `afk/run-*`.
+- **`.cursorindexingignore` (content `*`) committed on master** before every non-Phase-0
+  run. `worker.log` inspected: **no `Applying change` line anywhere** across the whole
+  validation — D6 held.
 
-## Phase 0 — the preflight gate refuses (D6, D8)
+## Phase 0 — the preflight gate refuses (D6, D8) ✅
 
-Before anything green, prove the two refusals fire:
+1. **Missing opt-out** ✅ — with `.cursorindexingignore` removed, the run stops with the
+   ADR-0013 message naming the file, its `*` content, and the opt-in key; `Applying
+   change` = 0, no child spawned.
+2. **Logged out** ✅ (with a nuance, [#271](https://github.com/paulocorcino/ralphy/issues/271)).
+   With the operator logged out (`status --format json` → `isAuthenticated:false`, exit 0),
+   a clean run stops with `Cursor is not authenticated — run `agent login`…` (exit 1). The
+   stop is driven by the **in-flight stderr matcher** (`is_cursor_auth_error`), NOT the
+   `status --format json` preflight the plan named — `probe_cursor_login` is wired only
+   into `ralphy init`, not `ralphy run`. And a leftover `.ralphy/plan.md` **masks** the
+   auth failure: the first pass served a stale plan (reported `infeasible`, 0 tokens, no
+   cursor.log) instead of the login stop; removing it surfaced the stop on the next run.
+   Filed as #271.
+3. **Invalid API key** ✅ — a garbage `CURSOR_API_KEY` yields
+   `⚠ Warning: The provided API key is invalid.`, classified as auth (not a generic
+   "no plan") — the third vendor string D8 exists for.
 
-1. Remove `.cursorindexingignore`, run `ralphy run --agent cursor --dry-run`.
-   Expect an ADR-0013 stop naming the file, its one-line content, and what it
-   prevents. **No child process is spawned.**
-2. Restore the file, log out of Cursor, run again. Expect the auth stop quoting
-   `agent login`, driven by `status --format json` → `isAuthenticated: false`
-   **with exit code 0** — the trap D8 exists for.
-3. Set `CURSOR_API_KEY` to garbage and run. Expect the *third* auth string
-   (`The provided API key is invalid`) to be classified as an auth failure, not
-   a generic one.
+## Phase 1 — plan-only dry run ✅
 
-A phase that cannot produce all three refusals means the gate is decorative.
+- `.ralphy/plan.md` written **by the agent** in execution mode (not `--mode plan`, D9):
+  feasibility verdict, `[verified]` acceptance ledger, `## Verify`, open steps, trailer.
+- Minted `create-chat` id **equals** `system/init.session_id` (D10).
+- Priced cleanly — no "unknown model" for the cursor pass; the `k3`/`+?` warning that
+  appears is a **pre-existing kimi gap** in project-cumulative totals, not a cursor
+  failure.
+- Repo returned to master; empty run branch removed.
+- **Intermittent lingering child** (D3's "stream may end early", made concrete): a pass
+  sometimes ends on `thinking/completed` with no terminal `result` envelope and the child
+  lingers to the idle watchdog; sometimes it completes cleanly (~6.6 min). Seen 1-of-2.
 
-## Phase 1 — plan-only dry run
+## Phase 2 — full non-dry-run ✅
 
-```
-ralphy run --repo C:/Dev/FinCal --only-issue <n> --agent cursor \
-  --base-branch <base> --dry-run --verbose
-```
+- **Green close reaching `DONE_SENTINEL`** ✅ — FinCal #117: execute ended
+  `Done / exited_cleanly / saw_envelope=true`, the verify gate passed, the issue closed
+  green (`is_error:false`, sentinel last). The run also validated ralphy's learning loop:
+  the planner read the prior run's `verify-failure.md` and rewrote its `## Verify` to a
+  tokenizer-safe form, citing the earlier failure.
+- **[#268], found live:** the FIRST green attempt (#116) was blocked not by the adapter
+  but by the verify gate — the cursor planner authored a defensive
+  `sh -c "test \"$(git diff-tree …)\" = \"README.md\""`, and the no-shell verify
+  tokenizer (ADR-0011) does not honor `\"`, mis-splitting it into a garbage argv that
+  fails `exit 2` and burns the repair budget. The committed work was correct; only the
+  verify command was un-tokenizable. Fixed (`cca8d0a` classified the related quota shape;
+  `ce54f92` rejects nested-quote verify lines at parse time, mirroring #181).
+- **Classification ladder** ✅ — a deliberate `--max-minutes-per-issue` kill mid-run:
+  `outcome=Timeout, saw_envelope=false, committed=true → non_green`; 101 commits did NOT
+  buy a green close (the Kimi precedent holds). The killed run reports 0 tokens (usage
+  rides the envelope), and D11's credit-vs-token warning auto-fired.
+- **Progress asymmetry measured** ✅ — stream `editToolCall` **+39/−12** vs actual
+  `git diff` **208 files, +27,170/−120**; the delta is shell-driven merge/cherry-pick work
+  the stream does not account for (D3/§C2 confirmed — the stream's number would be wrong by
+  exactly the shell-driven work).
 
-Acceptance:
+## Phase 3 — the usage question (D11) ✅
 
-- `.ralphy/plan.md` written **by the agent**, in execution mode — not
-  `--mode plan` (D9). The plan has open steps, a feasibility verdict, an
-  acceptance ledger and `## Verify` commands.
-- The minted `create-chat` id equals `system/init.session_id` (D10). A mismatch
-  is a hard error, not a warning.
-- The run prices out — no "unknown model" — through the family normalization of
-  D5. Record which family the `auto` route actually chose, recovered from the
-  store blob (`providerOptions.cursor.modelName`), and confirm the price table
-  resolved it.
-- Repo returned to the base branch; the empty run branch removed.
+1. **Single run** ✅ — `result.usage` is captured from the envelope; the on-disk store
+   carries no token count on a real workload: `meta.json` has no token field, `store.db`
+   is 140 protobuf/JSON blobs whose only "token"+digit string is skill prose, and no
+   `agent-transcripts` JSONL is written on this build. D11 stands unchanged.
+2. **Resumed session** ✅ — a direct 2-turn `--resume` probe (same minted UUID) on the
+   current build: turn 1 `input 12941 / cacheRead 5248`, turn 2 `input 100 / cacheRead
+   18176`. Input collapses while cacheRead grows — **incremental**, so D11 keeps the
+   **sum** rule; ralphy's run totals (far exceeding any single envelope) confirm it sums.
+   Semantics did not change under the Pro/version change.
+3. **Interactive-session scan** ✅ — the daemon's `GET /api/usage` (`scan_cursor`)
+   enumerated 68 cursor interactive sessions (11 from the capstone day), **every one with
+   `tokens: null`** — unavailable, never 0, never invented (contrast the claude synthetic
+   entry's `{input:0,…}`). Exercised via an ephemeral daemon so the operator's
+   `daemon-require-login` posture was untouched.
+4. **The unit mismatch** ✅ — ralphy's per-run tokens match Cursor's dashboard **to the
+   digit** for the counted passes (#117 = 455 794). But every Pro-tier event is
+   `Cost = "Included"` (flat subscription, $0 marginal): ralphy's `$0.38` is a modeled
+   token-price projection, not Cursor's bill. **[#269], found here:** the
+   knowledge-consolidation invocation (375 994 real tokens, a distinct dashboard event) is
+   NOT in ralphy's per-issue total (plan+execute only) — ralphy under-reports cursor spend
+   per issue by a whole invocation.
 
-## Phase 2 — full non-dry-run
+## Phase 4 — the token cost of the foreign harvest (D12) ✅
 
-Same invocation without `--dry-run`, on an issue that requires real edits **and**
-at least one shell-driven change.
+- Harvest floor ≈ **15 679 input tokens per invocation** (78 foreign skills); ~100% of a
+  trivial task's input, ~17% of a real plan's input, and once harvested the skills move
+  into cacheRead and are re-read every turn (Phase 1 plan: cacheRead 1 264 640).
+- **Cross-vendor multiple** — the same one-line-file issue on `--agent claude` (#118):
+  claude 175 904 total tokens (fresh input 377 — it does not auto-harvest) vs cursor #117
+  831 048 (plan+execute+consolidate) → **~4.7×** total tokens, **~42×** on uncached input.
+  The delta is overwhelmingly the foreign-skill harvest.
+- **[#270], recommendation:** Cursor needs a harvest-aware per-issue budget default
+  distinctly higher than a non-harvesting vendor's — a budget tuned on another vendor reads
+  wrong for Cursor. Feeds ADR-0038.
 
-Acceptance:
+## Phase 4b — the limit, whenever it arrives (D13) ✅ (captured on Free tier)
 
-- `DONE_SENTINEL` is the last line of `result.result`, and `result.is_error` is
-  `false` (D3).
-- The classification ladder (ADR-0023) behaves: commits without a sentinel must
-  **not** buy a green close — the Kimi precedent.
-- **The progress asymmetry is measured, not assumed.** D3/§C2 says
-  `editToolCall` reports `linesAdded`/`diffString` and `shellToolCall` reports
-  nothing about files. Compare the stream's accounting against `git diff HEAD`
-  and record the delta. If Ralphy surfaces the stream's number anywhere an
-  operator reads it, that number is wrong by exactly the shell-driven work.
-- A deliberate kill mid-run: confirm the **absence** of the `result` envelope is
-  classified as failure, per Cursor's documented "stream may end early" contract.
+The ceiling was hit during Free-tier exhaustion:
+`ActionRequiredError: You've hit your usage limit  Get Cursor Pro for more Agent usage…`,
+exit 1, **no reset hint**, **no `result` envelope**. Reset is not daily (still exhausted
+the next day, before the Pro upgrade). The capstone also found the **plan-phase** Free-tier
+limit arrives as a *bare* `ActionRequiredError:` stderr line with no terminal record —
+the shape the D13 spike never handled — which the fold skipped ("produced no plan") until
+`cca8d0a` folds a bare-stderr `ActionRequiredError` into `vendor_error`. D13 is now
+validated against the real strings.
 
-## Phase 3 — the usage question (D11, the provisional decision)
+## Phase 5 — cross-platform parity ✅
 
-This is the phase the plan exists for. Four measurements, in order:
+Phase 1 repeated on WSL (Ubuntu-22.04, WSL-native ralphy build). Both installs are on the
+**same** CLI build, so this became a parity check, and parity held on every mechanic: the
+init/auth record (`apiKeySource=login, model=Auto, permissionMode=default`, minted-UUID
+session), the envelope shape (`cacheWrite=0`, incremental usage), `auto` pricing, the
+skill harvest, and the D11 credit-vs-token warning are byte-identical. The only difference
+was the plan *content* — WSL judged #108 infeasible because the FinCal app tree had drifted
+to docs-only (app code lives on unmerged `afk/*` branches) — a correct feasibility read of
+the current tree, not a platform divergence. (`permissionMode` reports `default` on both
+platforms despite `--force`; the `"force"` in `outcome.rs`'s fixture is synthetic.)
+Environment friction: WSL git on `/mnt/c` needed `core.autocrlf=true` to see the CRLF
+checkout as clean; a WSL-native repo avoids it.
 
-1. **Single run.** Capture `result.usage` from the envelope. Compare against the
-   store: confirm — again, on a real workload — that
-   `~/.cursor/chats/<hash>/<sid>/store.db` and the `agent-transcripts` JSONL
-   contain no token count. If a future CLI build has added one, D11 is rewritten
-   rather than worked around.
-2. **Resumed session — now a regression check, not an open question.** Settled
-   ahead of implementation by driving the CLI directly: turn 1 reported
-   `input 18 336 / cacheRead 128`, turn 2 reported `input 102 / cacheRead 18 432`.
-   Records are **incremental and are summed**. The validation re-runs this on a
-   real workload only to confirm the semantics did not change under load.
-3. **`ralphy usage` after an interactive session.** Run `agent` interactively by
-   hand, then `ralphy usage`. Expect `scan_cursor` to enumerate the session and
-   report tokens as **unavailable** — an explicit gap, never a zero and never an
-   invented number. A zero is a bug; the absence of the session is a worse bug.
-4. **The unit mismatch, stated.** Record the run's token counts alongside what
-   Cursor's dashboard says it cost in credits. The note must state plainly that
-   Ralphy's tokens are not Cursor's bill, with both numbers from the same run.
+## What would have failed this validation (none did)
 
-If measurement 2 shows cumulative envelopes, D11 gains a keep-last rule (the
-Codex shape). If it shows incremental, D11 gains a sum. If `--resume` turns out
-to report neither coherently, D11 becomes "usage is per-invocation only" and the
-adapter must not resume a session mid-issue.
-
-## Phase 4 — the token cost of the foreign harvest (D12)
-
-The spike measured a trivial "reply OK" run at **18 212 input tokens**, almost
-all of it 78 harvested skills from other vendors' directories. On a real charter
-this is a fixed tax on every call.
-
-- Record `inputTokens` for a plan pass and an execute pass, and estimate the
-  harvest's share by counting skills in the request blob.
-- Compare against the same issue driven by another vendor, and state the
-  multiple.
-- Feed the result into ADR-0038: **a per-issue budget tuned on another vendor
-  will read wrong for Cursor.** If the multiple is large, this validation
-  produces a recommended Cursor-specific default rather than leaving the
-  operator to discover it.
-
-## Phase 4b — the limit, whenever it arrives (D13)
-
-D13 is open by choice: a burst of 25 consecutive Free-tier runs (351 058 input
-tokens) never tripped a quota, and chasing the ceiling was not worth the time it
-would take. So the detector is written against the `ActionRequiredError` class
-rather than a captured phrase, and **this validation is where the real string
-finally lands** — a long queue run against FinCal will hit the ceiling on its
-own schedule.
-
-The note records, whenever it happens: the exact stderr line, the exit code,
-whether any reset hint accompanies it, and whether the `result` envelope is
-present or the stream simply ends. Until then, `Limit(None)` plus ADR-0030's
-synthetic cadence is the behaviour, and the detector is marked **unvalidated**
-in the adapter's own tests rather than pretending otherwise.
-
-## Phase 5 — cross-platform parity
-
-Repeat Phase 1 on WSL against the same issue. The two installs differ by a
-version, which is itself the point: the note records whether a version skew
-changed the stream shape, the envelope fields, or the auth strings.
-
-## What fails this validation outright
-
-- Any `Applying change` line in a `worker.log` during any phase.
-- A `.cursorignore` written by Ralphy, ever (D6 — it breaks the edit tool and the
-  agent routes around it via the shell).
-- `~/.cursor/cli-config.json` differing before and after a run in the four model
-  keys (D4's write-back reaching the operator's state through Ralphy).
-- `ralphy usage` reporting a token number for an interactive Cursor session.
-  There is no source for one; a number there is fabricated.
+- Any `Applying change` line in a `worker.log` during any phase — none seen.
+- A `.cursorignore` written by Ralphy — never.
+- `~/.cursor/cli-config.json` differing before/after a run in the four model keys — the
+  Pro upgrade changed auth/tier fields, but the four model keys were unchanged.
+- `ralphy usage` reporting a token number for an interactive Cursor session — it reports
+  `null`, never a fabricated number.
