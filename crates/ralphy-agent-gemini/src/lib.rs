@@ -31,6 +31,7 @@ use tracing::info;
 
 mod auth;
 mod command;
+mod context;
 mod model;
 mod outcome;
 mod policy;
@@ -355,7 +356,11 @@ impl Agent for GeminiAgent {
         let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let model = self.phase_model(Phase::Execute);
         let ralphy_dir = ws.ralphy_dir();
-        check_stdin_ceiling(PROMPT_EXECUTE)?;
+        // The Gemini CLI refuses `read_file` on the gitignored `.ralphy/`, so the
+        // charter's own run inputs (`plan.md`, `issue.json`, the retry briefs) are
+        // delivered inline on stdin rather than by path (#275).
+        let exec_prompt = context::exec_stdin(PROMPT_EXECUTE, ws);
+        check_stdin_ceiling(&exec_prompt)?;
 
         let run = || {
             let PreparedRoot {
@@ -375,7 +380,7 @@ impl Agent for GeminiAgent {
             );
             ralphy_core::emit::executing("gemini", 0, model.unwrap_or(DEFAULT_MODEL), "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-            let r = self.run_gemini(cmd, PROMPT_EXECUTE, timeout)?;
+            let r = self.run_gemini(cmd, &exec_prompt, timeout)?;
             Ok((r, ()))
         };
 
@@ -629,11 +634,20 @@ mod tests {
             !src[SIG.len()..body_end].contains("_plan"),
             "the plan artifact is never read: `_plan` must not appear in execute's body"
         );
+        // The shared vendor-neutral charter is the base of the stdin, built once
+        // via the #275 inliner, and piped once. `PROMPT_EXECUTE` reaches the child
+        // only through `context::exec_stdin` — never a second, plan-specific one.
         assert_eq!(
-            src.matches("self.run_gemini(cmd, PROMPT_EXECUTE, timeout)")
+            src.matches("context::exec_stdin(PROMPT_EXECUTE, ws)")
                 .count(),
             1,
-            "the execute path sends the shared vendor-neutral charter, once"
+            "the execute stdin is the shared charter, inlined once"
+        );
+        assert_eq!(
+            src.matches("self.run_gemini(cmd, &exec_prompt, timeout)")
+                .count(),
+            1,
+            "the inlined charter is piped once"
         );
         let at = |needle: &str| {
             src.find(needle)
