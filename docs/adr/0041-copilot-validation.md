@@ -30,10 +30,17 @@ cannot settle are settled here:
   the Copilot equivalent must confirm the scan reports a **real, non-fabricated
   number** for an interactive session and that it matches the store.
 
-Status: **proposed** — this is the plan; it flips to **accepted** when every phase
-below has executed against a real repository and the observations are folded back
-in, ADR-0041's Status is moved from proposed to accepted, and its D11 "unobserved"
-caveats are replaced with the captured strings.
+Status: **accepted** — executed against `paulocorcino/FinCal` on 2026-07-22
+([#272](https://github.com/paulocorcino/ralphy/issues/272)). Every phase below ran;
+the observations, numbers and log lines are in the companion
+[docs/evidence/272-copilot-capstone-live.md](../evidence/272-copilot-capstone-live.md)
+(and the raw captures under `docs/live/copilot-272-*.log`). Phases 0, 1, 2a, 2b, 3,
+3.4, 4, 5 and 6 are green; 2c fired the planner-infeasible block live (the executor
+`RALPHY_BLOCKED_EXIT` path stays unit-validated); **Phase 4b — the real account-quota
+ceiling — remains unobserved and is deferred by maintainer ruling** (the
+`--max-ai-credits` cap self-throttles and is a different surface). ADR-0041 is moved
+to accepted on this basis, and its D11 language is updated for what *was* observed.
+The plan text below is preserved as the contract that was executed.
 
 ## What fails the whole exercise outright
 

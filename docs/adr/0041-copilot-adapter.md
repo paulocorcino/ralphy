@@ -18,8 +18,14 @@ schema, session store, catalog, cost traps — is in
 [docs/research/copilot-cli-adapter-spike.md](../research/copilot-cli-adapter-spike.md);
 this ADR records the decisions, the spike records the observations.
 
-Status: **proposed** — decisions settled, implementation landing in slices.
-Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040; applies the
+Status: **accepted** — decisions settled and shipped in slices, then
+**live-validated end-to-end** against `paulocorcino/FinCal` on 2026-07-22
+([#272](https://github.com/paulocorcino/ralphy/issues/272);
+[validation note](./0041-copilot-validation.md),
+[evidence](../evidence/272-copilot-capstone-live.md)). The capstone ran a paid
+plan-then-execute to green, reconciled tokens against the real AI-credit bill, and
+confirmed the interactive-scan inversion; one item is deferred by maintainer ruling
+(see D11). Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040; applies the
 [ADR-0040](./0040-agent-adapter-onboarding-contract.md) onboarding contract for
 the first time.
 
@@ -393,6 +399,18 @@ so a violation costs no tokens. An absent or unparsable config is a pass: the
 documented default is `false`, and failing every run over an unreadable
 machine-managed file would trade one silent risk for a loud outage. The runtime
 limit surface is unchanged — still `Limit(None)` plus ADR-0030.
+
+**Capstone (#272, 2026-07-22).** The `continueOnAutoMode` preflight was confirmed to
+stop a run *before any child spawns* (with the key set `true`, the D11 message won
+over even the logged-out auth error). But the **real account-quota ceiling remains
+unobserved**: `--max-ai-credits` is *agent-aware* — the model is told its remaining
+budget and self-throttles rather than blowing the cap — and a session cap is a
+different surface from account exhaustion. `is_copilot_limit_text` therefore stays
+**class-validated** (its predicates unit-tested and proven disjoint from the auth
+predicate) with the real wording still uncaptured; a maintainer ruling keeps it
+deferred. One live billing note lands here: GitHub has moved to **AI credits** and
+`premiumRequests` is the *legacy* platform — `is_copilot_limit_text` already matches
+`out of ai credits`, so the class matcher is forward-compatible with the new surface.
 
 ## D12 — `ACCEPTS_IMAGES` is true
 
