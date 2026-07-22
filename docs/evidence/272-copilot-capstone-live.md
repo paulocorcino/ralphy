@@ -204,7 +204,20 @@ Every phase executed against a real repository. **0, 1, 2a, 2b, 3, 3.4, 4, 5, 6*
 
 ## Follow-ups filed
 
-- (none required — no adapter defect surfaced; the under-report of run-level sessions
-  (consolidation, triage) in the per-issue ledger and the ~5.5% store-vs-bill floor are
-  documented above as accounting facts, not bugs.)
+No functional adapter defect surfaced (every guard fires, green closes, parity holds).
+Two cost-accounting gaps the capstone surfaced were filed:
+
+- **[#276](https://github.com/paulocorcino/ralphy/issues/276)** — consolidation usage
+  escapes the ledger for 6 of 7 adapters. #269 (closed) wired the mechanism
+  (`append_run_phase` "consolidate" phase) + Cursor's parser; the other six
+  (`copilot` included) still return `Usage::default()`, so `append_run_phase` no-ops on
+  zero and the consolidation tokens are never ledgered. Live evidence here: session
+  `9128577d`, 146382 input tokens, no `consolidate` row.
+- **[#277](https://github.com/paulocorcino/ralphy/issues/277)** — Copilot should report
+  the real **AI-credit** cost (`total_nano_aiu`) rather than only the ADR-0034 USD
+  counterfactual, which over-states GitHub's actual charge ~6.5×. Likely an
+  ADR-0034/0041 D10 amendment.
+
+The ~5.5% store-vs-bill floor (hidden compaction) is a documented platform fact, not a
+ralphy defect.
 </content>
