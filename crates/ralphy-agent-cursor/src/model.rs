@@ -50,8 +50,11 @@ pub(crate) fn is_first_party(family: &str) -> bool {
 /// same shape as a truncation, which is why they must be recognized by text.
 const REFUSALS: &[&str] = &["Cannot use this model:", "Named models unavailable"];
 
-/// The vendor prefixes the entitlement refusal with its own error class.
-const ERROR_CLASS: &str = "ActionRequiredError: ";
+/// The vendor prefixes the entitlement refusal with its own error class. It also
+/// prefixes a bare-stderr QUOTA stop with the same class (`outcome::bare_limit_prose`
+/// reuses this to line-start gate that shape), so it is the crate's one literal for
+/// "an `ActionRequiredError` line begins here".
+pub(crate) const ERROR_CLASS: &str = "ActionRequiredError: ";
 
 /// `Some(err)` when `log` carries a `--model` refusal: the run did not fail, it was
 /// REFUSED, and the operator can fix it by editing one flag.

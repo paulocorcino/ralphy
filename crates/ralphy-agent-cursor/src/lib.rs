@@ -342,11 +342,23 @@ impl Agent for CursorAgent {
                 &after_sha[..7.min(after_sha.len())]
             )
         });
-        if let Some(n) = outcome::limit_stop_note(&fold, range.as_deref()) {
+        // A quota stop reaches `fold` (built from `r.stdout`) only as a
+        // `turn_ended.error` record; the vendor's bare `ActionRequiredError:` stderr
+        // prose — the shape the capstone measured live (#251) — is in the MERGED log
+        // alone, which `r.stdout` never carries. Fold that (a superset of `r.stdout`)
+        // so BOTH shapes resolve to `Limit(None)` instead of a mute `Stuck`. Gated the
+        // same way `model_refusal_stop` reads the merged log: only a line-start
+        // `ActionRequiredError:` match sets `vendor_error`, so a green transcript
+        // quoting the sentence cannot trip it.
+        let merged = fold_cursor_stream(&r.log);
+        if let Some(n) = outcome::limit_stop_note(&merged, range.as_deref()) {
             tracing::warn!("{n}");
         }
-        let outcome: Outcome =
-            classify_cursor_outcome(&fold, r.exited_cleanly, r.timed_out, committed, r.exit_code);
+        let outcome: Outcome = if outcome::cursor_limit_note(&merged).is_some() {
+            Outcome::Limit(None)
+        } else {
+            classify_cursor_outcome(&fold, r.exited_cleanly, r.timed_out, committed, r.exit_code)
+        };
         info!(
             ?outcome,
             exited_cleanly = r.exited_cleanly,

@@ -39,11 +39,12 @@ pub(crate) struct CursorFold {
     /// right, so a run that ends on one is NOT the zero-record shape of a
     /// preflight rejection, however empty the rest of the fold looks.
     pub(crate) saw_turn_end: bool,
-    /// The vendor's own sentence for why it stopped, from `turn_ended.error`.
-    /// Measured on 2026-07-21 as the carrier of an account-quota refusal — where
-    /// ADR-0042 anticipated an `ActionRequiredError` in stderr prose. Reading it
-    /// is what keeps an explicit, self-describing refusal from degrading to a
-    /// mute `Stuck`. What Ralphy *does* with a quota stop is #266.
+    /// The vendor's own sentence for why it stopped. Two carriers, folded to the
+    /// same field: a `turn_ended.error` record (measured 2026-07-21), OR the bare
+    /// `ActionRequiredError:` stderr prose ADR-0042 anticipated and the capstone
+    /// finally measured (2026-07-22, #251) — a quota stop with NO terminal record
+    /// at all. Reading it is what keeps an explicit, self-describing refusal from
+    /// degrading to a mute `Stuck`. What Ralphy *does* with a quota stop is #266.
     pub(crate) vendor_error: Option<String>,
     /// Tool calls whose result was `failure` rather than `success`. A failed tool
     /// call is **not** a failed run — the envelope still reports success — so these
@@ -131,12 +132,56 @@ fn collect_tool_results(v: &Value, failed: &mut Vec<String>, denied: &mut Vec<St
     }
 }
 
-/// Fold one call's stdout. Lines that do not parse as JSON are skipped, so a
-/// truncated last line — the ordinary shape of a killed child — never panics.
+/// The quota/rate-limit sentence CLASSES Cursor uses, case-insensitive: the
+/// vendor's wording is editor-framed marketing prose and varies, so a class match
+/// is stabler than the whole sentence (ADR-0040 C7 precedent).
+const LIMIT_CLASSES: &[&str] = &[
+    "usage limit",
+    "rate limit",
+    "quota",
+    "too many requests",
+    "resource exhausted",
+];
+
+/// The quota sentence when `line` is the vendor's bare `ActionRequiredError:` prose
+/// for a usage/rate limit — the shape that arrives on stderr with NO terminal
+/// record (measured live 2026-07-22, #251), which the record path never caught.
+/// `None` for a model-entitlement `ActionRequiredError` (that is `model_refusal_stop`'s
+/// job) or any other line.
+///
+/// Line-start gated on [`model::ERROR_CLASS`], exactly as `model_refusal_stop` is:
+/// stdout stream-json lines begin with `{`, so a green run's transcript quoting the
+/// sentence can never reach this. The returned string omits the class prefix, so it
+/// reads identically to the `turn_ended.error` a record-shape stop carries.
+fn bare_limit_prose(line: &str) -> Option<String> {
+    let rest = line.strip_prefix(crate::model::ERROR_CLASS)?;
+    let lower = rest.to_lowercase();
+    LIMIT_CLASSES
+        .iter()
+        .any(|class| lower.contains(class))
+        .then(|| rest.to_string())
+}
+
+/// Fold one call's stream. Reads `r.stdout` on the paths that only need the JSON
+/// records, or the MERGED `r.log` on the paths that must also see a bare-stderr
+/// limit (the plan closure and execute's limit check) — folding the merged log is a
+/// superset, since every non-JSON line is skipped save the gated one below.
+///
+/// Lines that do not parse as JSON are skipped, so a truncated last line — the
+/// ordinary shape of a killed child — never panics. The one exception is the
+/// vendor's bare `ActionRequiredError:` quota line ([`bare_limit_prose`]).
 pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
     let mut fold = CursorFold::default();
     for line in stdout.lines() {
-        let Ok(obj) = serde_json::from_str::<Value>(line.trim()) else {
+        let trimmed = line.trim();
+        let Ok(obj) = serde_json::from_str::<Value>(trimmed) else {
+            // Not JSON. Capture only the bare-stderr quota prose (#251); everything
+            // else here is genuinely noise. First one wins, so a later stderr line
+            // cannot overwrite a `turn_ended.error` already read from a record.
+            if let Some(msg) = bare_limit_prose(trimmed) {
+                fold.is_error = true;
+                fold.vendor_error.get_or_insert(msg);
+            }
             continue;
         };
         let ty = obj.get("type").and_then(Value::as_str).unwrap_or_default();
@@ -215,20 +260,13 @@ const INTERRUPTED: i32 = 130;
 /// `resource exhausted` (ADR-0040 C7 precedent; the measured sentence is
 /// editor-framed marketing prose and will be reworded). `None` otherwise.
 ///
-/// Reads `vendor_error` ONLY, never the merged stdout+stderr `log`:
-/// `vendor_error` is populated exclusively from a `turn_ended` record whose
-/// `status != "success"` (`fold_cursor_stream` above), so a transcript quoting
-/// the sentence in a GREEN run's `final_text` can never reach it — unlike
-/// `model_refusal_stop`, which reads the merged log and needs a line-start
-/// gate against exactly that false positive.
+/// Reads `vendor_error` ONLY. It is populated from a `turn_ended` record whose
+/// `status != "success"`, OR from a bare `ActionRequiredError:` stderr line
+/// ([`bare_limit_prose`]) — both gated in `fold_cursor_stream` so a transcript
+/// quoting the sentence in a GREEN run's `final_text` can never reach it. A caller
+/// that wants the bare-stderr shape too must therefore fold the MERGED log, not
+/// `r.stdout` alone (the plan closure and execute's limit check both do).
 pub(crate) fn cursor_limit_note(fold: &CursorFold) -> Option<String> {
-    const LIMIT_CLASSES: &[&str] = &[
-        "usage limit",
-        "rate limit",
-        "quota",
-        "too many requests",
-        "resource exhausted",
-    ];
     let msg = fold.vendor_error.as_deref()?;
     let lower = msg.to_lowercase();
     LIMIT_CLASSES
@@ -349,6 +387,13 @@ mod tests {
     const USAGE_LIMIT: &str = include_str!("../fixtures/usage-limit-2026-07-21.jsonl");
     const USAGE_LIMIT_MIDTURN: &str =
         include_str!("../fixtures/usage-limit-midturn-2026-07-21.jsonl");
+    /// The quota stop AS MEASURED: the vendor's bare `ActionRequiredError:` stderr
+    /// prose in the MERGED log, with NO terminal record at all. Captured live on
+    /// 2026-07-22 during the #251 capstone — the `cursor.log` of a plan run whose
+    /// child hit the Free-tier limit, byte-identical to the direct `agent -p` stderr.
+    /// The record-shape fixtures above were D13's pre-implementation guess; THIS is
+    /// the shape the run found, and the fold must read it the same way.
+    const USAGE_LIMIT_STDERR: &str = include_str!("../fixtures/usage-limit-stderr-2026-07-22.log");
 
     fn envelope(subtype: &str, is_error: bool, result: &str) -> String {
         serde_json::json!({
@@ -605,6 +650,56 @@ mod tests {
         let note = limit_stop_note(&bare, None).expect("a quota stop must produce a note");
         assert!(note.contains("usage limit"), "{note}");
         assert!(!note.contains("kept on the branch"), "{note}");
+    }
+
+    /// #251: the quota stop AS IT ACTUALLY ARRIVES — a bare `ActionRequiredError:`
+    /// stderr line, no `turn_ended`, no envelope. Before the capstone this shape
+    /// folded to nothing, so the plan path reported "produced no plan" and execute
+    /// reported `Stuck`; both buried the vendor's own sentence. It must read as
+    /// `Limit(None)`, and carry the SAME sentence as the record shape.
+    #[test]
+    fn the_bare_stderr_quota_shape_is_a_limit() {
+        let fold = fold_cursor_stream(USAGE_LIMIT_STDERR);
+        assert!(
+            !fold.saw_turn_end && !fold.saw_envelope,
+            "the measured shape carries NO terminal record"
+        );
+        assert!(
+            fold.vendor_error
+                .as_deref()
+                .is_some_and(|m| m.contains("usage limit")),
+            "the bare stderr line must carry the vendor's sentence: {:?}",
+            fold.vendor_error
+        );
+        assert!(
+            cursor_limit_note(&fold)
+                .as_deref()
+                .is_some_and(|m| m.contains("You've hit your usage limit")),
+            "{:?}",
+            cursor_limit_note(&fold)
+        );
+        assert_eq!(
+            fold.vendor_error,
+            fold_cursor_stream(USAGE_LIMIT).vendor_error,
+            "one refusal, one sentence — bare-stderr and record shapes fold alike"
+        );
+        assert_eq!(
+            classify_cursor_outcome(&fold, false, false, false, Some(1)),
+            Outcome::Limit(None)
+        );
+    }
+
+    /// #251: the bare-line capture is gated to the LIMIT classes. A bare
+    /// `ActionRequiredError:` that is NOT a quota — an entitlement refusal, which
+    /// `model_refusal_stop` owns — must not fold to a `vendor_error`, or it would
+    /// masquerade as a quota stop and schedule a pointless wait.
+    #[test]
+    fn a_bare_non_limit_action_required_is_not_a_limit() {
+        let stream =
+            format!("{INIT}\nActionRequiredError: Named models unavailable on your plan\n");
+        let fold = fold_cursor_stream(&stream);
+        assert_eq!(fold.vendor_error, None, "not a quota class → not captured");
+        assert_eq!(cursor_limit_note(&fold), None);
     }
 
     /// #266: `vendor_error` is the only carrier — a working run whose transcript
