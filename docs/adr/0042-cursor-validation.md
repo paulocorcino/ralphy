@@ -18,7 +18,9 @@ executed and passed. The run surfaced four follow-up issues — verify-gate toke
 per-issue under-count [#269](https://github.com/paulocorcino/ralphy/issues/269), harvest
 budget [#270](https://github.com/paulocorcino/ralphy/issues/270), and logged-out
 stale-plan masking [#271](https://github.com/paulocorcino/ralphy/issues/271) — none of
-which invalidate the adapter; each is recorded in its phase.
+which invalidate the adapter; each is recorded in its phase. The raw numbers, commands
+and log lines behind each phase are in
+[docs/evidence/251-cursor-capstone-live.md](../evidence/251-cursor-capstone-live.md).
 
 ## Environment the run had
 
