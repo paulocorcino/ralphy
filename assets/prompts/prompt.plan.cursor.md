@@ -149,7 +149,7 @@ on one.
          after — proving the behavior, not merely that the code builds. Name
          the exact assertion (literal string or value) the test checks, so a
          weak implementation cannot pass it>
-   - [ ] Self-review: run the **subagent `reviewer` skill**, if not availble use **inline `reviewer` skill** (materialized at
+   - [ ] Self-review: run the **subagent `reviewer` skill**, or if it is not available the **inline `reviewer` skill** (materialized at
          `<repo>/.cursor/skills/reviewer/`, discovered BY NAME — name it exactly
          `reviewer`, it sits among dozens of unrelated harvested skills) over
          ONLY the commits you made for this issue — not the whole branch; for a
