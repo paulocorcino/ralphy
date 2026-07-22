@@ -45,6 +45,20 @@ pub(crate) fn cursor_status_verdict(stdout: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Preflight for the resume path (#271): when a finalized plan for this issue is
+/// already on disk, `run_plan_session` resumes WITHOUT spawning a child, so the
+/// in-flight stderr matcher never runs and a logged-out operator is served the
+/// stale plan instead of the `agent login` stop. Gate the resume on a fresh
+/// status verdict — probed **lazily**, so a fresh plan (nothing to mask) never
+/// pays for the extra spawn. `Some(msg)` = stop, logged out; `None` = proceed
+/// (no finalized plan to mask an error, or still logged in).
+pub(crate) fn resume_requires_login(
+    finalized: bool,
+    logged_in: impl FnOnce() -> bool,
+) -> Option<&'static str> {
+    (finalized && !logged_in()).then_some(CURSOR_AUTH_ERROR_MSG)
+}
+
 /// Ask the CLI itself whether the operator is logged in — the ADR-0013 preflight,
 /// and what `ralphy init`'s gate reports. Behavioural detection: the vendor's own
 /// answer, never inspection of its credential file.
@@ -138,6 +152,43 @@ mod tests {
         assert!(
             CURSOR_AUTH_ERROR_MSG.contains("agent login"),
             "the message must quote the login command verbatim: {CURSOR_AUTH_ERROR_MSG}"
+        );
+    }
+
+    /// #271: the resume-path preflight maps `(finalized, logged_in)` to a stop.
+    /// Only a finalized plan on disk that a logged-out operator would otherwise
+    /// resume warrants the `agent login` stop.
+    #[test]
+    fn resume_requires_login_maps_the_four_states() {
+        // Logged-out resume is the ONLY state that stops.
+        assert_eq!(
+            resume_requires_login(true, || false),
+            Some(CURSOR_AUTH_ERROR_MSG)
+        );
+        // Logged in, or no finalized plan to mask an error: proceed.
+        assert_eq!(resume_requires_login(true, || true), None);
+        assert_eq!(resume_requires_login(false, || false), None);
+        assert_eq!(resume_requires_login(false, || true), None);
+    }
+
+    /// The zero-cost guarantee: a fresh plan (nothing finalized to mask an error)
+    /// must NEVER pay for the status probe. The closure panics if invoked; a `None`
+    /// return proves it was short-circuited. The complementary direction — the
+    /// probe IS consulted when a finalized plan exists — is recorded via a `Cell`.
+    #[test]
+    fn resume_requires_login_probes_only_when_a_finalized_plan_exists() {
+        assert_eq!(
+            resume_requires_login(false, || panic!("must not probe on a fresh plan")),
+            None
+        );
+        let probed = std::cell::Cell::new(false);
+        let _ = resume_requires_login(true, || {
+            probed.set(true);
+            true
+        });
+        assert!(
+            probed.get(),
+            "a finalized plan must consult the login probe"
         );
     }
 

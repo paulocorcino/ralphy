@@ -403,6 +403,17 @@ $ agent status --format json
 `CURSOR_AUTH_ERROR_MSG` names `agent login` verbatim — the string the CLI itself
 prints, regardless of which of its two binary names was invoked.
 
+**The preflight also gates the resume/plan-reuse path (#271).** The shared plan
+shell (`run_plan_session`) resumes a finalized `.ralphy/plan.md` *before* spawning
+any child, so on that path the in-flight matcher never runs and a logged-out
+operator was being served the stale plan instead of the `agent login` stop —
+reporting a plan verdict at zero tokens with no `cursor.log`. `plan()` therefore
+runs tier 1 (`probe_cursor_login`) as a third gating site, in addition to `ralphy
+init`: **only when a finalized plan for this issue is on disk** (the exact masking
+case), so a fresh plan pays no extra spawn and its auth is still caught in-flight.
+Logged out ⇒ bail with `CURSOR_AUTH_ERROR_MSG` (no `(see <log>)` suffix — no child
+ran); logged in ⇒ the resume proceeds byte-for-byte.
+
 **Env hygiene:** `CURSOR_API_KEY` and `CURSOR_AUTH_TOKEN` are left alone (Ralphy
 sets neither, and scrubbing them would break an operator who authenticates that
 way), but `CURSOR_CONFIG_DIR` and `XDG_CONFIG_HOME` are **passed through

@@ -225,6 +225,19 @@ impl Agent for CursorAgent {
             Ok((r, ()))
         };
 
+        // #271: before the shared shell can silently RESUME a finalized plan (no
+        // child spawns, so the in-flight auth matcher at `run_plan_session` never
+        // runs), confirm the operator is still logged in. Probed only when a
+        // finalized plan for THIS issue is on disk — the exact masking case; a fresh
+        // plan pays nothing and its auth is caught in-flight. No child ran, so the
+        // bail carries no `(see <log>)` suffix.
+        if let Some(msg) = auth::resume_requires_login(
+            ralphy_adapter_support::plan_is_finalized_for(&plan_path, issue.number),
+            auth::probe_cursor_login,
+        ) {
+            anyhow::bail!("{msg}");
+        }
+
         let ralphy_dir = ws.ralphy_dir();
         let charter_path = ws.plan_charter_path();
         let session = run_plan_session(
@@ -664,6 +677,38 @@ mod tests {
         assert!(
             at_refusal < at_limit,
             "a hard refusal must be checked before the limit"
+        );
+    }
+
+    /// #271: `plan()` must gate the resume/plan-reuse decision on a fresh login
+    /// verdict, BEFORE `run_plan_session` — otherwise a leftover finalized plan.md
+    /// resumes without spawning a child and the in-flight auth matcher never runs,
+    /// serving a logged-out operator a stale plan instead of the `agent login`
+    /// stop. The probe is short-circuited on `plan_is_finalized_for` so a fresh plan
+    /// pays no extra spawn. Needles assembled from fragments so this cannot match
+    /// itself.
+    #[test]
+    fn the_resume_path_is_gated_on_a_fresh_login_verdict() {
+        let src = include_str!("lib.rs");
+        let plan = src
+            .split_once("fn plan(")
+            .expect("plan()")
+            .1
+            .split_once("fn execute(")
+            .map(|(p, _)| p)
+            .expect("plan body ends before execute()");
+        let gate = concat!("resume_requires_", "login(");
+        let finalized = concat!("plan_is_finalized_", "for(&plan_path, issue.number)");
+        let spawn = concat!("run_plan_", "session(");
+        let at_gate = plan.find(gate).expect("plan() must gate the resume path");
+        let at_spawn = plan.find(spawn).expect("plan() must call run_plan_session");
+        assert!(
+            at_gate < at_spawn,
+            "the login gate must precede the resume/plan-reuse decision"
+        );
+        assert!(
+            plan.contains(finalized),
+            "the probe must be short-circuited on a finalized plan (zero cost on a fresh plan)"
         );
     }
 
