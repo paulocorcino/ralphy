@@ -99,6 +99,12 @@ impl PriceTable {
     /// Anthropic families `claude-haiku-4.5` where the table (and Anthropic) use
     /// `claude-haiku-4-5` — punctuation only. Normalization never invents a price:
     /// an id whose dashed form is also absent still resolves to `None`.
+    ///
+    /// Finally, a leading `provider/` segment is stripped: the native Kimi run path
+    /// emits `kimi-code/k3` while the usage scan (`scan_kimi_code` strips the
+    /// prefix) and the table's K2-family convention (`k2p6`, `kimi-k2.7-code`) key
+    /// the bare `k3`. Without this the same model prices on a run yet reports
+    /// `unknown model` on `ralphy usage` for the identical session (ADR-0028 D4).
     fn resolve(&self, model: &str) -> Option<&ModelPrice> {
         let stripped = strip_release_date(model);
         self.0
@@ -106,6 +112,7 @@ impl PriceTable {
             .or_else(|| self.0.get(stripped))
             .or_else(|| self.0.get(&dots_to_dashes(model)))
             .or_else(|| self.0.get(&dots_to_dashes(stripped)))
+            .or_else(|| self.0.get(strip_provider_prefix(model)))
     }
 
     /// Load the effective table: the shipped [`defaults`](Self::defaults) overlaid
@@ -150,6 +157,14 @@ fn strip_release_date(model: &str) -> &str {
 /// Copilot's catalog ids and the table's family keys.
 fn dots_to_dashes(model: &str) -> String {
     model.replace('.', "-")
+}
+
+/// A model id with a leading `provider/` segment removed (`kimi-code/k3` → `k3`),
+/// so the native Kimi run path's prefixed id resolves against the same bare
+/// K2-family key the usage scan and the table's convention already use. Returns
+/// the input unchanged when it carries no `/`, so a slash-free id is never mangled.
+fn strip_provider_prefix(model: &str) -> &str {
+    model.rsplit_once('/').map_or(model, |(_, tail)| tail)
 }
 
 /// Resolve the operator's pricing-override file: `$RALPHY_PRICING_FILE` when set,

@@ -1,135 +1,105 @@
-# Kimi adapter — deep re-validation plan (the #251 bar)
+# Kimi adapter — deep re-validation note (the #251 bar)
 
 Companion to [ADR-0028](./0028-kimi-adapter.md) and a follow-up to the original
 capstone note [0028-kimi-validation](./0028-kimi-validation.md) (issue
-[#155](https://github.com/paulocorcino/ralphy/issues/155)). Like the Cursor
-capstone ([#251](https://github.com/paulocorcino/ralphy/issues/251)), this file is
-**now the plan** and will be rewritten into the note that execution produces.
+[#155](https://github.com/paulocorcino/ralphy/issues/155)). This file **was** the
+plan; it is now the note of what issue
+[#274](https://github.com/paulocorcino/ralphy/issues/274) actually ran. Raw evidence
+lives in [`docs/evidence/274-kimi-capstone-live.md`](../evidence/274-kimi-capstone-live.md)
+and `docs/live/kimi-274-*.log`.
 
-The first note was already thorough — it drove a real repo to a **green close**,
-found and fixed the headline Windows cp1252 crash (`PYTHONUTF8=1`, not the
-`PYTHONIOENCODING` TUI trap), priced the native model, confirmed the
-`.ralphy/skills` container (D8) and the token harvest from `wire.jsonl` (D7), and
-ran **triage** live. So this capstone is narrow: it closes only the #251 dimensions
-that note left on reasoning rather than observation.
+**Status: proposed — and it stays proposed.** The marquee D9 ceiling *was* captured
+live with a real exit code and string, satisfying the "capture" bar — but the capture
+**refuted** the exit-75 mapping (the real billing cap exits `1` + text, not `75`, and
+the adapter misclassifies it). Accepting an ADR whose D9 is contradicted would be
+wrong; acceptance waits on [#282](https://github.com/paulocorcino/ralphy/issues/282)
+landing and a WSL live pass (deferred — the account quota was exhausted at capture
+time, which is *why* the ceiling was reachable).
 
-- **The exit-75 limit (D9) was never induced.** "A real 429 could not be forced
-  without burning quota" — the mapping `exit 75 → Limit(None)` is grounded in
-  Kimi's `RETRYABLE = 75` source constant and unit-tested, but no real ceiling was
-  ever hit. The [[opencode-silent-quota-timeout]] finding notes Kimi has a
-  billing-cycle cap; this capstone hits it and captures the real shape.
-- **Tokens were never reconciled against a bill.** The note recorded per-issue
-  usage (`input 139 381 · cache_read 4 734 464 · output 30 549`) but never put it
-  next to Kimi's subscription/billing.
-- **The auth stop (D6) was never force-reproduced** — a `kimi logout` "would have
-  broken every subsequent validation run", so auth-OK was only proven positively.
-- **The interactive-session scan was not exercised**, and the run was **Windows-
-  only** — yet `PYTHONUTF8` and exit-75 are the two most platform-shaped mechanics
-  in the adapter.
+## The migration that re-grounded the plan
 
-Status: **proposed** — flips to accepted when D9's ceiling is captured with a real
-exit code and string, and the cross-platform parity is recorded.
+The plan was written against `kimi` **1.48.0** (a Python/Textual-TUI build); the host
+and the adapter code have since migrated to **`kimi-code` 0.28.0** (migrator run
+2026-07-20, `~/.kimi-code`). The adapter source already tracked 0.28; only the plan
+text lagged. Four premises were re-grounded (evidence doc, drift ledger), **none a
+code defect**:
 
-## What fails the whole exercise outright
+- `PYTHONUTF8=1` — absent from the crate; 0.28 is not the Python build (env inherited
+  untouched, asserted by `get_envs().count() == 0`). Phase 2 confirmed **zero charmap
+  crashes** across a 16-min subprocess-heavy build with no env coercion.
+- the auth string is `auth.login_required` (not `LLM not set`);
+- the model is `kimi-code/k3` (not `kimi-for-coding`);
+- the store/creds live under `~/.kimi-code/`, not `~/.kimi/`.
 
-- A real Kimi limit reaching Ralphy as anything other than `Limit(None)` — or
-  worse, being swallowed and burning the wall timeout (the OpenCode failure mode).
-- `ralphy usage` inventing a token number for a Kimi session with no store row.
-- The operator's `~/.kimi` credential or config differing before/after a run.
-- A push or opened PR from any phase.
+## What each phase found
 
-## Environment the run needs
+- **Phase 1 — plan-only (✅).** Real plan artifact; the `wire.jsonl` D7 harvest still
+  recovers `input/cache_read/output` on the 0.28 layout; run-path prices cleanly.
+- **Finding #1 — usage-scan pricing (fixed).** `scan_kimi_code` strips the
+  `kimi-code/` prefix to a bare `k3`, but `pricing/defaults.rs` keyed only the
+  prefixed form, so every `ralphy usage` Kimi row reported `~$?`. Fixed on
+  `feat/copilot`: `pricing.rs::resolve` gained a `strip_provider_prefix` fallback and
+  the rows were re-keyed bare (`k3`/`kimi-for-coding`), aligning with the dominant
+  `k2p6`/`kimi-k2.7-code` convention. Green gate clean.
+- **Phase 2 — green run + stream-vs-diff (✅).** The `Stuck`→`non_green` ladder holds
+  (5 commits without the clean-exit sentinel do **not** buy a green close — the
+  HEAD-diff `committed` guard decides). Stream progress ≈ real `git diff` (6/14 steps,
+  no inflation). A fresh green close is carried from #155 (the eligible issues are
+  large multi-step features; the agent Stuck at the turn budget).
+- **Phase 3 — usage & billing (✅).** The scan reports a real, non-null, now-priced
+  number. Billing reconciliation resolves **categorically**: `kimi-code` exposes no
+  usage/billing CLI surface and bills a **flat subscription + per-cycle quota**, not
+  metered tokens — so Ralphy's `$` is a pure ADR-0034 counterfactual with no line item
+  to sit beside, and the only real cost signal is the binary quota-exhausted 403.
+- **Phase 4 — one-shot builders (✅, code-verified).** `build_kimi_command` (run) and
+  `build_kimi_init_command` (init) share the same command core with the env inherited
+  untouched; init deliberately omits `--skills-dir` (tested). No token-scrub or
+  encoding contract exists for the one-shot surface to miss.
+- **Phase 5 — host hygiene (✅, + amendment).** Config byte-identical across
+  authenticated runs; `.ralphy`/`.agents` gitignored, no token-bearing tracked write,
+  no `.kimi` repo residue. **Amendment:** Kimi rotates its OAuth token on every
+  authenticated run (and `kimi logout` strips the model catalog from `config.toml`),
+  so "credentials byte-identical before/after" is unachievable — the correct
+  stop-condition is *no credential loss, no scope/structure change, no logout*.
+- **Phase 0 — auth stop D6 (⚠️ gap → #281).** A real `kimi logout` is **not**
+  recognized: it strips the catalog, so the adapter's pinned `-m kimi-code/k3` yields
+  `config.invalid` (not `auth.login_required`), which `is_kimi_auth_error` misses →
+  `produced no plan`. The stop is clean (no loop/commit), only misclassified. Re-login
+  restores the catalog and auth.
+- **Phase 4b — the ceiling D9 (⚠️ marquee → #282).** A real billing-cycle 403 was hit
+  live. It exits **`1` + `provider.api_error: 403 … usage limit for this billing
+  cycle`**, not exit `75`. Three defects: (1) exit-1-not-75; (2) `is_kimi_limit_text`
+  matched only the stale `access_terminated_error` — **fixed** to also match the 0.28
+  prose (regression test, green gate); (3) the plan path passes `|_log| None` and never
+  detects a limit (what the live repro hit — 5/7 adapters surface a plan-time
+  `PlanLimit`; Kimi and OpenCode are the outliers). Not swallowed into a wall-timeout
+  (exits fast). D9 is observed-live-but-refuted.
+- **Phase 6 — WSL parity (◐ deferred).** Ubuntu-22.04, the Linux `kimi-code` is at
+  `~/.kimi-code/bin/kimi` on PATH via `~/.bashrc` (not `~/.local/bin`) — a
+  `resolve_program` fragility for non-interactive launches. The encoding no-op is moot
+  (no `PYTHONUTF8` in 0.28). A live plan/execute + the exit-75 platform-identity check
+  are deferred: they need a WSL-native ralphy build and, for the limit, a quota that
+  has since been exhausted.
 
-- `kimi` (record the exact build; the note ran `1.48.0`) resolved through
-  `resolve_program("kimi")` (off `PATH`, `~/.local/bin`), on Windows and again on
-  Linux/WSL.
-- Auth: `kimi login` OAuth (`~/.kimi/credentials/kimi-code.json`); model
-  `kimi-code/kimi-for-coding` passed with `-m` (D4).
-- `PYTHONUTF8=1` set on every child (the note's fix) — Phase 6 confirms it is a
-  no-op on a UTF-8 Linux locale and does **not** re-trigger the Textual TUI.
-- Target repo with a real subprocess-heavy build (the note used FinCal: `npm ci`,
-  `prisma generate`, `next build`, `docker build`) so the encoding path is
-  exercised; `.ralphy/plan.md` not already tracked.
-- A reachable **billing-cycle / quota ceiling** for Phase 4b, plus access to the
-  session log where a limit would surface.
+## Landed on `feat/copilot`
 
-## Phase 0 — the auth stop (D6), force-reproduced
+- `crates/ralphy-cli/src/pricing.rs` + `pricing/defaults.rs` — Finding #1 (scan pricing).
+- `crates/ralphy-agent-kimi/src/auth.rs` — `is_kimi_limit_text` now matches the 0.28
+  billing-cycle body (#282 defect 2).
 
-Actually reproduce the logged-out state this time — `kimi logout` in a disposable
-session (re-login after) — and confirm the run stops on `is_kimi_auth_error`
-(exit 1 + `LLM not set`) rather than looping, then that auth-OK returns on
-re-login. Confirm no stale `.ralphy/plan.md` masks the stop.
+## Filed
 
-## Phase 1 — plan-only dry run (confirm + baseline)
+- [#281](https://github.com/paulocorcino/ralphy/issues/281) — `kimi logout` full-logout
+  not recognized as an auth stop (D6).
+- [#282](https://github.com/paulocorcino/ralphy/issues/282) — the real billing ceiling
+  (D9) misclassified: exits 1 not 75, stale matcher (fixed), plan path never detects
+  limits.
 
-Already green; re-run only to confirm the `wire.jsonl` harvest (D7) still recovers
-`input / cache_read / output` on the current build and to capture a clean per-run
-token baseline for the Phase 3 reconciliation.
+## To flip to accepted
 
-## Phase 2 — green run + stream-vs-diff delta
-
-The `Stuck`/`Done` ladder and the `PYTHONUTF8` fix under a subprocess-heavy run are
-validated; add only the #251 progress-asymmetry check — the executor's reported
-change accounting next to the real `git diff` for shell-driven work, confirming the
-HEAD-diff `committed` guard decided the outcome, not the stream. Re-confirm zero
-charmap crashes.
-
-## Phase 3 — usage & billing (the reconciliation the note skipped)
-
-1. **Interactive-session scan** — `ralphy usage` / daemon `GET /api/usage`
-   (`scan_kimi`) reports a **real token number** for interactive Kimi sessions,
-   matching `wire.jsonl` to the digit; no session with a store row reports `null`,
-   no session without a row reports a fabricated number. Ephemeral daemon so
-   `daemon-require-login` is untouched.
-2. **The unit mismatch** — put Ralphy's per-run token total (and USD projection)
-   next to Kimi's billing for the same run. State plainly what Ralphy's `$` is (an
-   ADR-0034 list-price counterfactual) versus what Kimi's subscription actually
-   charges, and whether the per-issue total covers every invocation (the Cursor
-   #269 under-report shape).
-
-## Phase 4 — one-shot / triage flows (confirm the surface)
-
-The note ran triage, diagnose and draft-issues; re-confirm each one-shot builder
-carries the `PYTHONUTF8=1` contract and the `.ralphy/skills` container, and record
-the per-issue token cost vs another vendor for the ADR-0038 budget.
-
-## Phase 4b — the exit-75 ceiling (D9) — the marquee phase
-
-Hit a **real** Kimi limit (billing-cycle / quota cap). Capture:
-
-- The exact exit code — confirm it is **75** as the `RETRYABLE` source constant
-  predicts, and that it maps to `Limit(None)` + the ADR-0030 cadence with
-  `--stop-on-limit` force-enabled for Kimi.
-- The exact message and any reset hint, and whether a terminal record was present.
-- Crucially, confirm the limit is **not swallowed** into a silent retry that burns
-  the wall timeout (the OpenCode failure mode) — Kimi's clean exit-75 is the good
-  case; verify it actually arrives.
-
-Promote the exit-75 mapping from source-grounded-and-unit-tested to
-observed-live, or amend it if the real ceiling exits differently.
-
-## Phase 5 — host hygiene / residue audit
-
-- `~/.kimi` credentials and any config byte-identical before/after every run.
-- Nothing token-bearing written into the target tree; `.ralphy/skills` gitignored
-  (`.ralphy/.gitignore = *`), no `.agents/`/`.kimi/` residue in the repo.
-- Confirm the note's incidental verify-gate hang (an orphaned `next dev` from a
-  plan-authored `sh -c "… & kill $PID"`) is a verify-command robustness issue, not
-  Kimi residue — and record whether the process-group reap follow-up landed.
-- Record any unasked artifact Kimi writes outside the workspace.
-
-## Phase 6 — cross-platform parity (the note was Windows-only)
-
-Repeat Phase 1 and a short execute on Linux/WSL. Confirm `PYTHONUTF8=1` is a no-op
-on a UTF-8 locale and does not trigger the "No Windows console found" TUI, the
-exit-75 mapping is platform-identical, and the `resolve_program` probe finds
-`~/.local/bin/kimi`. Record any divergence as version skew or a real platform
-difference.
-
-## What would have failed this validation (to confirm none did)
-
-- A real Kimi ceiling arriving as anything but a clean exit-75 `Limit(None)`, or
-  swallowed into a wall-timeout burn.
-- `ralphy usage` inventing a number for a session with no `wire.jsonl` row.
-- `~/.kimi` credentials/config mutated across a run.
-- A push or opened PR from any phase.
+- #282 implemented (plan-time `PlanLimit` route + the 0.28 matcher) so a real ceiling
+  classifies as `Limit`, and ADR-0028's D9 section rewritten to "exit-1 + text".
+- #281 ruled on (the `config.invalid` conflation) so `kimi logout` stops on the auth
+  message.
+- A WSL live pass once quota resets: Phase 1 + a short execute, and the exit-1 ceiling
+  confirmed platform-identical.

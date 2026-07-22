@@ -68,13 +68,15 @@ impl PriceTable {
                 cache_creation: 0.95,
             },
         );
-        // `kimi-code/kimi-for-coding` is the id the native Kimi adapter reports
-        // (ADR-0028 D4; "K2.7 Code"). Priced with the same indicative K2-family
-        // list prices as `k2p6` so a `--agent kimi` run costs out instead of
-        // logging "unknown model"; Moonshot bills no separate cache-write premium,
-        // so `cache_creation` matches the plain input rate.
+        // `kimi-for-coding` is the native Kimi model ("K2.7 Code"); the run path
+        // reports it prefixed (`kimi-code/kimi-for-coding`) and the usage scan
+        // (`scan_kimi_code`) strips that prefix to the bare id — the table keys the
+        // bare form and `resolve`'s provider-prefix fallback covers the run path, so
+        // one row serves both surfaces (ADR-0028 D4). Priced with the same
+        // indicative K2-family list prices as `k2p6`; Moonshot bills no separate
+        // cache-write premium, so `cache_creation` matches the plain input rate.
         t.insert(
-            "kimi-code/kimi-for-coding".to_string(),
+            "kimi-for-coding".to_string(),
             ModelPrice {
                 input: 0.95,
                 output: 4.0,
@@ -82,11 +84,11 @@ impl PriceTable {
                 cache_creation: 0.95,
             },
         );
-        // `kimi-code/k3` is the id kimi-code 0.28 reports (ADR-0028 D4); the row
-        // above stays for runs recorded before the 0.28 cut. Same indicative
-        // K2-family rates.
+        // `k3` is the bare id kimi-code 0.28 reports (run path prefixes it
+        // `kimi-code/k3`; the scan strips to `k3`); the row above stays for sessions
+        // recorded before the 0.28 cut. Same indicative K2-family rates.
         t.insert(
-            "kimi-code/k3".to_string(),
+            "k3".to_string(),
             ModelPrice {
                 input: 0.95,
                 output: 4.0,
@@ -321,15 +323,27 @@ mod tests {
             table.cost_usd("k2p6", &tokens).is_some(),
             "OpenCode's `k2p6` must be priced by the defaults"
         );
+        // Both Kimi surfaces must price: the run path's PREFIXED id (via `resolve`'s
+        // provider-prefix fallback) and the usage scan's BARE id (exact key). A
+        // regression that reverts the fallback or renames the key would let one
+        // surface report `unknown model` while the other prices — the #274 gap.
         assert!(
             table
                 .cost_usd("kimi-code/kimi-for-coding", &tokens)
                 .is_some(),
-            "the native Kimi adapter's `kimi-code/kimi-for-coding` must be priced (ADR-0028)"
+            "the Kimi run path's prefixed `kimi-code/kimi-for-coding` must price (ADR-0028)"
+        );
+        assert!(
+            table.cost_usd("kimi-for-coding", &tokens).is_some(),
+            "the usage scan's bare `kimi-for-coding` must price (ADR-0028)"
         );
         assert!(
             table.cost_usd("kimi-code/k3", &tokens).is_some(),
-            "the 0.28 Kimi adapter's `kimi-code/k3` must be priced (ADR-0028 D4)"
+            "the 0.28 Kimi run path's prefixed `kimi-code/k3` must price (ADR-0028 D4)"
+        );
+        assert!(
+            table.cost_usd("k3", &tokens).is_some(),
+            "the 0.28 usage scan's bare `k3` must price — the #274 gap (ADR-0028 D4)"
         );
     }
 

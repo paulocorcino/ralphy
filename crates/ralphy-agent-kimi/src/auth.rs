@@ -18,21 +18,31 @@ pub(crate) fn is_kimi_auth_error(text: &str) -> bool {
 }
 
 /// Return `true` when `text` shows a Kimi API-level usage-limit failure. When the
-/// billing-cycle quota is exhausted, headless `kimi` gets an HTTP 403 whose body
-/// carries `access_terminated_error`; the CLI writes that line to the log and exits
+/// billing-cycle quota is exhausted, headless `kimi` gets an HTTP 403 and exits
 /// non-zero *without* the exit-75 chat-level sentinel (ADR-0028 D9) and without a
 /// `RALPHY_DONE_EXIT`, so — absent this marker — a genuine limit is misread as
-/// `Outcome::Stuck`. The marker is deliberately the distinctive error *type*, not
-/// the prose "usage limit", to avoid matching a task that merely echoed the phrase.
+/// `Outcome::Stuck`.
+///
+/// Two 403 body shapes are matched, both observed live:
+/// - the older JSON error *type* `access_terminated_error` (kept for back-compat);
+/// - the `kimi-code` 0.28 shape `provider.api_error: 403 … usage limit for this
+///   billing cycle …` (captured live in the #274 capstone) — this one carries **no**
+///   `access_terminated_error` token, so the old matcher alone silently misses every
+///   real 0.28 ceiling.
+///
+/// Matching the 0.28 prose "usage limit for this billing cycle" is safe from a task
+/// merely echoing the phrase: `detect_limit` trusts this scan only on a **non-clean
+/// exit**, and a task that quotes the words does not fail the process (ADR-0028 D9,
+/// mirroring Codex's non-clean-exit guard).
 pub(crate) fn is_kimi_limit_text(text: &str) -> bool {
     // The Kimi CLI hard-wraps its 403 body to the terminal width, so in the captured
-    // log the marker token is split mid-word by a newline (observed live:
+    // log a marker token can be split mid-word by a newline (observed live:
     // `access_\nterminated_error`). Strip line breaks before matching so the wrap
     // position can't hide the signal.
     let unwrapped: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
-    unwrapped
-        .to_ascii_lowercase()
-        .contains("access_terminated_error")
+    let lower = unwrapped.to_ascii_lowercase();
+    lower.contains("access_terminated_error")
+        || lower.contains("usage limit for this billing cycle")
 }
 
 #[cfg(test)]
@@ -66,6 +76,21 @@ mod tests {
         assert!(is_kimi_limit_text(log));
         // A usage limit is not an auth error, and a clean run is neither.
         assert!(!is_kimi_auth_error(log));
+        assert!(!is_kimi_limit_text("all green\nRALPHY_DONE_EXIT\n"));
+    }
+
+    #[test]
+    fn is_kimi_limit_text_matches_0_28_provider_api_error() {
+        // The verbatim kimi-code 0.28 billing-cycle 403, captured live in the #274
+        // capstone. It carries NO `access_terminated_error` token — the old matcher
+        // alone silently misses it, misclassifying a real ceiling as Stuck / "no plan".
+        let live = "error: failed to run prompt: provider.api_error: 403 You've reached \
+            your usage limit for this billing cycle. Your quota will be refreshed in the \
+            next cycle. To continue now, purchase extra usage or upgrade your plan: \
+            https://www.kimi.com/code/#pricing";
+        assert!(is_kimi_limit_text(live));
+        // Still not confused with an auth failure or a clean run.
+        assert!(!is_kimi_auth_error(live));
         assert!(!is_kimi_limit_text("all green\nRALPHY_DONE_EXIT\n"));
     }
 
