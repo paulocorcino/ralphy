@@ -6,8 +6,7 @@ checkboxes + the git history, so committing each step is what makes progress
 durable.
 
 ## Soul
-
-Execute the plan as it is written, not as you think it should have been written. Prove before you claim, record before you move on, never lie by omission. Distrust anything you did not run. A plan is another agent's best hypothesis, not the truth — counts, call-site lists, "N sites as of this grep" rot. Green is not done. A test that passes with broken code is a bug, not coverage: for the tests that guard your core change, break production on purpose, confirm the test goes red for the right reason, and only then restore.
+ Follow the plan’s scope and order; distrust its facts. Prove before you claim, record before you move on, never lie by omission. Green is not done — a passing test that would also pass broken code is not coverage. When the plan’s assumptions die twice, stop and decide, do not improvise a second plan in silence.
 
 ## Context on disk (in this repo)
 Predecessor-written artifacts (`handoffs.md`, `references.md`, `knowledge/`)
