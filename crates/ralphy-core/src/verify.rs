@@ -31,8 +31,10 @@ pub enum VerifySpec {
     Commands(Vec<Vec<String>>),
     /// The section is present but malformed — a markdown checklist masquerading as
     /// commands (a leading `-`/`*`/`+` bullet, `- [ ]` checkbox, or backtick-wrapped
-    /// command). Tokenizing it would spawn a bogus `-`/`` ` `` program and the real
-    /// command would never run (#181), so it resolves to this arm instead. Carries a
+    /// command), or a backslash-escaped quote the tokenizer cannot honor (`\"`/`\'`).
+    /// Tokenizing the former would spawn a bogus `-`/`` ` `` program (#181); the latter
+    /// mis-splits into a garbage argv the gate spawn-fails on (#268). Either way the
+    /// real command would never run, so it resolves to this arm instead. Carries a
     /// clear, operator-facing error naming the malformed line(s).
     Invalid(String),
     /// Section absent or present-but-empty — a planner omission. The runner falls
@@ -48,7 +50,8 @@ pub enum VerifySpec {
 /// absent or whitespace-only section is [`VerifySpec::Unspecified`]. A section
 /// authored as a markdown checklist (a leading bullet, checkbox, or
 /// backtick-wrapped command) is rejected as [`VerifySpec::Invalid`] rather than
-/// tokenized into a bogus `-`/`` ` `` program that spawn-fails (#181).
+/// tokenized into a bogus `-`/`` ` `` program that spawn-fails (#181), as is a line
+/// with a backslash-escaped quote (`\"`/`\'`) the tokenizer cannot honor (#268).
 pub fn parse_verify(md: &str) -> VerifySpec {
     let heading_re = Regex::new(r"(?im)^##\s+Verify\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(md, &heading_re);
@@ -79,6 +82,20 @@ pub fn parse_verify(md: &str) -> VerifySpec {
         .collect();
     if !malformed.is_empty() {
         return VerifySpec::Invalid(malformed_error(&malformed));
+    }
+
+    // Reject a backslash-escaped quote before tokenizing: [`tokenize`] does not honor
+    // `\"`/`\'`, so a nested escaped quote (`sh -c "test \"$x\" = y"`) is mis-split
+    // into a garbage argv the gate spawn-runs, failing with a confusing shell syntax
+    // error that also spends the repair budget (#268). Catch it here with a clear,
+    // actionable message rather than let it fail opaquely at runtime.
+    let escaped: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| has_escaped_quote(l))
+        .collect();
+    if !escaped.is_empty() {
+        return VerifySpec::Invalid(escaped_quote_error(&escaped));
     }
 
     let commands: Vec<Vec<String>> = lines
@@ -115,6 +132,58 @@ fn malformed_error(malformed: &[&str]) -> String {
         "`## Verify` must be one bare command per line, not a markdown list \
          (no `-`/`*`/`+` bullet, `- [ ]` checkbox, or backtick-wrapped command). \
          Offending line(s): {offenders}"
+    )
+}
+
+/// Whether a `## Verify` line contains a backslash-escaped quote that [`tokenize`]
+/// will misread (#268). The tokenizer does not honor backslash escapes, so a `\"`
+/// inside a double-quoted region — or a `\'` inside a single-quoted region, or
+/// either outside quotes — is taken as a real quote toggle, splitting the line into
+/// a garbage argv. Walking tokenize's own quote state machine, this flags the first
+/// backslash that escapes a quote the tokenizer would otherwise toggle. A backslash
+/// before any non-quote char (a Windows path `C:\foo`) or an escaped backslash
+/// (`\\`) is left alone, so real commands are not false-flagged.
+fn has_escaped_quote(line: &str) -> bool {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut prev_backslash = false;
+    for ch in line.chars() {
+        if prev_backslash {
+            prev_backslash = false;
+            // A quote the tokenizer would toggle, reached via `\`: the author meant
+            // an escaped literal quote the tokenizer cannot honor.
+            if (ch == '"' && !in_single) || (ch == '\'' && !in_double) {
+                return true;
+            }
+            // The char was escaped (a literal — including a literal `\`): it neither
+            // toggles a quote nor starts a new escape.
+            continue;
+        }
+        match ch {
+            '\\' => prev_backslash = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The operator-facing error for a `## Verify` line whose backslash-escaped quote the
+/// tokenizer cannot honor (#268): the gate runs argv with no shell, so name the
+/// offending line(s) and point at the two shapes that DO tokenize cleanly — single
+/// outer quotes or a single bare command (e.g. a `python -c` one-liner).
+fn escaped_quote_error(offenders: &[&str]) -> String {
+    let list = offenders
+        .iter()
+        .map(|l| format!("`{l}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "`## Verify` runs each command as argv with no shell, and its tokenizer does \
+         not honor backslash-escaped quotes (`\\\"`/`\\'`). Rewrite with single outer \
+         quotes (e.g. `sh -c 'test \"$x\" = y'`) or as one bare command per line (e.g. \
+         a `python -c \"...\"` one-liner). Offending line(s): {list}"
     )
 }
 
