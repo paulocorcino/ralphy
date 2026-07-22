@@ -83,6 +83,12 @@ pub enum RunEvent {
     IssueClosed {
         number: u64,
         tokens: u64,
+        /// Vendor spawns this issue paid for (plan + execute + any repair/protocol
+        /// bounce). The live region multiplies it by the vendor's harvest floor for
+        /// the #270 per-issue harvest-tax estimate. Defaults to `0` on the
+        /// decoder-absent path (a pre-#270 producer or a manual construction), which
+        /// simply omits the estimate — additive and round-trip tolerant.
+        invocations: u64,
         usage: UsageLite,
     },
     /// An issue finished non-green and stopped the run; `outcome` is the core's
@@ -256,6 +262,7 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         ralphy_core::emit::ISSUE_CLOSED_MSG => Some(RunEvent::IssueClosed {
             number,
             tokens: fields.tokens.unwrap_or(0),
+            invocations: fields.invocations.unwrap_or(0),
             usage: usage_from(fields),
         }),
         ralphy_core::emit::NON_GREEN_MSG => Some(RunEvent::NonGreen {
@@ -669,6 +676,7 @@ mod tests {
                 message: "green — issue closed".into(),
                 number: Some(7),
                 tokens: Some(1_200_000),
+                invocations: Some(3),
                 up: Some(41_200),
                 cr: Some(902_000),
                 cw: Some(22_000),
@@ -679,6 +687,7 @@ mod tests {
             Some(RunEvent::IssueClosed {
                 number: 7,
                 tokens: 1_200_000,
+                invocations: 3,
                 usage: UsageLite {
                     input: 41_200,
                     cache_read: 902_000,

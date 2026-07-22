@@ -538,6 +538,43 @@ manifest.
 re-verifies P16 (a planted skill's BODY, not its description, is read) under
 Ralphy's own materialization rather than a hand-planted probe skill.
 
+### Harvest-tax surfacing (issue #270)
+
+The warning above ("meets the tax in the run log") is necessary but is not a
+budget: it fires once per invocation with no per-issue consequence, and a Cursor
+issue is 3+ invocations (plan, execute, consolidate, plus each `--resume` repair),
+each paying the floor and re-reading the harvested skills from cache. So the
+capstone (ralphy#251) measured a **harvest floor ≈ 15 679 input tokens per
+invocation** and FinCal #117 (a one-line change) totalled ~831k tokens across its
+three passes.
+
+Ralphy surfaces this as a **first-class, read-time harvest-tax estimate**, not a
+new enforcement budget (a finite wall-clock default was deliberately removed in
+ADR-0038; a token budget is a separate, larger change):
+
+- **One measured constant is the source of truth.**
+  `skills::CURSOR_HARVEST_FLOOR_TOKENS = 15 679` feeds both the D12 operator notice
+  (`foreign_harvest_notice()`) and the estimate, so the two can never drift. This is
+  the per-invocation floor, not the `18 212` trivial-run *total* (which folds in the
+  run's own input) — the estimate multiplies it by an invocation count, so it must
+  exclude non-harvest input.
+- **The floor crosses the vendor-neutral boundary opaquely.** `Agent::harvest_floor()
+  -> Option<u64>` (defaulted `None`; only Cursor overrides it) carries the number the
+  core never branches on — the same discipline `name()` follows (ADR-0002/0004).
+- **The estimate is `floor × invocation_count`, a read-time VIEW — never stored.**
+  The harvest tokens cannot be isolated from a ledger record (Cursor's CLI injects
+  the foreign skills, so they fold into the ordinary `input` field), so the tax is
+  derived at read time and shown per-issue on the `done` line and as a `harvest est:`
+  footer segment — the exact analog of USD (ADR-0008 D8). It is deliberately kept off
+  the ledger and the CloudEvents wire so a consumer can never sum an estimate against
+  real tokens.
+
+**Implemented** (#270): `Agent::harvest_floor` + the Cursor override; the
+`invocations` count on `RunLedger`/`QueueReport` and the `green — issue closed`
+event; the `harvest est` render segments in `crates/ralphy-cli/src/ui/render.rs`.
+A `--plan-agent` split with a non-Cursor planner under-counts the plan invocation's
+harvest — a documented v1 simplification.
+
 ## D13 — Quota stops are `Limit(None)` plus the synthetic cadence, and Ralphy adds no retry
 
 **Implemented** (#266): `outcome::cursor_limit_note` / `outcome::limit_stop_note`

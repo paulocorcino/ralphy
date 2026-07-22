@@ -940,10 +940,16 @@ pub(crate) fn close_and_record(
     // (ADR-0008 D11).
     let issue_total =
         plan.usage.total() + exec_usage.total() + protocol_usage.total() + repair_usage.total();
+    // Vendor spawns this issue paid for: plan + execute always ran; the protocol
+    // bounce and the verify-gate repair each count only if they consumed tokens
+    // (a repair writes ONE ledger line regardless of attempts, so this is a floor,
+    // matching `RunLedger::record_phase_if_used`). Feeds the #270 estimate.
+    let invocations =
+        2 + u64::from(protocol_usage.total() > 0) + u64::from(repair_usage.total() > 0);
     // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
     // carry the *execution* phase breakdown so the live UI can combine it
     // with the planning usage it stashed at `plan written` (ADR-0008 D11).
-    crate::emit::issue_closed(issue.number, issue_total, exec_usage);
+    crate::emit::issue_closed(issue.number, issue_total, invocations, exec_usage);
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),

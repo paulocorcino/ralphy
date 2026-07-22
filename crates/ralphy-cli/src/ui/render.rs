@@ -211,6 +211,42 @@ pub struct PanelData {
     /// Read-time USD for the consolidation segment (ADR-0008 D8). `None` when the
     /// pass did not run or its model is unpriced.
     pub consolidate_usd: Option<f64>,
+    /// The read-time harvest-tax ESTIMATE for a harvesting vendor (issue #270):
+    /// `harvest_floor × invocation_count` input tokens the vendor's CLI injected by
+    /// auto-discovering foreign skills, plus the invocation count for the `(N× ~Mk)`
+    /// gloss. `None` for a non-harvesting vendor (the segment is omitted). It is an
+    /// input-side estimate, never a priced/stored figure — the analog of `run_usd`,
+    /// which is likewise derived read-time and never entered on the ledger.
+    pub harvest_est: Option<HarvestEst>,
+}
+
+/// The read-time harvest-tax estimate (issue #270): `Some(floor × invocations)`
+/// when the vendor harvests (`floor.is_some()`) and at least one invocation was
+/// counted, else `None` — a non-harvesting vendor or an unknown/zero count omits the
+/// segment entirely rather than rendering a nonsensical `0×`. The one place the
+/// estimate arithmetic lives, shared by the per-issue done line and the run footer.
+pub(crate) fn harvest_est(floor: Option<u64>, invocations: Option<u64>) -> Option<HarvestEst> {
+    let floor = floor?;
+    let invocations = invocations.filter(|&n| n > 0)?;
+    Some(HarvestEst {
+        tokens: floor.saturating_mul(invocations),
+        invocations,
+        floor,
+    })
+}
+
+/// The per-run harvest-tax estimate for the footer (issue #270): the estimated
+/// injected input tokens and the invocation count they were derived from.
+#[derive(Debug, Clone, Copy)]
+pub struct HarvestEst {
+    /// `harvest_floor × invocations` — the estimated input tokens injected across
+    /// the run by the vendor's foreign-skill harvest.
+    pub tokens: u64,
+    /// The invocation count the estimate multiplied the floor by, for the `(N× …)`
+    /// gloss so the operator can see the arithmetic.
+    pub invocations: u64,
+    /// The per-invocation floor, for the `(N× ~Mk)` gloss.
+    pub floor: u64,
 }
 
 /// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
@@ -547,8 +583,16 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
         ),
         None => String::new(),
     };
+    // The harvest-tax ESTIMATE segment (issue #270): shown only for a harvesting
+    // vendor (Cursor today), between the run/consolidate figures it is folded into
+    // and the project balance. Tokens only, labelled `est` — it is a read-time
+    // projection like USD, never a stored or priced figure.
+    let harvest_seg = match &data.harvest_est {
+        Some(est) => format!(" · harvest est: {}", fmt_harvest_est(est, opts.emoji)),
+        None => String::new(),
+    };
     let footer_raw = format!(
-        "run: {}{} · project: {} {}",
+        "run: {}{}{} · project: {} {}",
         fmt_breakdown(
             &data.run_breakdown,
             data.run_usd,
@@ -556,6 +600,7 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
             opts.emoji
         ),
         consolidate_seg,
+        harvest_seg,
         data.project_id,
         fmt_breakdown(
             &data.project_breakdown,
@@ -606,6 +651,9 @@ pub(crate) struct LineExtra {
     pub(crate) model: Option<String>,
     pub(crate) effort: Option<String>,
     pub(crate) meter: Option<Meter>,
+    /// The per-issue harvest-tax estimate (issue #270), present only on the `done`
+    /// line of a harvesting vendor's issue. `None` elsewhere (the segment is omitted).
+    pub(crate) harvest_est: Option<HarvestEst>,
 }
 
 /// Price one phase's [`UsageLite`] at read time, or `None` when its model is absent
@@ -705,11 +753,28 @@ fn issue_tail(number: u64, label: &str, extra: &LineExtra, opts: RenderOpts) -> 
     if let Some(m) = extra.meter.as_ref().filter(|m| m.usage.total() > 0) {
         tail.push(fmt_meter(m, opts.emoji));
     }
+    if let Some(est) = extra.harvest_est.as_ref() {
+        tail.push(format!("harvest est {}", fmt_harvest_est(est, opts.emoji)));
+    }
     if tail.is_empty() {
         format!("#{number} {label}")
     } else {
         format!("#{number} {label} · {}", tail.join(" · "))
     }
+}
+
+/// Format a harvest-tax estimate (issue #270): `~↑47.0k (3× ~15.7k)` — the estimated
+/// injected input tokens, then the `(invocations× ~floor)` gloss so the operator sees
+/// the arithmetic. The leading `~` and the `est` label a caller prepends both mark it a
+/// projection, never a measured/priced figure. ASCII path uses `in ` for the glyph.
+fn fmt_harvest_est(est: &HarvestEst, emoji: bool) -> String {
+    let up = if emoji { "↑" } else { "in " };
+    format!(
+        "~{up}{} ({}× ~{})",
+        fmt_tokens(est.tokens),
+        est.invocations,
+        fmt_tokens(est.floor)
+    )
 }
 
 /// Format a token count compactly for the footer: `1.2M`, `8.4k`, or a bare

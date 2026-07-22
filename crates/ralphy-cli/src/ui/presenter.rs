@@ -21,7 +21,9 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use super::render::{meter_for, pick, render_active_line, render_line, sleep_label, LineExtra};
+use super::render::{
+    harvest_est, meter_for, pick, render_active_line, render_line, sleep_label, LineExtra,
+};
 use super::{
     active_phase, fit, queue_bar_label, render_info_line, render_totals_panel, PanelData,
     RenderOpts,
@@ -44,6 +46,12 @@ struct LiveState {
     active_start: Option<(u64, Instant)>,
     queue_bar: Option<ProgressBar>,
     active_bar: Option<ProgressBar>,
+    /// The executor vendor's per-invocation harvest floor (issue #270), or `None`
+    /// for a non-harvesting vendor. Set once via [`PresenterHandle::set_harvest_floor`]
+    /// after the composition root builds the executor (the presenter is spawned at
+    /// boot, before the agent exists), then read on each `done` line to project the
+    /// per-issue harvest-tax estimate.
+    harvest_floor: Option<u64>,
 }
 
 impl LiveState {
@@ -238,6 +246,9 @@ impl Renderer {
                         model: e.model.clone(),
                         effort: e.effort.clone(),
                         meter,
+                        // The harvest estimate belongs on the `done` line (it needs the
+                        // issue's full invocation count), not the `plan written` line.
+                        harvest_est: None,
                     },
                     None => LineExtra {
                         meter,
@@ -259,13 +270,16 @@ impl Renderer {
             RunEvent::IssueClosed { number, usage, .. } => {
                 // The `done` line shows the issue total (plan + execute) and prices
                 // each phase's model: combine the planning usage the fold stashed
-                // with this execution usage.
+                // with this execution usage. On a harvesting vendor it also carries the
+                // per-issue harvest-tax estimate (issue #270), from the invocation
+                // count the fold just stashed × the vendor's floor.
                 let extra = match s.run.active_issue().filter(|e| e.number == *number) {
                     Some(e) => LineExtra {
                         duration: s.elapsed_of(e.number),
                         model: e.model.clone(),
                         effort: e.effort.clone(),
                         meter: Some(meter_for(&self.price, e.plan_usage.as_ref(), usage)),
+                        harvest_est: harvest_est(s.harvest_floor, e.invocations),
                     },
                     None => LineExtra::default(),
                 };
@@ -454,6 +468,19 @@ impl PresenterHandle {
     pub(crate) fn with_edge(mut self, edge: Arc<Mutex<crate::ui::EdgeNoticeState>>) -> Self {
         self.edge = edge;
         self
+    }
+
+    /// Record the executor vendor's per-invocation harvest floor (issue #270) so the
+    /// `done` line can project the per-issue harvest-tax estimate. Set once by the
+    /// composition root after it builds the executor — the presenter is spawned at
+    /// boot, before the agent is known — and `None` for a non-harvesting vendor. The
+    /// render thread reads it (behind the same lock it already takes per event), so
+    /// this only needs to land before the first issue closes.
+    pub(crate) fn set_harvest_floor(&self, floor: Option<u64>) {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .harvest_floor = floor;
     }
 
     /// Print the run-border notice, if a border event folded one (#222). Same
@@ -666,6 +693,7 @@ mod tests {
             &RunEvent::IssueClosed {
                 number: 7,
                 tokens: 0,
+                invocations: 0,
                 usage: usage(200, 20),
             },
         );
@@ -677,6 +705,57 @@ mod tests {
         assert_eq!(meter.usage.output, 30, "plan (10) + exec (20) output");
         // The issue is closed: the anchor is dropped so no later line reuses it.
         assert!(s.active_start.is_none());
+    }
+
+    /// Issue #270: on a harvesting vendor (a floor set on the live state) the `done`
+    /// line carries the per-issue harvest-tax estimate — the issue's invocation count
+    /// times the floor. With no floor set (a non-harvesting vendor) it stays absent.
+    #[test]
+    fn drive_done_line_carries_the_harvest_estimate_for_a_harvesting_vendor() {
+        let (r, mut s) = plain_renderer();
+        s.harvest_floor = Some(15_679);
+        r.drive(
+            &mut s,
+            &RunEvent::IssueStarted {
+                number: 7,
+                title: "t".into(),
+            },
+        );
+        let extra = r.drive(
+            &mut s,
+            &RunEvent::IssueClosed {
+                number: 7,
+                tokens: 0,
+                invocations: 3,
+                usage: usage(200, 20),
+            },
+        );
+        let est = extra.harvest_est.expect("a harvesting vendor's estimate");
+        assert_eq!(est.tokens, 47_037, "3 invocations × 15 679 floor");
+        assert_eq!(est.invocations, 3);
+
+        // No floor (non-harvesting vendor) → no estimate on the done line.
+        let (r2, mut s2) = plain_renderer();
+        r2.drive(
+            &mut s2,
+            &RunEvent::IssueStarted {
+                number: 8,
+                title: "t".into(),
+            },
+        );
+        let extra2 = r2.drive(
+            &mut s2,
+            &RunEvent::IssueClosed {
+                number: 8,
+                tokens: 0,
+                invocations: 3,
+                usage: usage(200, 20),
+            },
+        );
+        assert!(
+            extra2.harvest_est.is_none(),
+            "non-harvester omits the estimate"
+        );
     }
 
     /// A `done` for an issue that is not the active one carries no derived tail —
@@ -696,6 +775,7 @@ mod tests {
             &RunEvent::IssueClosed {
                 number: 99,
                 tokens: 0,
+                invocations: 0,
                 usage: UsageLite::default(),
             },
         );

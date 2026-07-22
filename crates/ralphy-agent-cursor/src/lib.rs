@@ -491,6 +491,20 @@ mod tests {
         assert!(clamped.issue_deadline() <= rd);
     }
 
+    /// Issue #270: Cursor is a harvesting vendor, so it reports a finite harvest
+    /// floor (the single source of truth is the `skills` constant). The floor drives
+    /// the read-time per-issue harvest-tax estimate; a non-harvesting vendor returns
+    /// `None` via the trait default and shows no estimate.
+    #[test]
+    fn cursor_reports_the_harvest_floor() {
+        let agent = CursorAgent::new(None, PathBuf::from("/run"));
+        assert_eq!(
+            agent.harvest_floor(),
+            Some(skills::CURSOR_HARVEST_FLOOR_TOKENS)
+        );
+        assert_eq!(agent.harvest_floor(), Some(15_679));
+    }
+
     /// ADR-0042 D3: this vendor opens with ~8.1 s of silence and shows inter-record
     /// gaps up to ~7.4 s, so a watchdog in seconds would reap healthy runs. Unlike
     /// `max_minutes_per_issue`, `IssueBudget::new` leaves `idle_minutes` at `0` —

@@ -423,6 +423,17 @@ every question, and a service is the infra D1 refused), and baking USD into the
 export (it must stay a read-time projection so a re-priced table re-exports
 correctly).
 
+**A second read-time view (issue #270): the Cursor harvest-tax estimate.** USD is
+not the only figure derived at read-time and never stored. A harvesting vendor
+(Cursor) injects a measured floor of foreign-skill input tokens per invocation
+(ADR-0042 D12) that cannot be isolated from a ledger record — they fold into the
+ordinary `input` field. So the console/panel show an ESTIMATE, `harvest_floor ×
+invocation_count`, on the per-issue `done` line and as a `harvest est:` footer
+segment, labelled `est`. Like USD, it is a projection: never written to the ledger
+(D6) and never placed on the `run.finished`/`issue.closed` CloudEvents tally, so a
+consumer can never sum an estimate against the four real token buckets — the
+tokens-as-truth invariant (D2) holds.
+
 ## Consequences
 
 - The core gains a vendor-agnostic `Usage` type and a `usage` field on `Plan`

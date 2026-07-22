@@ -178,6 +178,7 @@ mod tests {
                 model: None,
             },
             run_usage_by_model: Default::default(),
+            invocations: 0,
         };
 
         let summary = crate::run::summary::RunSummary::from_report(&report, 1);

@@ -99,6 +99,11 @@ pub struct IssueEntry {
     pub plan_usage: Option<UsageLite>,
     /// The execution phase's usage, from `issue closed`.
     pub exec_usage: Option<UsageLite>,
+    /// Vendor spawns this issue paid for, from `issue closed` (#270). The done line
+    /// multiplies it by the vendor's harvest floor for the per-issue harvest-tax
+    /// estimate; `None` for a not-yet-closed or pre-#270 entry (the estimate is then
+    /// omitted).
+    pub invocations: Option<u64>,
 }
 
 /// A light `{number, title}` reference for the `run.started.queue` scope list and
@@ -229,6 +234,7 @@ impl RunState {
                 budget_min: None,
                 plan_usage: None,
                 exec_usage: None,
+                invocations: None,
             });
             self.issues.last_mut().expect("just pushed")
         }
@@ -346,12 +352,21 @@ impl RunState {
                 }
                 e.budget_min = Some(budget_min);
             }
-            RunEvent::IssueClosed { number, usage, .. } => {
+            RunEvent::IssueClosed {
+                number,
+                usage,
+                invocations,
+                ..
+            } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
                 let e = self.entry_mut(n);
                 e.exec_usage = Some(usage);
+                // `0` (a manual construction or pre-#270 producer) means "unknown",
+                // not "zero spawns", so store `None` and let the done line omit the
+                // estimate rather than render a nonsensical `0×`.
+                e.invocations = (invocations > 0).then_some(invocations);
                 e.status = IssueStatus::Done;
             }
             RunEvent::NonGreen { number, outcome } => {
@@ -553,6 +568,7 @@ mod tests {
             RunEvent::IssueClosed {
                 number: 1,
                 tokens: 0,
+                invocations: 0,
                 usage: UsageLite::default(),
             },
             RunEvent::IssueStarted {
@@ -714,6 +730,7 @@ mod tests {
         state.apply(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
         state.apply(RunEvent::Skipped {

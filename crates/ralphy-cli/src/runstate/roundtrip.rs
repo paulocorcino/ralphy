@@ -219,12 +219,13 @@ fn roundtrip_plan_closed() {
 
 #[test]
 fn roundtrip_issue_closed() {
-    let ev = one(|| ralphy_core::emit::issue_closed(7, 1_200_000, &usage()));
+    let ev = one(|| ralphy_core::emit::issue_closed(7, 1_200_000, 3, &usage()));
     assert_eq!(
         decode(&ev),
         Some(RunEvent::IssueClosed {
             number: 7,
             tokens: 1_200_000,
+            invocations: 3,
             usage: usage_lite(),
         })
     );

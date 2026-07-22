@@ -544,6 +544,7 @@ mod tests {
         queue.push(RunEvent::IssueClosed {
             number: 7,
             tokens: 42,
+            invocations: 0,
             usage: UsageLite {
                 input: 1,
                 cache_read: 2,

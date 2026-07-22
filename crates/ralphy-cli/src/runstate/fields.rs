@@ -36,6 +36,11 @@ pub struct EventFields {
     pub target_epoch: Option<i64>,
     pub model: Option<String>,
     pub tokens: Option<u64>,
+    /// Vendor spawn count on a `green — issue closed` event (#270): plan and execute
+    /// plus any repair/protocol bounce. The live region multiplies it by the vendor's
+    /// harvest floor for the per-issue harvest-tax estimate. Absent on a pre-#270
+    /// emission, which simply omits the estimate.
+    pub invocations: Option<u64>,
     /// Reasoning effort label (`low`/`medium`/`high`); adapters also report it as
     /// `variant` (OpenCode), folded into the same slot.
     pub effort: Option<String>,
@@ -122,6 +127,7 @@ impl Default for EventFields {
             target_epoch: None,
             model: None,
             tokens: None,
+            invocations: None,
             effort: None,
             cmd: None,
             up: None,
@@ -163,6 +169,7 @@ impl Visit for EventFields {
             "idle_minutes" => self.idle_minutes = Some(value),
             "stop_before" => self.stop_before = Some(value),
             "tokens" => self.tokens = Some(value),
+            "invocations" => self.invocations = Some(value),
             "up" => self.up = Some(value),
             "cr" => self.cr = Some(value),
             "cw" => self.cw = Some(value),
