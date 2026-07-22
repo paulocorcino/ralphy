@@ -13,6 +13,7 @@ use ralphy_usage_scan::{
 };
 
 use crate::registry::RegistryStore;
+use crate::StorePaths;
 
 /// The ledger root: `$RALPHY_USAGE_DIR` when set, else `<home>/.ralphy/usage`.
 /// Copied from `ralphy-core`'s `ledger::usage_root()` so the daemon reads the
@@ -242,18 +243,8 @@ pub fn gemini_dir_path() -> anyhow::Result<PathBuf> {
 /// ones — whose `tokens` is always `null` (ADR-0042 D11: no count exists) — then
 /// the Gemini ones, whose counts are a LOWER BOUND (ADR-0043 D10: the router's
 /// tokens never reach disk).
-// One positional per store path/handle; grouping them into a struct would only
-// move the argument list, not shrink it (mirrors `router`/`usage_route`).
-#[allow(clippy::too_many_arguments)]
 pub fn interactive_records(
-    claude_dir: &Path,
-    codex_dir: &Path,
-    opencode_db: &Path,
-    kimi_dir: &Path,
-    kimi_code_dir: &Path,
-    copilot_db: &Path,
-    cursor_dir: &Path,
-    gemini_dir: &Path,
+    stores: &StorePaths,
     registry: &RegistryStore,
     run_records: &[serde_json::Value],
     since: Option<&str>,
@@ -272,44 +263,44 @@ pub fn interactive_records(
         })
         .collect();
     let claude = scan_claude(&ClaudeScan {
-        projects_dir: claude_dir,
+        projects_dir: &stores.claude_projects_dir,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
     });
     let codex = scan_codex(&CodexScan {
-        codex_dir,
+        codex_dir: &stores.codex_dir,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
     });
     let opencode = scan_opencode(&OpenCodeScan {
-        db_path: opencode_db,
+        db_path: &stores.opencode_db,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
     });
     let kimi = scan_kimi(&KimiScan {
-        kimi_dir,
-        kimi_code_dir,
+        kimi_dir: &stores.kimi_dir,
+        kimi_code_dir: &stores.kimi_code_dir,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
     });
     let copilot = scan_copilot(&CopilotScan {
-        db_path: copilot_db,
+        db_path: &stores.copilot_db,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
     });
     let cursor = scan_cursor(&CursorScan {
-        cursor_dir,
+        cursor_dir: &stores.cursor_dir,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,
     });
     let gemini = scan_gemini(&GeminiScan {
-        gemini_dir,
+        gemini_dir: &stores.gemini_dir,
         run_session_ids: &run_session_ids,
         repos: &repos,
         since,

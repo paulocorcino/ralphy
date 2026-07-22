@@ -137,28 +137,23 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
     let usage_dir = usage::usage_dir_path()?;
-    let claude_projects_dir = usage::claude_projects_dir_path()?;
-    let codex_dir = usage::codex_dir_path()?;
-    let opencode_db = usage::opencode_db_path()?;
-    let kimi_dir = usage::kimi_dir_path()?;
-    let kimi_code_dir = usage::kimi_code_dir_path()?;
-    let copilot_db = usage::copilot_db_path()?;
-    let cursor_dir = usage::cursor_dir_path()?;
-    let gemini_dir = usage::gemini_dir_path()?;
+    let stores = StorePaths {
+        claude_projects_dir: usage::claude_projects_dir_path()?,
+        codex_dir: usage::codex_dir_path()?,
+        opencode_db: usage::opencode_db_path()?,
+        kimi_dir: usage::kimi_dir_path()?,
+        kimi_code_dir: usage::kimi_code_dir_path()?,
+        copilot_db: usage::copilot_db_path()?,
+        cursor_dir: usage::cursor_dir_path()?,
+        gemini_dir: usage::gemini_dir_path()?,
+    };
     axum::serve(
         listener,
         router(
             id,
             registry_path,
             usage_dir,
-            claude_projects_dir,
-            codex_dir,
-            opencode_db,
-            kimi_dir,
-            kimi_code_dir,
-            copilot_db,
-            cursor_dir,
-            gemini_dir,
+            stores,
             start,
             shutdown_rx,
             auth_state,
@@ -176,25 +171,34 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     Ok(())
 }
 
+/// The per-vendor interactive session-store paths resolved once at daemon boot
+/// and handed to the `/api/usage` scan — one `PathBuf` per vendor store. Grouped
+/// so onboarding a vendor is a new field, not another positional threaded through
+/// every `router` call site (#267); eight adjacent same-typed paths were also
+/// transposition-prone (the compiler can't catch two swapped stores). `Default`
+/// yields empty paths — a "no store" set the scans tolerate (ADR-0040 C6) — which
+/// the daemon's tests use as their all-missing base.
+#[derive(Clone, Default)]
+pub struct StorePaths {
+    pub claude_projects_dir: PathBuf,
+    pub codex_dir: PathBuf,
+    pub opencode_db: PathBuf,
+    pub kimi_dir: PathBuf,
+    pub kimi_code_dir: PathBuf,
+    pub copilot_db: PathBuf,
+    pub cursor_dir: PathBuf,
+    pub gemini_dir: PathBuf,
+}
+
 /// The daemon's HTTP surface. Real routes sit *before* the embedded-UI
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
 /// at runtime (the embedded HTML bakes in no identity).
-// One positional per resolved-at-boot path/handle; grouping them into a struct
-// would only move the argument list, not shrink it, and churn the ~20 call sites.
-#[allow(clippy::too_many_arguments)]
 pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
     usage_dir: PathBuf,
-    claude_projects_dir: PathBuf,
-    codex_dir: PathBuf,
-    opencode_db: PathBuf,
-    kimi_dir: PathBuf,
-    kimi_code_dir: PathBuf,
-    copilot_db: PathBuf,
-    cursor_dir: PathBuf,
-    gemini_dir: PathBuf,
+    stores: StorePaths,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
@@ -202,7 +206,7 @@ pub fn router(
     let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
-    // public `router` signature and its ~20 call sites are untouched; production
+    // public `router` signature and its call sites are untouched; production
     // calls `router` exactly once, so one manager per router is correct.
     let sessions = Arc::new(session::SessionManager::new());
     // `shutdown` is consumed by the `/ws` presence closure; clone one for the
@@ -212,7 +216,7 @@ pub fn router(
     let session_registry = registry_path.clone();
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
-    // constructed here (NOT a `router` param) so the ~20-call-site signature holds.
+    // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let tree_watchers = watchers.clone();
     let tree_registry = registry_path.clone();
@@ -250,31 +254,11 @@ pub fn router(
             "/api/usage",
             get({
                 let dir = usage_dir.clone();
-                let claude_dir = claude_projects_dir.clone();
-                let codex_dir = codex_dir.clone();
-                let opencode_db = opencode_db.clone();
-                let kimi_dir = kimi_dir.clone();
-                let kimi_code_dir = kimi_code_dir.clone();
-                let copilot_db = copilot_db.clone();
-                let cursor_dir = cursor_dir.clone();
-                let gemini_dir = gemini_dir.clone();
+                let stores = stores.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
-                    usage_route(
-                        dir,
-                        claude_dir,
-                        codex_dir,
-                        opencode_db,
-                        kimi_dir,
-                        kimi_code_dir,
-                        copilot_db,
-                        cursor_dir,
-                        gemini_dir,
-                        registry,
-                        daemon_id,
-                        q.0.since,
-                    )
+                    usage_route(dir, stores, registry, daemon_id, q.0.since)
                 }
             }),
         )
@@ -1450,19 +1434,9 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 /// `since` keeps run records whose `ts` is lexically `>=` it and interactive
 /// records whose `last_ts` is `>=` it. The interactive scan excludes any session
 /// the ledger already owns (its `session_id` in `records`) and writes nothing.
-// One positional per resolved-at-boot store path; grouping them would only move
-// the argument list, not shrink it (mirrors `router`).
-#[allow(clippy::too_many_arguments)]
 async fn usage_route(
     usage_dir: PathBuf,
-    claude_projects_dir: PathBuf,
-    codex_dir: PathBuf,
-    opencode_db: PathBuf,
-    kimi_dir: PathBuf,
-    kimi_code_dir: PathBuf,
-    copilot_db: PathBuf,
-    cursor_dir: PathBuf,
-    gemini_dir: PathBuf,
+    stores: StorePaths,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -1477,19 +1451,7 @@ async fn usage_route(
             registry::RegistryStore::default()
         }
     };
-    let interactive = usage::interactive_records(
-        &claude_projects_dir,
-        &codex_dir,
-        &opencode_db,
-        &kimi_dir,
-        &kimi_code_dir,
-        &copilot_db,
-        &cursor_dir,
-        &gemini_dir,
-        &store,
-        &runs,
-        since.as_deref(),
-    );
+    let interactive = usage::interactive_records(&stores, &store, &runs, since.as_deref());
     Json(serde_json::json!({
         "daemon_id": daemon_id,
         "records": runs,
@@ -1994,14 +1956,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2174,14 +2129,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2210,14 +2158,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2269,14 +2210,7 @@ mod tests {
             None,
             registry_path,
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2325,14 +2259,7 @@ mod tests {
             None,
             registry_path,
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2392,14 +2319,7 @@ mod tests {
             None,
             registry_path,
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2452,14 +2372,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2505,14 +2418,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2563,14 +2469,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
-            claude_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                claude_projects_dir: claude_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2650,14 +2552,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            codex_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                codex_dir: codex_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2718,14 +2616,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            db.clone(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                opencode_db: db.clone(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2790,14 +2684,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            db.clone(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                copilot_db: db.clone(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2845,14 +2735,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            kimi_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                kimi_dir: kimi_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2903,14 +2789,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            cursor_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                cursor_dir: cursor_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2974,14 +2856,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            gemini_dir.path().to_path_buf(),
+            StorePaths {
+                gemini_dir: gemini_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -3049,14 +2927,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3087,14 +2958,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3126,14 +2990,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -3158,14 +3015,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3211,14 +3061,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(policy, session_epoch),
@@ -3593,14 +3436,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3698,14 +3534,7 @@ mod tests {
                 None,
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
+                StorePaths::default(),
                 Instant::now(),
                 idle_shutdown(),
                 auth::AuthState::fixed(

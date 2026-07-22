@@ -246,7 +246,10 @@ ignores the operator's `ralphy config set`.
 
 **Tier 4 — usage scan and daemon**: `usage-scan/src/<vendor>.rs` +
 `<Vendor>Scan` + the `pub mod`/`pub use` · `daemon/src/usage.rs` path resolver
-and `interactive_records` · the four `daemon/src/lib.rs` state-plumbing sites ·
+and `interactive_records` · the daemon's store-path plumbing — a new
+`daemon::StorePaths` **field** and its one construction site in `serve()` (the
+`router`/`usage_route` signatures take the whole struct, so they are no longer
+per-vendor edits) ·
 **`daemon/src/session.rs::Agent`** — the third agent enum, plus its two matches
 (`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and the
 `agents` / `consoleItems` / accelerator-map trio in `daemon/assets/ui/app.js`.
