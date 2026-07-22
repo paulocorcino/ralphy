@@ -439,7 +439,7 @@ const DEFAULT_MODEL: &str = "auto";
 /// terminal record that carried no `stats` — only the requested model is
 /// attributed, at zero tokens, so a pinned run still tells a routed one apart
 /// in the report without inventing a number nobody can reconcile.
-fn phase_usage(fold: Option<&outcome::GeminiFold>, model: Option<&str>) -> Usage {
+pub(crate) fn phase_usage(fold: Option<&outcome::GeminiFold>, model: Option<&str>) -> Usage {
     let key = price_key(model.unwrap_or(DEFAULT_MODEL));
     match fold.and_then(|f| f.usage.as_ref()) {
         Some(items) if !items.is_empty() => Usage::fold_usage(items, Some(&key)),

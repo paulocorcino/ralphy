@@ -9,7 +9,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use tracing::info;
 
-use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
+use ralphy_adapter_support::{
+    list_session_files, run_init_session, run_text_session, JsonSession, TextSession,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
@@ -17,6 +19,7 @@ use ralphy_core::{
 
 use crate::auth::{is_codex_auth_error, CODEX_AUTH_ERROR_MSG};
 use crate::command::{build_codex_init_command, resolve_init_model};
+use crate::usage::{codex_sessions_dir, fold_rollout_usage};
 
 /// Run a one-shot headless `codex exec` repo-diagnosis session (ADR-0012 stage 2)
 /// from `neutral_cwd` — a directory OUTSIDE the target repo, so Codex never
@@ -125,10 +128,10 @@ pub fn draft_issues(
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the
 /// cli can dispatch on the selected agent. `effort` defaults to `medium`.
 ///
-/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
-/// line are uniform across vendors, but this adapter's headless consolidation
-/// stream is not yet parsed for tokens — only Cursor's is live-validated. A
-/// best-effort follow-up wires this vendor's own parser here (ADR-0008 D9).
+/// The consolidation session's tokens are captured the same way `plan`/`execute`
+/// are — snapshot the rollout tree around the call (appeared-over-grew) and
+/// [`fold_rollout_usage`] the delta — so the run-level `consolidate` ledger line
+/// carries real usage (ADR-0008 D9/D10, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
@@ -144,7 +147,18 @@ pub fn consolidate_knowledge(
         model = model.as_deref().unwrap_or("(codex default)"),
         effort, "consolidating knowledge with codex exec"
     );
+    // Snapshot the rollout tree around the call: a file that APPEARED is this
+    // session, one that merely grew is a pre-existing concurrent session (D10).
+    let sessions_dir = codex_sessions_dir();
+    let snapshot = || {
+        sessions_dir
+            .as_deref()
+            .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
+            .unwrap_or_default()
+    };
+
     let cmd = build_codex_init_command(model.as_deref(), effort, ws.repo_root(), &[]);
+    let before = snapshot();
     run_text_session(
         TextSession {
             cmd,
@@ -157,7 +171,8 @@ pub fn consolidate_knowledge(
         },
         is_codex_auth_error,
     )?;
-    Ok(Usage::default())
+    let after = snapshot();
+    Ok(fold_rollout_usage(&before, &after, model))
 }
 
 /// Run a one-shot headless `codex exec` agent-triage session (ADR-0017). Mirrors

@@ -21,6 +21,7 @@ use ralphy_core::{
 
 use crate::command::build_opencode_command;
 use crate::events::{is_opencode_auth_error, OPENCODE_AUTH_ERROR_MSG};
+use crate::usage::opencode_usage;
 
 /// The minimal `OPENCODE_CONFIG_CONTENT` for a one-shot `init` session: an empty
 /// JSON object. The diagnosis/draft sessions read the repo and write a JSON
@@ -179,10 +180,10 @@ pub fn triage_issues(
 /// can dispatch on the selected agent. `effort` is unused: OpenCode has no
 /// reasoning-effort knob (ADR-0005 D3).
 ///
-/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
-/// line are uniform across vendors, but this adapter's headless consolidation
-/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
-/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
+/// The consolidation session's tokens are captured the same way `plan`/`execute`
+/// do — `opencode_usage` correlates the `--format json` stream's `sessionID` to the
+/// rows in `opencode.db` — so the run-level `consolidate` ledger line carries real
+/// usage (ADR-0008 D9, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
@@ -195,7 +196,7 @@ pub fn consolidate_knowledge(
 
     info!(?model, "consolidating knowledge with opencode run");
     let cmd = build_opencode_command(model, None, ws.repo_root(), INIT_OPENCODE_CONFIG);
-    run_text_session(
+    let log = run_text_session(
         TextSession {
             cmd,
             prompt: PROMPT_CONSOLIDATE,
@@ -207,7 +208,7 @@ pub fn consolidate_knowledge(
         },
         is_opencode_auth_error,
     )?;
-    Ok(Usage::default())
+    Ok(opencode_usage(&log))
 }
 
 /// List available models by passing through to `opencode models`.

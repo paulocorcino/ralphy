@@ -26,9 +26,10 @@ use ralphy_core::{
 };
 
 use crate::auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
-use crate::command::build_copilot_init_command;
+use crate::command::{build_copilot_command, build_copilot_init_command, mint_session_id};
 use crate::guards::{builtin_mcp_violation, copilot_config_path};
 use crate::outcome::preflight;
+use crate::usage::copilot_usage;
 
 /// D11: assert `continueOnAutoMode` is not enabled before ANY one-shot child is
 /// spawned — no token is spent on a run that cannot be trusted. Mirrors
@@ -159,10 +160,12 @@ pub fn draft_issues(
 /// can dispatch on the selected agent. `effort` is unused: the one-shots omit
 /// `--effort` unconditionally (ADR-0041 D5).
 ///
-/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
-/// line are uniform across vendors, but this adapter's headless consolidation
-/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
-/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
+/// The consolidation session's tokens are captured the same way `plan`/`execute`
+/// do — a locally minted `--session-id`, read back from `session-store.db` via
+/// [`copilot_usage`] — so the run-level `consolidate` ledger line carries real usage
+/// (ADR-0008 D9, ADR-0041 D10, issue #276). The one-shot's own `build_copilot_init_command`
+/// mints and discards its id, so consolidate mints its own and drives
+/// [`build_copilot_command`] directly with the identical one-shot argv.
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
@@ -176,7 +179,11 @@ pub fn consolidate_knowledge(
 
     info!(?model, "consolidating knowledge with copilot");
     preflight_or_bail()?;
-    let cmd = build_copilot_init_command(model, ws.repo_root(), &[]);
+    // Mint the id ourselves: the one-shot builder mints one internally and drops it,
+    // leaving no key for the session-store read. Same argv as `build_copilot_init_command`
+    // (effort `None`, escape hatch off, no images).
+    let session_id = mint_session_id();
+    let cmd = build_copilot_command(&session_id, model, None, ws.repo_root(), false, &[]);
     run_text_session(
         TextSession {
             cmd,
@@ -190,7 +197,7 @@ pub fn consolidate_knowledge(
         is_copilot_auth_error,
     )?;
     check_builtin_mcp_receipt(&log_path)?;
-    Ok(Usage::default())
+    Ok(copilot_usage(&session_id))
 }
 
 /// Run a one-shot headless `copilot` agent-triage session (ADR-0017). Mirrors

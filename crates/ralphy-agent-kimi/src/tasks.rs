@@ -9,7 +9,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use tracing::info;
 
-use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
+use ralphy_adapter_support::{
+    list_session_files, run_init_session, run_text_session, JsonSession, TextSession,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
@@ -17,6 +19,7 @@ use ralphy_core::{
 
 use crate::auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
 use crate::command::{build_kimi_init_command, resolve_init_kimi_model};
+use crate::usage::{fold_wire_usage, kimi_sessions_dir};
 
 /// Run a one-shot headless `kimi` repo-diagnosis session (ADR-0012 stage 2)
 /// from `neutral_cwd` — a directory OUTSIDE the target repo. The target `repo` is
@@ -116,10 +119,10 @@ pub fn draft_issues(
 /// can dispatch on the selected agent. `effort` is unused: Kimi has no
 /// `model_reasoning_effort` analog (ADR-0028 D3), same shape as OpenCode.
 ///
-/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
-/// line are uniform across vendors, but this adapter's headless consolidation
-/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
-/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
+/// The consolidation session's tokens are captured the same way `plan`/`execute`
+/// are — snapshot the `wire` session tree around the call (appeared-over-grew) and
+/// [`fold_wire_usage`] the delta — so the run-level `consolidate` ledger line
+/// carries real usage (ADR-0008 D9/D10, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
@@ -132,7 +135,18 @@ pub fn consolidate_knowledge(
     let model = resolve_init_kimi_model(model);
 
     info!(%model, "consolidating knowledge with kimi");
+    // Snapshot the `wire` session tree around the call: a file that APPEARED is
+    // this session, one that merely grew is a pre-existing concurrent session (D10).
+    let sessions_dir = kimi_sessions_dir();
+    let snapshot = || {
+        sessions_dir
+            .as_deref()
+            .map(|d| list_session_files(d, "jsonl", true, Some("wire")))
+            .unwrap_or_default()
+    };
+
     let cmd = build_kimi_init_command(&model, ws.repo_root(), PROMPT_CONSOLIDATE);
+    let before = snapshot();
     run_text_session(
         TextSession {
             cmd,
@@ -145,7 +159,8 @@ pub fn consolidate_knowledge(
         },
         is_kimi_auth_error,
     )?;
-    Ok(Usage::default())
+    let after = snapshot();
+    Ok(fold_wire_usage(&before, &after, Some(model)))
 }
 
 /// Run a one-shot headless `kimi` agent-triage session (ADR-0017). Mirrors

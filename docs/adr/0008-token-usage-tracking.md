@@ -495,11 +495,15 @@ The fix keeps D3's shape and adds one phase value:
   from the cli, outside any `IssueCtx`). Best-effort like every D6 write; a
   zero-token pass writes nothing.
 - **Adapter seam.** Every adapter's `consolidate_knowledge` now returns `Usage`
-  (was `()`), parsed from the same vendor stream the plan/execute path reads. Only
-  Cursor's shape is live-validated so far (its one-shot builder carries
+  (was `()`), parsed from the same vendor stream the plan/execute path reads.
+  Cursor was live-validated first (its one-shot builder carries
   `--output-format stream-json`, so `parse_cursor_usage` reads the terminal
-  `result` record, D11); the other adapters return `Usage::default()` until their
-  own parser is wired — a best-effort follow-up (D9), not a blocker.
+  `result` record, D11). Issue #276 then closed the remaining six: each captures its
+  consolidation-session tokens the way that adapter's own `plan`/`execute` already
+  does — a log/stream parse (`claude`, `gemini`, `opencode`), a minted `--session-id`
+  read back from the session store (`copilot`), or a sessions-dir snapshot-diff
+  (`codex`, `kimi`). No adapter returns `Usage::default()` any longer; token capture
+  for the `consolidate` phase is live across all seven vendors.
 - **Roll-ups.** The consolidation `Usage` folds into this run's total, the
   `run.finished` event (ADR-0019), and the panel run figure, and shows as a
   distinct `consolidate:` footer segment so the overhead stays legible beside the

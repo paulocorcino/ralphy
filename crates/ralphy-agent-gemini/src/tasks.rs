@@ -146,7 +146,7 @@ pub(crate) fn one_shot_stop(log: &str, exit_code: Option<i32>, timed_out: bool) 
 /// root, not here: by the time this is reached the root, the skills and the
 /// policy document have already been written, and a charter Ralphy refuses to
 /// send must cost none of that.
-fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) -> Result<()> {
+fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) -> Result<String> {
     let out = ralphy_adapter_support::run_headless(cmd, prompt, timeout).context(SPAWN_ERR)?;
     let succeeded = one_shot_succeeded(&out);
     let (code, timed_out) = (out.exit.and_then(|s| s.code()), out.timed_out);
@@ -158,7 +158,9 @@ fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) 
         bail!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display());
     }
     if succeeded {
-        return Ok(());
+        // The `--output-format stream-json` stream is captured in `log`; callers
+        // that need token usage (consolidate) fold it, the rest drop it.
+        return Ok(log);
     }
     match one_shot_stop(&log, code, timed_out) {
         Some(msg) => bail!("{msg} (see {})", log_path.display()),
@@ -328,10 +330,10 @@ pub fn triage_issues(
 /// The session's only deliverable is the rewritten `KNOWLEDGE.md`, which the caller
 /// verifies; the consumed notes are archived by the caller, not here.
 ///
-/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
-/// line are uniform across vendors, but this adapter's headless consolidation
-/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
-/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
+/// The consolidation session's tokens are captured the same way `plan`/`execute`
+/// are — the `--output-format stream-json` stream carries the terminal `result.stats`,
+/// which [`crate::phase_usage`] reads off [`outcome::fold_gemini_stream`] — so the
+/// run-level `consolidate` ledger line carries real usage (ADR-0008 D9, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
@@ -346,8 +348,11 @@ pub fn consolidate_knowledge(
 
     info!(?model, "consolidating knowledge with gemini");
     let cmd = one_shot_command(&one_shot_base(ws.repo_root()), ws.repo_root(), model)?;
-    run_one_shot(cmd, PROMPT_CONSOLIDATE, timeout, &log_path)?;
-    Ok(Usage::default())
+    let log = run_one_shot(cmd, PROMPT_CONSOLIDATE, timeout, &log_path)?;
+    Ok(crate::phase_usage(
+        Some(&outcome::fold_gemini_stream(&log)),
+        model,
+    ))
 }
 
 #[cfg(test)]
@@ -528,7 +533,7 @@ mod tests {
              words can fail it"
         );
         assert!(
-            at("return Ok(())") < at(concat!("one_shot_", "stop(&log")),
+            at("return Ok(log)") < at(concat!("one_shot_", "stop(&log")),
             "a successful session must return before the ladder is consulted"
         );
         // …and the log is persisted before ANY bail, so every error message's
