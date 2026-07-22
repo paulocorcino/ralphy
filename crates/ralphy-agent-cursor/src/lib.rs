@@ -190,6 +190,14 @@ impl Agent for CursorAgent {
         "cursor"
     }
 
+    /// Cursor auto-discovers ~78 foreign skills per invocation with no CLI-side
+    /// allowlist (ADR-0042 D12); the measured floor is surfaced as a read-time
+    /// estimate (issue #270). No other adapter overrides this — the trait default
+    /// (`None`) covers every non-harvesting vendor.
+    fn harvest_floor(&self) -> Option<u64> {
+        Some(skills::CURSOR_HARVEST_FLOOR_TOKENS)
+    }
+
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let log_path = self.run_dir.join("cursor.log");

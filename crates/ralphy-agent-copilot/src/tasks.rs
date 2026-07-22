@@ -22,7 +22,7 @@ use tracing::info;
 use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
@@ -158,13 +158,18 @@ pub fn draft_issues(
 /// here. Mirrors the other adapters' `consolidate_knowledge` signature so the cli
 /// can dispatch on the selected agent. `effort` is unused: the one-shots omit
 /// `--effort` unconditionally (ADR-0041 D5).
+///
+/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
+/// line are uniform across vendors, but this adapter's headless consolidation
+/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
+/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
     let log_path = run_dir.join("consolidate.log");
@@ -185,7 +190,7 @@ pub fn consolidate_knowledge(
         is_copilot_auth_error,
     )?;
     check_builtin_mcp_receipt(&log_path)?;
-    Ok(())
+    Ok(Usage::default())
 }
 
 /// Run a one-shot headless `copilot` agent-triage session (ADR-0017). Mirrors

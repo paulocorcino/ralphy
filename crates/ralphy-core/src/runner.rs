@@ -151,6 +151,7 @@ fn run_queue_with(
         agent: agent.name(),
         run_usage: Usage::default(),
         run_usage_by_model: BTreeMap::new(),
+        invocations: 0,
     };
 
     let mut worked: Vec<IssueResult> = Vec::new();

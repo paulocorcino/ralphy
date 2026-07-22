@@ -12,7 +12,7 @@ use tracing::info;
 use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
@@ -115,13 +115,18 @@ pub fn draft_issues(
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
 /// can dispatch on the selected agent. `effort` is unused: Kimi has no
 /// `model_reasoning_effort` analog (ADR-0028 D3), same shape as OpenCode.
+///
+/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
+/// line are uniform across vendors, but this adapter's headless consolidation
+/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
+/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
     let model = resolve_init_kimi_model(model);
@@ -140,7 +145,7 @@ pub fn consolidate_knowledge(
         },
         is_kimi_auth_error,
     )?;
-    Ok(())
+    Ok(Usage::default())
 }
 
 /// Run a one-shot headless `kimi` agent-triage session (ADR-0017). Mirrors

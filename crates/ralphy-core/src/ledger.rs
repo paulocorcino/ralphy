@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
+use tracing::warn;
 
 use crate::Usage;
 
@@ -29,8 +30,11 @@ pub struct LedgerRecord {
     pub actor_name: String,
     /// The orchestrator build, `env!("CARGO_PKG_VERSION")` (D6).
     pub ralphy_version: String,
+    /// The issue this phase served, or `0` for a run-level phase not tied to any
+    /// single issue (the end-of-run `consolidate` pass — issue #269).
     pub issue: u64,
-    /// `plan` | `execute`.
+    /// `plan` | `execute` | `protocol-repair` | `repair` (the runner's per-issue
+    /// phases) | `consolidate` (the run-level knowledge-consolidation pass).
     pub phase: String,
     /// The adapter's self-reported vendor label ([`crate::Agent::name`]),
     /// opaque to the core.
@@ -241,6 +245,45 @@ pub fn append(rec: &LedgerRecord) -> Result<()> {
     Ok(())
 }
 
+/// Append a **run-level** phase line — a phase not tied to a single issue, namely
+/// the end-of-run knowledge consolidation (ADR-0008; issue #269). `issue` is `0`,
+/// the run-level sentinel: real issue numbers start at `1`, so a `0` line is a
+/// run-scoped overhead cost the project total counts and a per-issue query skips.
+///
+/// Built and appended here (not in the runner's `RunLedger`) because consolidation
+/// fires from the cli after the queue drains, outside any `IssueCtx`. Best-effort
+/// like every ledger write: a `0`-token usage writes nothing (an empty overhead
+/// line would only add noise), and a write failure warns rather than stops (D9).
+pub fn append_run_phase(
+    project: &str,
+    actor_email: &str,
+    actor_name: &str,
+    agent: &str,
+    phase: &str,
+    usage: &Usage,
+) {
+    if usage.total() == 0 {
+        return;
+    }
+    let rec = LedgerRecord {
+        project: project.to_string(),
+        actor_email: actor_email.to_string(),
+        actor_name: actor_name.to_string(),
+        ralphy_version: env!("CARGO_PKG_VERSION").into(),
+        issue: 0,
+        phase: phase.to_string(),
+        agent: agent.to_string(),
+        model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
+        session_id: None,
+        outcome: "ok".into(),
+        tokens: usage.clone(),
+        ts: chrono::Utc::now().to_rfc3339(),
+    };
+    if let Err(e) = append(&rec) {
+        warn!(phase, error = %e, "writing run-level {} usage ledger line failed", phase);
+    }
+}
+
 /// The project's cumulative token totals, summed over its whole ledger file. A
 /// missing file (nothing recorded yet) reads as `Usage::default()`.
 pub fn project_total(slug: &str) -> Usage {
@@ -256,6 +299,12 @@ pub fn project_total(slug: &str) -> Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// `RALPHY_USAGE_DIR` is process-global, so the tests that point it at a temp
+    /// dir must not run concurrently — one removing it mid-way would send another's
+    /// read to the real home. Serialize them behind this lock.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn sample_record() -> LedgerRecord {
         LedgerRecord {
@@ -368,6 +417,7 @@ mod tests {
 
     #[test]
     fn append_then_project_total_round_trips() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Point the ledger root at a unique temp dir so production is untouched.
         let dir = std::env::temp_dir().join(format!(
             "ralphy-ledger-{}-{:x}",
@@ -402,6 +452,66 @@ mod tests {
         assert_eq!(total.output, 22);
         assert_eq!(total.cache_read, 33);
         assert_eq!(total.cache_creation, 44);
+
+        std::env::remove_var("RALPHY_USAGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Issue #269: the run-level `consolidate` line lands with `issue = 0`, counts
+    /// toward the project total, and is skipped by a per-issue read — while a
+    /// zero-token pass writes nothing at all.
+    #[test]
+    fn append_run_phase_records_a_run_level_consolidate_line() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir =
+            std::env::temp_dir().join(format!("ralphy-ledger-runphase-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("RALPHY_USAGE_DIR", &dir);
+
+        let usage = Usage {
+            input: 33_398,
+            output: 5_444,
+            cache_read: 337_152,
+            cache_creation: 0,
+            model: Some("composer-2.5".into()),
+        };
+        // A zero-token pass is a no-op: no line, no file.
+        append_run_phase(
+            "owner/repo",
+            "dev@example.com",
+            "Dev Name",
+            "cursor",
+            "consolidate",
+            &Usage::default(),
+        );
+        assert_eq!(
+            project_total("owner/repo").total(),
+            0,
+            "a zero-token consolidation must write nothing"
+        );
+
+        append_run_phase(
+            "owner/repo",
+            "dev@example.com",
+            "Dev Name",
+            "cursor",
+            "consolidate",
+            &usage,
+        );
+
+        // It counts toward the project total.
+        assert_eq!(project_total("owner/repo").total(), usage.total());
+
+        // The line is a run-level `consolidate` phase at issue 0, agent/model intact.
+        let rows = read_project_rows("owner/repo");
+        assert_eq!(rows.len(), 1, "exactly the one non-zero line was written");
+        let row = &rows[0];
+        assert_eq!(row.issue, 0, "run-level sentinel");
+        assert_eq!(row.phase, "consolidate");
+        assert_eq!(row.agent, "cursor");
+        assert_eq!(row.model, "composer-2.5");
+        assert_eq!(row.outcome, "ok");
+        assert_eq!(row.tokens.cache_read, 337_152);
 
         std::env::remove_var("RALPHY_USAGE_DIR");
         let _ = std::fs::remove_dir_all(&dir);

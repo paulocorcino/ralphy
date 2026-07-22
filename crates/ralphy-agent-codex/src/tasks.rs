@@ -12,7 +12,7 @@ use tracing::info;
 use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::auth::{is_codex_auth_error, CODEX_AUTH_ERROR_MSG};
@@ -124,13 +124,18 @@ pub fn draft_issues(
 /// which the caller verifies; the consumed notes are archived by the caller, not
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the
 /// cli can dispatch on the selected agent. `effort` defaults to `medium`.
+///
+/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
+/// line are uniform across vendors, but this adapter's headless consolidation
+/// stream is not yet parsed for tokens — only Cursor's is live-validated. A
+/// best-effort follow-up wires this vendor's own parser here (ADR-0008 D9).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     std::fs::create_dir_all(run_dir).ok();
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
@@ -152,7 +157,7 @@ pub fn consolidate_knowledge(
         },
         is_codex_auth_error,
     )?;
-    Ok(())
+    Ok(Usage::default())
 }
 
 /// Run a one-shot headless `codex exec` agent-triage session (ADR-0017). Mirrors

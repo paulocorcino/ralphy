@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use ralphy_core::{git, Workspace};
+use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
 mod cli;
@@ -84,6 +84,11 @@ pub(crate) fn consolidate_defaults(
 /// (`ralphy_core::PROMPT_CONSOLIDATE`); only the CLI invocation differs. Mirrors
 /// the `diagnose_with_agent`/triage dispatch so `--agent` selects the vendor here
 /// exactly as it does for the plan/execute loop and the other one-shots.
+///
+/// Returns the invocation's [`Usage`] (issue #269): the consolidation pass is a
+/// real vendor call, so its tokens are folded into the run total and the ledger
+/// rather than dropped. Only Cursor parses a live token count today; the other
+/// adapters report `Usage::default()` until their own parser is wired.
 fn consolidate_with_agent(
     agent: CliAgent,
     ws: &Workspace,
@@ -91,7 +96,7 @@ fn consolidate_with_agent(
     model: Option<&str>,
     effort: Option<&str>,
     timeout: std::time::Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     match agent {
         CliAgent::Claude => {
             ralphy_agent_claude::consolidate_knowledge(ws, run_dir, model, effort, timeout)
@@ -123,11 +128,13 @@ fn consolidate_with_agent(
 /// (`knowledge::validate_knowledge`), then archive ONLY the notes the session
 /// declared folded (its `<!-- folded: ... -->` marker) into `knowledge/raw/` —
 /// unfolded notes stay loose, named in a warning, for the next pass. Returns
-/// how many notes were archived. Errors — leaving every note loose for a retry
-/// and restoring the pre-session `KNOWLEDGE.md` — when the session left the
-/// file missing, unchanged, or structurally malformed (the rejected output is
-/// kept as `KNOWLEDGE.rejected.md` in the run dir for inspection). `notes`
-/// must be non-empty; callers gate on `loose_notes` first.
+/// how many notes were archived, paired with the consolidation invocation's
+/// [`Usage`] (issue #269) so the caller can fold it into the run total and the
+/// ledger. Errors — leaving every note loose for a retry and restoring the
+/// pre-session `KNOWLEDGE.md` — when the session left the file missing, unchanged,
+/// or structurally malformed (the rejected output is kept as `KNOWLEDGE.rejected.md`
+/// in the run dir for inspection). `notes` must be non-empty; callers gate on
+/// `loose_notes` first.
 ///
 /// Callers are responsible for clearing `ANTHROPIC_API_KEY` (the subscription-quota
 /// sentinel) before this runs — `run` already does so up front, `consolidate` does
@@ -140,7 +147,7 @@ fn run_consolidation(
     effort: Option<&str>,
     max_minutes: u64,
     notes: &[PathBuf],
-) -> Result<usize> {
+) -> Result<(usize, Usage)> {
     use anyhow::{bail, Context};
     use ralphy_core::knowledge;
 
@@ -149,7 +156,7 @@ fn run_consolidation(
     // The curated file before the session, to verify the session produced one.
     let before = std::fs::read_to_string(ws.knowledge_file()).ok();
 
-    consolidate_with_agent(
+    let usage = consolidate_with_agent(
         agent,
         ws,
         run_dir,
@@ -199,7 +206,8 @@ fn run_consolidation(
             "notes not folded by the session — kept loose for the next pass"
         );
     }
-    knowledge::archive_notes(ws, &to_archive)
+    let archived = knowledge::archive_notes(ws, &to_archive)?;
+    Ok((archived, usage))
 }
 
 /// `ralphy consolidate`: run a one-shot agent session that curates the loose
@@ -240,7 +248,7 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
     let model = args.model.and_then(non_empty);
     let effort = args.effort.and_then(non_empty);
 
-    let archived = run_consolidation(
+    let (archived, _usage) = run_consolidation(
         args.agent,
         &ws,
         &run_dir,

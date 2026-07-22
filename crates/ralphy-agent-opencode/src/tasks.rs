@@ -16,7 +16,7 @@ use ralphy_adapter_support::{
 };
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::command::build_opencode_command;
@@ -178,13 +178,18 @@ pub fn triage_issues(
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
 /// can dispatch on the selected agent. `effort` is unused: OpenCode has no
 /// reasoning-effort knob (ADR-0005 D3).
+///
+/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
+/// line are uniform across vendors, but this adapter's headless consolidation
+/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
+/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
 
@@ -202,7 +207,7 @@ pub fn consolidate_knowledge(
         },
         is_opencode_auth_error,
     )?;
-    Ok(())
+    Ok(Usage::default())
 }
 
 /// List available models by passing through to `opencode models`.

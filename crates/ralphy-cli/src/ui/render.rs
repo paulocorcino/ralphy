@@ -204,6 +204,13 @@ pub struct PanelData {
     /// Whether any model in the *cumulative project* ledger was unpriced — the
     /// project figure then carries the `+?` suffix, independent of the run.
     pub project_usd_partial: bool,
+    /// The end-of-run knowledge-consolidation pass's own token breakdown, shown as
+    /// a distinct footer segment so this run overhead stays legible next to the run
+    /// total it is folded into (issue #269). `None` when the pass did not run.
+    pub consolidate_breakdown: Option<UsageLite>,
+    /// Read-time USD for the consolidation segment (ADR-0008 D8). `None` when the
+    /// pass did not run or its model is unpriced.
+    pub consolidate_usd: Option<f64>,
 }
 
 /// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
@@ -529,14 +536,26 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     // accumulated balance, each in tokens plus a read-time USD estimate (D8). USD
     // is a read-time projection, never stored; an unpriced model shows `~$?`
     // (never `~$0.00`) or flags the priced portion with `+?`.
+    // The consolidation segment (issue #269): shown only on a run that consolidated,
+    // between the run total it is part of and the project balance. `false` for the
+    // partial flag — the segment prices a single model, so there is no priced/unpriced
+    // split to flag; an unpriced model already renders `$?`.
+    let consolidate_seg = match &data.consolidate_breakdown {
+        Some(u) => format!(
+            " · consolidate: {}",
+            fmt_breakdown(u, data.consolidate_usd, false, opts.emoji)
+        ),
+        None => String::new(),
+    };
     let footer_raw = format!(
-        "run: {} · project: {} {}",
+        "run: {}{} · project: {} {}",
         fmt_breakdown(
             &data.run_breakdown,
             data.run_usd,
             data.run_usd_partial,
             opts.emoji
         ),
+        consolidate_seg,
         data.project_id,
         fmt_breakdown(
             &data.project_breakdown,

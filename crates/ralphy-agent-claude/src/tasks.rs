@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{run_json_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace,
 };
 use tracing::info;
 
@@ -27,13 +27,19 @@ use crate::settings::SETTINGS_JSON;
 /// Mirrors the planning pass's invocation (settings with the skip flags, no
 /// Stop hook) — the session's only deliverable is `KNOWLEDGE.md`, which the
 /// caller verifies; the consumed notes are archived by the caller, not here.
+///
+/// Returns `Usage::default()` for now (issue #269): the consolidation call IS
+/// counted at the run level, but this vendor's headless consolidation stream is
+/// not yet parsed for tokens — only Cursor's is live-validated. Wiring this
+/// adapter's own parser here is a best-effort follow-up (ADR-0008 D9); the seam
+/// is uniform so the caller folds whatever a vendor reports.
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     std::fs::create_dir_all(run_dir).ok();
     let settings_path = run_dir.join("ralphy.settings.json");
     std::fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
@@ -76,7 +82,7 @@ pub fn consolidate_knowledge(
         },
         is_claude_auth_error,
     )?;
-    Ok(())
+    Ok(Usage::default())
 }
 
 /// Run a one-shot headless `claude -p` repo-diagnosis session (ADR-0012 stage 2)

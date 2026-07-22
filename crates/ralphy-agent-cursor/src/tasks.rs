@@ -19,8 +19,11 @@ use tracing::info;
 use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, Settings, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, Settings, TriageDraft, TriageRequest, Usage, Workspace,
+    PROMPT_CONSOLIDATE,
 };
+
+use crate::usage::parse_cursor_usage;
 
 use crate::auth::{is_cursor_auth_error, CURSOR_AUTH_ERROR_MSG};
 use crate::command::{build_cursor_init_command, operator_config_dir, seed_cursor_config_dir};
@@ -218,13 +221,19 @@ pub fn triage_issues(
 /// repo cwd: pipe the shared consolidation charter on stdin and wait up to
 /// `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`, which
 /// the caller verifies; the consumed notes are archived by the caller, not here.
+///
+/// Returns the invocation's [`Usage`] parsed from the same `stream-json` `result`
+/// record the plan/execute path reads (ADR-0042 D11): the one-shot builder carries
+/// `--output-format stream-json` exactly like the run builder, so the consolidation
+/// pass is a real, countable vendor call the caller folds into the run total and the
+/// ledger (issue #269) rather than dropping.
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     let _ = effort;
     let config_dir = run_dir.join(CONFIG_DIR_NAME);
     one_shot_preflight(ws.repo_root(), ws.repo_root(), &config_dir)?;
@@ -234,7 +243,7 @@ pub fn consolidate_knowledge(
 
     info!(?model, "consolidating knowledge with cursor");
     let cmd = build_cursor_init_command(model, ws.repo_root(), &config_dir);
-    run_text_session(
+    let log = run_text_session(
         TextSession {
             cmd,
             prompt: PROMPT_CONSOLIDATE,
@@ -246,7 +255,7 @@ pub fn consolidate_knowledge(
         },
         is_cursor_auth_error,
     )?;
-    Ok(())
+    Ok(parse_cursor_usage(&log, model))
 }
 
 #[cfg(test)]

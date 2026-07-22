@@ -22,15 +22,45 @@ use ralphy_core::Workspace;
 /// The skills subtree, embedded at build time so the binary is self-contained.
 static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
 
-/// D12: naming the foreign roots this vendor harvests with no CLI-side
-/// allowlist, and the measured cost of a trivial run, so an operator meets the
-/// tax in the run log rather than inferring it from a usage report.
-pub(crate) const FOREIGN_HARVEST_NOTICE: &str =
-    "cursor: this vendor auto-discovers skills recursively under .claude/skills, \
-     .codex/skills and their ~/ equivalents with no CLI-side allowlist — a \
-     trivial run measured 18 212 input tokens injecting 78 foreign skills. See \
-     docs/configuration.md's Cursor section for the full cost and how it is \
-     handled.";
+/// The capstone-measured harvest floor (ralphy#251, ADR-0042 validation Phase 4):
+/// the input tokens the Cursor CLI injects on EACH invocation by auto-discovering
+/// 78 foreign skills. Single source of truth for both the operator notice below
+/// and the read-time harvest-tax estimate (issue #270) — so the two cannot drift.
+/// This is the per-invocation harvest floor, NOT the `18 212` trivial-run *total*
+/// (which folds in the run's own tiny input); the estimate multiplies this by the
+/// invocation count, so it must exclude non-harvest input.
+pub const CURSOR_HARVEST_FLOOR_TOKENS: u64 = 15_679;
+
+/// D12: naming the foreign roots this vendor harvests with no CLI-side allowlist,
+/// and the measured per-invocation cost, so an operator meets the tax in the run
+/// log rather than inferring it from a usage report. Built from
+/// [`CURSOR_HARVEST_FLOOR_TOKENS`] so the notice and the #270 estimate share one
+/// number.
+pub(crate) fn foreign_harvest_notice() -> String {
+    format!(
+        "cursor: this vendor auto-discovers skills recursively under .claude/skills, \
+         .codex/skills and their ~/ equivalents with no CLI-side allowlist — a measured \
+         ~{} input tokens per invocation injecting 78 foreign skills. See \
+         docs/configuration.md's Cursor section for the full cost and how it is handled.",
+        fmt_thousands(CURSOR_HARVEST_FLOOR_TOKENS)
+    )
+}
+
+/// Group digits with an ASCII space (`15679` → `15 679`), matching the separator
+/// the D12 notice has always used. ASCII space only, to keep the string
+/// byte-stable across platforms (the drift test asserts on this form).
+fn fmt_thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let bytes = digits.as_bytes();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && (bytes.len() - i) % 3 == 0 {
+            out.push(' ');
+        }
+        out.push(*b as char);
+    }
+    out
+}
 
 /// Materialize the embedded skills into the canonical, ralphy-owned `.ralphy/skills`
 /// store, then expose them to Cursor by linking each into `.cursor/skills/<name>`
@@ -69,7 +99,7 @@ pub(crate) fn materialize_cursor_skills(ws: &Workspace) -> Result<Vec<String>> {
 
     ensure_gitignore_entries(&skills_dir.join(".gitignore"), &names)?;
 
-    tracing::warn!("{}", FOREIGN_HARVEST_NOTICE);
+    tracing::warn!("{}", foreign_harvest_notice());
 
     Ok(names
         .iter()
@@ -271,8 +301,20 @@ mod tests {
 
     #[test]
     fn the_harvest_notice_names_the_foreign_roots_and_the_measured_cost() {
-        assert!(FOREIGN_HARVEST_NOTICE.contains(".claude/skills"));
-        assert!(FOREIGN_HARVEST_NOTICE.contains("18 212"));
-        assert!(FOREIGN_HARVEST_NOTICE.contains("docs/configuration.md"));
+        let notice = foreign_harvest_notice();
+        assert!(notice.contains(".claude/skills"));
+        // The notice cites the same measured floor the #270 estimate multiplies,
+        // so the two surfaces can never drift.
+        assert!(notice.contains(&fmt_thousands(CURSOR_HARVEST_FLOOR_TOKENS)));
+        assert!(notice.contains("15 679"));
+        assert!(notice.contains("docs/configuration.md"));
+    }
+
+    #[test]
+    fn fmt_thousands_groups_with_ascii_space() {
+        assert_eq!(fmt_thousands(15_679), "15 679");
+        assert_eq!(fmt_thousands(235_185), "235 185");
+        assert_eq!(fmt_thousands(999), "999");
+        assert_eq!(fmt_thousands(1_000), "1 000");
     }
 }

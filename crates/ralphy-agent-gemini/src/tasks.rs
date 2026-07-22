@@ -28,7 +28,7 @@ use tracing::info;
 
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::auth::{is_gemini_auth_error, GEMINI_AUTH_ERROR_MSG};
@@ -327,13 +327,18 @@ pub fn triage_issues(
 /// cwd: pipe the shared consolidation charter on stdin and wait up to `timeout`.
 /// The session's only deliverable is the rewritten `KNOWLEDGE.md`, which the caller
 /// verifies; the consumed notes are archived by the caller, not here.
+///
+/// Returns `Usage::default()` for now (issue #269): the run-level fold and ledger
+/// line are uniform across vendors, but this adapter's headless consolidation
+/// stream is not yet parsed for tokens — only Cursor's is live-validated. Wiring
+/// this vendor's own parser here is a best-effort follow-up (ADR-0008 D9).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     let _ = effort;
     check_stdin_ceiling(PROMPT_CONSOLIDATE)?;
     fs::create_dir_all(run_dir).ok();
@@ -341,7 +346,8 @@ pub fn consolidate_knowledge(
 
     info!(?model, "consolidating knowledge with gemini");
     let cmd = one_shot_command(&one_shot_base(ws.repo_root()), ws.repo_root(), model)?;
-    run_one_shot(cmd, PROMPT_CONSOLIDATE, timeout, &log_path)
+    run_one_shot(cmd, PROMPT_CONSOLIDATE, timeout, &log_path)?;
+    Ok(Usage::default())
 }
 
 #[cfg(test)]

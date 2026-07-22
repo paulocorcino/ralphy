@@ -196,6 +196,12 @@ pub struct QueueReport {
     /// needs this split because price resolves per model — `run_usage` alone cannot
     /// be priced once a run mixes models.
     pub run_usage_by_model: BTreeMap<String, Usage>,
+    /// The number of vendor invocations (ledger lines) this run recorded — plan,
+    /// execute, and each conditional repair/protocol phase that actually ran. The
+    /// footer's read-time harvest-tax estimate (issue #270) multiplies it by the
+    /// vendor's [`Agent::harvest_floor`](crate::Agent::harvest_floor). It is a
+    /// **floor**: a multi-attempt repair writes one line, so counts one.
+    pub invocations: u64,
 }
 
 /// Fold one phase's [`Usage`] into a per-model accumulator, keyed by its `model`
@@ -220,6 +226,9 @@ pub(crate) struct RunLedger<'a> {
     pub(crate) agent: &'static str,
     pub(crate) run_usage: Usage,
     pub(crate) run_usage_by_model: BTreeMap<String, Usage>,
+    /// Count of vendor invocations recorded (one per written ledger line); feeds
+    /// the #270 harvest-tax estimate. See [`QueueReport::invocations`].
+    pub(crate) invocations: u64,
 }
 
 impl RunLedger<'_> {
@@ -252,6 +261,7 @@ impl RunLedger<'_> {
         }
         self.run_usage.add_tokens(usage);
         accumulate_by_model(&mut self.run_usage_by_model, usage);
+        self.invocations += 1;
     }
 
     /// [`record_phase`](Self::record_phase) for the conditional repair phases:

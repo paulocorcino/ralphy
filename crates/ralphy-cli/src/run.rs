@@ -497,7 +497,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // down the notifier then the sink — in that exact order (ADR-0006/-0007/-0019).
     // Kept before the `?` propagation so a non-green result still finalizes and
     // pushes; `render_final_panel` runs after, only on the green path.
-    finalize_run(
+    let consolidation_usage = finalize_run(
         args.agent,
         presenter,
         &result,
@@ -520,6 +520,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         branch_mode,
         args.dry_run,
         &cfg.repo_root,
+        &consolidation_usage,
     );
     Ok(())
 }
@@ -771,7 +772,7 @@ fn finalize_run(
     run_start: std::time::Instant,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events_handle: Option<events::sink::EventsHandle>,
-) {
+) -> ralphy_core::Usage {
     // Flush the queue bar to N/N and clear the live region before anything else
     // prints — whether that is the panel or `anyhow`'s error on the `?` propagation.
     presenter.finalize();
@@ -779,13 +780,20 @@ fn finalize_run(
     // Consolidate any loose knowledge notes into KNOWLEDGE.md. Runs BEFORE the
     // notifier/sink shutdown and AFTER the presenter finalize so it surfaces as a
     // first-class lifecycle event in both surfaces (see `maybe_consolidate_knowledge`).
-    maybe_consolidate_knowledge(agent, result.is_ok(), dry_run, ws, stamp);
+    // Its token cost is returned so the caller folds it into the panel run total
+    // (issue #269); the ledger line is written inside `maybe_consolidate_knowledge`.
+    let consolidation_usage =
+        maybe_consolidate_knowledge(agent, result.is_ok(), dry_run, ws, stamp);
 
     // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
     // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the
-    // sink shutdown so the worker drains and POSTs it as the run's last event.
+    // sink shutdown so the worker drains and POSTs it as the run's last event. The
+    // run usage folds in the consolidation pass so the event reports total vendor
+    // spend, matching the panel footer (issue #269).
     if let (Some(s), Ok(report)) = (summary, result.as_ref()) {
-        emit_run_finished(s, &report.run_usage, run_start);
+        let mut run_usage = report.run_usage.clone();
+        run_usage.add_tokens(&consolidation_usage);
+        emit_run_finished(s, &run_usage, run_start);
     }
 
     // Tear down the notifier (ADR-0007 D4), then the CloudEvents sink: each worker
@@ -796,6 +804,8 @@ fn finalize_run(
     if let Some(events_handle) = events_handle {
         events_handle.shutdown();
     }
+
+    consolidation_usage
 }
 
 /// The verify gate's time budget in minutes: the persisted `verify.timeout_minutes`,
