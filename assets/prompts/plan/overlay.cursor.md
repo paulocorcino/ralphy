@@ -8,7 +8,7 @@
    leaving them to be asked about.>
 
 <!-- slot: self-review-step -->
-   - [ ] Self-review: run the **inline `reviewer` skill** (materialized at
+   - [ ] Self-review: run the **subagent `reviewer` skill**, if not availble use **inline `reviewer` skill** (materialized at
          `<repo>/.cursor/skills/reviewer/`, discovered BY NAME — name it exactly
          `reviewer`, it sits among dozens of unrelated harvested skills) over
          ONLY the commits you made for this issue — not the whole branch; for a
