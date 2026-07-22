@@ -4,6 +4,17 @@ Companion to [ADR-0043](./0043-gemini-adapter.md), recording what the live probe
 of issue #253 **actually observed** on 2026-07-21, and — as importantly — what
 they could not.
 
+The end-to-end **live capstone (#265)** ran 2026-07-22; its raw numbers, commands
+and log lines are in
+[docs/evidence/265-gemini-capstone-live.md](../evidence/265-gemini-capstone-live.md).
+It closes several items this note left open: a real `--agent gemini` run reaches
+green (`gemini-3.5-flash`), the operator root is re-proved byte-identical, and two
+of the three D5 revocations are exercised live (AutonomyDisabled bails pre-spawn;
+Untrusted exits 55). It leaves three open by maintainer ruling: **true quota
+exhaustion** and **browser-OAuth isolation** stay deferred (AC6), and **WSL parity**
+was not run this pass. New follow-up: **#275** (the child cannot read its own
+gitignored `.ralphy/` artifacts).
+
 Host: Windows 11 (10.0.26200), `gemini` 0.51.0 installed by npm at
 `%APPDATA%\npm\gemini.CMD`, node 22.22.2. Operator auth mode
 `security.auth.selectedType = "gemini-api-key"`, credential in the Windows
