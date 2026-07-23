@@ -15,23 +15,35 @@ use ralphy_agent_cursor::CursorAgent;
 use ralphy_agent_gemini::GeminiAgent;
 use ralphy_agent_kimi::KimiAgent;
 use ralphy_agent_opencode::OpenCodeAgent;
-use ralphy_core::{github, Agent, BranchMode};
+use ralphy_core::{github, Agent, BranchMode, Effort};
 use tracing::warn;
 
 use crate::cli::{CliAgent, RunArgs};
 use crate::non_empty;
 use crate::{config, delivery, events, ui};
 
-/// The five Claude-only run knobs resolved once (flag > settings.json >
+/// The Claude-only run knobs resolved once (flag > settings.json >
 /// hardcoded default, ADR-0010) so the executor and an optional split planner
 /// share one value. Strings are guaranteed non-empty by the resolvers.
 pub(crate) struct ResolvedClaude {
     pub(crate) plan_model: String,
-    pub(crate) plan_effort: String,
-    pub(crate) exec_effort: String,
     pub(crate) default_exec_model: String,
     pub(crate) max_minutes_per_issue: u64,
     pub(crate) remote_control: bool,
+}
+
+/// Vendor-neutral effort resolved independently for planning and execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResolvedEffort {
+    pub(crate) plan: Option<Effort>,
+    pub(crate) exec: Option<Effort>,
+}
+
+fn claude_effort_strings(effort: &ResolvedEffort) -> (Option<String>, Option<String>) {
+    (
+        effort.plan.map(|value| value.to_string()),
+        effort.exec.map(|value| value.to_string()),
+    )
 }
 
 /// The two Copilot per-phase model overrides resolved once (flag, then
@@ -205,6 +217,7 @@ pub(crate) fn build_agent(
     run_deadline: Option<std::time::Instant>,
     persisted_opencode_model: Option<String>,
     claude: &ResolvedClaude,
+    effort: &ResolvedEffort,
     copilot: &ResolvedCopilot,
     cursor: &ResolvedCursor,
     gemini: &ResolvedGemini,
@@ -215,24 +228,23 @@ pub(crate) fn build_agent(
     // session has a coarser progress signal) and so keeps the `Option`.
     let headless_idle = idle_minutes.unwrap_or(ralphy_core::DEFAULT_IDLE_MINUTES);
     match which {
-        CliAgent::Claude => Box::new(
-            ClaudeAgent::new(
-                non_empty(claude.plan_model.clone()),
-                non_empty(claude.plan_effort.clone()),
-                run_dir,
+        CliAgent::Claude => {
+            let (plan_effort, exec_effort) = claude_effort_strings(effort);
+            Box::new(
+                ClaudeAgent::new(non_empty(claude.plan_model.clone()), plan_effort, run_dir)
+                    .with_exec_config(
+                        non_empty(args.exec_model.clone().unwrap_or_default()),
+                        exec_effort,
+                        claude.default_exec_model.clone(),
+                        claude.max_minutes_per_issue,
+                        claude.remote_control,
+                        args.headless_exec,
+                        args.max_exec_calls,
+                    )
+                    .with_run_deadline(run_deadline)
+                    .with_idle_minutes(idle_minutes),
             )
-            .with_exec_config(
-                non_empty(args.exec_model.clone().unwrap_or_default()),
-                non_empty(claude.exec_effort.clone()),
-                claude.default_exec_model.clone(),
-                claude.max_minutes_per_issue,
-                claude.remote_control,
-                args.headless_exec,
-                args.max_exec_calls,
-            )
-            .with_run_deadline(run_deadline)
-            .with_idle_minutes(idle_minutes),
-        ),
+        }
         CliAgent::Codex => Box::new(
             CodexAgent::new(
                 non_empty(args.exec_model.clone().unwrap_or_default()),
@@ -436,6 +448,24 @@ pub(crate) fn init_tracing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_effort_translation_preserves_each_resolved_phase() {
+        assert_eq!(
+            claude_effort_strings(&ResolvedEffort {
+                plan: Some(Effort::High),
+                exec: Some(Effort::Low),
+            }),
+            (Some("high".into()), Some("low".into()))
+        );
+        assert_eq!(
+            claude_effort_strings(&ResolvedEffort {
+                plan: None,
+                exec: None,
+            }),
+            (None, None)
+        );
+    }
 
     #[test]
     fn strip_events_token_removes_env_var() {
@@ -675,8 +705,6 @@ mod tests {
 
         let claude = ResolvedClaude {
             plan_model: String::new(),
-            plan_effort: String::new(),
-            exec_effort: String::new(),
             default_exec_model: String::new(),
             max_minutes_per_issue: 30,
             remote_control: false,
@@ -690,6 +718,10 @@ mod tests {
             None,
             None,
             &claude,
+            &ResolvedEffort {
+                plan: None,
+                exec: None,
+            },
             &copilot,
             &cursor,
             &resolve_gemini(None, None, &Default::default()),
@@ -747,8 +779,6 @@ mod tests {
 
         let claude = ResolvedClaude {
             plan_model: String::new(),
-            plan_effort: String::new(),
-            exec_effort: String::new(),
             default_exec_model: String::new(),
             max_minutes_per_issue: 30,
             remote_control: false,
@@ -760,6 +790,10 @@ mod tests {
             None,
             None,
             &claude,
+            &ResolvedEffort {
+                plan: None,
+                exec: None,
+            },
             &resolve_copilot(None, None, &Default::default()),
             &resolve_cursor(None, None, &Default::default()),
             &resolve_gemini(None, None, &Default::default()),

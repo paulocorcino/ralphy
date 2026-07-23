@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use ralphy_core::BranchMode;
+use ralphy_core::{BranchMode, Effort};
 
 use crate::{
     config, daemon, init, install, issues, models, mutate, schedule, telegram, triage, usage,
@@ -170,10 +170,9 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) plan_model: Option<String>,
 
-    /// Planning effort (default: medium, or `claude.plan_effort` in
-    /// settings.json).
+    /// Vendor-neutral planning effort.
     #[arg(long)]
-    pub(crate) plan_effort: Option<String>,
+    pub(crate) plan_effort: Option<Effort>,
 
     /// Force the execution model for the issue (overrides the plan's judgment;
     /// for `--agent copilot`, the persisted fallback is `copilot.exec_model`
@@ -187,10 +186,9 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) exec_variant: Option<String>,
 
-    /// Execution effort (default: medium, or `claude.exec_effort` in
-    /// settings.json).
+    /// Vendor-neutral execution effort.
     #[arg(long)]
-    pub(crate) exec_effort: Option<String>,
+    pub(crate) exec_effort: Option<Effort>,
 
     /// Execution model used when the plan emits no complexity judgment
     /// (default: sonnet, or `claude.default_exec_model` in settings.json).
@@ -346,6 +344,31 @@ impl From<CliBranchMode> for BranchMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_effort_flags_accept_only_the_core_lexicon() {
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "run",
+            "--plan-effort",
+            "high",
+            "--exec-effort",
+            "max",
+        ])
+        .expect("canonical effort flags must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(args.plan_effort, Some(Effort::High));
+        assert_eq!(args.exec_effort, Some(Effort::Max));
+
+        for invalid in ["none", "minimal", "hihg"] {
+            assert!(
+                Cli::try_parse_from(["ralphy", "run", "--plan-effort", invalid]).is_err(),
+                "accepted invalid effort {invalid}"
+            );
+        }
+    }
 
     /// This slice (#232) wires Copilot's per-phase models through the EXISTING
     /// `--plan-model`/`--exec-model` flags and `copilot.*` settings — no new

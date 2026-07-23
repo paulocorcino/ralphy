@@ -27,7 +27,7 @@ use report::{
 };
 use wiring::{
     build_agent, build_run_queue, init_tracing, operating_branch, preflight_agents,
-    resolve_plan_agent, strip_events_token_from_env, ResolvedClaude,
+    resolve_plan_agent, strip_events_token_from_env, ResolvedClaude, ResolvedEffort,
 };
 
 pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
@@ -360,16 +360,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             claude_settings.plan_model.clone(),
             "opus",
         ),
-        plan_effort: config::resolve_str(
-            args.plan_effort.clone(),
-            claude_settings.plan_effort.clone(),
-            "medium",
-        ),
-        exec_effort: config::resolve_str(
-            args.exec_effort.clone(),
-            claude_settings.exec_effort.clone(),
-            "medium",
-        ),
         default_exec_model: config::resolve_str(
             args.default_exec_model.clone(),
             claude_settings.default_exec_model.clone(),
@@ -385,6 +375,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             args.no_remote_control,
             settings.remote_control,
         ),
+    };
+    let resolved_effort = ResolvedEffort {
+        plan: config::resolve_effort(args.plan_effort, claude_settings.plan_effort.clone(), None)?,
+        exec: config::resolve_effort(args.exec_effort, claude_settings.exec_effort.clone(), None)?,
     };
     let resolved_copilot = wiring::resolve_copilot(
         args.plan_model.clone(),
@@ -412,6 +406,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         run_deadline,
         persisted_opencode_model.clone(),
         &resolved_claude,
+        &resolved_effort,
         &resolved_copilot,
         &resolved_cursor,
         &resolved_gemini,
@@ -436,6 +431,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 run_deadline,
                 persisted_opencode_model,
                 &resolved_claude,
+                &resolved_effort,
                 &resolved_copilot,
                 &resolved_cursor,
                 &resolved_gemini,
@@ -933,7 +929,7 @@ mod tests {
             "origin/main"
         );
         assert_eq!(config::resolve_str(None, None, "opus"), "opus");
-        assert_eq!(config::resolve_str(None, None, "medium"), "medium");
+        assert_eq!(config::resolve_effort(None, None, None).unwrap(), None);
         assert_eq!(config::resolve_str(None, None, "sonnet"), "sonnet");
         assert_eq!(config::resolve_u64(None, None, 90), 90);
 

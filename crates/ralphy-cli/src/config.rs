@@ -28,7 +28,7 @@ use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
 use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
-use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
+use ralphy_core::{git, gitignore, BranchMode, Effort, Settings, Workspace};
 
 use crate::runlock;
 
@@ -242,11 +242,21 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             s.remote_control = Some(b);
         }
         "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
-        "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = Some(value.to_owned()))?,
+        "claude.plan_effort" | "claude.exec_effort" => {
+            value.parse::<Effort>().map_err(anyhow::Error::msg)?;
+            let plan = key == "claude.plan_effort";
+            with_claude(&mut s, |c| {
+                let slot = if plan {
+                    &mut c.plan_effort
+                } else {
+                    &mut c.exec_effort
+                };
+                *slot = Some(value.to_owned());
+            })?
+        }
         "claude.default_exec_model" => {
             with_claude(&mut s, |c| c.default_exec_model = Some(value.to_owned()))?
         }
-        "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = Some(value.to_owned()))?,
         "claude.max_minutes_per_issue" => {
             let n = value.parse::<u64>().map_err(|_| {
                 anyhow!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
@@ -515,6 +525,25 @@ pub fn resolve_str(flag: Option<String>, persisted: Option<String>, default: &st
         .unwrap_or_else(|| default.to_owned())
 }
 
+/// Resolve one phase's neutral effort. Persisted strings are parsed even when
+/// supplied outside `config set`, so hand-edited settings fail before adapter construction.
+pub fn resolve_effort(
+    flag: Option<Effort>,
+    persisted: Option<String>,
+    default: Option<Effort>,
+) -> Result<Option<Effort>> {
+    if let Some(flag) = flag {
+        return Ok(Some(flag));
+    }
+    match persisted.filter(|value| !value.is_empty()) {
+        Some(value) => value
+            .parse::<Effort>()
+            .map(Some)
+            .map_err(anyhow::Error::msg),
+        None => Ok(default),
+    }
+}
+
 /// Resolve the effective queue assignee filter. Precedence:
 /// `--assignee X` (non-empty) > `--no-assignee` (forces `None`) >
 /// persisted `queue.assignee` (non-empty) > `None` (no filter). Empty strings on
@@ -644,6 +673,32 @@ mod tests {
         assert_eq!(c.exec_model, None);
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn claude_effort_config_accepts_only_core_values() {
+        for (index, value) in ["low", "medium", "high", "xhigh", "max"]
+            .into_iter()
+            .enumerate()
+        {
+            let (ws, dir) = tmp_ws(&format!("claude-effort-{index}"));
+            set(&ws, "claude.plan_effort", value).unwrap();
+            set(&ws, "claude.exec_effort", value).unwrap();
+            let settings = Settings::load(&ws).unwrap();
+            let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
+            assert_eq!(claude.plan_effort.as_deref(), Some(value));
+            assert_eq!(claude.exec_effort.as_deref(), Some(value));
+            fs::remove_dir_all(dir).ok();
+        }
+
+        for invalid in ["none", "minimal", "hihg"] {
+            let (ws, dir) = tmp_ws(invalid);
+            assert!(set(&ws, "claude.plan_effort", invalid).is_err());
+            let settings = Settings::load(&ws).unwrap();
+            let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
+            assert_eq!(claude.plan_effort, None);
+            fs::remove_dir_all(dir).ok();
+        }
     }
 
     /// ADR-0042 D6's escape hatch (#243): the one Cursor key. Same bool discipline
@@ -827,6 +882,24 @@ mod tests {
             resolve_str(Some("flag".into()), Some("persisted".into()), "default"),
             "flag"
         );
+    }
+
+    #[test]
+    fn resolve_effort_applies_precedence_and_validates_raw_settings() {
+        assert_eq!(
+            resolve_effort(Some(Effort::High), Some("low".into()), Some(Effort::Medium)).unwrap(),
+            Some(Effort::High)
+        );
+        assert_eq!(
+            resolve_effort(None, Some("low".into()), Some(Effort::Medium)).unwrap(),
+            Some(Effort::Low)
+        );
+        assert_eq!(
+            resolve_effort(None, None, Some(Effort::Medium)).unwrap(),
+            Some(Effort::Medium)
+        );
+        assert_eq!(resolve_effort(None, None, None).unwrap(), None);
+        assert!(resolve_effort(None, Some("hihg".into()), None).is_err());
     }
 
     #[test]
@@ -1199,8 +1272,11 @@ mod tests {
                 "verify.require_verify_gate" => "true",
                 "remote_control" => "true",
                 "claude.max_minutes_per_issue" => "45",
-                // Validated against Copilot's effort vocabulary, so `x` is refused.
-                "copilot.plan_effort" | "copilot.exec_effort" => "high",
+                // Validated against effort vocabularies, so `x` is refused.
+                "claude.plan_effort"
+                | "claude.exec_effort"
+                | "copilot.plan_effort"
+                | "copilot.exec_effort" => "high",
                 "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
                 "cursor.allow_codebase_indexing_i_understand_the_risk" => "true",
                 // Validated against the vendor's id set, so `x` is refused.
