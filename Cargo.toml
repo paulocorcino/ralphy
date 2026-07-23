@@ -15,6 +15,7 @@ members = [
     "crates/ralphy-proc-util",
     "crates/ralphy-daemon",
     "crates/ralphy-usage-scan",
+    "crates/xtask",
 ]
 
 [workspace.package]
