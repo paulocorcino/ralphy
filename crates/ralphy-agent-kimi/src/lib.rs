@@ -334,6 +334,29 @@ mod tests {
         );
     }
 
+    /// ADR-0044 D4: resolved effort is stored on the agent and discarded at
+    /// plan/execute — mirrors gemini's documented-discard pin.
+    #[test]
+    fn resolved_effort_is_stored_for_documented_discard() {
+        let agent = KimiAgent::new(None, PathBuf::from("/run"))
+            .with_plan_effort(Some("high".into()))
+            .with_exec_effort(Some("high".into()));
+        assert_eq!(agent.plan_effort.as_deref(), Some("high"));
+        assert_eq!(agent.exec_effort.as_deref(), Some("high"));
+        let prod = include_str!("lib.rs")
+            .split("\nmod tests {")
+            .next()
+            .expect("production half");
+        assert!(
+            prod.contains("let _ = self.plan_effort.as_deref();"),
+            "plan must discard plan_effort before emit"
+        );
+        assert!(
+            prod.contains("let _ = self.exec_effort.as_deref();"),
+            "execute must discard exec_effort before emit"
+        );
+    }
+
     #[test]
     fn kimi_honours_max_minutes_per_issue() {
         assert_eq!(

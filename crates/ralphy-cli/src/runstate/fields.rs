@@ -39,7 +39,7 @@ pub struct EventFields {
     /// Vendor spawn count on a `green — issue closed` event: plan and execute plus
     /// any repair/protocol bounce. Absent on an older emission.
     pub invocations: Option<u64>,
-    /// Reasoning effort rung (`minimal`/`low`/`medium`/`high`/`max`), or absent
+    /// Reasoning effort rung (`low`/`medium`/`high`/`xhigh`/`max`), or absent
     /// when the adapter emitted an empty string / documented no-op (ADR-0044 D9).
     pub effort: Option<String>,
     /// Provider-native dialect selector (OpenCode `--variant`). Decoder-inert
@@ -305,5 +305,38 @@ pub(super) fn usage_from(fields: &EventFields) -> UsageLite {
         cache_creation: fields.cw.unwrap_or(0),
         output: fields.out.unwrap_or(0),
         model: fields.model.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// ADR-0044 D2/D9: `EventFields.effort` doc names the five-rung lexicon —
+    /// not Copilot-local `minimal`.
+    #[test]
+    fn effort_field_doc_names_five_rung_lexicon() {
+        let prod = include_str!("fields.rs")
+            .split("\nmod tests {")
+            .next()
+            .expect("production half");
+        let doc = prod
+            .split("pub effort:")
+            .next()
+            .expect("effort field")
+            .rsplit("/// Reasoning effort rung")
+            .next()
+            .expect("effort doc");
+        assert!(
+            doc.contains("xhigh"),
+            "effort doc must list xhigh (ADR-0044 D2): {doc}"
+        );
+        let minimal = concat!("`", "minimal`");
+        assert!(
+            !doc.contains(minimal),
+            "effort doc must not list minimal as a rung (ADR-0044 D2): {doc}"
+        );
+        assert!(
+            doc.contains("ADR-0044 D9"),
+            "effort doc must keep the empty/no-op clause: {doc}"
+        );
     }
 }
