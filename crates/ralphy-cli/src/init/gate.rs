@@ -66,6 +66,7 @@ impl Agent {
 }
 
 pub struct EnvFindings {
+    pub git: bool,
     pub python: bool,
     pub gh_authenticated: bool,
     pub github_remote: bool,
@@ -75,6 +76,7 @@ pub struct EnvFindings {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HardFail {
+    MissingGit,
     MissingPython,
     GhNotAuthenticated,
     NoGithubRemote,
@@ -86,6 +88,13 @@ pub enum HardFail {
 /// The agent-login rule fires only when ≥1 agent is present.
 pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
     let mut fails = Vec::new();
+    // FIRST on purpose: git is a hard prerequisite whose absence otherwise
+    // surfaces as `NoGithubRemote` (git::origin_url fails ⇒ github_remote() is
+    // false), so name the root cause ahead of the symptom it masquerades as.
+    if !f.git {
+        fails.push(HardFail::MissingGit);
+    }
+
     if !f.python {
         fails.push(HardFail::MissingPython);
     }
@@ -113,6 +122,9 @@ pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
 /// assert them literally.
 pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
     let mut out = String::new();
+
+    let git = if f.git { "ok" } else { "MISSING" };
+    out.push_str(&format!("git:           {git}\n"));
 
     let py = if f.python { "ok" } else { "MISSING" };
     out.push_str(&format!("python:        {py}\n"));
@@ -158,6 +170,17 @@ pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
         );
     }
 
+    // git backs every branch/commit/tag/undo; when it is missing its absence
+    // would otherwise read as `NO GITHUB REMOTE`. Point Windows operators at Git
+    // for Windows, which also provides the git-bash shell #291 pins SHELL to.
+    if !f.git {
+        out.push_str(
+            "note: git is required — ralphy shells to the git CLI to branch, commit, tag, and \
+             undo. install it from https://git-scm.com/download/win on Windows (Git for Windows \
+             also provides the git-bash shell ralphy uses), or your package manager on Linux/macOS\n",
+        );
+    }
+
     let blocker_count = fails.len();
     if blocker_count == 0 {
         out.push_str("result: all checks passed\n");
@@ -166,6 +189,10 @@ pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
     }
 
     out
+}
+
+pub(crate) fn git_present() -> bool {
+    find_program("git", std::env::var_os("PATH"), std::env::var_os("PATHEXT")).is_some()
 }
 
 pub(crate) fn python_present() -> bool {
@@ -300,6 +327,7 @@ mod tests {
 
     fn all_green() -> EnvFindings {
         EnvFindings {
+            git: true,
             python: true,
             gh_authenticated: true,
             github_remote: true,
@@ -450,6 +478,34 @@ mod tests {
         assert!(evaluate_gate(&all_green()).is_empty());
     }
 
+    // (b0) Missing git → MissingGit, and it leads (before the NoGithubRemote
+    // symptom it currently masquerades as: git::origin_url fails without git).
+    #[test]
+    fn evaluate_gate_missing_git_leads() {
+        let f = EnvFindings {
+            git: false,
+            ..all_green()
+        };
+        let fails = evaluate_gate(&f);
+        assert!(fails.contains(&HardFail::MissingGit));
+        // With github_remote still ok in the fixture, the sole/first blocker is
+        // git — the operator is told the root cause, not "no GitHub remote".
+        assert_eq!(fails.first(), Some(&HardFail::MissingGit));
+        assert!(!fails.contains(&HardFail::NoGithubRemote));
+    }
+
+    // (b1) The report names git and points at Git for Windows when it is missing.
+    #[test]
+    fn format_report_names_git_and_its_remediation_when_missing() {
+        let f = EnvFindings {
+            git: false,
+            ..all_green()
+        };
+        let report = format_report(&f, &evaluate_gate(&f));
+        assert!(report.contains("git:           MISSING"), "{report}");
+        assert!(report.contains("git-scm.com/download/win"), "{report}");
+    }
+
     // (b) Missing python.
     #[test]
     fn evaluate_gate_missing_python() {
@@ -523,6 +579,7 @@ mod tests {
     #[test]
     fn format_report_logged_in_and_not_logged_in_substrings() {
         let f = EnvFindings {
+            git: true,
             python: true,
             gh_authenticated: true,
             github_remote: true,
@@ -545,6 +602,7 @@ mod tests {
     #[test]
     fn the_report_surfaces_geminis_router_tax() {
         let with_gemini = EnvFindings {
+            git: true,
             python: true,
             gh_authenticated: true,
             github_remote: true,

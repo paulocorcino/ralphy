@@ -6,8 +6,8 @@ use clap::Args;
 use ralphy_core::{git, github, gitignore, DiagnosisReport, DraftRequest, IssuesMode, Workspace};
 
 use super::gate::{
-    agent_logged_in, agent_present, evaluate_gate, gh_authenticated, github_remote, python_present,
-    Agent, EnvFindings,
+    agent_logged_in, agent_present, evaluate_gate, gh_authenticated, git_present, github_remote,
+    python_present, Agent, EnvFindings,
 };
 use super::issues::{
     decide_issues_path, draft_decision, draft_with_agent, format_draft_summary, load_issues_draft,
@@ -327,6 +327,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
             .filter(agent_logged_in)
             .collect();
         EnvFindings {
+            git: git_present(),
             python: python_present(),
             gh_authenticated: gh_authenticated(),
             github_remote: github_remote(&repo),
