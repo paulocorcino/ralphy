@@ -272,8 +272,8 @@ mod tests {
 
     /// Cross-path invariant (ADR-0042 D12): both `plan()` and `execute()` must
     /// materialize BEFORE spawning the child, on both the success and error
-    /// paths — a refused D6 run must not have already written into the
-    /// operator's repo.
+    /// paths — the D6 gate runs first, so a run it stops must not have already
+    /// materialized skills into the operator's repo.
     #[test]
     fn skills_are_materialized_on_both_phases() {
         let src = include_str!("lib.rs");

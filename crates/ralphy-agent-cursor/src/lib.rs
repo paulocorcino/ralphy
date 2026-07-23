@@ -7,10 +7,10 @@
 //! Cursor needs no interactive session: `plan` and `execute` both pipe the charter
 //! on **stdin** (ADR-0042 D2).
 //!
-//! Two of this adapter's behaviours exist to refuse a vendor default, and they are
+//! Two of this adapter's behaviours exist to contain a vendor default, and they are
 //! not optional garnish on the run — they gate it:
-//! - [`guards`] refuses to spawn in a repository that has not opted out of the
-//!   codebase upload (D6), and
+//! - [`guards`] writes the opt-out (announced) into a repository that has not
+//!   opted out of the codebase upload, before spawning in it (D6), and
 //! - every invocation runs against a scratch `CURSOR_CONFIG_DIR` seeded from the
 //!   operator's own, so a `--model` never reassigns the default model of their
 //!   interactive Cursor sessions (D4/D17).
@@ -121,7 +121,7 @@ impl CursorAgent {
         self
     }
 
-    /// Hand the operator back the codebase indexing D6 refuses by default
+    /// Hand the operator back the codebase indexing D6 opts out of by default
     /// (persisted as `cursor.allow_codebase_indexing_i_understand_the_risk`).
     /// Ralphy never denies a capability — it denies a *silent* one.
     pub fn with_allow_indexing(mut self, allow: bool) -> Self {
@@ -203,10 +203,11 @@ impl Agent for CursorAgent {
         let log_path = self.run_dir.join("cursor.log");
         let session_id = mint_session_id();
         let model = self.phase_model(Phase::Plan);
-        // D6 BEFORE the emit, not just before the spawn: a refused run must not
-        // publish a `planning` event (ADR-0019/0039) for work that never began.
-        // `run_cursor` re-asserts it — that is the cross-path invariant, and this is
-        // the event-hygiene one.
+        // D6 BEFORE the emit, not just before the spawn: the gate writes the opt-out
+        // here, and a run it CANNOT protect (a write failure) must not publish a
+        // `planning` event (ADR-0019/0039) for work that never began. `run_cursor`
+        // re-asserts it — that is the cross-path invariant, and this is the
+        // event-hygiene one.
         guards::indexing_gate(ws.repo_root(), self.allow_indexing)?;
         let _skills = materialize_cursor_skills(ws)?;
 
@@ -617,9 +618,10 @@ mod tests {
         assert!(err.to_string().contains("other-id"), "{err}");
     }
 
-    /// The default hatch is OFF: a fresh agent refuses an un-opted-out repository.
+    /// The default hatch is OFF: a fresh agent protects an un-opted-out repository
+    /// (writes the opt-out) rather than allowing the upload.
     #[test]
-    fn indexing_is_refused_by_default_and_reachable_on_request() {
+    fn indexing_is_off_by_default_and_reachable_on_request() {
         assert!(!CursorAgent::new(None, PathBuf::from("/run")).allow_indexing);
         assert!(
             CursorAgent::new(None, PathBuf::from("/run"))

@@ -1,28 +1,32 @@
 //! ADR-0042 D6's policy gate: Cursor uploads the enclosing repository as a side
-//! effect of answering a question, so Ralphy refuses to spawn it in a repository
-//! that has not opted out.
+//! effect of answering a question, so before Ralphy spawns it, every enclosing
+//! repository must carry the opt-out.
 //!
 //! The rule is stated over the child's **working directory**, not the verb — the
 //! indexing service is spawned by the CLI, so every invocation is covered:
 //!
-//! > Any `cursor` invocation whose cwd is inside a git repository requires
+//! > Any `cursor` invocation whose cwd is inside a git repository must have
 //! > `.cursorindexingignore` in that repository's root.
 //!
-//! Ralphy never writes the file: disabling a vendor's data flow inside the
-//! operator's own repository is their decision, and an unexplained new file in
-//! their `git status` is not Ralphy's to leave. The gate only READS.
+//! Ralphy **creates** that file itself when it is missing and announces it on the
+//! run log (`tracing::warn!`): a hard refusal stopped every Cursor run on the
+//! operator, so instead the gate leaves a visible file in their `git status` they
+//! can commit or delete, and an explicit opt-in turns the whole thing off. It is
+//! not a silent write — the notice names the file, the tree it protects, and the
+//! opt-in key.
 
 //! The rule itself lives in `ralphy_proc_util::cursor` (ADR-0042 D19) so the
-//! daemon's interactive launch enforces the SAME refusal without importing the
+//! daemon's interactive launch enforces the SAME gate without importing the
 //! core; this module is the run path's entry point onto it.
 
 use std::path::Path;
 
-/// D6's preflight. `Ok(())` when the child may be spawned; `Err` with an
-/// actionable ADR-0013 stop otherwise.
+/// D6's preflight. `Ok(())` when the child may be spawned — writing the opt-out
+/// into any unprotected enclosing root first; `Err` only when that write fails.
 ///
-/// Three ways to pass: the operator opted in (`allow_indexing`), the cwd is
-/// outside any repository, or the repository root carries the opt-out file.
+/// Three ways to pass writing nothing: the operator opted in (`allow_indexing`),
+/// the cwd is outside any repository, or every enclosing root already carries the
+/// opt-out file.
 pub(crate) fn indexing_gate(work_dir: &Path, allow_indexing: bool) -> anyhow::Result<()> {
     ralphy_proc_util::cursor::indexing_gate(work_dir, allow_indexing)
 }
@@ -48,20 +52,19 @@ mod tests {
         names
     }
 
+    /// The contents Ralphy writes: exactly the one line that suppresses the tree.
+    fn optout_body(dir: &Path) -> String {
+        fs::read_to_string(dir.join(".cursorindexingignore")).expect("opt-out file")
+    }
+
     #[test]
-    fn indexing_gate_refuses_a_repo_without_the_optout() {
+    fn indexing_gate_creates_the_optout_in_a_repo_without_one() {
         let d = repo();
-        let err = indexing_gate(d.path(), false)
-            .expect_err("a repository with no opt-out must refuse the spawn");
-        let msg = err.to_string();
-        // The message must be actionable, not merely a refusal: it names the file,
-        // its one-line content, and the key that overrides it.
-        assert!(msg.contains(".cursorindexingignore"), "{msg}");
-        assert!(msg.contains('*'), "{msg}");
         assert!(
-            msg.contains("cursor.allow_codebase_indexing_i_understand_the_risk"),
-            "{msg}"
+            indexing_gate(d.path(), false).is_ok(),
+            "the gate no longer refuses — it writes the opt-out and proceeds"
         );
+        assert_eq!(optout_body(d.path()), "*\n");
     }
 
     #[test]
@@ -72,46 +75,39 @@ mod tests {
     }
 
     /// The rule is about the repository ROOT, not the cwd: a run whose working
-    /// directory is a nested subdirectory is still uploading the whole repository.
+    /// directory is a nested subdirectory is still uploading the whole repository,
+    /// so the opt-out lands at the ROOT even from a deep cwd.
     #[test]
-    fn indexing_gate_resolves_the_root_from_a_nested_subdir() {
+    fn indexing_gate_creates_the_optout_at_the_root_from_a_nested_subdir() {
         let d = repo();
         let nested = d.path().join("crates").join("deep");
         fs::create_dir_all(&nested).unwrap();
-        assert!(
-            indexing_gate(&nested, false).is_err(),
-            "a nested cwd must resolve the enclosing root"
-        );
-        fs::write(d.path().join(".cursorindexingignore"), "*\n").unwrap();
-        assert!(
-            indexing_gate(&nested, false).is_ok(),
-            "the opt-out at the ROOT covers a nested cwd"
+        assert!(indexing_gate(&nested, false).is_ok());
+        assert_eq!(
+            optout_body(d.path()),
+            "*\n",
+            "the opt-out must be written at the ROOT, not the nested cwd"
         );
     }
 
     /// D6's measured evidence: a run indexed the PARENT repository, not the working
-    /// directory it was given. So an opt-out in an inner repository alone must not
-    /// pass — the outer tree is what would be uploaded.
+    /// directory it was given. So EVERY enclosing root must get the opt-out — an
+    /// inner one alone would leave the outer tree uploading.
     #[test]
-    fn indexing_gate_requires_the_optout_in_every_enclosing_repository() {
+    fn indexing_gate_creates_the_optout_in_every_enclosing_repository() {
         let outer = repo();
         let inner = outer.path().join("vendor").join("nested");
         fs::create_dir_all(inner.join(".git")).unwrap();
 
-        // Inner opted out, outer not: still refused, and the message names the OUTER
-        // root — the larger tree, and the one the operator has to protect.
+        // Inner already opted out, outer not: the gate writes the OUTER one.
         fs::write(inner.join(".cursorindexingignore"), "*\n").unwrap();
-        let err = indexing_gate(&inner, false)
-            .expect_err("an inner opt-out must not cover the enclosing repository");
-        assert!(
-            err.to_string()
-                .contains(&outer.path().display().to_string()),
-            "{err}"
-        );
-
-        // Both opted out: allowed.
-        fs::write(outer.path().join(".cursorindexingignore"), "*\n").unwrap();
         assert!(indexing_gate(&inner, false).is_ok());
+        assert_eq!(
+            optout_body(outer.path()),
+            "*\n",
+            "the outer tree is protected"
+        );
+        assert_eq!(optout_body(&inner), "*\n", "the inner opt-out is untouched");
     }
 
     /// D6 explicitly allows this: `draft_issues` / `consolidate_knowledge` may run
@@ -123,29 +119,35 @@ mod tests {
         assert!(indexing_gate(d.path(), false).is_ok());
     }
 
+    /// The opt-in reaches the capability AND writes nothing: an operator who wants
+    /// the indexing must not find an opt-out file suppressing it.
     #[test]
-    fn the_opt_in_setting_overrides_the_refusal() {
+    fn the_opt_in_setting_writes_nothing_and_allows_indexing() {
         let d = repo();
-        assert!(indexing_gate(d.path(), false).is_err());
+        let before = listing(d.path());
         assert!(
             indexing_gate(d.path(), true).is_ok(),
             "the operator's explicit opt-in must reach the capability"
         );
+        assert_eq!(
+            listing(d.path()),
+            before,
+            "opt-in must NOT write the opt-out — that would suppress the indexing the operator asked for"
+        );
     }
 
-    /// D6: Ralphy never creates the opt-out file, and the gate is a pure read on
-    /// BOTH paths — the refusing one and the allowing one.
+    /// The gate does not rewrite a tree that already carries the opt-out.
     #[test]
-    fn the_gate_writes_nothing() {
+    fn the_gate_writes_nothing_when_already_protected() {
         let d = repo();
-        let before = listing(d.path());
-        let _ = indexing_gate(d.path(), false);
-        assert_eq!(listing(d.path()), before, "the refusal must write nothing");
-
         fs::write(d.path().join(".cursorindexingignore"), "*\n").unwrap();
         let before = listing(d.path());
         indexing_gate(d.path(), false).unwrap();
-        assert_eq!(listing(d.path()), before, "the pass must write nothing too");
+        assert_eq!(
+            listing(d.path()),
+            before,
+            "an already-protected tree must not be rewritten"
+        );
     }
 
     /// D6: the sibling ignore file denies the vendor's edit tool, so Ralphy must

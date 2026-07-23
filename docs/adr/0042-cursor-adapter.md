@@ -321,6 +321,39 @@ This is the strictest stance Ralphy takes toward any vendor, and it is
 proportionate: no other vendor transmits the repository as a side effect of
 answering a question.
 
+### Amendment — Ralphy creates the opt-out itself, with a notice, instead of refusing
+
+The original decision made two choices that this amendment **supersedes**: "Ralphy
+does not create the file" and "Ralphy refuses to start". In practice the hard
+refusal stopped *every* Cursor run on the operator — a queue built, planning
+began, and the first contact with the repository aborted the whole run — which is
+a worse operator experience than the data-flow risk warrants, given the remedy is
+a single deterministic file whose contents are not a judgement call.
+
+So the gate now **writes `.cursorindexingignore` itself** (one line, `*`) into
+every unprotected enclosing root before the child is spawned, and **announces it**
+on the run log (`tracing::warn!`), naming the file, the tree it protects, and the
+opt-in that turns it off. The two invariants the original decision protected are
+kept:
+
+- **The upload is still prevented before the first spawn.** The file must exist
+  before `cursor-agent` starts, because the indexing service walks the tree at
+  launch; the write happens on the same preflight the refusal used to, ahead of
+  every spawn path including the one-shots and the daemon's interactive launch.
+- **It is not a *silent* write.** The whole reason D6 refused to create the file
+  was that an unexplained file in the operator's `git status` is not Ralphy's to
+  leave. The notice removes the "unexplained" half: the operator sees exactly what
+  was written and why, in their `git status` to commit or delete, and the opt-in
+  (`cursor.allow_codebase_indexing_i_understand_the_risk`) still reaches the
+  indexing for anyone who wants it — in which case **no file is written**, so it
+  cannot suppress the indexing they asked for.
+
+The only remaining hard stop is a **write failure** (a read-only tree): there the
+gate returns the ADR-0013 error, because it can neither protect the tree nor
+honestly proceed. The "one implementation in `ralphy-proc-util`" of D19 is
+unchanged — both the run path and the daemon's interactive launch call the same
+`indexing_gate`, so they create-and-announce identically.
+
 ## D7 — The argv refuses the rest of the blast radius
 
 Every run is spawned with, and only with, the autonomy it needs:
@@ -763,9 +796,12 @@ crate renames the key or the section.
 
 ## Consequences
 
-- **Cursor is the first vendor Ralphy will refuse to run by default.** D6 turns
-  a preflight into a policy gate. That is a new precedent and it should stay
-  narrow: it is justified by a data flow the operator cannot see, not by taste.
+- **Cursor is the first vendor whose default Ralphy overrides on the operator's
+  behalf.** D6 turns a preflight into a policy gate; the amendment above softened
+  it from a refusal into an announced auto-write, but it remains a policy gate. It
+  is a new precedent and should stay narrow: it is justified by a data flow the
+  operator cannot see, not by taste, and it is the one place Ralphy writes into
+  the operator's repository unbidden — which is why it is loud about it.
 - **The blast radius is priced in tokens too.** 78 harvested skills make a
   trivial run cost 18 KB of input. Any per-issue budget
   ([ADR-0038](./0038-per-issue-budget-vs-idle-watchdog.md)) tuned on another

@@ -640,8 +640,10 @@ async fn session_ws_upgrade(
     };
     // ADR-0042 D6: an ordinary Cursor run uploads the enclosing repository. The
     // run path is gated in the adapter, but this interactive launch spawns
-    // `cursor-agent` directly — so the refusal has to happen here too, BEFORE the
-    // spec is built and anything is spawned. The UI is not a way around it.
+    // `cursor-agent` directly — so the gate has to run here too, BEFORE the spec
+    // is built and anything is spawned: it writes `.cursorindexingignore` into the
+    // unprotected repo (announced on the daemon log) and then proceeds. A write
+    // failure (read-only tree) is the only way it stops the launch.
     if agent == session::Agent::Cursor {
         let root = Path::new(&entry.path);
         if let Err(e) =

@@ -34,7 +34,7 @@ use crate::settings::CursorSettings;
 ///
 /// The one-shot signatures are shared across every vendor, so the flag cannot ride
 /// a parameter — it is read here instead. Fail-closed at both hops: an unreadable
-/// or malformed settings file yields `false`, i.e. the refusal, never the upload.
+/// or malformed settings file yields `false`, i.e. protect the tree, never upload.
 fn allow_indexing(repo: &Path) -> bool {
     Settings::load(&Workspace::new(repo))
         .unwrap_or_default()
@@ -48,8 +48,8 @@ fn allow_indexing(repo: &Path) -> bool {
 /// `work_dir` is the CHILD's cwd, which is what the indexing service walks — for
 /// `diagnose_repo` that is the neutral directory outside the repo, not the repo
 /// being diagnosed. `repo` is where the opt-in is persisted. `config_dir` is this
-/// verb's scratch `CURSOR_CONFIG_DIR`, seeded only once the gate has passed: a
-/// refused one-shot leaves nothing behind.
+/// verb's scratch `CURSOR_CONFIG_DIR`, seeded only once the gate has passed (it
+/// writes the opt-out first): a one-shot the gate stops leaves nothing behind.
 fn one_shot_preflight(work_dir: &Path, repo: &Path, config_dir: &Path) -> Result<()> {
     indexing_gate(work_dir, allow_indexing(repo))?;
     seed_cursor_config_dir(operator_config_dir().as_deref(), config_dir)
@@ -285,22 +285,22 @@ mod tests {
         );
     }
 
-    /// The refusal happens BEFORE the seed: a gated one-shot leaves no scratch dir.
+    /// The protection happens BEFORE the seed: the opt-out is written and then the
+    /// scratch dir is seeded, so the indexing service never sees an unprotected tree.
     #[test]
-    fn the_preflight_refuses_an_unprotected_repository() {
+    fn the_preflight_protects_an_unprotected_repository() {
         let d = repo();
         let config_dir = d.path().join("cursor-config");
-        let err = one_shot_preflight(d.path(), d.path(), &config_dir)
-            .expect_err("an un-opted-out repository must refuse the one-shot");
-        let msg = err.to_string();
-        assert!(msg.contains(".cursorindexingignore"), "{msg}");
-        assert!(
-            msg.contains("cursor.allow_codebase_indexing_i_understand_the_risk"),
-            "{msg}"
+        one_shot_preflight(d.path(), d.path(), &config_dir)
+            .expect("the preflight writes the opt-out and proceeds, it no longer refuses");
+        assert_eq!(
+            fs::read_to_string(d.path().join(".cursorindexingignore")).unwrap(),
+            "*\n",
+            "the one-shot must write the opt-out before it seeds and spawns"
         );
         assert!(
-            !config_dir.exists(),
-            "a refused one-shot must not seed a config dir"
+            config_dir.is_dir(),
+            "the preflight must continue to D17's seed once the gate has written the opt-out"
         );
     }
 
@@ -360,86 +360,39 @@ mod tests {
         );
     }
 
-    /// The behavioural fan-out: all four verbs refuse an unprotected repository
-    /// before they build a prompt, create an artifact, or spawn a child.
+    /// The behavioural fan-out became a source pin when the gate stopped refusing:
+    /// a verb that spawned before gating would upload the repository, and — because
+    /// no test here spawns a real child — the suite would stay green. So each of the
+    /// four one-shot verbs must call `one_shot_preflight` BEFORE its spawn helper,
+    /// which is where the opt-out is written ahead of the indexing service. Needles
+    /// are `concat!`-assembled so this pin cannot match its own source.
     #[test]
-    fn each_one_shot_refuses_an_unprotected_repository() {
-        let d = repo();
-        let repo_path = d.path();
-        let out = repo_path.join("out.json");
-        let short = Duration::from_secs(1);
-
-        let mut errs: Vec<String> = Vec::new();
-        errs.push(
-            draft_issues(
-                repo_path,
-                &out,
-                &DraftRequest {
-                    mode: ralphy_core::IssuesMode::LooseBacklog,
-                    source_docs: &[],
-                    triage_label: "x",
-                },
-                None,
-                None,
-                short,
-            )
-            .expect_err("draft_issues must refuse")
-            .to_string(),
-        );
-        errs.push(
-            triage_issues(
-                repo_path,
-                &out,
-                &TriageRequest {
-                    issue_numbers: &[1],
-                    queue_label: "AFK",
-                    attachments_manifest: "",
-                    image_paths: &[],
-                },
-                None,
-                None,
-                short,
-            )
-            .expect_err("triage_issues must refuse")
-            .to_string(),
-        );
-        // The neutral cwd is INSIDE the repo here on purpose: that is the shape the
-        // gate must catch, and `diagnose_repo` gates on it rather than on `repo`.
-        let nested = repo_path.join("neutral");
-        fs::create_dir_all(&nested).unwrap();
-        errs.push(
-            diagnose_repo(repo_path, &nested, None, None, short)
-                .expect_err("diagnose_repo must refuse")
-                .to_string(),
-        );
-        let run_dir = repo_path.join("run");
-        errs.push(
-            consolidate_knowledge(&Workspace::new(repo_path), &run_dir, None, None, short)
-                .expect_err("consolidate_knowledge must refuse")
-                .to_string(),
-        );
-
-        for msg in &errs {
-            assert!(msg.contains(".cursorindexingignore"), "{msg}");
-        }
-        // `out_path` alone proves nothing — only the CHILD ever writes it, so it is
-        // absent whether or not the gate fired. `<repo>/.ralphy` does: the shared
-        // harness `create_dir_all`s each verb's log parent on its way to the spawn,
-        // so the directory's absence pins that the refusal preceded the harness.
-        assert!(!out.exists(), "no artifact may be created before the gate");
-        assert!(
-            !repo_path.join(".ralphy").exists(),
-            "the refusal must precede the session harness, which creates the log dir"
-        );
-        for dir in [
-            repo_path.join(".ralphy").join("cursor-config"),
-            nested.join("cursor-config"),
-            run_dir.join("cursor-config"),
+    fn every_one_shot_gates_before_it_spawns() {
+        let src = include_str!("tasks.rs");
+        let preflight = concat!("one_shot_", "preflight(");
+        for (verb, spawn) in [
+            ("pub fn diagnose_repo(", concat!("run_init_", "session(")),
+            ("pub fn draft_issues(", concat!("run_init_", "session(")),
+            ("pub fn triage_issues(", concat!("run_init_", "session(")),
+            (
+                "pub fn consolidate_knowledge(",
+                concat!("run_text_", "session("),
+            ),
         ] {
+            // Slice from the verb's own signature so the first hit of each needle is
+            // that verb's — the next verb starts after this one's spawn.
+            let body = &src[src
+                .find(verb)
+                .unwrap_or_else(|| panic!("{verb} must exist"))..];
+            let at_gate = body
+                .find(preflight)
+                .unwrap_or_else(|| panic!("{verb} must call the indexing gate"));
+            let at_spawn = body
+                .find(spawn)
+                .unwrap_or_else(|| panic!("{verb} must spawn a child"));
             assert!(
-                !dir.exists(),
-                "a refused one-shot must seed nothing: {}",
-                dir.display()
+                at_gate < at_spawn,
+                "{verb} must gate BEFORE it spawns, or the repository uploads first"
             );
         }
     }

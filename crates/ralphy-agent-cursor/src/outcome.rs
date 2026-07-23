@@ -338,8 +338,8 @@ impl CursorAgent {
     ///
     /// **Cross-path invariant:** D6's indexing gate and D17's config seeding both
     /// run BEFORE `HeadlessCall::new`, on every path including the error ones. A
-    /// child spawned before the gate returns `Ok` has already uploaded the
-    /// repository, so "we refused afterwards" is not a refusal.
+    /// child spawned before the gate has written the opt-out has already uploaded
+    /// the repository, so protecting it afterwards protects nothing.
     pub(crate) fn run_cursor(
         &self,
         cmd: Command,
@@ -806,9 +806,10 @@ mod tests {
 
     /// The WIRING half of D6, and the invariant the whole slice exists for: no test
     /// here spawns a real child, so deleting the gate call would keep the suite
-    /// green and turn the refusal into a no-op. Pin the call AND its position — a
-    /// gate that runs after the spawn has already uploaded the repository.
-    /// Fragments are assembled with `concat!` so the assertion cannot match itself.
+    /// green and let a run spawn before the opt-out is written. Pin the call AND its
+    /// position — a gate that runs after the spawn has already uploaded the
+    /// repository. Fragments are assembled with `concat!` so the assertion cannot
+    /// match itself.
     #[test]
     fn the_gate_runs_before_any_child_is_spawned() {
         let src = include_str!("outcome.rs");
@@ -822,7 +823,7 @@ mod tests {
         let at_spawn = src.find(spawn).expect("the HeadlessCall site moved");
         assert!(
             at_gate < at_spawn,
-            "D6 must refuse BEFORE the child is spawned, not after"
+            "D6 must write the opt-out BEFORE the child is spawned, not after"
         );
         assert!(
             at_seed < at_spawn,

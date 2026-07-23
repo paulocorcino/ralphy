@@ -177,7 +177,7 @@ If you want the model's own default, leave the key unset.
 
 | Key | Meaning |
 | --- | --- |
-| `cursor.allow_codebase_indexing_i_understand_the_risk` | **Danger.** Opts back into Cursor's default behavior of uploading the enclosing repository to its servers (ADR-0042 D6). Off by default: Ralphy refuses to spawn `cursor-agent` in a repository lacking `.cursorindexingignore`, and never writes that file for you. |
+| `cursor.allow_codebase_indexing_i_understand_the_risk` | **Danger.** Opts back into Cursor's default behavior of uploading the enclosing repository to its servers (ADR-0042 D6). Off by default: before spawning `cursor-agent` in a repository that lacks `.cursorindexingignore`, Ralphy writes that file for you (one line, `*`) and says so on the run log — it lands in your `git status` to commit or delete. Setting this to `true` reaches the indexing and writes no file. |
 
 ```powershell
 ralphy config set cursor.allow_codebase_indexing_i_understand_the_risk true
