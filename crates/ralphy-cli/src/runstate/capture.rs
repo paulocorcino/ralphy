@@ -455,7 +455,7 @@ mod tests {
                 "\"claude -p --staged\"",
                 "\"claude -p\"",
                 "self.plan_model.as_deref().unwrap_or(\"\")",
-                "self.plan_effort.as_deref().unwrap_or(\"medium\")",
+                "self.plan_effort.as_deref().unwrap_or(\"\")",
             ],
             &[],
         ),
@@ -468,7 +468,7 @@ mod tests {
                 "interactive claude over the PTY",
                 "self.exec.max_minutes_per_issue",
                 "&exec_model",
-                "self.exec.exec_effort.as_deref().unwrap_or(\"medium\")",
+                "self.exec.exec_effort.as_deref().unwrap_or(\"\")",
             ],
         ),
         (
@@ -480,7 +480,7 @@ mod tests {
                 "headless claude -p loop --max-calls",
                 "self.exec.max_minutes_per_issue",
                 "&exec_model",
-                "self.exec.exec_effort.as_deref().unwrap_or(\"medium\")",
+                "self.exec.exec_effort.as_deref().unwrap_or(\"\")",
             ],
         ),
         (

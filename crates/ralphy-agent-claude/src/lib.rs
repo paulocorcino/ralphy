@@ -54,6 +54,12 @@ pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issue
 /// agent at the embedded charter and the plan, and names the exit sentinel.
 pub(crate) const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.";
 
+fn effort_args(effort: Option<&str>) -> Vec<String> {
+    effort
+        .map(|value| vec!["--effort".into(), value.into()])
+        .unwrap_or_default()
+}
+
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
 /// the `exec_*` fields configure the interactive execution session. `run_dir` is
 /// where the settings file, the captured logs, and the per-issue flag file live.
@@ -188,10 +194,7 @@ impl Agent for ClaudeAgent {
         args.push(settings_path.to_string_lossy().into_owned());
         args.push("--plugin-dir".into());
         args.push(plugin_dir.to_string_lossy().into_owned());
-        if let Some(e) = &self.plan_effort {
-            args.push("--effort".into());
-            args.push(e.clone());
-        }
+        args.extend(effort_args(self.plan_effort.as_deref()));
 
         ralphy_core::emit::planning(
             if staged {
@@ -200,7 +203,7 @@ impl Agent for ClaudeAgent {
                 "claude -p"
             },
             self.plan_model.as_deref().unwrap_or(""),
-            self.plan_effort.as_deref().unwrap_or("medium"),
+            self.plan_effort.as_deref().unwrap_or(""),
         );
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)
@@ -303,6 +306,12 @@ mod tests {
     use ralphy_adapter_support::PROMPT_EXECUTE;
     use std::path::PathBuf;
     use std::time::Duration;
+
+    #[test]
+    fn planning_effort_args_map_high_and_omit_unset() {
+        assert_eq!(effort_args(Some("high")), ["--effort", "high"]);
+        assert!(effort_args(None).is_empty());
+    }
 
     /// Anti-drift: the charter this adapter launches sessions with and the
     /// embedded execution prompt must both name the shared completion sentinel;

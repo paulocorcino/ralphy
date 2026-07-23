@@ -105,9 +105,7 @@ impl ClaudeAgent {
                 .arg("--plugin-dir")
                 .arg(plugin_dir.as_os_str());
             cmd = cmd.arg("--model").arg(&exec_model);
-            if let Some(e) = &self.exec.exec_effort {
-                cmd = cmd.arg("--effort").arg(e);
-            }
+            cmd = cmd.args(crate::effort_args(self.exec.exec_effort.as_deref()));
             if self.exec.remote_control {
                 cmd = cmd.arg("--remote-control").arg(&rc_name);
             }
@@ -123,7 +121,7 @@ impl ClaudeAgent {
             },
             self.exec.max_minutes_per_issue,
             &exec_model,
-            self.exec.exec_effort.as_deref().unwrap_or("medium"),
+            self.exec.exec_effort.as_deref().unwrap_or(""),
         );
 
         let transcript_dir = self.transcript_dir(ws);
@@ -530,6 +528,12 @@ fn scan_dsr_request(carry: &mut Vec<u8>, chunk: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interactive_effort_args_map_high_and_omit_unset() {
+        assert_eq!(crate::effort_args(Some("high")), ["--effort", "high"]);
+        assert!(crate::effort_args(None).is_empty());
+    }
 
     #[test]
     fn scan_dsr_request_detects_split_sequence() {

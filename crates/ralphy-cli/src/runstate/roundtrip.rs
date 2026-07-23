@@ -92,17 +92,17 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
 
 #[test]
 fn roundtrip_planning() {
-    let ev = one(|| ralphy_core::emit::planning("codex exec", "gpt-5-codex", "medium"));
+    let ev = one(|| ralphy_core::emit::planning("claude -p", "claude-opus-4", "high"));
     assert_eq!(
         ev.fields.cmd,
-        Some("codex exec".to_string()),
+        Some("claude -p".to_string()),
         "`cmd` must reach the bus even though no decoder arm reads it"
     );
     assert_eq!(
         decode(&ev),
         Some(RunEvent::Planning {
-            model: Some("gpt-5-codex".into()),
-            effort: Some("medium".into()),
+            model: Some("claude-opus-4".into()),
+            effort: Some("high".into()),
         })
     );
 }
@@ -128,7 +128,7 @@ fn roundtrip_executing() {
             "interactive claude over the PTY",
             45,
             "claude-opus-4",
-            "medium",
+            "high",
         )
     });
     assert_eq!(
@@ -142,7 +142,7 @@ fn roundtrip_executing() {
             number: 0,
             budget_min: 45,
             model: "claude-opus-4".into(),
-            effort: Some("medium".into()),
+            effort: Some("high".into()),
         })
     );
 }

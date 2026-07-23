@@ -43,10 +43,7 @@ impl ClaudeAgent {
             "--model".into(),
             model.into(),
         ];
-        if let Some(e) = &self.exec.exec_effort {
-            args.push("--effort".into());
-            args.push(e.clone());
-        }
+        args.extend(crate::effort_args(self.exec.exec_effort.as_deref()));
 
         let mut cmd = Command::new(crate::interactive::resolve_claude_binary());
         cmd.args(&args)
@@ -98,7 +95,7 @@ impl ClaudeAgent {
             ),
             self.exec.max_minutes_per_issue,
             &exec_model,
-            self.exec.exec_effort.as_deref().unwrap_or("medium"),
+            self.exec.exec_effort.as_deref().unwrap_or(""),
         );
 
         let mut no_commit_streak = 0u32;
@@ -276,6 +273,12 @@ fn headless_reason_to_outcome(r: HeadlessReason) -> Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headless_effort_args_map_high_and_omit_unset() {
+        assert_eq!(crate::effort_args(Some("high")), ["--effort", "high"]);
+        assert!(crate::effort_args(None).is_empty());
+    }
 
     /// One real transcript api-error line carrying the limit banner `text`, in the
     /// exact shape Claude Code writes (`isApiErrorMessage`+`error`+`apiErrorStatus`).
