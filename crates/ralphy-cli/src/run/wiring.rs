@@ -538,9 +538,12 @@ mod tests {
             .expect("Cursor arm follows Copilot")
             .0;
         assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-        assert!(arm.contains(".or_else(|| copilot.plan_effort"));
-        assert!(arm.contains(".with_plan_effort("));
-        assert!(arm.contains(".with_exec_effort("));
+        assert!(
+            arm.contains(".with_plan_effort(plan_effort.or_else(|| copilot.plan_effort.clone()))")
+        );
+        assert!(
+            arm.contains(".with_exec_effort(exec_effort.or_else(|| copilot.exec_effort.clone()))")
+        );
     }
 
     #[test]

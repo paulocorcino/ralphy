@@ -215,11 +215,13 @@ actually happened and is read after the fact (D10).
 D5a normalises *within* the Copilot adapter. It deliberately stops short of
 making `low|medium|high|xhigh` **Ralphy's** effort vocabulary, because effort is
 currently an opaque passthrough in every adapter — Claude forwards the operator's
-string, Codex hardcodes `medium`, OpenCode's `--variant` is documented as an
-opaque passthrough — and a normalised vocabulary honoured by one vendor out of
-five is worse than none: the operator cannot tell where the word means anything.
-Promoting effort to a core concept touches `CONTEXT.md` and all five adapters
-and is tracked separately, so it does not sit on this adapter's critical path.
+string, Codex (as of this ADR's writing) hardcoded `medium`, OpenCode's
+`--variant` is documented as an opaque passthrough — and a normalised vocabulary
+honoured by one vendor out of five is worse than none: the operator cannot tell
+where the word means anything. Promoting effort to a core concept touches
+`CONTEXT.md` and all five adapters and is tracked separately, so it does not sit
+on this adapter's critical path. (Codex's freeze was later lifted — see Amendment
+2026-07-23 on ADR-0004 and below.)
 
 ## Amendment (2026-07-23): flags feed `resolve_effort`/`clamp_effort`; D5a clamp unchanged
 

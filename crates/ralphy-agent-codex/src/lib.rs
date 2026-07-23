@@ -138,6 +138,16 @@ impl CodexAgent {
         }
         codex_config_model().unwrap_or_else(|| routed.to_string())
     }
+
+    /// Planning-phase effort for argv/emit: operator flag, else vendor default.
+    fn resolved_plan_effort(&self) -> &str {
+        self.plan_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT)
+    }
+
+    /// Execution-phase effort for argv/emit: operator flag, else vendor default.
+    fn resolved_exec_effort(&self) -> &str {
+        self.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT)
+    }
 }
 
 impl Agent for CodexAgent {
@@ -167,10 +177,7 @@ impl Agent for CodexAgent {
             materialize_codex_skills(ws)?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
-            // Effort is orthogonal to the Sol planning model: the operator's
-            // `--plan-effort` lands here, else the vendor default (ADR-0004
-            // Amendment 2026-07-23).
-            let effort = self.plan_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
+            let effort = self.resolved_plan_effort();
             let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
             ralphy_core::emit::planning("codex exec", &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
@@ -235,7 +242,7 @@ impl Agent for CodexAgent {
         // (low→Luna, medium→Terra, high→Sol); effort is an orthogonal operator
         // axis defaulting to medium when unset (ADR-0004 Amendment 2026-07-23).
         let model = self.resolve_model(tier_to_model(plan.recommended_model.as_deref()));
-        let effort = self.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
+        let effort = self.resolved_exec_effort();
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
         // HEAD before/after bounds the work this call committed (progress guard).
@@ -347,10 +354,9 @@ mod tests {
     fn exec_effort_high_lands_in_argv() {
         let agent =
             CodexAgent::new(None, PathBuf::from("/run")).with_exec_effort(Some("high".into()));
-        let effort = agent.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
         let cmd = build_codex_command(
             CODEX_MODEL_SOL,
-            effort,
+            agent.resolved_exec_effort(),
             std::path::Path::new("/repo"),
             std::path::Path::new("/repo/out.txt"),
         );
@@ -367,10 +373,9 @@ mod tests {
     #[test]
     fn unset_exec_effort_defaults_to_medium() {
         let agent = CodexAgent::new(None, PathBuf::from("/run"));
-        let effort = agent.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
         let cmd = build_codex_command(
             command::CODEX_MODEL_TERRA,
-            effort,
+            agent.resolved_exec_effort(),
             std::path::Path::new("/repo"),
             std::path::Path::new("/repo/out.txt"),
         );
@@ -382,6 +387,21 @@ mod tests {
             args.iter()
                 .any(|a| a == "model_reasoning_effort=\"medium\""),
             "unset effort must default to medium: {args:?}"
+        );
+    }
+
+    #[test]
+    fn plan_and_execute_use_the_resolved_effort_helpers() {
+        // Pins the production call sites to the same helpers the argv tests drive —
+        // a plan/execute that ignores stored fields would otherwise stay green.
+        let prod = include_str!("lib.rs");
+        assert!(
+            prod.contains("let effort = self.resolved_plan_effort();"),
+            "plan must bind effort via resolved_plan_effort"
+        );
+        assert!(
+            prod.contains("let effort = self.resolved_exec_effort();"),
+            "execute must bind effort via resolved_exec_effort"
         );
     }
 
