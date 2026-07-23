@@ -34,6 +34,66 @@ mod tests {
     /// adapter's own `price_key`, so the table and the vendor's id grammar cannot
     /// drift apart — and the two ids that collide with a Cursor row of the same
     /// spelling stay un-conflated.
+    /// Golden lock: every bare id that lived in the retired `defaults.rs` still
+    /// prices to the same 1M-each USD via seed ⊕ overlay (issue #288 AC1).
+    #[test]
+    fn every_former_defaults_id_prices_identically_from_seed_and_overlay() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        // (bare id, expected USD over 1M of each token kind)
+        let rows: &[(&str, f64)] = &[
+            ("claude-opus-4-8", 110.25),
+            ("claude-sonnet-4-6", 22.05),
+            ("claude-haiku-4-5", 7.35),
+            ("gpt-5.5", 40.5),
+            ("k2p6", 6.06),
+            ("kimi-for-coding", 6.06),
+            ("k3", 6.06),
+            ("claude-sonnet-5", 22.05),
+            ("kimi-k2.7-code", 6.06),
+            ("auto", 10.5),
+            ("composer-2.5", 3.7),
+            ("cursor-grok-4.5", 10.5),
+            ("glm-5.2", 7.46),
+            ("gemini-3-flash", 4.05),
+            ("gemini-3.1-pro", 16.2),
+            ("gemini-3.5-flash", 12.15),
+            ("gpt-5.6-sol", 41.75),
+            ("gpt-5.6-terra", 20.875),
+            ("gpt-5.6-luna", 8.35),
+            ("gpt-5.1", 12.625),
+            ("gpt-5.2", 17.675),
+            ("gpt-5.3-codex", 17.675),
+            ("gpt-5.4", 20.25),
+            ("gpt-5.4-mini", 6.075),
+            ("gpt-5.4-nano", 1.67),
+            ("claude-opus-4-7", 36.75),
+            ("claude-fable-5", 73.5),
+            ("claude-4.6-sonnet", 22.05),
+            ("claude-4.6-opus", 36.75),
+            ("claude-4.5-sonnet", 22.05),
+            ("claude-4.5-haiku", 7.35),
+            ("claude-4.5-opus", 36.75),
+            ("claude-4-sonnet", 22.05),
+            ("gpt-5-mini", 6.075),
+            ("gemini-3.1-pro-preview", 16.2),
+            ("gemini-3-flash-preview", 4.05),
+            ("gemini-3.1-flash-lite", 2.025),
+            ("gemini-2.5-pro", 12.625),
+            ("gemini-2.5-flash", 3.13),
+        ];
+        assert_eq!(rows.len(), 39, "former defaults.rs had 39 priced ids");
+        for &(id, expected) in rows {
+            let got = table
+                .cost_usd(id, &tokens)
+                .unwrap_or_else(|| panic!("{id} must still price from seed⊕overlay"));
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "{id}: expected {expected}, got {got}"
+            );
+        }
+    }
+
     #[test]
     fn gemini_ids_price_through_the_adapters_key() {
         let table = PriceTable::defaults();

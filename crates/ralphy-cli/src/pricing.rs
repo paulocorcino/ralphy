@@ -504,4 +504,86 @@ mod tests {
         let table = PriceTable::defaults();
         assert_eq!(table.cost_usd("big-pickle", &one_million_each()), None);
     }
+
+    #[test]
+    fn synthesize_maps_each_provider_prefix() {
+        assert_eq!(
+            synthesize("claude-opus-4-8").as_deref(),
+            Some("anthropic/claude-opus-4-8")
+        );
+        assert_eq!(synthesize("gpt-5.5").as_deref(), Some("openai/gpt-5.5"));
+        assert_eq!(
+            synthesize("gemini-3-flash").as_deref(),
+            Some("google/gemini-3-flash")
+        );
+        assert_eq!(
+            synthesize("kimi-for-coding").as_deref(),
+            Some("moonshotai/kimi-for-coding")
+        );
+        assert_eq!(synthesize("k2p6"), None);
+        assert_eq!(synthesize("composer-2.5"), None);
+    }
+
+    #[test]
+    fn cache_layer_beats_seed_via_synthesis() {
+        let seed = BTreeMap::from([(
+            "anthropic/claude-opus-4-8".into(),
+            ModelPrice {
+                input: 15.0,
+                output: 75.0,
+                cache_read: 1.5,
+                cache_creation: 18.75,
+            },
+        )]);
+        let cache = BTreeMap::from([(
+            "anthropic/claude-opus-4-8".into(),
+            ModelPrice {
+                input: 5.0,
+                output: 25.0,
+                cache_read: 0.5,
+                cache_creation: 6.25,
+            },
+        )]);
+        let table = PriceTable::from_layers(BTreeMap::new(), cache, seed, BTreeMap::new());
+        let cost = table
+            .cost_usd("claude-opus-4-8", &one_million_each())
+            .expect("cache hit");
+        // Cache rates 5+25+0.5+6.25 = 36.75, not seed's 110.25.
+        assert!(
+            (cost - 36.75).abs() < 1e-9,
+            "cache must beat seed; got {cost}"
+        );
+    }
+
+    #[test]
+    fn load_reads_disk_cache_when_ralphy_pricing_cache_set() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("ralphy-pricing-cache-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let cache_file = dir.join("models-dev.json");
+        std::fs::write(
+            &cache_file,
+            r#"{"timestamp":"2026-07-23T00:00:00Z","data":{"anthropic/claude-opus-4-8":{"input":5.0,"output":25.0,"cache_read":0.5,"cache_creation":6.25}}}"#,
+        )
+        .expect("write cache");
+        std::env::set_var("RALPHY_PRICING_CACHE", &cache_file);
+        // Ensure no override file interferes.
+        std::env::set_var(
+            "RALPHY_PRICING_FILE",
+            dir.join("missing-pricing.toml").as_os_str(),
+        );
+
+        let loaded = PriceTable::load();
+        let cost = loaded
+            .cost_usd("claude-opus-4-8", &one_million_each())
+            .expect("cache-backed opus");
+        assert!(
+            (cost - 36.75).abs() < 1e-9,
+            "load must apply disk cache over seed; got {cost}"
+        );
+
+        std::env::remove_var("RALPHY_PRICING_CACHE");
+        std::env::remove_var("RALPHY_PRICING_FILE");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
