@@ -20,9 +20,6 @@ pub use render::{
     normalize_remote_url, render_info_line, render_totals_panel, PanelBranchMode, PanelData,
     PanelStop, RenderOpts,
 };
-// The `HarvestEst` type is reached only through `PanelData`'s field and the
-// `harvest_est` constructor, so only the constructor needs a name here.
-pub(crate) use render::harvest_est;
 // Re-exported because it appears in `PanelData`'s public fields (constructed in `main`).
 pub use crate::runstate::UsageLite;
 use crate::runstate::{IssueStatus, RunState};

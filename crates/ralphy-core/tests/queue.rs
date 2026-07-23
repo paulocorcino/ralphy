@@ -1028,7 +1028,7 @@ fn pins_green_run_vocabulary() {
     );
     assert_eq!(green.get("number"), "7");
     // A clean green issue is two vendor spawns — plan + execute, no repair/protocol
-    // bounce — so the #270 harvest-tax estimate multiplies the floor by 2.
+    // bounce — so the invocation count is 2.
     assert_eq!(green.get("invocations"), "2");
 
     fs::remove_dir_all(&repo).ok();

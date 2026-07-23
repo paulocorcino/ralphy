@@ -36,10 +36,8 @@ pub struct EventFields {
     pub target_epoch: Option<i64>,
     pub model: Option<String>,
     pub tokens: Option<u64>,
-    /// Vendor spawn count on a `green — issue closed` event (#270): plan and execute
-    /// plus any repair/protocol bounce. The live region multiplies it by the vendor's
-    /// harvest floor for the per-issue harvest-tax estimate. Absent on a pre-#270
-    /// emission, which simply omits the estimate.
+    /// Vendor spawn count on a `green — issue closed` event: plan and execute plus
+    /// any repair/protocol bounce. Absent on an older emission.
     pub invocations: Option<u64>,
     /// Reasoning effort rung (`minimal`/`low`/`medium`/`high`/`max`), or absent
     /// when the adapter emitted an empty string / documented no-op (ADR-0044 D9).

@@ -217,14 +217,10 @@ skills, and has no effect on what it harvests from *other* vendors.
 
 Practical consequence: a per-issue token budget tuned against another vendor
 (one with no foreign-skill harvest) reads wrong for Cursor — expect materially
-higher input-token floors on this vendor, independent of the task.
-
-To make that tax visible rather than only felt in the aggregate (issue #270),
-a Cursor run surfaces a **harvest-tax estimate** — `~15 679 input tokens ×
-invocation count` — on each issue's `done` line and as a `harvest est:` footer
-segment. It is a read-time estimate (the same kind of projection as the USD
-figures), labelled `est`, and is deliberately never written to the usage ledger
-or the CloudEvents stream — the recorded token counts stay the single truth.
+higher input-token floors on this vendor, independent of the task. The harvested
+tokens are not separable from a ledger record — Cursor's CLI folds them into the
+ordinary `input` field — so they simply ride the run's recorded token counts;
+Ralphy does not surface a separate estimate for them.
 
 ## Gemini run defaults (`gemini.*`)
 

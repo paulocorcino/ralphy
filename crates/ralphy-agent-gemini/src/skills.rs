@@ -3,8 +3,8 @@
 //! without paying for a turn.
 //!
 //! Unlike Codex/Copilot/Cursor, this root is 100% Ralphy-owned (D4): there is
-//! no operator-shared directory to link into, no foreign-skill harvest to warn
-//! about, and no `.gitignore` merge dance — `materialize_assets`'s
+//! no operator-shared directory to link into, no foreign-skill harvest, and
+//! no `.gitignore` merge dance — `materialize_assets`'s
 //! clear-and-replace is safe here because nothing but Ralphy ever writes under
 //! `<GEMINI_CLI_HOME>/.gemini/skills`.
 

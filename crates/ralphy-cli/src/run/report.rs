@@ -124,7 +124,7 @@ pub(crate) fn emit_run_finished_no_work(run_start: std::time::Instant) {
 /// D8/D11, priced per model), and hand the assembled `PanelData` to the presenter.
 /// Consumes `report` (its branch/commits/undo fields move into the panel).
 // A composition-root assembler: it gathers the many read-time inputs of the footer
-// (report, summary, both USD sources, and the #270 harvest floor) into one PanelData.
+// (report, summary, both USD sources) into one PanelData.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_final_panel(
     presenter: &ui::PresenterHandle,
@@ -134,7 +134,6 @@ pub(crate) fn render_final_panel(
     dry_run: bool,
     repo_root: &std::path::Path,
     consolidate_usage: &ralphy_core::Usage,
-    harvest_floor: Option<u64>,
 ) {
     let panel_stop = report.stop.map(|s| match s {
         StopReason::Deadline => ui::PanelStop::Deadline,
@@ -218,13 +217,6 @@ pub(crate) fn render_final_panel(
     }
     let (project_usd, project_partial) = price_table.cost_usd_by_model(&project_by_model);
 
-    // The harvest-tax ESTIMATE (issue #270): the run's vendor invocations (every
-    // recorded phase line) plus the end-of-run consolidation pass when it ran, times
-    // the vendor's floor. `None` (segment omitted) for a non-harvesting vendor. A
-    // read-time projection, never stored — the analog of the USD figures above.
-    let run_invocations = report.invocations + u64::from(consolidate_usage.total() > 0);
-    let harvest_est = ui::harvest_est(harvest_floor, Some(run_invocations));
-
     let data = ui::PanelData {
         branch: report.branch,
         orig_branch: report.orig_branch,
@@ -254,7 +246,6 @@ pub(crate) fn render_final_panel(
         project_usd_partial: project_partial,
         consolidate_breakdown,
         consolidate_usd,
-        harvest_est,
     };
     presenter.print_panel(&data);
 }

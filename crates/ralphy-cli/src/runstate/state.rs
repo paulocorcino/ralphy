@@ -99,10 +99,8 @@ pub struct IssueEntry {
     pub plan_usage: Option<UsageLite>,
     /// The execution phase's usage, from `issue closed`.
     pub exec_usage: Option<UsageLite>,
-    /// Vendor spawns this issue paid for, from `issue closed` (#270). The done line
-    /// multiplies it by the vendor's harvest floor for the per-issue harvest-tax
-    /// estimate; `None` for a not-yet-closed or pre-#270 entry (the estimate is then
-    /// omitted).
+    /// Vendor spawns this issue paid for, from `issue closed`. `None` for a
+    /// not-yet-closed or older entry.
     pub invocations: Option<u64>,
 }
 

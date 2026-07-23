@@ -17,17 +17,6 @@ pub trait Agent {
     /// (ADR-0002) holds.
     fn name(&self) -> &'static str;
 
-    /// The read-time harvest-tax floor (issue #270): the input tokens this vendor's
-    /// CLI injects on *each* invocation by auto-discovering foreign skills, or `None`
-    /// for a vendor that does not harvest. Like [`name`](Self::name), an opaque
-    /// number the core only carries through — it is never branched on — so the
-    /// vendor-agnostic boundary (ADR-0002/0004) holds. The CLI turns it into a
-    /// read-time estimate view (`floor × invocation_count`), the analog of USD
-    /// (ADR-0008 D8); it is never stored in the ledger or on the wire.
-    fn harvest_floor(&self) -> Option<u64> {
-        None
-    }
-
     /// Read the issue and the repo, decide feasibility, and write the plan
     /// artifact into the workspace. The returned [`Plan`] points at it.
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan>;

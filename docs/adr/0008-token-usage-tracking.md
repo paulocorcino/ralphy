@@ -423,16 +423,15 @@ every question, and a service is the infra D1 refused), and baking USD into the
 export (it must stay a read-time projection so a re-priced table re-exports
 correctly).
 
-**A second read-time view (issue #270): the Cursor harvest-tax estimate.** USD is
-not the only figure derived at read-time and never stored. A harvesting vendor
-(Cursor) injects a measured floor of foreign-skill input tokens per invocation
-(ADR-0042 D12) that cannot be isolated from a ledger record — they fold into the
-ordinary `input` field. So the console/panel show an ESTIMATE, `harvest_floor ×
-invocation_count`, on the per-issue `done` line and as a `harvest est:` footer
-segment, labelled `est`. Like USD, it is a projection: never written to the ledger
-(D6) and never placed on the `run.finished`/`issue.closed` CloudEvents tally, so a
-consumer can never sum an estimate against the four real token buckets — the
-tokens-as-truth invariant (D2) holds.
+**A second read-time view (issue #270): the Cursor harvest-tax estimate — since
+removed.** Cursor injects a measured floor of foreign-skill input tokens per
+invocation (ADR-0042 D12) that folds into the ordinary `input` field. This was
+briefly surfaced as a read-time `harvest est:` projection on the `done` line and
+run footer, but was removed: the estimate was built from a hardcoded floor and a
+hardcoded foreign-skill count that did not reflect the operator's actual
+environment, so it overstated its own precision. The harvested tokens still ride
+the run's recorded `input` counts (tokens-as-truth, D2); Ralphy no longer derives
+a separate figure from them.
 
 ## Consequences
 

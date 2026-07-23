@@ -309,9 +309,8 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             number,
             tokens,
             usage,
-            // The harvest-tax estimate (#270) is a console/panel-only read-time view;
-            // it deliberately never rides the CloudEvents envelope (a consumer could
-            // sum an estimate against real tokens). See docs/adr/0008 D8.
+            // The invocation count is a console/panel-only read-time view; it
+            // deliberately never rides the CloudEvents envelope. See docs/adr/0008 D8.
             invocations: _,
         } => Some(envelope(
             "dev.ralphy.issue.closed",

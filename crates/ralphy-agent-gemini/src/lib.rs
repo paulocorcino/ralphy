@@ -545,17 +545,6 @@ mod tests {
         );
     }
 
-    /// Issue #270: Gemini's skills root is ralphy-owned, so it does NOT harvest
-    /// foreign skills and reports no harvest floor (the trait default) — the console
-    /// then shows no harvest-tax estimate for a Gemini run.
-    #[test]
-    fn gemini_reports_no_harvest_floor() {
-        assert_eq!(
-            GeminiAgent::new(None, PathBuf::from("/run")).harvest_floor(),
-            None
-        );
-    }
-
     #[test]
     fn the_phase_model_reads_the_matching_override() {
         let agent = GeminiAgent::new(Some("exec-m".into()), PathBuf::from("/run"))

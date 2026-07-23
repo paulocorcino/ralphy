@@ -84,10 +84,8 @@ pub enum RunEvent {
         number: u64,
         tokens: u64,
         /// Vendor spawns this issue paid for (plan + execute + any repair/protocol
-        /// bounce). The live region multiplies it by the vendor's harvest floor for
-        /// the #270 per-issue harvest-tax estimate. Defaults to `0` on the
-        /// decoder-absent path (a pre-#270 producer or a manual construction), which
-        /// simply omits the estimate — additive and round-trip tolerant.
+        /// bounce). Defaults to `0` on the decoder-absent path (an older producer or a
+        /// manual construction) — additive and round-trip tolerant.
         invocations: u64,
         usage: UsageLite,
     },

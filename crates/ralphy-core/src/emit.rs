@@ -74,8 +74,7 @@ pub const ISSUE_CLOSED_MSG: &str = "green — issue closed";
 /// protocol + repair) the telegram notifier reads; `usage` is the EXECUTION
 /// phase's split the live UI combines with the planning usage (ADR-0008 D11).
 /// `invocations` is the count of vendor spawns this issue paid for (plan +
-/// execute + any repair/protocol bounce) — the live UI multiplies it by the
-/// vendor's harvest floor for the #270 per-issue harvest-tax estimate.
+/// execute + any repair/protocol bounce).
 pub fn issue_closed(number: u64, tokens: u64, invocations: u64, usage: &crate::Usage) {
     info!(
         number,

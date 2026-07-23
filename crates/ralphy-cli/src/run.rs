@@ -412,14 +412,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         &resolved_gemini,
         idle_minutes,
     );
-    // The harvest tax is paid per child spawn, so it is the EXECUTOR vendor's floor
-    // (issue #270): capture it before `executor` moves into the agent/split, and hand
-    // it to the presenter for the per-issue estimate and to the final panel for the
-    // run-footer segment. `None` for a non-harvesting vendor. A `--plan-agent` split
-    // where the planner is a different vendor under-counts the plan invocation's
-    // harvest — a documented v1 simplification.
-    let harvest_floor = executor.harvest_floor();
-    presenter.set_harvest_floor(harvest_floor);
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
         executor
     } else {
@@ -525,7 +517,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.dry_run,
         &cfg.repo_root,
         &consolidation_usage,
-        harvest_floor,
     );
     Ok(())
 }

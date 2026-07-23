@@ -65,7 +65,6 @@ fn render_done_line_shows_model_effort_duration_and_compact_meter() {
         duration: Some(Duration::from_secs(776)),
         model: Some("sonnet".into()),
         effort: Some("medium".into()),
-        harvest_est: None,
         meter: Some(Meter {
             usage: UsageLite {
                 input: 41_200,
@@ -1114,7 +1113,6 @@ fn panel_base() -> PanelData {
         project_usd_partial: false,
         consolidate_breakdown: None,
         consolidate_usd: None,
-        harvest_est: None,
     }
 }
 
@@ -1189,86 +1187,6 @@ fn render_totals_panel_footer_shows_consolidation_segment_when_present() {
     assert!(
         !plain_footer.contains("consolidate:"),
         "a run that did not consolidate shows no segment: {plain_footer}"
-    );
-}
-
-#[test]
-fn harvest_est_gates_on_floor_and_count() {
-    // Issue #270: `Some(floor × invocations)` only when the vendor harvests AND at
-    // least one invocation ran; a non-harvester (`None` floor) or an unknown/zero
-    // count omits the estimate rather than rendering a nonsensical `0×`.
-    let est = harvest_est(Some(15_679), Some(3)).expect("a harvesting vendor with spawns");
-    assert_eq!(est.tokens, 47_037);
-    assert_eq!(est.invocations, 3);
-    assert_eq!(est.floor, 15_679);
-    assert!(
-        harvest_est(None, Some(3)).is_none(),
-        "non-harvester omits it"
-    );
-    assert!(
-        harvest_est(Some(15_679), None).is_none(),
-        "unknown count omits it"
-    );
-    assert!(
-        harvest_est(Some(15_679), Some(0)).is_none(),
-        "zero count omits it"
-    );
-}
-
-#[test]
-fn render_totals_panel_footer_shows_harvest_segment_when_present() {
-    let opts = RenderOpts {
-        color: false,
-        emoji: true,
-    };
-    // Issue #270: a harvesting vendor's run shows a distinct `harvest est:` segment
-    // between the run/consolidate figures and the project balance; a non-harvesting
-    // vendor omits it. Tokens only, labelled `est` — never a priced/stored figure.
-    let data = PanelData {
-        harvest_est: harvest_est(Some(15_679), Some(15)),
-        ..panel_base()
-    };
-    let lines = render_totals_panel(&data, opts);
-    let footer = lines
-        .iter()
-        .find(|l| l.contains("run:") && l.contains("project:"))
-        .expect("a token footer line");
-    assert!(footer.contains("harvest est:"), "segment label: {footer}");
-    assert!(
-        footer.contains("15× ~15.7k"),
-        "invocation × floor gloss: {footer}"
-    );
-    assert!(
-        footer.contains("~↑235.2k"),
-        "estimated injected input: {footer}"
-    );
-    // The harvest segment itself carries NO USD (an input-side estimate, not a priced
-    // figure) — scoped to the segment, since run:/project: legitimately show `$`.
-    let harvest_seg = footer
-        .split_once("harvest est:")
-        .and_then(|(_, rest)| rest.split_once(" · project:"))
-        .map(|(seg, _)| seg)
-        .expect("harvest segment before project");
-    assert!(
-        !harvest_seg.contains('$'),
-        "the harvest estimate carries no USD: {harvest_seg}"
-    );
-    // It sits between the run total and the project balance.
-    let hi = footer.find("harvest est:").unwrap();
-    assert!(
-        footer.find("run:").unwrap() < hi && hi < footer.find("project:").unwrap(),
-        "harvest segment must sit between run and project: {footer}"
-    );
-
-    // A non-harvesting vendor (panel_base carries None) → no segment.
-    let plain = render_totals_panel(&panel_base(), opts);
-    let plain_footer = plain
-        .iter()
-        .find(|l| l.contains("run:") && l.contains("project:"))
-        .expect("a token footer line");
-    assert!(
-        !plain_footer.contains("harvest est:"),
-        "a non-harvesting vendor shows no segment: {plain_footer}"
     );
 }
 

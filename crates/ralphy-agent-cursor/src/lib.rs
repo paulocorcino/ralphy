@@ -190,14 +190,6 @@ impl Agent for CursorAgent {
         "cursor"
     }
 
-    /// Cursor auto-discovers ~78 foreign skills per invocation with no CLI-side
-    /// allowlist (ADR-0042 D12); the measured floor is surfaced as a read-time
-    /// estimate (issue #270). No other adapter overrides this — the trait default
-    /// (`None`) covers every non-harvesting vendor.
-    fn harvest_floor(&self) -> Option<u64> {
-        Some(skills::CURSOR_HARVEST_FLOOR_TOKENS)
-    }
-
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
         let plan_path = ws.plan_path();
         let log_path = self.run_dir.join("cursor.log");
@@ -503,20 +495,6 @@ mod tests {
             .with_max_minutes_per_issue(1000)
             .with_run_deadline(Some(rd));
         assert!(clamped.issue_deadline() <= rd);
-    }
-
-    /// Issue #270: Cursor is a harvesting vendor, so it reports a finite harvest
-    /// floor (the single source of truth is the `skills` constant). The floor drives
-    /// the read-time per-issue harvest-tax estimate; a non-harvesting vendor returns
-    /// `None` via the trait default and shows no estimate.
-    #[test]
-    fn cursor_reports_the_harvest_floor() {
-        let agent = CursorAgent::new(None, PathBuf::from("/run"));
-        assert_eq!(
-            agent.harvest_floor(),
-            Some(skills::CURSOR_HARVEST_FLOOR_TOKENS)
-        );
-        assert_eq!(agent.harvest_floor(), Some(15_679));
     }
 
     /// ADR-0042 D3: this vendor opens with ~8.1 s of silence and shows inter-record

@@ -943,7 +943,7 @@ pub(crate) fn close_and_record(
     // Vendor spawns this issue paid for: plan + execute always ran; the protocol
     // bounce and the verify-gate repair each count only if they consumed tokens
     // (a repair writes ONE ledger line regardless of attempts, so this is a floor,
-    // matching `RunLedger::record_phase_if_used`). Feeds the #270 estimate.
+    // matching `RunLedger::record_phase_if_used`).
     let invocations =
         2 + u64::from(protocol_usage.total() > 0) + u64::from(repair_usage.total() > 0);
     // `tokens` stays for the telegram notifier (keep stable); `up/cr/cw/out`
