@@ -132,6 +132,23 @@ mod tests {
         assert!(args.contains(&"high".to_string()), "argv: {args:?}");
     }
 
+    /// ADR-0044 D8: resolved Effort is never a `--variant` value. The builder only
+    /// receives the operator's `--exec-variant`; `None` here mirrors an agent that
+    /// carries `exec_effort=Some("high")` with `variant=None`.
+    #[test]
+    fn resolved_effort_never_becomes_variant() {
+        let args = argv(&build_opencode_command(
+            None,
+            None,
+            Path::new("/repo"),
+            "{}",
+        ));
+        assert!(
+            !args.contains(&"--variant".to_string()),
+            "neutral effort must not surface as --variant: {args:?}"
+        );
+    }
+
     #[test]
     fn build_command_removes_both_api_keys() {
         let cmd = build_opencode_command(None, None, Path::new("/repo"), "{}");

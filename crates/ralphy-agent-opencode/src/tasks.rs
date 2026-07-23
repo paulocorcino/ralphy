@@ -43,8 +43,8 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
-    // accepted for a uniform init dispatch signature and ignored.
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
@@ -89,8 +89,8 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
-    // accepted for a uniform init dispatch signature and ignored.
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
@@ -137,8 +137,8 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    // OpenCode has no reasoning-effort knob (ADR-0005 D3); accepted for a uniform
-    // dispatch signature and ignored.
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let prompt = format!(
         "{}{}",
@@ -177,8 +177,9 @@ pub fn triage_issues(
 /// `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
 /// which the caller verifies; the consumed notes are archived by the caller, not
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
-/// can dispatch on the selected agent. `effort` is unused: OpenCode has no
-/// reasoning-effort knob (ADR-0005 D3).
+/// can dispatch on the selected agent. `effort` is a documented no-op
+/// (ADR-0044 D4): discarded here — must not alter argv; `--variant` stays
+/// `--exec-variant`-only (D8).
 ///
 /// The consolidation session's tokens are captured the same way `plan`/`execute`
 /// do — `opencode_usage` correlates the `--format json` stream's `sessionID` to the
@@ -191,6 +192,8 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
 

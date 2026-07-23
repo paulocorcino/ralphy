@@ -110,6 +110,10 @@ mod tests {
                 "/repo/.ralphy/skills",
             ]
         );
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "Kimi has no effort flag (ADR-0044 D4): {args:?}"
+        );
         assert_eq!(cmd.get_current_dir(), Some(Path::new("/repo")));
         // The 0.28 contract inherits the operator env untouched: no stdio-encoding
         // coercion of any kind.

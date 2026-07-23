@@ -88,10 +88,15 @@ enum Phase {
 /// (set via `new`); `plan_model` is the override for `plan()` (set via
 /// `with_plan_model`). `None` on either omits `-m` entirely, which on this vendor
 /// means the account default — there is no per-invocation state to inherit,
-/// because Ralphy owns the configuration root (D4).
+/// because Ralphy owns the configuration root (D4). `plan_effort`/`exec_effort`
+/// accept the neutral Effort word at the CLI and are a documented no-op here
+/// (ADR-0044 D4) — Gemini's numeric `thinkingBudget` mapping is deliberately
+/// deferred.
 pub struct GeminiAgent {
     exec_model: Option<String>,
     plan_model: Option<String>,
+    plan_effort: Option<String>,
+    exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -101,6 +106,8 @@ impl GeminiAgent {
         Self {
             exec_model: model,
             plan_model: None,
+            plan_effort: None,
+            exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
@@ -109,6 +116,20 @@ impl GeminiAgent {
     /// Set the model override used for `plan()`.
     pub fn with_plan_model(mut self, model: Option<String>) -> Self {
         self.plan_model = model;
+        self
+    }
+
+    /// Accept the resolved planning Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::plan`] (D4) — must not alter argv.
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Accept the resolved execution Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::execute`] (D4) — must not alter argv.
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
         self
     }
 
@@ -273,6 +294,10 @@ impl Agent for GeminiAgent {
                 &policy_path,
                 auth_type.as_deref(),
             );
+            // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "". Numeric
+            // `thinkingBudget` mapping deliberately deferred.
+            let _ = self.plan_effort.as_deref();
             ralphy_core::emit::planning("gemini", model.unwrap_or(DEFAULT_MODEL), "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding root setup.
@@ -378,6 +403,10 @@ impl Agent for GeminiAgent {
                 &policy_path,
                 auth_type.as_deref(),
             );
+            // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "". Numeric
+            // `thinkingBudget` mapping deliberately deferred.
+            let _ = self.exec_effort.as_deref();
             ralphy_core::emit::executing("gemini", 0, model.unwrap_or(DEFAULT_MODEL), "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_gemini(cmd, &exec_prompt, timeout)?;
@@ -489,6 +518,37 @@ mod tests {
         let agent = GeminiAgent::new(None, PathBuf::from("/run"));
         let _as_dyn: &dyn Agent = &agent;
         assert_eq!(agent.name(), "gemini");
+    }
+
+    /// ADR-0044 D4: a resolved effort on the agent must not inject `--effort`
+    /// into `build_gemini_command` argv (the builder has no effort parameter).
+    #[test]
+    fn resolved_effort_never_appears_on_argv() {
+        use std::path::Path;
+        use std::process::Command;
+
+        fn argv(cmd: &Command) -> Vec<String> {
+            cmd.get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        }
+
+        let agent = GeminiAgent::new(None, PathBuf::from("/run"))
+            .with_plan_effort(Some("high".into()))
+            .with_exec_effort(Some("high".into()));
+        let _ = (agent.plan_effort.as_deref(), agent.exec_effort.as_deref());
+        let args = argv(&build_gemini_command(
+            "s1",
+            None,
+            Path::new("/repo"),
+            Path::new("/ws/.ralphy/gemini-home"),
+            Path::new("/ws/.ralphy/gemini-home/ralphy-policy.toml"),
+            Some("gemini-api-key"),
+        ));
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "resolved effort must not alter argv: {args:?}"
+        );
     }
 
     /// Issue #270: Gemini's skills root is ralphy-owned, so it does NOT harvest

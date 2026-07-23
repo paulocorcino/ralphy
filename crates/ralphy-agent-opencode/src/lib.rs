@@ -88,13 +88,17 @@ impl OpenCodeSettings {
 
 /// Drives the `opencode` CLI. `model` is the operator override (omitted entirely
 /// when `None`, deferring to OpenCode's own resolution, ADR-0005 D4); `variant`
-/// is the operator's optional effort knob, passed through only when set (D3);
-/// `run_dir` is where the captured logs live; `max_minutes_per_issue` is the
-/// per-issue wall budget, clamped to `run_deadline` when the run carries a global
-/// deadline.
+/// is the operator's optional provider-native dialect (`--exec-variant`), passed
+/// through only when set (D3 / ADR-0044 D8) — orthogonal to Ralphy's Effort word;
+/// `plan_effort`/`exec_effort` accept the neutral word at the CLI and are a
+/// documented no-op here (ADR-0044 D4); `run_dir` is where the captured logs live;
+/// `max_minutes_per_issue` is the per-issue wall budget, clamped to `run_deadline`
+/// when the run carries a global deadline.
 pub struct OpenCodeAgent {
     model: Option<String>,
     variant: Option<String>,
+    plan_effort: Option<String>,
+    exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -104,16 +108,35 @@ impl OpenCodeAgent {
         Self {
             model,
             variant: None,
+            plan_effort: None,
+            exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
     }
 
-    /// Set the operator's optional `--variant` knob (ADR-0005 D3). Passed through
-    /// to OpenCode only when present; omitted otherwise so the adapter never
-    /// sends a value the provider rejects.
+    /// Set the operator's optional `--variant` knob (ADR-0005 D3). Provider-native
+    /// dialect from `--exec-variant` only — never from resolved Effort (ADR-0044
+    /// D8). Passed through to OpenCode only when present; omitted otherwise so the
+    /// adapter never sends a value the provider rejects.
     pub fn with_variant(mut self, variant: Option<String>) -> Self {
         self.variant = variant;
+        self
+    }
+
+    /// Accept the resolved planning Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::plan`] (D4) — must not alter argv or map
+    /// onto `--variant` (D8).
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Accept the resolved execution Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::execute`] (D4) — must not alter argv or map
+    /// onto `--variant` (D8).
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
         self
     }
 
@@ -170,6 +193,10 @@ impl Agent for OpenCodeAgent {
                 ws.repo_root(),
                 &skills_config,
             );
+            // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "". `--variant`
+            // stays `--exec-variant`-only (D8).
+            let _ = self.plan_effort.as_deref();
             ralphy_core::emit::planning(
                 "opencode run",
                 self.model.as_deref().unwrap_or(""),
@@ -249,6 +276,10 @@ impl Agent for OpenCodeAgent {
                 ws.repo_root(),
                 &skills_config,
             );
+            // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "". `--variant`
+            // stays `--exec-variant`-only (D8).
+            let _ = self.exec_effort.as_deref();
             ralphy_core::emit::executing(
                 "opencode run",
                 0,
@@ -389,6 +420,72 @@ mod tests {
         // `&dyn Agent` (the core never learns the vendor).
         let agent = OpenCodeAgent::new(None, PathBuf::from("/run")).with_variant(None);
         let _as_dyn: &dyn Agent = &agent;
+    }
+
+    /// ADR-0005 D3 amendment (#285): `--variant` is dialect, not Ralphy Effort.
+    /// Needle is one physical ADR line (hard-wrap trap).
+    #[test]
+    fn adr_0005_d3_amendment_separates_variant_from_effort() {
+        let adr = include_str!("../../../docs/adr/0005-opencode-adapter.md");
+        assert!(
+            adr.contains("`--variant` is OpenCode's provider-native dialect, not Ralphy Effort."),
+            "D3 amendment must keep the dialect≠Effort line"
+        );
+        assert!(
+            adr.contains("Telemetry reports `variant` separately from `effort`."),
+            "D3 amendment must keep the telemetry-split line"
+        );
+    }
+
+    /// ADR-0044 D8: `with_exec_effort` must not feed `--variant`; only
+    /// `with_variant` (from `--exec-variant`) does.
+    #[test]
+    fn resolved_effort_does_not_become_variant_on_argv() {
+        use std::path::Path;
+        use std::process::Command;
+
+        fn argv(cmd: &Command) -> Vec<String> {
+            cmd.get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        }
+
+        let effort_only = OpenCodeAgent::new(None, PathBuf::from("/run"))
+            .with_exec_effort(Some("high".into()))
+            .with_variant(None);
+        let args = argv(&build_opencode_command(
+            effort_only.model.as_deref(),
+            effort_only.variant.as_deref(),
+            Path::new("/repo"),
+            "{}",
+        ));
+        assert!(
+            !args.contains(&"--variant".to_string()),
+            "exec_effort must not become --variant: {args:?}"
+        );
+
+        let with_variant = OpenCodeAgent::new(None, PathBuf::from("/run"))
+            .with_exec_effort(Some("high".into()))
+            .with_variant(Some("max".into()));
+        let args = argv(&build_opencode_command(
+            with_variant.model.as_deref(),
+            with_variant.variant.as_deref(),
+            Path::new("/repo"),
+            "{}",
+        ));
+        let variant_pos = args
+            .iter()
+            .position(|a| a == "--variant")
+            .expect("--variant present");
+        assert_eq!(
+            args.get(variant_pos + 1).map(String::as_str),
+            Some("max"),
+            "argv: {args:?}"
+        );
+        assert!(
+            !args.contains(&"high".to_string()),
+            "neutral effort word must not appear on argv: {args:?}"
+        );
     }
 
     // ── prompt asset ─────────────────────────────────────────────────────────

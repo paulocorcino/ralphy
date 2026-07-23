@@ -69,11 +69,15 @@ fn write_exec_charter(ws: &Workspace) -> Result<PathBuf> {
 }
 
 /// Drives the `kimi` CLI. `model` is the operator override (else
-/// [`DEFAULT_KIMI_MODEL`]); `run_dir` is where the captured logs live;
-/// `max_minutes_per_issue` is the per-issue wall budget, clamped to `run_deadline`
-/// when the run carries a global deadline.
+/// [`DEFAULT_KIMI_MODEL`]); `plan_effort`/`exec_effort` accept the neutral Effort
+/// word at the CLI and are a documented no-op here (ADR-0044 D4) — Kimi has no
+/// level axis; `run_dir` is where the captured logs live; `max_minutes_per_issue`
+/// is the per-issue wall budget, clamped to `run_deadline` when the run carries a
+/// global deadline.
 pub struct KimiAgent {
     model: Option<String>,
+    plan_effort: Option<String>,
+    exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -82,9 +86,25 @@ impl KimiAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
         Self {
             model,
+            plan_effort: None,
+            exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
+    }
+
+    /// Accept the resolved planning Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::plan`] (D4) — must not alter argv.
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Accept the resolved execution Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::execute`] (D4) — must not alter argv.
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
+        self
     }
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `CodexAgent::with_max_minutes_per_issue`).
@@ -149,6 +169,9 @@ impl Agent for KimiAgent {
                 &skills_dir,
                 ralphy_adapter_support::PLAN_CHARTER,
             );
+            // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "".
+            let _ = self.plan_effort.as_deref();
             ralphy_core::emit::planning("kimi", &model, "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
@@ -223,6 +246,9 @@ impl Agent for KimiAgent {
                 &skills_dir,
                 ralphy_adapter_support::EXEC_CHARTER,
             );
+            // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "".
+            let _ = self.exec_effort.as_deref();
             ralphy_core::emit::executing("kimi", 0, &model, "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
@@ -280,6 +306,32 @@ mod tests {
     fn kimi_agent_is_a_dyn_agent() {
         let agent = KimiAgent::new(None, PathBuf::from("/run"));
         let _as_dyn: &dyn Agent = &agent;
+    }
+
+    /// ADR-0044 D4: a resolved effort on the agent must not inject `--effort`
+    /// into `build_kimi_command` argv (the builder has no effort parameter).
+    #[test]
+    fn resolved_effort_never_appears_on_argv() {
+        use std::path::Path;
+
+        let agent = KimiAgent::new(None, PathBuf::from("/run"))
+            .with_plan_effort(Some("high".into()))
+            .with_exec_effort(Some("high".into()));
+        let _ = (agent.plan_effort.as_deref(), agent.exec_effort.as_deref());
+        let cmd = build_kimi_command(
+            DEFAULT_KIMI_MODEL,
+            Path::new("/repo"),
+            Path::new("/repo/.ralphy/skills"),
+            "hello",
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "resolved effort must not alter argv: {args:?}"
+        );
     }
 
     #[test]

@@ -25,8 +25,9 @@ use crate::usage::{fold_wire_usage, kimi_sessions_dir};
 /// from `neutral_cwd` — a directory OUTSIDE the target repo. The target `repo` is
 /// passed as data in the prompt; the session writes its JSON report to
 /// `<neutral_cwd>/diagnosis.json`, which this function reads, validates against
-/// [`DiagnosisReport`], and returns. `effort` is unused: Kimi has no
-/// `model_reasoning_effort` analog (ADR-0028 D3), same shape as OpenCode.
+/// [`DiagnosisReport`], and returns. `effort` is a documented no-op (ADR-0044
+/// D4): accepted for a uniform init dispatch signature, discarded here — Kimi
+/// has no level axis; must not alter argv.
 pub fn diagnose_repo(
     repo: &Path,
     neutral_cwd: &Path,
@@ -34,6 +35,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let model = resolve_init_kimi_model(model);
@@ -80,6 +82,7 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let model = resolve_init_kimi_model(model);
     let prompt =
@@ -116,8 +119,9 @@ pub fn draft_issues(
 /// cwd: pass the shared consolidation charter on argv and wait up to `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
 /// which the caller verifies; the consumed notes are archived by the caller, not
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
-/// can dispatch on the selected agent. `effort` is unused: Kimi has no
-/// `model_reasoning_effort` analog (ADR-0028 D3), same shape as OpenCode.
+/// can dispatch on the selected agent. `effort` is a documented no-op
+/// (ADR-0044 D4): accepted for uniform dispatch, discarded here — must not
+/// alter argv.
 ///
 /// The consolidation session's tokens are captured the same way `plan`/`execute`
 /// are — snapshot the `wire` session tree around the call (appeared-over-grew) and
@@ -130,6 +134,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
     let model = resolve_init_kimi_model(model);
@@ -177,6 +182,7 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let model = resolve_init_kimi_model(model);
     let prompt = format!(

@@ -39,7 +39,11 @@ pub(crate) struct ResolvedEffort {
     pub(crate) exec: Option<Effort>,
 }
 
-fn claude_effort_strings(effort: &ResolvedEffort) -> (Option<String>, Option<String>) {
+/// Translate resolved Effort into the string form adapters store on
+/// `with_plan_effort` / `with_exec_effort`. Vendor-neutral (ADR-0044 D5): every
+/// adapter receives the word so a documented discard site is real, not "never
+/// received".
+fn effort_strings(effort: &ResolvedEffort) -> (Option<String>, Option<String>) {
     (
         effort.plan.map(|value| value.to_string()),
         effort.exec.map(|value| value.to_string()),
@@ -229,7 +233,7 @@ pub(crate) fn build_agent(
     let headless_idle = idle_minutes.unwrap_or(ralphy_core::DEFAULT_IDLE_MINUTES);
     match which {
         CliAgent::Claude => {
-            let (plan_effort, exec_effort) = claude_effort_strings(effort);
+            let (plan_effort, exec_effort) = effort_strings(effort);
             Box::new(
                 ClaudeAgent::new(non_empty(claude.plan_model.clone()), plan_effort, run_dir)
                     .with_exec_config(
@@ -272,32 +276,50 @@ pub(crate) fn build_agent(
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
         ),
-        CliAgent::Gemini => Box::new(
-            GeminiAgent::new(gemini.exec_model.clone(), run_dir)
-                .with_plan_model(gemini.plan_model.clone())
+        CliAgent::Gemini => {
+            let (plan_effort, exec_effort) = effort_strings(effort);
+            Box::new(
+                GeminiAgent::new(gemini.exec_model.clone(), run_dir)
+                    .with_plan_model(gemini.plan_model.clone())
+                    .with_plan_effort(plan_effort)
+                    .with_exec_effort(exec_effort)
+                    .with_run_deadline(run_deadline)
+                    .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+                    .with_idle_minutes(headless_idle),
+            )
+        }
+        CliAgent::Kimi => {
+            let (plan_effort, exec_effort) = effort_strings(effort);
+            Box::new(
+                KimiAgent::new(
+                    non_empty(args.exec_model.clone().unwrap_or_default()),
+                    run_dir,
+                )
+                .with_plan_effort(plan_effort)
+                .with_exec_effort(exec_effort)
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
-        ),
-        CliAgent::Kimi => Box::new(
-            KimiAgent::new(
-                non_empty(args.exec_model.clone().unwrap_or_default()),
-                run_dir,
             )
-            .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
-            .with_idle_minutes(headless_idle),
-        ),
-        CliAgent::OpenCode => Box::new(
-            OpenCodeAgent::new(
-                config::resolve_opencode_model(args.exec_model.clone(), persisted_opencode_model),
-                run_dir,
+        }
+        CliAgent::OpenCode => {
+            let (plan_effort, exec_effort) = effort_strings(effort);
+            Box::new(
+                OpenCodeAgent::new(
+                    config::resolve_opencode_model(
+                        args.exec_model.clone(),
+                        persisted_opencode_model,
+                    ),
+                    run_dir,
+                )
+                .with_variant(non_empty(args.exec_variant.clone().unwrap_or_default()))
+                .with_plan_effort(plan_effort)
+                .with_exec_effort(exec_effort)
+                .with_run_deadline(run_deadline)
+                .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+                .with_idle_minutes(headless_idle),
             )
-            .with_variant(non_empty(args.exec_variant.clone().unwrap_or_default()))
-            .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
-            .with_idle_minutes(headless_idle),
-        ),
+        }
     }
 }
 
@@ -450,16 +472,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_effort_translation_preserves_each_resolved_phase() {
+    fn effort_translation_preserves_each_resolved_phase() {
         assert_eq!(
-            claude_effort_strings(&ResolvedEffort {
+            effort_strings(&ResolvedEffort {
                 plan: Some(Effort::High),
                 exec: Some(Effort::Low),
             }),
             (Some("high".into()), Some("low".into()))
         );
         assert_eq!(
-            claude_effort_strings(&ResolvedEffort {
+            effort_strings(&ResolvedEffort {
                 plan: None,
                 exec: None,
             }),
@@ -477,10 +499,56 @@ mod tests {
             .split_once("CliAgent::Codex =>")
             .expect("Codex arm follows Claude")
             .0;
-        assert!(arm.contains("let (plan_effort, exec_effort) = claude_effort_strings(effort);"));
+        assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
         assert!(arm.contains("ClaudeAgent::new("));
         assert!(arm.contains("plan_effort, run_dir"));
         assert!(arm.contains("exec_effort,"));
+    }
+
+    #[test]
+    fn kimi_arm_passes_each_translated_effort_to_the_adapter() {
+        let source = include_str!("wiring.rs");
+        let arm = source
+            .split_once("CliAgent::Kimi =>")
+            .expect("Kimi arm")
+            .1
+            .split_once("CliAgent::OpenCode =>")
+            .expect("OpenCode arm follows Kimi")
+            .0;
+        assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
+        assert!(arm.contains(".with_plan_effort(plan_effort)"));
+        assert!(arm.contains(".with_exec_effort(exec_effort)"));
+    }
+
+    #[test]
+    fn gemini_arm_passes_each_translated_effort_to_the_adapter() {
+        let source = include_str!("wiring.rs");
+        let arm = source
+            .split_once("CliAgent::Gemini =>")
+            .expect("Gemini arm")
+            .1
+            .split_once("CliAgent::Kimi =>")
+            .expect("Kimi arm follows Gemini")
+            .0;
+        assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
+        assert!(arm.contains(".with_plan_effort(plan_effort)"));
+        assert!(arm.contains(".with_exec_effort(exec_effort)"));
+    }
+
+    #[test]
+    fn opencode_arm_passes_each_translated_effort_to_the_adapter() {
+        let source = include_str!("wiring.rs");
+        let arm = source
+            .split_once("CliAgent::OpenCode =>")
+            .expect("OpenCode arm")
+            .1
+            .split_once("fn resolve_plan_agent")
+            .expect("resolve_plan_agent follows the match")
+            .0;
+        assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
+        assert!(arm.contains(".with_plan_effort(plan_effort)"));
+        assert!(arm.contains(".with_exec_effort(exec_effort)"));
+        assert!(arm.contains(".with_variant("));
     }
 
     #[test]

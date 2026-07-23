@@ -217,8 +217,9 @@ fn read_artifact<T: DeserializeOwned>(
 /// The owned root's base is still the TARGET's (`one_shot_base(repo)`), not the
 /// throwaway cwd's: the identity belongs to the repository being diagnosed, and a
 /// root under a temp dir the caller deletes would be a new installation every run.
-/// `effort` is unused — this vendor's headless surface has no reasoning-effort
-/// axis.
+/// `effort` is a documented no-op (ADR-0044 D4): accepted for a uniform init
+/// dispatch signature, discarded here — Gemini has no level axis on argv;
+/// numeric `thinkingBudget` mapping is deliberately deferred.
 pub fn diagnose_repo(
     repo: &Path,
     neutral_cwd: &Path,
@@ -226,6 +227,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let log_path = neutral_cwd.join("diagnose.log");
@@ -259,6 +261,7 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
@@ -307,6 +310,7 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let prompt = triage_prompt(repo, req, out_path);
     let log_path = repo.join(".ralphy").join("triage.log");
@@ -341,6 +345,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     check_stdin_ceiling(PROMPT_CONSOLIDATE)?;
     fs::create_dir_all(run_dir).ok();

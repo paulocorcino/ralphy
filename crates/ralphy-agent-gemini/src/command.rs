@@ -336,6 +336,10 @@ mod tests {
             args.iter().all(|a| a.len() < 128),
             "a prompt-shaped argument reached argv: {args:?}"
         );
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "Gemini has no effort flag (ADR-0044 D4): {args:?}"
+        );
     }
 
     /// D12: the vendor's native plan mode writes into a vendor-private directory
