@@ -305,6 +305,15 @@ mod tests {
             .expect("crates/ is the parent")
             .to_path_buf();
         let needle = concat!("EFFORT", "_ORDER");
+        let semantic_order = concat!(
+            "\"none\",",
+            "\"minimal\",",
+            "\"low\",",
+            "\"medium\",",
+            "\"high\",",
+            "\"xhigh\",",
+            "\"max\""
+        );
         let mut stack = vec![crates.clone()];
         let mut scanned = 0;
         while let Some(dir) = stack.pop() {
@@ -329,6 +338,15 @@ mod tests {
                     assert!(
                         !text.contains(needle),
                         "{} names the clamp ordering: it stays inside the Copilot adapter (#227)",
+                        path.display()
+                    );
+                    let compact = text
+                        .chars()
+                        .filter(|character| !character.is_whitespace())
+                        .collect::<String>();
+                    assert!(
+                        !compact.contains(semantic_order),
+                        "{} defines Copilot's seven-rung ordering outside its adapter",
                         path.display()
                     );
                 }

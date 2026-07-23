@@ -948,6 +948,35 @@ mod tests {
     }
 
     #[test]
+    fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
+        let source = include_str!("run.rs");
+        let resolution = source
+            .split_once("let resolved_effort = ResolvedEffort")
+            .expect("resolved effort construction")
+            .1
+            .split_once("let resolved_copilot")
+            .expect("Copilot resolution follows effort")
+            .0;
+        for expression in [
+            "args.plan_effort",
+            "claude_settings.plan_effort.clone()",
+            "args.exec_effort",
+            "claude_settings.exec_effort.clone()",
+        ] {
+            assert!(
+                resolution.contains(expression),
+                "missing effort resolution input: {expression}"
+            );
+        }
+        let build_argument = ["&resolved", "_effort,"].concat();
+        assert_eq!(
+            source.matches(&build_argument).count(),
+            2,
+            "executor and split planner must receive the resolved effort"
+        );
+    }
+
+    #[test]
     fn unset_max_minutes_resolves_to_uncapped() {
         // The per-issue cap is opt-in (docs/adr/0038): an unset flag AND unset
         // setting resolve to `0`, which `issue_deadline` reads as "no per-issue
