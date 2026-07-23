@@ -180,9 +180,11 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) exec_model: Option<String>,
 
-    /// OpenCode `--variant` (effort) passed through to `opencode run`. Omitted
-    /// when unset so the adapter never sends a value the provider rejects
-    /// (docs/adr/0005 D3). Only used by `--agent opencode`.
+    /// OpenCode provider-native `--variant` dialect passed through to
+    /// `opencode run`. Orthogonal to `--plan-effort`/`--exec-effort` (those are
+    /// documented no-ops for this agent; docs/adr/0005 D3 amendment / ADR-0044
+    /// D8). Omitted when unset so the adapter never sends a value the provider
+    /// rejects. Only used by `--agent opencode`.
     #[arg(long)]
     pub(crate) exec_variant: Option<String>,
 

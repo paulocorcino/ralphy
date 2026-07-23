@@ -77,12 +77,17 @@ chosen value.
 So the OpenCode adapter is **deterministic — no auto complexity routing.** A fixed
 model (D4), with `--variant` passed through **only when the operator sets it**
 (`--exec-variant` / equivalent) and omitted otherwise, so the adapter never sends
-a value the provider rejects. This is the **effort** knob of CONTEXT.md — a
-deterministic value the operator sets — not auto-judged **complexity routing**,
-and CONTEXT.md already blesses a deterministic adapter (fixed model + fixed effort)
-as a first-class citizen. The OpenCode plan prompt therefore emits **no**
-`## Execution model` tier line at all (the mirror-image of why the Codex prompt
-emits one).
+a value the provider rejects. This is a deterministic operator knob — not
+auto-judged **complexity routing**, and CONTEXT.md already blesses a deterministic
+adapter (fixed model + fixed effort) as a first-class citizen. The OpenCode plan
+prompt therefore emits **no** `## Execution model` tier line at all (the
+mirror-image of why the Codex prompt emits one).
+
+### Amendment (issue #285 / ADR-0044 D8/D9)
+
+`--variant` is OpenCode's provider-native dialect, not Ralphy Effort.
+Neutral `--plan-effort`/`--exec-effort` are documented no-ops here.
+Telemetry reports `variant` separately from `effort`.
 
 ## D4 — Model resolution defers to OpenCode; `--exec-model` overrides
 
