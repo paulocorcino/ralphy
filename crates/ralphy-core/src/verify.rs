@@ -313,12 +313,12 @@ pub fn run(commands: &[Vec<String>], repo_root: &Path, timeout: Duration) -> Ver
 /// How many trailing characters of combined output to keep for the comment tail.
 const TAIL_BYTES: usize = 4000;
 
-/// Grace for collecting a command's output after its exit status is known. A
-/// descendant that inherited the pipes (a dev server a `## Verify` command
-/// backgrounded) can hold the write-end open past the foreground exit, so the
-/// reader never sees EOF; we wait only this long, then leak the stuck reader
-/// instead of blocking the gate forever (#156). Mirrors the headless runner's
-/// 5s collect grace.
+/// Grace for collecting a command's output after the tree-kill. The kill closes
+/// every inherited write-end, so the readers normally hit EOF and deliver at
+/// once; the grace is a backstop for a kill that failed to close a handle —
+/// then that stream's capture is dropped and the stuck reader leaked instead of
+/// blocking the gate forever (#156). Mirrors the headless runner's 5s collect
+/// grace.
 const OUTPUT_COLLECT_GRACE: Duration = Duration::from_secs(5);
 
 /// Run a single command, draining its output through threads (so a chatty command
@@ -399,9 +399,6 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    // Kill the whole tree, not just the direct `sh`/`bash`, so a
-                    // detached grandchild can't survive to hold the pipe open.
-                    ralphy_proc_util::kill_tree(&mut child);
                     timed_out = true;
                     break None;
                 }
@@ -411,11 +408,21 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         }
     };
 
-    // Collect the captured output with a bounded grace. Once the exit status is
-    // known, a descendant that inherited the pipes keeps the write-end open so the
-    // reader never sees EOF — waiting on the join unboundedly is what hung the gate
-    // for ~43 min (#156). Leak a stuck reader (warned, tail may be truncated)
-    // rather than block.
+    // Teardown BEFORE collection, on every path: kill the whole tree — not just
+    // the direct `sh`/`bash` — so a descendant that inherited the pipes (a dev
+    // server a `## Verify` command backgrounded) can't hold the write-end open
+    // and starve the readers of EOF. Collecting first with only a bounded grace
+    // dropped the whole stream whenever such a descendant existed, which on a
+    // FAILED gate handed the repair executor an empty output tail. The kill also
+    // reaps leaked descendants (a dev server holding a port) so a self-leaking
+    // command can't poison later gates. The direct child's exit code, already in
+    // hand, stays the outcome.
+    ralphy_proc_util::kill_tree(&mut child);
+
+    // Collect the captured output. The tree-kill closed every write-end, so the
+    // readers hit EOF and deliver the full capture promptly; the grace is a
+    // backstop against a kill that failed to close a handle — the unbounded join
+    // it replaces is what hung the gate for ~43 min (#156).
     let mut combined = String::new();
     if let Some(h) = out_handle {
         combined.push_str(&recv_and_join(&rx_out, h, "stdout"));
@@ -423,12 +430,6 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     if let Some(h) = err_handle {
         combined.push_str(&recv_and_join(&rx_err, h, "stderr"));
     }
-
-    // Teardown: kill any descendant that outlived the foreground command (a leaked
-    // dev server holding a port), so a self-leaking `## Verify` command can't poison
-    // later gates. The direct child's exit code stays the outcome. Best-effort; on
-    // the timeout path the tree is already gone.
-    ralphy_proc_util::kill_tree(&mut child);
 
     CommandOutcome {
         argv: argv.to_vec(),
@@ -516,10 +517,11 @@ fn spawn_command(program: &str, rest: &[String]) -> (std::ffi::OsString, Vec<std
 }
 
 /// Await one reader thread's captured bytes within [`OUTPUT_COLLECT_GRACE`], then
-/// join it and return the bytes as lossy UTF-8. On a natural exit or after a
-/// [`ralphy_proc_util::kill_tree`] the pipe hits EOF and the thread sends promptly,
-/// so the join is immediate; if the grace elapses a descendant still holds the
-/// write-end — warn that the tail may be truncated and leak that one thread instead
+/// join it and return the bytes as lossy UTF-8. The caller tree-killed the child
+/// first, so the pipe hits EOF and the thread sends promptly — the join is
+/// immediate. The reader sends its buffer exactly once, at EOF, so if the grace
+/// elapses (a write-end the kill could not close) there is nothing partial to
+/// recover: this stream's capture is DROPPED, and the stuck thread leaked instead
 /// of blocking the gate on a join that would hang (#156). Mirrors
 /// `ralphy-adapter-support`'s `recv_and_join`.
 fn recv_and_join(
@@ -535,7 +537,7 @@ fn recv_and_join(
         Err(_) => {
             tracing::warn!(
                 stream,
-                "verify gate reader did not finish within the collect grace — output tail may be truncated"
+                "verify gate reader still blocked after the tree-kill — this stream's captured output was dropped"
             );
             String::new()
         }

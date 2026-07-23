@@ -18,6 +18,7 @@ const CLEAN_STDERR: &str = "hello-from-stderr";
 const LARGE_LEN: usize = 200_000;
 const STDERR_MARKER: &str = "quota-marker: usage limit reached";
 const DEGRADED_MARKER: &str = "Waiting for API response";
+const LEAK_MARKER: &str = "output-before-the-leak";
 
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/
 /// stderr piped exactly as the adapters do before handing the command off.
@@ -65,6 +66,37 @@ fn timeout_kills_child_and_returns_promptly() {
     assert!(
         elapsed < Duration::from_secs(30),
         "run_headless returned promptly after the deadline (took {elapsed:?})"
+    );
+}
+
+#[test]
+fn natural_exit_with_leaked_grandchild_still_captures_the_output() {
+    // The cursor #244 shape: the agent CLI exits ON ITS OWN, but an orphan it
+    // spawned inherits stdout and holds the write-end open. Before the
+    // pre-collect tree-kill, the reader never reached EOF, the collect grace
+    // expired, and the capture came back EMPTY — silently dropping the very
+    // output the limit/auth detectors scan. The reader delivers its buffer only
+    // at EOF, so capturing the marker proves the kill closed the leaked pipe.
+    let started = Instant::now();
+    let r = run_headless(
+        child_cmd("exit-leaking-grandchild"),
+        "ignored prompt",
+        Duration::from_secs(60),
+    )
+    .expect("run_headless should not error on a natural exit with a leaked orphan");
+    let elapsed = started.elapsed();
+
+    assert!(!r.timed_out, "the direct child exited on its own");
+    let status = r.exit.expect("a natural exit yields Some(status)");
+    assert!(status.success(), "the direct child exited 0");
+    assert!(
+        r.stdout.contains(LEAK_MARKER),
+        "the child's output is captured despite the leaked pipe holder — got {:?}",
+        r.stdout
+    );
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "returned promptly, not after the orphan's 60s lifetime (took {elapsed:?})"
     );
 }
 

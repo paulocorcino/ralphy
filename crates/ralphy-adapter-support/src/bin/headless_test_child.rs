@@ -11,6 +11,12 @@
 //!   stdout pipe write-end open after the direct child dies, so it exercises
 //!   `run_headless`'s process-tree kill: a plain `child.kill()` would leave the
 //!   reader blocked on the still-open pipe.
+//! - `exit-leaking-grandchild` — write [`LEAK_MARKER`] to stdout, spawn a copy of
+//!   itself (in `sleep` mode) that inherits this process's stdout, then exit 0
+//!   *immediately*. The natural-exit counterpart of `sleep-with-grandchild` (the
+//!   cursor #244 shape): the agent CLI exits on its own but its orphan holds the
+//!   pipe, so only the pre-collect tree-kill lets the reader reach EOF — the
+//!   marker arriving is the proof.
 //! - `large` — emit a large (>64KB) stream to stdout, then exit 0 (the
 //!   no-truncation case).
 //! - `stderr-then-sleep` — write a newline-terminated marker to stderr (so the
@@ -65,6 +71,9 @@ pub const CHATTY_TICK: Duration = Duration::from_millis(100);
 /// The line the `degraded-chatty` child emits every tick — a representative
 /// degraded/retry banner the caller's `degraded_line` predicate matches on.
 pub const DEGRADED_MARKER: &str = "Waiting for API response";
+/// The stdout line the `exit-leaking-grandchild` child writes before leaking its
+/// orphan — capturing it proves the reader reached EOF past the leaked pipe.
+pub const LEAK_MARKER: &str = "output-before-the-leak";
 
 /// Append `<label> tick\n` to the heartbeat file every [`CHATTY_TICK`] for ~60s.
 ///
@@ -128,6 +137,18 @@ fn main() {
                 let _ = std::process::Command::new(exe).arg("sleep").spawn();
             }
             std::thread::sleep(Duration::from_secs(60));
+        }
+        "exit-leaking-grandchild" => {
+            // The output the runner must still capture: it only arrives if the
+            // reader reaches EOF, which — with the orphan below holding the
+            // write-end — only the pre-collect tree-kill can force.
+            println!("{LEAK_MARKER}");
+            let _ = std::io::stdout().flush();
+            // Grandchild inherits our stdout, then we exit 0 straight away — the
+            // orphan holds the pipe open past our natural exit.
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe).arg("sleep").spawn();
+            }
         }
         "stderr-then-sleep" => {
             // Emit the marker as a full LINE (newline + flush) so the reader's

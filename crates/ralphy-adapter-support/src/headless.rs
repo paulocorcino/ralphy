@@ -285,11 +285,9 @@ fn drive_headless(
             tracing::info!(
                 "headless child emitted an early-kill line on stderr — reaping now instead of waiting out the wall timeout"
             );
-            ralphy_proc_util::kill_tree(&mut child);
             break None;
         }
         if Instant::now() >= deadline {
-            ralphy_proc_util::kill_tree(&mut child);
             timed_out = true;
             break None;
         }
@@ -303,7 +301,6 @@ fn drive_headless(
                 ralphy_core::emit::idle_reaped(
                     idle.window().map(|w| w.as_secs() / 60).unwrap_or(0),
                 );
-                ralphy_proc_util::kill_tree(&mut child);
                 timed_out = true;
                 idle_killed = true;
                 break None;
@@ -322,11 +319,20 @@ fn drive_headless(
         thread::sleep(Duration::from_millis(500));
     };
 
-    // Collect with a bounded grace so a child that flushed late is still captured.
-    // After a natural exit (or `kill_tree`) the pipes reach EOF and the readers
-    // finish, so this normally returns the full buffer; on the rare stuck reader we
-    // warn (a truncated capture is observable) and leak that one thread rather than
-    // block the whole run on it.
+    // Teardown BEFORE collection, on every exit path — including a NATURAL exit.
+    // An agent CLI that backgrounded a helper leaves that descendant holding the
+    // inherited stdout/stderr write-ends open after the CLI itself exits; without
+    // this kill the readers never reach EOF and the collect grace below returned
+    // EMPTY — silently dropping the very output the limit/auth detectors scan
+    // (the cursor #244 shape: a live run classified Stuck with its evidence
+    // discarded). On the early-kill/timeout/idle paths this is where the tree
+    // dies; on a natural exit it reaps whatever the CLI leaked.
+    ralphy_proc_util::kill_tree(&mut child);
+
+    // Collect the captured output. The tree-kill closed every write-end, so the
+    // readers hit EOF and deliver the full buffer; the grace is a backstop
+    // against a kill that failed to close a handle — then that stream's capture
+    // is dropped and the stuck reader leaked rather than blocking the whole run.
     let collect = Duration::from_secs(5);
     let stdout_bytes = recv_and_join(&rx_out, out_handle, collect, "stdout");
     let stderr_bytes = recv_and_join(&rx_err, err_handle, collect, "stderr");
@@ -538,11 +544,12 @@ fn run_headless_logged_impl(
     })
 }
 
-/// Await one reader thread's captured bytes within `grace`, then join it. On a
-/// natural exit or after [`kill_tree`] the pipe hits EOF and the thread sends
-/// promptly, so the join is immediate; if the grace elapses the thread is still
-/// blocked (a descendant survived) — warn that the capture may be truncated and
-/// leak that one thread instead of blocking the run on a join that would hang.
+/// Await one reader thread's captured bytes within `grace`, then join it. The
+/// caller tree-killed the child first, so the pipe hits EOF and the thread sends
+/// promptly — the join is immediate. The reader sends its buffer exactly once,
+/// at EOF, so if the grace elapses (a write-end the kill could not close) there
+/// is nothing partial to recover: this stream's capture is DROPPED, and the
+/// stuck thread leaked instead of blocking the run on a join that would hang.
 fn recv_and_join(
     rx: &mpsc::Receiver<Vec<u8>>,
     handle: thread::JoinHandle<()>,
@@ -557,7 +564,7 @@ fn recv_and_join(
         Err(_) => {
             tracing::warn!(
                 stream,
-                "headless reader did not finish within the collect grace — output may be truncated"
+                "headless reader still blocked after the tree-kill — this stream's captured output was dropped"
             );
             Vec::new()
         }
