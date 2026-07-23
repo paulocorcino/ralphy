@@ -112,10 +112,16 @@ pub(crate) fn seed_cursor_config_dir(operator_dir: Option<&Path>, scratch: &Path
 /// it overrides the charter, D9). `--sandbox` is deliberately left unset: forcing a
 /// sandbox mode is a capability decision this spike gathered no evidence for.
 ///
-/// Two env vars are set and no more. `CURSOR_CONFIG_DIR` is the D17 containment.
+/// The environment is set with care. `CURSOR_CONFIG_DIR` is the D17 containment.
 /// `CURSOR_AGENT_DISABLE_DEBUG_LOG` turns off a debug log the CLI writes for every
 /// invocation, unasked, into the OS temp directory (D18) — a queue run produces
 /// hundreds of invocations and the files name the operator's repositories.
+/// On **Windows only**, `SHELL` (plus `MSYSTEM`) is pinned to a located git-bash
+/// (D20) so the vendor runs shell tool calls under bash, not PowerShell — where a
+/// POSIX heredoc commit message (`-m "$(cat <<'EOF' … EOF)"`) ParserErrors. `MSYSTEM`
+/// is required with it: without the MSYS runtime flag git-bash returns "no exit
+/// status" for every command. Both are left untouched when the operator already set
+/// `SHELL` or no git-bash is found (see [`git_bash_shell_pin`]).
 /// `CURSOR_API_KEY`/`CURSOR_AUTH_TOKEN` are left untouched: Ralphy sets neither,
 /// and scrubbing them would break an operator who authenticates that way (D8).
 pub(crate) fn build_cursor_command(
@@ -139,7 +145,53 @@ pub(crate) fn build_cursor_command(
         .stderr(Stdio::piped())
         .env("CURSOR_CONFIG_DIR", config_dir)
         .env("CURSOR_AGENT_DISABLE_DEBUG_LOG", "1");
+    // D20: on Windows, pin SHELL to git-bash so the vendor's shell classifier picks
+    // bash over PowerShell and POSIX heredoc commits stop ParserError-ing. Windows
+    // only — on Linux/macOS SHELL is already a POSIX shell and must be left alone.
+    // `MSYSTEM` rides along: git-bash spawned without its MSYS runtime flag flips the
+    // classifier but then returns "no exit status" for every command (the vendor's
+    // persistent shell cannot read an exit code back) — verified live, SHELL alone is
+    // a worse break than the papercut it fixes, SHELL+MSYSTEM runs commands cleanly.
+    #[cfg(windows)]
+    if let Some(shell) = git_bash_shell_pin(
+        std::env::var_os("SHELL"),
+        ralphy_proc_util::locate_git_bash(),
+    ) {
+        cmd.env("SHELL", shell).env("MSYSTEM", GIT_BASH_MSYSTEM);
+    }
     cmd
+}
+
+/// The MSYS runtime flavour git-bash sets for a 64-bit Git-for-Windows shell. Ralphy
+/// sets it alongside `SHELL` (D20) because `cursor-agent`'s persistent shell cannot
+/// read an exit code back from git-bash unless the MSYS runtime is initialised, which
+/// this flag triggers.
+#[cfg(windows)]
+const GIT_BASH_MSYSTEM: &str = "MINGW64";
+
+/// The `SHELL` a Windows run pins so `cursor-agent` runs its shell tool calls under
+/// git-bash, not PowerShell (ADR-0042 D20). The vendor's classifier reads `SHELL`;
+/// native `ralphy.exe` spawns the CLI with `MSYSTEM` absent and `SHELL` empty, so it
+/// falls through to PowerShell and a POSIX heredoc commit ParserErrors on the first
+/// try of every execute session.
+///
+/// `Some(path)` says set it; `None` leaves `SHELL` exactly as the parent env has it,
+/// in the two cases the fix must not touch:
+/// - the operator already set `SHELL` (`existing_shell` is `Some`) — a deliberate
+///   choice Ralphy never overrides, the same stance as D8's credential vars;
+/// - no git-bash was located — pinning `SHELL` to a missing binary would break the
+///   spawn entirely, so today's self-healing PowerShell fallback stands instead.
+///
+/// Pure over its inputs so every branch unit-tests without touching the real env.
+#[cfg(windows)]
+fn git_bash_shell_pin(
+    existing_shell: Option<std::ffi::OsString>,
+    located_git_bash: Option<PathBuf>,
+) -> Option<PathBuf> {
+    match existing_shell {
+        Some(_) => None,
+        None => located_git_bash,
+    }
 }
 
 /// The one-shot builder (`init` / `triage` / `consolidate` / `diagnose`).
@@ -399,6 +451,265 @@ mod tests {
                 .map(PathBuf::into_os_string)
                 .unwrap_or_else(|| NAMES[0].into())
         );
+    }
+
+    /// D20: on Windows the run pins `SHELL` to git-bash. The decision is a pure
+    /// function of two inputs, so every branch is asserted deterministically here;
+    /// the shape guarantee (the pinned path is what the vendor classifier accepts)
+    /// lives in `ralphy_proc_util::is_git_bash_shape` and its own tests.
+    #[cfg(windows)]
+    mod shell_pin {
+        use super::*;
+
+        #[test]
+        fn no_shell_and_git_bash_found_pins_it() {
+            let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+            assert_eq!(git_bash_shell_pin(None, Some(bash.clone())), Some(bash));
+        }
+
+        #[test]
+        fn an_operator_set_shell_is_never_overridden() {
+            let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+            assert_eq!(
+                git_bash_shell_pin(Some("/usr/bin/fish".into()), Some(bash)),
+                None,
+                "a deliberate operator SHELL must pass through untouched (D8 stance)"
+            );
+        }
+
+        #[test]
+        fn no_git_bash_located_sets_nothing() {
+            assert_eq!(
+                git_bash_shell_pin(None, None),
+                None,
+                "SHELL must never point at a missing binary — PowerShell fallback stands"
+            );
+        }
+
+        #[test]
+        fn the_pinned_path_is_a_shape_the_vendor_classifier_accepts() {
+            let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+            let pinned = git_bash_shell_pin(None, Some(bash)).expect("pins when found");
+            assert!(
+                ralphy_proc_util::is_git_bash_shape(&pinned),
+                "the pinned SHELL must match /git.*bash\\.exe$/i: {pinned:?}"
+            );
+        }
+
+        /// The builder actually applies the pin: whatever the pure decision says for
+        /// this host's real env, the `Command` reflects it. Recomputing the same
+        /// inputs keeps it deterministic while still catching a wrong var name or a
+        /// missing gate.
+        #[test]
+        fn build_cursor_command_applies_the_pin() {
+            let cmd = build_cursor_command("s1", None, Path::new("."), Path::new("cfg"));
+            let expected = git_bash_shell_pin(
+                std::env::var_os("SHELL"),
+                ralphy_proc_util::locate_git_bash(),
+            );
+            match expected {
+                Some(p) => {
+                    assert_eq!(env_of(&cmd, "SHELL").map(PathBuf::from), Some(p));
+                    // MSYSTEM must ride along, or git-bash returns "no exit status".
+                    assert_eq!(
+                        env_of(&cmd, "MSYSTEM").as_deref(),
+                        Some("MINGW64"),
+                        "pinning SHELL to git-bash without MSYSTEM breaks the shell"
+                    );
+                }
+                None => {
+                    assert!(
+                        !cmd.get_envs().any(|(k, _)| k == "SHELL"),
+                        "SHELL must not be set when the pin declines"
+                    );
+                    assert!(
+                        !cmd.get_envs().any(|(k, _)| k == "MSYSTEM"),
+                        "MSYSTEM must not be set when SHELL is not pinned"
+                    );
+                }
+            }
+            // The one-shot builder delegates, so it inherits the same wiring.
+            let init = build_cursor_init_command(None, Path::new("."), Path::new("cfg"));
+            assert_eq!(env_of(&init, "SHELL"), env_of(&cmd, "SHELL"));
+            assert_eq!(env_of(&init, "MSYSTEM"), env_of(&cmd, "MSYSTEM"));
+        }
+    }
+
+    /// End-to-end validation of D20 against the **real** `cursor-agent` on a Windows
+    /// host. `#[ignore]` — it spawns the vendor CLI, needs a logged-in Cursor and
+    /// network, and costs a real model turn, so it never runs in CI. Invoke it by
+    /// hand in the lab:
+    ///
+    /// ```text
+    /// cargo test -p ralphy-agent-cursor --lib -- --ignored --nocapture cursor_shell_pin_lets_a_heredoc_commit
+    /// ```
+    ///
+    /// It drives the production builder (`build_cursor_command`) so the pin under
+    /// test is the shipped one, in a throwaway git repo (no trace, unlike touching
+    /// the lab repo), and forces the exact POSIX heredoc commit that ParserErrors
+    /// under PowerShell. The discriminator is the vendor's `ps-script` PowerShell
+    /// wrapper: under the git-bash pin it is never created; strip the pin (the
+    /// pre-fix state) and it reappears.
+    #[cfg(windows)]
+    mod e2e {
+        use super::*;
+        use std::io::{Read, Write};
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        /// One instruction turn forcing the heredoc form the model reaches for out of
+        /// habit — `-m "$(cat <<'EOF' … EOF)"` — the construct PowerShell rejects.
+        const HEREDOC_PROMPT: &str = "\
+You are in a git repository with a staged file. Make EXACTLY ONE commit by running \
+this shell command VERBATIM, and nothing else — do not rewrite the quoting, do not \
+use any other form:\n\n\
+git commit -m \"$(cat <<'EOF'\nProbe: multi-line heredoc commit\n\nSecond paragraph proving the message survived the heredoc.\nEOF\n)\"\n\n\
+After it succeeds, stop.";
+
+        fn git(repo: &Path, args: &[&str]) {
+            let ok = Command::new("git")
+                .current_dir(repo)
+                .args(args)
+                .status()
+                .expect("git must be on PATH")
+                .success();
+            assert!(ok, "git {args:?} failed");
+        }
+
+        /// Run `cmd` to completion (180s watchdog), feeding the prompt on stdin and
+        /// returning stdout+stderr combined — the stream the fold and this probe read.
+        fn run_capture(mut cmd: Command, prompt: &str) -> String {
+            let mut child = cmd.spawn().expect("spawn cursor-agent");
+            let pid = child.id();
+            {
+                let mut stdin = child.stdin.take().expect("piped stdin");
+                stdin.write_all(prompt.as_bytes()).expect("write prompt");
+            } // drop closes stdin → cursor's print mode processes the turn
+            let mut out = child.stdout.take().expect("piped stdout");
+            let mut err = child.stderr.take().expect("piped stderr");
+            let ho = thread::spawn(move || {
+                let mut s = String::new();
+                let _ = out.read_to_string(&mut s);
+                s
+            });
+            let he = thread::spawn(move || {
+                let mut s = String::new();
+                let _ = err.read_to_string(&mut s);
+                s
+            });
+            let start = Instant::now();
+            loop {
+                if child.try_wait().expect("try_wait").is_some() {
+                    break;
+                }
+                if start.elapsed() > Duration::from_secs(180) {
+                    ralphy_proc_util::kill_tree_by_pid(pid);
+                    let _ = child.wait();
+                    break;
+                }
+                thread::sleep(Duration::from_millis(200));
+            }
+            format!(
+                "{}\n{}",
+                ho.join().unwrap_or_default(),
+                he.join().unwrap_or_default()
+            )
+        }
+
+        /// Prepare a throwaway repo with one staged file and the indexing opt-out the
+        /// runner would write, returning `(repo, scratch_config_dir)`.
+        fn lab_repo() -> (tempfile::TempDir, tempfile::TempDir) {
+            let repo = tempfile::tempdir().expect("tempdir");
+            git(repo.path(), &["init", "-q"]);
+            git(repo.path(), &["config", "user.email", "probe@ralphy.test"]);
+            git(repo.path(), &["config", "user.name", "ralphy probe"]);
+            std::fs::write(repo.path().join("README.md"), "probe\n").expect("write file");
+            // Opt out of the codebase upload exactly as the D6 gate does.
+            std::fs::write(repo.path().join(".cursorindexingignore"), "*\n").expect("opt-out");
+            git(repo.path(), &["add", "-A"]);
+            let cfg = tempfile::tempdir().expect("config tempdir");
+            (repo, cfg)
+        }
+
+        fn head_message(repo: &Path) -> String {
+            let out = Command::new("git")
+                .current_dir(repo)
+                .args(["log", "-1", "--pretty=%B"])
+                .output()
+                .expect("git log");
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        }
+
+        #[test]
+        #[ignore = "e2e: spawns real cursor-agent, needs a logged-in Cursor + network"]
+        fn cursor_shell_pin_lets_a_heredoc_commit_land_without_a_ps_script_wrapper() {
+            // Precondition: this host is the production shape the fix targets — no
+            // operator SHELL, and git-bash present so the pin can fire.
+            assert!(
+                std::env::var_os("SHELL").is_none(),
+                "unset SHELL for this probe — the fix only pins when the operator has not"
+            );
+            let git_bash = ralphy_proc_util::locate_git_bash()
+                .expect("git-bash must be installed to validate D20 on this host");
+
+            // ---- FIX arm: the shipped builder, whose pin sets SHELL=git-bash. ----
+            let (repo, cfg) = lab_repo();
+            let fixed = build_cursor_command(&mint_session_id(), None, repo.path(), cfg.path());
+            assert_eq!(
+                env_of(&fixed, "SHELL").map(PathBuf::from),
+                Some(git_bash.clone()),
+                "the production builder must pin SHELL to git-bash"
+            );
+            assert_eq!(
+                env_of(&fixed, "MSYSTEM").as_deref(),
+                Some("MINGW64"),
+                "MSYSTEM must ride along or git-bash returns 'no exit status'"
+            );
+            let stream = run_capture(fixed, HEREDOC_PROMPT);
+            assert!(
+                !stream.contains("no exit status"),
+                "the git-bash shell must return exit codes (MSYSTEM present); stream:\n{stream}"
+            );
+
+            assert!(
+                !stream.contains("ps-script"),
+                "the git-bash pin must avoid the PowerShell ps-script wrapper entirely; stream:\n{stream}"
+            );
+            let msg = head_message(repo.path());
+            assert!(
+                msg.contains("multi-line heredoc commit") && msg.contains("Second paragraph"),
+                "the multi-line heredoc commit must have landed; HEAD message:\n{msg}\nstream:\n{stream}"
+            );
+
+            // ---- BASELINE arm: the same builder minus the pin (the pre-fix state). ----
+            // Best-effort reproduction — proof the harness would catch a regression.
+            let (repo2, cfg2) = lab_repo();
+            let mut baseline =
+                build_cursor_command(&mint_session_id(), None, repo2.path(), cfg2.path());
+            baseline.env_remove("SHELL");
+            baseline.env_remove("MSYSTEM");
+            let baseline_stream = run_capture(baseline, HEREDOC_PROMPT);
+            eprintln!(
+                "baseline (no pin) reproduced the PowerShell wrapper: {}",
+                baseline_stream.contains("ps-script") || baseline_stream.contains("ParserError")
+            );
+        }
+    }
+
+    /// D20 is Windows-only: on Linux/macOS `SHELL` is already a POSIX shell and
+    /// Ralphy must never touch it, on either builder.
+    #[test]
+    #[cfg(not(windows))]
+    fn shell_is_never_touched_off_windows() {
+        for cmd in [
+            build_cursor_command("s1", None, Path::new("."), Path::new("cfg")),
+            build_cursor_init_command(None, Path::new("."), Path::new("cfg")),
+        ] {
+            assert!(
+                !cmd.get_envs().any(|(k, _)| k == "SHELL" || k == "MSYSTEM"),
+                "ralphy must not set SHELL/MSYSTEM off Windows"
+            );
+        }
     }
 
     #[test]

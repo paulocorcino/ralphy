@@ -313,6 +313,59 @@ fn version_key(name: &str) -> Vec<u64> {
         .collect()
 }
 
+/// True when `path` is the shape `cursor-agent`'s shell classifier accepts as
+/// git-bash — its own detector keys on `/git.*bash\.exe$/i` (ADR-0042 D20). A
+/// `bash.exe` that is not under a `git` path — notably `%SystemRoot%\System32\
+/// bash.exe`, the **WSL launcher** — is NOT git-bash: pinning `SHELL` to it would
+/// make the vendor spawn WSL, not a POSIX shell on the host. Pure and
+/// OS-independent so both directions unit-test on every platform.
+pub fn is_git_bash_shape(path: &Path) -> bool {
+    let lower = path.to_string_lossy().to_ascii_lowercase();
+    lower
+        .strip_suffix("bash.exe")
+        .is_some_and(|head| head.contains("git"))
+}
+
+/// Locate git-bash (`bash.exe`) — the shell `cursor-agent`'s classifier picks over
+/// PowerShell for POSIX shell tool calls (ADR-0042 D20). `None` means no git-bash
+/// is present, and the caller must then leave `SHELL` unset rather than point it at
+/// a missing binary.
+///
+/// The two standard Git-for-Windows install roots are probed first — the exact
+/// paths the vendor's own detector uses — then `PATH`. Only a git-bash-*shaped* hit
+/// is accepted ([`is_git_bash_shape`]): a bare `bash.exe` on `PATH` is as likely to
+/// be the WSL launcher, which is not git-bash.
+///
+/// Pure over its inputs so all shapes unit-test against temp trees with an empty
+/// `PATH`, matching [`locate_cursor_with`](cursor::locate_cursor_with).
+pub fn locate_git_bash_with(
+    path_var: Option<std::ffi::OsString>,
+    pathext: Option<std::ffi::OsString>,
+    program_files: Option<PathBuf>,
+    program_files_x86: Option<PathBuf>,
+) -> Option<PathBuf> {
+    // `Git\bin\bash.exe` is git-bash; `Git\cmd\` (sometimes the only dir on PATH)
+    // carries git.exe but no bash — hence the explicit `bin` probe here.
+    for root in [program_files, program_files_x86].into_iter().flatten() {
+        let cand = root.join("Git").join("bin").join("bash.exe");
+        if cand.is_file() {
+            return Some(cand);
+        }
+    }
+    find_program("bash", path_var, pathext).filter(|p| is_git_bash_shape(p))
+}
+
+/// Locate git-bash against the real environment (ADR-0042 D20). `None` when no
+/// git-bash is installed — the run then leaves `SHELL` as the operator has it.
+pub fn locate_git_bash() -> Option<PathBuf> {
+    locate_git_bash_with(
+        std::env::var_os("PATH"),
+        std::env::var_os("PATHEXT"),
+        std::env::var_os("ProgramFiles").map(PathBuf::from),
+        std::env::var_os("ProgramFiles(x86)").map(PathBuf::from),
+    )
+}
+
 /// The home directory, from the platform's usual env var (`USERPROFILE` on
 /// Windows, else `HOME`). Exported so every adapter shares one definition instead
 /// of re-deriving the `USERPROFILE`-or-`HOME` dance.
@@ -596,6 +649,97 @@ mod tests {
             );
             assert_eq!(found, got.first().cloned(), "the nvm fallback must be hit");
         }
+    }
+
+    /// ADR-0042 D20: git-bash under either standard root is the shape the vendor's
+    /// classifier accepts; the WSL launcher (a `System32\bash.exe`) and git.exe are
+    /// not, and pinning `SHELL` to the WSL bash would spawn WSL instead of a POSIX
+    /// shell on the host.
+    #[test]
+    fn is_git_bash_shape_matches_the_vendor_regex() {
+        assert!(is_git_bash_shape(Path::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        // Case-insensitive, like the vendor's `/…/i` regex.
+        assert!(is_git_bash_shape(Path::new(
+            r"C:\Program Files (x86)\Git\bin\BASH.EXE"
+        )));
+        // The WSL launcher: a bash.exe that is NOT git-bash.
+        assert!(!is_git_bash_shape(Path::new(
+            r"C:\Windows\System32\bash.exe"
+        )));
+        // git.exe is not a shell.
+        assert!(!is_git_bash_shape(Path::new(
+            r"C:\Program Files\Git\cmd\git.exe"
+        )));
+    }
+
+    /// D20: the two standard Git-for-Windows roots are probed first, `bin\bash.exe`
+    /// under each. `is_file()` is OS-independent, so this resolves on every platform.
+    #[test]
+    fn locate_git_bash_prefers_the_program_files_roots() {
+        for from_x86 in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let want = root.path().join("Git").join("bin").join("bash.exe");
+            fs::create_dir_all(want.parent().unwrap()).unwrap();
+            fs::write(&want, b"").unwrap();
+            let (pf, pf86) = if from_x86 {
+                (None, Some(root.path().to_path_buf()))
+            } else {
+                (Some(root.path().to_path_buf()), None)
+            };
+            let got = locate_git_bash_with(Some(std::ffi::OsString::new()), None, pf, pf86);
+            assert_eq!(got.as_deref(), Some(want.as_path()), "x86={from_x86}");
+        }
+    }
+
+    /// No install anywhere resolves to nothing — the caller then leaves `SHELL`
+    /// alone rather than pinning it to a missing binary.
+    #[test]
+    fn locate_git_bash_is_none_when_nothing_is_installed() {
+        assert_eq!(
+            locate_git_bash_with(Some(std::ffi::OsString::new()), None, None, None),
+            None
+        );
+    }
+
+    /// D20: a `bash.exe` on `PATH` that is not git-bash (the WSL launcher shape) is
+    /// rejected, while a git-shaped one is accepted. Windows-only: the `PATH` search
+    /// keys on `PATHEXT`, which is a no-op off Windows.
+    #[test]
+    #[cfg(windows)]
+    fn locate_git_bash_rejects_a_non_git_bash_on_path() {
+        let base = tempfile::tempdir().unwrap();
+
+        // A `System32\bash.exe` on PATH — the WSL launcher — must be rejected.
+        let sys = base.path().join("System32");
+        fs::create_dir_all(&sys).unwrap();
+        fs::write(sys.join("bash.exe"), b"").unwrap();
+        assert_eq!(
+            locate_git_bash_with(
+                Some(sys.clone().into_os_string()),
+                Some(".EXE".into()),
+                None,
+                None
+            ),
+            None,
+            "a non-git bash.exe on PATH must be rejected"
+        );
+
+        // A git-shaped `Git\bin\bash.exe` on PATH IS accepted.
+        let gitbin = base.path().join("Git").join("bin");
+        fs::create_dir_all(&gitbin).unwrap();
+        let want = gitbin.join("bash.exe");
+        fs::write(&want, b"").unwrap();
+        let got = locate_git_bash_with(
+            Some(gitbin.into_os_string()),
+            Some(".EXE".into()),
+            None,
+            None,
+        )
+        .expect("a git-shaped bash.exe on PATH must resolve");
+        assert!(is_git_bash_shape(&got), "resolved {got:?}");
+        assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("bash"));
     }
 
     #[test]

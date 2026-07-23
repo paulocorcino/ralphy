@@ -782,6 +782,66 @@ defaulting to `false` on every failure path; a source-text pin
 (`session::tests::the_optin_key_matches_the_adapters_own_schema`) reds if this
 crate renames the key or the section.
 
+## D20 — On Windows, runs pin `SHELL` to git-bash so shell tool calls run under bash, not PowerShell
+
+`cursor-agent` does **not** run a shell tool call directly on Windows: it writes
+the command into a temp `ps-script-<uuid>.ps1` and executes it via PowerShell.
+The model, out of habit, emits POSIX for a multi-line commit message —
+`-m "$(cat <<'EOF' … EOF)"` — and PowerShell parses `<<` as a redirection
+operator, so the first multi-line commit of every execute session fails with
+`ParserError: Missing file specification after redirection operator`. The run
+stays green and the commit lands on a retry (a `degraded_note`, not a failed
+run — a failed tool call is not a failed run, D3), but the agent burns one
+wasted shell tool call adapting.
+
+The shell is chosen by the CLI's own classifier from `userTerminalHint ||
+process.env.SHELL`: git-bash (`/git.*bash\.exe$/i`, or `MSYSTEM`/`EXEPATH`
+present) → bash; otherwise, with `pwsh`/`powershell` on the host → **PowerShell**.
+Ralphy spawns `cursor-agent` from a native Windows process (`ralphy.exe`), so
+`MSYSTEM` is absent and `SHELL` is empty → the classifier falls through to
+PowerShell. A controlled probe confirmed the single variable: with `SHELL`
+unset the heredoc fails byte-identically to production; with `SHELL` pointed at
+`C:\Program Files\Git\bin\bash.exe` it runs first try.
+
+**`SHELL` alone is not enough — `MSYSTEM` rides with it (live-validated).** An
+end-to-end probe against the real `cursor-agent`, spawned from a native Windows
+process (`MSYSTEM` absent), found that pinning only `SHELL` to git-bash flips the
+classifier to bash but then every shell tool call — even a bare `echo` — comes
+back `spawnError: "the shell command returned no exit status"`: the vendor's
+persistent shell service cannot read an exit code back from a git-bash that never
+initialised its MSYS runtime. That is a *worse* break than the papercut (the
+PowerShell path at least runs commands and self-heals). Setting
+`MSYSTEM=MINGW64` alongside `SHELL` initialises the runtime, and the same probe
+then ran commands with `exitCode: 0` and real stdout, and landed the multi-line
+heredoc commit on the first try with no `ps-script`/`ParserError`. So the pin is
+**two env vars, together**: `SHELL`=git-bash and `MSYSTEM=MINGW64`.
+
+So on **Windows only**, `build_cursor_command` pins `SHELL` (and `MSYSTEM`) to a
+located git-bash. Constraints:
+
+- **Windows only.** On Linux/macOS `SHELL` is already a POSIX shell; the whole
+  behaviour is `#[cfg(windows)]`-gated.
+- **Never point `SHELL` at a path that does not exist.** The locator
+  (`ralphy_proc_util::locate_git_bash`, alongside the D19 `locate_cursor` move so
+  the daemon's interactive launch can reuse it) probes the two Git-for-Windows
+  roots (`%ProgramFiles%`/`%ProgramFiles(x86)%\Git\bin\bash.exe`) then `PATH`,
+  accepting only a git-bash-*shaped* hit — a bare `bash.exe` on `PATH` is as
+  likely to be the WSL launcher (`System32\bash.exe`), which is not git-bash and
+  would spawn WSL. If none is found, nothing is set and today's PowerShell
+  behaviour (which self-heals) stands.
+- **Respect an operator who already set `SHELL`.** Same stance as D8's credential
+  vars: an existing `SHELL` in the parent env passes through untouched.
+
+git-bash is **not** a new hard requirement: Ralphy already requires `git` at
+runtime, and the standard Git-for-Windows install ships `git.exe` and `bash.exe`
+together at exactly the probed path. When `bash.exe` is absent, the fix degrades
+gracefully to PowerShell rather than breaking the run.
+
+The one behavioural consequence: the agent's shell commands now go through bash,
+so plans must not assume PowerShell-only cmdlets. `environment.md` mandates none
+and the verify gate is toolchain-generic (`cargo`, `gh`, …), so this is safe
+today — but it is a real decision worth stating.
+
 ## Consequences
 
 - **Cursor is the first vendor whose default Ralphy overrides on the operator's
