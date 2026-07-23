@@ -19,6 +19,26 @@ use crate::auth::{
 use crate::plan::materialize_plugin;
 use crate::ClaudeAgent;
 
+fn headless_args(
+    settings: &Path,
+    plugin_dir: &Path,
+    model: &str,
+    effort: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "-p".into(),
+        "--dangerously-skip-permissions".into(),
+        "--settings".into(),
+        settings.to_string_lossy().into_owned(),
+        "--plugin-dir".into(),
+        plugin_dir.to_string_lossy().into_owned(),
+        "--model".into(),
+        model.into(),
+    ];
+    args.extend(crate::effort_args(effort));
+    args
+}
+
 impl ClaudeAgent {
     /// Spawn a single `claude -p` call for headless execution, piping
     /// `PROMPT_EXECUTE` on stdin and draining stdout/stderr via reader threads
@@ -33,17 +53,12 @@ impl ClaudeAgent {
         timeout: Duration,
         call_index: u32,
     ) -> Result<(bool, String)> {
-        let mut args: Vec<String> = vec![
-            "-p".into(),
-            "--dangerously-skip-permissions".into(),
-            "--settings".into(),
-            settings.to_string_lossy().into_owned(),
-            "--plugin-dir".into(),
-            plugin_dir.to_string_lossy().into_owned(),
-            "--model".into(),
-            model.into(),
-        ];
-        args.extend(crate::effort_args(self.exec.exec_effort.as_deref()));
+        let args = headless_args(
+            settings,
+            plugin_dir,
+            model,
+            self.exec.exec_effort.as_deref(),
+        );
 
         let mut cmd = Command::new(crate::interactive::resolve_claude_binary());
         cmd.args(&args)
@@ -275,9 +290,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn headless_effort_args_map_high_and_omit_unset() {
-        assert_eq!(crate::effort_args(Some("high")), ["--effort", "high"]);
-        assert!(crate::effort_args(None).is_empty());
+    fn headless_command_maps_high_and_omits_unset() {
+        let set = headless_args(
+            Path::new("settings.json"),
+            Path::new("plugin"),
+            "sonnet",
+            Some("high"),
+        );
+        assert_eq!(
+            set.windows(2)
+                .filter(|pair| pair == &["--effort", "high"])
+                .count(),
+            1
+        );
+        let unset = headless_args(
+            Path::new("settings.json"),
+            Path::new("plugin"),
+            "sonnet",
+            None,
+        );
+        assert!(!unset.iter().any(|arg| arg == "--effort"));
     }
 
     /// One real transcript api-error line carrying the limit banner `text`, in the

@@ -17,7 +17,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -58,6 +58,31 @@ fn effort_args(effort: Option<&str>) -> Vec<String> {
     effort
         .map(|value| vec!["--effort".into(), value.into()])
         .unwrap_or_default()
+}
+
+fn planning_args(
+    model: Option<&str>,
+    effort: Option<&str>,
+    settings_path: &Path,
+    plugin_dir: &Path,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(model) = model {
+        args.extend(["--model".into(), model.into()]);
+    }
+    args.extend([
+        "-p".into(),
+        "--dangerously-skip-permissions".into(),
+        "--output-format".into(),
+        "stream-json".into(),
+        "--verbose".into(),
+        "--settings".into(),
+        settings_path.to_string_lossy().into_owned(),
+        "--plugin-dir".into(),
+        plugin_dir.to_string_lossy().into_owned(),
+    ]);
+    args.extend(effort_args(effort));
+    args
 }
 
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
@@ -175,26 +200,16 @@ impl Agent for ClaudeAgent {
         let (prompt, staged) = plan_prompt_for(issue);
         write_plan_charter(ws, prompt)?;
 
-        // `--model` first (as the ps1 oracle does), then the headless flags.
-        let mut args: Vec<String> = Vec::new();
-        if let Some(m) = &self.plan_model {
-            args.push("--model".into());
-            args.push(m.clone());
-        }
-        args.push("-p".into());
-        args.push("--dangerously-skip-permissions".into());
         // Capture per-invocation token usage off the result event (ADR-0008 D5).
         // `stream-json` requires `--verbose` on the pinned CLI; the plan markdown
         // is still written to disk by the session, so the stdout format is free to
         // change. `parse_plan_usage` skips the non-JSON warning preamble.
-        args.push("--output-format".into());
-        args.push("stream-json".into());
-        args.push("--verbose".into());
-        args.push("--settings".into());
-        args.push(settings_path.to_string_lossy().into_owned());
-        args.push("--plugin-dir".into());
-        args.push(plugin_dir.to_string_lossy().into_owned());
-        args.extend(effort_args(self.plan_effort.as_deref()));
+        let args = planning_args(
+            self.plan_model.as_deref(),
+            self.plan_effort.as_deref(),
+            &settings_path,
+            &plugin_dir,
+        );
 
         ralphy_core::emit::planning(
             if staged {
@@ -308,9 +323,21 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn planning_effort_args_map_high_and_omit_unset() {
-        assert_eq!(effort_args(Some("high")), ["--effort", "high"]);
-        assert!(effort_args(None).is_empty());
+    fn planning_command_maps_high_and_omits_unset() {
+        let set = planning_args(
+            Some("opus"),
+            Some("high"),
+            Path::new("settings.json"),
+            Path::new("plugin"),
+        );
+        assert_eq!(
+            set.windows(2)
+                .filter(|pair| pair == &["--effort", "high"])
+                .count(),
+            1
+        );
+        let unset = planning_args(None, None, Path::new("settings.json"), Path::new("plugin"));
+        assert!(!unset.iter().any(|arg| arg == "--effort"));
     }
 
     /// Anti-drift: the charter this adapter launches sessions with and the

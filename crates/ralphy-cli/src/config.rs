@@ -692,12 +692,16 @@ mod tests {
         }
 
         for invalid in ["none", "minimal", "hihg"] {
-            let (ws, dir) = tmp_ws(invalid);
-            assert!(set(&ws, "claude.plan_effort", invalid).is_err());
-            let settings = Settings::load(&ws).unwrap();
-            let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
-            assert_eq!(claude.plan_effort, None);
-            fs::remove_dir_all(dir).ok();
+            for key in ["claude.plan_effort", "claude.exec_effort"] {
+                let (ws, dir) = tmp_ws(&format!("{key}-{invalid}"));
+                assert!(set(&ws, key, invalid).is_err());
+                let settings = Settings::load(&ws).unwrap();
+                let claude: ClaudeSettings =
+                    settings.agent_settings(ClaudeSettings::SECTION).unwrap();
+                assert_eq!(claude.plan_effort, None);
+                assert_eq!(claude.exec_effort, None);
+                fs::remove_dir_all(dir).ok();
+            }
         }
     }
 

@@ -468,6 +468,22 @@ mod tests {
     }
 
     #[test]
+    fn claude_arm_passes_each_translated_effort_to_the_adapter() {
+        let source = include_str!("wiring.rs");
+        let arm = source
+            .split_once("CliAgent::Claude =>")
+            .expect("Claude arm")
+            .1
+            .split_once("CliAgent::Codex =>")
+            .expect("Codex arm follows Claude")
+            .0;
+        assert!(arm.contains("let (plan_effort, exec_effort) = claude_effort_strings(effort);"));
+        assert!(arm.contains("ClaudeAgent::new("));
+        assert!(arm.contains("plan_effort, run_dir"));
+        assert!(arm.contains("exec_effort,"));
+    }
+
+    #[test]
     fn strip_events_token_removes_env_var() {
         // Guard the process-global env var against the other events-store tests.
         let _g = events::config::ENV_LOCK.lock().unwrap();
