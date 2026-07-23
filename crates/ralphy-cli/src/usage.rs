@@ -11,7 +11,10 @@ use anyhow::Result;
 use clap::{Args, ValueEnum};
 use ralphy_core::{git, read_project_rows, Usage, UsageRow};
 
-use crate::pricing::PriceTable;
+use crate::pricing::fetch::{
+    pricing_offline_env, refresh_if_stale, RefreshOpts, CACHE_TTL, DEFAULT_MODELS_DEV_URL,
+};
+use crate::pricing::{pricing_cache_file, pricing_offline_from_file, PriceTable};
 
 /// `ralphy usage` arguments.
 #[derive(Args)]
@@ -39,6 +42,10 @@ pub struct UsageArgs {
     /// Output format: the default human table, or `csv`/`json` for export.
     #[arg(long, value_enum)]
     pub format: Option<Format>,
+
+    /// Force a models.dev price-table refresh even when the disk cache is fresh.
+    #[arg(long)]
+    pub refresh: bool,
 }
 
 /// The dimension `--by` groups on.
@@ -292,6 +299,16 @@ pub fn usage_cmd(args: UsageArgs) -> Result<()> {
         eprintln!("note: no ledger rows for project '{slug}' (nothing recorded, or the --project slug does not match)");
     }
 
+    let offline = pricing_offline_env() || pricing_offline_from_file();
+    if let Some(cache_path) = pricing_cache_file() {
+        refresh_if_stale(&RefreshOpts {
+            url: DEFAULT_MODELS_DEV_URL,
+            cache_path: &cache_path,
+            ttl: CACHE_TTL,
+            force: args.refresh,
+            offline,
+        });
+    }
     let table = PriceTable::load();
     match args.format.unwrap_or(Format::Table) {
         Format::Table => {

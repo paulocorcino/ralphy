@@ -9,11 +9,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use ralphy_core::Usage;
 
+pub(crate) mod fetch;
 mod floor;
 mod ingest;
 
@@ -21,12 +22,21 @@ mod ingest;
 /// [`Usage`]'s numeric split so each token kind is priced at its own rate — cache
 /// reads in particular are ~1/10th of fresh input, so collapsing them would
 /// overstate cost by an order of magnitude.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 pub struct ModelPrice {
     pub input: f64,
     pub output: f64,
     pub cache_read: f64,
     pub cache_creation: f64,
+}
+
+/// Operator `pricing.toml`: optional offline gate plus per-model overrides.
+#[derive(Debug, Default, Deserialize)]
+struct PricingTomlFile {
+    #[serde(default)]
+    offline: bool,
+    #[serde(flatten)]
+    overrides: BTreeMap<String, ModelPrice>,
 }
 
 /// Disk-cache envelope (ADR-0034 A6): already-normalized `data`, no re-ingest.
@@ -181,9 +191,9 @@ impl PriceTable {
         let Ok(text) = std::fs::read_to_string(&path) else {
             return table;
         };
-        match toml::from_str::<BTreeMap<String, ModelPrice>>(&text) {
-            Ok(overrides) => {
-                table.overrides = overrides;
+        match parse_pricing_toml(&text) {
+            Ok(file) => {
+                table.overrides = file.overrides;
             }
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "parsing pricing.toml failed — using defaults")
@@ -191,6 +201,54 @@ impl PriceTable {
         }
         table
     }
+}
+
+/// Parse `pricing.toml` text into offline flag + overrides. Prefers a flatten
+/// struct; on failure falls back to extracting `offline` from a `toml::Value`
+/// then deserializing remaining tables as overrides.
+fn parse_pricing_toml(text: &str) -> Result<PricingTomlFile, String> {
+    match toml::from_str::<PricingTomlFile>(text) {
+        Ok(file) => Ok(file),
+        Err(flatten_err) => {
+            let value: toml::Value =
+                toml::from_str(text).map_err(|e| format!("toml: {e}; flatten: {flatten_err}"))?;
+            let offline = value
+                .get("offline")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let mut overrides = BTreeMap::new();
+            if let toml::Value::Table(table) = value {
+                for (k, v) in table {
+                    if k == "offline" {
+                        continue;
+                    }
+                    match v.try_into::<ModelPrice>() {
+                        Ok(price) => {
+                            overrides.insert(k, price);
+                        }
+                        Err(e) => {
+                            return Err(format!("override `{k}`: {e}; flatten: {flatten_err}"));
+                        }
+                    }
+                }
+            }
+            Ok(PricingTomlFile { offline, overrides })
+        }
+    }
+}
+
+/// `offline = true` from the resolved `pricing.toml`, or `false` when missing /
+/// unreadable / malformed.
+pub(crate) fn pricing_offline_from_file() -> bool {
+    let Some(path) = pricing_file() else {
+        return false;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    parse_pricing_toml(&text)
+        .map(|f| f.offline)
+        .unwrap_or(false)
 }
 
 /// Bare-id lookup candidates, preserving the historical resolve order.
@@ -254,7 +312,7 @@ fn strip_provider_prefix(model: &str) -> &str {
 
 /// Resolve the operator's pricing-override file: `$RALPHY_PRICING_FILE` when set,
 /// else `<home>/.ralphy/pricing.toml`. `None` when no home directory resolves.
-fn pricing_file() -> Option<PathBuf> {
+pub(crate) fn pricing_file() -> Option<PathBuf> {
     if let Some(file) = std::env::var_os("RALPHY_PRICING_FILE") {
         return Some(PathBuf::from(file));
     }
@@ -264,7 +322,7 @@ fn pricing_file() -> Option<PathBuf> {
 
 /// Resolve the optional models.dev disk cache: `$RALPHY_PRICING_CACHE` when set,
 /// else `<home>/.ralphy/pricing-cache/models-dev.json`.
-fn pricing_cache_file() -> Option<PathBuf> {
+pub(crate) fn pricing_cache_file() -> Option<PathBuf> {
     if let Some(file) = std::env::var_os("RALPHY_PRICING_CACHE") {
         return Some(PathBuf::from(file));
     }
@@ -305,7 +363,7 @@ mod tests {
 
     /// Serialises tests that mutate the process-global pricing env vars, so
     /// `cargo test`'s parallel runner can't race them (mirrors telegram config).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     pub(super) fn one_million_each() -> Usage {
         Usage {
@@ -495,6 +553,32 @@ mod tests {
             "the override must re-price differently from defaults (read-time projection)"
         );
 
+        std::env::remove_var("RALPHY_PRICING_FILE");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn offline_true_with_model_override_still_loads_overrides() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let dir =
+            std::env::temp_dir().join(format!("ralphy-pricing-offline-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let file = dir.join("pricing.toml");
+        std::fs::write(
+            &file,
+            "offline = true\n\n[claude-opus-4-8]\ninput = 30.0\noutput = 75.0\ncache_read = 1.5\ncache_creation = 18.75\n",
+        )
+        .expect("write");
+        std::env::set_var("RALPHY_PRICING_FILE", &file);
+        assert!(pricing_offline_from_file());
+        let loaded = PriceTable::load();
+        let cost = loaded
+            .cost_usd("claude-opus-4-8", &one_million_each())
+            .unwrap();
+        assert!(
+            (cost - 125.25).abs() < 1e-9,
+            "offline + override must still reprice; got {cost}"
+        );
         std::env::remove_var("RALPHY_PRICING_FILE");
         let _ = std::fs::remove_dir_all(&dir);
     }

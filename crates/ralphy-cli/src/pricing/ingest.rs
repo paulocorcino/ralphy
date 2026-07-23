@@ -1,6 +1,6 @@
 //! models.dev → normalized `provider/model → ModelPrice` ingest (ADR-0034 A6).
-//! Pure: no network, no disk. Shared by the embedded seed load and (later) the
-//! fetch path (#289).
+//! Pure: no network, no disk. Shared by the embedded seed load and the fetch
+//! path (`pricing::fetch`).
 
 use std::collections::BTreeMap;
 
