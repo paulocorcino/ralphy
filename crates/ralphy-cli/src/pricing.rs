@@ -1,13 +1,9 @@
-//! The read-time price table (ADR-0008 D2/D8). Tokens are the immutable truth in
-//! the ledger; USD is a *projection* applied here at read-time and never written.
-//! The table is keyed by **model** (opus costs the same per token whoever ran it),
-//! ships with sane defaults for the models actually in use, and is
-//! operator-overridable at `~/.ralphy/pricing.toml`.
-//!
-//! A model absent from the table reports **unknown** cost (`None`) and logs "add
-//! `<model>` to pricing.toml" — never `0`, which would be a lie that hides spend
-//! (the empirical reason: OpenCode's custom model IDs would otherwise report $0
-//! for millions of tokens).
+//! The read-time price table (ADR-0008 D2/D8, ADR-0034 slice A). Tokens are the
+//! immutable truth in the ledger; USD is a *projection* applied here at
+//! read-time and never written. The floor is an embedded models.dev-shaped seed
+//! plus a bare-id slug overlay; an optional disk cache and `pricing.toml`
+//! override both. A model absent from every layer reports **unknown** cost
+//! (`None`) — never `0`, which would hide spend.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -18,7 +14,8 @@ use tracing::warn;
 
 use ralphy_core::Usage;
 
-mod defaults;
+mod floor;
+mod ingest;
 
 /// The per-1M-token USD price for one model (ADR-0008 D8). The four fields mirror
 /// [`Usage`]'s numeric split so each token kind is priced at its own rate — cache
@@ -32,10 +29,23 @@ pub struct ModelPrice {
     pub cache_creation: f64,
 }
 
-/// A model-keyed price table. Built from [`defaults`](PriceTable::defaults) and
-/// optionally overlaid with the operator's `~/.ralphy/pricing.toml`.
+/// Disk-cache envelope (ADR-0034 A6): already-normalized `data`, no re-ingest.
+#[derive(Debug, Deserialize)]
+struct PricingCacheFile {
+    #[allow(dead_code)]
+    timestamp: String,
+    data: BTreeMap<String, ModelPrice>,
+}
+
+/// A layered price table. Precedence for a bare id: `pricing.toml` overrides →
+/// disk cache (via provider synthesis) → seed (via synthesis) → slug overlay.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct PriceTable(pub BTreeMap<String, ModelPrice>);
+pub struct PriceTable {
+    overrides: BTreeMap<String, ModelPrice>,
+    cache: BTreeMap<String, ModelPrice>,
+    seed: BTreeMap<String, ModelPrice>,
+    overlay: BTreeMap<String, ModelPrice>,
+}
 
 /// The set of unknown models already warned about, so the "add `<model>` to
 /// pricing.toml" hint is logged once per model rather than on every priced row.
@@ -47,8 +57,24 @@ static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(Ha
 const UNKNOWN_MODEL: &str = "unknown";
 
 impl PriceTable {
+    /// Build a table from explicit layers — used by [`Self::defaults`] /
+    /// [`Self::load`] and by pure resolver unit tests (no disk).
+    pub(crate) fn from_layers(
+        overrides: BTreeMap<String, ModelPrice>,
+        cache: BTreeMap<String, ModelPrice>,
+        seed: BTreeMap<String, ModelPrice>,
+        overlay: BTreeMap<String, ModelPrice>,
+    ) -> Self {
+        Self {
+            overrides,
+            cache,
+            seed,
+            overlay,
+        }
+    }
+
     /// The read-time USD cost of `tokens` priced as `model`, or `None` when the
-    /// model is absent from the table (logged once — never reported as `0`).
+    /// model is absent from every layer (logged once — never reported as `0`).
     pub fn cost_usd(&self, model: &str, tokens: &Usage) -> Option<f64> {
         let Some(price) = self.resolve(model) else {
             warn_unknown(model);
@@ -88,40 +114,67 @@ impl PriceTable {
         (any_priced.then_some(usd), any_unpriced)
     }
 
-    /// Resolve a model id to its price, tolerating a trailing release-date suffix:
-    /// `claude-haiku-4-5-20251001` falls back to the undated family id
-    /// `claude-haiku-4-5`. Claude Code keys its `modelUsage` map by the *dated* id
-    /// while the table (and Anthropic's published price list) uses the undated
-    /// family id, so without this fallback every dated id reports as unpriced
-    /// (`~$?`) even when its family is in the table.
-    ///
-    /// A dotted id falls back to its dashed form too: Copilot's catalog spells the
-    /// Anthropic families `claude-haiku-4.5` where the table (and Anthropic) use
-    /// `claude-haiku-4-5` — punctuation only. Normalization never invents a price:
-    /// an id whose dashed form is also absent still resolves to `None`.
-    ///
-    /// Finally, a leading `provider/` segment is stripped: the native Kimi run path
-    /// emits `kimi-code/k3` while the usage scan (`scan_kimi_code` strips the
-    /// prefix) and the table's K2-family convention (`k2p6`, `kimi-k2.7-code`) key
-    /// the bare `k3`. Without this the same model prices on a run yet reports
-    /// `unknown model` on `ralphy usage` for the identical session (ADR-0028 D4).
+    /// Resolve a model id through override → cache → seed → overlay, with the
+    /// existing release-date / dots-to-dashes / provider-prefix normalizations
+    /// applied to bare candidates, and provider-prefix synthesis for catalog keys.
     fn resolve(&self, model: &str) -> Option<&ModelPrice> {
-        let stripped = strip_release_date(model);
-        self.0
-            .get(model)
-            .or_else(|| self.0.get(stripped))
-            .or_else(|| self.0.get(&dots_to_dashes(model)))
-            .or_else(|| self.0.get(&dots_to_dashes(stripped)))
-            .or_else(|| self.0.get(strip_provider_prefix(model)))
+        let candidates = bare_candidates(model);
+
+        for c in &candidates {
+            if let Some(p) = self.overrides.get(c.as_str()) {
+                return Some(p);
+            }
+        }
+
+        for c in &candidates {
+            if let Some(key) = synthesize(c) {
+                if let Some(p) = self.cache.get(&key) {
+                    return Some(p);
+                }
+            }
+            if let Some(p) = self.cache.get(c.as_str()) {
+                return Some(p);
+            }
+        }
+
+        for c in &candidates {
+            if let Some(key) = synthesize(c) {
+                if let Some(p) = self.seed.get(&key) {
+                    return Some(p);
+                }
+            }
+        }
+
+        for c in &candidates {
+            if let Some(p) = self.overlay.get(c.as_str()) {
+                return Some(p);
+            }
+        }
+
+        None
     }
 
-    /// Load the effective table: the shipped [`defaults`](Self::defaults) overlaid
-    /// with `~/.ralphy/pricing.toml` when present. The override path is
-    /// `$RALPHY_PRICING_FILE` when set (tests point it at a temp file), else
-    /// `<home>/.ralphy/pricing.toml`, resolving home via `USERPROFILE`/`HOME` to
-    /// match `ledger.rs`. A missing or malformed file leaves the defaults intact.
+    /// Load the effective table: embedded floor, optional disk cache, then
+    /// `~/.ralphy/pricing.toml` overrides. Cache path is `$RALPHY_PRICING_CACHE`
+    /// when set, else `<home>/.ralphy/pricing-cache/models-dev.json`. Override
+    /// path is `$RALPHY_PRICING_FILE` when set, else `<home>/.ralphy/pricing.toml`.
+    /// Missing or malformed files leave the lower layers intact — never fetch.
     pub fn load() -> Self {
         let mut table = Self::defaults();
+        if let Some(path) = pricing_cache_file() {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                match serde_json::from_str::<PricingCacheFile>(&text) {
+                    Ok(file) => table.cache = file.data,
+                    Err(e) => {
+                        warn!(
+                            path = %path.display(),
+                            error = %e,
+                            "parsing pricing cache failed — using seed/overlay floor"
+                        );
+                    }
+                }
+            }
+        }
         let Some(path) = pricing_file() else {
             return table;
         };
@@ -130,9 +183,7 @@ impl PriceTable {
         };
         match toml::from_str::<BTreeMap<String, ModelPrice>>(&text) {
             Ok(overrides) => {
-                for (model, price) in overrides {
-                    table.0.insert(model, price);
-                }
+                table.overrides = overrides;
             }
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "parsing pricing.toml failed — using defaults")
@@ -142,11 +193,45 @@ impl PriceTable {
     }
 }
 
+/// Bare-id lookup candidates, preserving the historical resolve order.
+fn bare_candidates(model: &str) -> Vec<String> {
+    let stripped = strip_release_date(model);
+    let mut out = Vec::with_capacity(5);
+    for c in [
+        model.to_string(),
+        stripped.to_string(),
+        dots_to_dashes(model),
+        dots_to_dashes(stripped),
+        strip_provider_prefix(model).to_string(),
+    ] {
+        if !out.iter().any(|e| e == &c) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Deterministic provider-prefix synthesis (ADR-0034 A2). `None` → overlay path.
+pub(crate) fn synthesize(id: &str) -> Option<String> {
+    let provider = if id.starts_with("claude-") {
+        "anthropic"
+    } else if id.starts_with("gpt-") {
+        "openai"
+    } else if id.starts_with("gemini-") {
+        "google"
+    } else if id.starts_with("kimi-") {
+        "moonshotai"
+    } else {
+        return None;
+    };
+    Some(format!("{provider}/{id}"))
+}
+
 /// Strip a trailing `-YYYYMMDD` release-date suffix from a model id, returning the
 /// undated family id (`claude-haiku-4-5-20251001` → `claude-haiku-4-5`). Returns
 /// the input unchanged when the final segment is not exactly eight digits, so a
 /// genuinely undated id (or an operator's custom key) is never mangled.
-fn strip_release_date(model: &str) -> &str {
+pub(crate) fn strip_release_date(model: &str) -> &str {
     match model.rsplit_once('-') {
         Some((head, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => head,
         _ => model,
@@ -177,6 +262,21 @@ fn pricing_file() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".ralphy").join("pricing.toml"))
 }
 
+/// Resolve the optional models.dev disk cache: `$RALPHY_PRICING_CACHE` when set,
+/// else `<home>/.ralphy/pricing-cache/models-dev.json`.
+fn pricing_cache_file() -> Option<PathBuf> {
+    if let Some(file) = std::env::var_os("RALPHY_PRICING_CACHE") {
+        return Some(PathBuf::from(file));
+    }
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    Some(
+        PathBuf::from(home)
+            .join(".ralphy")
+            .join("pricing-cache")
+            .join("models-dev.json"),
+    )
+}
+
 /// Log a one-shot pricing hint for an unpriced model. The `unknown` *sentinel*
 /// (the bucket the runner assigns to a usage record with no model attribution — it
 /// is not a real model id) gets a distinct, actionable message instead of the
@@ -203,7 +303,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// Serialises tests that mutate the process-global `RALPHY_PRICING_FILE`, so
+    /// Serialises tests that mutate the process-global pricing env vars, so
     /// `cargo test`'s parallel runner can't race them (mirrors telegram config).
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -215,6 +315,128 @@ mod tests {
             cache_creation: 1_000_000,
             model: Some("claude-opus-4-8".into()),
         }
+    }
+
+    #[test]
+    fn cost_usd_arithmetic_frozen_opus_fixture() {
+        // ADR-0008 D8 oracle — inline rates only; no seed involved.
+        let price = ModelPrice {
+            input: 15.0,
+            output: 75.0,
+            cache_read: 1.5,
+            cache_creation: 18.75,
+        };
+        let table = PriceTable::from_layers(
+            BTreeMap::from([("claude-opus-4-8".into(), price)]),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+        let cost = table
+            .cost_usd("claude-opus-4-8", &one_million_each())
+            .expect("fixture prices");
+        assert!(
+            (cost - 110.25).abs() < 1e-9,
+            "frozen arithmetic must be 110.25, got {cost}"
+        );
+    }
+
+    #[test]
+    fn opus_pipeline_resolves_via_synthesis_to_seed() {
+        let table = PriceTable::defaults();
+        let cost = table
+            .cost_usd("claude-opus-4-8", &one_million_each())
+            .expect("opus resolves via synthesis to seed");
+        // Seed carries the former defaults rates (15/75/1.5/18.75).
+        assert!(
+            (cost - 110.25).abs() < 1e-9,
+            "pipeline cost tracks seed rates; got {cost}"
+        );
+        assert_eq!(
+            synthesize("claude-opus-4-8").as_deref(),
+            Some("anthropic/claude-opus-4-8")
+        );
+        assert!(table.seed.contains_key("anthropic/claude-opus-4-8"));
+        assert!(!table.overlay.contains_key("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn resolver_seed_overlay_override_and_unknown() {
+        let seed = BTreeMap::from([(
+            "anthropic/claude-opus-4-8".into(),
+            ModelPrice {
+                input: 15.0,
+                output: 75.0,
+                cache_read: 1.5,
+                cache_creation: 18.75,
+            },
+        )]);
+        let overlay = BTreeMap::from([(
+            "k2p6".into(),
+            ModelPrice {
+                input: 0.95,
+                output: 4.0,
+                cache_read: 0.16,
+                cache_creation: 0.95,
+            },
+        )]);
+        let table = PriceTable::from_layers(
+            BTreeMap::new(),
+            BTreeMap::new(),
+            seed.clone(),
+            overlay.clone(),
+        );
+        let tokens = one_million_each();
+
+        let opus = table
+            .cost_usd("claude-opus-4-8", &tokens)
+            .expect("opus via seed synthesis");
+        assert!((opus - 110.25).abs() < 1e-9);
+
+        let k2 = table.cost_usd("k2p6", &tokens).expect("k2p6 via overlay");
+        assert!((k2 - (0.95 + 4.0 + 0.16 + 0.95)).abs() < 1e-9);
+        assert_eq!(synthesize("k2p6"), None);
+
+        // Seed alone, no overlay row for opus; overlay alone no seed for k2p6.
+        let seed_only =
+            PriceTable::from_layers(BTreeMap::new(), BTreeMap::new(), seed, BTreeMap::new());
+        assert!(seed_only.cost_usd("k2p6", &tokens).is_none());
+        let overlay_only =
+            PriceTable::from_layers(BTreeMap::new(), BTreeMap::new(), BTreeMap::new(), overlay);
+        assert!(overlay_only.cost_usd("claude-opus-4-8", &tokens).is_none());
+
+        assert_eq!(table.cost_usd("big-pickle", &tokens), None);
+
+        let overrides = BTreeMap::from([(
+            "claude-opus-4-8".into(),
+            ModelPrice {
+                input: 30.0,
+                output: 75.0,
+                cache_read: 1.5,
+                cache_creation: 18.75,
+            },
+        )]);
+        let with_override = PriceTable::from_layers(
+            overrides,
+            BTreeMap::new(),
+            BTreeMap::from([(
+                "anthropic/claude-opus-4-8".into(),
+                ModelPrice {
+                    input: 15.0,
+                    output: 75.0,
+                    cache_read: 1.5,
+                    cache_creation: 18.75,
+                },
+            )]),
+            BTreeMap::new(),
+        );
+        let overridden = with_override
+            .cost_usd("claude-opus-4-8", &tokens)
+            .expect("override");
+        assert!(
+            (overridden - 125.25).abs() < 1e-9,
+            "override must beat seed; got {overridden}"
+        );
     }
 
     #[test]
@@ -275,5 +497,11 @@ mod tests {
 
         std::env::remove_var("RALPHY_PRICING_FILE");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_model_never_returns_some_zero() {
+        let table = PriceTable::defaults();
+        assert_eq!(table.cost_usd("big-pickle", &one_million_each()), None);
     }
 }
