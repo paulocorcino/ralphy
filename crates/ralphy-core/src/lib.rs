@@ -68,6 +68,7 @@ pub const DEFAULT_INTERACTIVE_IDLE_MINUTES: u64 = 45;
 pub const UNBOUNDED_ISSUE_HORIZON: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 
 mod agent;
+mod effort;
 pub(crate) mod markdown;
 mod runner;
 mod tracker;
@@ -103,6 +104,7 @@ pub use blocked::{
     CONSOLIDATED_SPEC_MARKER, PROMOTE_EVIDENCE_MARKER,
 };
 pub use diagnosis::{DiagnosisReport, RepoKind};
+pub use effort::Effort;
 pub use init_session::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DraftRequest, IssuesMode,
     TriageRequest, PROMPT_CONSOLIDATE, PROMPT_DIAGNOSE, PROMPT_INIT_ISSUES, PROMPT_TRIAGE,
