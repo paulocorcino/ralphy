@@ -189,6 +189,20 @@ An **optional adapter capability**, not a core guarantee — a deterministic ada
 which is a deterministic knob the operator sets, not an auto-judged choice.
 _Avoid_: model selection (too broad), auto-model.
 
+**Effort**:
+The deterministic reasoning-depth knob the operator sets per phase
+(`--plan-effort`/`--exec-effort`), on the fixed five-rung ladder
+`low | medium | high | xhigh | max` (ADR-0044) — the cross-vendor intersection of
+the CLIs that expose one. `low`/`medium`/`high` are the guaranteed-universal core;
+`xhigh`/`max` are accepted but clamp down on a model that cannot honour them, so
+asking for more never silently delivers less. One word, translated to each
+vendor's dialect **inside** the adapter (clamp where the vendor degrades silently,
+passthrough where it errors loudly, a documented no-op where there is no effort
+axis) — never a raw passthrough. Distinct from **complexity routing** (auto-judged
+model choice) and from model selection: effort is *how hard*, not *which model*.
+_Avoid_: reasoning level (vendor-specific), variant (that is OpenCode's dialect,
+not the Ralphy word).
+
 **Supervised session**:
 Live human oversight of a *running* agent session — following it and intervening
 mid-flight, via Remote Control (mobile) or an on-screen terminal (local/Tauri).
