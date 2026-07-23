@@ -966,6 +966,8 @@ mod tests {
             .0;
         assert!(plan_resolution.contains("args.plan_effort"));
         assert!(plan_resolution.contains("claude_settings.plan_effort.clone()"));
+        assert!(plan_resolution
+            .contains("args.plan_effort, claude_settings.plan_effort.clone(), None)?"));
         assert!(!plan_resolution.contains("exec_effort"));
 
         let exec_resolution = resolution
@@ -974,6 +976,8 @@ mod tests {
             .1;
         assert!(exec_resolution.contains("args.exec_effort"));
         assert!(exec_resolution.contains("claude_settings.exec_effort.clone()"));
+        assert!(exec_resolution
+            .contains("args.exec_effort, claude_settings.exec_effort.clone(), None)?"));
         assert!(!exec_resolution.contains("plan_effort"));
         let build_argument = ["&resolved", "_effort,"].concat();
         assert_eq!(
