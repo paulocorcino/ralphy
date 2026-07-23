@@ -224,3 +224,16 @@ route through the exact invocation this ADR fixes (`codex exec -C <neutral dir>
   `config.toml` now has a native `plan_mode_reasoning_effort` key; it governs
   Codex's own interactive plan mode, not ralphy's plan charter (which is an
   ordinary `exec` run), so it does not interact with this routing.
+
+## Amendment (2026-07-23): operator `--plan-effort`/`--exec-effort` set `model_reasoning_effort`
+
+The 2026-07-10 amendment held `model_reasoning_effort` at the vendor default
+(`medium`) and treated effort as frozen relative to the tier→model routing.
+That freeze is lifted for the operator's Effort flags (#286 / ADR-0044 D7).
+
+**Decision.** `--plan-effort` / `--exec-effort` now set `model_reasoning_effort`
+on plan and execute `codex exec` invocations. When unset, the default remains
+`medium`. Effort stays orthogonal to tier→model: the tier still picks Sol /
+Terra / Luna; effort only sets how hard the chosen model thinks. Init/triage
+one-shots keep `DEFAULT_CODEX_EFFORT`. Amends D3's frozen-effort clause and
+the 2026-07-10 `held at the vendor default` wording for run plan/execute.

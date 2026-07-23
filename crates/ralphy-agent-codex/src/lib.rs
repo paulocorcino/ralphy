@@ -53,11 +53,15 @@ use usage::{codex_sessions_dir, fold_rollout_usage, rollout_session_id};
 const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.plan.codex.md");
 
 /// Drives the `codex` CLI. `model` is the operator override (else the user's
-/// Codex config, else the tier-routed family table); `run_dir` is where the
-/// captured logs live; `max_minutes_per_issue` is the per-issue wall budget,
-/// clamped to `run_deadline` when the run carries a global deadline.
+/// Codex config, else the tier-routed family table); `plan_effort`/`exec_effort`
+/// are the operator's resolved Effort words (default `medium` when unset);
+/// `run_dir` is where the captured logs live; `max_minutes_per_issue` is the
+/// per-issue wall budget, clamped to `run_deadline` when the run carries a
+/// global deadline.
 pub struct CodexAgent {
     model: Option<String>,
+    plan_effort: Option<String>,
+    exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -66,9 +70,25 @@ impl CodexAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
         Self {
             model,
+            plan_effort: None,
+            exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
+    }
+
+    /// Set the planning-phase reasoning effort (`model_reasoning_effort`).
+    /// `None` keeps the vendor default ([`DEFAULT_CODEX_EFFORT`]).
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Set the execution-phase reasoning effort (`model_reasoning_effort`).
+    /// `None` keeps the vendor default ([`DEFAULT_CODEX_EFFORT`]).
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
+        self
     }
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
@@ -147,11 +167,12 @@ impl Agent for CodexAgent {
             materialize_codex_skills(ws)?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
-            // Effort stays at the vendor default: the tier routes the MODEL, and
-            // planning quality comes from Sol, not an effort bump (ADR-0004,
-            // Amendment 2026-07-10 supersedes the old always-`high`).
-            let cmd = build_codex_command(&model, DEFAULT_CODEX_EFFORT, ws.repo_root(), &out_path);
-            ralphy_core::emit::planning("codex exec", &model, DEFAULT_CODEX_EFFORT, "");
+            // Effort is orthogonal to the Sol planning model: the operator's
+            // `--plan-effort` lands here, else the vendor default (ADR-0004
+            // Amendment 2026-07-23).
+            let effort = self.plan_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
+            let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
+            ralphy_core::emit::planning("codex exec", &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -211,10 +232,10 @@ impl Agent for CodexAgent {
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
         // Execution routes the plan's neutral complexity tier to a MODEL
-        // (low→Luna, medium→Terra, high→Sol); effort stays at the vendor default
-        // (ADR-0004, Amendment 2026-07-10).
+        // (low→Luna, medium→Terra, high→Sol); effort is an orthogonal operator
+        // axis defaulting to medium when unset (ADR-0004 Amendment 2026-07-23).
         let model = self.resolve_model(tier_to_model(plan.recommended_model.as_deref()));
-        let effort = DEFAULT_CODEX_EFFORT;
+        let effort = self.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
         // HEAD before/after bounds the work this call committed (progress guard).
@@ -318,6 +339,77 @@ mod tests {
             .with_max_minutes_per_issue(0)
             .with_run_deadline(Some(rd));
         assert!(bounded.issue_deadline() <= rd);
+    }
+
+    // ── effort → model_reasoning_effort ─────────────────────────────────────
+
+    #[test]
+    fn exec_effort_high_lands_in_argv() {
+        let agent =
+            CodexAgent::new(None, PathBuf::from("/run")).with_exec_effort(Some("high".into()));
+        let effort = agent.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
+        let cmd = build_codex_command(
+            CODEX_MODEL_SOL,
+            effort,
+            std::path::Path::new("/repo"),
+            std::path::Path::new("/repo/out.txt"),
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
+            "argv must carry the operator's high effort: {args:?}"
+        );
+    }
+
+    #[test]
+    fn unset_exec_effort_defaults_to_medium() {
+        let agent = CodexAgent::new(None, PathBuf::from("/run"));
+        let effort = agent.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT);
+        let cmd = build_codex_command(
+            command::CODEX_MODEL_TERRA,
+            effort,
+            std::path::Path::new("/repo"),
+            std::path::Path::new("/repo/out.txt"),
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter()
+                .any(|a| a == "model_reasoning_effort=\"medium\""),
+            "unset effort must default to medium: {args:?}"
+        );
+    }
+
+    #[test]
+    fn effort_is_orthogonal_to_tier_model_routing() {
+        assert_eq!(tier_to_model(Some("low")), command::CODEX_MODEL_LUNA);
+        assert_eq!(tier_to_model(Some("medium")), command::CODEX_MODEL_TERRA);
+        assert_eq!(tier_to_model(Some("high")), CODEX_MODEL_SOL);
+
+        // A fixed model id is unchanged when only effort varies.
+        for effort in ["low", "high"] {
+            let cmd = build_codex_command(
+                command::CODEX_MODEL_TERRA,
+                effort,
+                std::path::Path::new("/repo"),
+                std::path::Path::new("/repo/out.txt"),
+            );
+            let args: Vec<String> = cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let m = args.iter().position(|a| a == "-m").expect("-m present");
+            assert_eq!(
+                args[m + 1],
+                command::CODEX_MODEL_TERRA,
+                "effort={effort} must not alter -m: {args:?}"
+            );
+        }
     }
 
     // ── resolve_model ───────────────────────────────────────────────────────

@@ -221,6 +221,16 @@ five is worse than none: the operator cannot tell where the word means anything.
 Promoting effort to a core concept touches `CONTEXT.md` and all five adapters
 and is tracked separately, so it does not sit on this adapter's critical path.
 
+## Amendment (2026-07-23): flags feed `resolve_effort`/`clamp_effort`; D5a clamp unchanged
+
+D5a's persisted-only composition (#227 open question) is lifted: `--plan-effort`/
+`--exec-effort` now feed the existing `resolve_effort`/`clamp_effort` path at
+`build_agent`, with persisted `copilot.*_effort` remaining as the fallback for
+seven-rung extensions (`none`/`minimal`/`max`, ADR-0044 D6). The clamp
+logic and the `clamp_lives_only_in_the_copilot_adapter` guard are unchanged —
+only the composition-root wiring merges the resolved word ahead of the
+persisted keys.
+
 ## D6 — No complexity routing in v1
 
 `plan()` returns `recommended_model: None`. Neither routing axis survives

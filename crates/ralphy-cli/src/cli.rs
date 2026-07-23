@@ -390,9 +390,10 @@ mod tests {
         assert_eq!(n, 29, "this slice must introduce no new run flag");
     }
 
-    /// The effort clamp is persisted-only too: `copilot.plan_effort` /
-    /// `copilot.exec_effort` are `settings.json` keys, and whether Ralphy grows an
-    /// adapter-wide effort flag is #227's open question, not this slice's.
+    /// Effort reaches Copilot via the existing `--plan-effort`/`--exec-effort`
+    /// flags (merged at `build_agent`); the clamp still introduces no new run
+    /// flag — `copilot.*_effort` remain settings.json keys for seven-rung
+    /// extensions (ADR-0044 D6).
     #[test]
     fn no_new_run_flags_for_copilot_effort() {
         use clap::CommandFactory;

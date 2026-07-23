@@ -490,7 +490,7 @@ mod tests {
             "crates/ralphy-agent-codex/src/lib.rs",
             1,
             1,
-            &["\"codex exec\"", "&model", "DEFAULT_CODEX_EFFORT", "\"\""],
+            &["\"codex exec\"", "&model", "effort", "\"\""],
             &["\"codex exec\"", "0", "&model", "effort", "\"\""],
         ),
         (

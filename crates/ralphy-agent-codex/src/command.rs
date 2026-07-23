@@ -18,10 +18,10 @@ pub(crate) const CODEX_MODEL_TERRA: &str = "gpt-5.6-terra";
 /// Fast/affordable model: tier-`low` (mechanical, well-understood) execution.
 pub(crate) const CODEX_MODEL_LUNA: &str = "gpt-5.6-luna";
 
-/// The fixed `model_reasoning_effort` every routed run pins. The tier chooses the
-/// MODEL; effort stays at the vendor default so routing is one axis, not a
-/// tier×effort matrix. Note this `-c` override supersedes the user's own
-/// `config.toml` effort (observed live, ADR-0004 Amendment) — deliberate, so runs
+/// Default `model_reasoning_effort` when the operator leaves `--*-effort` unset.
+/// The tier chooses the MODEL; effort is an orthogonal axis (ADR-0004 Amendment
+/// 2026-07-23). This `-c` override supersedes the user's own `config.toml`
+/// effort (observed live, ADR-0004 Amendment 2026-07-10) — deliberate, so runs
 /// don't inherit an interactive-use setting.
 pub(crate) const DEFAULT_CODEX_EFFORT: &str = "medium";
 

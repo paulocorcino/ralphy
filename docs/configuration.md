@@ -117,8 +117,8 @@ OpenCode effort is set per-run with `--exec-variant` (not persisted).
 | --- | --- | --- | --- | --- |
 | `copilot.plan_model` | `--plan-model` | any model id Copilot offers | none | The persisted planning-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
 | `copilot.exec_model` | `--exec-model` | any model id Copilot offers | none | The persisted execution-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
-| `copilot.plan_effort` | none | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | none | The reasoning effort *requested* for the planning phase. When unset, `--effort` is omitted (ADR-0041 D5). |
-| `copilot.exec_effort` | none | same | none | The reasoning effort *requested* for the execution phase. When unset, `--effort` is omitted (ADR-0041 D5). |
+| `copilot.plan_effort` | `--plan-effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | none | The reasoning effort *requested* for the planning phase. When unset, `--effort` is omitted (ADR-0041 D5). |
+| `copilot.exec_effort` | `--exec-effort` | same | none | The reasoning effort *requested* for the execution phase. When unset, `--effort` is omitted (ADR-0041 D5). |
 | `copilot.allow_builtin_mcp_servers_i_understand_the_risk` | none | `true`, `false` | `false` | **Danger.** The D7 escape hatch: drops `--disable-builtin-mcps` from the argv AND suppresses the connected-server failure. See below. |
 
 ```powershell
@@ -131,9 +131,10 @@ Resolution per phase: `--plan-model`/`--exec-model` (per-run) > `copilot.plan_mo
 account's own current selection, the correct default rather than a degraded
 fallback (ADR-0041 D4).
 
-The two effort keys have **no per-run flag**: they are persisted-only, because
-whether Ralphy's `--plan-effort`/`--exec-effort` become valid for every adapter is
-still open (#227).
+Effort resolution: `--plan-effort`/`--exec-effort` (neutral five-rung lexicon) >
+`copilot.plan_effort`/`copilot.exec_effort` (persisted; seven-rung extensions for
+`none`/`minimal`/`max`, ADR-0044 D6) > omit `--effort`. The adapter then clamps
+whatever arrives per model (ADR-0041 D5a).
 
 ### The builtin-MCP escape hatch
 

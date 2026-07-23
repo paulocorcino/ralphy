@@ -57,15 +57,14 @@ fn effort_strings(effort: &ResolvedEffort) -> (Option<String>, Option<String>) {
 pub(crate) struct ResolvedCopilot {
     pub(crate) plan_model: Option<String>,
     pub(crate) exec_model: Option<String>,
-    /// The per-phase reasoning-effort REQUESTS (ADR-0041 D5a). Persisted-only —
-    /// there is no `--*-effort` flag for Copilot: whether Ralphy's existing
-    /// `--plan-effort`/`--exec-effort` become every adapter's vocabulary is #227's
-    /// open question, and the adapter clamps whatever arrives here per model.
+    /// The per-phase reasoning-effort REQUESTS (ADR-0041 D5a). Populated from
+    /// persisted `copilot.*_effort` (seven-rung extensions for ADR-0044 D6);
+    /// `build_agent` merges these under the resolved `--plan-effort`/
+    /// `--exec-effort` words. The adapter clamps whatever arrives per model.
     pub(crate) plan_effort: Option<String>,
     pub(crate) exec_effort: Option<String>,
-    /// D7's escape hatch (ADR-0041), persisted-only for the same reason as the
-    /// effort axis — and additionally because a per-run flag would make giving
-    /// Copilot back its credentialled MCP server a one-keystroke decision.
+    /// D7's escape hatch (ADR-0041), persisted-only — a per-run flag would make
+    /// giving Copilot back its credentialled MCP server a one-keystroke decision.
     pub(crate) allow_builtin_mcps: bool,
 }
 
@@ -249,25 +248,33 @@ pub(crate) fn build_agent(
                     .with_idle_minutes(idle_minutes),
             )
         }
-        CliAgent::Codex => Box::new(
-            CodexAgent::new(
-                non_empty(args.exec_model.clone().unwrap_or_default()),
-                run_dir,
-            )
-            .with_run_deadline(run_deadline)
-            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
-            .with_idle_minutes(headless_idle),
-        ),
-        CliAgent::Copilot => Box::new(
-            CopilotAgent::new(copilot.exec_model.clone(), run_dir)
-                .with_plan_model(copilot.plan_model.clone())
-                .with_plan_effort(copilot.plan_effort.clone())
-                .with_exec_effort(copilot.exec_effort.clone())
-                .with_allow_builtin_mcps(copilot.allow_builtin_mcps)
+        CliAgent::Codex => {
+            let (plan_effort, exec_effort) = effort_strings(effort);
+            Box::new(
+                CodexAgent::new(
+                    non_empty(args.exec_model.clone().unwrap_or_default()),
+                    run_dir,
+                )
+                .with_plan_effort(plan_effort)
+                .with_exec_effort(exec_effort)
                 .with_run_deadline(run_deadline)
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
-        ),
+            )
+        }
+        CliAgent::Copilot => {
+            let (plan_effort, exec_effort) = effort_strings(effort);
+            Box::new(
+                CopilotAgent::new(copilot.exec_model.clone(), run_dir)
+                    .with_plan_model(copilot.plan_model.clone())
+                    .with_plan_effort(plan_effort.or_else(|| copilot.plan_effort.clone()))
+                    .with_exec_effort(exec_effort.or_else(|| copilot.exec_effort.clone()))
+                    .with_allow_builtin_mcps(copilot.allow_builtin_mcps)
+                    .with_run_deadline(run_deadline)
+                    .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+                    .with_idle_minutes(headless_idle),
+            )
+        }
         CliAgent::Cursor => Box::new(
             CursorAgent::new(cursor.exec_model.clone(), run_dir)
                 .with_plan_model(cursor.plan_model.clone())
@@ -506,6 +513,37 @@ mod tests {
     }
 
     #[test]
+    fn codex_arm_passes_each_translated_effort_to_the_adapter() {
+        let source = include_str!("wiring.rs");
+        let arm = source
+            .split_once("CliAgent::Codex =>")
+            .expect("Codex arm")
+            .1
+            .split_once("CliAgent::Copilot =>")
+            .expect("Copilot arm follows Codex")
+            .0;
+        assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
+        assert!(arm.contains(".with_plan_effort(plan_effort)"));
+        assert!(arm.contains(".with_exec_effort(exec_effort)"));
+    }
+
+    #[test]
+    fn copilot_arm_merges_resolved_and_persisted_effort() {
+        let source = include_str!("wiring.rs");
+        let arm = source
+            .split_once("CliAgent::Copilot =>")
+            .expect("Copilot arm")
+            .1
+            .split_once("CliAgent::Cursor =>")
+            .expect("Cursor arm follows Copilot")
+            .0;
+        assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
+        assert!(arm.contains(".or_else(|| copilot.plan_effort"));
+        assert!(arm.contains(".with_plan_effort("));
+        assert!(arm.contains(".with_exec_effort("));
+    }
+
+    #[test]
     fn kimi_arm_passes_each_translated_effort_to_the_adapter() {
         let source = include_str!("wiring.rs");
         let arm = source
@@ -696,8 +734,8 @@ mod tests {
         assert_eq!(resolved.exec_model, Some("e".into()));
     }
 
-    /// The effort axis is persisted-only: the two model flags must not leak into
-    /// it, and an unset section carries no effort (#227 owns the flag question).
+    /// `resolve_copilot` still populates effort from settings only; flags merge
+    /// at `build_agent`. Model flags must not leak into the effort fields.
     #[test]
     fn resolve_copilot_effort_comes_from_settings_only() {
         let persisted = ralphy_agent_copilot::CopilotSettings {
