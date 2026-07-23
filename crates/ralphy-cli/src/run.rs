@@ -957,17 +957,24 @@ mod tests {
             .split_once("let resolved_copilot")
             .expect("Copilot resolution follows effort")
             .0;
-        for expression in [
-            "args.plan_effort",
-            "claude_settings.plan_effort.clone()",
-            "args.exec_effort",
-            "claude_settings.exec_effort.clone()",
-        ] {
-            assert!(
-                resolution.contains(expression),
-                "missing effort resolution input: {expression}"
-            );
-        }
+        let plan_resolution = resolution
+            .split_once("plan: config::resolve_effort(")
+            .expect("plan effort resolution")
+            .1
+            .split_once("exec: config::resolve_effort(")
+            .expect("exec effort follows plan")
+            .0;
+        assert!(plan_resolution.contains("args.plan_effort"));
+        assert!(plan_resolution.contains("claude_settings.plan_effort.clone()"));
+        assert!(!plan_resolution.contains("exec_effort"));
+
+        let exec_resolution = resolution
+            .split_once("exec: config::resolve_effort(")
+            .expect("exec effort resolution")
+            .1;
+        assert!(exec_resolution.contains("args.exec_effort"));
+        assert!(exec_resolution.contains("claude_settings.exec_effort.clone()"));
+        assert!(!exec_resolution.contains("plan_effort"));
         let build_argument = ["&resolved", "_effort,"].concat();
         assert_eq!(
             source.matches(&build_argument).count(),
