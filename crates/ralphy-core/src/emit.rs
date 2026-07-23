@@ -228,10 +228,11 @@ pub const PLANNING_MSG: &str = "planning";
 /// The adapter started the planning pass for the active issue.
 ///
 /// `cmd` is the readable child command (log-only — no decoder arm reads it).
-/// An empty `model`/`effort` decodes to `None`: the CLI's `clean_opt` folds an
-/// empty string into an absent field.
-pub fn planning(cmd: &str, model: &str, effort: &str) {
-    info!(cmd = %cmd, model = %model, effort = %effort, "{}", PLANNING_MSG);
+/// An empty `model`/`effort`/`variant` decodes to `None`: the CLI's `clean_opt`
+/// folds an empty string into an absent field. `variant` is reported under its
+/// own name (ADR-0044 D9); it is never folded into `effort`.
+pub fn planning(cmd: &str, model: &str, effort: &str, variant: &str) {
+    info!(cmd = %cmd, model = %model, effort = %effort, variant = %variant, "{}", PLANNING_MSG);
 }
 
 /// See [`executing`].
@@ -240,9 +241,18 @@ pub const EXECUTING_MSG: &str = "executing";
 /// The adapter started the execution pass for the active issue.
 ///
 /// `budget_min = 0` is the "no per-issue budget reported" sentinel the decoder's
-/// `unwrap_or(0)` already assumes; empty `model`/`effort` decode to `None`.
-pub fn executing(cmd: &str, budget_min: u64, model: &str, effort: &str) {
-    info!(cmd = %cmd, budget_min, model = %model, effort = %effort, "{}", EXECUTING_MSG);
+/// `unwrap_or(0)` already assumes; empty `model`/`effort`/`variant` decode to
+/// `None`. `variant` is reported under its own name (ADR-0044 D9).
+pub fn executing(cmd: &str, budget_min: u64, model: &str, effort: &str, variant: &str) {
+    info!(
+        cmd = %cmd,
+        budget_min,
+        model = %model,
+        effort = %effort,
+        variant = %variant,
+        "{}",
+        EXECUTING_MSG
+    );
 }
 
 // ── Emitted by the CLI (ADR-0019/-0020/-0021), not by the core runner ────────

@@ -213,7 +213,7 @@ impl Agent for CursorAgent {
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());
-            ralphy_core::emit::planning("cursor", model.unwrap_or(command::AUTO_MODEL), "");
+            ralphy_core::emit::planning("cursor", model.unwrap_or(command::AUTO_MODEL), "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -314,7 +314,7 @@ impl Agent for CursorAgent {
 
         let run = || {
             let cmd = build_cursor_command(&session_id, model, ws.repo_root(), &self.config_dir());
-            ralphy_core::emit::executing("cursor", 0, model.unwrap_or(command::AUTO_MODEL), "");
+            ralphy_core::emit::executing("cursor", 0, model.unwrap_or(command::AUTO_MODEL), "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_cursor(cmd, PROMPT_EXECUTE, timeout, ws.repo_root())?;
             Ok((r, ()))

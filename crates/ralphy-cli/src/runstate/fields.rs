@@ -41,9 +41,13 @@ pub struct EventFields {
     /// harvest floor for the per-issue harvest-tax estimate. Absent on a pre-#270
     /// emission, which simply omits the estimate.
     pub invocations: Option<u64>,
-    /// Reasoning effort label (`low`/`medium`/`high`); adapters also report it as
-    /// `variant` (OpenCode), folded into the same slot.
+    /// Reasoning effort rung (`minimal`/`low`/`medium`/`high`/`max`), or absent
+    /// when the adapter emitted an empty string / documented no-op (ADR-0044 D9).
     pub effort: Option<String>,
+    /// Provider-native dialect selector (OpenCode `--variant`). Decoder-inert
+    /// like `cmd`: recorded for `ralphy.log` / sinks, never folded into
+    /// `RunEvent::{Planning,Executing}.effort` (ADR-0044 D9).
+    pub variant: Option<String>,
     /// Readable child command on `planning` / `executing`. Decoder-inert: recorded
     /// (and pinned by the round-trips) but never read by `event_to_runevent` — it
     /// exists for `ralphy.log` and for downstream sinks that want the command.
@@ -129,6 +133,7 @@ impl Default for EventFields {
             tokens: None,
             invocations: None,
             effort: None,
+            variant: None,
             cmd: None,
             up: None,
             cr: None,
@@ -205,7 +210,8 @@ impl Visit for EventFields {
             "outcome" => self.outcome = Some(value.to_string()),
             "reset" => self.reset = Some(value.to_string()),
             "model" => self.model = clean_opt(value),
-            "effort" | "variant" => self.effort = clean_opt(value),
+            "effort" => self.effort = clean_opt(value),
+            "variant" => self.variant = clean_opt(value),
             "cmd" => self.cmd = clean_opt(value),
             "label" => self.label = clean_opt(value),
             "repo" => self.repo = Some(value.to_string()),
@@ -250,7 +256,8 @@ impl Visit for EventFields {
             // `Some("…")` / quote wrapping and treat `None`/empty as absent so the
             // decoder never carries a literal `None` or `""` into a display label.
             "model" => self.model = clean_opt(&rendered),
-            "effort" | "variant" => self.effort = clean_opt(&rendered),
+            "effort" => self.effort = clean_opt(&rendered),
+            "variant" => self.variant = clean_opt(&rendered),
             "cmd" => self.cmd = clean_opt(&rendered),
             // The `%`-formatted (Display) run-boundary fields arrive here via
             // tracing's Display wrapper; store them raw (no quote stripping — these

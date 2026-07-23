@@ -273,7 +273,7 @@ impl Agent for GeminiAgent {
                 &policy_path,
                 auth_type.as_deref(),
             );
-            ralphy_core::emit::planning("gemini", model.unwrap_or(DEFAULT_MODEL), "");
+            ralphy_core::emit::planning("gemini", model.unwrap_or(DEFAULT_MODEL), "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding root setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -378,7 +378,7 @@ impl Agent for GeminiAgent {
                 &policy_path,
                 auth_type.as_deref(),
             );
-            ralphy_core::emit::executing("gemini", 0, model.unwrap_or(DEFAULT_MODEL), "");
+            ralphy_core::emit::executing("gemini", 0, model.unwrap_or(DEFAULT_MODEL), "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_gemini(cmd, &exec_prompt, timeout)?;
             Ok((r, ()))

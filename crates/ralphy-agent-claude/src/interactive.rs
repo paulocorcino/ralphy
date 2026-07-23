@@ -144,6 +144,7 @@ impl ClaudeAgent {
             self.exec.max_minutes_per_issue,
             &exec_model,
             self.exec.exec_effort.as_deref().unwrap_or(""),
+            "",
         );
 
         let transcript_dir = self.transcript_dir(ws);

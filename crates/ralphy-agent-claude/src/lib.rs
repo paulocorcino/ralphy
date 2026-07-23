@@ -219,6 +219,7 @@ impl Agent for ClaudeAgent {
             },
             self.plan_model.as_deref().unwrap_or(""),
             self.plan_effort.as_deref().unwrap_or(""),
+            "",
         );
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)

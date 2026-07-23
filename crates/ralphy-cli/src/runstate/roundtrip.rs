@@ -92,7 +92,7 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
 
 #[test]
 fn roundtrip_planning() {
-    let ev = one(|| ralphy_core::emit::planning("claude -p", "claude-opus-4", "high"));
+    let ev = one(|| ralphy_core::emit::planning("claude -p", "claude-opus-4", "high", ""));
     assert_eq!(
         ev.fields.cmd,
         Some("claude -p".to_string()),
@@ -111,7 +111,7 @@ fn roundtrip_planning() {
 /// absent model/effort decodes to `None` — the shape opencode's `?None` rendered.
 #[test]
 fn roundtrip_planning_absent_model_and_effort() {
-    let ev = one(|| ralphy_core::emit::planning("opencode run", "", ""));
+    let ev = one(|| ralphy_core::emit::planning("opencode run", "", "", ""));
     assert_eq!(
         decode(&ev),
         Some(RunEvent::Planning {
@@ -129,6 +129,7 @@ fn roundtrip_executing() {
             45,
             "claude-opus-4",
             "high",
+            "",
         )
     });
     assert_eq!(
@@ -153,7 +154,7 @@ fn roundtrip_executing() {
 /// sentinel the other 3 adapters emit.
 #[test]
 fn roundtrip_executing_absent_model_and_effort() {
-    let ev = one(|| ralphy_core::emit::executing("kimi", 0, "", ""));
+    let ev = one(|| ralphy_core::emit::executing("kimi", 0, "", "", ""));
     assert_eq!(
         decode(&ev),
         Some(RunEvent::Executing {
@@ -161,6 +162,37 @@ fn roundtrip_executing_absent_model_and_effort() {
             budget_min: 0,
             model: String::new(),
             effort: None,
+        })
+    );
+}
+
+/// ADR-0044 D9: a tracing `variant` value must not populate `EventFields.effort`
+/// / `RunEvent::Planning.effort`. OpenCode's dialect rides its own field.
+#[test]
+fn variant_does_not_fold_into_effort() {
+    let ev = one(|| ralphy_core::emit::planning("opencode run", "", "", "high"));
+    assert_eq!(ev.fields.effort, None);
+    assert_eq!(ev.fields.variant.as_deref(), Some("high"));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Planning {
+            model: None,
+            effort: None,
+        })
+    );
+}
+
+/// Symmetric half of D9: a real effort rung lands in `effort`, not `variant`.
+#[test]
+fn effort_decodes_independently_of_variant() {
+    let ev = one(|| ralphy_core::emit::planning("claude -p", "", "medium", ""));
+    assert_eq!(ev.fields.effort.as_deref(), Some("medium"));
+    assert_eq!(ev.fields.variant, None);
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::Planning {
+            model: None,
+            effort: Some("medium".into()),
         })
     );
 }

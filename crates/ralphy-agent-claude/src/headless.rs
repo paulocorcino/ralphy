@@ -111,6 +111,7 @@ impl ClaudeAgent {
             self.exec.max_minutes_per_issue,
             &exec_model,
             self.exec.exec_effort.as_deref().unwrap_or(""),
+            "",
         );
 
         let mut no_commit_streak = 0u32;

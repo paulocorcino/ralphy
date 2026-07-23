@@ -305,6 +305,7 @@ impl Agent for CopilotAgent {
                 "copilot",
                 model.unwrap_or(""),
                 effort.as_deref().unwrap_or(""),
+                "",
             );
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir setup.
@@ -407,6 +408,7 @@ impl Agent for CopilotAgent {
                 0,
                 model.unwrap_or(""),
                 effort.as_deref().unwrap_or(""),
+                "",
             );
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_copilot(cmd, PROMPT_EXECUTE, timeout)?;
