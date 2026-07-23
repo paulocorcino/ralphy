@@ -6,7 +6,7 @@
 //! Each adapter keeps its own vendor decision — which substrings signal auth,
 //! which reset-string format to parse, which JSON fields mark a limit — and passes
 //! it in. These helpers return a `bool`/`Option`, never an `Outcome`: the seam
-//! ADR-0004 protects (each adapter's `classify_*`) stays untouched.
+//! ADR-0002 protects (each adapter's `classify_*`) stays untouched.
 
 /// Return `true` when `text` matches any auth marker **group**. The outer slice is
 /// OR (any group matching wins); each inner slice is AND (every substring in the

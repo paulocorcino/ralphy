@@ -249,7 +249,7 @@ one row per reachable family. Two corrections to the sketch above:
   longest-first decoration list rather than in the sequence D5 assumed.
 - Normalization happens at ATTRIBUTION, not at lookup: the adapter writes
   `Usage.model = model_family(requested)`, so the ledger persists the family key
-  and `PriceTable::resolve` stays vendor-neutral (ADR-0004). The consequence is
+  and `PriceTable::resolve` stays vendor-neutral (ADR-0002). The consequence is
   deliberate and worth knowing: the raw effort suffix is not retained, so a
   ledger row cannot distinguish `-max` from `-low` after the fact.
 

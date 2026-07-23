@@ -47,6 +47,13 @@ future adapter would inherit a Claude-shaped assumption.
   name) is swappable inside an adapter without touching the core or other adapters.
 - `ralphy-pty` is a shared crate (consumers: Claude interactive exec now; on-screen
   terminal / Tauri and supervised sessions later), not core infrastructure.
+- There is deliberately **no shared "headless runner" or `Outcome` runner that
+  adapters bend to fit**: the only surface shared between adapters is the core's
+  `Agent` trait and `Outcome` enum. Each adapter owns its own raw-output→signal
+  detection; vendor-neutral plumbing (`ralphy-adapter-support`) may share
+  mechanical steps and, per ADR-0023, the fixed signal→`Outcome` ordering, but
+  never the detection itself. (ADR-0004 first articulated this invariant when the
+  second adapter arrived; it is a boundary property, recorded here as its home.)
 - The plan artifact may keep emitting Claude model names (`sonnet`/`opus`) at
   parity, confined to a single tier↔model translation point in the Claude adapter;
   moving to an abstract tier is a deliberate later improvement, not part of the port.

@@ -6,7 +6,8 @@ crate `ralphy-agent-codex` that implements the same PTY-free `Agent` trait
 flag; the core keeps taking a single `&dyn Agent` and never learns which vendor
 it holds. The only surface shared between the two adapters is the core's `Agent`
 trait and `Outcome` enum — there is deliberately **no** shared "headless runner"
-that both bend to fit. Each adapter is built to its vendor's best-fit mechanism,
+that both bend to fit (the boundary invariant, whose home is ADR-0002). Each
+adapter is built to its vendor's best-fit mechanism,
 even where that makes the two internally divergent, because the only thing that
 must match is the `Outcome` the core receives, not how it was produced.
 

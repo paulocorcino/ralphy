@@ -1,5 +1,9 @@
 # A blocked issue is skipped until its blocker is CLOSED; this is safe only because runs share one branch
 
+_Renumbered from 0002 to 0045 (#293): the number 0002 had accidentally collided
+with the core/adapter-boundary ADR, which is the canonical 0002. The decision is
+unchanged; only the identifier moved._
+
 Ralphy reads each issue's `## Blocked by` section. When an issue declares a blocker
 that is still open, the runner **skips** it (no close, no stop — the same path as an
 infeasible plan) so unrelated later issues still run, and a future run picks it up

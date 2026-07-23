@@ -328,7 +328,7 @@ it arrives** (rather than buffering everything in memory and writing once at exi
 so the log is observable live and survives a crash of the `ralphy` process; the file
 is rewritten once at the end in the canonical stdout-then-stderr order the detectors
 scan. This is shared OS plumbing — the same seam as `run_headless`, and like the
-Windows program-resolver correction it does **not** reopen ADR-0004. All four
+Windows program-resolver correction it does **not** reopen ADR-0002. All four
 adapters get the streamed log; only OpenCode passes the early-kill predicate.
 
 ## Consequences
@@ -374,7 +374,7 @@ adapters get the streamed log; only OpenCode passes the early-kill predicate.
     the extensionless `opencode` shell shim next to it was "not a valid Win32
     application" (os error 193) — the resolver honours `PATHEXT` and skips the
     extensionless shim. This is shared OS plumbing, the same seam as `run_headless`
-    (it does not reopen ADR-0004).
+    (it does not reopen ADR-0002).
   - The `--format json` event parsing is fixed to the real envelope: every event
     is `{type, timestamp, sessionID, part:{…}}` with the payload (text, tool,
     reason) under `part`, and an error carries `{error:{name,data:{…}}}`. The

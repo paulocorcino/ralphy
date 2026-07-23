@@ -499,7 +499,7 @@ pub(crate) fn execute_phase(
         // Model attribution happens once, after the loop, via `fold_usage` —
         // the ONE place accumulated-usage model derivation lives (ADR-0008
         // D8); the runner stays vendor-neutral and passes no fallback
-        // (ADR-0004 — alias fallback lives in the adapter).
+        // (ADR-0002 — alias fallback lives in the adapter).
         exec_attempts.push(usage);
         if session_id.is_some() {
             exec_session_id = session_id;

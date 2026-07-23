@@ -57,7 +57,7 @@ pub use settings::CursorSettings;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 
 /// The vendor's id grammar, normalized to the billing family (ADR-0042 D5) — the
-/// price table's key. Vendor-specific by ADR-0004, so it lives here and
+/// price table's key. Vendor-specific by ADR-0002, so it lives here and
 /// `PriceTable::resolve` stays neutral.
 pub use model::model_family;
 

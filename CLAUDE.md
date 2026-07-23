@@ -9,7 +9,7 @@ them here.
   is defined there. Use these words; don't invent synonyms.
 - **[docs/adr/](./docs/adr/)** — architecture decisions. Check for a relevant
   ADR before changing a seam; the boundary you're about to cross was probably
-  decided on purpose (e.g. ADR-0004 core/adapter boundary).
+  decided on purpose (e.g. ADR-0002 core/adapter boundary).
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI, crate layout.
 
 ## Architecture — ports & adapters, ubiquitous-language-first
@@ -24,10 +24,9 @@ buses. Don't add them.
   contract (the *port*) and owns queue lifecycle, git/forge, run reporting. It
   must never gain a dependency on a `ralphy-agent-*` crate or on
   `ralphy-adapter-support`; the dependency arrow points *inward*, toward core
-  (ADR-0004 protects this seam — the codebase cites it by that number, though
-  the file currently lives at `docs/adr/0002-core-agnostic-adapter-boundary.md`,
-  a known numbering drift). If core seems to need something vendor-specific,
-  the design is wrong — lift it behind the contract, don't leak it in.
+  ([ADR-0002](./docs/adr/0002-core-agnostic-adapter-boundary.md) protects this
+  seam). If core seems to need something vendor-specific, the design is wrong —
+  lift it behind the contract, don't leak it in.
 - **Each `ralphy-agent-*` is an adapter** implementing that port: one crate per
   vendor, holding all that is vendor-specific (execution mode, completion
   protocol). **`ralphy-adapter-support`** is the vendor-*neutral* plumbing the

@@ -131,10 +131,10 @@ removal, merged per-entry `.gitignore`) that Codex and Copilot both drive. It is
 the deliberate counterpart of **Adapter**: where an adapter holds what is
 vendor-specific, adapter support holds what is common. It owns **no** completion
 protocol and produces **no** `Outcome` — it hands back raw captured output and
-each adapter still classifies it (the seam ADR-0004 protects). Lives in
+each adapter still classifies it (the seam ADR-0002 protects). Lives in
 `ralphy-adapter-support`; depended on by the vendor adapter crates, never by the
 core.
-_Avoid_: shared runner, headless runner (ADR-0004 forbids a shared *Outcome*
+_Avoid_: shared runner, headless runner (ADR-0002 forbids a shared *Outcome*
 runner — this is only the plumbing), utils, helpers.
 
 **Run deadline / per-issue budget / idle watchdog**:
@@ -166,7 +166,7 @@ beats closing a throttled session) and a `timeout`; a `done` needs only
 protocol-completion and flake-repair hand-backs legitimately finish with no commit
 (the plan lives in gitignored `.ralphy/plan.md`). `committed` is a *progress* signal
 feeding the Claude headless no-commit **streak**, not a gate on **green**. This
-*narrows* — does not reopen — ADR-0004: raw→signal extraction (including limit
+*narrows* — does not reopen — ADR-0002: raw→signal extraction (including limit
 trustworthiness and exit normalization) stays per-adapter; only the signal→`Outcome`
 ordering is shared (ADR-0023). Claude is the reference implementation; the behavior
 change lands on the Codex and OpenCode adapters.
@@ -422,7 +422,7 @@ An issue's `## Blocked by` section names other issues (`#N`) it depends on. The
 runner gates on it: if any named blocker is still **open**, the blocked issue is
 *skipped* this run (not closed, not a stop) and picked up by a later run once the
 blocker clears. A blocker counts as satisfied when simply **closed** — safe only
-because every issue in a run shares one branch (see ADR-0002).
+because every issue in a run shares one branch (see ADR-0045).
 _Avoid_: depends-on, prerequisite, stop-before (that's flow control, not a dependency).
 
 **stop-before**:

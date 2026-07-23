@@ -7,7 +7,7 @@ member** — it can only ever appear as a **blocker** in another issue's `## Blo
 section. This ADR gives that one position runtime *visibility* without making the HITL
 itself queryable: the agent still never works a `ready-for-human` issue.
 
-The gap is in the blocked-by gate (ADR-0002). The gate treats every open blocker
+The gap is in the blocked-by gate (ADR-0045). The gate treats every open blocker
 identically: a blocker that is "agent work, not done yet" (the queue will resolve it)
 is indistinguishable from one that is "HITL, parked until a human acts" (the queue
 will *never* resolve it). Both render as `⏭️ skipped (blocked)`, so an unattended run
@@ -15,7 +15,7 @@ gives no signal that a chain is stalled on a human rather than merely waiting it
 
 **Decision.** At the gate, when an open blocker carries `ready-for-human`, classify the
 skip reason as *waiting on a human* instead of generic *blocked*, and surface it. The
-run **continues** — this is a deliberate extension of ADR-0002's skip-and-continue, not
+run **continues** — this is a deliberate extension of ADR-0045's skip-and-continue, not
 a new hard halt. Only the chain that depends on the HITL stalls (which the gate already
 does today); independent chains run to completion. The division of labour is:
 

@@ -1,6 +1,6 @@
 //! The shared, vendor-neutral **precedence** half of outcome classification
 //! (ADR-0023). Each adapter still extracts its own [`CompletionSignals`] from
-//! raw end state (Camada 1 — the ADR-0004 seam); this module owns only the fixed
+//! raw end state (Camada 1 — the ADR-0002 seam); this module owns only the fixed
 //! ladder that orders those signals into a core [`Outcome`] (Camada 2), so the
 //! precedence is verified once instead of drifting across three CLIs.
 

@@ -96,7 +96,7 @@ Codex/OpenCode test asserts the behavior being changed.
 
 `ralphy-adapter-support` gains the pure `classify` function and the
 `CompletionSignals` type. It still performs **no** raw-output detection of its own,
-so ADR-0004's ban on a shared raw-output completion runner is intact — this shares
+so ADR-0002's ban on a shared raw-output completion runner is intact — this shares
 the *ordering*, not the *detection*.
 
 ## Consequences

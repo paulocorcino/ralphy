@@ -4,7 +4,7 @@
 //! auth/timeout, then read the artifact and validated it against a core schema —
 //! the same mechanical tail every time. [`run_json_session`] owns that tail.
 //!
-//! It stays vendor- and core-neutral (ADR-0004): the adapter passes the already
+//! It stays vendor- and core-neutral (ADR-0002): the adapter passes the already
 //! built [`Command`], its own auth detector, the exact error wording, and a
 //! `validate` closure that parses the raw artifact into whatever core type it
 //! returns. The `serde_json` deserialization and the `ralphy-core` schema types
