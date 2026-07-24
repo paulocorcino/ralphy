@@ -20,6 +20,12 @@ pub(crate) const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
+/// Hard per-request cap covering connect + TLS + body read. The per-phase
+/// timeouts above are a floor (they fail a dead connect fast); this bounds the
+/// whole request so a slow-drip body — where `timeout_read` resets on every
+/// read — cannot run past it. With `MAX_ATTEMPTS` and `RETRY_SLEEP` the whole
+/// fetch stays within ~3.2s worst case.
+const REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const MAX_ATTEMPTS: u32 = 2;
 const RETRY_SLEEP: Duration = Duration::from_millis(200);
 
@@ -121,6 +127,11 @@ fn fetch_body(url: &str) -> Result<String, String> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(CONNECT_TIMEOUT)
         .timeout_read(READ_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        // Don't follow redirects: each hop is a fresh connect+read that would
+        // blow past the ~3s budget. models.dev/api.json answers 200 directly; a
+        // 3xx surfaces as Error::Status and falls through to the stale cache.
+        .redirects(0)
         .build();
 
     let mut last_err = String::from("models.dev fetch failed");
@@ -150,17 +161,16 @@ fn fetch_body(url: &str) -> Result<String, String> {
     Err(last_err)
 }
 
-/// Write `bytes` via temp file + rename. On Windows, remove the destination
-/// first — `rename` does not replace an existing file.
+/// Write `bytes` via temp file + atomic rename. `std::fs::rename` replaces an
+/// existing destination on both Unix and Windows (there it maps to
+/// `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`), so the canonical cache is
+/// never absent: a concurrent reader sees either the old file or the new one,
+/// never a gap. Deleting the destination first would open exactly that gap.
 fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join(format!("models-dev.json.{}.tmp", std::process::id()));
     std::fs::write(&tmp, bytes)?;
-    #[cfg(windows)]
-    {
-        let _ = std::fs::remove_file(path);
-    }
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {

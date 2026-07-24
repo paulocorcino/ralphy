@@ -25,6 +25,18 @@ pub(crate) const CODEX_MODEL_LUNA: &str = "gpt-5.6-luna";
 /// don't inherit an interactive-use setting.
 pub(crate) const DEFAULT_CODEX_EFFORT: &str = "medium";
 
+/// Clamp a neutral effort word to a value Codex's `model_reasoning_effort`
+/// accepts (`minimal|low|medium|high`). The neutral lexicon's top rungs
+/// `xhigh`/`max` (ADR-0044) have no Codex analogue, so they saturate to `high`
+/// — otherwise `codex exec` rejects the `-c` override at startup. Only the argv
+/// is clamped; telemetry keeps the operator's original word.
+pub(crate) fn codex_reasoning_effort(word: &str) -> &str {
+    match word {
+        "xhigh" | "max" => "high",
+        other => other,
+    }
+}
+
 /// Locate the Codex config file: `$CODEX_HOME/config.toml` when `CODEX_HOME` is
 /// set (matching Codex's own resolution), else `<home>/.codex/config.toml`
 /// (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when no home is known.
@@ -107,7 +119,10 @@ pub(crate) fn build_codex_command(
         .arg("-m")
         .arg(model)
         .arg("-c")
-        .arg(format!("model_reasoning_effort=\"{effort}\""))
+        .arg(format!(
+            "model_reasoning_effort=\"{}\"",
+            codex_reasoning_effort(effort)
+        ))
         .arg("-s")
         .arg("danger-full-access")
         .arg("-o")
@@ -164,7 +179,10 @@ pub(crate) fn build_codex_init_command(
         cmd.arg("-m").arg(m);
     }
     cmd.arg("-c")
-        .arg(format!("model_reasoning_effort=\"{effort}\""))
+        .arg(format!(
+            "model_reasoning_effort=\"{}\"",
+            codex_reasoning_effort(effort)
+        ))
         .arg("-s")
         .arg("danger-full-access");
     for p in images {
@@ -233,6 +251,35 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert!(args.iter().any(|a| a == "model_reasoning_effort=\"low\""));
+    }
+
+    #[test]
+    fn neutral_top_rungs_saturate_to_codex_high() {
+        // `xhigh`/`max` are neutral lexicon rungs (ADR-0044) with no Codex
+        // `model_reasoning_effort` value; they must clamp to `high` so the `-c`
+        // override is one `codex exec` accepts, not one it rejects at startup.
+        assert_eq!(codex_reasoning_effort("xhigh"), "high");
+        assert_eq!(codex_reasoning_effort("max"), "high");
+        // Valid words pass through untouched.
+        for w in ["low", "medium", "high", "minimal"] {
+            assert_eq!(codex_reasoning_effort(w), w);
+        }
+        for word in ["xhigh", "max"] {
+            let cmd = build_codex_command(
+                CODEX_MODEL_SOL,
+                word,
+                Path::new("/repo"),
+                Path::new("/repo/out.txt"),
+            );
+            let args: Vec<String> = cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            assert!(
+                args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
+                "{word} should clamp to high in argv: {args:?}"
+            );
+        }
     }
 
     // ── build_codex_init_command ────────────────────────────────────────────

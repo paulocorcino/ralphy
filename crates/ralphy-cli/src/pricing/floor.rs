@@ -30,10 +30,6 @@ mod tests {
     use super::*;
     use crate::pricing::tests::one_million_each;
 
-    /// The Gemini axis end to end (ADR-0043 D8): the lookup goes through the
-    /// adapter's own `price_key`, so the table and the vendor's id grammar cannot
-    /// drift apart — and the two ids that collide with a Cursor row of the same
-    /// spelling stay un-conflated.
     /// Golden lock: every bare id that lived in the retired `defaults.rs` still
     /// prices to the same 1M-each USD via seed ⊕ overlay (issue #288 AC1).
     #[test]
@@ -94,6 +90,10 @@ mod tests {
         }
     }
 
+    /// The Gemini axis end to end (ADR-0043 D8): the lookup goes through the
+    /// adapter's own `price_key`, so the table and the vendor's id grammar cannot
+    /// drift apart — and the two ids that collide with a Cursor row of the same
+    /// spelling stay un-conflated.
     #[test]
     fn gemini_ids_price_through_the_adapters_key() {
         let table = PriceTable::defaults();
