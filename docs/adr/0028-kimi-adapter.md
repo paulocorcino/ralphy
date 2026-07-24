@@ -189,12 +189,42 @@ detectors use (ADR-0013). Detection stays **behavioral** rather than inspecting
 the credentials file, which is simpler and matches the other adapters. The guard
 landed on this signal in #241; before that a logged-out run fell through as a
 generic `kimi produced no plan` / `Stuck`, losing the actionable message.
-One boundary observed while porting it: a `KIMI_CODE_HOME` with **no**
-`config.toml` at all answers `No model configured…` instead, which the detector
-deliberately does not claim — that is "never configured", not "logged out".
 Historical
 caveat, no longer applicable: `LLM not set` meant "no model resolved"; 0.28's
 `auth.login_required` line is unambiguous about the cause.
+
+**#281 — the full-logout state is a second logged-out shape.** The
+`auth.login_required` line above is only one of two logged-out signatures, and it
+is the *narrower* one: an expired/invalid token with the model catalog still
+intact. The #274 capstone (Phase 0) captured the other live on Windows
+(`kimi-code` 0.28.0): a full `kimi logout` **strips the login-populated catalog**
+(`default_model` and every `[models.*]` entry) from `config.toml`, and the run
+then fails with no `auth.login_required` token at all —
+
+- on the adapter's real path, where `-m kimi-code/k3` is pinned
+  (`command.rs`): `config.invalid: Model "kimi-code/k3" is not configured in
+  config.toml…`;
+- on a bare invocation (no `-m`): `No model configured. Run \`kimi\` and use
+  /login to sign in, then retry…`.
+
+`is_kimi_auth_error` now matches all three via the shared multi-group
+`auth_error` helper (Codex D5's precedent), keeping detection behavioral: groups
+`["auth.login_required"]`, `["no model configured", "login"]`, and
+`["config.invalid", "is not configured"]`.
+
+This **supersedes** the earlier boundary note that a `No model configured…`
+output was deliberately *not* claimed as logged-out (read then as "never
+configured"). Two things changed the call: the full-logout state is a real,
+now-observed logged-out shape that leaves `config.toml` present, and its message
+carries the CLI's own `/login` hint — matched with an AND-guard
+(`no model configured` **and** `login`) so it keys on the actionable signal, not
+the bare "no model" prose. **The `config.invalid` group carries an accepted
+conflation risk:** a genuine operator model-config typo on `kimi-code/k3` reads
+as "run `kimi login`" too. Taken on purpose — login populates the catalog and the
+adapter always pins the managed `kimi-code/k3`, so "model not configured" almost
+always *means* logged-out, and re-login is the correct first action either way. A
+tighter model-specific match was rejected as brittle against a future pinned-id
+change.
 
 ## D7 — Tokens come from `wire.jsonl` `usage.record`, per step, snapshot-diffed (#239/#240)
 
