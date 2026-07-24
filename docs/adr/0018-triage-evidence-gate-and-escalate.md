@@ -132,3 +132,64 @@ reframing of a sensitive request), the mechanics are:
   edge in the state machine.
 - ADR-0017 §2 is amended: the three-verdict set becomes four, and the
   promotion bar is the evidence gate, not executability alone.
+
+## Amendment (2026-07-24): a decomposition's head slice is drafted, not left as prose
+
+§3 and §4 offer the escalate proposal as a choice — a suggested decomposition
+into child issues, **or** the restricted follow-up to open. Issue #295 (the CI
+`test` job hanging to runner death) showed what that exclusive `or` costs. The
+verdict was right on every count: no runner log survives, so the defect is not
+localizable; the repro needs a hosted Linux runner, so no red test exists
+locally; and the work is three slices with different gates. But the proposal
+decomposed, so it emitted no `draft_issue` — and its own slice A ("add
+`timeout-minutes:` to the `test` job"), which the same comment called
+agent-sized and locally verifiable, existed nowhere on the board. A correct
+verdict landed inert: the maintainer owed a decision *and* three issues typed
+by hand, including the one slice that did not depend on that decision.
+
+The two proposal arms are therefore not exclusive. When a decomposition's head
+slice is **unblocked** (it carries no `## Blocked by`) **and** locally
+verifiable, it goes in `draft_issue` as well. The §4 human-confirmed creation
+checkpoint still gates it — that checkpoint is what keeps the agent from
+authoring work items — and the schema's single `Option<DraftIssue>` is
+unchanged, so at most one slice is ever drafted. Every blocked slice stays
+prose until its blocker lands and its acceptance criteria can be written
+without inventing them.
+
+One mechanic does change: `DraftIssue` gains `labels`, and the interactive
+create step passes them instead of `&[]`. An unlabeled creation was right for
+the §4 restricted follow-up (it must not jump into the queue) and wrong for a
+head slice that already passed both gates — it landed on the board in neither
+the queue nor triage, so the human still had to label it by hand and the draft
+saved only typing. The head slice carries the queue label; the restricted
+follow-up carries none, explicitly.
+
+## Amendment (2026-07-24): the autonomy gate, and routing by the kind of doubt
+
+The evidence gate answers "is the defect real?". It never asked "can an agent
+fix it unattended?" — and with `ralphy schedule install triage` feeding
+`ralphy schedule install run`, that second question is the one that decides
+whether a verdict closes the loop or parks it. The charter's tie-breaker
+("when unsure, prefer bounce — returning work to a human is always safe") made
+the omission worse: it routed size, missing evidence, and decision debt to the
+same destination, and "safe" described the agent's exposure, not the board's.
+
+`promote` and `consolidate` therefore require a second gate of five criteria,
+each defaulting to no: **written intent** (the correct behavior is already
+recorded and cited — the objective form of "does this touch a business rule?");
+**a red test named now and runnable locally on both OSes** (no network, no
+vendor CLI, no hosted runner, no credentials — a defect reproducible only on
+infrastructure the executor cannot reach is not agent work, by physics);
+**bounded blast radius** (no `pub` API, prompt asset, event schema, label
+vocabulary, or ADR); **one fix, not a fork** (needing to present A vs B *is*
+decision debt); and **a stated falsifier** (what would have to be observed for
+the diagnosis to be wrong, and where it was looked for). Routing follows the
+kind of doubt: unsure it is real → bounce; unsure what correct is → escalate;
+real and fixable → promote, regardless of size or tedium.
+
+What keeps a more willing `promote` honest is §2's asymmetry, now stated
+explicitly: the executor must produce the failing test FIRST, so a promote
+built on a phantom is falsified one turn later and costs a cycle — while a
+false bounce costs the issue indefinitely. The gate is deliberately *not*
+justified by "Ralphy never pushes": that containment is under active revision,
+and a rule that leans on it would rot with it.

@@ -87,3 +87,20 @@ reporter's language.
 - One comment is now written per promoted issue, including trivially-clear ones.
   This is the accepted cost of an auditable board; the marker keeps re-triage
   from multiplying it.
+
+## Amendment (2026-07-24): the stamp records the red test and the falsifier
+
+§1 fixed the stamp's three lines on the evidence gate: reproduces, mechanism,
+intent. ADR-0018's autonomy gate adds two claims the stamp must also carry,
+because the label alone cannot: **Red test** — the test or command that fails
+today and passes after, named and locally runnable on both OSes — and
+**Falsifier** — what would have to be observed for the diagnosis to be wrong,
+and where it was looked for without being found.
+
+Both belong in the stamp rather than in prose the reader must trust. The red
+test is what the executor's failing-test-first step adjudicates one turn later,
+so writing it down turns the promote into a prediction with a scheduled verdict.
+The falsifier is the anti-yes-man line: a stamp that cites only confirming
+evidence reads identically whether the triage doubted the claim or agreed with
+it on sight. The stamp stays a short list of checkable citations — five lines,
+not a spec, and never a rewrite of the author's body.

@@ -41,6 +41,14 @@ pub struct DraftIssue {
     pub title: String,
     /// The proposed follow-up issue body (may carry a `Closes #<original>` line).
     pub body: String,
+    /// Labels to apply at creation. A decomposition's unblocked head slice
+    /// carries the queue label, so an accepted draft is grabbable instead of
+    /// landing unlabeled — outside the queue AND outside triage. A restricted
+    /// follow-up (the maintainer-scoped reframing) carries none, deliberately:
+    /// it must not jump into the queue. `#[serde(default)]` keeps drafts
+    /// written before this field valid.
+    #[serde(default)]
+    pub labels: Vec<String>,
 }
 
 /// One triaged issue: its number, the verdict, and the comment body the verdict
@@ -179,6 +187,26 @@ mod tests {
         let json = serde_json::to_string(&draft).expect("serialize");
         let back: TriageDraft = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(draft, back);
+    }
+
+    #[test]
+    fn draft_issue_labels_default_to_empty_and_survive_a_round_trip() {
+        // A draft written before `labels` existed still parses (the restricted
+        // follow-up carries none by design), and a head slice's queue label
+        // survives serialization — it is what makes an accepted draft grabbable.
+        let legacy = r#"{ "title": "Restricted follow-up", "body": "Closes #21" }"#;
+        let parsed: DraftIssue =
+            serde_json::from_str(legacy).expect("parse a draft without labels");
+        assert!(parsed.labels.is_empty(), "labels default to empty");
+
+        let head = DraftIssue {
+            title: "CI: bound the test job".into(),
+            body: "## What to build\n...".into(),
+            labels: vec!["ready-for-agent".into()],
+        };
+        let json = serde_json::to_string(&head).expect("serialize");
+        let back: DraftIssue = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(head, back);
     }
 
     #[test]

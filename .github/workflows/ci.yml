@@ -40,6 +40,10 @@ jobs:
   test:
     name: build · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A wedged test used to consume the whole job budget until the hosted
+    # runner died ("lost communication"), which uploads no log at all. Bound
+    # the job so a hang fails fast, inside the step, with a log that survives.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +60,25 @@ jobs:
       - name: Build
         run: cargo build --workspace --release
 
+      # The Linux hang has the same signature as memory or disk exhaustion, so
+      # sample both alongside the tests. The sampler runs inside the Test step
+      # because a job killed by `timeout-minutes` cancels later steps: only the
+      # log of the step that was running survives.
       - name: Test
-        # PTY tests drive cmd.exe on Windows and sh on Linux (portable-pty).
+        if: runner.os == 'Linux'
+        # PTY tests drive sh on Linux (portable-pty).
+        run: |
+          ( while true; do
+              echo "--- resources $(date -u +%H:%M:%S) ---"
+              free -m | head -2
+              df -h / | tail -1
+              sleep 60
+            done ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null' EXIT
+          cargo test --workspace --release
+
+      - name: Test
+        if: runner.os == 'Windows'
+        # PTY tests drive cmd.exe on Windows (portable-pty).
         run: cargo test --workspace --release

@@ -411,7 +411,8 @@ pub fn run(args: &TriageArgs) -> Result<()> {
             .read_line(&mut answer)
             .context("reading answer from stdin")?;
         if matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            let number = tracker.create_issue(&draft_issue.title, &draft_issue.body, &[])?;
+            let number =
+                tracker.create_issue(&draft_issue.title, &draft_issue.body, &draft_issue.labels)?;
             println!("  created follow-up issue #{number}.");
         } else {
             println!("  skipped — no issue created.");
@@ -680,6 +681,7 @@ mod tests {
                 draft_issue: Some(DraftIssue {
                     title: "Restricted follow-up".into(),
                     body: "Closes #24".into(),
+                    labels: vec![],
                 }),
             }],
         };
