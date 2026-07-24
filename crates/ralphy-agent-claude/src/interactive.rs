@@ -104,6 +104,10 @@ impl ClaudeAgent {
         let settings_path = self.write_exec_settings()?;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
+        // Effort follows the same precedence as the model: operator flag wins,
+        // else the plan's `opus-high` rung raises it to high (ADR-0002, Amendment
+        // 2026-07-24).
+        let exec_effort = self.resolve_exec_effort(plan);
         let flag_file = self.run_dir.join("status.flag");
         let _ = std::fs::remove_file(&flag_file);
 
@@ -128,7 +132,7 @@ impl ClaudeAgent {
                     &settings_path,
                     &plugin_dir,
                     &exec_model,
-                    self.exec.exec_effort.as_deref(),
+                    exec_effort.as_deref(),
                     self.exec.remote_control,
                     &rc_name,
                 ))
@@ -143,7 +147,7 @@ impl ClaudeAgent {
             },
             self.exec.max_minutes_per_issue,
             &exec_model,
-            self.exec.exec_effort.as_deref().unwrap_or(""),
+            exec_effort.as_deref().unwrap_or(""),
             "",
         );
 

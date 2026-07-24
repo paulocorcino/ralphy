@@ -75,18 +75,21 @@ on one.
    <one or two sentences. If "no", explain what is missing — the loop will
    skip the issue and leave a comment.>
 
-   ## Execution model: sonnet | opus
+   ## Execution model: sonnet | opus | opus-high
    <one line justifying the choice. Pick the SMALLEST model that will do this
    reliably. Choose `opus` only if at least one concrete signal holds: the
    change touches 2+ crates/packages, OR it introduces a new parser/classifier/state
    machine, OR it must preserve subtle semantics across modules (concurrency,
-   lifetimes, behavior shared between callers). Otherwise choose `sonnet` —
-   including for broad-but-mechanical changes (renames, adding a field or
-   string everywhere, straightforward refactors); breadth alone is not
-   complexity. Decide this LAST, after writing the Steps: price the residual
-   difficulty of executing the plan you just wrote — a highly prescriptive
-   plan (decisions made, signatures given, traps named) lowers the tier the
-   executor needs — not the difficulty of the raw issue.>
+   lifetimes, behavior shared between callers). Choose `opus-high` — opus at high
+   reasoning effort — only for the hardest cases, where plain `opus` would visibly
+   under-think: dense concurrency/lifetime/type-plumbing, subtle correctness with
+   little test cover, or genuinely ambiguous design needing sustained judgment.
+   Otherwise choose `sonnet` — including for broad-but-mechanical changes
+   (renames, adding a field or string everywhere, straightforward refactors);
+   breadth alone is not complexity. Decide this LAST, after writing the Steps:
+   price the residual difficulty of executing the plan you just wrote — a highly
+   prescriptive plan (decisions made, signatures given, traps named) lowers the
+   tier the executor needs — not the difficulty of the raw issue.>
 
    ## Done when
    - <machine-verifiable condition(s) — what the project's tests, a build, or
@@ -318,6 +321,20 @@ on one.
   whether the issue is already partially or fully implemented on the current
   branch (read-only `git log` and tree inspection); if so, say so under
   `## Feasible` and plan only the residue.
+- Distinguish a stale handoff from unmerged predecessor work before ruling on
+  it: when `handoffs.md` or `knowledge/` claims delivered artifacts (files,
+  green command sequences) that the current tree lacks, do NOT conclude the
+  handoff is stale until read-only ref archaeology has looked for that work on
+  other refs of this repository — `git branch -a` plus
+  `git log --all --oneline -- <path>` for a path the handoff names. Ralphy
+  never merges: predecessors close with their work on a run branch, so a later
+  run based elsewhere sees every handoff contradict its tree. If the work
+  exists on another ref, the verdict on THIS base may still be `Feasible: no`,
+  but the prose must name that branch and state that the run's base is what is
+  wrong, not the handoffs — the skip comment becomes the operator's one-move
+  fix (re-run with that base). This ref scan is contradiction-triggered ONLY:
+  on a normal pass the checked-out tree is the truth, and never anchor a plan
+  step or a "Done when" in code that exists only on another ref.
 - Anchor new shapes too: any NEW signature, struct, or field you specify must
   be validated against the consuming code you read in this pass (does the
   caller actually have that data at that point?). If you cannot validate it,

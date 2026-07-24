@@ -238,3 +238,61 @@ on plan and execute `codex exec` invocations. When unset, the default remains
 Terra / Luna; effort only sets how hard the chosen model thinks. Init/triage
 one-shots keep `DEFAULT_CODEX_EFFORT`. Amends D3's frozen-effort clause and
 the 2026-07-10 `held at the vendor default` wording for run plan/execute.
+
+## Amendment (2026-07-24): the execute tier is one cost/power ladder — model *and* default effort — with a new `xhigh` rung
+
+The 2026-07-10 amendment routed the tier to a model and froze effort at the
+vendor default; the 2026-07-23 amendment let the operator's `--exec-effort`
+move effort but kept it **orthogonal** to the tier. That orthogonality left the
+planner unable to ask for the thing operators actually wanted: the flagship
+*thinking harder*. Sol at tier `high` ran at `medium` effort, and the only way
+to reach Sol at `high` effort was an operator flag applied uniformly to every
+issue in the run — not a per-issue judgment the plan could make from the work in
+front of it.
+
+**Decision.** For the **execute** phase, the neutral complexity tier now selects
+a single point on a `(model, effort)` cost/power ladder, and a fourth rung
+`xhigh` is added so the planner can reach Sol at `high` effort per issue:
+
+| tier (neutral) | model           | default effort |
+| -------------- | --------------- | -------------- |
+| `low`          | `gpt-5.6-luna`  | low            |
+| `medium`       | `gpt-5.6-terra` | medium         |
+| `high`         | `gpt-5.6-sol`   | medium         |
+| `xhigh`        | `gpt-5.6-sol`   | high           |
+
+- **Luna stays on `low`.** Dropping Luna for Terra:low was considered and
+  rejected: Terra costs 2.5× Luna per token (the seeded floor: Sol 41.75, Terra
+  20.875, Luna 8.35), and `low` is *defined* as mechanical, localized,
+  well-understood work — the territory where the cheap model has the least
+  downside. No measured Luna failure rate justifies the 2.5× on the most common
+  trivial-task tier. The conservative Terra:low fallback named in the 2026-07-10
+  amendment remains available if live runs show Luna under-delivering.
+- **The ladder is monotonic in both axes** — each rung is ≥ the previous in
+  model weight and effort — so it reads as one "how much power does this issue
+  deserve" dial, not a free tier×effort matrix (still rejected as unearned
+  configuration surface). `high` → Sol:medium and `xhigh` → Sol:high are the two
+  flagship rungs the original request asked for.
+- **Effort precedence is unchanged in spirit, refined in the default.** The
+  order is `--exec-effort` override → the **tier-derived** effort above (was:
+  the flat `medium`). An explicit operator flag still wins on every issue — the
+  operator is never denied (the opt-in posture). Only the *unset* default moved
+  from flat `medium` to per-tier. `--exec-model` still short-circuits the model
+  column exactly as before (override → `config.toml` model → the table).
+- **Plan phase is untouched.** Planning runs before any tier exists, so it keeps
+  running on Sol at `--plan-effort` (default `medium`, `DEFAULT_CODEX_EFFORT`).
+  Init/triage one-shots likewise keep `DEFAULT_CODEX_EFFORT`. This amendment
+  governs the **execute** routing only.
+- **`xhigh` is the neutral-lexicon rung (ADR-0044), not a Codex value.** Codex's
+  `model_reasoning_effort` accepts `minimal|low|medium|high`; the `xhigh` tier
+  therefore maps to the argv effort `high` at the single routing point — the
+  neutral word names the *rung*, the concrete word `high` is what reaches
+  `codex exec`. The plan charter's `## Execution model` line gains `xhigh` as a
+  fourth accepted value (codex overlay only; other vendors are unchanged).
+- **Direct model selection is unaffected.** `--exec-model gpt-5.6-luna` (or any
+  id) bypasses the ladder entirely, so an operator invoking a model by hand gets
+  exactly it — the ladder is the *auto-routing* default, not a cage.
+
+This supersedes the 2026-07-23 amendment's "effort stays orthogonal to
+tier→model" for the execute phase; that orthogonality still holds for the plan
+phase and the init/triage one-shots.

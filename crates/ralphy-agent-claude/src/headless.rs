@@ -44,21 +44,18 @@ impl ClaudeAgent {
     /// `PROMPT_EXECUTE` on stdin and draining stdout/stderr via reader threads
     /// to avoid pipe-buffer deadlock. Polls `try_wait` until `timeout` fires;
     /// kills the child on expiry and returns `exited = false`.
+    #[allow(clippy::too_many_arguments)]
     fn run_headless_call(
         &self,
         cmd_dir: &Path,
         settings: &Path,
         plugin_dir: &Path,
         model: &str,
+        effort: Option<&str>,
         timeout: Duration,
         call_index: u32,
     ) -> Result<(bool, String)> {
-        let args = headless_args(
-            settings,
-            plugin_dir,
-            model,
-            self.exec.exec_effort.as_deref(),
-        );
+        let args = headless_args(settings, plugin_dir, model, effort);
 
         let mut cmd = Command::new(crate::interactive::resolve_claude_binary());
         cmd.args(&args)
@@ -100,6 +97,9 @@ impl ClaudeAgent {
         let settings_path = self.write_exec_settings()?;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
+        // Effort follows the model's precedence: operator flag wins, else the
+        // plan's `opus-high` rung raises it to high (ADR-0002, Amendment 2026-07-24).
+        let exec_effort = self.resolve_exec_effort(plan);
         let deadline = self.issue_deadline();
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
@@ -110,7 +110,7 @@ impl ClaudeAgent {
             ),
             self.exec.max_minutes_per_issue,
             &exec_model,
-            self.exec.exec_effort.as_deref().unwrap_or(""),
+            exec_effort.as_deref().unwrap_or(""),
             "",
         );
 
@@ -132,6 +132,7 @@ impl ClaudeAgent {
                 &settings_path,
                 &plugin_dir,
                 &exec_model,
+                exec_effort.as_deref(),
                 remaining,
                 i,
             )?;

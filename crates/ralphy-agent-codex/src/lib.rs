@@ -36,8 +36,8 @@ use auth::{
     is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
 };
 use command::{
-    build_codex_command, codex_config_model, recommended_tier, tier_to_model, CODEX_MODEL_SOL,
-    DEFAULT_CODEX_EFFORT,
+    build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
+    CODEX_MODEL_SOL, DEFAULT_CODEX_EFFORT,
 };
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
@@ -46,8 +46,9 @@ use usage::{codex_sessions_dir, fold_rollout_usage, rollout_session_id};
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` that emits a vendor-neutral
-/// `low|medium|high` complexity tier (routed to the executor model, ADR-0004
-/// Amendment 2026-07-10) instead of a Claude model name. Copied to
+/// `low|medium|high|xhigh` complexity tier (routed to the executor model+effort,
+/// ADR-0004 Amendments 2026-07-10 and 2026-07-24) instead of a Claude model name.
+/// Copied to
 /// `.ralphy/plan-charter.md` for the live session to read; only a one-line
 /// pointer is piped on stdin. Single source of truth lives at `assets/prompts/`.
 const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.plan.codex.md");
@@ -128,7 +129,7 @@ impl CodexAgent {
     /// The single model decision point, in precedence order: the explicit
     /// `--exec-model` override, then the `model` from the user's Codex config, then
     /// `routed` — the role's row in the family table (planning → Sol; execution →
-    /// the plan tier via `tier_to_model`). Honouring the config keeps a
+    /// the plan tier via `tier_to_model_effort`). Honouring the config keeps a
     /// subscription account on the model it is entitled to with no explicit flag;
     /// the routed fallback replaces the dead `gpt-5-codex` floor (ADR-0004,
     /// Amendment 2026-07-10).
@@ -144,9 +145,12 @@ impl CodexAgent {
         self.plan_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT)
     }
 
-    /// Execution-phase effort for argv/emit: operator flag, else vendor default.
-    fn resolved_exec_effort(&self) -> &str {
-        self.exec_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT)
+    /// Execution-phase effort for argv/emit: the operator's `--exec-effort` flag
+    /// wins on every issue; when unset it falls back to `tier_default` — the
+    /// effort the plan's complexity rung routed to (ADR-0004, Amendment
+    /// 2026-07-24), not a flat `medium`.
+    fn resolved_exec_effort<'a>(&'a self, tier_default: &'a str) -> &'a str {
+        self.exec_effort.as_deref().unwrap_or(tier_default)
     }
 }
 
@@ -238,11 +242,13 @@ impl Agent for CodexAgent {
     }
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
-        // Execution routes the plan's neutral complexity tier to a MODEL
-        // (low→Luna, medium→Terra, high→Sol); effort is an orthogonal operator
-        // axis defaulting to medium when unset (ADR-0004 Amendment 2026-07-23).
-        let model = self.resolve_model(tier_to_model(plan.recommended_model.as_deref()));
-        let effort = self.resolved_exec_effort();
+        // Execution routes the plan's neutral complexity tier to one rung on the
+        // (model, effort) ladder — low→Luna:low, medium→Terra:medium,
+        // high→Sol:medium, xhigh→Sol:high (ADR-0004 Amendment 2026-07-24). The
+        // tier's effort is the DEFAULT; an explicit `--exec-effort` still wins.
+        let (routed_model, routed_effort) = tier_to_model_effort(plan.recommended_model.as_deref());
+        let model = self.resolve_model(routed_model);
+        let effort = self.resolved_exec_effort(routed_effort);
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
         // HEAD before/after bounds the work this call committed (progress guard).
@@ -351,12 +357,16 @@ mod tests {
     // ── effort → model_reasoning_effort ─────────────────────────────────────
 
     #[test]
-    fn exec_effort_high_lands_in_argv() {
+    fn exec_effort_override_wins_over_the_tier_default() {
+        // An explicit `--exec-effort high` beats the tier's routed default on
+        // every issue — even when the tier (here `medium`→Terra:medium) would
+        // otherwise route to `medium`.
         let agent =
             CodexAgent::new(None, PathBuf::from("/run")).with_exec_effort(Some("high".into()));
+        assert_eq!(agent.resolved_exec_effort("medium"), "high");
         let cmd = build_codex_command(
             CODEX_MODEL_SOL,
-            agent.resolved_exec_effort(),
+            agent.resolved_exec_effort("medium"),
             std::path::Path::new("/repo"),
             std::path::Path::new("/repo/out.txt"),
         );
@@ -371,11 +381,16 @@ mod tests {
     }
 
     #[test]
-    fn unset_exec_effort_defaults_to_medium() {
+    fn unset_exec_effort_falls_back_to_the_tier_default() {
+        // With no `--exec-effort`, the effort is whatever the tier routed — no
+        // longer a flat `medium`. `xhigh`→Sol:high proves the high rung reaches
+        // the argv unaided by an operator flag.
         let agent = CodexAgent::new(None, PathBuf::from("/run"));
+        let (model, tier_effort) = command::tier_to_model_effort(Some("xhigh"));
+        assert_eq!(agent.resolved_exec_effort(tier_effort), "high");
         let cmd = build_codex_command(
-            command::CODEX_MODEL_TERRA,
-            agent.resolved_exec_effort(),
+            model,
+            agent.resolved_exec_effort(tier_effort),
             std::path::Path::new("/repo"),
             std::path::Path::new("/repo/out.txt"),
         );
@@ -384,9 +399,8 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert!(
-            args.iter()
-                .any(|a| a == "model_reasoning_effort=\"medium\""),
-            "unset effort must default to medium: {args:?}"
+            args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
+            "unset effort must inherit the tier's routed effort: {args:?}"
         );
     }
 
@@ -400,18 +414,27 @@ mod tests {
             "plan must bind effort via resolved_plan_effort"
         );
         assert!(
-            prod.contains("let effort = self.resolved_exec_effort();"),
-            "execute must bind effort via resolved_exec_effort"
+            prod.contains("let effort = self.resolved_exec_effort(routed_effort);"),
+            "execute must bind effort via resolved_exec_effort(routed_effort)"
         );
     }
 
     #[test]
-    fn effort_is_orthogonal_to_tier_model_routing() {
-        assert_eq!(tier_to_model(Some("low")), command::CODEX_MODEL_LUNA);
-        assert_eq!(tier_to_model(Some("medium")), command::CODEX_MODEL_TERRA);
-        assert_eq!(tier_to_model(Some("high")), CODEX_MODEL_SOL);
+    fn effort_does_not_alter_the_tier_routed_model() {
+        assert_eq!(
+            tier_to_model_effort(Some("low")).0,
+            command::CODEX_MODEL_LUNA
+        );
+        assert_eq!(
+            tier_to_model_effort(Some("medium")).0,
+            command::CODEX_MODEL_TERRA
+        );
+        assert_eq!(tier_to_model_effort(Some("high")).0, CODEX_MODEL_SOL);
+        assert_eq!(tier_to_model_effort(Some("xhigh")).0, CODEX_MODEL_SOL);
 
-        // A fixed model id is unchanged when only effort varies.
+        // A fixed model id in `-m` is unchanged when only the effort argv varies —
+        // effort couples to the tier as a DEFAULT, but the `-m` column is set by
+        // the model, never by the effort word.
         for effort in ["low", "high"] {
             let cmd = build_codex_command(
                 command::CODEX_MODEL_TERRA,
@@ -441,7 +464,7 @@ mod tests {
         let overridden = CodexAgent::new(Some("gpt-5".into()), PathBuf::from("/run"));
         assert_eq!(overridden.resolve_model(CODEX_MODEL_SOL), "gpt-5");
         assert_eq!(
-            overridden.resolve_model(command::tier_to_model(Some("low"))),
+            overridden.resolve_model(command::tier_to_model_effort(Some("low")).0),
             "gpt-5"
         );
     }

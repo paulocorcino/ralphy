@@ -1,16 +1,19 @@
 <!-- slot: execution-model -->
-   ## Execution model: sonnet | opus
+   ## Execution model: sonnet | opus | opus-high
    <one line justifying the choice. Pick the SMALLEST model that will do this
    reliably. Choose `opus` only if at least one concrete signal holds: the
    change touches 2+ crates/packages, OR it introduces a new parser/classifier/state
    machine, OR it must preserve subtle semantics across modules (concurrency,
-   lifetimes, behavior shared between callers). Otherwise choose `sonnet` —
-   including for broad-but-mechanical changes (renames, adding a field or
-   string everywhere, straightforward refactors); breadth alone is not
-   complexity. Decide this LAST, after writing the Steps: price the residual
-   difficulty of executing the plan you just wrote — a highly prescriptive
-   plan (decisions made, signatures given, traps named) lowers the tier the
-   executor needs — not the difficulty of the raw issue.>
+   lifetimes, behavior shared between callers). Choose `opus-high` — opus at high
+   reasoning effort — only for the hardest cases, where plain `opus` would visibly
+   under-think: dense concurrency/lifetime/type-plumbing, subtle correctness with
+   little test cover, or genuinely ambiguous design needing sustained judgment.
+   Otherwise choose `sonnet` — including for broad-but-mechanical changes
+   (renames, adding a field or string everywhere, straightforward refactors);
+   breadth alone is not complexity. Decide this LAST, after writing the Steps:
+   price the residual difficulty of executing the plan you just wrote — a highly
+   prescriptive plan (decisions made, signatures given, traps named) lowers the
+   tier the executor needs — not the difficulty of the raw issue.>
 
 <!-- slot: self-review-step -->
    - [ ] Self-review: spawn an independent subagent (the agent/task tool)
