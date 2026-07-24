@@ -143,6 +143,35 @@ mod tests {
     }
 
     #[test]
+    fn plan_time_detector_maps_real_0_28_ceiling_to_reset_none_limit() {
+        // The plan-path closure in `lib.rs` composes exactly this: the (now
+        // 0.28-correct) matcher through `detect_limit` with no reset hint. A
+        // billing-cycle ceiling during planning writes no plan, so this is where it
+        // bites (#282 defect #3) — it must classify as a limit carrying `None`
+        // (drives the ADR-0030 synthetic cadence), never "kimi produced no plan".
+        let plan_log = "planning cmd=kimi model=kimi-code/k3\n\
+            error: failed to run prompt: provider.api_error: 403 You've reached your \
+            usage limit for this billing cycle. Your quota will be refreshed in the \
+            next cycle. To continue now, purchase extra usage or upgrade your plan: \
+            https://www.kimi.com/code/#pricing";
+        assert_eq!(
+            ralphy_adapter_support::detect_limit(plan_log, is_kimi_limit_text, |_| None),
+            Some(None),
+            "the real 0.28 plan-time ceiling must be a reset-less limit, not a no-plan"
+        );
+        // A clean planning log with no 403 is not a limit (guards against a false
+        // positive that would route every plan through the cadence).
+        assert_eq!(
+            ralphy_adapter_support::detect_limit(
+                "planning cmd=kimi model=kimi-code/k3\nall green\nRALPHY_DONE_EXIT",
+                is_kimi_limit_text,
+                |_| None
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn is_kimi_limit_text_matches_terminal_wrapped_marker() {
         // The Kimi CLI hard-wraps the 403 body to terminal width, splitting the
         // marker token across a newline in the captured log — the exact live form

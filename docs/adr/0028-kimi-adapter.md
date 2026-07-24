@@ -327,6 +327,25 @@ treated as unverified, not settled**, until a live limit is actually observed
 against `kimi-code` 0.28. Whoever hits one first should capture the exit code
 and the literal stdout/stderr text and fold it back into this decision.
 
+**Amended — observed live (#274 capstone → #282).** A real billing-cycle ceiling
+was finally hit against `kimi-code` 0.28.0. The 1.48-era source model above did
+**not** hold: the exhausted-quota 403 exits **`1`** (`FAILURE`), *not* `75`
+(`RETRYABLE`), printing `provider.api_error: 403 … usage limit for this billing
+cycle …` to stderr. So the exit-75 → `Limit(None)` mapping is a **red herring for
+the billing cap** and remains **unobserved-live** (it may still fire for a
+transient retryable — that is untested; the billing cap does not take it). The
+correct signal is the *text* on a non-clean (exit-1) exit, matched by
+`is_kimi_limit_text` (now also matching the 0.28 `usage limit for this billing
+cycle` prose; the older `access_terminated_error` type token is gone from this
+body). Two further gaps this fixed (#282): the execute matcher was stale (matched
+only `access_terminated_error`), and — because a billing cap blocks the very first
+call — the ceiling bites during **planning**, where the adapter passed `|_log| None`
+as the plan-time detector, so every real limit was misclassified as "kimi produced
+no plan". Both paths now route the 0.28 text through `detect_limit` → a `reset:
+None` limit (execute) / `PlanLimit { reset: None }` (plan), driving the ADR-0030
+synthetic cadence — the Codex/Gemini pattern. Evidence: `docs/live/kimi-274-limit.log`,
+`docs/evidence/274-kimi-capstone-live.md`.
+
 ## Consequences
 
 - The core, `ralphy-agent-claude`, `ralphy-agent-codex`, `ralphy-agent-opencode`,

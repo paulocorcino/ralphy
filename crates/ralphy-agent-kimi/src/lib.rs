@@ -23,7 +23,7 @@ use ralphy_adapter_support::{
     list_session_files, run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg,
     PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
 
 mod auth;
@@ -41,7 +41,7 @@ mod usage;
 /// cannot hand to the CLI. Stays `false` until Kimi ships a `--print` image channel.
 pub const ACCEPTS_IMAGES: bool = false;
 
-use auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
+use auth::{is_kimi_auth_error, is_kimi_limit_text, KIMI_AUTH_ERROR_MSG};
 use command::{build_kimi_command, DEFAULT_KIMI_MODEL};
 use outcome::{classify_kimi_outcome, kimi_final_text};
 use skills::materialize_kimi_skills;
@@ -200,8 +200,20 @@ impl Agent for KimiAgent {
             },
             run,
             is_kimi_auth_error,
-            // No plan-time usage limit is surfaced for Kimi in this slice (D9).
-            |_log| None,
+            // A billing-cycle ceiling bites hardest during planning: it blocks
+            // every call including the first, so no plan is ever written and the
+            // run would otherwise abort as "kimi produced no plan" (#282). Surface
+            // it as a typed `PlanLimit` so the runner routes it through the same
+            // stop-and-report / auto-resume path as an execute-time
+            // `Outcome::Limit` (the Codex/Gemini pattern). Kimi's 403 promises only
+            // "the next cycle" with no timestamp → `reset: None`, which drives the
+            // ADR-0030 synthetic cadence `phases.rs` already handles. The
+            // no-plan-written state is itself the non-clean-exit guard the execute
+            // path spells out: a task merely echoing the phrase still writes a plan.
+            |log| {
+                ralphy_adapter_support::detect_limit(log, is_kimi_limit_text, |_| None)
+                    .map(|reset| PlanLimit { reset }.into())
+            },
         )?;
 
         // None = resumed (finalized plan kept, no vendor run): no wire payload to
