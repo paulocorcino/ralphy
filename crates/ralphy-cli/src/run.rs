@@ -27,7 +27,7 @@ use report::{
 };
 use wiring::{
     build_agent, build_run_queue, init_tracing, operating_branch, preflight_agents,
-    resolve_plan_agent, strip_events_token_from_env, ResolvedClaude,
+    resolve_plan_agent, strip_events_token_from_env, ResolvedClaude, ResolvedEffort,
 };
 
 pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
@@ -244,6 +244,24 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             Default::default()
         });
     let persisted_opencode_model = opencode_settings.model.clone();
+    let copilot_settings: ralphy_agent_copilot::CopilotSettings = settings
+        .agent_settings(ralphy_agent_copilot::CopilotSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed copilot settings section — its persisted defaults ignored");
+            Default::default()
+        });
+    let cursor_settings: ralphy_agent_cursor::CursorSettings = settings
+        .agent_settings(ralphy_agent_cursor::CursorSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed cursor settings section — its persisted defaults ignored");
+            Default::default()
+        });
+    let gemini_settings: ralphy_agent_gemini::GeminiSettings = settings
+        .agent_settings(ralphy_agent_gemini::GeminiSettings::SECTION)
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "malformed gemini settings section — its persisted defaults ignored");
+            Default::default()
+        });
     let base_branch = config::resolve_str(
         args.base_branch.clone(),
         settings.base_branch.clone(),
@@ -342,16 +360,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             claude_settings.plan_model.clone(),
             "opus",
         ),
-        plan_effort: config::resolve_str(
-            args.plan_effort.clone(),
-            claude_settings.plan_effort.clone(),
-            "medium",
-        ),
-        exec_effort: config::resolve_str(
-            args.exec_effort.clone(),
-            claude_settings.exec_effort.clone(),
-            "medium",
-        ),
         default_exec_model: config::resolve_str(
             args.default_exec_model.clone(),
             claude_settings.default_exec_model.clone(),
@@ -368,6 +376,25 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             settings.remote_control,
         ),
     };
+    let resolved_effort = ResolvedEffort {
+        plan: config::resolve_effort(args.plan_effort, claude_settings.plan_effort.clone(), None)?,
+        exec: config::resolve_effort(args.exec_effort, claude_settings.exec_effort.clone(), None)?,
+    };
+    let resolved_copilot = wiring::resolve_copilot(
+        args.plan_model.clone(),
+        args.exec_model.clone(),
+        &copilot_settings,
+    );
+    let resolved_cursor = wiring::resolve_cursor(
+        args.plan_model.clone(),
+        args.exec_model.clone(),
+        &cursor_settings,
+    );
+    let resolved_gemini = wiring::resolve_gemini(
+        args.plan_model.clone(),
+        args.exec_model.clone(),
+        &gemini_settings,
+    );
     // The idle watchdog knob stays an `Option` through the composition root: an
     // absent value is not "off", it is "let each execution path use the default
     // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
@@ -379,6 +406,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         run_deadline,
         persisted_opencode_model.clone(),
         &resolved_claude,
+        &resolved_effort,
+        &resolved_copilot,
+        &resolved_cursor,
+        &resolved_gemini,
         idle_minutes,
     );
     let agent: Box<dyn Agent> = if plan_agent == args.agent {
@@ -392,6 +423,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 run_deadline,
                 persisted_opencode_model,
                 &resolved_claude,
+                &resolved_effort,
+                &resolved_copilot,
+                &resolved_cursor,
+                &resolved_gemini,
                 idle_minutes,
             ),
             executor,
@@ -458,7 +493,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // down the notifier then the sink — in that exact order (ADR-0006/-0007/-0019).
     // Kept before the `?` propagation so a non-green result still finalizes and
     // pushes; `render_final_panel` runs after, only on the green path.
-    finalize_run(
+    let consolidation_usage = finalize_run(
         args.agent,
         presenter,
         &result,
@@ -481,6 +516,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         branch_mode,
         args.dry_run,
         &cfg.repo_root,
+        &consolidation_usage,
     );
     Ok(())
 }
@@ -732,7 +768,7 @@ fn finalize_run(
     run_start: std::time::Instant,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events_handle: Option<events::sink::EventsHandle>,
-) {
+) -> ralphy_core::Usage {
     // Flush the queue bar to N/N and clear the live region before anything else
     // prints — whether that is the panel or `anyhow`'s error on the `?` propagation.
     presenter.finalize();
@@ -740,13 +776,20 @@ fn finalize_run(
     // Consolidate any loose knowledge notes into KNOWLEDGE.md. Runs BEFORE the
     // notifier/sink shutdown and AFTER the presenter finalize so it surfaces as a
     // first-class lifecycle event in both surfaces (see `maybe_consolidate_knowledge`).
-    maybe_consolidate_knowledge(agent, result.is_ok(), dry_run, ws, stamp);
+    // Its token cost is returned so the caller folds it into the panel run total
+    // (issue #269); the ledger line is written inside `maybe_consolidate_knowledge`.
+    let consolidation_usage =
+        maybe_consolidate_knowledge(agent, result.is_ok(), dry_run, ws, stamp);
 
     // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
     // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the
-    // sink shutdown so the worker drains and POSTs it as the run's last event.
+    // sink shutdown so the worker drains and POSTs it as the run's last event. The
+    // run usage folds in the consolidation pass so the event reports total vendor
+    // spend, matching the panel footer (issue #269).
     if let (Some(s), Ok(report)) = (summary, result.as_ref()) {
-        emit_run_finished(s, &report.run_usage, run_start);
+        let mut run_usage = report.run_usage.clone();
+        run_usage.add_tokens(&consolidation_usage);
+        emit_run_finished(s, &run_usage, run_start);
     }
 
     // Tear down the notifier (ADR-0007 D4), then the CloudEvents sink: each worker
@@ -757,6 +800,8 @@ fn finalize_run(
     if let Some(events_handle) = events_handle {
         events_handle.shutdown();
     }
+
+    consolidation_usage
 }
 
 /// The verify gate's time budget in minutes: the persisted `verify.timeout_minutes`,
@@ -875,7 +920,7 @@ mod tests {
             "origin/main"
         );
         assert_eq!(config::resolve_str(None, None, "opus"), "opus");
-        assert_eq!(config::resolve_str(None, None, "medium"), "medium");
+        assert_eq!(config::resolve_effort(None, None, None).unwrap(), None);
         assert_eq!(config::resolve_str(None, None, "sonnet"), "sonnet");
         assert_eq!(config::resolve_u64(None, None, 90), 90);
 
@@ -891,6 +936,46 @@ mod tests {
             })
             .unwrap_or(BranchMode::New);
         assert_eq!(branch_mode, BranchMode::New);
+    }
+
+    #[test]
+    fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
+        let source = include_str!("run.rs");
+        let resolution = source
+            .split_once("let resolved_effort = ResolvedEffort")
+            .expect("resolved effort construction")
+            .1
+            .split_once("let resolved_copilot")
+            .expect("Copilot resolution follows effort")
+            .0;
+        let plan_resolution = resolution
+            .split_once("plan: config::resolve_effort(")
+            .expect("plan effort resolution")
+            .1
+            .split_once("exec: config::resolve_effort(")
+            .expect("exec effort follows plan")
+            .0;
+        assert!(plan_resolution.contains("args.plan_effort"));
+        assert!(plan_resolution.contains("claude_settings.plan_effort.clone()"));
+        assert!(plan_resolution
+            .contains("args.plan_effort, claude_settings.plan_effort.clone(), None)?"));
+        assert!(!plan_resolution.contains("exec_effort"));
+
+        let exec_resolution = resolution
+            .split_once("exec: config::resolve_effort(")
+            .expect("exec effort resolution")
+            .1;
+        assert!(exec_resolution.contains("args.exec_effort"));
+        assert!(exec_resolution.contains("claude_settings.exec_effort.clone()"));
+        assert!(exec_resolution
+            .contains("args.exec_effort, claude_settings.exec_effort.clone(), None)?"));
+        assert!(!exec_resolution.contains("plan_effort"));
+        let build_argument = ["&resolved", "_effort,"].concat();
+        assert_eq!(
+            source.matches(&build_argument).count(),
+            2,
+            "executor and split planner must receive the resolved effort"
+        );
     }
 
     #[test]

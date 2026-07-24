@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use ralphy_core::{git, Workspace};
+use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
 mod cli;
@@ -70,7 +70,12 @@ pub(crate) fn consolidate_defaults(
 ) -> (Option<&'static str>, Option<&'static str>) {
     match agent {
         CliAgent::Claude => (Some("opus"), Some("medium")),
-        CliAgent::Codex | CliAgent::Kimi | CliAgent::OpenCode => (None, None),
+        CliAgent::Codex
+        | CliAgent::Copilot
+        | CliAgent::Cursor
+        | CliAgent::Gemini
+        | CliAgent::Kimi
+        | CliAgent::OpenCode => (None, None),
     }
 }
 
@@ -79,6 +84,11 @@ pub(crate) fn consolidate_defaults(
 /// (`ralphy_core::PROMPT_CONSOLIDATE`); only the CLI invocation differs. Mirrors
 /// the `diagnose_with_agent`/triage dispatch so `--agent` selects the vendor here
 /// exactly as it does for the plan/execute loop and the other one-shots.
+///
+/// Returns the invocation's [`Usage`] (issue #269): the consolidation pass is a
+/// real vendor call, so its tokens are folded into the run total and the ledger
+/// rather than dropped. Only Cursor parses a live token count today; the other
+/// adapters report `Usage::default()` until their own parser is wired.
 fn consolidate_with_agent(
     agent: CliAgent,
     ws: &Workspace,
@@ -86,13 +96,22 @@ fn consolidate_with_agent(
     model: Option<&str>,
     effort: Option<&str>,
     timeout: std::time::Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     match agent {
         CliAgent::Claude => {
             ralphy_agent_claude::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
         CliAgent::Codex => {
             ralphy_agent_codex::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        CliAgent::Copilot => {
+            ralphy_agent_copilot::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        CliAgent::Cursor => {
+            ralphy_agent_cursor::consolidate_knowledge(ws, run_dir, model, effort, timeout)
+        }
+        CliAgent::Gemini => {
+            ralphy_agent_gemini::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
@@ -109,11 +128,13 @@ fn consolidate_with_agent(
 /// (`knowledge::validate_knowledge`), then archive ONLY the notes the session
 /// declared folded (its `<!-- folded: ... -->` marker) into `knowledge/raw/` —
 /// unfolded notes stay loose, named in a warning, for the next pass. Returns
-/// how many notes were archived. Errors — leaving every note loose for a retry
-/// and restoring the pre-session `KNOWLEDGE.md` — when the session left the
-/// file missing, unchanged, or structurally malformed (the rejected output is
-/// kept as `KNOWLEDGE.rejected.md` in the run dir for inspection). `notes`
-/// must be non-empty; callers gate on `loose_notes` first.
+/// how many notes were archived, paired with the consolidation invocation's
+/// [`Usage`] (issue #269) so the caller can fold it into the run total and the
+/// ledger. Errors — leaving every note loose for a retry and restoring the
+/// pre-session `KNOWLEDGE.md` — when the session left the file missing, unchanged,
+/// or structurally malformed (the rejected output is kept as `KNOWLEDGE.rejected.md`
+/// in the run dir for inspection). `notes` must be non-empty; callers gate on
+/// `loose_notes` first.
 ///
 /// Callers are responsible for clearing `ANTHROPIC_API_KEY` (the subscription-quota
 /// sentinel) before this runs — `run` already does so up front, `consolidate` does
@@ -126,7 +147,7 @@ fn run_consolidation(
     effort: Option<&str>,
     max_minutes: u64,
     notes: &[PathBuf],
-) -> Result<usize> {
+) -> Result<(usize, Usage)> {
     use anyhow::{bail, Context};
     use ralphy_core::knowledge;
 
@@ -135,7 +156,7 @@ fn run_consolidation(
     // The curated file before the session, to verify the session produced one.
     let before = std::fs::read_to_string(ws.knowledge_file()).ok();
 
-    consolidate_with_agent(
+    let usage = consolidate_with_agent(
         agent,
         ws,
         run_dir,
@@ -185,7 +206,8 @@ fn run_consolidation(
             "notes not folded by the session — kept loose for the next pass"
         );
     }
-    knowledge::archive_notes(ws, &to_archive)
+    let archived = knowledge::archive_notes(ws, &to_archive)?;
+    Ok((archived, usage))
 }
 
 /// `ralphy consolidate`: run a one-shot agent session that curates the loose
@@ -226,7 +248,7 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
     let model = args.model.and_then(non_empty);
     let effort = args.effort.and_then(non_empty);
 
-    let archived = run_consolidation(
+    let (archived, _usage) = run_consolidation(
         args.agent,
         &ws,
         &run_dir,
@@ -249,5 +271,137 @@ pub(crate) fn non_empty(s: String) -> Option<String> {
         None
     } else {
         Some(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #237: the four one-shot dispatch sites must route Copilot to REAL work, not
+    /// bail — and not merely lack the bail string (a swap to another vendor's
+    /// same-signature function would still pass a bare substring-absence check).
+    /// Pins the actual call each `Agent::Copilot`/`CliAgent::Copilot` arm must make,
+    /// scoped to a window after the arm's own match guard. Fragments are assembled
+    /// with `concat!` so the assertion cannot match itself.
+    #[test]
+    fn copilot_one_shots_are_wired() {
+        let stale_needle = concat!("does not support ", "one-shot");
+        let cases: [(&str, &str); 4] = [
+            (
+                include_str!("init/run.rs"),
+                concat!("ralphy_agent_copilot::", "diagnose_repo("),
+            ),
+            (
+                include_str!("init/issues.rs"),
+                concat!("ralphy_agent_copilot::", "draft_issues("),
+            ),
+            (
+                include_str!("triage.rs"),
+                concat!("ralphy_agent_copilot::", "triage_issues("),
+            ),
+            (
+                include_str!("main.rs"),
+                concat!("ralphy_agent_copilot::", "consolidate_knowledge("),
+            ),
+        ];
+        for (src, real_call) in cases {
+            assert!(!src.contains(stale_needle), "stale one-shot bail found");
+            assert!(
+                src.contains(real_call),
+                "expected {real_call} in dispatch source"
+            );
+        }
+        assert_eq!(consolidate_defaults(CliAgent::Copilot), (None, None));
+    }
+
+    /// #247, the same pin one vendor over: each `Agent::Cursor`/`CliAgent::Cursor`
+    /// arm must make its REAL call, and the "not yet wired" bail must be gone from
+    /// every dispatch source — checking only for the bail's absence would pass on an
+    /// arm silently swapped to another vendor's same-signature function.
+    #[test]
+    fn cursor_one_shots_are_wired() {
+        let stale_bail = concat!("not yet wired for ", "--agent cursor");
+        let cases: [(&str, &str); 4] = [
+            (
+                include_str!("init/run.rs"),
+                concat!("ralphy_agent_cursor::", "diagnose_repo("),
+            ),
+            (
+                include_str!("init/issues.rs"),
+                concat!("ralphy_agent_cursor::", "draft_issues("),
+            ),
+            (
+                include_str!("triage.rs"),
+                concat!("ralphy_agent_cursor::", "triage_issues("),
+            ),
+            (
+                include_str!("main.rs"),
+                concat!("ralphy_agent_cursor::", "consolidate_knowledge("),
+            ),
+        ];
+        for (src, real_call) in cases {
+            assert!(!src.contains(stale_bail), "stale one-shot bail found");
+            assert!(
+                src.contains(real_call),
+                "expected {real_call} in dispatch source"
+            );
+        }
+        // D5: the model axis is an entitlement, not a tier — no per-verb default.
+        assert_eq!(consolidate_defaults(CliAgent::Cursor), (None, None));
+    }
+
+    /// #259, the same pin one vendor over: each `Agent::Gemini`/`CliAgent::Gemini`
+    /// arm must make its REAL call, and the "not yet wired" bail must be gone from
+    /// every dispatch source — checking only for the bail's absence would pass on an
+    /// arm silently swapped to another vendor's same-signature function.
+    ///
+    /// Stronger than its siblings on purpose (self-review, #259): the call is
+    /// asserted INSIDE the Gemini arm, not merely somewhere in the file. A
+    /// whole-file `contains` is satisfied by the gemini call sitting in another
+    /// vendor's arm — which is the exact swap the doc comment claims to catch.
+    #[test]
+    fn gemini_one_shots_are_wired() {
+        let stale_bail = concat!("not yet wired for ", "--agent gemini");
+        let cases: [(&str, &str, &str); 4] = [
+            (
+                include_str!("init/run.rs"),
+                concat!("Agent::", "Gemini =>"),
+                concat!("ralphy_agent_gemini::", "diagnose_repo("),
+            ),
+            (
+                include_str!("init/issues.rs"),
+                concat!("Agent::", "Gemini =>"),
+                concat!("ralphy_agent_gemini::", "draft_issues("),
+            ),
+            (
+                include_str!("triage.rs"),
+                concat!("Agent::", "Gemini =>"),
+                concat!("ralphy_agent_gemini::", "triage_issues("),
+            ),
+            (
+                include_str!("main.rs"),
+                concat!("CliAgent::", "Gemini =>"),
+                concat!("ralphy_agent_gemini::", "consolidate_knowledge("),
+            ),
+        ];
+        for (src, arm, real_call) in cases {
+            assert!(!src.contains(stale_bail), "stale one-shot bail found");
+            // The dispatch arm, and only it: from the `Gemini =>` marker to the
+            // next arm's `=>`. A call that drifted into a neighbouring vendor's
+            // arm is outside this window and reds.
+            let start = src
+                .find(arm)
+                .unwrap_or_else(|| panic!("no {arm} dispatch arm"))
+                + arm.len();
+            let end = src[start..].find(" =>").map_or(src.len(), |i| start + i);
+            assert!(
+                src[start..end].contains(real_call),
+                "expected {real_call} inside the {arm} arm, not merely in the file"
+            );
+        }
+        // ADR-0043 D8: the model axis is an account entitlement, not a complexity
+        // tier — nothing here recommends one.
+        assert_eq!(consolidate_defaults(CliAgent::Gemini), (None, None));
     }
 }

@@ -145,9 +145,10 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
                 session_id,
                 project,
                 actor_email,
-                tokens: agg.tokens,
+                tokens: Some(agg.tokens),
                 first_ts: ms_to_rfc3339(agg.first_ms),
                 last_ts: ms_to_rfc3339(agg.last_ms),
+                lower_bound: false,
             }
         })
         .collect();
@@ -259,12 +260,20 @@ mod tests {
         let records = scan(&db, &[], None);
         assert_eq!(records.len(), 1);
         let r = &records[0];
-        assert_eq!(r.tokens.input, 2168);
-        assert_eq!(r.tokens.output, 100, "reasoning NOT folded (would be 140)");
-        assert_eq!(r.tokens.cache_read, 11264);
-        assert_eq!(r.tokens.cache_creation, 0);
+        assert_eq!(r.tokens.as_ref().unwrap().input, 2168);
+        assert_eq!(
+            r.tokens.as_ref().unwrap().output,
+            100,
+            "reasoning NOT folded (would be 140)"
+        );
+        assert_eq!(r.tokens.as_ref().unwrap().cache_read, 11264);
+        assert_eq!(r.tokens.as_ref().unwrap().cache_creation, 0);
         assert_eq!(r.model, "k2p6");
         assert_eq!(r.agent, "opencode");
+        assert!(
+            !r.lower_bound,
+            "OpenCode writes every token to disk — this is a total, not a floor"
+        );
     }
 
     #[test]

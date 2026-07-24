@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_ms":5483,"duration_api_ms":5483,"result":"TURN_ONE","session_id":"4233e5ca-56a3-4d6d-832c-f704789b1756","request_id":"5883dcb0-c137-4b8e-9f43-784951a209b8","usage":{"inputTokens":18336,"outputTokens":16,"cacheReadTokens":128,"cacheWriteTokens":0}}

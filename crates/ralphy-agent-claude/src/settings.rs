@@ -51,13 +51,27 @@ impl ClaudeSettings {
     pub const SECTION: &'static str = "claude";
 }
 
-/// The planner's `## Execution model: sonnet|opus` judgment, lowercased, if any.
-/// Claude-vocabulary parsing lives here, not in core (ADR-0002 amendment, #79):
-/// core's `Plan.recommended_model` is an opaque token it only carries across.
+/// The planner's `## Execution model: sonnet|opus|opus-high` judgment, lowercased,
+/// if any. Claude-vocabulary parsing lives here, not in core (ADR-0002 amendment,
+/// #79): core's `Plan.recommended_model` is an opaque token it only carries across.
+/// `opus-high` is the effort-bearing rung (ADR-0002, Amendment 2026-07-24) — opus
+/// at high reasoning effort. `opus-high|opus` order matters: alternation is
+/// leftmost-first, so `opus` must not shadow `opus-high`.
 pub(crate) fn recommended_model(md: &str) -> Option<String> {
-    let re =
-        regex::Regex::new(r"(?im)^\s*##\s*Execution model:\s*(opus|sonnet)").expect("valid regex");
+    let re = regex::Regex::new(r"(?im)^\s*##\s*Execution model:\s*(opus-high|opus|sonnet)")
+        .expect("valid regex");
     re.captures(md).map(|c| c[1].to_lowercase())
+}
+
+/// Normalize a plan judgment token to the literal model `claude --model` expects:
+/// the effort-bearing `opus-high` rung selects the `opus` model (its effort is
+/// carried separately by [`ClaudeAgent::resolve_exec_effort`]). Every other token
+/// passes through unchanged.
+fn model_of_judgment(token: &str) -> &str {
+    match token {
+        "opus-high" => "opus",
+        other => other,
+    }
 }
 
 /// The execution-side configuration, separate from the planning knobs.
@@ -129,15 +143,32 @@ impl Default for ExecConfig {
 impl ClaudeAgent {
     /// The single tier→model decision point: explicit override > the plan's
     /// `## Execution model` judgment > the configured default. Returns the
-    /// literal model string `claude --model` expects (`sonnet`/`opus`).
+    /// literal model string `claude --model` expects (`sonnet`/`opus`); the
+    /// `opus-high` rung normalizes to `opus` (its effort rides
+    /// [`Self::resolve_exec_effort`], ADR-0002 Amendment 2026-07-24).
     pub(crate) fn resolve_exec_model(&self, plan: &Plan) -> String {
         if let Some(m) = &self.exec.exec_model {
             return m.clone();
         }
         if let Some(m) = &plan.recommended_model {
-            return m.clone();
+            return model_of_judgment(m).to_string();
         }
         self.exec.default_exec_model.clone()
+    }
+
+    /// The single execution-effort decision point, mirroring [`Self::resolve_exec_model`]:
+    /// the operator's `--exec-effort` (or persisted `claude.exec_effort`) wins on
+    /// every issue; otherwise the plan's `opus-high` judgment couples to `high`;
+    /// otherwise absent, leaving Claude on its own default (ADR-0002, Amendment
+    /// 2026-07-24). `None` omits `--effort` from the argv entirely.
+    pub(crate) fn resolve_exec_effort(&self, plan: &Plan) -> Option<String> {
+        if let Some(effort) = &self.exec.exec_effort {
+            return Some(effort.clone());
+        }
+        if plan.recommended_model.as_deref() == Some("opus-high") {
+            return Some("high".to_string());
+        }
+        None
     }
 
     /// Write `ralphy.settings.json` with the skip flags and a Stop hook that
@@ -245,6 +276,60 @@ mod tests {
             Some("opus")
         );
         assert_eq!(recommended_model("no judgment here"), None);
+        // The effort-bearing rung must parse whole, not be shadowed by `opus`.
+        assert_eq!(
+            recommended_model("## Execution model: opus-high\nbecause").as_deref(),
+            Some("opus-high")
+        );
+        assert_eq!(
+            recommended_model("## Execution model: Opus-High\n").as_deref(),
+            Some("opus-high")
+        );
+    }
+
+    #[test]
+    fn opus_high_judgment_selects_the_opus_model() {
+        // The rung carries effort separately; the `--model` argv is plain `opus`.
+        let agent = agent_with(None, "sonnet");
+        assert_eq!(
+            agent.resolve_exec_model(&plan_with(Some("opus-high"))),
+            "opus"
+        );
+    }
+
+    #[test]
+    fn opus_high_judgment_couples_effort_to_high_when_operator_is_silent() {
+        // No `--exec-effort`: the plan's opus-high rung raises effort to high.
+        let silent = ClaudeAgent::new(None, None, PathBuf::from("/run")).with_exec_config(
+            None,
+            None, // operator did not name an exec effort
+            "sonnet".into(),
+            45,
+            true,
+            false,
+            6,
+        );
+        assert_eq!(
+            silent
+                .resolve_exec_effort(&plan_with(Some("opus-high")))
+                .as_deref(),
+            Some("high")
+        );
+        // A plain opus (or sonnet) rung leaves effort absent — Claude's own default.
+        assert_eq!(silent.resolve_exec_effort(&plan_with(Some("opus"))), None);
+        assert_eq!(silent.resolve_exec_effort(&plan_with(None)), None);
+    }
+
+    #[test]
+    fn operator_exec_effort_wins_over_the_opus_high_rung() {
+        // An explicit `--exec-effort medium` beats the plan's opus-high default.
+        let forced = agent_with(None, "sonnet"); // agent_with sets exec_effort = medium
+        assert_eq!(
+            forced
+                .resolve_exec_effort(&plan_with(Some("opus-high")))
+                .as_deref(),
+            Some("medium")
+        );
     }
 
     #[test]

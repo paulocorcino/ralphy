@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use ralphy_core::BranchMode;
+use ralphy_core::{BranchMode, Effort};
 
 use crate::{
     config, daemon, init, install, issues, models, mutate, schedule, telegram, triage, usage,
@@ -104,7 +104,8 @@ pub(crate) struct RunArgs {
     pub(crate) repo: PathBuf,
 
     /// Which agent CLI executes the run: `claude` (the default, a live PTY
-    /// session), `codex` (headless `codex exec`), or `opencode`. Selects the
+    /// session) or one of the headless adapters — `codex`, `copilot`, `kimi`,
+    /// `opencode`. Selects the
     /// executor; pair with `--plan-agent` to plan with a different adapter.
     /// Selected per run; the core never learns which vendor it holds.
     #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
@@ -163,29 +164,33 @@ pub(crate) struct RunArgs {
     #[arg(long = "branch-mode", value_enum)]
     pub(crate) branch_mode: Option<CliBranchMode>,
 
-    /// Planning model (default: opus, or `claude.plan_model` in settings.json).
+    /// Planning model (default: opus, or `claude.plan_model` in settings.json;
+    /// for `--agent copilot` / a Copilot `--plan-agent`, the persisted fallback
+    /// is `copilot.plan_model` instead, and an unset value omits `--model`).
     #[arg(long)]
     pub(crate) plan_model: Option<String>,
 
-    /// Planning effort (default: medium, or `claude.plan_effort` in
-    /// settings.json).
+    /// Vendor-neutral planning effort.
     #[arg(long)]
-    pub(crate) plan_effort: Option<String>,
+    pub(crate) plan_effort: Option<Effort>,
 
-    /// Force the execution model for the issue (overrides the plan's judgment).
+    /// Force the execution model for the issue (overrides the plan's judgment;
+    /// for `--agent copilot`, the persisted fallback is `copilot.exec_model`
+    /// instead, and an unset value omits `--model`).
     #[arg(long)]
     pub(crate) exec_model: Option<String>,
 
-    /// OpenCode `--variant` (effort) passed through to `opencode run`. Omitted
-    /// when unset so the adapter never sends a value the provider rejects
-    /// (docs/adr/0005 D3). Only used by `--agent opencode`.
+    /// OpenCode provider-native `--variant` dialect passed through to
+    /// `opencode run`. Orthogonal to `--plan-effort`/`--exec-effort` (those are
+    /// documented no-ops for this agent; docs/adr/0005 D3 amendment / ADR-0044
+    /// D8). Omitted when unset so the adapter never sends a value the provider
+    /// rejects. Only used by `--agent opencode`.
     #[arg(long)]
     pub(crate) exec_variant: Option<String>,
 
-    /// Execution effort (default: medium, or `claude.exec_effort` in
-    /// settings.json).
+    /// Vendor-neutral execution effort.
     #[arg(long)]
-    pub(crate) exec_effort: Option<String>,
+    pub(crate) exec_effort: Option<Effort>,
 
     /// Execution model used when the plan emits no complexity judgment
     /// (default: sonnet, or `claude.default_exec_model` in settings.json).
@@ -290,6 +295,14 @@ pub(crate) struct ConsolidateArgs {
 pub(crate) enum CliAgent {
     Claude,
     Codex,
+    // One word `copilot` derives correctly from the variant name — no `#[value]` attr.
+    Copilot,
+    // One word `cursor` derives correctly from the variant name — no `#[value]` attr.
+    // The binary is `cursor-agent`/`agent` (ADR-0042 D14); the SELECTOR is the
+    // vendor's name, as with every other adapter.
+    Cursor,
+    // One word `gemini` derives correctly from the variant name — no `#[value]` attr.
+    Gemini,
     // One word `kimi` derives correctly from the variant name — no `#[value]` attr.
     Kimi,
     // The ADR-0005 contract and the documented invocation are `--agent opencode`
@@ -304,6 +317,9 @@ impl CliAgent {
         match self {
             CliAgent::Claude => "claude",
             CliAgent::Codex => "codex",
+            CliAgent::Copilot => "copilot",
+            CliAgent::Cursor => "cursor",
+            CliAgent::Gemini => "gemini",
             CliAgent::Kimi => "kimi",
             CliAgent::OpenCode => "opencode",
         }
@@ -330,6 +346,68 @@ impl From<CliBranchMode> for BranchMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_effort_flags_accept_only_the_core_lexicon() {
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "run",
+            "--plan-effort",
+            "high",
+            "--exec-effort",
+            "max",
+        ])
+        .expect("canonical effort flags must parse");
+        let Command::Run(args) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(args.plan_effort, Some(Effort::High));
+        assert_eq!(args.exec_effort, Some(Effort::Max));
+
+        for invalid in ["none", "minimal", "hihg"] {
+            assert!(
+                Cli::try_parse_from(["ralphy", "run", "--plan-effort", invalid]).is_err(),
+                "accepted invalid effort {invalid}"
+            );
+        }
+    }
+
+    /// This slice (#232) wires Copilot's per-phase models through the EXISTING
+    /// `--plan-model`/`--exec-model` flags and `copilot.*` settings — no new
+    /// `run` flag. Pins the flag count captured on HEAD before the change.
+    #[test]
+    fn no_new_run_flags_for_copilot_model() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        let run = cli
+            .get_subcommands()
+            .find(|s| s.get_name() == "run")
+            .expect("the `run` subcommand must be registered");
+        let n = run
+            .get_arguments()
+            .filter(|a| a.get_long().is_some())
+            .count();
+        assert_eq!(n, 29, "this slice must introduce no new run flag");
+    }
+
+    /// Effort reaches Copilot via the existing `--plan-effort`/`--exec-effort`
+    /// flags (merged at `build_agent`); the clamp still introduces no new run
+    /// flag — `copilot.*_effort` remain settings.json keys for seven-rung
+    /// extensions (ADR-0044 D6).
+    #[test]
+    fn no_new_run_flags_for_copilot_effort() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        let run = cli
+            .get_subcommands()
+            .find(|s| s.get_name() == "run")
+            .expect("the `run` subcommand must be registered");
+        let n = run
+            .get_arguments()
+            .filter(|a| a.get_long().is_some())
+            .count();
+        assert_eq!(n, 29, "the effort clamp must introduce no new run flag");
+    }
 
     #[test]
     fn init_subcommand_is_registered() {
@@ -562,6 +640,42 @@ mod tests {
             Cli::try_parse_from(["ralphy", "run", "--assignee", "@me", "--no-assignee"]).is_err(),
             "--assignee and --no-assignee must conflict"
         );
+    }
+
+    #[test]
+    fn cli_agent_parses_copilot() {
+        // `--agent copilot` parses to the one-word variant and round-trips its cli_name.
+        use clap::ValueEnum;
+        assert_eq!(
+            CliAgent::from_str("copilot", true).ok(),
+            Some(CliAgent::Copilot)
+        );
+        assert_eq!(CliAgent::Copilot.cli_name(), "copilot");
+    }
+
+    #[test]
+    fn cli_agent_parses_cursor() {
+        // `--agent cursor` parses to the one-word variant and round-trips its
+        // cli_name. The SELECTOR is the vendor name even though the binary is
+        // `cursor-agent`/`agent` (ADR-0042 D14).
+        use clap::ValueEnum;
+        assert_eq!(
+            CliAgent::from_str("cursor", true).ok(),
+            Some(CliAgent::Cursor)
+        );
+        assert_eq!(CliAgent::Cursor.cli_name(), "cursor");
+    }
+
+    #[test]
+    fn cli_agent_parses_gemini() {
+        // `--agent gemini` parses to the one-word variant and round-trips its
+        // cli_name (ADR-0043 D1).
+        use clap::ValueEnum;
+        assert_eq!(
+            CliAgent::from_str("gemini", true).ok(),
+            Some(CliAgent::Gemini)
+        );
+        assert_eq!(CliAgent::Gemini.cli_name(), "gemini");
     }
 
     #[test]

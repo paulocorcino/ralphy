@@ -35,6 +35,7 @@ fn render_plain_finished_carries_timestamp_glyph_and_no_ansi() {
     let event = RunEvent::IssueClosed {
         number: 30,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     };
     let line = render_plain_line(&event, &ts, Some(Duration::from_secs(133))).expect("a line");
@@ -80,6 +81,7 @@ fn render_done_line_shows_model_effort_duration_and_compact_meter() {
         &RunEvent::IssueClosed {
             number: 45,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         },
         &ts,
@@ -111,6 +113,7 @@ fn render_done_line_omits_meter_when_zero() {
     let event = RunEvent::IssueClosed {
         number: 9,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     };
     let line = render_plain_line(&event, &ts, None).expect("a line");
@@ -621,6 +624,7 @@ fn golden_render_queue_bar_labels_over_a_fixed_event_sequence() {
     s.apply(RunEvent::IssueClosed {
         number: 2,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     seen.push(bar(&s));
@@ -674,6 +678,7 @@ fn golden_render_active_line_is_derived_from_the_fold() {
     s.apply(RunEvent::IssueClosed {
         number: 7,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     assert_eq!(active_phase(&s.issues[0].status), None);
@@ -699,6 +704,7 @@ fn queue_bar_label_advances_through_all_terminal_outcomes_to_n_over_n() {
     s.apply(RunEvent::IssueClosed {
         number: 10,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     // non-green (stopping run)
@@ -752,6 +758,7 @@ fn queue_bar_label_finish_flushes_trailing_issue_to_n_over_n() {
         s.apply(RunEvent::IssueClosed {
             number: n,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
     }
@@ -937,6 +944,7 @@ fn bar_label_no_colour_emits_no_ansi() {
         s.apply(RunEvent::IssueClosed {
             number: n,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
     }
@@ -1103,6 +1111,8 @@ fn panel_base() -> PanelData {
         project_usd: Some(35.6),
         run_usd_partial: false,
         project_usd_partial: false,
+        consolidate_breakdown: None,
+        consolidate_usd: None,
     }
 }
 
@@ -1133,6 +1143,51 @@ fn render_totals_panel_footer_shows_run_and_project_tokens() {
     assert!(footer.contains("$2.10"), "run usd: {footer}");
     assert!(footer.contains("$35.60"), "project usd: {footer}");
     assert!(!footer.contains('\u{1b}'), "no ANSI byte: {footer:?}");
+}
+
+#[test]
+fn render_totals_panel_footer_shows_consolidation_segment_when_present() {
+    let opts = RenderOpts {
+        color: false,
+        emoji: true,
+    };
+    // Issue #269: a run that consolidated shows a distinct `consolidate:` segment
+    // between the run total and the project balance; a run that did not omits it.
+    let data = PanelData {
+        consolidate_breakdown: Some(UsageLite {
+            input: 33_398,
+            output: 5_444,
+            cache_read: 337_152,
+            ..Default::default()
+        }),
+        consolidate_usd: Some(0.42),
+        ..panel_base()
+    };
+    let lines = render_totals_panel(&data, opts);
+    let footer = lines
+        .iter()
+        .find(|l| l.contains("run:") && l.contains("project:"))
+        .expect("a token footer line");
+    assert!(footer.contains("consolidate:"), "segment label: {footer}");
+    assert!(footer.contains("↑33.4k"), "consolidation input: {footer}");
+    assert!(footer.contains("$0.42"), "consolidation usd: {footer}");
+    // It sits between the run total and the project balance.
+    let ci = footer.find("consolidate:").unwrap();
+    assert!(
+        footer.find("run:").unwrap() < ci && ci < footer.find("project:").unwrap(),
+        "consolidate segment must sit between run and project: {footer}"
+    );
+
+    // No consolidation this run → no segment (panel_base carries None).
+    let plain = render_totals_panel(&panel_base(), opts);
+    let plain_footer = plain
+        .iter()
+        .find(|l| l.contains("run:") && l.contains("project:"))
+        .expect("a token footer line");
+    assert!(
+        !plain_footer.contains("consolidate:"),
+        "a run that did not consolidate shows no segment: {plain_footer}"
+    );
 }
 
 #[test]

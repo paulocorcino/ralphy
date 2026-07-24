@@ -23,6 +23,31 @@ use crate::plan::materialize_plugin;
 use crate::usage::{dirs_home, latest_transcript_text, latest_transcript_text_since};
 use crate::{ClaudeAgent, EXEC_CHARTER};
 
+fn interactive_args(
+    settings_path: &Path,
+    plugin_dir: &Path,
+    model: &str,
+    effort: Option<&str>,
+    remote_control: bool,
+    rc_name: &str,
+) -> Vec<std::ffi::OsString> {
+    let mut args = vec![
+        "--dangerously-skip-permissions".into(),
+        "--settings".into(),
+        settings_path.as_os_str().to_owned(),
+        "--plugin-dir".into(),
+        plugin_dir.as_os_str().to_owned(),
+        "--model".into(),
+        model.into(),
+    ];
+    args.extend(crate::effort_args(effort).into_iter().map(Into::into));
+    if remote_control {
+        args.extend(["--remote-control".into(), rc_name.into()]);
+    }
+    args.push(EXEC_CHARTER.into());
+    args
+}
+
 /// How a `drive_session` ended: a terminal [`Outcome`], or a signal that the
 /// child stayed degraded past the API watch's kill and should be re-spawned once.
 pub(crate) enum DriveEnd {
@@ -79,6 +104,10 @@ impl ClaudeAgent {
         let settings_path = self.write_exec_settings()?;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
+        // Effort follows the same precedence as the model: operator flag wins,
+        // else the plan's `opus-high` rung raises it to high (ADR-0002, Amendment
+        // 2026-07-24).
+        let exec_effort = self.resolve_exec_effort(plan);
         let flag_file = self.run_dir.join("status.flag");
         let _ = std::fs::remove_file(&flag_file);
 
@@ -96,22 +125,17 @@ impl ClaudeAgent {
         // second child resumes from the on-disk `plan.md`, untouched between
         // spawns — see `prompt.execute.md` resume instruction).
         let build_cmd = || {
-            let mut cmd = PtyCommand::new(resolve_claude_binary())
+            PtyCommand::new(resolve_claude_binary())
                 .cwd(ws.repo_root())
                 .env("RALPHY_FLAG_FILE", &flag_file)
-                .arg("--dangerously-skip-permissions")
-                .arg("--settings")
-                .arg(settings_path.as_os_str())
-                .arg("--plugin-dir")
-                .arg(plugin_dir.as_os_str());
-            cmd = cmd.arg("--model").arg(&exec_model);
-            if let Some(e) = &self.exec.exec_effort {
-                cmd = cmd.arg("--effort").arg(e);
-            }
-            if self.exec.remote_control {
-                cmd = cmd.arg("--remote-control").arg(&rc_name);
-            }
-            cmd.arg(EXEC_CHARTER)
+                .args(interactive_args(
+                    &settings_path,
+                    &plugin_dir,
+                    &exec_model,
+                    exec_effort.as_deref(),
+                    self.exec.remote_control,
+                    &rc_name,
+                ))
         };
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
@@ -123,7 +147,8 @@ impl ClaudeAgent {
             },
             self.exec.max_minutes_per_issue,
             &exec_model,
-            self.exec.exec_effort.as_deref().unwrap_or("medium"),
+            exec_effort.as_deref().unwrap_or(""),
+            "",
         );
 
         let transcript_dir = self.transcript_dir(ws);
@@ -530,6 +555,38 @@ fn scan_dsr_request(carry: &mut Vec<u8>, chunk: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interactive_command_maps_high_and_omits_unset() {
+        let strings = |args: Vec<std::ffi::OsString>| {
+            args.into_iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        let set = strings(interactive_args(
+            Path::new("settings.json"),
+            Path::new("plugin"),
+            "sonnet",
+            Some("high"),
+            false,
+            "ralphy-1",
+        ));
+        assert_eq!(
+            set.windows(2)
+                .filter(|pair| pair == &["--effort", "high"])
+                .count(),
+            1
+        );
+        let unset = strings(interactive_args(
+            Path::new("settings.json"),
+            Path::new("plugin"),
+            "sonnet",
+            None,
+            false,
+            "ralphy-1",
+        ));
+        assert!(!unset.iter().any(|arg| arg == "--effort"));
+    }
 
     #[test]
     fn scan_dsr_request_detects_split_sequence() {

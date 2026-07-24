@@ -9,9 +9,9 @@
 //! [`list_session_files`]). Every one of these takes the vendor-specific part —
 //! markers, formats, extensions, schema closures — as a parameter.
 //!
-//! ## Why this does NOT reopen ADR-0004
+//! ## Why this does NOT reopen ADR-0002
 //!
-//! ADR-0004 states there is "deliberately no shared 'headless runner' that both
+//! ADR-0002 states there is "deliberately no shared 'headless runner' that both
 //! bend to fit." That prohibition is about a shared **`Outcome`-detection**
 //! runner — the semantic completion protocol each vendor must shape itself. This
 //! crate extracts **only mechanical plumbing**, which is identical by nature, not
@@ -22,9 +22,9 @@
 //! Each adapter's `classify_*` function still maps captured output onto its own
 //! `Outcome`, and every vendor-specific decision (which markers signal auth, which
 //! reset-string format to parse) stays in the adapter. This extraction is the
-//! mechanical floor *beneath* the seam ADR-0004 protects, not a violation of it.
+//! mechanical floor *beneath* the seam ADR-0002 protects, not a violation of it.
 //! (This rationale is recorded here so a future architecture review does not
-//! re-flag the shared crate as an ADR-0004 violation.)
+//! re-flag the shared crate as an ADR-0002 violation.)
 //!
 //! The public surface speaks only `std` types ([`Command`], [`Duration`],
 //! [`ExitStatus`], [`String`]) — no `portable-pty`, no vendor names. Building the
@@ -42,7 +42,7 @@ pub use detect::{auth_error, detect_limit, scan_json_lines};
 
 mod json_session;
 pub use json_session::{
-    run_init_session, run_json_session, run_text_session, JsonSession, TextSession,
+    run_init_session, run_json_session, run_text_session, strip_bom, JsonSession, TextSession,
 };
 
 mod resume;
@@ -55,10 +55,15 @@ mod session_files;
 pub use session_files::{list_session_files, session_files_appeared};
 
 mod sentinel;
-pub use sentinel::{blocked_reason, done_sentinel, DONE_SENTINEL, PLAN_CHARTER, PROMPT_EXECUTE};
+pub use sentinel::{
+    blocked_reason, done_sentinel, DONE_SENTINEL, EXEC_CHARTER, PLAN_CHARTER, PROMPT_EXECUTE,
+};
 
 mod assets;
 pub use assets::materialize_assets;
+
+mod skills;
+pub use skills::{ensure_gitignore_entries, link_or_copy_dir, remove_path};
 
 pub use ralphy_proc_util::{
     find_program, home_dir, home_scoped_path, locate_program, locate_program_with, resolve_program,

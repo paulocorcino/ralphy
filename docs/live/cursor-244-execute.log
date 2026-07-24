@@ -1,0 +1,221 @@
+[2m2026-07-21 03:16:09[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Users/PICHAU/AppData/Local/Temp/fincal-lab-244 [3mstamp[0m[2m=[0m20260721-031609 [3mdry_run[0m[2m=[0mfalse
+🐙 Ralphy - v0.1.0-rc13
+fincal-lab-244 · master · https://github.com/paulocorcino/FinCal
+[2m2026-07-21 03:16:15[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#108 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"title":"Transferência: par vinculado neutro entre Contas","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missue #108
+[2m2026-07-21 03:16:19[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"cursor" [3mplan_agent[0m[2m=[0m"cursor" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0morigin/master [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-21 03:16:23[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260721-031609 [3mbase[0m[2m=[0morigin/master [3mwas[0m[2m=[0mmaster
+[2m2026-07-21 03:16:26[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m108 [3mtitle[0m[2m=[0mTransferência: par vinculado neutro entre Contas
+[2m2026-07-21 03:16:27[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m handoffs collected for planner [3mnumber[0m[2m=[0m108 [3mhandoffs[0m[2m=[0m2
+[2m2026-07-21 03:16:29[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m references collected for planner [3mnumber[0m[2m=[0m108 [3mreferences[0m[2m=[0m3
+[2m2026-07-21 03:16:29[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mcursor [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-21 03:19:13[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m108 [3mopen_steps[0m[2m=[0m15 [3mup[0m[2m=[0m0 [3mcr[0m[2m=[0m0 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3mmodel[0m[2m=[0m"" [3msteps_json[0m[2m=[0m[{"status":"open","text":"Sync codebase: `git merge origin/main` (or checkout app tree); confirm `node --version` is 22.x, `npm ci`, `npx prisma generate`; probe DB with `npx prisma migrate status` — expect \"Database schema is up to date\""},{"status":"open","text":"In `src/lib/transferencia.ts`, add `isTransferencia(l)`, `totalReceitaMes(lancamentos, mesAno)`, `totalDespesaMes(lancamentos, mesAno)` filtering `transferenciaId == null`; export `CATEGORIA_TRANSFERENCIA_NOME = \"Transferência\"`"},{"status":"open","text":"Add failing test `__tests__/transferencia-neutra.test.ts`: fixture with origem saldoInicial 10000, destino 5000, existing DESPESA 1000 + RECEITA 2000 (non-transfer); after transfer pair valor 2500, assert `totalDespesaMes === 1000`, `totalReceitaMes === 2000`, origem saldo 6500, destino 9500, consolidated 16000 unchanged"},{"status":"open","text":"In `src/lib/transferencia-actions.ts`, implement `ensureCategoriasTransferencia(userId)`, `criarTransferencia`, `editarTransferencia`, `excluirTransferencia`, `obterParPorTransferenciaId(userId, transferenciaId)` — all scoped `userId`; validate origem ≠ destino; both contas `findFirst({ id, userId })`; create/edit in `$transaction`"},{"status":"open","text":"Add failing test `__tests__/transferencia-actions.test.ts` (mock `@/auth`, `@/lib/prisma` like `lancamento-actions.test.ts`): criar creates 2 rows same `transferenciaId`; editar updates both in one `$transaction`; excluir deletes by `transferenciaId`+`userId`; rejects foreign conta"},{"status":"open","text":"In `src/lib/lancamento-actions.ts` `editarLancamento`/`excluirLancamento`: if target row has `transferenciaId`, return `{ error: \"Use a ação de Transferência.\" }` or delegate delete to `excluirTransferencia` — extend existing delete test to assert pair removal"},{"status":"open","text":"Create `src/components/transferencias/transferencia-form.tsx`: Dialog \"Nova Transferência\"/\"Editar Transferência\"; fields origemId, destinoId, `CurrencyInput`, `DateField`; no tipo/categoria/status; dirty-form guard + toast; calls `criarTransferencia`/`editarTransferencia`"},{"status":"open","text":"Create `src/components/transferencias/transferencia-delete-dialog.tsx`: AlertDialog calling `excluirTransferencia`; copy mentions \"par inteiro\""},{"status":"open","text":"In `src/components/topbar.tsx`, add second button \"Nova Transferência\" with `TransferenciaForm` trigger (separate from `LancamentoForm`)"},{"status":"open","text":"In `src/components/agenda/agenda-screen.tsx`: when `editLanc?.transferenciaId`, render `TransferenciaForm` prefilled via `obterParPorTransferenciaId` (origem/destino/valor/data) instead of `LancamentoForm`; pass `onChipClick` unchanged"},{"status":"open","text":"In `src/components/agenda/day-detail-dialog.tsx`: chip click on transfer leg must not open `LancamentoForm` for edit — route through parent `onChipClick` only (remove conflation if any)"},{"status":"open","text":"Add `__tests__/transferencia-form.test.tsx`: render form, assert labels \"Conta de origem\"/\"Conta de destino\", no categoria select; submit calls mocked `criarTransferencia`"},{"status":"open","text":"Update `__tests__/agenda-screen.test.tsx`: transfer chip opens `TransferenciaForm` with title \"Editar Transferência\""},{"status":"open","text":"Add Playwright devDependency + `playwright.config.ts` if missing; script `tests/transferencia-screenshot.spec.ts` logs in demo user (`prisma/seed.ts`), clicks \"Nova Transferência\", saves `docs/screenshots/108-transferencia-20260721.png`"},{"status":"open","text":"Run project's format and test commands pass with no new warnings"}]
+[2m2026-07-21 03:19:13[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m108 [3mplan_md[0m[2m=[0m# Plan for #108: Transferência: par vinculado neutro entre Contas
+
+## Feasible: yes
+Issue body is complete; blockers #103/#104 are CLOSED on `origin/main` (`src/lib/lancamento-actions.ts`, `src/lib/saldo.ts`, Agenda UI). Current branch (`6092733`) is docs-only — executor must bring in `origin/main` (134 files) before coding. Partial UI exists (`lancamento-chip.tsx` TRANSFERENCIA styling); service layer and TransferenciaForm are absent.
+
+## Execution model: one piped turn
+Single session reads only this plan, `.ralphy/issue.json`, and the repo after syncing `origin/main`. All signatures, literal assertions, and traps are inline below — no resume idiom.
+
+## Done when
+- `npx vitest run transferencia` exits 0; new tests assert: (a) transfer pair moves per-account saldo via `calcularSaldoAtual` but `totalReceitaMes`/`totalDespesaMes` (excluding `transferenciaId != null`) unchanged; (b) `editarTransferencia` rewrites exactly 2 legs atomically; (c) `excluirTransferencia`/`excluirLancamento` on a transfer leg leaves 0 rows for that `transferenciaId`
+- `npm run lint` exits 0
+- `npm run build` exits 0
+- Playwright captures `docs/screenshots/108-transferencia-20260721.png` showing "Nova Transferência" dialog with origem/destino fields (`fs.statSync(path).size > 0`)
+- Review-only (omit if none): screenshot visual — neutral chip coloring and form layout look correct in PR
+
+## Acceptance ledger
+- [verified] Ação "Nova Transferência" (origem, destino, valor, data) cria o par vinculado com `transferenciaId` — evidence: `__tests__/transferencia-actions.test.ts` asserts `createMany`/`$transaction` creates 2 rows sharing one non-null `transferenciaId`, DESPESA on origem + RECEITA on destino, same `valor`/`data`
+- [verified] O par é **neutro**: excluído de totais de Receita/Despesa e da Taxa de Poupança, mas afeta o saldo das duas Contas — evidence: `__tests__/transferencia-neutra.test.ts` asserts `totalReceitaMes`/`totalDespesaMes` unchanged after transfer while `calcularSaldoAtual(origem)` drops and `calcularSaldoAtual(destino)` rises by exact `valor`; taxa proxy `(receita-despesa)/rendaLiquida` identical before/after
+- [verified] Renderizada com cor neutra (nunca verde/vermelho); nunca dentro do modal de Lançamento comum — evidence: existing `__tests__/lancamento-chip.test.tsx` TRANSFERENCIA case (`data-tipo="TRANSFERENCIA"`, glyph `\u21c4`); new `__tests__/transferencia-form.test.tsx` asserts dialog title "Nova Transferência" and absence of `categoriaId`/`tipo` fields; `topbar.tsx` wires separate trigger, not inside `LancamentoForm`
+- [verified] Clicar numa perna na Agenda reabre "Nova Transferência" pré-preenchido em edição (não o modal de Lançamento) — evidence: `__tests__/agenda-screen.test.tsx` chip click on `transferenciaId: "t1"` opens `TransferenciaForm` (title "Editar Transferência"), not `LancamentoForm`
+- [verified] Editar reescreve as duas pernas atomicamente (mesma operação de serviço, nunca uma perna sem a outra) — evidence: `__tests__/transferencia-actions.test.ts` mocks `prisma.$transaction`, asserts `editarTransferencia` updates both leg ids in one call; `editarLancamento` rejects rows with `transferenciaId != null`
+- [verified] Excluir remove sempre o par inteiro, nunca uma perna isolada — evidence: `__tests__/transferencia-actions.test.ts` asserts `excluirTransferencia` and `excluirLancamento` (transfer leg) call `deleteMany({ where: { transferenciaId, userId } })` with `count === 2`
+- [verified] Queries filtram por `userId`; ambas as Contas são do próprio usuário — evidence: `__tests__/transferencia-actions.test.ts` asserts `findFirst`/`deleteMany`/`updateMany` all include `userId: "u1"`; rejects when origem/destino not owned
+- [verified] Evidência: teste de que a Transferência move saldo mas não entra em Receita/Despesa + teste de atomicidade da edição/exclusão do par + screenshot — evidence: `npx vitest run transferencia` + Playwright writes `docs/screenshots/108-transferencia-20260721.png` with `size > 0`
+
+## Verify
+npx vitest run transferencia
+npm run lint
+npm run build
+
+## Decisions
+- Decision: Auto-assign internal categories `"Transferência"` (one RECEITA, one DESPESA) per user via `ensureCategoriasTransferencia(userId)` in `transferencia-actions.ts`. Why: `Lancamento.categoriaId` is NOT NULL (`prisma/schema.prisma` on `origin/main`); issue forbids migration; UI never exposes category on transfer form.
+- Decision: Pair shape = DESPESA leg on origem + RECEITA leg on destino, shared `transferenciaId = crypto.randomUUID()`, shared `status = statusDefaultPorData(data, hojeAmericaSaoPaulo())`. Why: matches historical #52 service and `signedValue` saldo math; consolidated saldo unchanged.
+- Decision: Atomic writes via `prisma.$transaction` in `criarTransferencia`/`editarTransferencia`; `excluirLancamento` delegates to `excluirTransferencia` when `transferenciaId` set; `editarLancamento` returns error for transfer legs. Why: TRA-02 single write path; prevents orphan legs.
+- Decision: Neutrality enforced by filtering `transferenciaId: null` in new pure helpers `totalReceitaMes`/`totalDespesaMes` in `src/lib/transferencia.ts` (Taxa de Poupança proxy until Diagnóstico slice). Why: saldo engine (`src/lib/saldo.ts`) must still count both legs for balance; only income/expense totals exclude transfers.
+- Decision: Playwright added as devDependency only for screenshot step (not in `origin/main` `package.json` today; `environment.md` confirms playwright 1.60.0 on host). Why: issue requires screenshot evidence; charter allows executor to install headless driver.
+
+## Caveats
+- Current branch lacks application code (source: `git diff --stat HEAD origin/main` → 134 files only on `origin/main`) — handled: step 0 merges `origin/main`
+- `categoriaId` NOT NULL conflicts with old #52 null-category pattern (source: `origin/main:prisma/schema.prisma`) — handled: internal categories decision above
+- Handoffs cite dbkit/playwright gate sequence not present on `origin/main` `package.json` (source: `.ralphy/handoffs.md` vs `git show origin/main:package.json`) — handled: Verify uses vitest/lint/build; Playwright scoped to screenshot only
+- Taxa de Poupança Diagnóstico motor not built yet (source: no `src/lib/diagnostico*.ts` on `origin/main`) — handled: neutrality tested via `totalReceitaMes`/`totalDespesaMes` exclusion proxy matching PRD formula inputs
+- `listarContas` still computes `saldoAtual` with empty lancamentos array (source: `origin/main:src/lib/conta-actions.ts` `calcularSaldoAtual(c.saldoInicial, [])`) — handled: transfer saldo proofs use `calcularSaldoAtual`/`obterSerieSaldos` directly, not Contas list
+
+## Steps
+- [ ] Sync codebase: `git merge origin/main` (or checkout app tree); confirm `node --version` is 22.x, `npm ci`, `npx prisma generate`; probe DB with `npx prisma migrate status` — expect "Database schema is up to date"
+- [ ] In `src/lib/transferencia.ts`, add `isTransferencia(l)`, `totalReceitaMes(lancamentos, mesAno)`, `totalDespesaMes(lancamentos, mesAno)` filtering `transferenciaId == null`; export `CATEGORIA_TRANSFERENCIA_NOME = "Transferência"`
+- [ ] Add failing test `__tests__/transferencia-neutra.test.ts`: fixture with origem saldoInicial 10000, destino 5000, existing DESPESA 1000 + RECEITA 2000 (non-transfer); after transfer pair valor 2500, assert `totalDespesaMes === 1000`, `totalReceitaMes === 2000`, origem saldo 6500, destino 9500, consolidated 16000 unchanged
+- [ ] In `src/lib/transferencia-actions.ts`, implement `ensureCategoriasTransferencia(userId)`, `criarTransferencia`, `editarTransferencia`, `excluirTransferencia`, `obterParPorTransferenciaId(userId, transferenciaId)` — all scoped `userId`; validate origem ≠ destino; both contas `findFirst({ id, userId })`; create/edit in `$transaction`
+- [ ] Add failing test `__tests__/transferencia-actions.test.ts` (mock `@/auth`, `@/lib/prisma` like `lancamento-actions.test.ts`): criar creates 2 rows same `transferenciaId`; editar updates both in one `$transaction`; excluir deletes by `transferenciaId`+`userId`; rejects foreign conta
+- [ ] In `src/lib/lancamento-actions.ts` `editarLancamento`/`excluirLancamento`: if target row has `transferenciaId`, return `{ error: "Use a ação de Transferência." }` or delegate delete to `excluirTransferencia` — extend existing delete test to assert pair removal
+- [ ] Create `src/components/transferencias/transferencia-form.tsx`: Dialog "Nova Transferência"/"Editar Transferência"; fields origemId, destinoId, `CurrencyInput`, `DateField`; no tipo/categoria/status; dirty-form guard + toast; calls `criarTransferencia`/`editarTransferencia`
+- [ ] Create `src/components/transferencias/transferencia-delete-dialog.tsx`: AlertDialog calling `excluirTransferencia`; copy mentions "par inteiro"
+- [ ] In `src/components/topbar.tsx`, add second button "Nova Transferência" with `TransferenciaForm` trigger (separate from `LancamentoForm`)
+- [ ] In `src/components/agenda/agenda-screen.tsx`: when `editLanc?.transferenciaId`, render `TransferenciaForm` prefilled via `obterParPorTransferenciaId` (origem/destino/valor/data) instead of `LancamentoForm`; pass `onChipClick` unchanged
+- [ ] In `src/components/agenda/day-detail-dialog.tsx`: chip click on transfer leg must not open `LancamentoForm` for edit — route through parent `onChipClick` only (remove conflation if any)
+- [ ] Add `__tests__/transferencia-form.test.tsx`: render form, assert labels "Conta de origem"/"Conta de destino", no categoria select; submit calls mocked `criarTransferencia`
+- [ ] Update `__tests__/agenda-screen.test.tsx`: transfer chip opens `TransferenciaForm` with title "Editar Transferência"
+- [ ] Add Playwright devDependency + `playwright.config.ts` if missing; script `tests/transferencia-screenshot.spec.ts` logs in demo user (`prisma/seed.ts`), clicks "Nova Transferência", saves `docs/screenshots/108-transferencia-20260721.png`
+- [ ] Run project's format and test commands pass with no new warnings
+
+<!-- ralphy-plan: issue=108 -->
+
+[2m2026-07-21 03:19:13[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m executing [3mcmd[0m[2m=[0mcursor [3mbudget_min[0m[2m=[0m0 [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-21 03:19:59[0m [33m WARN[0m [2mralphy_adapter_support::headless[0m[2m:[0m headless reader did not finish within the collect grace — output may be truncated [3mstream[0m[2m=[0m"stdout"
+[2m2026-07-21 03:19:59[0m [32m INFO[0m [2mralphy_agent_cursor[0m[2m:[0m cursor execution ended [3moutcome[0m[2m=[0mStuck [3mexited_cleanly[0m[2m=[0mfalse [3mtimed_out[0m[2m=[0mfalse [3mexit_code[0m[2m=[0mSome(1) [3mcommitted[0m[2m=[0mtrue [3msaw_envelope[0m[2m=[0mfalse [3msaw_no_records[0m[2m=[0mtrue
+[2m2026-07-21 03:19:59[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m non-green — stopping run [3mnumber[0m[2m=[0m108 [3moutcome[0m[2m=[0mStuck
+[2m2026-07-21 03:19:59[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"non_green" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m0 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m1 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"status":"non_green"}] [3mup[0m[2m=[0m0 [3mcr[0m[2m=[0m0 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3mduration_s[0m[2m=[0m230
+[2m2026-07-21 03:20:00[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `glm-5.2` to pricing.toml to price it [3mmodel[0m[2m=[0m"glm-5.2"
+[2m2026-07-21 03:20:00[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `gpt-5.6-sol` to pricing.toml to price it [3mmodel[0m[2m=[0m"gpt-5.6-sol"
+[2m2026-07-21 03:20:00[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `k3` to pricing.toml to price it [3mmodel[0m[2m=[0m"k3"
+[2m2026-07-21 03:20:00[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m some tokens had no model attribution — not priced (shown as +?) [3mmodel[0m[2m=[0m"unknown"
+[ok] 0 done · [blocked] 1 blocked · [skip] 0 skipped
+51 commit(s) on 'afk/run-20260721-031609'
+Stopped: #108 finished non-green (Stuck). Branch handed back.
+Left repo checked out on 'afk/run-20260721-031609' for inspection.
+[undo]  undo (pre-run tag 'ralphy/pre-run-20260721-031609'): git checkout master && git branch -D afk/run-20260721-031609
+➜  git merge afk/run-20260721-031609
+run: in 0 cr 0 cw 0 out 0 · $? · project: paulocorcino/FinCal in 19.3M cr 503.1M cw 0 out 2.8M · $4.47+?
+
+--- retry at --max-minutes-per-issue 60 ---
+[2m2026-07-21 03:21:14[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Users/PICHAU/AppData/Local/Temp/fincal-lab-244 [3mstamp[0m[2m=[0m20260721-032114 [3mdry_run[0m[2m=[0mfalse
+🐙 Ralphy - v0.1.0-rc13
+fincal-lab-244 · afk/run-20260721-031609 · https://github.com/paulocorcino/FinCal
+[2m2026-07-21 03:21:19[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#108 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"title":"Transferência: par vinculado neutro entre Contas","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missue #108
+[2m2026-07-21 03:21:19[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"cursor" [3mplan_agent[0m[2m=[0m"cursor" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0morigin/master [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-21 03:21:22[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260721-032114 [3mbase[0m[2m=[0morigin/master [3mwas[0m[2m=[0mafk/run-20260721-031609
+[2m2026-07-21 03:21:26[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m108 [3mtitle[0m[2m=[0mTransferência: par vinculado neutro entre Contas
+[2m2026-07-21 03:21:28[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m handoffs collected for planner [3mnumber[0m[2m=[0m108 [3mhandoffs[0m[2m=[0m2
+[2m2026-07-21 03:21:30[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m references collected for planner [3mnumber[0m[2m=[0m108 [3mreferences[0m[2m=[0m3
+[2m2026-07-21 03:21:30[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m108 [3mopen_steps[0m[2m=[0m15 [3mup[0m[2m=[0m0 [3mcr[0m[2m=[0m0 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3mmodel[0m[2m=[0m"" [3msteps_json[0m[2m=[0m[{"status":"open","text":"Sync codebase: `git merge origin/main` (or checkout app tree); confirm `node --version` is 22.x, `npm ci`, `npx prisma generate`; probe DB with `npx prisma migrate status` — expect \"Database schema is up to date\""},{"status":"open","text":"In `src/lib/transferencia.ts`, add `isTransferencia(l)`, `totalReceitaMes(lancamentos, mesAno)`, `totalDespesaMes(lancamentos, mesAno)` filtering `transferenciaId == null`; export `CATEGORIA_TRANSFERENCIA_NOME = \"Transferência\"`"},{"status":"open","text":"Add failing test `__tests__/transferencia-neutra.test.ts`: fixture with origem saldoInicial 10000, destino 5000, existing DESPESA 1000 + RECEITA 2000 (non-transfer); after transfer pair valor 2500, assert `totalDespesaMes === 1000`, `totalReceitaMes === 2000`, origem saldo 6500, destino 9500, consolidated 16000 unchanged"},{"status":"open","text":"In `src/lib/transferencia-actions.ts`, implement `ensureCategoriasTransferencia(userId)`, `criarTransferencia`, `editarTransferencia`, `excluirTransferencia`, `obterParPorTransferenciaId(userId, transferenciaId)` — all scoped `userId`; validate origem ≠ destino; both contas `findFirst({ id, userId })`; create/edit in `$transaction`"},{"status":"open","text":"Add failing test `__tests__/transferencia-actions.test.ts` (mock `@/auth`, `@/lib/prisma` like `lancamento-actions.test.ts`): criar creates 2 rows same `transferenciaId`; editar updates both in one `$transaction`; excluir deletes by `transferenciaId`+`userId`; rejects foreign conta"},{"status":"open","text":"In `src/lib/lancamento-actions.ts` `editarLancamento`/`excluirLancamento`: if target row has `transferenciaId`, return `{ error: \"Use a ação de Transferência.\" }` or delegate delete to `excluirTransferencia` — extend existing delete test to assert pair removal"},{"status":"open","text":"Create `src/components/transferencias/transferencia-form.tsx`: Dialog \"Nova Transferência\"/\"Editar Transferência\"; fields origemId, destinoId, `CurrencyInput`, `DateField`; no tipo/categoria/status; dirty-form guard + toast; calls `criarTransferencia`/`editarTransferencia`"},{"status":"open","text":"Create `src/components/transferencias/transferencia-delete-dialog.tsx`: AlertDialog calling `excluirTransferencia`; copy mentions \"par inteiro\""},{"status":"open","text":"In `src/components/topbar.tsx`, add second button \"Nova Transferência\" with `TransferenciaForm` trigger (separate from `LancamentoForm`)"},{"status":"open","text":"In `src/components/agenda/agenda-screen.tsx`: when `editLanc?.transferenciaId`, render `TransferenciaForm` prefilled via `obterParPorTransferenciaId` (origem/destino/valor/data) instead of `LancamentoForm`; pass `onChipClick` unchanged"},{"status":"open","text":"In `src/components/agenda/day-detail-dialog.tsx`: chip click on transfer leg must not open `LancamentoForm` for edit — route through parent `onChipClick` only (remove conflation if any)"},{"status":"open","text":"Add `__tests__/transferencia-form.test.tsx`: render form, assert labels \"Conta de origem\"/\"Conta de destino\", no categoria select; submit calls mocked `criarTransferencia`"},{"status":"open","text":"Update `__tests__/agenda-screen.test.tsx`: transfer chip opens `TransferenciaForm` with title \"Editar Transferência\""},{"status":"open","text":"Add Playwright devDependency + `playwright.config.ts` if missing; script `tests/transferencia-screenshot.spec.ts` logs in demo user (`prisma/seed.ts`), clicks \"Nova Transferência\", saves `docs/screenshots/108-transferencia-20260721.png`"},{"status":"open","text":"Run project's format and test commands pass with no new warnings"}]
+[2m2026-07-21 03:21:30[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m108 [3mplan_md[0m[2m=[0m# Plan for #108: Transferência: par vinculado neutro entre Contas
+
+## Feasible: yes
+Issue body is complete; blockers #103/#104 are CLOSED on `origin/main` (`src/lib/lancamento-actions.ts`, `src/lib/saldo.ts`, Agenda UI). Current branch (`6092733`) is docs-only — executor must bring in `origin/main` (134 files) before coding. Partial UI exists (`lancamento-chip.tsx` TRANSFERENCIA styling); service layer and TransferenciaForm are absent.
+
+## Execution model: one piped turn
+Single session reads only this plan, `.ralphy/issue.json`, and the repo after syncing `origin/main`. All signatures, literal assertions, and traps are inline below — no resume idiom.
+
+## Done when
+- `npx vitest run transferencia` exits 0; new tests assert: (a) transfer pair moves per-account saldo via `calcularSaldoAtual` but `totalReceitaMes`/`totalDespesaMes` (excluding `transferenciaId != null`) unchanged; (b) `editarTransferencia` rewrites exactly 2 legs atomically; (c) `excluirTransferencia`/`excluirLancamento` on a transfer leg leaves 0 rows for that `transferenciaId`
+- `npm run lint` exits 0
+- `npm run build` exits 0
+- Playwright captures `docs/screenshots/108-transferencia-20260721.png` showing "Nova Transferência" dialog with origem/destino fields (`fs.statSync(path).size > 0`)
+- Review-only (omit if none): screenshot visual — neutral chip coloring and form layout look correct in PR
+
+## Acceptance ledger
+- [verified] Ação "Nova Transferência" (origem, destino, valor, data) cria o par vinculado com `transferenciaId` — evidence: `__tests__/transferencia-actions.test.ts` asserts `createMany`/`$transaction` creates 2 rows sharing one non-null `transferenciaId`, DESPESA on origem + RECEITA on destino, same `valor`/`data`
+- [verified] O par é **neutro**: excluído de totais de Receita/Despesa e da Taxa de Poupança, mas afeta o saldo das duas Contas — evidence: `__tests__/transferencia-neutra.test.ts` asserts `totalReceitaMes`/`totalDespesaMes` unchanged after transfer while `calcularSaldoAtual(origem)` drops and `calcularSaldoAtual(destino)` rises by exact `valor`; taxa proxy `(receita-despesa)/rendaLiquida` identical before/after
+- [verified] Renderizada com cor neutra (nunca verde/vermelho); nunca dentro do modal de Lançamento comum — evidence: existing `__tests__/lancamento-chip.test.tsx` TRANSFERENCIA case (`data-tipo="TRANSFERENCIA"`, glyph `\u21c4`); new `__tests__/transferencia-form.test.tsx` asserts dialog title "Nova Transferência" and absence of `categoriaId`/`tipo` fields; `topbar.tsx` wires separate trigger, not inside `LancamentoForm`
+- [verified] Clicar numa perna na Agenda reabre "Nova Transferência" pré-preenchido em edição (não o modal de Lançamento) — evidence: `__tests__/agenda-screen.test.tsx` chip click on `transferenciaId: "t1"` opens `TransferenciaForm` (title "Editar Transferência"), not `LancamentoForm`
+- [verified] Editar reescreve as duas pernas atomicamente (mesma operação de serviço, nunca uma perna sem a outra) — evidence: `__tests__/transferencia-actions.test.ts` mocks `prisma.$transaction`, asserts `editarTransferencia` updates both leg ids in one call; `editarLancamento` rejects rows with `transferenciaId != null`
+- [verified] Excluir remove sempre o par inteiro, nunca uma perna isolada — evidence: `__tests__/transferencia-actions.test.ts` asserts `excluirTransferencia` and `excluirLancamento` (transfer leg) call `deleteMany({ where: { transferenciaId, userId } })` with `count === 2`
+- [verified] Queries filtram por `userId`; ambas as Contas são do próprio usuário — evidence: `__tests__/transferencia-actions.test.ts` asserts `findFirst`/`deleteMany`/`updateMany` all include `userId: "u1"`; rejects when origem/destino not owned
+- [verified] Evidência: teste de que a Transferência move saldo mas não entra em Receita/Despesa + teste de atomicidade da edição/exclusão do par + screenshot — evidence: `npx vitest run transferencia` + Playwright writes `docs/screenshots/108-transferencia-20260721.png` with `size > 0`
+
+## Verify
+npx vitest run transferencia
+npm run lint
+npm run build
+
+## Decisions
+- Decision: Auto-assign internal categories `"Transferência"` (one RECEITA, one DESPESA) per user via `ensureCategoriasTransferencia(userId)` in `transferencia-actions.ts`. Why: `Lancamento.categoriaId` is NOT NULL (`prisma/schema.prisma` on `origin/main`); issue forbids migration; UI never exposes category on transfer form.
+- Decision: Pair shape = DESPESA leg on origem + RECEITA leg on destino, shared `transferenciaId = crypto.randomUUID()`, shared `status = statusDefaultPorData(data, hojeAmericaSaoPaulo())`. Why: matches historical #52 service and `signedValue` saldo math; consolidated saldo unchanged.
+- Decision: Atomic writes via `prisma.$transaction` in `criarTransferencia`/`editarTransferencia`; `excluirLancamento` delegates to `excluirTransferencia` when `transferenciaId` set; `editarLancamento` returns error for transfer legs. Why: TRA-02 single write path; prevents orphan legs.
+- Decision: Neutrality enforced by filtering `transferenciaId: null` in new pure helpers `totalReceitaMes`/`totalDespesaMes` in `src/lib/transferencia.ts` (Taxa de Poupança proxy until Diagnóstico slice). Why: saldo engine (`src/lib/saldo.ts`) must still count both legs for balance; only income/expense totals exclude transfers.
+- Decision: Playwright added as devDependency only for screenshot step (not in `origin/main` `package.json` today; `environment.md` confirms playwright 1.60.0 on host). Why: issue requires screenshot evidence; charter allows executor to install headless driver.
+
+## Caveats
+- Current branch lacks application code (source: `git diff --stat HEAD origin/main` → 134 files only on `origin/main`) — handled: step 0 merges `origin/main`
+- `categoriaId` NOT NULL conflicts with old #52 null-category pattern (source: `origin/main:prisma/schema.prisma`) — handled: internal categories decision above
+- Handoffs cite dbkit/playwright gate sequence not present on `origin/main` `package.json` (source: `.ralphy/handoffs.md` vs `git show origin/main:package.json`) — handled: Verify uses vitest/lint/build; Playwright scoped to screenshot only
+- Taxa de Poupança Diagnóstico motor not built yet (source: no `src/lib/diagnostico*.ts` on `origin/main`) — handled: neutrality tested via `totalReceitaMes`/`totalDespesaMes` exclusion proxy matching PRD formula inputs
+- `listarContas` still computes `saldoAtual` with empty lancamentos array (source: `origin/main:src/lib/conta-actions.ts` `calcularSaldoAtual(c.saldoInicial, [])`) — handled: transfer saldo proofs use `calcularSaldoAtual`/`obterSerieSaldos` directly, not Contas list
+
+## Steps
+- [ ] Sync codebase: `git merge origin/main` (or checkout app tree); confirm `node --version` is 22.x, `npm ci`, `npx prisma generate`; probe DB with `npx prisma migrate status` — expect "Database schema is up to date"
+- [ ] In `src/lib/transferencia.ts`, add `isTransferencia(l)`, `totalReceitaMes(lancamentos, mesAno)`, `totalDespesaMes(lancamentos, mesAno)` filtering `transferenciaId == null`; export `CATEGORIA_TRANSFERENCIA_NOME = "Transferência"`
+- [ ] Add failing test `__tests__/transferencia-neutra.test.ts`: fixture with origem saldoInicial 10000, destino 5000, existing DESPESA 1000 + RECEITA 2000 (non-transfer); after transfer pair valor 2500, assert `totalDespesaMes === 1000`, `totalReceitaMes === 2000`, origem saldo 6500, destino 9500, consolidated 16000 unchanged
+- [ ] In `src/lib/transferencia-actions.ts`, implement `ensureCategoriasTransferencia(userId)`, `criarTransferencia`, `editarTransferencia`, `excluirTransferencia`, `obterParPorTransferenciaId(userId, transferenciaId)` — all scoped `userId`; validate origem ≠ destino; both contas `findFirst({ id, userId })`; create/edit in `$transaction`
+- [ ] Add failing test `__tests__/transferencia-actions.test.ts` (mock `@/auth`, `@/lib/prisma` like `lancamento-actions.test.ts`): criar creates 2 rows same `transferenciaId`; editar updates both in one `$transaction`; excluir deletes by `transferenciaId`+`userId`; rejects foreign conta
+- [ ] In `src/lib/lancamento-actions.ts` `editarLancamento`/`excluirLancamento`: if target row has `transferenciaId`, return `{ error: "Use a ação de Transferência." }` or delegate delete to `excluirTransferencia` — extend existing delete test to assert pair removal
+- [ ] Create `src/components/transferencias/transferencia-form.tsx`: Dialog "Nova Transferência"/"Editar Transferência"; fields origemId, destinoId, `CurrencyInput`, `DateField`; no tipo/categoria/status; dirty-form guard + toast; calls `criarTransferencia`/`editarTransferencia`
+- [ ] Create `src/components/transferencias/transferencia-delete-dialog.tsx`: AlertDialog calling `excluirTransferencia`; copy mentions "par inteiro"
+- [ ] In `src/components/topbar.tsx`, add second button "Nova Transferência" with `TransferenciaForm` trigger (separate from `LancamentoForm`)
+- [ ] In `src/components/agenda/agenda-screen.tsx`: when `editLanc?.transferenciaId`, render `TransferenciaForm` prefilled via `obterParPorTransferenciaId` (origem/destino/valor/data) instead of `LancamentoForm`; pass `onChipClick` unchanged
+- [ ] In `src/components/agenda/day-detail-dialog.tsx`: chip click on transfer leg must not open `LancamentoForm` for edit — route through parent `onChipClick` only (remove conflation if any)
+- [ ] Add `__tests__/transferencia-form.test.tsx`: render form, assert labels "Conta de origem"/"Conta de destino", no categoria select; submit calls mocked `criarTransferencia`
+- [ ] Update `__tests__/agenda-screen.test.tsx`: transfer chip opens `TransferenciaForm` with title "Editar Transferência"
+- [ ] Add Playwright devDependency + `playwright.config.ts` if missing; script `tests/transferencia-screenshot.spec.ts` logs in demo user (`prisma/seed.ts`), clicks "Nova Transferência", saves `docs/screenshots/108-transferencia-20260721.png`
+- [ ] Run project's format and test commands pass with no new warnings
+
+<!-- ralphy-plan: issue=108 -->
+
+[2m2026-07-21 03:21:30[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m executing [3mcmd[0m[2m=[0mcursor [3mbudget_min[0m[2m=[0m0 [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-21 03:21:45[0m [32m INFO[0m [2mralphy_agent_cursor[0m[2m:[0m cursor execution ended [3moutcome[0m[2m=[0mStuck [3mexited_cleanly[0m[2m=[0mfalse [3mtimed_out[0m[2m=[0mfalse [3mexit_code[0m[2m=[0mSome(1) [3mcommitted[0m[2m=[0mfalse [3msaw_envelope[0m[2m=[0mfalse [3msaw_no_records[0m[2m=[0mfalse
+[2m2026-07-21 03:21:45[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m non-green — stopping run [3mnumber[0m[2m=[0m108 [3moutcome[0m[2m=[0mStuck
+[2m2026-07-21 03:21:45[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"non_green" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m0 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m1 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"status":"non_green"}] [3mup[0m[2m=[0m0 [3mcr[0m[2m=[0m0 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3mduration_s[0m[2m=[0m31
+[2m2026-07-21 03:21:46[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `glm-5.2` to pricing.toml to price it [3mmodel[0m[2m=[0m"glm-5.2"
+[2m2026-07-21 03:21:46[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `gpt-5.6-sol` to pricing.toml to price it [3mmodel[0m[2m=[0m"gpt-5.6-sol"
+[2m2026-07-21 03:21:46[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `k3` to pricing.toml to price it [3mmodel[0m[2m=[0m"k3"
+[2m2026-07-21 03:21:46[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m some tokens had no model attribution — not priced (shown as +?) [3mmodel[0m[2m=[0m"unknown"
+[ok] 0 done · [blocked] 1 blocked · [skip] 0 skipped
+0 commit(s) on 'afk/run-20260721-032114'
+Stopped: #108 finished non-green (Stuck). Branch handed back.
+Left repo checked out on 'afk/run-20260721-032114' for inspection.
+➜  git merge afk/run-20260721-032114
+run: in 0 cr 0 cw 0 out 0 · $? · project: paulocorcino/FinCal in 19.3M cr 503.1M cw 0 out 2.8M · $4.47+?
+
+--- addendum 2026-07-21: the vendor's own record of the block ---
+
+The run log above records only the adapter's verdict (`outcome=Stuck`,
+`exit_code=Some(1)`). The vendor's side of both attempts survived in the Cursor
+session store, which is NOT cleaned with the lab workspace:
+
+    ~/.cursor/projects/C-Users-PICHAU-AppData-Local-Temp-fincal-lab-244/agent-transcripts/
+
+Three transcripts, matching the three cursor-agent invocations:
+
+  70395a43  03:19  planning     {"type":"turn_ended","status":"success"}
+  5a0ed2d9  03:19  execution    quota error, mid-turn (see below)
+  eb380690  03:21  execution    quota error, immediately (single-line file)
+
+Both execution turns died on the same structured record — the literal bytes:
+
+    {"type":"turn_ended","status":"error","error":"You've hit your usage limit Get Cursor Pro for more Agent usage, unlimited Tab, and more."}
+
+Captured as fixtures:
+  crates/ralphy-agent-cursor/fixtures/usage-limit-2026-07-21.jsonl         (eb380690, bare)
+  crates/ralphy-agent-cursor/fixtures/usage-limit-midturn-2026-07-21.jsonl (5a0ed2d9, after a Shell git-merge tool_use)
+
+Two findings this changes:
+
+1. The carrier is NOT `ActionRequiredError`. ADR-0042 (§ the outcome ladder) and
+   docs/research/cursor-cli-adapter-spike.md anticipated the quota signal
+   arriving as that error class in stderr prose. It does not: it arrives as the
+   `error` field of a well-formed `turn_ended` stream record, on stdout, in the
+   protocol the fold already parses. `ActionRequiredError` is a different
+   scenario (named-model rejection on a Free plan, § spike table).
+
+2. The ladder folds `turn_ended` without reading `status`/`error`, so an
+   explicit, self-describing vendor refusal degrades to a mute `Stuck`. It
+   should be a `Blocked` carrying the vendor's own sentence. Same shape as the
+   opencode silent-quota case: the vendor said why, the adapter dropped it.
+
+The fixtures and this note are the evidence the #244 handoff was missing. The
+fold now reads `status`/`error` on `turn_ended` (#244, this branch): the refusal
+is no longer mute — it is logged verbatim, and the terminal record counts as a
+record, so a quota stop is not mistaken for a preflight rejection. Turning that
+sentence into a limit outcome with a resumption stance is #266.

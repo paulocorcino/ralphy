@@ -282,16 +282,19 @@ mod tests {
         q.push(RunEvent::IssueClosed {
             number: 1,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
         q.push(RunEvent::IssueClosed {
             number: 2,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
         q.push(RunEvent::IssueClosed {
             number: 3,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
         let drained = q.drain_blocking(Duration::from_millis(0));
@@ -301,11 +304,13 @@ mod tests {
                 RunEvent::IssueClosed {
                     number: 2,
                     tokens: 0,
+                    invocations: 0,
                     usage: UsageLite::default(),
                 },
                 RunEvent::IssueClosed {
                     number: 3,
                     tokens: 0,
+                    invocations: 0,
                     usage: UsageLite::default(),
                 },
             ]
@@ -326,6 +331,7 @@ mod tests {
             queue.push(RunEvent::IssueClosed {
                 number: n,
                 tokens: 0,
+                invocations: 0,
                 usage: UsageLite::default(),
             });
         }
@@ -372,6 +378,7 @@ mod tests {
             queue.push(RunEvent::IssueClosed {
                 number: n,
                 tokens: 0,
+                invocations: 0,
                 usage: UsageLite::default(),
             });
         }

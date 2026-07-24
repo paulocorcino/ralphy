@@ -1,0 +1,11 @@
+[2m2026-07-22 15:36:34[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Dev/FinCal [3mstamp[0m[2m=[0m20260722-153634 [3mdry_run[0m[2m=[0mfalse
+🐵 Ralphy - v0.1.0-rc13
+FinCal · capstone/opencode-273 · https://github.com/paulocorcino/FinCal
+[2m2026-07-22 15:36:37[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#111 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":111,"title":"Diagnóstico Financeiro: métricas determinísticas narradas pela IA","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missue #111
+[2m2026-07-22 15:36:38[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"opencode" [3mplan_agent[0m[2m=[0m"opencode" [3mbranch_mode[0m[2m=[0m"current" [3mbase[0m[2m=[0morigin/main [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-22 15:36:40[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m running in place on current branch [3mbranch[0m[2m=[0mcapstone/opencode-273
+[2m2026-07-22 15:36:42[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m111 [3mtitle[0m[2m=[0mDiagnóstico Financeiro: métricas determinísticas narradas pela IA
+[2m2026-07-22 15:36:43[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m handoffs collected for planner [3mnumber[0m[2m=[0m111 [3mhandoffs[0m[2m=[0m1
+[2m2026-07-22 15:36:43[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m references collected for planner [3mnumber[0m[2m=[0m111 [3mreferences[0m[2m=[0m1
+[2m2026-07-22 15:36:43[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mopencode run [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+Error: opencode produced no plan at C:/Dev/FinCal\.ralphy\plan.md (see C:/Dev/FinCal\.ralphy\runs\20260722-153634\opencode.log)

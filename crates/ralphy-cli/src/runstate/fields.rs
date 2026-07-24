@@ -36,9 +36,16 @@ pub struct EventFields {
     pub target_epoch: Option<i64>,
     pub model: Option<String>,
     pub tokens: Option<u64>,
-    /// Reasoning effort label (`low`/`medium`/`high`); adapters also report it as
-    /// `variant` (OpenCode), folded into the same slot.
+    /// Vendor spawn count on a `green — issue closed` event: plan and execute plus
+    /// any repair/protocol bounce. Absent on an older emission.
+    pub invocations: Option<u64>,
+    /// Reasoning effort rung (`low`/`medium`/`high`/`xhigh`/`max`), or absent
+    /// when the adapter emitted an empty string / documented no-op (ADR-0044 D9).
     pub effort: Option<String>,
+    /// Provider-native dialect selector (OpenCode `--variant`). Decoder-inert
+    /// like `cmd`: recorded for `ralphy.log` / sinks, never folded into
+    /// `RunEvent::{Planning,Executing}.effort` (ADR-0044 D9).
+    pub variant: Option<String>,
     /// Readable child command on `planning` / `executing`. Decoder-inert: recorded
     /// (and pinned by the round-trips) but never read by `event_to_runevent` — it
     /// exists for `ralphy.log` and for downstream sinks that want the command.
@@ -122,7 +129,9 @@ impl Default for EventFields {
             target_epoch: None,
             model: None,
             tokens: None,
+            invocations: None,
             effort: None,
+            variant: None,
             cmd: None,
             up: None,
             cr: None,
@@ -163,6 +172,7 @@ impl Visit for EventFields {
             "idle_minutes" => self.idle_minutes = Some(value),
             "stop_before" => self.stop_before = Some(value),
             "tokens" => self.tokens = Some(value),
+            "invocations" => self.invocations = Some(value),
             "up" => self.up = Some(value),
             "cr" => self.cr = Some(value),
             "cw" => self.cw = Some(value),
@@ -198,7 +208,8 @@ impl Visit for EventFields {
             "outcome" => self.outcome = Some(value.to_string()),
             "reset" => self.reset = Some(value.to_string()),
             "model" => self.model = clean_opt(value),
-            "effort" | "variant" => self.effort = clean_opt(value),
+            "effort" => self.effort = clean_opt(value),
+            "variant" => self.variant = clean_opt(value),
             "cmd" => self.cmd = clean_opt(value),
             "label" => self.label = clean_opt(value),
             "repo" => self.repo = Some(value.to_string()),
@@ -243,7 +254,8 @@ impl Visit for EventFields {
             // `Some("…")` / quote wrapping and treat `None`/empty as absent so the
             // decoder never carries a literal `None` or `""` into a display label.
             "model" => self.model = clean_opt(&rendered),
-            "effort" | "variant" => self.effort = clean_opt(&rendered),
+            "effort" => self.effort = clean_opt(&rendered),
+            "variant" => self.variant = clean_opt(&rendered),
             "cmd" => self.cmd = clean_opt(&rendered),
             // The `%`-formatted (Display) run-boundary fields arrive here via
             // tracing's Display wrapper; store them raw (no quote stripping — these
@@ -293,5 +305,38 @@ pub(super) fn usage_from(fields: &EventFields) -> UsageLite {
         cache_creation: fields.cw.unwrap_or(0),
         output: fields.out.unwrap_or(0),
         model: fields.model.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// ADR-0044 D2/D9: `EventFields.effort` doc names the five-rung lexicon —
+    /// not Copilot-local `minimal`.
+    #[test]
+    fn effort_field_doc_names_five_rung_lexicon() {
+        let prod = include_str!("fields.rs")
+            .split("\nmod tests {")
+            .next()
+            .expect("production half");
+        let doc = prod
+            .split("pub effort:")
+            .next()
+            .expect("effort field")
+            .rsplit("/// Reasoning effort rung")
+            .next()
+            .expect("effort doc");
+        assert!(
+            doc.contains("xhigh"),
+            "effort doc must list xhigh (ADR-0044 D2): {doc}"
+        );
+        let minimal = concat!("`", "minimal`");
+        assert!(
+            !doc.contains(minimal),
+            "effort doc must not list minimal as a rung (ADR-0044 D2): {doc}"
+        );
+        assert!(
+            doc.contains("ADR-0044 D9"),
+            "effort doc must keep the empty/no-op clause: {doc}"
+        );
     }
 }

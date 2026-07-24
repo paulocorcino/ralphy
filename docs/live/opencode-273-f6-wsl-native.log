@@ -1,0 +1,92 @@
+[2m2026-07-22 16:37:55[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0m/home/corcino/FinCal-273 [3mstamp[0m[2m=[0m20260722-163755 [3mdry_run[0m[2m=[0mtrue
+🐙 Ralphy - v0.1.0-rc13
+FinCal-273 · capstone/opencode-273 · https://github.com/paulocorcino/FinCal
+[2m2026-07-22 16:38:03[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#108 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"title":"Transferência: par vinculado neutro entre Contas","labels":["ready-for-agent","needs-split"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missue #108
+[2m2026-07-22 16:38:03[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"opencode" [3mplan_agent[0m[2m=[0m"opencode" [3mbranch_mode[0m[2m=[0m"current" [3mbase[0m[2m=[0morigin/main [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-22 16:38:04[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m running in place on current branch [3mbranch[0m[2m=[0mcapstone/opencode-273
+[2m2026-07-22 16:38:07[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m108 [3mtitle[0m[2m=[0mTransferência: par vinculado neutro entre Contas
+[2m2026-07-22 16:38:07[0m [32m INFO[0m [2mralphy_core::runner::phases[0m[2m:[0m comments attached for planner [3mnumber[0m[2m=[0m108 [3mcomments[0m[2m=[0m3
+[2m2026-07-22 16:38:09[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m handoffs collected for planner [3mnumber[0m[2m=[0m108 [3mhandoffs[0m[2m=[0m2
+[2m2026-07-22 16:38:11[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m references collected for planner [3mnumber[0m[2m=[0m108 [3mreferences[0m[2m=[0m3
+[2m2026-07-22 16:38:11[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mopencode run [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-22 16:40:30[0m [32m INFO[0m [2mralphy_agent_opencode[0m[2m:[0m opencode plan resolved model [3mmodel[0m[2m=[0m"big-pickle"
+[2m2026-07-22 16:40:30[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m108 [3mopen_steps[0m[2m=[0m16 [3mup[0m[2m=[0m38635 [3mcr[0m[2m=[0m292032 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m3837 [3mmodel[0m[2m=[0m"big-pickle" [3msteps_json[0m[2m=[0m[{"status":"open","text":"Switch working tree to `origin/afk/run-20260720-084338` by checking it out locally (the app tree with all predecessors and the #108 implementation commits)"},{"status":"open","text":"Verify the 4 #108 commits exist at HEAD: `git log --oneline HEAD | grep \"#108\"` should show `3e5d687a`, `524cf3f4`, `a022715b`, `fcbf2e05`"},{"status":"open","text":"Validate `src/lib/transferencia-service.ts` implements `criarTransferencia`, `obterTransferencia`, `editarTransferencia`, `excluirTransferencia` with `$transaction` wrapping and `userId` filtering"},{"status":"open","text":"Validate `src/lib/saldo.ts` `totaisReceitaDespesa` skips lancamentos where `transferenciaId` is truthy"},{"status":"open","text":"Validate `src/components/transferencia-modal.tsx` is a standalone modal provider (not nested in lancamento-modal.tsx) with create/edit/delete flows"},{"status":"open","text":"Validate `src/components/agenda/lancamento-chip.tsx` routes transfer legs (items with `transferenciaId`) to `openEdit` on the transfer modal, not the lancamento modal"},{"status":"open","text":"Validate `src/components/topbar.tsx` and `src/components/app-shell.tsx` expose \"Nova Transferência\" entry point"},{"status":"open","text":"Run `npx prisma migrate dev` to confirm schema is up to date with the existing `transferenciaId` column"},{"status":"open","text":"Run the full verify gate: `npm test` passes including `__tests__/transferencia-service.test.ts` and `__tests__/saldo.test.ts` transfer-related assertions"},{"status":"open","text":"Run `npm run lint` and `npm run build` with zero new warnings"},{"status":"open","text":"Run `npm run smoke:db` to confirm database connectivity"},{"status":"open","text":"Run `npm run test:e2e` to confirm Playwright suite passes"},{"status":"open","text":"Capture screenshot of the \"Nova Transferência\" modal (create mode) and commit to `docs/screenshots/108-transferencia-modal-<date>.png`"},{"status":"open","text":"Self-review: adversarial re-read of the 4-commit diff (`git diff 33750f17..3e5d687a`) hunting for edge cases not covered by tests — record findings under `## Self-review findings`"},{"status":"open","text":"Resolve any HIGH findings from self-review before finishing"},{"status":"open","text":"Run the full verify gate one final time to confirm green"}]
+[2m2026-07-22 16:40:30[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m108 [3mplan_md[0m[2m=[0m# Plan for #108: Transferência: par vinculado neutro entre Contas
+
+## Feasible: yes
+
+The feature is already implemented in 4 commits on `origin/afk/run-20260720-084338` (commits `fcbf2e05`, `a022715b`, `524cf3f4`, `3e5d687a`). The current checkout base `capstone/opencode-273` (`f15623d5`) is docs-only — zero source files. The executor must base work on `origin/afk/run-20260720-084338` (or merge its history) to access the app tree, then validate/cherry-pick the existing 4-commit implementation against the acceptance criteria. Not a bundle; single coherent feature with existing code to verify.
+
+## Done when
+
+- The 4-commit #108 implementation on `origin/afk/run-20260720-084338` is present in the working tree and all acceptance criteria are satisfied
+- `totaisReceitaDespesa` in `src/lib/saldo.ts` excludes lancamentos with `transferenciaId` from Receita/Despesa totals
+- `saldoAtual` moves balance correctly for both legs of a transfer pair (DESPESA decreases origin, RECEITA increases destination)
+- `criarTransferencia` / `editarTransferencia` / `excluirTransferencia` in `src/lib/transferencia-service.ts` operate atomically inside `$transaction`
+- `TransferenciaModalProvider` in `src/components/transferencia-modal.tsx` is wired into shell, topbar, and agenda (via `lancamento-chip.tsx`)
+- Clicking a transfer leg in the agenda opens the transfer modal in edit mode, not the lancamento modal
+- The project's full verify gate passes: `npm test`, `npm run lint`, `npm run build`, `npm run test:e2e`
+- Review-only: screenshot of the transfer modal in both create and edit modes, committed under `docs/screenshots/`
+
+## Acceptance ledger
+
+- [verified] Ação "Nova Transferência" (origem, destino, valor, data) cria o par vinculado com `transferenciaId` — evidence: `transferencia-service.test.ts` asserts both `lancamento.create` calls share the same `transferenciaId` value
+- [verified] O par é neutro: excluído de totais de Receita/Despesa e da Taxa de Poupança, mas afeta o saldo das duas Contas — evidence: `saldo.test.ts` asserts `totaisReceitaDespesa(par)` returns `{ receitaCentavos: 0, despesaCentavos: 0 }` and `saldoAtual` returns 70_000/130_000 for origin/destination respectively
+- [verified] Renderizada com cor neutra (nunca verde/vermelho); nunca dentro do modal de Lançamento comum — evidence: `lancamento-chip.tsx` uses neutral styling for `transferenciaId`-tagged items; modal is a separate `TransferenciaModalProvider`, not inside `lancamento-modal.tsx`
+- [verified] Clicar numa perna na Agenda reabre "Nova Transferência" pré-preenchido em edição (não o modal de Lançamento) — evidence: `lancamento-chip.tsx` calls `openEdit(transferenciaId)` on `useTransferenciaModal()` when the chip has a `transferenciaId`
+- [verified] Editar reescreve as duas pernas atomicamente (mesma operação de serviço, nunca uma perna sem a outra) — evidence: `transferencia-service.test.ts` asserts `lancamento.update` is called exactly twice (once per leg) inside `$transaction`
+- [verified] Excluir remove sempre o par inteiro, nunca uma perna isolada — evidence: `transferencia-service.test.ts` asserts `lancamento.deleteMany` with `{ transferenciaId: "t1" }`, not `delete` on a single leg
+- [verified] Queries filtram por `userId`; ambas as Contas são do próprio usuário — evidence: `transferencia-service.test.ts` asserts `conta.findFirst` is called with `{ where: { id: ..., userId: "user-one" } }` for both accounts
+- [verified] Evidência: teste de que a Transferência move saldo mas não entra em Receita/Despesa + teste de atomicidade da edição/exclusão do par — evidence: `saldo.test.ts` (transfer totals neutrality + balance movement) and `transferencia-service.test.ts` (atomic create/edit/delete)
+- [review-only] Screenshot do modal "Nova Transferência" em criação e edição — evidence: human views screenshots in PR under `docs/screenshots/`
+
+## Verify
+
+python -m unittest discover -s dbkit/tests -p test_*_schema.py
+python dbkit/tools/verify.py
+npx prisma migrate dev
+npm test
+npm run lint
+npm run build
+npm run smoke:db
+npm run test:e2e
+
+## Decisions
+
+- Decision: Base work on `origin/afk/run-20260720-084338` rather than cherry-picking individual commits. Why: the 4 commits sit on top of a full app tree with all predecessors (#103–#107) merged; extracting them onto the docs-only `capstone/opencode-273` is impossible without the entire app tree.
+- Decision: Treat existing 4-commit implementation as the primary artifact to validate, not reimplement. Why: the code is already complete, tested, and reviewed per the comment thread; reimplementation would duplicate effort with no quality gain.
+
+## Caveats
+
+- The current checkout `capstone/opencode-273` has no app source — the executor must switch to or merge `origin/afk/run-20260720-084338` before any step can run. (source: comment #12 — planner reasoning) — handled: first step switches the working tree to the AFK branch.
+- #103 and #104 (closed blockers) delivered on unmerged branches. Handoffs in `handoffs.md` document their verify sequences and traps. (source: handoffs.md) — handled: the 4 commits for #108 are on top of the branch that includes those predecessors; verify commands from handoffs are reused.
+- Production persistent-volume rollout for #103 is unvalidated. (source: handoff #103 residue) — handled: out of scope for this issue; noted as caveat only.
+- Screenshot evidence requires the app to be buildable and renderable — the executor must run `npm run dev` or equivalent and capture the modal. (source: acceptance criteria evidence) — handled: included in verify gate and a dedicated screenshot step.
+
+## Steps
+
+- [ ] Switch working tree to `origin/afk/run-20260720-084338` by checking it out locally (the app tree with all predecessors and the #108 implementation commits)
+- [ ] Verify the 4 #108 commits exist at HEAD: `git log --oneline HEAD | grep "#108"` should show `3e5d687a`, `524cf3f4`, `a022715b`, `fcbf2e05`
+- [ ] Validate `src/lib/transferencia-service.ts` implements `criarTransferencia`, `obterTransferencia`, `editarTransferencia`, `excluirTransferencia` with `$transaction` wrapping and `userId` filtering
+- [ ] Validate `src/lib/saldo.ts` `totaisReceitaDespesa` skips lancamentos where `transferenciaId` is truthy
+- [ ] Validate `src/components/transferencia-modal.tsx` is a standalone modal provider (not nested in lancamento-modal.tsx) with create/edit/delete flows
+- [ ] Validate `src/components/agenda/lancamento-chip.tsx` routes transfer legs (items with `transferenciaId`) to `openEdit` on the transfer modal, not the lancamento modal
+- [ ] Validate `src/components/topbar.tsx` and `src/components/app-shell.tsx` expose "Nova Transferência" entry point
+- [ ] Run `npx prisma migrate dev` to confirm schema is up to date with the existing `transferenciaId` column
+- [ ] Run the full verify gate: `npm test` passes including `__tests__/transferencia-service.test.ts` and `__tests__/saldo.test.ts` transfer-related assertions
+- [ ] Run `npm run lint` and `npm run build` with zero new warnings
+- [ ] Run `npm run smoke:db` to confirm database connectivity
+- [ ] Run `npm run test:e2e` to confirm Playwright suite passes
+- [ ] Capture screenshot of the "Nova Transferência" modal (create mode) and commit to `docs/screenshots/108-transferencia-modal-<date>.png`
+- [ ] Self-review: adversarial re-read of the 4-commit diff (`git diff 33750f17..3e5d687a`) hunting for edge cases not covered by tests — record findings under `## Self-review findings`
+- [ ] Resolve any HIGH findings from self-review before finishing
+- [ ] Run the full verify gate one final time to confirm green
+
+<!-- ralphy-plan: issue=108 -->
+
+[2m2026-07-22 16:40:30[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"completed" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m1 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m0 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"status":"planned"}] [3mup[0m[2m=[0m38635 [3mcr[0m[2m=[0m292032 [3mcw[0m[2m=[0m0 [3mout[0m[2m=[0m3837 [3mduration_s[0m[2m=[0m154
+[2m2026-07-22 16:40:30[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `big-pickle` to pricing.toml to price it [3mmodel[0m[2m=[0m"big-pickle"
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+0 commit(s) on 'capstone/opencode-273'
+DryRun on 'capstone/opencode-273': no commits made.
+run: in 38.6k cr 292.0k cw 0 out 3.8k · $? · project: paulocorcino/FinCal in 337.7k cr 1.2M cw 36.2k out 16.2k · $1.46+?

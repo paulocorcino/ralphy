@@ -6,8 +6,8 @@ use clap::Args;
 use ralphy_core::{git, github, gitignore, DiagnosisReport, DraftRequest, IssuesMode, Workspace};
 
 use super::gate::{
-    agent_logged_in, agent_present, evaluate_gate, gh_authenticated, github_remote, python_present,
-    Agent, EnvFindings,
+    agent_logged_in, agent_present, evaluate_gate, gh_authenticated, git_present, github_remote,
+    python_present, Agent, EnvFindings,
 };
 use super::issues::{
     decide_issues_path, draft_decision, draft_with_agent, format_draft_summary, load_issues_draft,
@@ -139,6 +139,16 @@ fn diagnose_with_agent(
             ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
 
+        Agent::Copilot => {
+            ralphy_agent_copilot::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+        Agent::Gemini => {
+            ralphy_agent_gemini::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+        Agent::Cursor => {
+            ralphy_agent_cursor::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
+        }
+
         Agent::Kimi => ralphy_agent_kimi::diagnose_repo(repo, neutral_cwd, model, effort, timeout),
 
         Agent::Opencode => {
@@ -208,7 +218,12 @@ fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> 
 fn init_model_for(agent: Agent) -> Option<&'static str> {
     match agent {
         Agent::Claude => Some("sonnet"),
-        Agent::Codex | Agent::Opencode | Agent::Kimi => None,
+        Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Gemini
+        | Agent::Opencode
+        | Agent::Kimi => None,
     }
 }
 
@@ -312,6 +327,7 @@ pub fn run(args: &InitArgs) -> Result<()> {
             .filter(agent_logged_in)
             .collect();
         EnvFindings {
+            git: git_present(),
             python: python_present(),
             gh_authenticated: gh_authenticated(),
             github_remote: github_remote(&repo),

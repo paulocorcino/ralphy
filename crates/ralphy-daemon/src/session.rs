@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::OsString;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::JoinHandle;
@@ -33,6 +33,11 @@ pub struct SessionSpec {
     pub cwd: PathBuf,
     pub rows: u16,
     pub cols: u16,
+    /// Extra environment for the child, applied on the spawn path ONLY
+    /// ([`Session::spawn`]). A vendor whose containment lives in an env var —
+    /// Gemini's `GEMINI_CLI_HOME` (ADR-0043 D4) — is isolated by this and nothing
+    /// else, so no other construction site may skip it.
+    pub env: Vec<(OsString, OsString)>,
 }
 
 /// The agents the launcher can start. Maps to a concrete program via
@@ -42,16 +47,37 @@ pub struct SessionSpec {
 pub enum Agent {
     Claude,
     Codex,
+    Copilot,
+    Cursor,
+    Gemini,
+    Kimi,
     OpenCode,
 }
 
 impl Agent {
+    /// Every launchable vendor. The anti-drift tests (the workbench trio, the
+    /// usage-store resolvers) enumerate the daemon's vendors from here, so an
+    /// eighth variant reds them instead of passing silently.
+    pub const ALL: [Agent; 7] = [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Copilot,
+        Agent::Cursor,
+        Agent::Gemini,
+        Agent::Kimi,
+        Agent::OpenCode,
+    ];
+
     /// Parse the `agent=` query value. Unknown values yield `None` so the route
     /// can reject them rather than launching a surprise program.
     pub fn from_query(value: &str) -> Option<Agent> {
         match value {
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
+            "copilot" => Some(Agent::Copilot),
+            "cursor" => Some(Agent::Cursor),
+            "gemini" => Some(Agent::Gemini),
+            "kimi" => Some(Agent::Kimi),
             "opencode" => Some(Agent::OpenCode),
             _ => None,
         }
@@ -62,7 +88,35 @@ impl Agent {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            // The GitHub Copilot CLI ships as `copilot`, the same name the
+            // adapter resolves for its headless calls (ADR-0041).
+            Agent::Copilot => "copilot",
+            // Cursor ships one binary under two names (`cursor-agent`, `agent`)
+            // across three install roots and is on `PATH` under NEITHER
+            // (ADR-0042 D14) — so this name is only the fallback that makes a
+            // spawn failure legible; [`Agent::resolve_program`] does the real work.
+            Agent::Cursor => "cursor-agent",
+            // npm installs the Gemini CLI as `gemini` (+ a `.CMD`/`.ps1` shim on
+            // Windows); the shared resolver already picks the `.CMD` (#253), so
+            // this vendor needs no bespoke locator.
+            Agent::Gemini => "gemini",
+            // `kimi-code` ships its binary as `kimi` — the same name the adapter
+            // resolves for its headless calls (ADR-0028 D5).
+            Agent::Kimi => "kimi",
             Agent::OpenCode => "opencode",
+        }
+    }
+
+    /// What a `Command` should be constructed with. Every vendor but Cursor is
+    /// found on `PATH` (plus the `~/.local/bin` fallback); Cursor needs its own
+    /// locator, shared with the run path so detection and execution cannot
+    /// disagree (ADR-0042 D14/D19).
+    fn resolve_program(self) -> OsString {
+        match self {
+            Agent::Cursor => ralphy_proc_util::cursor::locate_cursor()
+                .map(PathBuf::into_os_string)
+                .unwrap_or_else(|| self.program_name().into()),
+            _ => ralphy_proc_util::resolve_program(self.program_name()),
         }
     }
 }
@@ -76,18 +130,89 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// program is resolved through `ralphy_proc_util::resolve_program` (Windows
 /// `.cmd`/`.exe` shims included), unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a
 /// program to run instead.
+///
+/// Gemini alone carries args and env: an interactive launch must land in the SAME
+/// owned configuration root and under the SAME policy document a `ralphy run`
+/// uses (ADR-0043 D4/D6), which is `GEMINI_CLI_HOME` plus the global `--policy`
+/// flag. The route refuses the launch when that document is absent, so this
+/// function never has to invent one.
 pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
-        None => ralphy_proc_util::resolve_program(agent.program_name()),
+        None => agent.resolve_program(),
+    };
+    let (args, env) = match agent {
+        Agent::Gemini => (
+            vec![
+                OsString::from("--policy"),
+                gemini_policy_path(&cwd).into_os_string(),
+            ],
+            vec![(
+                OsString::from("GEMINI_CLI_HOME"),
+                gemini_home(&cwd).into_os_string(),
+            )],
+        ),
+        _ => (Vec::new(), Vec::new()),
     };
     SessionSpec {
         program,
-        args: Vec::new(),
+        args,
         cwd,
         rows,
         cols,
+        env,
     }
+}
+
+/// Ralphy's owned Gemini configuration root inside a repo: `<repo>/.ralphy/`'s
+/// `gemini-home`. This is what `GEMINI_CLI_HOME` names — the CLI appends
+/// `.gemini` to it itself (ADR-0043 D4).
+///
+/// The daemon may not import `ralphy-agent-gemini` (ADR-0032 §10), so the layout
+/// is duplicated here; `the_gemini_root_layout_matches_the_adapters_own` reds if
+/// the adapter renames either component.
+pub fn gemini_home(repo_root: &Path) -> PathBuf {
+    repo_root.join(".ralphy").join(GEMINI_ROOT_DIR)
+}
+
+/// The policy document inside the owned root:
+/// `<repo>/.ralphy/gemini-home/.gemini/ralphy-policy.toml`. Its presence is what
+/// the session route gates a Gemini launch on.
+pub fn gemini_policy_path(repo_root: &Path) -> PathBuf {
+    gemini_home(repo_root)
+        .join(GEMINI_CLI_SUBDIR)
+        .join(GEMINI_POLICY_FILE)
+}
+
+const GEMINI_ROOT_DIR: &str = "gemini-home";
+const GEMINI_CLI_SUBDIR: &str = ".gemini";
+const GEMINI_POLICY_FILE: &str = "ralphy-policy.toml";
+
+/// Whether the operator opted in to Cursor's codebase upload for `repo_root`,
+/// read from `<repo_root>/.ralphy/settings.json`'s
+/// `["cursor"]["allow_codebase_indexing_i_understand_the_risk"]`.
+///
+/// The schema is `ralphy-agent-cursor`'s `CursorSettings`, but the daemon may not
+/// import the core (ADR-0032 §10), so it reparses the file — the same precedent
+/// `registry.rs` sets for `repos.toml`. `the_optin_key_matches_the_adapters_own_schema`
+/// reds if the adapter renames either key.
+///
+/// INVARIANT: every failure path — no file, unreadable, malformed JSON, wrong
+/// type — yields `false`. Refusal is the safe default: an unreadable settings
+/// file must never be what opens the upload.
+pub fn cursor_indexing_allowed(repo_root: &Path) -> bool {
+    let path = repo_root.join(".ralphy").join("settings.json");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| {
+            v.get("cursor")?
+                .get("allow_codebase_indexing_i_understand_the_risk")?
+                .as_bool()
+        })
+        .unwrap_or(false)
 }
 
 /// The platform's default interactive shell for the free console (issue #167).
@@ -130,6 +255,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
         cwd,
         rows,
         cols,
+        env: Vec::new(),
     }
 }
 
@@ -155,10 +281,13 @@ impl Session {
     /// runs on a dedicated `std::thread` (a blocking read must not sit on the
     /// tokio runtime); each chunk is sent non-blocking over the unbounded channel.
     pub fn spawn(spec: SessionSpec) -> Result<Session> {
-        let cmd = PtyCommand::new(spec.program)
+        let mut cmd = PtyCommand::new(spec.program)
             .args(spec.args)
             .cwd(&spec.cwd)
             .size(spec.rows, spec.cols);
+        for (k, v) in spec.env {
+            cmd = cmd.env(k, v);
+        }
         let pty = PtySession::spawn(cmd)?;
         let mut reader = pty.reader()?;
         let (tx, rx): (UnboundedSender<Vec<u8>>, UnboundedReceiver<Vec<u8>>) = unbounded_channel();
@@ -610,5 +739,209 @@ mod tests {
             ralphy_proc_util::home_dir().unwrap_or_else(|| PathBuf::from(".")),
             "no chosen repo falls back to the home directory (or '.' if unresolvable)"
         );
+    }
+
+    #[test]
+    fn every_agent_parses_from_its_query_value_and_names_a_program() {
+        // The daemon's enum is hand-kept in step with the CLI's `--agent` values
+        // (ADR-0040 Tier 4). A vendor missing here is invisible to the compiler —
+        // `from_query` just returns `None` and the daemon refuses the spawn, which
+        // is exactly how Kimi went unreachable from the workbench (issue #228).
+        for (value, agent, program) in [
+            ("claude", Agent::Claude, "claude"),
+            ("codex", Agent::Codex, "codex"),
+            ("copilot", Agent::Copilot, "copilot"),
+            ("cursor", Agent::Cursor, "cursor-agent"),
+            ("gemini", Agent::Gemini, "gemini"),
+            ("kimi", Agent::Kimi, "kimi"),
+            ("opencode", Agent::OpenCode, "opencode"),
+        ] {
+            assert_eq!(
+                Agent::from_query(value),
+                Some(agent),
+                "`agent={value}` must parse — an unparsed vendor cannot be launched"
+            );
+            assert_eq!(
+                agent.program_name(),
+                program,
+                "{value} must resolve the program the adapter itself shells"
+            );
+        }
+        assert_eq!(
+            Agent::from_query("bash"),
+            None,
+            "an unknown value stays unparsed rather than launching a surprise program"
+        );
+    }
+
+    /// ADR-0042 D14: `cursor-agent` is not reliably on `PATH`, and where it IS it
+    /// is only because the installer added `%LOCALAPPDATA%\cursor-agent` — an
+    /// accident the daemon must not depend on. So the Cursor arm must go through
+    /// the shared vendor locator, which knows the two names and three install
+    /// roots, not through the plain `PATH` resolver.
+    ///
+    /// Deliberately mutates NO environment: blanking `PATH`/`HOME` to force the
+    /// resolvers apart would reach every other test in this binary (`registry.rs`
+    /// shells `git`; `identity.rs` resolves `HOME` under its own separate lock),
+    /// turning one test's setup into another's flake. Instead the wiring is pinned
+    /// at the source — rewriting the arm as `resolve_program` reds this on EVERY
+    /// host, including one where the two happen to agree — and the behaviour is
+    /// asserted against the locator's live answer.
+    #[test]
+    fn cursor_resolves_off_path_through_the_vendor_locator() {
+        let src = include_str!("session.rs");
+        let production = src.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            production.contains("Agent::Cursor => ralphy_proc_util::cursor::locate_cursor()"),
+            "the Cursor arm must resolve through the shared vendor locator (D14/D19)"
+        );
+
+        // Env-free and non-vacuous on a host with Cursor installed: `spec_for` must
+        // yield the locator's real path, never the bare fallback name. Skipped when
+        // the stand-in override is exported into the whole test run — no test here
+        // sets it, but an operator's shell can.
+        if std::env::var_os(AGENT_OVERRIDE_ENV).is_none() {
+            assert_eq!(
+                spec_for(Agent::Cursor, PathBuf::from("."), 24, 80).program,
+                ralphy_proc_util::cursor::locate_cursor()
+                    .map(PathBuf::into_os_string)
+                    .unwrap_or_else(|| OsString::from("cursor-agent"))
+            );
+        }
+        // The `RALPHY_DAEMON_AGENT_OVERRIDE` seam is NOT bypassed for this vendor:
+        // proved end-to-end by `tests/session_ws_cursor.rs`, which launches the
+        // helper bin through `agent=cursor`.
+    }
+
+    /// `ALL` is hand-written, so a seventh variant added to the enum and to
+    /// `agent_flag` — but forgotten here — would leave every pin that iterates it
+    /// silently vacuous, which is exactly the ADR-0040 Tier 4 drift those pins
+    /// exist to catch. The `match` below is exhaustive, so the compiler forces the
+    /// count to be revisited.
+    #[test]
+    fn all_enumerates_every_enum_variant() {
+        fn tag(a: Agent) -> u8 {
+            match a {
+                Agent::Claude => 0,
+                Agent::Codex => 1,
+                Agent::Copilot => 2,
+                Agent::Cursor => 3,
+                Agent::Gemini => 4,
+                Agent::Kimi => 5,
+                Agent::OpenCode => 6,
+            }
+        }
+        let mut tags: Vec<u8> = Agent::ALL.iter().copied().map(tag).collect();
+        tags.sort_unstable();
+        tags.dedup();
+        assert_eq!(
+            tags,
+            (0..=6).collect::<Vec<u8>>(),
+            "Agent::ALL must list every variant exactly once"
+        );
+    }
+
+    /// The daemon reparses the adapter's settings file rather than importing the
+    /// core (ADR-0032 §10), so the two schemas can drift silently. This is the pin:
+    /// rename either name in the adapter and the daemon's gate reds here.
+    #[test]
+    fn the_optin_key_matches_the_adapters_own_schema() {
+        let src = include_str!("../../ralphy-agent-cursor/src/settings.rs");
+        assert!(
+            src.contains("allow_codebase_indexing_i_understand_the_risk"),
+            "the adapter renamed the opt-in key the daemon reparses"
+        );
+        assert!(
+            src.contains(r#"SECTION: &'static str = "cursor""#),
+            "the adapter renamed the settings section the daemon reparses"
+        );
+    }
+
+    /// Same drift risk as `the_optin_key_matches_the_adapters_own_schema`, one
+    /// layer down: the daemon duplicates the owned root's three path components
+    /// rather than importing `ralphy-agent-gemini` (ADR-0032 §10). Rename one in
+    /// the adapter and the daemon would silently point a launch — and its refusal
+    /// gate — at a directory the CLI never reads.
+    #[test]
+    fn the_gemini_root_layout_matches_the_adapters_own() {
+        let root = include_str!("../../ralphy-agent-gemini/src/root.rs");
+        assert!(
+            root.contains(r#"ROOT_DIR_NAME: &str = "gemini-home""#),
+            "the adapter renamed the owned root directory the daemon duplicates"
+        );
+        assert!(
+            root.contains(r#"CLI_SUBDIR: &str = ".gemini""#),
+            "the adapter renamed the CLI subdirectory the daemon duplicates"
+        );
+        let policy = include_str!("../../ralphy-agent-gemini/src/policy.rs");
+        assert!(
+            policy.contains(r#"POLICY_FILE: &str = "ralphy-policy.toml""#),
+            "the adapter renamed the policy document the daemon's launch gate checks"
+        );
+    }
+
+    /// A Gemini launch must carry BOTH halves of the containment: the env var the
+    /// CLI reads its root from, and the global flag the policy rides on. A spec
+    /// with one and not the other launches an unconstrained child.
+    #[test]
+    fn gemini_launches_under_the_owned_root_and_its_policy() {
+        let repo = PathBuf::from("C:/Dev/FinCal");
+        let spec = spec_for(Agent::Gemini, repo.clone(), 24, 80);
+        assert_eq!(
+            spec.env,
+            vec![(
+                OsString::from("GEMINI_CLI_HOME"),
+                gemini_home(&repo).into_os_string()
+            )]
+        );
+        assert_eq!(
+            spec.args,
+            vec![
+                OsString::from("--policy"),
+                gemini_policy_path(&repo).into_os_string()
+            ]
+        );
+        assert!(gemini_home(&repo).ends_with("gemini-home"));
+        assert!(gemini_policy_path(&repo).ends_with("ralphy-policy.toml"));
+
+        // Every other vendor keeps the bare interactive launch.
+        let bare = spec_for(Agent::Claude, repo, 24, 80);
+        assert!(bare.args.is_empty() && bare.env.is_empty());
+    }
+
+    /// The refusal is the safe default: only an explicit `true` opens the upload.
+    #[test]
+    fn cursor_indexing_allowed_defaults_to_false() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(
+            !cursor_indexing_allowed(d.path()),
+            "no .ralphy/ at all must not opt in"
+        );
+
+        let settings = d.path().join(".ralphy").join("settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        for (body, want) in [
+            ("{}", false),
+            (
+                r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":true}}"#,
+                true,
+            ),
+            (
+                r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":"yes"}}"#,
+                false,
+            ),
+            (
+                r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":false}}"#,
+                false,
+            ),
+            ("not json", false),
+        ] {
+            std::fs::write(&settings, body).unwrap();
+            assert_eq!(
+                cursor_indexing_allowed(d.path()),
+                want,
+                "settings.json = {body}"
+            );
+        }
     }
 }

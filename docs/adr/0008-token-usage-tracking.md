@@ -234,8 +234,8 @@ The record:
   "actor_email":    "dev@example.com",     // D7
   "actor_name":     "Dev Name",            // D7
   "ralphy_version": "0.1.0-rc5",           // env!("CARGO_PKG_VERSION")
-  "issue":          42,
-  "phase":          "execute",             // plan | execute
+  "issue":          42,                    // 0 for a run-level phase (consolidate)
+  "phase":          "execute",             // plan | execute | consolidate
   "agent":          "claude",              // claude | codex | opencode
   "model":          "claude-opus-4-8",     // resolves the price table (D8)
   "outcome":        "done",                // terminal status of THIS phase
@@ -423,6 +423,16 @@ every question, and a service is the infra D1 refused), and baking USD into the
 export (it must stay a read-time projection so a re-priced table re-exports
 correctly).
 
+**A second read-time view (issue #270): the Cursor harvest-tax estimate — since
+removed.** Cursor injects a measured floor of foreign-skill input tokens per
+invocation (ADR-0042 D12) that folds into the ordinary `input` field. This was
+briefly surfaced as a read-time `harvest est:` projection on the `done` line and
+run footer, but was removed: the estimate was built from a hardcoded floor and a
+hardcoded foreign-skill count that did not reflect the operator's actual
+environment, so it overstated its own precision. The harvested tokens still ride
+the run's recorded `input` counts (tokens-as-truth, D2); Ralphy no longer derives
+a separate figure from them.
+
 ## Consequences
 
 - The core gains a vendor-agnostic `Usage` type and a `usage` field on `Plan`
@@ -462,3 +472,39 @@ correctly).
   production harness already does. OpenCode and Codex remain proven-by-design; the
   first production slice (the `Usage` type, the Claude-exec capture, the ledger
   append) starts from these validated foundations.
+
+## Amendment 1 — the run-level `consolidate` phase (issue #269)
+
+D3 recorded the phase as the granularity and issue/run/project totals as pure
+roll-ups over `plan` and `execute` lines. The **end-of-run knowledge-consolidation
+pass** (ADR-0031, dispatched on the run's executor `--agent`) is a real, separate
+vendor invocation, but it fired *outside* any per-issue accounting frame and its
+adapter entry point returned `()`, so its tokens reached neither a per-issue total
+nor the ledger — under-reporting real vendor spend by a whole invocation (for the
+Cursor capstone, ralphy#251, the consolidation pass was the run's single largest
+event).
+
+The fix keeps D3's shape and adds one phase value:
+
+- **`phase: "consolidate"`, `issue: 0`.** Consolidation is a per-**run** call (it
+  runs once after the queue drains, not per issue), so it carries the run-level
+  sentinel `issue = 0` — real issue numbers start at `1`, so a per-issue query
+  skips it and the project/run roll-ups include it. Written by
+  `ledger::append_run_phase`, not the runner's `RunLedger` (consolidation fires
+  from the cli, outside any `IssueCtx`). Best-effort like every D6 write; a
+  zero-token pass writes nothing.
+- **Adapter seam.** Every adapter's `consolidate_knowledge` now returns `Usage`
+  (was `()`), parsed from the same vendor stream the plan/execute path reads.
+  Cursor was live-validated first (its one-shot builder carries
+  `--output-format stream-json`, so `parse_cursor_usage` reads the terminal
+  `result` record, D11). Issue #276 then closed the remaining six: each captures its
+  consolidation-session tokens the way that adapter's own `plan`/`execute` already
+  does — a log/stream parse (`claude`, `gemini`, `opencode`), a minted `--session-id`
+  read back from the session store (`copilot`), or a sessions-dir snapshot-diff
+  (`codex`, `kimi`). No adapter returns `Usage::default()` any longer; token capture
+  for the `consolidate` phase is live across all seven vendors.
+- **Roll-ups.** The consolidation `Usage` folds into this run's total, the
+  `run.finished` event (ADR-0019), and the panel run figure, and shows as a
+  distinct `consolidate:` footer segment so the overhead stays legible beside the
+  run total it is part of. It never touches any **per-issue** rollup — it is run
+  overhead, not issue work.

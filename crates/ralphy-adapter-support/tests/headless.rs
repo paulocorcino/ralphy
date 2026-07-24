@@ -18,6 +18,7 @@ const CLEAN_STDERR: &str = "hello-from-stderr";
 const LARGE_LEN: usize = 200_000;
 const STDERR_MARKER: &str = "quota-marker: usage limit reached";
 const DEGRADED_MARKER: &str = "Waiting for API response";
+const LEAK_MARKER: &str = "output-before-the-leak";
 
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/
 /// stderr piped exactly as the adapters do before handing the command off.
@@ -65,6 +66,37 @@ fn timeout_kills_child_and_returns_promptly() {
     assert!(
         elapsed < Duration::from_secs(30),
         "run_headless returned promptly after the deadline (took {elapsed:?})"
+    );
+}
+
+#[test]
+fn natural_exit_with_leaked_grandchild_still_captures_the_output() {
+    // The cursor #244 shape: the agent CLI exits ON ITS OWN, but an orphan it
+    // spawned inherits stdout and holds the write-end open. Before the
+    // pre-collect tree-kill, the reader never reached EOF, the collect grace
+    // expired, and the capture came back EMPTY — silently dropping the very
+    // output the limit/auth detectors scan. The reader delivers its buffer only
+    // at EOF, so capturing the marker proves the kill closed the leaked pipe.
+    let started = Instant::now();
+    let r = run_headless(
+        child_cmd("exit-leaking-grandchild"),
+        "ignored prompt",
+        Duration::from_secs(60),
+    )
+    .expect("run_headless should not error on a natural exit with a leaked orphan");
+    let elapsed = started.elapsed();
+
+    assert!(!r.timed_out, "the direct child exited on its own");
+    let status = r.exit.expect("a natural exit yields Some(status)");
+    assert!(status.success(), "the direct child exited 0");
+    assert!(
+        r.stdout.contains(LEAK_MARKER),
+        "the child's output is captured despite the leaked pipe holder — got {:?}",
+        r.stdout
+    );
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "returned promptly, not after the orphan's 60s lifetime (took {elapsed:?})"
     );
 }
 
@@ -341,6 +373,107 @@ fn healthy_child_with_a_degraded_matcher_survives() {
     let _ = std::fs::remove_file(&log_path);
 }
 
+// ── process-tree teardown: no descendant survives a kill ────────────────────
+
+/// A unique temp path for a per-test heartbeat file, written by the LEAF of the
+/// three-level helper tree.
+fn temp_heartbeat(tag: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "ralphy-headless-beat-{tag}-{}.txt",
+        std::process::id()
+    ))
+}
+
+/// Build the root of the three-level heartbeat tree, forwarding the leaf's
+/// heartbeat path as the second argv word.
+fn heartbeat_cmd(beat: &std::path::Path) -> Command {
+    let mut cmd = child_cmd("heartbeat-tree");
+    cmd.arg(beat);
+    cmd
+}
+
+/// Assert the tree really ran and then really stopped: ALL THREE levels wrote
+/// while it was alive (otherwise the whole test passes vacuously against a tree
+/// that never got built), and the file's byte length is UNCHANGED after a further
+/// 1.5 s — any surviving member would have appended ~15 more ticks in that window.
+fn assert_heartbeat_grew_then_froze(beat: &std::path::Path) {
+    let text = std::fs::read_to_string(beat).unwrap_or_default();
+    for label in ["L1", "L2", "leaf"] {
+        assert!(
+            text.contains(&format!("{label} tick")),
+            "level {label:?} never wrote, so its freeze proves nothing — got {text:?}"
+        );
+    }
+    let len_at_kill = text.len() as u64;
+    std::thread::sleep(Duration::from_millis(1500));
+    let len_after = std::fs::metadata(beat).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(
+        len_after, len_at_kill,
+        "a member of the tree outlived the kill and kept writing"
+    );
+}
+
+#[test]
+fn a_wall_timeout_leaves_no_surviving_descendant() {
+    // `timeout_with_surviving_grandchild_still_returns_promptly` only proves the
+    // CALL returns — the reader reaching EOF says nothing about whether the
+    // grandchild is still running. This is the missing half: the leaf's own writes
+    // must stop, which is the only observation that outlives the closed pipes.
+    let log_path = temp_log("beat-wall");
+    let beat = temp_heartbeat("wall");
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+
+    let r = HeadlessCall::new(
+        heartbeat_cmd(&beat),
+        "ignored prompt",
+        // 2 s, not the tighter margin the tree would also survive: the kill lands
+        // one 500 ms poll tick LATE, and everything before it must fit three
+        // sequential process creations on a contended CI runner. The tree sleeps
+        // 60 s either way, so a wider window costs the suite nothing.
+        Duration::from_secs(2),
+        &log_path,
+    )
+    .run()
+    .expect("a wall-timed tree run should not error");
+
+    assert!(r.timed_out, "the tree outlived its 2s wall timeout");
+    assert_heartbeat_grew_then_froze(&beat);
+
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+}
+
+#[test]
+fn an_idle_kill_leaves_no_surviving_descendant() {
+    // The idle path tears the tree down through a different door than the wall
+    // clock, so it needs its own proof. The leaf writes to a FILE, never to stdout,
+    // so nothing it does rearms the idle beacon — that is what makes a tree which
+    // is demonstrably alive still reachable by the watchdog.
+    let log_path = temp_log("beat-idle");
+    let beat = temp_heartbeat("idle");
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+
+    let r = HeadlessCall::new(
+        heartbeat_cmd(&beat),
+        "ignored prompt",
+        // A wall timeout the tree would happily sleep out: only the watchdog can
+        // end this run.
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .idle_window(Duration::from_secs(1))
+    .run()
+    .expect("an idle-watched tree run should not error");
+
+    assert!(r.idle_killed, "the idle watchdog fired, not the wall clock");
+    assert_heartbeat_grew_then_froze(&beat);
+
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&beat);
+}
+
 #[test]
 fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
     // `0` is the operator's opt-out: the silent child now runs to the wall timeout
@@ -491,4 +624,52 @@ fn large_output_is_captured_complete() {
         LARGE_LEN,
         "the full >64KB stream is captured with no truncation"
     );
+}
+
+/// The charter channel, proved end to end (#229 / ADR-0041 D2). Every headless
+/// adapter pipes a >23 KB charter on stdin because argv cannot carry it on
+/// Windows; a write that stops short would truncate the agent's instructions with
+/// no error anywhere. Markers on BOTH the first and last line, so a truncation at
+/// either end fails: a head-only assertion passes on a payload cut in half.
+#[test]
+fn stdin_payload_over_24kb_round_trips() {
+    const HEAD: &str = "RALPHY-STDIN-HEAD";
+    const TAIL: &str = "RALPHY-STDIN-TAIL";
+
+    let mut payload = String::from(HEAD);
+    payload.push('\n');
+    let mut i = 0usize;
+    while payload.len() < 24_576 {
+        payload.push_str(&format!("filler line {i} — padding the charter to size\n"));
+        i += 1;
+    }
+    payload.push_str(TAIL);
+    payload.push('\n');
+    assert!(payload.len() > 24_576, "payload is {} bytes", payload.len());
+
+    let log_path = temp_log("stdin-24kb");
+    let _ = std::fs::remove_file(&log_path);
+
+    let r = HeadlessCall::new(
+        child_cmd("echo-stdin"),
+        &payload,
+        Duration::from_secs(60),
+        &log_path,
+    )
+    .run()
+    .expect("the echo child should not error");
+
+    assert!(r.exited_cleanly, "child exited cleanly: {:?}", r.exit_code);
+    assert_eq!(
+        r.stdout.lines().next(),
+        Some(HEAD),
+        "the FIRST line survived the write"
+    );
+    assert_eq!(
+        r.stdout.lines().rfind(|l| !l.trim().is_empty()),
+        Some(TAIL),
+        "the LAST line survived the write"
+    );
+
+    let _ = std::fs::remove_file(&log_path);
 }

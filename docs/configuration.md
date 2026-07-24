@@ -111,6 +111,181 @@ so OpenCode picks its own. The model that **actually** ran is read back into the
 usage ledger, so the ledger is always truthful even when you let OpenCode decide.
 OpenCode effort is set per-run with `--exec-variant` (not persisted).
 
+## Copilot run defaults (`copilot.*`)
+
+| Key | Flag | Values | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `copilot.plan_model` | `--plan-model` | any model id Copilot offers | none | The persisted planning-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
+| `copilot.exec_model` | `--exec-model` | any model id Copilot offers | none | The persisted execution-phase model. When unset, `--model` is omitted (ADR-0041 D4). |
+| `copilot.plan_effort` | `--plan-effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | none | The reasoning effort *requested* for the planning phase. When unset, `--effort` is omitted (ADR-0041 D5). |
+| `copilot.exec_effort` | `--exec-effort` | same | none | The reasoning effort *requested* for the execution phase. When unset, `--effort` is omitted (ADR-0041 D5). |
+| `copilot.allow_builtin_mcp_servers_i_understand_the_risk` | none | `true`, `false` | `false` | **Danger.** The D7 escape hatch: drops `--disable-builtin-mcps` from the argv AND suppresses the connected-server failure. See below. |
+
+```powershell
+ralphy config set copilot.exec_model gpt-5
+ralphy config set copilot.exec_effort high
+```
+
+Resolution per phase: `--plan-model`/`--exec-model` (per-run) > `copilot.plan_model`/
+`copilot.exec_model` (persisted) > omit `--model` — an omitted `--model` runs the
+account's own current selection, the correct default rather than a degraded
+fallback (ADR-0041 D4).
+
+Effort resolution: `--plan-effort`/`--exec-effort` (neutral five-rung lexicon) >
+`copilot.plan_effort`/`copilot.exec_effort` (persisted; seven-rung extensions for
+`none`/`minimal`/`max`, ADR-0044 D6) > omit `--effort`. The adapter then clamps
+whatever arrives per model (ADR-0041 D5a).
+
+### The builtin-MCP escape hatch
+
+By default Ralphy passes `--disable-builtin-mcps` and then *verifies* it in band:
+Copilot's `session.mcp_servers_loaded` receipt must report every builtin server
+off, and a **missing** receipt fails the run too (fail closed — an unverifiable
+kill switch is not a verified one, ADR-0041 D7).
+
+Setting `copilot.allow_builtin_mcp_servers_i_understand_the_risk` to `true` does
+both halves of the opposite: it drops `--disable-builtin-mcps` from the argv *and*
+suppresses the connected-server failure. Suppressing only the check would grant
+you nothing.
+
+What you are handing back: Copilot's bundled GitHub MCP server holds **your**
+GitHub credential, so an agent that reaches it can open a pull request without
+ever running `git push` — outside the branch-and-hand-over discipline every other
+part of Ralphy enforces. The key name is deliberately long: length is the safety
+feature, so it cannot be set by accident. It is persisted-only, with no per-run
+flag, for the same reason.
+
+**Effort is a request, not an instruction.** Copilot's effort vocabulary is
+per-model — the catalog publishes each model's own supported list, and a level
+outside it is rejected. So Ralphy clamps the requested level DOWN to the greatest
+level the phase's model actually supports, never up: `xhigh` on a model offering
+`low`/`medium`/`high` is sent as `high`, and on a model offering
+`low`/`medium`/`high`/`max` it is *still* sent as `high` rather than escalating to
+`max` (ADR-0041 D5a). A model that takes no effort argument at all never receives
+the flag, however loudly it was requested; the same holds when the catalog is
+unavailable or the pinned model is unknown to it — the flag is omitted and the
+model's own default decides. After the phase runs, Ralphy compares the request
+against the level the vendor actually recorded in its session store and logs a
+warning on a divergence.
+
+The one direction that is *not* downward is a request below the model's floor:
+every effort-capable model Copilot publishes today starts at `low`, so
+`none` or `minimal` is raised to that floor rather than omitted (ADR-0041 D5a's
+"nothing supported at or below the request → use the lowest supported level").
+If you want the model's own default, leave the key unset.
+
+## Cursor run defaults (`cursor.*`)
+
+| Key | Meaning |
+| --- | --- |
+| `cursor.allow_codebase_indexing_i_understand_the_risk` | **Danger.** Opts back into Cursor's default behavior of uploading the enclosing repository to its servers (ADR-0042 D6). Off by default: before spawning `cursor-agent` in a repository that lacks `.cursorindexingignore`, Ralphy writes that file for you (one line, `*`) and says so on the run log — it lands in your `git status` to commit or delete. Setting this to `true` reaches the indexing and writes no file. |
+
+```powershell
+ralphy config set cursor.allow_codebase_indexing_i_understand_the_risk true
+```
+
+### Skills land with no flag, env var or manifest
+
+Unlike Copilot (`.agents/skills`), Cursor auto-discovers `SKILL.md` files
+recursively under several roots, and Ralphy materializes its bundled skills
+into `<repo>/.cursor/skills/` on every run — no `--plugin-dir`, no environment
+variable, no `.cursor-plugin/plugin.json` manifest (ADR-0042 D12). This is the
+cheapest skill delivery of any vendor Ralphy drives.
+
+Because every run executes against an isolated, scratch `CURSOR_CONFIG_DIR`
+(D17), the operator's own `~/.cursor/skills/` — Cursor's OWN user-level root,
+which the vendor resolves relative to `CURSOR_CONFIG_DIR` — is **not visible**
+to a Ralphy run. Only the repository-local root is read.
+
+### The foreign harvest is real, and it is not suppressed
+
+Cursor's skill discovery is not scoped to `.cursor/skills` alone: it also
+walks `.claude/skills`, `.codex/skills` and their `~/` equivalents — with no
+CLI-side allowlist. A trivial "reply OK" probe against an account with a
+personal Claude Code skills library measured **78 foreign skills** injected
+into a single request, at a cost of **18 212 input tokens** for that one
+call (ADR-0042 D12; spike §8 Phase 4).
+
+Isolating `HOME`/`CURSOR_CONFIG_DIR` further would suppress the harvest, but
+it would also isolate the vendor credential, forcing a second login — a worse
+trade for the operator than the token cost. Ralphy documents the behavior
+here and does not fight it. **D17's isolation covers only Cursor's OWN root,
+not the foreign ones**: unlike `~/.cursor/skills/` above, the foreign roots
+(`.claude/skills`, `.codex/skills` and their `~/` equivalents) are resolved
+from the repository path and the real `HOME`, never from `CURSOR_CONFIG_DIR`
+— so scoping `CURSOR_CONFIG_DIR` narrows what Cursor treats as *its own*
+skills, and has no effect on what it harvests from *other* vendors.
+
+Practical consequence: a per-issue token budget tuned against another vendor
+(one with no foreign-skill harvest) reads wrong for Cursor — expect materially
+higher input-token floors on this vendor, independent of the task. The harvested
+tokens are not separable from a ledger record — Cursor's CLI folds them into the
+ordinary `input` field — so they simply ride the run's recorded token counts;
+Ralphy does not surface a separate estimate for them.
+
+## Gemini run defaults (`gemini.*`)
+
+| Key | Flag | Values | Default |
+| --- | --- | --- | --- |
+| `gemini.plan_model` | `--plan-model` | a model id the CLI serves; `ralphy config set` lists the accepted set when it refuses one | none — the vendor routes |
+| `gemini.exec_model` | `--exec-model` | same | none — the vendor routes |
+
+```powershell
+ralphy config set gemini.plan_model gemini-2.5-pro
+ralphy config set gemini.exec_model gemini-3.5-flash
+```
+
+### The router tax
+
+Leave both unset and Ralphy omits `-m` entirely, which is not free: the CLI then
+asks a **router** which engine should serve the turn, and that question is itself
+a billed API call (the spike observed `gemini-3.1-flash-lite` in the
+`utility_router` role beside the answering engine). Every turn therefore costs
+**two requests instead of one**. Pinning a model per phase removes the routing
+call — which is why `ralphy init` prints the note when it finds this CLI
+installed (ADR-0043 D8).
+
+**The routing aliases do not remove the tax.** `auto`, `pro`, `flash` and
+`flash-lite` are accepted as pins, but each still names a *router* rather than an
+engine — the routing call is still made, and the run is still recorded as
+`gemini-routed`. Pin a concrete id (`gemini-2.5-pro`, `gemini-3.5-flash`, …) to
+actually drop to one request per turn.
+
+Validation is applied at `config set` time only, and only to the persisted keys.
+A `--plan-model`/`--exec-model` flag is passed through unfiltered on purpose: the vendor's id set is mutable by
+server-side experiment flags, so a stale local list must never block an id the
+CLI has just started serving. If the id really is unknown, the vendor answers
+`ModelNotFoundError … { code: 404 }` and the adapter turns it into a named stop
+quoting the id you asked for, not an unexplained failure.
+
+A run left unpinned is recorded under the model key `gemini-routed`, which
+carries **no price row** — a routed run reports an unpriced model rather than
+being attributed to an engine it may never have used.
+
+### Skills live in Ralphy's own root
+
+Ralphy's bundled skills (`reviewer`, `setup-pocock`, `staged-plan`) are
+materialized into `<repo>/.ralphy/gemini-home/.gemini/skills/` — the vendor's
+USER tier, inside the configuration root ADR-0043 D4 already owns. The
+operator's own `~/.gemini/skills` is neither read nor written.
+
+Confirm discovery by hand:
+
+```powershell
+$env:GEMINI_CLI_HOME = "<repo>/.ralphy/gemini-home"
+gemini skills list
+```
+
+which prints all three names at exit `0` with no model call. Ralphy itself
+runs this same probe once per phase and logs a warning naming any skill that
+did not appear, rather than failing the run.
+
+**Workspace-tier shadowing.** The vendor's own discovery order puts the
+WORKSPACE tier (`<repo>/.gemini/skills`, `<repo>/.agents/skills`) above the
+user tier Ralphy writes to. A repository that ships its own skill under one of
+those paths with a name colliding with `reviewer`, `setup-pocock` or
+`staged-plan` shadows Ralphy's — not worked around here, just recorded.
+
 ## Events sink keys (`events.*`)
 
 Stored in the **global** `~/.ralphy/events.toml`, not `settings.json`. See

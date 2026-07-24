@@ -40,5 +40,5 @@ pub use verify::{
 #[allow(unused_imports)]
 pub use wizard::{InitConfig, InitState, Question, Stage};
 
-pub(crate) use gate::agent_logged_in;
+pub(crate) use gate::{agent_logged_in, agent_present};
 pub(crate) use issues::{resolve_human_label, resolve_triage_label};

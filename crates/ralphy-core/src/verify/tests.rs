@@ -138,6 +138,56 @@ fn parse_bare_commands_unaffected() {
     );
 }
 
+/// The live #268 trigger: a cursor plan authored a defensive `sh -c` check with a
+/// nested backslash-escaped quote. The tokenizer cannot honor `\"`, so instead of
+/// mis-splitting it into a garbage argv that fails opaquely at runtime (spending the
+/// repair budget), it is rejected at parse time with an actionable message.
+#[test]
+fn parse_nested_escaped_quote_is_invalid() {
+    let md = "## Verify\n\nsh -c \"test \\\"$(git diff-tree --name-only -r HEAD)\\\" = \\\"README.md\\\"\"\n";
+    match parse_verify(md) {
+        VerifySpec::Invalid(error) => {
+            assert!(
+                error.contains("no shell") && error.contains("backslash-escaped quotes"),
+                "names the contract: {error}"
+            );
+            assert!(error.contains("sh -c"), "names offender: {error}");
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+/// The two tokenizer-safe rewrites of the same check parse cleanly to `Commands`:
+/// single outer quotes (double quotes stay literal inside `'...'`) and a bare
+/// `python -c` one-liner (regression guard for #268 — no over-broad rejection).
+#[test]
+fn parse_escape_free_quotes_still_parse() {
+    // Single outer quotes: the inner double quotes are literal, no backslash needed.
+    let single = "## Verify\n\nsh -c 'test \"$x\" = y'\n";
+    assert_eq!(
+        parse_verify(single),
+        VerifySpec::Commands(vec![vec![
+            "sh".into(),
+            "-c".into(),
+            "test \"$x\" = y".into(),
+        ]])
+    );
+    // A python one-liner with double-quoted arg — no escaped quotes, parses fine.
+    let py = "## Verify\n\npython -c \"assert open('LAB.md').read()\"\n";
+    assert!(matches!(parse_verify(py), VerifySpec::Commands(_)));
+}
+
+/// A Windows path in a verify command carries single backslashes before non-quote
+/// chars — these must NOT be mistaken for escaped quotes (#268 false-positive guard).
+#[test]
+fn parse_windows_path_backslashes_are_not_escaped_quotes() {
+    let md = "## Verify\n\npython C:\\tools\\check.py\n";
+    assert_eq!(
+        parse_verify(md),
+        VerifySpec::Commands(vec![vec!["python".into(), "C:\\tools\\check.py".into(),]])
+    );
+}
+
 #[test]
 fn parse_stops_at_next_heading() {
     let md = "## Verify\ncargo test\n## Other\ncargo bogus\n";

@@ -1,0 +1,22 @@
+[package]
+name = "ralphy-agent-copilot"
+version = "0.1.0-rc15"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GitHub Copilot CLI adapter for Ralphy: drives headless `copilot` behind the core Agent contract."
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+ralphy-core.workspace = true
+ralphy-adapter-support.workspace = true
+ralphy-usage-scan.workspace = true
+include_dir.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true

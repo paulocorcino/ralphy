@@ -666,6 +666,7 @@ mod tests {
             &RunEvent::IssueClosed {
                 number: 7,
                 tokens: 0,
+                invocations: 0,
                 usage: usage(200, 20),
             },
         );
@@ -696,6 +697,7 @@ mod tests {
             &RunEvent::IssueClosed {
                 number: 99,
                 tokens: 0,
+                invocations: 0,
                 usage: UsageLite::default(),
             },
         );

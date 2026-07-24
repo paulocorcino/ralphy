@@ -52,9 +52,10 @@ pub fn scan_kimi(input: &KimiScan) -> Vec<InteractiveRecord> {
             session_id,
             project: agg.project,
             actor_email: agg.actor_email,
-            tokens: agg.tokens,
+            tokens: Some(agg.tokens),
             first_ts: ms_to_rfc3339(agg.first_ms),
             last_ts: ms_to_rfc3339(agg.last_ms),
+            lower_bound: false,
         })
         .collect();
 
@@ -480,11 +481,15 @@ mod tests {
         write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
         let records = scan_legacy_only(tmp.path());
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].tokens.input, 120);
-        assert_eq!(records[0].tokens.output, 30);
-        assert_eq!(records[0].tokens.cache_read, 5);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 120);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 30);
+        assert_eq!(records[0].tokens.as_ref().unwrap().cache_read, 5);
         assert_eq!(records[0].session_id, "SESS");
         assert_eq!(records[0].agent, "kimi");
+        assert!(
+            !records[0].lower_bound,
+            "Kimi writes every token to disk — this is a total, not a floor"
+        );
     }
 
     #[test]
@@ -506,7 +511,11 @@ mod tests {
         write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
         let records = scan_legacy_only(tmp.path());
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].tokens.output, 10, "1+2+3+4 all summed");
+        assert_eq!(
+            records[0].tokens.as_ref().unwrap().output,
+            10,
+            "1+2+3+4 all summed"
+        );
     }
 
     fn usage_record(scope: Option<&str>, input: i64, output: i64, time: i64) -> String {
@@ -531,8 +540,8 @@ mod tests {
         write_wire(tmp.path(), "sessions/WS/SESS/agents/main/wire.jsonl", &body);
         let records = scan_code_only(tmp.path());
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].tokens.input, 100);
-        assert_eq!(records[0].tokens.output, 50);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 100);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 50);
     }
 
     #[test]
@@ -562,7 +571,7 @@ mod tests {
         let records = scan_legacy_only(tmp.path());
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].session_id, "SESS");
-        assert_eq!(records[0].tokens.input, 150);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 150);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{run_json_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace,
 };
 use tracing::info;
 
@@ -21,19 +21,25 @@ use ralphy_core::PROMPT_CONSOLIDATE;
 use crate::auth::{is_claude_auth_error, CLAUDE_AUTH_ERROR_MSG};
 use crate::interactive::resolve_claude_binary;
 use crate::settings::SETTINGS_JSON;
+use crate::usage::parse_plan_usage;
 
 /// Run a one-shot headless `claude -p` knowledge-consolidation session in
 /// `ws`: pipe the consolidation charter on stdin and wait up to `timeout`.
 /// Mirrors the planning pass's invocation (settings with the skip flags, no
 /// Stop hook) — the session's only deliverable is `KNOWLEDGE.md`, which the
 /// caller verifies; the consumed notes are archived by the caller, not here.
+///
+/// The consolidation session's tokens are captured the same way `plan` is —
+/// `--output-format stream-json --verbose` makes the stdout stream carry the
+/// terminal `result` event, which [`parse_plan_usage`] reads — so the run-level
+/// `consolidate` ledger line carries real usage (ADR-0008 D9, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
     std::fs::create_dir_all(run_dir).ok();
     let settings_path = run_dir.join("ralphy.settings.json");
     std::fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
@@ -45,6 +51,12 @@ pub fn consolidate_knowledge(
     }
     args.push("-p".into());
     args.push("--dangerously-skip-permissions".into());
+    // Mirror the plan pass so the stdout stream carries the `result` event
+    // `parse_plan_usage` reads; `stream-json` requires `--verbose`. `KNOWLEDGE.md`
+    // is still written by the session, so the stdout format is free to change.
+    args.push("--output-format".into());
+    args.push("stream-json".into());
+    args.push("--verbose".into());
     args.push("--settings".into());
     args.push(settings_path.to_string_lossy().into_owned());
     if let Some(e) = effort {
@@ -60,11 +72,11 @@ pub fn consolidate_knowledge(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // A non-JSON one-shot: spawn, persist the log, bail on auth then timeout — the
-    // shared `run_text_session` owns that exact tail (same messages, same order).
-    // The consolidated log is the only deliverable, so its returned value is
-    // dropped; the caller verifies `KNOWLEDGE.md` separately.
-    run_text_session(
+    // Spawn, persist the log, bail on auth then timeout — the shared
+    // `run_text_session` owns that exact tail (same messages, same order) and
+    // returns the stdout stream `parse_plan_usage` reads. `KNOWLEDGE.md` is the
+    // deliverable; the caller verifies it separately.
+    let log = run_text_session(
         TextSession {
             cmd,
             prompt: PROMPT_CONSOLIDATE,
@@ -76,7 +88,7 @@ pub fn consolidate_knowledge(
         },
         is_claude_auth_error,
     )?;
-    Ok(())
+    Ok(parse_plan_usage(&log))
 }
 
 /// Run a one-shot headless `claude -p` repo-diagnosis session (ADR-0012 stage 2)

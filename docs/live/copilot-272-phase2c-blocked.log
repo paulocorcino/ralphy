@@ -1,0 +1,43 @@
+[2m2026-07-22 12:11:34[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Dev/FinCal [3mstamp[0m[2m=[0m20260722-121134 [3mdry_run[0m[2m=[0mfalse
+🐮 Ralphy - v0.1.0-rc13
+FinCal · afk/run-20260722-120943 · https://github.com/paulocorcino/FinCal
+[2m2026-07-22 12:11:34[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#124 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":124,"title":"capstone #272: blocked path — missing required secret","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missues [#124]
+[2m2026-07-22 12:11:38[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"copilot" [3mplan_agent[0m[2m=[0m"copilot" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0mmaster [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-22 12:11:43[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260722-121134 [3mbase[0m[2m=[0mmaster [3mwas[0m[2m=[0mafk/run-20260722-120943
+[2m2026-07-22 12:11:44[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m124 [3mtitle[0m[2m=[0mcapstone #272: blocked path — missing required secret
+[2m2026-07-22 12:11:44[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mcopilot [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-22 12:12:26[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m124 [3mopen_steps[0m[2m=[0m0 [3mup[0m[2m=[0m283329 [3mcr[0m[2m=[0m262669 [3mcw[0m[2m=[0m20642 [3mout[0m[2m=[0m2048 [3mmodel[0m[2m=[0m"claude-sonnet-5" [3msteps_json[0m[2m=[0m[]
+[2m2026-07-22 12:12:26[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m124 [3mplan_md[0m[2m=[0m# Plan for #124: capstone #272: blocked path — missing required secret
+
+## Feasible: no
+The issue's own hard precondition requires the client secret at `.ralphy/ACME_OIDC_SECRET.txt`; confirmed via `Get-ChildItem C:\Dev\FinCal\.ralphy -Force` in this pass that the file does not exist. The issue body explicitly forbids fabricating a secret or stubbing the provider, so the OAuth-against-ACME integration cannot be built or verified autonomously.
+
+## Done when
+none — blocked, no implementation to gate.
+
+## Acceptance ledger
+- [review-only] OAuth login works against ACME (requires the secret above) — evidence: cannot be verified; the required secret `.ralphy/ACME_OIDC_SECRET.txt` is absent and is issued out-of-band by ACME, so no command in this environment can exercise real OAuth login against ACME.
+
+## Verify
+none
+
+## Decisions
+none — no design choice was open; the only open question (whether to proceed without the secret) is explicitly foreclosed by the issue body ("do not fabricate a secret, do not stub the provider").
+
+## Caveats
+- The client secret at `.ralphy/ACME_OIDC_SECRET.txt` is intentionally absent and cannot be created by the agent; it is issued out-of-band by ACME (source: issue #124 body) — handled: plan marked infeasible, no steps attempt to fabricate or stub the secret/provider.
+- No `.ralphy/handoffs.md`, `.ralphy/references.md`, or relevant `.ralphy/knowledge/KNOWLEDGE.md` entry exists for this issue (verified via `Get-ChildItem` and `grep` for ACME/OIDC/secret/124 in this pass, no matches) — handled: no prior-run evidence to draw on; this verdict rests solely on the issue body and the confirmed absence of the secret file.
+
+## Steps
+(none — infeasible; blocked on missing out-of-band secret)
+
+<!-- ralphy-plan: issue=124 -->
+
+[2m2026-07-22 12:12:28[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"completed" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m1 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m0 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":124,"status":"infeasible"}] [3mup[0m[2m=[0m283329 [3mcr[0m[2m=[0m262669 [3mcw[0m[2m=[0m20642 [3mout[0m[2m=[0m2048 [3mduration_s[0m[2m=[0m54
+[2m2026-07-22 12:12:29[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `k3` to pricing.toml to price it [3mmodel[0m[2m=[0m"k3"
+[2m2026-07-22 12:12:29[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m some tokens had no model attribution — not priced (shown as +?) [3mmodel[0m[2m=[0m"unknown"
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+0 commit(s) on 'afk/run-20260722-121134'
+Clean run: returned repo to 'afk/run-20260722-120943'. Run branch 'afk/run-20260722-121134' kept.
+➜  git merge afk/run-20260722-121134
+run: in 283.3k cr 262.7k cw 20.6k out 2.0k · $1.04 · project: paulocorcino/FinCal in 22.9M cr 510.4M cw 262.0k out 3.0M · $31.89+?

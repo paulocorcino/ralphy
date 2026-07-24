@@ -16,11 +16,12 @@ use ralphy_adapter_support::{
 };
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
-    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Workspace, PROMPT_CONSOLIDATE,
+    DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
 use crate::command::build_opencode_command;
 use crate::events::{is_opencode_auth_error, OPENCODE_AUTH_ERROR_MSG};
+use crate::usage::opencode_usage;
 
 /// The minimal `OPENCODE_CONFIG_CONTENT` for a one-shot `init` session: an empty
 /// JSON object. The diagnosis/draft sessions read the repo and write a JSON
@@ -42,8 +43,8 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
-    // accepted for a uniform init dispatch signature and ignored.
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
@@ -88,8 +89,8 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    // OpenCode has no reasoning-effort knob (ADR-0005 D3); the parameter is
-    // accepted for a uniform init dispatch signature and ignored.
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
@@ -136,8 +137,8 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    // OpenCode has no reasoning-effort knob (ADR-0005 D3); accepted for a uniform
-    // dispatch signature and ignored.
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let prompt = format!(
         "{}{}",
@@ -176,21 +177,29 @@ pub fn triage_issues(
 /// `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
 /// which the caller verifies; the consumed notes are archived by the caller, not
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
-/// can dispatch on the selected agent. `effort` is unused: OpenCode has no
-/// reasoning-effort knob (ADR-0005 D3).
+/// can dispatch on the selected agent. `effort` is a documented no-op
+/// (ADR-0044 D4): discarded here — must not alter argv; `--variant` stays
+/// `--exec-variant`-only (D8).
+///
+/// The consolidation session's tokens are captured the same way `plan`/`execute`
+/// do — `opencode_usage` correlates the `--format json` stream's `sessionID` to the
+/// rows in `opencode.db` — so the run-level `consolidate` ledger line carries real
+/// usage (ADR-0008 D9, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Usage> {
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     std::fs::create_dir_all(run_dir).ok();
 
     info!(?model, "consolidating knowledge with opencode run");
     let cmd = build_opencode_command(model, None, ws.repo_root(), INIT_OPENCODE_CONFIG);
-    run_text_session(
+    let log = run_text_session(
         TextSession {
             cmd,
             prompt: PROMPT_CONSOLIDATE,
@@ -202,7 +211,7 @@ pub fn consolidate_knowledge(
         },
         is_opencode_auth_error,
     )?;
-    Ok(())
+    Ok(opencode_usage(&log))
 }
 
 /// List available models by passing through to `opencode models`.

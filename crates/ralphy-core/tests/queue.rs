@@ -1015,10 +1015,21 @@ fn pins_green_run_vocabulary() {
         "green — issue closed",
         T_EMIT,
         &[
-            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+            "cr",
+            "cw",
+            "invocations",
+            "message",
+            "model",
+            "number",
+            "out",
+            "tokens",
+            "up",
         ],
     );
     assert_eq!(green.get("number"), "7");
+    // A clean green issue is two vendor spawns — plan + execute, no repair/protocol
+    // bounce — so the invocation count is 2.
+    assert_eq!(green.get("invocations"), "2");
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -1054,7 +1065,15 @@ fn exec_usage_single_attempt_keeps_model() {
         "green — issue closed",
         T_EMIT,
         &[
-            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+            "cr",
+            "cw",
+            "invocations",
+            "message",
+            "model",
+            "number",
+            "out",
+            "tokens",
+            "up",
         ],
     );
     assert_eq!(green.get("model"), "claude-opus-4-8");
@@ -1106,7 +1125,15 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
         "green — issue closed",
         T_EMIT,
         &[
-            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+            "cr",
+            "cw",
+            "invocations",
+            "message",
+            "model",
+            "number",
+            "out",
+            "tokens",
+            "up",
         ],
     );
     assert_eq!(green.get("model"), "claude-opus-4-8");
@@ -1147,7 +1174,15 @@ fn exec_usage_without_model_stays_unattributed() {
         "green — issue closed",
         T_EMIT,
         &[
-            "cr", "cw", "message", "model", "number", "out", "tokens", "up",
+            "cr",
+            "cw",
+            "invocations",
+            "message",
+            "model",
+            "number",
+            "out",
+            "tokens",
+            "up",
         ],
     );
     assert_eq!(green.get("model"), "");

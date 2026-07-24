@@ -194,7 +194,7 @@ the ledger says *which* criterion was proven; `## Verify` is *how* it was proven
 - **Vendor-neutral and split-run-safe.** `## Verify` is plan markdown, so any
   planner emits it and the **runner** — not the executor — runs it. Under a split
   run (ADR-0009) Claude can author the `## Verify` and the OpenCode executor need
-  not know it exists. Consistent with the core/adapter boundary (ADR-0002, 0004):
+  not know it exists. Consistent with the core/adapter boundary (ADR-0002):
   the gate lives in the runner, vendor-neutral; adapters still only classify their
   own output into an `Outcome`.
 - **One planner-prompt addition:** "emit `## Verify` with the command(s) that prove

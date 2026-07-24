@@ -27,25 +27,50 @@ use crate::{pricing, ui, CliAgent};
 /// never reaches for `claude`. The model/effort defaults come from
 /// `consolidate_defaults`: opus/medium for Claude (curation is judgment-heavy),
 /// the adapter's own default for the rest. 30-minute wall like the command.
+///
+/// Returns the consolidation invocation's token [`Usage`] (issue #269) — default
+/// (zero) when the pass did not run or failed. The pass is a real vendor call, so
+/// on success its tokens are recorded to the ledger as a run-level `consolidate`
+/// phase (`ledger::append_run_phase`, issue `0`) — so the project total counts it —
+/// and returned for the caller to fold into this run's total and footer. This is
+/// run overhead, not issue work, so it never touches any per-issue rollup.
 pub(crate) fn maybe_consolidate_knowledge(
     agent: CliAgent,
     run_ok: bool,
     dry_run: bool,
     ws: &Workspace,
     stamp: &str,
-) {
-    if run_ok && !dry_run {
-        let notes = ralphy_core::knowledge::loose_notes(ws);
-        if !notes.is_empty() {
-            ralphy_core::emit::knowledge_consolidating(notes.len() as u64);
-            let run_dir = ws.run_dir(stamp);
-            let (model, effort) = crate::consolidate_defaults(agent);
-            match crate::run_consolidation(agent, ws, &run_dir, model, effort, 30, &notes) {
-                Ok(archived) => ralphy_core::emit::knowledge_consolidated(archived as u64),
-                Err(e) => {
-                    warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry")
-                }
-            }
+) -> ralphy_core::Usage {
+    if !(run_ok && !dry_run) {
+        return ralphy_core::Usage::default();
+    }
+    let notes = ralphy_core::knowledge::loose_notes(ws);
+    if notes.is_empty() {
+        return ralphy_core::Usage::default();
+    }
+    ralphy_core::emit::knowledge_consolidating(notes.len() as u64);
+    let run_dir = ws.run_dir(stamp);
+    let (model, effort) = crate::consolidate_defaults(agent);
+    match crate::run_consolidation(agent, ws, &run_dir, model, effort, 30, &notes) {
+        Ok((archived, usage)) => {
+            ralphy_core::emit::knowledge_consolidated(archived as u64);
+            // Record the invocation as a run-level ledger line (best-effort, and a
+            // no-op on a zero-token usage) using the same git identity the runner's
+            // per-issue lines carry (ADR-0008 D7).
+            let repo = ws.repo_root();
+            ralphy_core::ledger::append_run_phase(
+                &git::project_slug(repo),
+                &git::user_email(repo).unwrap_or_default(),
+                &git::user_name(repo).unwrap_or_default(),
+                agent.cli_name(),
+                "consolidate",
+                &usage,
+            );
+            usage
+        }
+        Err(e) => {
+            warn!(error = %e, "knowledge consolidation failed — notes kept loose for retry");
+            ralphy_core::Usage::default()
         }
     }
 }
@@ -98,6 +123,9 @@ pub(crate) fn emit_run_finished_no_work(run_start: std::time::Instant) {
 /// shapes, compute the run + project token totals and their read-time USD (ADR-0008
 /// D8/D11, priced per model), and hand the assembled `PanelData` to the presenter.
 /// Consumes `report` (its branch/commits/undo fields move into the panel).
+// A composition-root assembler: it gathers the many read-time inputs of the footer
+// (report, summary, both USD sources) into one PanelData.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_final_panel(
     presenter: &ui::PresenterHandle,
     report: ralphy_core::QueueReport,
@@ -105,6 +133,7 @@ pub(crate) fn render_final_panel(
     branch_mode: BranchMode,
     dry_run: bool,
     repo_root: &std::path::Path,
+    consolidate_usage: &ralphy_core::Usage,
 ) {
     let panel_stop = report.stop.map(|s| match s {
         StopReason::Deadline => ui::PanelStop::Deadline,
@@ -124,15 +153,60 @@ pub(crate) fn render_final_panel(
     // Token-usage footer figures (ADR-0008 D11): the run total off this run's
     // accumulated usage, and the project's cumulative balance read from the ledger.
     let slug = git::project_slug(repo_root);
-    let run_usage = &report.run_usage;
+    // The run total folds in the end-of-run consolidation pass (run overhead, not
+    // issue work) so the run figure reports total vendor spend; the project total
+    // already includes it via the ledger line written in `maybe_consolidate_knowledge`
+    // (issue #269).
+    let mut run_usage = report.run_usage.clone();
+    run_usage.add_tokens(consolidate_usage);
     let project_usage = ralphy_core::ledger::project_total(&slug);
 
     // Read-time USD (ADR-0008 D8), priced per model and summed. The run total
-    // prices `report.run_usage_by_model` (the runner's per-model split); the
-    // project total groups the cumulative ledger rows by model and prices each.
-    // USD never enters the ledger — re-pricing the table re-prices history.
+    // prices the runner's per-model split with the consolidation pass folded in
+    // under its own model; the project total groups the cumulative ledger rows by
+    // model. USD never enters the ledger — re-pricing the table re-prices history.
     let price_table = pricing::PriceTable::load();
-    let (run_usd, run_partial) = price_table.cost_usd_by_model(&report.run_usage_by_model);
+    let mut run_by_model = report.run_usage_by_model.clone();
+    if consolidate_usage.total() > 0 {
+        run_by_model
+            .entry(
+                consolidate_usage
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| "unknown".into()),
+            )
+            .or_default()
+            .add_tokens(consolidate_usage);
+    }
+    let (run_usd, run_partial) = price_table.cost_usd_by_model(&run_by_model);
+
+    // The consolidation pass as its own footer segment, so the overhead stays
+    // legible beside the run total it is now part of. Priced alone; `None` (the
+    // segment is omitted) when the pass did not run this run (issue #269).
+    let (consolidate_breakdown, consolidate_usd) = if consolidate_usage.total() > 0 {
+        let mut by_model: std::collections::BTreeMap<String, ralphy_core::Usage> =
+            std::collections::BTreeMap::new();
+        by_model
+            .entry(
+                consolidate_usage
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| "unknown".into()),
+            )
+            .or_default()
+            .add_tokens(consolidate_usage);
+        let (usd, _) = price_table.cost_usd_by_model(&by_model);
+        (
+            Some(ralphy_core::Usage {
+                model: None,
+                ..consolidate_usage.clone()
+            }),
+            usd,
+        )
+    } else {
+        (None, None)
+    };
+
     let mut project_by_model: std::collections::BTreeMap<String, ralphy_core::Usage> =
         std::collections::BTreeMap::new();
     for row in ralphy_core::read_project_rows(&slug) {
@@ -170,6 +244,8 @@ pub(crate) fn render_final_panel(
         project_usd,
         run_usd_partial: run_partial,
         project_usd_partial: project_partial,
+        consolidate_breakdown,
+        consolidate_usd,
     };
     presenter.print_panel(&data);
 }

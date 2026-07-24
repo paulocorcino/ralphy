@@ -177,6 +177,7 @@ pub(crate) mod tests {
             oneline: Vec::new(),
             run_usage: Usage::default(),
             run_usage_by_model: Default::default(),
+            invocations: 0,
         }
     }
 

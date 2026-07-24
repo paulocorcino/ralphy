@@ -2,19 +2,33 @@
 //!
 //! Manages per-repo `.ralphy/settings.json`. Supported keys: `opencode.model`
 //! (OpenCode execution-model default, #47), the agent-agnostic `base_branch` and
-//! `branch_mode`, and the Claude-only run defaults under `claude.*`
+//! `branch_mode`, the Claude-only run defaults under `claude.*`
 //! (`plan_model`, `plan_effort`, `default_exec_model`, `exec_effort`,
-//! `max_minutes_per_issue`). The model/effort/budget knobs are Claude-only
-//! today — a Codex equivalent is deferred. Each resolves with the same
-//! precedence: per-run flag > `settings.json` > hardcoded default.
+//! `max_minutes_per_issue`), and the Copilot per-phase model overrides under
+//! `copilot.*` (`plan_model`, `exec_model`, #232; `plan_effort`, `exec_effort`,
+//! #233 — a requested level, CLAMPED per model by the adapter before it reaches
+//! argv). Cursor carries exactly one key,
+//! `cursor.allow_codebase_indexing_i_understand_the_risk` (#243, ADR-0042 D6) —
+//! it has no persisted model keys, because `--model` is mandatory on that vendor
+//! and so has no "unset" state to persist. Gemini carries the two per-phase pins
+//! `gemini.plan_model` / `gemini.exec_model` (#257, ADR-0043 D8), validated
+//! against the vendor's id set at `set` time only. The budget knob stays Claude-only today — a Codex equivalent is
+//! deferred. Each resolves with the same precedence: per-run flag then
+//! `settings.json` then a hardcoded default — except the two Copilot effort keys,
+//! which have no flag at all (#227 owns whether `--plan-effort`/`--exec-effort`
+//! become every adapter's vocabulary). Copilot's default is `None`, omitting the
+//! flag.
 
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
 use clap::{Args, Subcommand};
 use ralphy_agent_claude::ClaudeSettings;
+use ralphy_agent_copilot::CopilotSettings;
+use ralphy_agent_cursor::CursorSettings;
+use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
-use ralphy_core::{git, gitignore, BranchMode, Settings, Workspace};
+use ralphy_core::{git, gitignore, BranchMode, Effort, Settings, Workspace};
 
 use crate::runlock;
 
@@ -95,6 +109,14 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.default_exec_model",
     "claude.exec_effort",
     "claude.max_minutes_per_issue",
+    "copilot.plan_model",
+    "copilot.exec_model",
+    "copilot.plan_effort",
+    "copilot.exec_effort",
+    "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
+    "cursor.allow_codebase_indexing_i_understand_the_risk",
+    "gemini.plan_model",
+    "gemini.exec_model",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -107,7 +129,13 @@ verify.command is the per-repo fallback verify gate, ADR-0011; \
 verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
 model/effort/budget defaults are Claude-only today \
-(Codex deferred; OpenCode's model lives under opencode.model, #47))";
+(Codex deferred; OpenCode's model lives under opencode.model, #47); \
+Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
+copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
+hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
+which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \
+gemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \
+routes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
@@ -141,6 +169,27 @@ fn with_opencode(s: &mut Settings, f: impl FnOnce(&mut OpenCodeSettings)) -> Res
     let mut o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     f(&mut o);
     s.set_agent_settings(OpenCodeSettings::SECTION, &o)
+}
+
+/// Load-mutate-store the Copilot section; same contract as [`with_claude`].
+fn with_copilot(s: &mut Settings, f: impl FnOnce(&mut CopilotSettings)) -> Result<()> {
+    let mut c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
+    f(&mut c);
+    s.set_agent_settings(CopilotSettings::SECTION, &c)
+}
+
+/// Load-mutate-store the Cursor section; same contract as [`with_claude`].
+fn with_cursor(s: &mut Settings, f: impl FnOnce(&mut CursorSettings)) -> Result<()> {
+    let mut c: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
+    f(&mut c);
+    s.set_agent_settings(CursorSettings::SECTION, &c)
+}
+
+/// Load-mutate-store the Gemini section; same contract as [`with_claude`].
+fn with_gemini(s: &mut Settings, f: impl FnOnce(&mut GeminiSettings)) -> Result<()> {
+    let mut g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
+    f(&mut g);
+    s.set_agent_settings(GeminiSettings::SECTION, &g)
 }
 
 pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
@@ -193,16 +242,91 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             s.remote_control = Some(b);
         }
         "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
-        "claude.plan_effort" => with_claude(&mut s, |c| c.plan_effort = Some(value.to_owned()))?,
+        "claude.plan_effort" | "claude.exec_effort" => {
+            value.parse::<Effort>().map_err(anyhow::Error::msg)?;
+            let plan = key == "claude.plan_effort";
+            with_claude(&mut s, |c| {
+                let slot = if plan {
+                    &mut c.plan_effort
+                } else {
+                    &mut c.exec_effort
+                };
+                *slot = Some(value.to_owned());
+            })?
+        }
         "claude.default_exec_model" => {
             with_claude(&mut s, |c| c.default_exec_model = Some(value.to_owned()))?
         }
-        "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = Some(value.to_owned()))?,
         "claude.max_minutes_per_issue" => {
             let n = value.parse::<u64>().map_err(|_| {
                 anyhow!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
             })?;
             with_claude(&mut s, |c| c.max_minutes_per_issue = Some(n))?;
+        }
+        "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
+        "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = Some(value.to_owned()))?,
+        // Validated here, not at run time: an unrankable level is silently
+        // dropped by the adapter's clamp, so an unvalidated typo would persist as
+        // a setting that `config get` reports as set and that does nothing.
+        "copilot.plan_effort" | "copilot.exec_effort" => {
+            if !ralphy_agent_copilot::is_known_effort(value) {
+                bail!("{key} must be a Copilot reasoning-effort level, got '{value}'");
+            }
+            let plan = key == "copilot.plan_effort";
+            with_copilot(&mut s, |c| {
+                let slot = if plan {
+                    &mut c.plan_effort
+                } else {
+                    &mut c.exec_effort
+                };
+                *slot = Some(value.to_owned());
+            })?
+        }
+        // The verbosity IS the safety feature (ADR-0041 D7): the hatch gives
+        // Copilot back a credentialled MCP server that can open a PR on its own.
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_copilot(&mut s, |c| {
+                c.allow_builtin_mcp_servers_i_understand_the_risk = b
+            })?
+        }
+        // Validated HERE and only here: a persisted id is refused at
+        // configuration time rather than mid-run, while `--plan-model`/
+        // `--exec-model` stay unfiltered so a stale local list cannot block an id
+        // the vendor has started serving (ADR-0043 D8 amendment, #257).
+        //
+        // The stored value is TRIMMED: `is_pinnable_model` trims before matching,
+        // so persisting the raw string would accept ` gemini-2.5-pro `, report it
+        // valid from `config get`, and 404 on every run.
+        "gemini.plan_model" | "gemini.exec_model" => {
+            let value = value.trim();
+            if !ralphy_agent_gemini::is_pinnable_model(value) {
+                bail!(
+                    "{key} must be a Gemini model id the CLI still serves, got '{value}'; valid: {}",
+                    ralphy_agent_gemini::PINNABLE_MODELS.join(", ")
+                );
+            }
+            let plan = key == "gemini.plan_model";
+            with_gemini(&mut s, |g| {
+                if plan {
+                    g.plan_model = Some(value.to_owned());
+                } else {
+                    g.exec_model = Some(value.to_owned());
+                }
+            })?
+        }
+        // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
+        // run upload the operator's repository to the vendor. Ralphy never denies
+        // the capability — it denies a SILENT one.
+        "cursor.allow_codebase_indexing_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_cursor(&mut s, |c| {
+                c.allow_codebase_indexing_i_understand_the_risk = b
+            })?
         }
         _ => unreachable!(),
     }
@@ -238,6 +362,18 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.default_exec_model" => with_claude(&mut s, |c| c.default_exec_model = None)?,
         "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = None)?,
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
+        "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
+        "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
+        "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,
+        "copilot.exec_effort" => with_copilot(&mut s, |c| c.exec_effort = None)?,
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => with_copilot(&mut s, |c| {
+            c.allow_builtin_mcp_servers_i_understand_the_risk = false
+        })?,
+        "cursor.allow_codebase_indexing_i_understand_the_risk" => with_cursor(&mut s, |c| {
+            c.allow_codebase_indexing_i_understand_the_risk = false
+        })?,
+        "gemini.plan_model" => with_gemini(&mut s, |g| g.plan_model = None)?,
+        "gemini.exec_model" => with_gemini(&mut s, |g| g.exec_model = None)?,
         _ => unreachable!(),
     }
     s.save(ws)?;
@@ -253,6 +389,9 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     let s = Settings::load(ws)?;
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
+    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
+    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
@@ -274,6 +413,20 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         Some(n) => println!("claude.max_minutes_per_issue = {n}"),
         None => println!("claude.max_minutes_per_issue: not set"),
     }
+    print_str("copilot.plan_model", copilot.plan_model);
+    print_str("copilot.exec_model", copilot.exec_model);
+    print_str("copilot.plan_effort", copilot.plan_effort);
+    print_str("copilot.exec_effort", copilot.exec_effort);
+    println!(
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk = {}",
+        copilot.allow_builtin_mcp_servers_i_understand_the_risk
+    );
+    println!(
+        "cursor.allow_codebase_indexing_i_understand_the_risk = {}",
+        cursor.allow_codebase_indexing_i_understand_the_risk
+    );
+    print_str("gemini.plan_model", gemini.plan_model);
+    print_str("gemini.exec_model", gemini.exec_model);
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -298,6 +451,9 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
     let s = Settings::load(ws)?;
     let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
+    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
+    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
+    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
     let slug = git::project_slug(ws.repo_root());
     let events = crate::events::config::EventsStore::load().unwrap_or_default();
     let entry = events.entry(&slug);
@@ -319,6 +475,16 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "claude.default_exec_model": claude.default_exec_model,
         "claude.exec_effort": claude.exec_effort,
         "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
+        "copilot.plan_model": copilot.plan_model,
+        "copilot.exec_model": copilot.exec_model,
+        "copilot.plan_effort": copilot.plan_effort,
+        "copilot.exec_effort": copilot.exec_effort,
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk":
+            copilot.allow_builtin_mcp_servers_i_understand_the_risk,
+        "cursor.allow_codebase_indexing_i_understand_the_risk":
+            cursor.allow_codebase_indexing_i_understand_the_risk,
+        "gemini.plan_model": gemini.plan_model,
+        "gemini.exec_model": gemini.exec_model,
     }))
 }
 
@@ -331,6 +497,14 @@ fn print_str(key: &str, value: Option<String>) {
     }
 }
 
+/// Resolve a vendor-neutral optional model knob (ADR-0010). Precedence: `flag`,
+/// then the persisted `settings.json` value, then `None` (the adapter resolves
+/// its own default). Empty strings on either source are treated as unset.
+pub fn resolve_optional_model(flag: Option<String>, persisted: Option<String>) -> Option<String> {
+    flag.filter(|s| !s.is_empty())
+        .or_else(|| persisted.filter(|s| !s.is_empty()))
+}
+
 /// Resolve the OpenCode execution model from the per-run flag and the
 /// persisted setting (ADR-0010). Precedence: `exec_model` flag > persisted
 /// `opencode.model` > `None` (OpenCode resolves its own default). Empty
@@ -339,9 +513,7 @@ pub fn resolve_opencode_model(
     exec_model: Option<String>,
     persisted: Option<String>,
 ) -> Option<String> {
-    exec_model
-        .filter(|s| !s.is_empty())
-        .or_else(|| persisted.filter(|s| !s.is_empty()))
+    resolve_optional_model(exec_model, persisted)
 }
 
 /// Resolve a string-valued run knob (ADR-0010). Precedence: per-run `flag` >
@@ -351,6 +523,25 @@ pub fn resolve_str(flag: Option<String>, persisted: Option<String>, default: &st
     flag.filter(|s| !s.is_empty())
         .or_else(|| persisted.filter(|s| !s.is_empty()))
         .unwrap_or_else(|| default.to_owned())
+}
+
+/// Resolve one phase's neutral effort. Persisted strings are parsed even when
+/// supplied outside `config set`, so hand-edited settings fail before adapter construction.
+pub fn resolve_effort(
+    flag: Option<Effort>,
+    persisted: Option<String>,
+    default: Option<Effort>,
+) -> Result<Option<Effort>> {
+    if let Some(flag) = flag {
+        return Ok(Some(flag));
+    }
+    match persisted.filter(|value| !value.is_empty()) {
+        Some(value) => value
+            .parse::<Effort>()
+            .map(Some)
+            .map_err(anyhow::Error::msg),
+        None => Ok(default),
+    }
 }
 
 /// Resolve the effective queue assignee filter. Precedence:
@@ -458,6 +649,235 @@ mod tests {
         );
     }
 
+    #[test]
+    fn copilot_config_round_trip() {
+        let (ws, dir) = tmp_ws("copilot-config-round-trip");
+
+        set(&ws, "copilot.plan_model", "gpt-5").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_model.as_deref(), Some("gpt-5"));
+        assert_eq!(c.exec_model, None);
+
+        set(&ws, "copilot.exec_model", "claude-sonnet-5").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_model.as_deref(), Some("gpt-5"));
+        assert_eq!(c.exec_model.as_deref(), Some("claude-sonnet-5"));
+
+        unset(&ws, "copilot.plan_model").unwrap();
+        unset(&ws, "copilot.exec_model").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_model, None);
+        assert_eq!(c.exec_model, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn claude_effort_config_accepts_only_core_values() {
+        for (index, value) in ["low", "medium", "high", "xhigh", "max"]
+            .into_iter()
+            .enumerate()
+        {
+            let (ws, dir) = tmp_ws(&format!("claude-effort-{index}"));
+            set(&ws, "claude.plan_effort", value).unwrap();
+            set(&ws, "claude.exec_effort", value).unwrap();
+            let settings = Settings::load(&ws).unwrap();
+            let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
+            assert_eq!(claude.plan_effort.as_deref(), Some(value));
+            assert_eq!(claude.exec_effort.as_deref(), Some(value));
+            fs::remove_dir_all(dir).ok();
+        }
+
+        for invalid in ["none", "minimal", "hihg"] {
+            for key in ["claude.plan_effort", "claude.exec_effort"] {
+                let (ws, dir) = tmp_ws(&format!("{key}-{invalid}"));
+                assert!(set(&ws, key, invalid).is_err());
+                let settings = Settings::load(&ws).unwrap();
+                let claude: ClaudeSettings =
+                    settings.agent_settings(ClaudeSettings::SECTION).unwrap();
+                assert_eq!(claude.plan_effort, None);
+                assert_eq!(claude.exec_effort, None);
+                fs::remove_dir_all(dir).ok();
+            }
+        }
+    }
+
+    /// ADR-0042 D6's escape hatch (#243): the one Cursor key. Same bool discipline
+    /// as Copilot's hatch, guarding a bigger capability — `true` lets a run proceed
+    /// in a repository whose contents the vendor will walk and sync to its servers.
+    #[test]
+    fn cursor_config_round_trip() {
+        const KEY: &str = "cursor.allow_codebase_indexing_i_understand_the_risk";
+        let (ws, dir) = tmp_ws("cursor-config-round-trip");
+
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(
+            !c.allow_codebase_indexing_i_understand_the_risk,
+            "the hatch is off until the operator sets it"
+        );
+
+        set(&ws, KEY, "true").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(
+            c.allow_codebase_indexing_i_understand_the_risk,
+            "the opt-in must persist and reload"
+        );
+        assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
+
+        let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
+        assert!(err.to_string().contains("'true' or 'false'"), "{err}");
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(
+            c.allow_codebase_indexing_i_understand_the_risk,
+            "the refused write must leave the stored value alone"
+        );
+
+        unset(&ws, KEY).unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        assert!(!c.allow_codebase_indexing_i_understand_the_risk);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// ADR-0043 D8 (#257): the two Gemini per-phase pins persist, print, emit and
+    /// clear — and an id the CLI no longer serves is refused HERE, before a spawn.
+    #[test]
+    fn gemini_config_round_trip() {
+        let (ws, dir) = tmp_ws("gemini-config-round-trip");
+
+        set(&ws, "gemini.plan_model", "gemini-2.5-pro").unwrap();
+        set(&ws, "gemini.exec_model", "gemini-3.5-flash").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(g.plan_model.as_deref(), Some("gemini-2.5-pro"));
+        assert_eq!(g.exec_model.as_deref(), Some("gemini-3.5-flash"));
+
+        let json = config_json(&ws).unwrap();
+        assert_eq!(
+            json["gemini.exec_model"],
+            serde_json::json!("gemini-3.5-flash")
+        );
+        assert_eq!(
+            json["gemini.plan_model"],
+            serde_json::json!("gemini-2.5-pro")
+        );
+        get(&ws, false).unwrap();
+
+        // A padded value is trimmed on the way in, not stored raw to 404 later.
+        set(&ws, "gemini.exec_model", "  gemini-2.5-flash  ").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(g.exec_model.as_deref(), Some("gemini-2.5-flash"));
+        set(&ws, "gemini.exec_model", "gemini-3.5-flash").unwrap();
+
+        // The retired id is refused at configuration time, naming what was asked.
+        let err = set(&ws, "gemini.exec_model", "gemini-3-pro-preview")
+            .expect_err("a retired id must not be pinnable");
+        assert!(err.to_string().contains("gemini-3-pro-preview"), "{err}");
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(
+            g.exec_model.as_deref(),
+            Some("gemini-3.5-flash"),
+            "the refused write must leave the stored value alone"
+        );
+
+        unset(&ws, "gemini.plan_model").unwrap();
+        unset(&ws, "gemini.exec_model").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
+        assert_eq!(g.plan_model, None);
+        assert_eq!(g.exec_model, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// D7's escape hatch (#234): a bool key that only `'true'`/`'false'` set, so a
+    /// hopeful `yes` cannot silently hand Copilot back its credentialled MCP server.
+    #[test]
+    fn copilot_allow_builtin_mcps_round_trip() {
+        const KEY: &str = "copilot.allow_builtin_mcp_servers_i_understand_the_risk";
+        let (ws, dir) = tmp_ws("copilot-allow-builtin-mcps");
+
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(
+            !c.allow_builtin_mcp_servers_i_understand_the_risk,
+            "the hatch is off until the operator sets it"
+        );
+
+        set(&ws, KEY, "true").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(c.allow_builtin_mcp_servers_i_understand_the_risk);
+        assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
+
+        let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
+        assert!(err.to_string().contains("'true' or 'false'"), "{err}");
+        // The refused write left the stored value alone.
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(c.allow_builtin_mcp_servers_i_understand_the_risk);
+
+        unset(&ws, KEY).unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert!(!c.allow_builtin_mcp_servers_i_understand_the_risk);
+        assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(false));
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The two effort keys land in the same `copilot` section and surface through
+    /// `config_json` — the shape the daemon's `config` verb reads.
+    #[test]
+    fn copilot_effort_config_round_trip() {
+        let (ws, dir) = tmp_ws("copilot-effort-round-trip");
+
+        set(&ws, "copilot.plan_effort", "high").unwrap();
+        set(&ws, "copilot.exec_effort", "low").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_effort.as_deref(), Some("high"));
+        assert_eq!(c.exec_effort.as_deref(), Some("low"));
+        let j = config_json(&ws).unwrap();
+        assert_eq!(j["copilot.plan_effort"], serde_json::json!("high"));
+        assert_eq!(j["copilot.exec_effort"], serde_json::json!("low"));
+
+        unset(&ws, "copilot.plan_effort").unwrap();
+        unset(&ws, "copilot.exec_effort").unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        assert_eq!(c.plan_effort, None);
+        assert_eq!(c.exec_effort, None);
+        let j = config_json(&ws).unwrap();
+        assert_eq!(j["copilot.plan_effort"], serde_json::Value::Null);
+
+        // A typo is refused at `set` time: an unrankable level is silently
+        // dropped by the adapter's clamp, so persisting it would leave the
+        // operator with a setting `config get` reports as set and that does
+        // nothing.
+        let err = set(&ws, "copilot.plan_effort", "hgih").expect_err("a typo must be refused");
+        assert!(
+            err.to_string().contains("reasoning-effort level"),
+            "error: {err}"
+        );
+        assert_eq!(
+            config_json(&ws).unwrap()["copilot.plan_effort"],
+            serde_json::Value::Null,
+            "a refused set must persist nothing"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
     // --- resolve_str / resolve_u64 precedence ---
 
     #[test]
@@ -466,6 +886,24 @@ mod tests {
             resolve_str(Some("flag".into()), Some("persisted".into()), "default"),
             "flag"
         );
+    }
+
+    #[test]
+    fn resolve_effort_applies_precedence_and_validates_raw_settings() {
+        assert_eq!(
+            resolve_effort(Some(Effort::High), Some("low".into()), Some(Effort::Medium)).unwrap(),
+            Some(Effort::High)
+        );
+        assert_eq!(
+            resolve_effort(None, Some("low".into()), Some(Effort::Medium)).unwrap(),
+            Some(Effort::Low)
+        );
+        assert_eq!(
+            resolve_effort(None, None, Some(Effort::Medium)).unwrap(),
+            Some(Effort::Medium)
+        );
+        assert_eq!(resolve_effort(None, None, None).unwrap(), None);
+        assert!(resolve_effort(None, Some("hihg".into()), None).is_err());
     }
 
     #[test]
@@ -838,6 +1276,15 @@ mod tests {
                 "verify.require_verify_gate" => "true",
                 "remote_control" => "true",
                 "claude.max_minutes_per_issue" => "45",
+                // Validated against effort vocabularies, so `x` is refused.
+                "claude.plan_effort"
+                | "claude.exec_effort"
+                | "copilot.plan_effort"
+                | "copilot.exec_effort" => "high",
+                "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
+                "cursor.allow_codebase_indexing_i_understand_the_risk" => "true",
+                // Validated against the vendor's id set, so `x` is refused.
+                "gemini.plan_model" | "gemini.exec_model" => "gemini-3.5-flash",
                 _ => "x",
             }
         };

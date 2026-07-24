@@ -18,12 +18,24 @@ pub(crate) const CODEX_MODEL_TERRA: &str = "gpt-5.6-terra";
 /// Fast/affordable model: tier-`low` (mechanical, well-understood) execution.
 pub(crate) const CODEX_MODEL_LUNA: &str = "gpt-5.6-luna";
 
-/// The fixed `model_reasoning_effort` every routed run pins. The tier chooses the
-/// MODEL; effort stays at the vendor default so routing is one axis, not a
-/// tier×effort matrix. Note this `-c` override supersedes the user's own
-/// `config.toml` effort (observed live, ADR-0004 Amendment) — deliberate, so runs
+/// Default `model_reasoning_effort` when the operator leaves `--*-effort` unset.
+/// The tier chooses the MODEL; effort is an orthogonal axis (ADR-0004 Amendment
+/// 2026-07-23). This `-c` override supersedes the user's own `config.toml`
+/// effort (observed live, ADR-0004 Amendment 2026-07-10) — deliberate, so runs
 /// don't inherit an interactive-use setting.
 pub(crate) const DEFAULT_CODEX_EFFORT: &str = "medium";
+
+/// Clamp a neutral effort word to a value Codex's `model_reasoning_effort`
+/// accepts (`minimal|low|medium|high`). The neutral lexicon's top rungs
+/// `xhigh`/`max` (ADR-0044) have no Codex analogue, so they saturate to `high`
+/// — otherwise `codex exec` rejects the `-c` override at startup. Only the argv
+/// is clamped; telemetry keeps the operator's original word.
+pub(crate) fn codex_reasoning_effort(word: &str) -> &str {
+    match word {
+        "xhigh" | "max" => "high",
+        other => other,
+    }
+}
 
 /// Locate the Codex config file: `$CODEX_HOME/config.toml` when `CODEX_HOME` is
 /// set (matching Codex's own resolution), else `<home>/.codex/config.toml`
@@ -62,25 +74,33 @@ fn parse_codex_config_model(toml: &str) -> Option<String> {
     None
 }
 
-/// The planner's `## Execution model: low|medium|high` complexity tier, lowercased,
-/// if any. The Codex plan variant emits a vendor-neutral tier rather than a Claude
-/// model name; this is the private mirror of `plan::recommended_model` for the
-/// Codex path, leaving the core's `opus|sonnet` parser untouched.
+/// The planner's `## Execution model: low|medium|high|xhigh` complexity tier,
+/// lowercased, if any. The Codex plan variant emits a vendor-neutral tier rather
+/// than a Claude model name; this is the private mirror of `plan::recommended_model`
+/// for the Codex path, leaving the core's `opus|sonnet` parser untouched. `xhigh`
+/// is the fourth rung (ADR-0004, Amendment 2026-07-24) that reaches Sol at high
+/// effort. `xhigh|high` order matters: alternation is leftmost-first, so `high`
+/// must not shadow `xhigh`.
 pub(crate) fn recommended_tier(md: &str) -> Option<String> {
     use regex::Regex;
-    let re =
-        Regex::new(r"(?im)^\s*##\s*Execution model:\s*(low|medium|high)").expect("valid regex");
+    let re = Regex::new(r"(?im)^\s*##\s*Execution model:\s*(low|medium|xhigh|high)")
+        .expect("valid regex");
     re.captures(md).map(|c| c[1].to_lowercase())
 }
 
-/// Map a neutral complexity tier to the executor MODEL. Unknown or absent tiers
-/// default to Terra — the single tier→model point (ADR-0004, Amendment
-/// 2026-07-10), the mirror of the Claude adapter's tier↔model point (ADR-0002).
-pub(crate) fn tier_to_model(tier: Option<&str>) -> &'static str {
+/// Map a neutral complexity tier to the executor `(model, default effort)` — one
+/// rung on the cost/power ladder (ADR-0004, Amendment 2026-07-24). The effort is
+/// the tier's DEFAULT; an explicit `--exec-effort` overrides it (see
+/// `CodexAgent::resolved_exec_effort`). Unknown or absent tiers default to
+/// Terra:medium — the single tier→model+effort point, the mirror of the Claude
+/// adapter's tier↔model point (ADR-0002). The `xhigh` rung's effort is the concrete
+/// Codex word `high` (the neutral `xhigh` names the rung, not a Codex value).
+pub(crate) fn tier_to_model_effort(tier: Option<&str>) -> (&'static str, &'static str) {
     match tier {
-        Some("low") => CODEX_MODEL_LUNA,
-        Some("high") => CODEX_MODEL_SOL,
-        _ => CODEX_MODEL_TERRA,
+        Some("low") => (CODEX_MODEL_LUNA, "low"),
+        Some("high") => (CODEX_MODEL_SOL, "medium"),
+        Some("xhigh") => (CODEX_MODEL_SOL, "high"),
+        _ => (CODEX_MODEL_TERRA, "medium"),
     }
 }
 
@@ -107,7 +127,10 @@ pub(crate) fn build_codex_command(
         .arg("-m")
         .arg(model)
         .arg("-c")
-        .arg(format!("model_reasoning_effort=\"{effort}\""))
+        .arg(format!(
+            "model_reasoning_effort=\"{}\"",
+            codex_reasoning_effort(effort)
+        ))
         .arg("-s")
         .arg("danger-full-access")
         .arg("-o")
@@ -164,7 +187,10 @@ pub(crate) fn build_codex_init_command(
         cmd.arg("-m").arg(m);
     }
     cmd.arg("-c")
-        .arg(format!("model_reasoning_effort=\"{effort}\""))
+        .arg(format!(
+            "model_reasoning_effort=\"{}\"",
+            codex_reasoning_effort(effort)
+        ))
         .arg("-s")
         .arg("danger-full-access");
     for p in images {
@@ -233,6 +259,35 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert!(args.iter().any(|a| a == "model_reasoning_effort=\"low\""));
+    }
+
+    #[test]
+    fn neutral_top_rungs_saturate_to_codex_high() {
+        // `xhigh`/`max` are neutral lexicon rungs (ADR-0044) with no Codex
+        // `model_reasoning_effort` value; they must clamp to `high` so the `-c`
+        // override is one `codex exec` accepts, not one it rejects at startup.
+        assert_eq!(codex_reasoning_effort("xhigh"), "high");
+        assert_eq!(codex_reasoning_effort("max"), "high");
+        // Valid words pass through untouched.
+        for w in ["low", "medium", "high", "minimal"] {
+            assert_eq!(codex_reasoning_effort(w), w);
+        }
+        for word in ["xhigh", "max"] {
+            let cmd = build_codex_command(
+                CODEX_MODEL_SOL,
+                word,
+                Path::new("/repo"),
+                Path::new("/repo/out.txt"),
+            );
+            let args: Vec<String> = cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            assert!(
+                args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
+                "{word} should clamp to high in argv: {args:?}"
+            );
+        }
     }
 
     // ── build_codex_init_command ────────────────────────────────────────────
@@ -305,6 +360,15 @@ mod tests {
             recommended_tier("## Execution model: HIGH\n").as_deref(),
             Some("high")
         );
+        // The fourth rung must parse as `xhigh`, not be shadowed by `high`.
+        assert_eq!(
+            recommended_tier("## Execution model: xhigh\n").as_deref(),
+            Some("xhigh")
+        );
+        assert_eq!(
+            recommended_tier("## Execution model: XHigh\n").as_deref(),
+            Some("xhigh")
+        );
     }
 
     #[test]
@@ -314,16 +378,38 @@ mod tests {
         assert_eq!(recommended_tier("## Execution model: opus"), None);
     }
 
-    // ── tier_to_model ───────────────────────────────────────────────────────
+    // ── tier_to_model_effort ────────────────────────────────────────────────
 
     #[test]
-    fn tier_to_model_maps_and_defaults() {
-        assert_eq!(tier_to_model(Some("low")), CODEX_MODEL_LUNA);
-        assert_eq!(tier_to_model(Some("medium")), CODEX_MODEL_TERRA);
-        assert_eq!(tier_to_model(Some("high")), CODEX_MODEL_SOL);
-        // Absent or unrecognized tiers default to the everyday model.
-        assert_eq!(tier_to_model(None), CODEX_MODEL_TERRA);
-        assert_eq!(tier_to_model(Some("bogus")), CODEX_MODEL_TERRA);
+    fn tier_to_model_effort_maps_and_defaults() {
+        assert_eq!(tier_to_model_effort(Some("low")), (CODEX_MODEL_LUNA, "low"));
+        assert_eq!(
+            tier_to_model_effort(Some("medium")),
+            (CODEX_MODEL_TERRA, "medium")
+        );
+        // Both flagship rungs land on Sol; only the effort differs.
+        assert_eq!(
+            tier_to_model_effort(Some("high")),
+            (CODEX_MODEL_SOL, "medium")
+        );
+        assert_eq!(
+            tier_to_model_effort(Some("xhigh")),
+            (CODEX_MODEL_SOL, "high")
+        );
+        // Absent or unrecognized tiers default to the everyday model at medium.
+        assert_eq!(tier_to_model_effort(None), (CODEX_MODEL_TERRA, "medium"));
+        assert_eq!(
+            tier_to_model_effort(Some("bogus")),
+            (CODEX_MODEL_TERRA, "medium")
+        );
+    }
+
+    #[test]
+    fn xhigh_tier_effort_is_a_codex_accepted_word() {
+        // The `xhigh` rung must route to the concrete Codex word `high`, not the
+        // neutral `xhigh` (which `codex exec` would reject before the clamp).
+        let (_, effort) = tier_to_model_effort(Some("xhigh"));
+        assert_eq!(codex_reasoning_effort(effort), "high");
     }
 
     // ── parse_codex_config_model ────────────────────────────────────────────

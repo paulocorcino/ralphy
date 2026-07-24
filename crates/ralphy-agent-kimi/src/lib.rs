@@ -1,11 +1,11 @@
-//! The Kimi CLI adapter: drives `kimi --print` behind the core [`Agent`] contract.
+//! The Kimi CLI adapter: drives headless `kimi -p` behind the core [`Agent`] contract.
 //! Everything Kimi-specific — the binary, the model flag, the headless invocation,
 //! the `stream-json` final-text parser, and the signal→[`Outcome`] mapping — is
 //! confined here. See docs/adr/0028.
 //!
 //! Like the Codex and OpenCode adapters (and unlike Claude's live PTY session),
 //! Kimi needs no interactive session: `plan` and `execute` both run headless
-//! `kimi --print` with the charter piped on stdin, and completion is detected from
+//! `kimi -p <charter>` with the charter on argv, and completion is detected from
 //! the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the final
 //! assistant message in Kimi's `stream-json` stream, the process exit code, and a
 //! HEAD-diff commit check — mapped onto the same core [`Outcome`].
@@ -23,7 +23,7 @@ use ralphy_adapter_support::{
     list_session_files, run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg,
     PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Usage, Workspace};
+use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
 
 mod auth;
@@ -34,19 +34,19 @@ mod tasks;
 mod usage;
 
 /// `false`, settled at validation (ADR-0028 / 0028-kimi-validation). The model
-/// advertises `image_in`/`video_in`, but `kimi --print` exposes **no** attachment
-/// or image flag — its only input is a text/stream-json charter on stdin — so
+/// advertises `image_in`/`video_in`, but headless `kimi` exposes **no** attachment
+/// or image flag — its only input is the `-p` text charter on argv — so
 /// there is no verified multimodal path to deliver a fetched image on. Setting
 /// `true` would make triage attachment-fetch (ADR-0025 §4) pull images the adapter
 /// cannot hand to the CLI. Stays `false` until Kimi ships a `--print` image channel.
 pub const ACCEPTS_IMAGES: bool = false;
 
-use auth::{is_kimi_auth_error, KIMI_AUTH_ERROR_MSG};
+use auth::{is_kimi_auth_error, is_kimi_limit_text, KIMI_AUTH_ERROR_MSG};
 use command::{build_kimi_command, DEFAULT_KIMI_MODEL};
 use outcome::{classify_kimi_outcome, kimi_final_text};
 use skills::materialize_kimi_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
-use usage::{fold_wire_usage, kimi_sessions_dir, wire_session_id};
+use usage::{fold_wire_usage, kimi_sessions_dir, resume_hint_session_id};
 
 /// The Kimi planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` with no `## Execution model` tier line
@@ -57,12 +57,27 @@ use usage::{fold_wire_usage, kimi_sessions_dir, wire_session_id};
 /// `assets/prompts/`.
 const PROMPT_PLAN_KIMI: &str = include_str!("../../../assets/prompts/prompt.plan.kimi.md");
 
+/// Write the full execution charter to `<ws>/.ralphy/exec.md` and return its path.
+/// The charter is too large for the argv ceiling, so only
+/// [`ralphy_adapter_support::EXEC_CHARTER`] — a pointer at this file — rides `-p`
+/// (ADR-0028 Amendment (b)). `execute` calls this before every spawn; if it is
+/// ever dropped the child is handed a pointer at a file nobody wrote.
+fn write_exec_charter(ws: &Workspace) -> Result<PathBuf> {
+    let path = ws.ralphy_dir().join("exec.md");
+    fs::write(&path, PROMPT_EXECUTE).context("writing .ralphy/exec.md")?;
+    Ok(path)
+}
+
 /// Drives the `kimi` CLI. `model` is the operator override (else
-/// [`DEFAULT_KIMI_MODEL`]); `run_dir` is where the captured logs live;
-/// `max_minutes_per_issue` is the per-issue wall budget, clamped to `run_deadline`
-/// when the run carries a global deadline.
+/// [`DEFAULT_KIMI_MODEL`]); `plan_effort`/`exec_effort` accept the neutral Effort
+/// word at the CLI and are a documented no-op here (ADR-0044 D4) — Kimi has no
+/// level axis; `run_dir` is where the captured logs live; `max_minutes_per_issue`
+/// is the per-issue wall budget, clamped to `run_deadline` when the run carries a
+/// global deadline.
 pub struct KimiAgent {
     model: Option<String>,
+    plan_effort: Option<String>,
+    exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -71,9 +86,25 @@ impl KimiAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
         Self {
             model,
+            plan_effort: None,
+            exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
+    }
+
+    /// Accept the resolved planning Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::plan`] (D4) — must not alter argv.
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Accept the resolved execution Effort word (ADR-0044 D5). Documented no-op
+    /// at the discard site in [`Agent::execute`] (D4) — must not alter argv.
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
+        self
     }
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `CodexAgent::with_max_minutes_per_issue`).
@@ -132,13 +163,23 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            ralphy_core::emit::planning("kimi --print", &model, "");
+            let cmd = build_kimi_command(
+                &model,
+                ws.repo_root(),
+                &skills_dir,
+                ralphy_adapter_support::PLAN_CHARTER,
+            );
+            // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "".
+            let _ = self.plan_effort.as_deref();
+            ralphy_core::emit::planning("kimi", &model, "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
-            let r = self.run_kimi(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
+            // 0.28 has no stdin prompt channel: the charter rides `-p` on argv and
+            // the piped stdin `HeadlessCall` requires is simply closed empty.
+            let r = self.run_kimi(cmd, "", timeout)?;
             let after = snapshot();
             Ok((r, (before, after)))
         };
@@ -159,16 +200,28 @@ impl Agent for KimiAgent {
             },
             run,
             is_kimi_auth_error,
-            // No plan-time usage limit is surfaced for Kimi in this slice (D9).
-            |_log| None,
+            // A billing-cycle ceiling bites hardest during planning: it blocks
+            // every call including the first, so no plan is ever written and the
+            // run would otherwise abort as "kimi produced no plan" (#282). Surface
+            // it as a typed `PlanLimit` so the runner routes it through the same
+            // stop-and-report / auto-resume path as an execute-time
+            // `Outcome::Limit` (the Codex/Gemini pattern). Kimi's 403 promises only
+            // "the next cycle" with no timestamp → `reset: None`, which drives the
+            // ADR-0030 synthetic cadence `phases.rs` already handles. The
+            // no-plan-written state is itself the non-clean-exit guard the execute
+            // path spells out: a task merely echoing the phrase still writes a plan.
+            |log| {
+                ralphy_adapter_support::detect_limit(log, is_kimi_limit_text, |_| None)
+                    .map(|reset| PlanLimit { reset }.into())
+            },
         )?;
 
         // None = resumed (finalized plan kept, no vendor run): no wire payload to
         // fold, so report zero planning tokens.
         let (usage, session_id) = match session {
-            Some((_, (before, after))) => (
+            Some((r, (before, after))) => (
                 fold_wire_usage(&before, &after, Some(model)),
-                wire_session_id(&before, &after),
+                resume_hint_session_id(&r.stdout),
             ),
             None => (Usage::default(), None),
         };
@@ -198,11 +251,20 @@ impl Agent for KimiAgent {
 
         let run = || {
             let skills_dir = materialize_kimi_skills(ws)?;
-            let cmd = build_kimi_command(&model, ws.repo_root(), &skills_dir);
-            ralphy_core::emit::executing("kimi --print", 0, &model, "");
+            write_exec_charter(ws)?;
+            let cmd = build_kimi_command(
+                &model,
+                ws.repo_root(),
+                &skills_dir,
+                ralphy_adapter_support::EXEC_CHARTER,
+            );
+            // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
+            // discarded here — must not alter argv; emit effort "".
+            let _ = self.exec_effort.as_deref();
+            ralphy_core::emit::executing("kimi", 0, &model, "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();
-            let r = self.run_kimi(cmd, PROMPT_EXECUTE, timeout)?;
+            let r = self.run_kimi(cmd, "", timeout)?;
             let after = snapshot();
             Ok((r, (before, after)))
         };
@@ -241,7 +303,7 @@ impl Agent for KimiAgent {
         Ok(Execution {
             outcome,
             usage: fold_wire_usage(&before, &after, Some(model)),
-            session_id: wire_session_id(&before, &after),
+            session_id: resume_hint_session_id(&r.stdout),
         })
     }
 }
@@ -256,6 +318,55 @@ mod tests {
     fn kimi_agent_is_a_dyn_agent() {
         let agent = KimiAgent::new(None, PathBuf::from("/run"));
         let _as_dyn: &dyn Agent = &agent;
+    }
+
+    /// ADR-0044 D4: a resolved effort on the agent must not inject `--effort`
+    /// into `build_kimi_command` argv (the builder has no effort parameter).
+    #[test]
+    fn resolved_effort_never_appears_on_argv() {
+        use std::path::Path;
+
+        let agent = KimiAgent::new(None, PathBuf::from("/run"))
+            .with_plan_effort(Some("high".into()))
+            .with_exec_effort(Some("high".into()));
+        let _ = (agent.plan_effort.as_deref(), agent.exec_effort.as_deref());
+        let cmd = build_kimi_command(
+            DEFAULT_KIMI_MODEL,
+            Path::new("/repo"),
+            Path::new("/repo/.ralphy/skills"),
+            "hello",
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !args.iter().any(|a| a == "--effort"),
+            "resolved effort must not alter argv: {args:?}"
+        );
+    }
+
+    /// ADR-0044 D4: resolved effort is stored on the agent and discarded at
+    /// plan/execute — mirrors gemini's documented-discard pin.
+    #[test]
+    fn resolved_effort_is_stored_for_documented_discard() {
+        let agent = KimiAgent::new(None, PathBuf::from("/run"))
+            .with_plan_effort(Some("high".into()))
+            .with_exec_effort(Some("high".into()));
+        assert_eq!(agent.plan_effort.as_deref(), Some("high"));
+        assert_eq!(agent.exec_effort.as_deref(), Some("high"));
+        let prod = include_str!("lib.rs")
+            .split("\nmod tests {")
+            .next()
+            .expect("production half");
+        assert!(
+            prod.contains("let _ = self.plan_effort.as_deref();"),
+            "plan must discard plan_effort before emit"
+        );
+        assert!(
+            prod.contains("let _ = self.exec_effort.as_deref();"),
+            "execute must discard exec_effort before emit"
+        );
     }
 
     #[test]
@@ -313,6 +424,29 @@ mod tests {
             PROMPT_PLAN_KIMI
         );
         assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_KIMI.len());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// The exec side mirrors the plan side: the full charter goes to
+    /// `.ralphy/exec.md` and only the pointer rides argv.
+    #[test]
+    fn execute_writes_exec_md_charter() {
+        let base = std::env::temp_dir().join(format!("ralphy-kimi-exec-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let ws = Workspace::new(&base);
+        fs::create_dir_all(ws.ralphy_dir()).unwrap();
+
+        // Drive the PRODUCTION write, not a hand-rolled copy of it: deleting the
+        // call in `execute` must red this test, not leave it tautologically green.
+        let exec_md = write_exec_charter(&ws).unwrap();
+        assert_eq!(exec_md, ws.ralphy_dir().join("exec.md"));
+        assert_eq!(fs::read_to_string(&exec_md).unwrap(), PROMPT_EXECUTE);
+        // The pointer stays a pointer (same rule sentinel.rs pins) and the file it
+        // points at carries the real charter.
+        assert!(ralphy_adapter_support::EXEC_CHARTER.len() < 512);
+        assert!(PROMPT_EXECUTE.len() > 512);
 
         let _ = fs::remove_dir_all(&base);
     }

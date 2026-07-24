@@ -1,0 +1,12 @@
+[2m2026-07-22 11:31:17[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Dev/FinCal [3mstamp[0m[2m=[0m20260722-113117 [3mdry_run[0m[2m=[0mtrue
+🐙 Ralphy - v0.1.0-rc13
+FinCal · capstone/copilot-272 · https://github.com/paulocorcino/FinCal
+[2m2026-07-22 11:31:23[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#108 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":108,"title":"Transferência: par vinculado neutro entre Contas","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missues [#108]
+[2m2026-07-22 11:31:23[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"copilot" [3mplan_agent[0m[2m=[0m"copilot" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0mmaster [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-22 11:31:29[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260722-113117 [3mbase[0m[2m=[0mmaster [3mwas[0m[2m=[0mcapstone/copilot-272
+[2m2026-07-22 11:31:33[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m108 [3mtitle[0m[2m=[0mTransferência: par vinculado neutro entre Contas
+[2m2026-07-22 11:31:33[0m [32m INFO[0m [2mralphy_core::runner::phases[0m[2m:[0m comments attached for planner [3mnumber[0m[2m=[0m108 [3mcomments[0m[2m=[0m2
+[2m2026-07-22 11:31:35[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m handoffs collected for planner [3mnumber[0m[2m=[0m108 [3mhandoffs[0m[2m=[0m2
+[2m2026-07-22 11:31:36[0m [32m INFO[0m [2mralphy_core::runner::artifacts[0m[2m:[0m references collected for planner [3mnumber[0m[2m=[0m108 [3mreferences[0m[2m=[0m3
+[2m2026-07-22 11:31:36[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mcopilot [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+Error: Copilot's `continueOnAutoMode` is enabled in C:\Users\PICHAU\.copilot\config.json: a vendor-internal retry that silently switches model and hides a rate limit from Ralphy (ADR-0041 D11) — set it to false

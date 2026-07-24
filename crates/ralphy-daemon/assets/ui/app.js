@@ -1066,10 +1066,18 @@ function shell() {
     closeUsage() {
       this.usageOpen = false;
     },
-    // Sum a run record's token buckets into one total for the compact list.
+    // Sum a record's token buckets into one total for the compact list. A null
+    // `tokens` means the vendor keeps no count anywhere (Cursor, ADR-0042 D11) —
+    // render that as "unavailable", never as 0, which would read as "spent
+    // nothing". A `lower_bound` record is a FLOOR, not the bill (Gemini hides its
+    // router's tokens, ADR-0043 D10) — carry the caveat on the number itself, so
+    // it cannot be read without it.
     usageTokens(rec) {
-      const t = (rec && rec.tokens) || {};
-      return (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
+      const t = rec && rec.tokens;
+      if (!t) return "unavailable";
+      const total =
+        (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
+      return rec.lower_bound ? "≥ " + total + " (lower bound)" : total;
     },
 
     // --- about (read-only) ------------------------------------------------
@@ -1439,7 +1447,7 @@ function shell() {
 
     // --- canvas tabs ------------------------------------------------------
     // The Agents tab is permanent; file tabs are appended and closable.
-    agents: ["claude", "codex", "opencode"],
+    agents: ["claude", "codex", "opencode", "kimi", "copilot", "cursor", "gemini"],
     agentMenu: false,
     consoleCount: 0,
     // The design-system confirm dialog (replaces window.confirm). `askConfirm`
@@ -1963,6 +1971,12 @@ function shell() {
         { kind: "claude", label: "claude", plain: false, digit: "1" },
         { kind: "codex", label: "codex", plain: false, digit: "2" },
         { kind: "opencode", label: "opencode", plain: false, digit: "3" },
+        // Kimi arrived after the first three, so it takes the next free digit
+        // rather than renumbering the accelerators already in an operator's hands.
+        { kind: "kimi", label: "kimi", plain: false, digit: "4" },
+        { kind: "copilot", label: "copilot", plain: false, digit: "5" },
+        { kind: "cursor", label: "cursor", plain: false, digit: "6" },
+        { kind: "gemini", label: "gemini", plain: false, digit: "7" },
         { kind: "console", label: "console", plain: true, digit: "0" },
       ];
     },
@@ -2228,12 +2242,13 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
-// Alt+Shift+<digit> → open a console: 1 claude · 2 codex · 3 opencode · 0 plain
+// Alt+Shift+<digit> → open a console: 1 claude · 2 codex · 3 opencode · 4 kimi ·
+// 5 copilot · 6 cursor · 7 gemini · 0 plain
 // console. Matched on the physical key (e.code) so layout / macOS Option glyphs
 // don't matter; guarded so it never hijacks a text field, modal, or the login.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit0: "__plain" };
+  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit4: "kimi", Digit5: "copilot", Digit6: "cursor", Digit7: "gemini", Digit0: "__plain" };
   const kind = map[e.code];
   if (!kind) return;
   const c = getShell();

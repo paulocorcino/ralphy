@@ -1,0 +1,71 @@
+# Live probe — issue #243, --agent cursor against C:\Dev\FinCal
+date: 2026-07-21T05:33:13Z
+cursor-agent: 2026.07.16-899851b
+ralphy under test: target/debug/ralphy.exe @ 1877dca
+
+## Probe A — the refusal path (AC 4): no .cursorindexingignore in the lab
+$ ls -a C:/Dev/FinCal | grep -i cursorindexing   # (nothing)
+(absent — as required for this probe)
+$ ls $TMP/cursor-agent-logs-*/ | wc -l   # BEFORE
+51
+
+$ ralphy run --repo C:/Dev/FinCal --only-issue 112 --agent cursor --base-branch origin/master --dry-run --verbose
+exit=1
+Error: the `cursor` CLI was not found on PATH, PATHEXT, or ~/.local/bin. Install it, or select another agent with --agent / --plan-agent.
+
+### Probe A, second attempt (after the d8ac69f preflight fix)
+$ ralphy run --repo C:/Dev/FinCal --only-issue 112 --agent cursor --base-branch origin/master --dry-run --verbose
+
+### Probe A, FINAL (after d8ac69f + e0a2cec; lab's stale .ralphy/plan.md removed so the planner really spawns)
+$ ralphy run --repo C:/Dev/FinCal --only-issue 108 --agent cursor --base-branch origin/master --dry-run --verbose
+exit=1
+logs under $TMP/cursor-agent-logs-*: 51 BEFORE, 51 AFTER  → NO child was spawned (AC 4)
+
+Error: ralphy: refusing to run `cursor` in C:/Dev/FinCal — an ordinary Cursor run walks this repository and syncs a copy of it to Cursor's servers, whatever the task asked for.
+Opt out by creating C:/Dev/FinCal/.cursorindexingignore containing one line:
+
+    *
+
+Ralphy will not create that file for you: it lands in your repository and your `git status`, so it is your call.
+If you WANT the indexing, opt in instead:
+
+    ralphy config set cursor.allow_codebase_indexing_i_understand_the_risk true
+
+
+## Probe B — the happy path (AC 2/3/9/10/11/12)
+
+Setup: `.cursorindexingignore` (content `*`) written by hand into C:\Dev\FinCal, and
+listed in `.git/info/exclude` — ralphy refuses a dirty tree, so the opt-out must be
+committed or excluded before the first Cursor run. Lab's stale .ralphy/plan.md removed.
+
+$ ralphy run --repo C:/Dev/FinCal --only-issue 108 --agent cursor --base-branch origin/master --dry-run --verbose
+exit=0 · duration_s=346 · outcome="completed" · issues_json=[{"number":108,"status":"planned"}]
+
+### The plan artifact Cursor wrote (C:/Dev/FinCal/.ralphy/plan.md)
+  open steps '- [ ]' ....... 12
+  '## Feasible:' ........... 1
+  '## Acceptance ledger' ... 1
+  '## Verify' .............. 1
+  → the ~26 KB charter arrived WHOLE on stdin: the agent produced every section it asks for.
+
+### The repository was returned
+$ git -C C:/Dev/FinCal rev-parse --abbrev-ref HEAD
+afk/run-20260720-143515      (the branch the lab was already on; the run's base)
+$ git -C C:/Dev/FinCal branch --list "afk/run-20260721*"
+(nothing — the empty run branch afk/run-20260721-024331 was removed)
+runner said: DryRun: returned repo to 'afk/run-20260720-143515'; empty run branch removed.
+
+### The operator's own Cursor state, before → after
+  ~/.cursor/cli-config.json md5 .... b7986977aa5161a15ee3d72bc173cf65 → b7986977aa5161a15ee3d72bc173cf65   UNCHANGED (D17)
+  ~/.cursor/chats entries .......... 5  → 5                                                                UNCHANGED (D17)
+  $TMP/cursor-agent-logs-*/ files .. 51 → 51                                                               NO new debug log (D18)
+  worker.log 'Applying change' ..... 0  → 0                                                                NOTHING uploaded (D6)
+
+### Where the run's own Cursor state went instead (D17's containment, measured)
+$ ls -R C:/Dev/FinCal/.ralphy/runs/20260721-024331/cursor-config
+  cli-config.json      (seeded IN from the operator's — their permissions policy applies)
+  statsig-cache.json   (written by the run — would have landed in ~/.cursor without D17)
+  chats/2a8e98a033a3fd28d98d7550370cf2bb/5199eb5c-a3bd-4473-9fdd-211c4bc015ad
+                       (the run's chat — this is why the operator's chat list is unchanged)
+
+Matches ADR-0042 D17's measured table exactly: cli-config.json + statsig-cache.json + a chats/ tree.

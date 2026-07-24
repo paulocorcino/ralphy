@@ -4,7 +4,8 @@
 //! daemon calls it on request and serializes the result.
 //!
 //! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]),
-//! **OpenCode** ([`opencode`]), and **Kimi** ([`kimi`]) modules. The
+//! **OpenCode** ([`opencode`]), **Kimi** ([`kimi`]), **Copilot**
+//! ([`copilot`]), **Cursor** ([`cursor`]), and **Gemini** ([`gemini`]) modules. The
 //! one-module-per-vendor shape (§7) leaves room for more to follow. The [`kimi`]
 //! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
 //! attribution lives in `kimi.rs`, not here; this file owns only the shared
@@ -15,11 +16,17 @@ use std::path::Path;
 
 pub mod claude;
 pub mod codex;
+pub mod copilot;
+pub mod cursor;
+pub mod gemini;
 pub mod kimi;
 pub mod opencode;
 
 pub use claude::scan_claude;
 pub use codex::scan_codex;
+pub use copilot::{scan_copilot, session_reasoning_effort, session_tokens};
+pub use cursor::scan_cursor;
+pub use gemini::scan_gemini;
 pub use kimi::scan_kimi;
 pub use opencode::scan_opencode;
 
@@ -44,9 +51,15 @@ pub struct InteractiveRecord {
     pub session_id: String,
     pub project: Option<String>,
     pub actor_email: Option<String>,
-    pub tokens: Tokens,
+    /// `None` means the vendor keeps NO token count anywhere — unavailable,
+    /// never zero. Serialized as `null` so a consumer cannot mistake it for `0`.
+    pub tokens: Option<Tokens>,
     pub first_ts: String,
     pub last_ts: String,
+    /// `true` means the vendor makes a complete figure impossible, so these
+    /// counts are a FLOOR, not the bill (ADR-0043 D10). A consumer MUST label
+    /// such a record — never present it as a total.
+    pub lower_bound: bool,
 }
 
 /// A repo the daemon knows about, as the scan needs it: the `owner/repo` slug it
@@ -91,6 +104,18 @@ pub struct OpenCodeScan<'a> {
     pub since: Option<&'a str>,
 }
 
+/// Everything the Copilot scan reads, mirroring [`OpenCodeScan`]: `db_path` is the
+/// `session-store.db` SQLite store (the scan COPIES it plus its `-wal`/`-shm`
+/// sidecars before reading its `assistant_usage_events`/`sessions` tables — see
+/// `copilot.rs`), plus the run-owned ids to exclude, the repo registry for
+/// attribution, and an optional `since` lower bound on `last_ts` (ADR-0033 §2).
+pub struct CopilotScan<'a> {
+    pub db_path: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
 /// Everything the Kimi scan reads, mirroring [`OpenCodeScan`] but with TWO store
 /// roots (ADR-0033 §2): `kimi_dir` is the `.kimi` base (legacy `kimi-cli`
 /// `StatusUpdate` wire files) and `kimi_code_dir` is the `.kimi-code` base
@@ -101,6 +126,34 @@ pub struct OpenCodeScan<'a> {
 pub struct KimiScan<'a> {
     pub kimi_dir: &'a Path,
     pub kimi_code_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Cursor scan reads, mirroring [`KimiScan`]'s two-store shape but
+/// with ONE base: `cursor_dir` is the `.cursor` base, under which the scan walks
+/// BOTH `chats/<hash>/<sid>/meta.json` and
+/// `projects/<slug>/agent-transcripts/<sid>/` and unions them by session id
+/// (ADR-0042 D11 — neither store alone enumerates every session). Plus the
+/// run-owned ids to exclude, the repo registry for attribution, and an optional
+/// `since` lower bound on `last_ts`.
+pub struct CursorScan<'a> {
+    pub cursor_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Gemini scan reads, mirroring [`CursorScan`]: `gemini_dir` is the
+/// `.gemini` base, under which the scan enumerates `tmp/<basename>/chats/` — the
+/// direct `*.jsonl` session logs AND the nested `<parent-sid>/*.jsonl` subagent
+/// ones (ADR-0043 D10). Each project directory maps back to a repo through its
+/// `.project_root` sibling, so no path hash has to be reversed. Plus the
+/// run-owned ids to exclude, the repo registry for attribution, and an optional
+/// `since` lower bound on `last_ts`.
+pub struct GeminiScan<'a> {
+    pub gemini_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
     pub repos: &'a [RegisteredRepo],
     pub since: Option<&'a str>,

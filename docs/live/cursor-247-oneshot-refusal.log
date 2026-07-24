@@ -1,0 +1,17 @@
+# Live refusal probe — issue #247, 2026-07-21 (Windows 11, ralphy debug build)
+#
+# A throwaway git repo with no opt-out file, one knowledge note, no vendor child:
+#   ralphy consolidate --repo C:/Users/PICHAU/AppData/Local/Temp/ralphy-247-probe-a --agent cursor
+# exit code: 1
+
+Consolidating 1 note(s) into KNOWLEDGE.md: issue-999.md
+Error: ralphy: refusing to run `cursor` in C:/Users/PICHAU/AppData/Local/Temp/ralphy-247-probe-a — an ordinary Cursor run walks this repository and syncs a copy of it to Cursor's servers, whatever the task asked for.
+Opt out by creating C:/Users/PICHAU/AppData/Local/Temp/ralphy-247-probe-a/.cursorindexingignore containing one line:
+
+    *
+
+Ralphy will not create that file for you: it lands in your repository and your `git status`, so it is your call.
+If you WANT the indexing, opt in instead:
+
+    ralphy config set cursor.allow_codebase_indexing_i_understand_the_risk true
+

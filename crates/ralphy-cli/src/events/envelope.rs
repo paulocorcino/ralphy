@@ -309,6 +309,9 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             number,
             tokens,
             usage,
+            // The invocation count is a console/panel-only read-time view; it
+            // deliberately never rides the CloudEvents envelope. See docs/adr/0008 D8.
+            invocations: _,
         } => Some(envelope(
             "dev.ralphy.issue.closed",
             Some(&subject_for(*number)),

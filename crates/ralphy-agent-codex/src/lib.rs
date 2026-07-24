@@ -36,8 +36,8 @@ use auth::{
     is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
 };
 use command::{
-    build_codex_command, codex_config_model, recommended_tier, tier_to_model, CODEX_MODEL_SOL,
-    DEFAULT_CODEX_EFFORT,
+    build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
+    CODEX_MODEL_SOL, DEFAULT_CODEX_EFFORT,
 };
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
@@ -46,18 +46,23 @@ use usage::{codex_sessions_dir, fold_rollout_usage, rollout_session_id};
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` that emits a vendor-neutral
-/// `low|medium|high` complexity tier (routed to the executor model, ADR-0004
-/// Amendment 2026-07-10) instead of a Claude model name. Copied to
+/// `low|medium|high|xhigh` complexity tier (routed to the executor model+effort,
+/// ADR-0004 Amendments 2026-07-10 and 2026-07-24) instead of a Claude model name.
+/// Copied to
 /// `.ralphy/plan-charter.md` for the live session to read; only a one-line
 /// pointer is piped on stdin. Single source of truth lives at `assets/prompts/`.
 const PROMPT_PLAN_CODEX: &str = include_str!("../../../assets/prompts/prompt.plan.codex.md");
 
 /// Drives the `codex` CLI. `model` is the operator override (else the user's
-/// Codex config, else the tier-routed family table); `run_dir` is where the
-/// captured logs live; `max_minutes_per_issue` is the per-issue wall budget,
-/// clamped to `run_deadline` when the run carries a global deadline.
+/// Codex config, else the tier-routed family table); `plan_effort`/`exec_effort`
+/// are the operator's resolved Effort words (default `medium` when unset);
+/// `run_dir` is where the captured logs live; `max_minutes_per_issue` is the
+/// per-issue wall budget, clamped to `run_deadline` when the run carries a
+/// global deadline.
 pub struct CodexAgent {
     model: Option<String>,
+    plan_effort: Option<String>,
+    exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
 }
@@ -66,9 +71,25 @@ impl CodexAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
         Self {
             model,
+            plan_effort: None,
+            exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
         }
+    }
+
+    /// Set the planning-phase reasoning effort (`model_reasoning_effort`).
+    /// `None` keeps the vendor default ([`DEFAULT_CODEX_EFFORT`]).
+    pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
+        self.plan_effort = effort;
+        self
+    }
+
+    /// Set the execution-phase reasoning effort (`model_reasoning_effort`).
+    /// `None` keeps the vendor default ([`DEFAULT_CODEX_EFFORT`]).
+    pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
+        self.exec_effort = effort;
+        self
     }
 
     /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
@@ -108,7 +129,7 @@ impl CodexAgent {
     /// The single model decision point, in precedence order: the explicit
     /// `--exec-model` override, then the `model` from the user's Codex config, then
     /// `routed` — the role's row in the family table (planning → Sol; execution →
-    /// the plan tier via `tier_to_model`). Honouring the config keeps a
+    /// the plan tier via `tier_to_model_effort`). Honouring the config keeps a
     /// subscription account on the model it is entitled to with no explicit flag;
     /// the routed fallback replaces the dead `gpt-5-codex` floor (ADR-0004,
     /// Amendment 2026-07-10).
@@ -117,6 +138,19 @@ impl CodexAgent {
             return m.to_string();
         }
         codex_config_model().unwrap_or_else(|| routed.to_string())
+    }
+
+    /// Planning-phase effort for argv/emit: operator flag, else vendor default.
+    fn resolved_plan_effort(&self) -> &str {
+        self.plan_effort.as_deref().unwrap_or(DEFAULT_CODEX_EFFORT)
+    }
+
+    /// Execution-phase effort for argv/emit: the operator's `--exec-effort` flag
+    /// wins on every issue; when unset it falls back to `tier_default` — the
+    /// effort the plan's complexity rung routed to (ADR-0004, Amendment
+    /// 2026-07-24), not a flat `medium`.
+    fn resolved_exec_effort<'a>(&'a self, tier_default: &'a str) -> &'a str {
+        self.exec_effort.as_deref().unwrap_or(tier_default)
     }
 }
 
@@ -147,11 +181,9 @@ impl Agent for CodexAgent {
             materialize_codex_skills(ws)?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
-            // Effort stays at the vendor default: the tier routes the MODEL, and
-            // planning quality comes from Sol, not an effort bump (ADR-0004,
-            // Amendment 2026-07-10 supersedes the old always-`high`).
-            let cmd = build_codex_command(&model, DEFAULT_CODEX_EFFORT, ws.repo_root(), &out_path);
-            ralphy_core::emit::planning("codex exec", &model, DEFAULT_CODEX_EFFORT);
+            let effort = self.resolved_plan_effort();
+            let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
+            ralphy_core::emit::planning("codex exec", &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -210,11 +242,13 @@ impl Agent for CodexAgent {
     }
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
-        // Execution routes the plan's neutral complexity tier to a MODEL
-        // (low→Luna, medium→Terra, high→Sol); effort stays at the vendor default
-        // (ADR-0004, Amendment 2026-07-10).
-        let model = self.resolve_model(tier_to_model(plan.recommended_model.as_deref()));
-        let effort = DEFAULT_CODEX_EFFORT;
+        // Execution routes the plan's neutral complexity tier to one rung on the
+        // (model, effort) ladder — low→Luna:low, medium→Terra:medium,
+        // high→Sol:medium, xhigh→Sol:high (ADR-0004 Amendment 2026-07-24). The
+        // tier's effort is the DEFAULT; an explicit `--exec-effort` still wins.
+        let (routed_model, routed_effort) = tier_to_model_effort(plan.recommended_model.as_deref());
+        let model = self.resolve_model(routed_model);
+        let effort = self.resolved_exec_effort(routed_effort);
         let out_path = ws.ralphy_dir().join("codex-last.txt");
         let log_path = self.run_dir.join("codex.log");
         // HEAD before/after bounds the work this call committed (progress guard).
@@ -234,7 +268,7 @@ impl Agent for CodexAgent {
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
             let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
-            ralphy_core::emit::executing("codex exec", 0, &model, effort);
+            ralphy_core::emit::executing("codex exec", 0, &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
@@ -320,6 +354,107 @@ mod tests {
         assert!(bounded.issue_deadline() <= rd);
     }
 
+    // ── effort → model_reasoning_effort ─────────────────────────────────────
+
+    #[test]
+    fn exec_effort_override_wins_over_the_tier_default() {
+        // An explicit `--exec-effort high` beats the tier's routed default on
+        // every issue — even when the tier (here `medium`→Terra:medium) would
+        // otherwise route to `medium`.
+        let agent =
+            CodexAgent::new(None, PathBuf::from("/run")).with_exec_effort(Some("high".into()));
+        assert_eq!(agent.resolved_exec_effort("medium"), "high");
+        let cmd = build_codex_command(
+            CODEX_MODEL_SOL,
+            agent.resolved_exec_effort("medium"),
+            std::path::Path::new("/repo"),
+            std::path::Path::new("/repo/out.txt"),
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
+            "argv must carry the operator's high effort: {args:?}"
+        );
+    }
+
+    #[test]
+    fn unset_exec_effort_falls_back_to_the_tier_default() {
+        // With no `--exec-effort`, the effort is whatever the tier routed — no
+        // longer a flat `medium`. `xhigh`→Sol:high proves the high rung reaches
+        // the argv unaided by an operator flag.
+        let agent = CodexAgent::new(None, PathBuf::from("/run"));
+        let (model, tier_effort) = command::tier_to_model_effort(Some("xhigh"));
+        assert_eq!(agent.resolved_exec_effort(tier_effort), "high");
+        let cmd = build_codex_command(
+            model,
+            agent.resolved_exec_effort(tier_effort),
+            std::path::Path::new("/repo"),
+            std::path::Path::new("/repo/out.txt"),
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
+            "unset effort must inherit the tier's routed effort: {args:?}"
+        );
+    }
+
+    #[test]
+    fn plan_and_execute_use_the_resolved_effort_helpers() {
+        // Pins the production call sites to the same helpers the argv tests drive —
+        // a plan/execute that ignores stored fields would otherwise stay green.
+        let prod = include_str!("lib.rs");
+        assert!(
+            prod.contains("let effort = self.resolved_plan_effort();"),
+            "plan must bind effort via resolved_plan_effort"
+        );
+        assert!(
+            prod.contains("let effort = self.resolved_exec_effort(routed_effort);"),
+            "execute must bind effort via resolved_exec_effort(routed_effort)"
+        );
+    }
+
+    #[test]
+    fn effort_does_not_alter_the_tier_routed_model() {
+        assert_eq!(
+            tier_to_model_effort(Some("low")).0,
+            command::CODEX_MODEL_LUNA
+        );
+        assert_eq!(
+            tier_to_model_effort(Some("medium")).0,
+            command::CODEX_MODEL_TERRA
+        );
+        assert_eq!(tier_to_model_effort(Some("high")).0, CODEX_MODEL_SOL);
+        assert_eq!(tier_to_model_effort(Some("xhigh")).0, CODEX_MODEL_SOL);
+
+        // A fixed model id in `-m` is unchanged when only the effort argv varies —
+        // effort couples to the tier as a DEFAULT, but the `-m` column is set by
+        // the model, never by the effort word.
+        for effort in ["low", "high"] {
+            let cmd = build_codex_command(
+                command::CODEX_MODEL_TERRA,
+                effort,
+                std::path::Path::new("/repo"),
+                std::path::Path::new("/repo/out.txt"),
+            );
+            let args: Vec<String> = cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let m = args.iter().position(|a| a == "-m").expect("-m present");
+            assert_eq!(
+                args[m + 1],
+                command::CODEX_MODEL_TERRA,
+                "effort={effort} must not alter -m: {args:?}"
+            );
+        }
+    }
+
     // ── resolve_model ───────────────────────────────────────────────────────
 
     #[test]
@@ -329,7 +464,7 @@ mod tests {
         let overridden = CodexAgent::new(Some("gpt-5".into()), PathBuf::from("/run"));
         assert_eq!(overridden.resolve_model(CODEX_MODEL_SOL), "gpt-5");
         assert_eq!(
-            overridden.resolve_model(command::tier_to_model(Some("low"))),
+            overridden.resolve_model(command::tier_to_model_effort(Some("low")).0),
             "gpt-5"
         );
     }

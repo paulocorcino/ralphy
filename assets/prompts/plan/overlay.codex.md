@@ -1,14 +1,17 @@
 <!-- slot: execution-model -->
-   ## Execution model: low | medium | high
-   <one line justifying the choice. This is a vendor-neutral COMPLEXITY tier
-   that selects the executor MODEL (low → the fast model, medium → the everyday
-   model, high → the flagship). Pick the SMALLEST that will do
-   this reliably: `low` for mechanical, localized, well-understood changes (add
-   a string, a field, a UI binding, a straightforward refactor); `medium` is the
-   default for ordinary feature work; `high` only when the work is genuinely
-   complex (cross-cutting changes, tricky concurrency/lifetimes/type-plumbing,
-   subtle correctness, or ambiguous design needing judgment). Default to
-   `medium` unless a concrete reason makes `low` or `high` the right call.>
+   ## Execution model: low | medium | high | xhigh
+   <one line justifying the choice. This is a vendor-neutral COMPLEXITY tier and
+   ONE rung on a single cost/power ladder — it selects both the executor model
+   and how hard it reasons: `low` → the fast model at low effort (mechanical,
+   localized, well-understood changes: add a string, a field, a UI binding, a
+   straightforward refactor); `medium` → the everyday model at medium effort,
+   the default for ordinary feature work; `high` → the flagship at medium effort,
+   for genuinely complex work (cross-cutting changes, tricky
+   concurrency/lifetimes/type-plumbing, subtle correctness, or ambiguous design
+   needing judgment); `xhigh` → the flagship at high effort, reserved for the
+   hardest cases where `high` would visibly under-think. Pick the SMALLEST that
+   will do this reliably; default to `medium` unless a concrete reason makes
+   another rung the right call.>
 
 <!-- slot: self-review-step -->
    - [ ] Self-review: delegate the review to one Codex subagent running the

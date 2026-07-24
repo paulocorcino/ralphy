@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"C:\\Dev\\FinCal","session_id":"bff2f4bd-afb5-4b46-b71c-b206255624b7","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Count slowly from 1 to 40, writing a short sentence about each number. Take your time and be thorough. End with RALPHY_DONE_5E1D."}]},"session_id":"bff2f4bd-afb5-4b46-b71c-b206255624b7"}

@@ -1,8 +1,7 @@
 //! Anti-drift gate for the plan prompt variants (issues #71, #75).
 //!
-//! The five plan prompt artifacts (`prompt.plan.md`, `prompt.plan.codex.md`,
-//! `prompt.plan.kimi.md`, `prompt.plan.opencode.md`, `prompt.plan.staged.md`) are
-//! ASSEMBLED from one
+//! The plan prompt artifacts — one per entry in [`VARIANTS`], which is the
+//! authoritative list — are ASSEMBLED from one
 //! canonical template plus a small per-variant overlay under
 //! `assets/prompts/plan/`. The adapters keep embedding the assembled artifacts
 //! via `include_str!` — this test re-runs the assembly and fails if any
@@ -32,9 +31,12 @@ const SLOTS: [&str; 8] = [
     "mode-rules",
 ];
 
-const VARIANTS: [(&str, &str); 5] = [
+const VARIANTS: [(&str, &str); 8] = [
     ("claude", "prompt.plan.md"),
     ("codex", "prompt.plan.codex.md"),
+    ("copilot", "prompt.plan.copilot.md"),
+    ("cursor", "prompt.plan.cursor.md"),
+    ("gemini", "prompt.plan.gemini.md"),
     ("kimi", "prompt.plan.kimi.md"),
     ("opencode", "prompt.plan.opencode.md"),
     ("staged", "prompt.plan.staged.md"),

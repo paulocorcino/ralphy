@@ -4,7 +4,7 @@
 //! auth/timeout, then read the artifact and validated it against a core schema —
 //! the same mechanical tail every time. [`run_json_session`] owns that tail.
 //!
-//! It stays vendor- and core-neutral (ADR-0004): the adapter passes the already
+//! It stays vendor- and core-neutral (ADR-0002): the adapter passes the already
 //! built [`Command`], its own auth detector, the exact error wording, and a
 //! `validate` closure that parses the raw artifact into whatever core type it
 //! returns. The `serde_json` deserialization and the `ralphy-core` schema types
@@ -128,7 +128,11 @@ pub fn run_json_session<T>(
 /// Strip a single leading UTF-8 BOM (`\u{feff}`) from a decoded artifact. A BOM is
 /// not whitespace, so `trim_start` misses it; left in place it makes `serde_json`
 /// fail at "line 1 column 1". Returns the input unchanged when no BOM is present.
-fn strip_bom(s: &str) -> &str {
+///
+/// `pub` so an adapter that reads its own artifact outside [`run_json_session`]
+/// (Gemini's one-shots, whose ladder is exit-code-first and cannot go through the
+/// shared tail) shares this guard rather than growing a second copy of it.
+pub fn strip_bom(s: &str) -> &str {
     s.strip_prefix('\u{feff}').unwrap_or(s)
 }
 

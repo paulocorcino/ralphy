@@ -137,22 +137,23 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
     let usage_dir = usage::usage_dir_path()?;
-    let claude_projects_dir = usage::claude_projects_dir_path()?;
-    let codex_dir = usage::codex_dir_path()?;
-    let opencode_db = usage::opencode_db_path()?;
-    let kimi_dir = usage::kimi_dir_path()?;
-    let kimi_code_dir = usage::kimi_code_dir_path()?;
+    let stores = StorePaths {
+        claude_projects_dir: usage::claude_projects_dir_path()?,
+        codex_dir: usage::codex_dir_path()?,
+        opencode_db: usage::opencode_db_path()?,
+        kimi_dir: usage::kimi_dir_path()?,
+        kimi_code_dir: usage::kimi_code_dir_path()?,
+        copilot_db: usage::copilot_db_path()?,
+        cursor_dir: usage::cursor_dir_path()?,
+        gemini_dir: usage::gemini_dir_path()?,
+    };
     axum::serve(
         listener,
         router(
             id,
             registry_path,
             usage_dir,
-            claude_projects_dir,
-            codex_dir,
-            opencode_db,
-            kimi_dir,
-            kimi_code_dir,
+            stores,
             start,
             shutdown_rx,
             auth_state,
@@ -170,22 +171,34 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     Ok(())
 }
 
+/// The per-vendor interactive session-store paths resolved once at daemon boot
+/// and handed to the `/api/usage` scan — one `PathBuf` per vendor store. Grouped
+/// so onboarding a vendor is a new field, not another positional threaded through
+/// every `router` call site (#267); eight adjacent same-typed paths were also
+/// transposition-prone (the compiler can't catch two swapped stores). `Default`
+/// yields empty paths — a "no store" set the scans tolerate (ADR-0040 C6) — which
+/// the daemon's tests use as their all-missing base.
+#[derive(Clone, Default)]
+pub struct StorePaths {
+    pub claude_projects_dir: PathBuf,
+    pub codex_dir: PathBuf,
+    pub opencode_db: PathBuf,
+    pub kimi_dir: PathBuf,
+    pub kimi_code_dir: PathBuf,
+    pub copilot_db: PathBuf,
+    pub cursor_dir: PathBuf,
+    pub gemini_dir: PathBuf,
+}
+
 /// The daemon's HTTP surface. Real routes sit *before* the embedded-UI
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
 /// at runtime (the embedded HTML bakes in no identity).
-// One positional per resolved-at-boot path/handle; grouping them into a struct
-// would only move the argument list, not shrink it, and churn the ~20 call sites.
-#[allow(clippy::too_many_arguments)]
 pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
     usage_dir: PathBuf,
-    claude_projects_dir: PathBuf,
-    codex_dir: PathBuf,
-    opencode_db: PathBuf,
-    kimi_dir: PathBuf,
-    kimi_code_dir: PathBuf,
+    stores: StorePaths,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
@@ -193,7 +206,7 @@ pub fn router(
     let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
-    // public `router` signature and its ~20 call sites are untouched; production
+    // public `router` signature and its call sites are untouched; production
     // calls `router` exactly once, so one manager per router is correct.
     let sessions = Arc::new(session::SessionManager::new());
     // `shutdown` is consumed by the `/ws` presence closure; clone one for the
@@ -203,7 +216,7 @@ pub fn router(
     let session_registry = registry_path.clone();
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
-    // constructed here (NOT a `router` param) so the ~20-call-site signature holds.
+    // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let tree_watchers = watchers.clone();
     let tree_registry = registry_path.clone();
@@ -241,25 +254,11 @@ pub fn router(
             "/api/usage",
             get({
                 let dir = usage_dir.clone();
-                let claude_dir = claude_projects_dir.clone();
-                let codex_dir = codex_dir.clone();
-                let opencode_db = opencode_db.clone();
-                let kimi_dir = kimi_dir.clone();
-                let kimi_code_dir = kimi_code_dir.clone();
+                let stores = stores.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
                 move |q: Query<UsageQuery>| {
-                    usage_route(
-                        dir,
-                        claude_dir,
-                        codex_dir,
-                        opencode_db,
-                        kimi_dir,
-                        kimi_code_dir,
-                        registry,
-                        daemon_id,
-                        q.0.since,
-                    )
+                    usage_route(dir, stores, registry, daemon_id, q.0.since)
                 }
             }),
         )
@@ -639,6 +638,40 @@ async fn session_ws_upgrade(
     let Some(entry) = store.entry(repo) else {
         return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
     };
+    // ADR-0042 D6: an ordinary Cursor run uploads the enclosing repository. The
+    // run path is gated in the adapter, but this interactive launch spawns
+    // `cursor-agent` directly — so the gate has to run here too, BEFORE the spec
+    // is built and anything is spawned: it writes `.cursorindexingignore` into the
+    // unprotected repo (announced on the daemon log) and then proceeds. A write
+    // failure (read-only tree) is the only way it stops the launch.
+    if agent == session::Agent::Cursor {
+        let root = Path::new(&entry.path);
+        if let Err(e) =
+            ralphy_proc_util::cursor::indexing_gate(root, session::cursor_indexing_allowed(root))
+        {
+            return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
+        }
+    }
+    // ADR-0043 D4/D6: a Gemini child is contained by an owned configuration root
+    // AND the policy document inside it. The daemon may not import the adapter
+    // (ADR-0032 §10), so it cannot GENERATE that document — and duplicating the
+    // generator would drift from the operator's imported deny rules. It therefore
+    // fails closed. INVARIANT: this refusal precedes `spec_for` and every spawn
+    // path, so no Gemini child is ever created outside the owned root.
+    if agent == session::Agent::Gemini
+        && !session::gemini_policy_path(Path::new(&entry.path)).is_file()
+    {
+        // The remedy names ONLY the run verb: `ralphy init`'s login probe calls
+        // `root::ensure` directly and writes no policy document
+        // (`ralphy-agent-gemini/src/lib.rs` — `write_policy` is reached only from
+        // `prepare_root`), so naming it here would send the operator round a loop
+        // that ends in this same refusal.
+        return (
+            StatusCode::BAD_REQUEST,
+            "gemini: no owned configuration root in this repo — run `ralphy run --agent gemini` here first (`ralphy init` alone does not write the policy document)",
+        )
+            .into_response();
+    }
     let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
     match sessions.spawn_attached(
         repo.to_string(),
@@ -1403,16 +1436,9 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 /// `since` keeps run records whose `ts` is lexically `>=` it and interactive
 /// records whose `last_ts` is `>=` it. The interactive scan excludes any session
 /// the ledger already owns (its `session_id` in `records`) and writes nothing.
-// One positional per resolved-at-boot store path; grouping them would only move
-// the argument list, not shrink it (mirrors `router`).
-#[allow(clippy::too_many_arguments)]
 async fn usage_route(
     usage_dir: PathBuf,
-    claude_projects_dir: PathBuf,
-    codex_dir: PathBuf,
-    opencode_db: PathBuf,
-    kimi_dir: PathBuf,
-    kimi_code_dir: PathBuf,
+    stores: StorePaths,
     registry_path: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
@@ -1427,16 +1453,7 @@ async fn usage_route(
             registry::RegistryStore::default()
         }
     };
-    let interactive = usage::interactive_records(
-        &claude_projects_dir,
-        &codex_dir,
-        &opencode_db,
-        &kimi_dir,
-        &kimi_code_dir,
-        &store,
-        &runs,
-        since.as_deref(),
-    );
+    let interactive = usage::interactive_records(&stores, &store, &runs, since.as_deref());
     Json(serde_json::json!({
         "daemon_id": daemon_id,
         "records": runs,
@@ -1941,11 +1958,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2118,11 +2131,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2151,11 +2160,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2207,11 +2212,7 @@ mod tests {
             None,
             registry_path,
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2260,11 +2261,7 @@ mod tests {
             None,
             registry_path,
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2324,11 +2321,7 @@ mod tests {
             None,
             registry_path,
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2381,11 +2374,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2431,11 +2420,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2486,11 +2471,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             usage_dir.path().to_path_buf(),
-            claude_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                claude_projects_dir: claude_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2534,6 +2518,14 @@ mod tests {
             !body_string.contains("usd"),
             "no pricing in the payload; got: {body_string}"
         );
+
+        // A vendor that writes every token to disk reports a total, not a floor:
+        // a blanket `lower_bound: true` would mislabel the whole modal.
+        let claude = interactive
+            .iter()
+            .find(|r| r.get("session_id").and_then(|v| v.as_str()) == Some("int-sess"))
+            .unwrap();
+        assert_eq!(claude["lower_bound"].as_bool(), Some(false), "{claude}");
     }
 
     /// `/api/usage` also carries Codex interactive records: a rollout under the
@@ -2562,11 +2554,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            codex_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                codex_dir: codex_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2627,11 +2618,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            db.clone(),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                opencode_db: db.clone(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2662,6 +2652,74 @@ mod tests {
         );
     }
 
+    /// `/api/usage` also carries Copilot interactive records: a row in a seeded
+    /// `session-store.db` flows through the scan and appears in the `interactive`
+    /// array with `agent=="copilot"` and its `session_id`. Proves the `copilot_db`
+    /// router arg is threaded end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_copilot_interactive_records() {
+        use rusqlite::Connection;
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("session-store.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute(
+                "CREATE TABLE assistant_usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                 session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
+                 cache_read_tokens INTEGER, cache_write_tokens INTEGER, created_at TEXT)",
+                [],
+            )
+            .unwrap();
+            conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT)", [])
+                .unwrap();
+            conn.execute(
+                "INSERT INTO assistant_usage_events (session_id, model, input_tokens, \
+                 output_tokens, cache_read_tokens, cache_write_tokens, created_at) \
+                 VALUES ('ses_cp', 'claude-sonnet-5', 22913, 350, 0, 22903, \
+                 '2026-07-20T11:54:33.066Z')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths {
+                copilot_db: db.clone(),
+                ..Default::default()
+            },
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("copilot")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_cp")
+            }),
+            "interactive must carry a copilot record with the session id; got: {body_string}"
+        );
+        assert!(
+            !body_string.contains("usd"),
+            "no pricing in the payload; got: {body_string}"
+        );
+    }
+
     /// `/api/usage` also carries Kimi interactive records: a legacy `wire.jsonl`
     /// with one non-zero `StatusUpdate` under the kimi base dir's `sessions/` tree
     /// flows through the scan and appears in the `interactive` array with
@@ -2679,11 +2737,10 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            kimi_dir.path().to_path_buf(),
-            PathBuf::from("does-not-exist"),
+            StorePaths {
+                kimi_dir: kimi_dir.path().to_path_buf(),
+                ..Default::default()
+            },
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2712,6 +2769,131 @@ mod tests {
             !body_string.contains("usd"),
             "no pricing in the payload; got: {body_string}"
         );
+    }
+
+    /// `/api/usage` also carries Cursor interactive records, and their `tokens` is
+    /// JSON `null` — the key is PRESENT and is not `0` (ADR-0042 D11: Cursor keeps
+    /// no token count anywhere, so "unavailable" must not serialize as "spent
+    /// nothing"). Proves the `cursor_dir` router arg is threaded end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_cursor_interactive_records() {
+        let cursor_dir = tempfile::tempdir().unwrap();
+        let sid = "33333333-3333-3333-3333-333333333333";
+        let sess = cursor_dir.path().join("chats").join("aaaa").join(sid);
+        std::fs::create_dir_all(&sess).unwrap();
+        std::fs::write(
+            sess.join("meta.json"),
+            r#"{"schemaVersion":1,"createdAtMs":1784593842510,"hasConversation":true,"updatedAtMs":1784593855173,"cwd":"C:\\Dev\\FinCal"}"#,
+        )
+        .unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths {
+                cursor_dir: cursor_dir.path().to_path_buf(),
+                ..Default::default()
+            },
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        let record = interactive
+            .iter()
+            .find(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("cursor")
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some(sid)
+            })
+            .unwrap_or_else(|| panic!("no cursor record for {sid}; got: {body_string}"));
+        assert!(
+            record.get("tokens").is_some(),
+            "the tokens key must be PRESENT, not omitted; got: {record}"
+        );
+        assert!(
+            record["tokens"].is_null(),
+            "tokens must be null (unavailable), never 0; got: {record}"
+        );
+    }
+
+    /// `/api/usage` also carries Gemini interactive records, with REAL counts —
+    /// unlike Cursor's `null`, the Gemini store keeps per-turn tokens (a lower
+    /// bound, ADR-0043 D10). Proves the `gemini_dir` router arg is threaded
+    /// end-to-end.
+    #[tokio::test]
+    async fn api_usage_carries_gemini_interactive_records() {
+        let gemini_dir = tempfile::tempdir().unwrap();
+        let chats = gemini_dir.path().join("tmp").join("fincal").join("chats");
+        std::fs::create_dir_all(&chats).unwrap();
+        std::fs::write(
+            gemini_dir
+                .path()
+                .join("tmp")
+                .join("fincal")
+                .join(".project_root"),
+            "c:\\dev\\fincal",
+        )
+        .unwrap();
+        std::fs::write(
+            chats.join("session-x.jsonl"),
+            "{\"sessionId\":\"ralphy-probe-p1p2p3p4p6\",\"startTime\":\"2026-07-21T00:56:00Z\",\"lastUpdated\":\"2026-07-21T01:00:00Z\",\"kind\":\"main\"}\n\
+             {\"id\":\"78d80d17\",\"type\":\"gemini\",\"content\":\"OK\",\"tokens\":{\"input\":20637,\"output\":30,\"cached\":0,\"thoughts\":257,\"tool\":0,\"total\":20924},\"model\":\"gemini-3.1-pro-preview-customtools\"}\n",
+        )
+        .unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths {
+                gemini_dir: gemini_dir.path().to_path_buf(),
+                ..Default::default()
+            },
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = resp.into_body().collect().await.unwrap().to_bytes();
+        let body_string = String::from_utf8_lossy(&raw);
+        let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let interactive = body["interactive"].as_array().expect("interactive array");
+        let record = interactive
+            .iter()
+            .find(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some("gemini")
+                    && r.get("session_id").and_then(|v| v.as_str())
+                        == Some("ralphy-probe-p1p2p3p4p6")
+            })
+            .unwrap_or_else(|| panic!("no gemini record; got: {body_string}"));
+        // `total - input`, not the bare `output` field — the arithmetic survives
+        // the whole route, not just the scan's own unit test.
+        assert_eq!(record["tokens"]["output"].as_u64(), Some(287), "{record}");
+        assert_eq!(record["tokens"]["input"].as_u64(), Some(20637), "{record}");
+        // ADR-0043 D10: the served record must carry the floor label, or the UI
+        // has nothing to render `≥ n (lower bound)` from.
+        assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
     }
 
     #[test]
@@ -2747,11 +2929,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -2782,11 +2960,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -2818,11 +2992,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::localhost(),
@@ -2847,11 +3017,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -2897,11 +3063,7 @@ mod tests {
             Some(id),
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(policy, session_epoch),
@@ -3276,11 +3438,7 @@ mod tests {
             None,
             PathBuf::from("does-not-exist"),
             PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
-            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
             auth::AuthState::fixed(
@@ -3378,11 +3536,7 @@ mod tests {
                 None,
                 PathBuf::from("does-not-exist"),
                 PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
-                PathBuf::from("does-not-exist"),
+                StorePaths::default(),
                 Instant::now(),
                 idle_shutdown(),
                 auth::AuthState::fixed(

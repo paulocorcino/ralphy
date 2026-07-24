@@ -1,424 +1,263 @@
-# Ralphy
+# Ralphy 🌙
 
 [![Built with Rust](https://img.shields.io/badge/built_with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
-[![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows_%7C_Linux-0078D6)](#prerequisites)
+[![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows_%7C_Linux_%7C_macOS-0078D6)](https://github.com/paulocorcino/ralphy/releases)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 [![Powered by Claude Code](https://img.shields.io/badge/powered_by-Claude_Code-d97757)](https://claude.com/claude-code)
 
-**Ralphy works your GitHub issue backlog while you sleep — and hands you a branch to review in the morning.**
+**Ralphy works through your GitHub issues while you sleep — and hands you a branch to review in the morning. ☕**
 
-You label the issues you trust an agent to handle. Ralphy plans each one, has a coding
-agent write the code, commits the work, and closes the issue when it's green. It **never
-pushes and never opens a PR** — you review the branch and **merge by hand**. It runs on
-your **coding-agent subscription** (Claude, ChatGPT/Codex, or your OpenCode provider — no
-API key, so no per-token bill).
+You tag the issues you trust a coding agent to handle. Overnight, Ralphy takes them one by
+one: it **plans** the work, lets a coding agent **write the code**, **commits** it, and
+**closes** the issue once the tests pass. In the morning you skim the branch and merge
+what you like.
 
-> **Scope:** Ralphy runs on **Windows and Linux** (both built and tested in CI). It
-> drives one coding-agent CLI per run, picked with `--agent`:
-> **[Claude Code](https://claude.com/claude-code)** (the default), **Codex**, **Kimi**,
-> or **OpenCode**.
+Three things worth knowing up front:
+
+- 🔒 **It never pushes and never opens a PR.** Everything stays on one local branch. *You*
+  review and *you* merge — Ralphy never touches your remote.
+- 💳 **No API key, no per-token bill.** It runs on the **subscription** you already pay for
+  (Claude, ChatGPT/Codex, and more).
+- 💻 **Windows, Linux, and macOS.**
 
 ```text
-You, before bed:                          Ralphy, overnight:                 You, morning:
-┌──────────────────────────┐              ┌────────────────────────┐         ┌────────────────────────┐
-│ label issues you trust   │   ──────▶    │ plan → code → commit   │  ───▶   │ review the branch,     │
-│ an agent to handle       │              │ → close, issue by issue│         │ merge what you like    │
-└──────────────────────────┘              └────────────────────────┘         └────────────────────────┘
+  🌆 You, before bed              🌙 Ralphy, overnight            🌅 You, in the morning
+┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐
+│  tag the issues you    │ ──▶ │  plan → code → commit  │ ──▶ │  review the branch,    │
+│  trust an agent to do  │     │  → close, one by one   │     │  merge what you like   │
+└────────────────────────┘     └────────────────────────┘     └────────────────────────┘
 ```
 
 ---
 
-## Quick start
+## 🤔 What is Ralphy?
 
-```powershell
-# Windows (PowerShell)
-# 1) Try one issue, plan only — no code changes, no commits. Inspect .ralphy/plan.md.
-ralphy run --repo C:\Dev\foo --only-issue 13 --dry-run
+Think of Ralphy as a **tireless junior teammate** who picks up small, well-described tasks
+from your issue tracker and works them while you're away — carefully, one at a time, and
+always leaving the final say to you.
 
-# 2) Run that one issue for real. Commits land on a fresh afk/run-<stamp> branch.
-ralphy run --repo C:\Dev\foo --only-issue 13
+It doesn't replace you. It does the *legwork*: reading the codebase, planning a change,
+writing it, running the tests, and closing the ticket when everything's green. What it
+delivers is a branch full of finished work for you to review — never a surprise on your
+main branch.
 
-# 3) The overnight run: the whole queue, ascending order, with an 8-hour budget.
-ralphy run --repo C:\Dev\foo --deadline-hours 8
+## 🔁 What is the "Ralph loop"?
 
-# 4) Run an explicit set of issues, in the exact order given, ignoring queue
-#    labels and dependency ordering. Drains the list as a sequence.
-ralphy run --repo C:\Dev\foo --issues 5,3,9
-```
+The idea behind Ralphy is a simple, repeating loop:
+
+> **plan → execute → commit → verify → repeat**
+
+Point an AI coding agent at a task, let it plan and do the work, commit the result, check
+that it actually passes — then move to the next task and do it all again. Run that loop
+unattended over a whole backlog and you wake up to a pile of done work.
+
+That pattern is [Geoffrey Huntley](https://ghuntley.com/ralphy/)'s "Ralph" technique.
+Ralphy is a careful, batteries-included implementation of it: a single binary that runs the
+loop over your **real GitHub issues**, with guardrails so it's safe to leave running while
+you sleep.
+
+---
+
+## 🛠️ Set up Ralphy
+
+Three steps: get the binary, make sure you've got the basics, and initialize your project.
+
+### 📦 Step 1 — Get the `ralphy` binary
+
+Grab the archive for your platform from the
+[**Releases page**](https://github.com/paulocorcino/ralphy/releases) — Windows, Linux, or
+macOS (Intel & Apple Silicon) — and unzip it anywhere.
+
+Then let Ralphy put itself on your `PATH` so you can type `ralphy` from any folder:
 
 ```bash
-# Linux (bash) — same flags, POSIX paths
-ralphy run --repo ~/dev/foo --only-issue 13 --dry-run
-ralphy run --repo ~/dev/foo --only-issue 13
-ralphy run --repo ~/dev/foo --deadline-hours 8
-ralphy run --repo ~/dev/foo --issues 5,3,9
+./ralphy install
 ```
 
-`--repo` defaults to the current directory, so from inside the repo you can just run
-`ralphy run --only-issue 13`. Work the same setup up incrementally: `--dry-run` one
-issue, then one issue for real, and only then trust the unattended overnight queue.
+*(Prefer to build from source? See [docs/BUILDING.md](docs/BUILDING.md).)*
 
-New to a repo? [docs/getting-started.md](docs/getting-started.md) walks the whole
-onboarding — the guided `ralphy init` command and the manual path — from a fresh
-clone to a draining queue.
+### ✅ Step 2 — The basics you'll need
 
-`--issues 5,3,9` is the manual override: it works exactly those issues, in the order
-listed, fetching each by number regardless of its labels and skipping the dependency
-sort — the run drains the list as a sequence. Like `--only-issue`, a `stop-before`
-label on a listed issue is ignored; unlike it, human-return labels (ADR-0016) are
-still respected. It is mutually exclusive with `--only-issue`.
+- 🐙 **A GitHub account and the `gh` CLI, logged in.** Ralphy works your GitHub issues, so
+  it talks to GitHub through `gh`. Check with `gh auth status`.
+- 🤖 **A coding-agent CLI, signed in to its subscription.** This is the "brain" that writes
+  the code. [Claude Code](https://claude.com/claude-code) is the default; Codex, OpenCode,
+  and others work too. → [Which agents, and how to pick one](docs/agents.md)
 
-## Prerequisites
+No API keys anywhere — Ralphy rides on the subscription you already log into.
 
-- A **clean working tree** in the target repo (Ralphy refuses to start on uncommitted
-  work) and a reachable base branch (default `origin/main`).
-- **`gh`** authenticated — check with `gh auth status`.
-- The **agent CLI** for your `--agent` choice, signed in to its subscription (no API key):
-  - `claude` (default) — Claude Code CLI
-  - `codex` — signed in with `codex login` (use `--agent codex`)
-  - `kimi` — signed in with `kimi login` (use `--agent kimi`)
-  - `opencode` — a provider set up with `opencode auth login` (use `--agent opencode`)
-- The Ralphy binary on your `PATH` (`ralphy.exe` on Windows, `ralphy` on Linux) — see
-  [docs/BUILDING.md](docs/BUILDING.md).
-- Whatever build tools the issues themselves need on `PATH` (an issue that builds a
-  feature needs that feature's deps, or it will time out).
+### 🚦 Step 3 — Initialize your project
 
-Ralphy works **in place** on whatever repo you point `--repo` at — no worktree, so your
-warm build cache (`target/`, `node_modules`, …) is reused.
+From inside your project folder, run the guided setup:
 
-## How it works
-
-For every queued issue, in ascending number order:
-
-1. **Plan** — the agent reads the codebase and writes a `.ralphy/plan.md` you can
-   inspect. On Claude, the plan also picks the execution model (a small model for
-   mechanical work, a strong one for complex work). Issues labelled `stagedplan` are
-   planned with the bundled `staged-plan` skill.
-2. **Execute** — the agent works the plan and commits each step. On Claude you can
-   follow along and step in from the Claude **mobile app** (each session is named
-   `ralphy-<n>`); Codex and OpenCode run quietly in the background.
-3. **Verify gate** — before closing, Ralphy itself re-runs the commands the plan listed
-   under `## Verify` (e.g. `cargo fmt --check`, `cargo test`) over the committed code. The
-   issue only closes if they pass — "green" stops meaning *the agent said so* and starts
-   meaning *the runner saw the verification pass on the code you'll merge*. Either way it
-   posts a comment recording each command and its exit code. See
-   [Verifying before close](#verifying-before-close).
-4. **Close on green** — once the gate passes, Ralphy closes the issue with a comment
-   pointing at the run branch. You still merge by hand.
-
-If an issue **doesn't** finish cleanly (blocked, stuck, out of time, or the verify gate
-fails), the whole run
-**stops** and hands you the branch as it stands — so one bad issue can't burn the rest of
-the night. Finished issues stay committed; the stalled one's partial work is left for
-you to inspect.
-
-## Which issues get worked
-
-An issue is in the queue if it carries **any** queue label. The defaults are
-`ready-for-agent` and its shorthand `AFK`:
-
-| Label | What Ralphy does |
-|---|---|
-| `ready-for-agent` **or** `AFK` | works it, closes it when green |
-| `ready-for-human` / `HITL` | never touched — not in the queue |
-| `triage-agent` | evaluated by `ralphy triage`; parks the issue out of the run queue until triaged |
-| `stagedplan` | planned with the `staged-plan` skill (still needs a queue label to be picked up) |
-
-`ralphy triage`'s `escalate` verdict routes accepted-but-human-first issues (a
-maintainer owes a decision) to `ready-for-human`, keeping them out of the queue —
-distinct from `bounce`, which returns reporter-owed gaps to `needs-info`.
-
-**Human-return precedence** (ADR-0016): a label that returns an issue to a human —
-`ready-for-human`/`HITL`, `needs-info`, `needs-triage`, `wontfix`, or `triage-agent`
-— outranks any queue label. A queued issue that also carries one is **skipped with a
-visible reason** and the run continues; neither `--only-issue` nor `--issues`
-overrides it.
-
-Two extra controls:
-
-- **`## Blocked by` in the issue body** — if it names an issue that's still open, Ralphy
-  **skips** the issue (later ones still run) until the blocker is closed. A `## Blocked by`
-  inside a `ralphy triage` consolidated-spec comment gates the queue the same way.
-- **`stop-before` label** — put it on a queued issue and the run stops **before** working
-  it; every earlier issue still runs. Remove it and re-run to continue. (Create the
-  `stop-before` label in your repo first.)
-
-`--queue-label` (repeatable) replaces the default label set entirely.
-
-## Choosing an agent
-
-`--agent` picks the CLI for the whole run (default `claude`):
-
-| `--agent` | Runs | Notes |
-|---|---|---|
-| `claude` (default) | Claude Code, live session | Mobile Remote Control, model routing, auto-resume on usage limits |
-| `codex` | `codex exec`, headless | Scales effort on one model; stops and reports on a usage limit |
-| `kimi` | `kimi --print`, headless | Fixed model (`kimi-code/kimi-for-coding`); stops and reports on a usage limit |
-| `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant`; stops and reports on a usage limit |
-
-All four run on a **subscription, not a metered API key** — Ralphy makes sure your
-subscription login stays the one in charge. The same `reviewer` and `staged-plan` skills
-ship to every agent automatically, so a run never depends on what's installed on your
-machine, and your global skills are left untouched.
-
-**Split planner and executor.** `--agent` picks the executor; `--plan-agent` (default:
-the `--agent` value) picks the planner, so you can plan with one agent and execute with
-another. The plan is vendor-neutral markdown, so any planner's plan runs under any
-executor. The canonical split is `--agent opencode --plan-agent claude` — Claude plans on
-its subscription, OpenCode's coder model executes:
-
-```powershell
-ralphy run --agent opencode --plan-agent claude
+```bash
+ralphy init
 ```
 
-Usage-limit handling is per-phase: a Claude planner can wait out a plan-time reset while
-the OpenCode executor stops on an execute-time limit (an explicit `--stop-on-limit`
-forces both phases to stop).
+It checks your environment, creates the issue labels Ralphy uses, and gets the repo ready
+to be worked. Follow the prompts — it explains each step as it goes.
+[Full walkthrough →](docs/getting-started.md)
 
-## Everyday flags
+---
 
-```powershell
-ralphy run --agent codex                   # use Codex instead of Claude
-ralphy run --agent kimi                     # use Kimi (kimi --print, headless)
-ralphy run --agent opencode                # use OpenCode
-ralphy run --agent opencode --plan-agent claude  # Claude plans, OpenCode executes
-ralphy run --base-branch feature/x         # cut the run branch from another base
-ralphy run --branch-mode current           # commit onto the current branch (no new branch)
-ralphy run --exec-model opus               # force the execution model for every issue
-ralphy run --exec-variant high             # OpenCode effort passthrough
-ralphy run --remote-control                # opt into mobile Remote Control (Claude, off by default)
-ralphy run --no-remote-control             # per-run override: force it off even if configured on
-ralphy run --queue-label my-label          # use your own queue label
-ralphy run --no-telegram                   # mute the Telegram monitor for this run
-ralphy run --if-idle                       # no-op (exit 0) if a run is already active — for schedulers
+## 💡 Turn an idea into a backlog
+
+Ralphy works *issues* — so first you need some. The easiest way is to let your coding agent
+turn a rough idea into a clean, labeled backlog for you.
+
+Inside your agent (Claude, Codex, …), go from fuzzy to ready in three moves:
+
+1. 📝 **Describe your idea.** Co-author a short doc with the agent so it really understands
+   what you want to build. → use the **`grill-with-docs`** skill
+2. 📋 **Turn it into a spec.** Shape that doc into a proper PRD (a product requirements
+   document). → use the **`to-prd`** skill
+3. 🧩 **Break it into work.** Split the PRD into small, independent GitHub issues, each
+   tagged so Ralphy knows it's fair game. → use the **`to-issues`** skill
+
+`ralphy init` can set these engineering skills up for you. The result: a tidy backlog of
+bite-sized issues, ready for the overnight run.
+
+---
+
+## 🏷️ The labels (meet AFK & HITL)
+
+Ralphy decides what to touch purely from **issue labels**. Two matter most:
+
+- 🟢 **`AFK`** (or `ready-for-agent`) — *"away from keyboard, agent go."* This issue is
+  yours to work, Ralphy. Plan it, code it, close it when green.
+- 🔴 **`HITL`** (or `ready-for-human`) — *"human in the loop."* Hands off. This one needs a
+  person; Ralphy never touches it.
+
+That's the whole mental model: tag an issue **AFK** and it joins the overnight queue; leave
+it **HITL** (or unlabeled) and it's ignored. A couple more labels fine-tune things (triage,
+staged plans, "stop before this one") — but AFK and HITL are the two you'll use every day.
+[The full label rules →](docs/adr/0016-queue-label-precedence.md)
+
+---
+
+## 🌙 Run it
+
+Here's the golden rule: **build up trust one step at a time.** Try one issue as a dry run,
+then one for real, and only then let it loose on the whole queue overnight.
+
+```bash
+# 1️⃣  Plan one issue — no code changes, no commits. Then read .ralphy/plan.md.
+ralphy run --only-issue 13 --dry-run
+
+# 2️⃣  Now actually do that one issue. Commits land on a fresh afk/run-<stamp> branch.
+ralphy run --only-issue 13
+
+# 3️⃣  The real deal: work the whole queue overnight, with an 8-hour budget.
+ralphy run --deadline-hours 8
 ```
 
-Run `ralphy run --help` for the full list (planning model/effort, time budgets, and
-more).
+💡 Run these from inside your repo. Pointing at a repo elsewhere? Add
+`--repo /path/to/repo`.
 
-Remote Control is opt-in and off by default (#148): pass `--remote-control` per
-run, or persist it with `ralphy config set remote_control true`.
+Under the hood, for each issue Ralphy: 📝 **plans** → ⌨️ **executes and commits** → ✅
+**re-runs the tests itself** → 🎉 **closes the issue** if they pass. If an issue gets stuck
+or a test fails, it **stops the whole run** and hands you the branch as-is — one bad issue
+can never burn the rest of the night.
 
-### Scheduled runs (`--if-idle`)
+### ⭐ The command you'll type most
 
-Ralphy is *the run, not the cron*: put `ralphy run --if-idle` on a timer (Windows
-Task Scheduler, cron, GitHub Actions) and the queue drains on schedule. Every run
-holds a presence lock (`.ralphy/run.lock`) for its lifetime; an `--if-idle`
-invocation that finds a live run logs `skipped: run in progress since <time>,
-pid <X>` and exits 0, so a timer never piles a run onto a live one and the
-scheduler's history shows no false failures. A stale lock left by a crash or
-reboot is ignored and taken over. Without the flag a live lock only warns —
-intentional concurrency stays your call. Copy-pasteable recipes per platform,
-each with its traps (working directory, non-interactive auth, log capture):
-[docs/scheduling.md](docs/scheduling.md).
+Once you trust it, this is the everyday shape of a run:
 
-### Branch modes
-
-`--branch-mode new` (the default) cuts a fresh `afk/run-<stamp>` branch from
-`--base-branch` and commits every issue onto it, leaving your current branch untouched.
-`--branch-mode current` commits straight onto the branch you're already on. Either way a
-clean working tree is required. For issues that need different bases, run twice with
-different `--base-branch`.
-
-## Persistent settings
-
-Anything you'd otherwise retype every run can be persisted per-repo in
-`.ralphy/settings.json` via `ralphy config`. The resolution order is always **per-run
-flag > `settings.json` > built-in default**, so a flag still wins for a one-off:
-
-```powershell
-ralphy config set opencode.model kimi-for-coding/k2p7   # OpenCode execution model default
-ralphy config set base_branch origin/develop            # default base for the run branch
-ralphy config set branch_mode current                   # default branch mode
-ralphy config set verify.command "cargo test"           # per-repo fallback verify gate
-ralphy config set claude.default_exec_model opus        # Claude run defaults (claude.*):
-ralphy config set claude.max_minutes_per_issue 120      #   plan_model, plan_effort,
-ralphy config set claude.max_minutes_per_issue 0        #   0 = no per-issue cap (the default)
-ralphy config get                                        #   exec_effort, … — see config --help
-ralphy config unset opencode.model                      # clear a key
+```bash
+ralphy run --agent <agent> --branch-mode <current|new>
 ```
 
-Every key, its default, and where each store lives is in the
-[configuration reference](docs/configuration.md).
+Two knobs do the heavy lifting:
 
-List the models an agent offers (OpenCode only — Codex/Claude have no listing command):
+- 🤖 **`--agent <agent>`** — *who writes the code.* Pick the coding agent for this run:
+  `claude` (the default), `codex`, `opencode`, and more. Same issues, different brain.
+  → [see all agents](docs/agents.md)
+- 🌿 **`--branch-mode <current|new>`** — *where the commits land.*
+  - **`new`** (default) — cut a fresh `afk/run-<stamp>` branch and commit there, leaving the
+    branch you're on untouched. Safest: your work is quarantined until you review it.
+  - **`current`** — commit straight onto the branch you're already on. Handy when you've
+    made a branch yourself and want Ralphy's work to continue right on it.
 
-```powershell
-ralphy models --agent opencode
+  Either way, Ralphy refuses to start on a dirty repo — so nothing uncommitted is ever at
+  risk.
+
+📖 Every other flag — deadlines, planning models, running a specific set of issues, stopping
+before one, and more — lives in the [**run options reference**](docs/run-options.md).
+`ralphy run --help` prints the same list in your terminal.
+⏰ Want it on a timer (nightly, hourly)? → [docs/scheduling.md](docs/scheduling.md)
+
+### 🌅 The morning after
+
+```bash
+# See what landed overnight
+git log --oneline origin/main..afk/run-<stamp>
+git diff origin/main..afk/run-<stamp>
+
+# 👍 Happy? Merge it.        # 👎 Not happy? Just delete the branch —
+git checkout main            #     your main was never touched.
+git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
 ```
 
-## Morning review
+If the run stopped early, your repo is left on the run branch so you can fix the stuck
+issue in place and pick up where it left off.
 
-```powershell
-git -C C:\Dev\foo log --oneline origin/main..afk/run-<stamp>   # what landed
-git -C C:\Dev\foo diff origin/main..afk/run-<stamp>            # the full diff
+---
 
-# happy with it?
-git -C C:\Dev\foo checkout main; git -C C:\Dev\foo merge afk/run-<stamp>
-
-# not happy? just delete the branch:
-git -C C:\Dev\foo branch -D afk/run-<stamp>
-```
-
-If the run **stopped** (didn't finish green), the repo is left on the run branch so you
-can fix the stalled issue in place, then commit and continue.
-
-## Knowledge cache and consolidation
-
-Every green close leaves a note at `.ralphy/knowledge/issue-<N>.md` with the
-environment facts and working commands extracted from the issue's handoff —
-future sessions read these instead of re-deriving environment procedures. The
-folder grows across runs, and the same trap naturally gets re-recorded by
-several issues. Periodically (end of a milestone, or when the loose notes pile
-up), curate it:
-
-```powershell
-ralphy consolidate --repo C:\Dev\foo
-```
-
-A one-shot agent session (Claude) merges all loose notes into a single
-`.ralphy/knowledge/KNOWLEDGE.md` — organized by topic, deduplicated, with
-provenance — and the consumed notes are archived under `knowledge/raw/`.
-Planner and executor sessions read `KNOWLEDGE.md` first, then any newer loose
-notes. If the session fails or produces nothing, the notes stay loose for a
-retry.
-
-## Running unattended, safely
-
-Ralphy is built to run while you sleep, so it ships its own guardrails:
-
-- **Clean-tree precondition** — it won't start on a dirty working tree, so it never
-  clobbers uncommitted work, and the agent is kept on the run branch.
-- **Never pushes, never opens a PR** — the agent only commits locally. The single run
-  branch is the delivery; you review and merge it by hand.
-- **Time budgets** — a per-issue limit (`--max-minutes-per-issue`, unbounded by
-  default; `0` disables the cap) and a global `--deadline-hours` keep a hung issue
-  from running forever.
-- **Stop at first failure** — one stalled issue stops the run instead of burning the rest
-  of the budget.
-- **Runner-enforced verify gate** — Ralphy re-runs the plan's `## Verify` commands itself
-  before closing an issue, so an issue closes only when the runner *saw* the verification
-  pass — not because the agent said it was done. See
-  [Verifying before close](#verifying-before-close).
-- **Command guardrails** (Claude) — destructive commands like `git push`, `reset --hard`,
-  branch switches, and `gh pr merge` are blocked; recursive deletes are allowed inside the
-  worktree and the system temp dir (build artifacts, e2e browser profiles) but blocked
-  everywhere else. For Codex/OpenCode, safety rests on the isolated run branch and the
-  built-in self-review.
-
-## Verifying before close
-
-For a tool that closes issues unattended overnight, "green = the agent said so" is the
-central trust gap: an agent can declare *done* without the work actually being verifiable.
-Ralphy closes that gap with a **runner-enforced verify gate** (ADR-0011). After the agent
-reports done — but **before** the issue is closed — the runner itself re-runs a set of
-commands the plan declared, over the committed code, and **only closes if they pass**.
-
-The planner emits a `## Verify` section in `.ralphy/plan.md`, one command per line:
-
-```markdown
-## Verify
-
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-```
-
-- **Technology-agnostic** — the gate runs whatever commands the plan names and checks
-  exit codes. It knows nothing about Rust/Node/Python; the same machinery verifies
-  `cargo test`, `pytest`, `npm test`, or `make check`.
-- **Direct argv, no shell** — each line runs as `argv` directly (no `&&`, pipes, or
-  globs), which makes `## Verify` portable Windows↔Linux for free. The runner chains the
-  commands, runs them sequentially, and stops at the first non-zero exit. A command that
-  truly needs a shell writes `sh -c "…"` explicitly.
-- **Bounded** — the gate runs inside the per-issue time budget; a hung verification fails
-  the gate rather than going green by silence.
-
-**Pass** → the issue closes on the existing green path. **Fail** → the issue stays open,
-the run stops, and the branch is handed back with the work intact. Either way, Ralphy
-posts a comment recording **each command, its exit code, and (on failure) a tail of the
-output** — what you read in the morning to see why an issue did or didn't close.
-
-**Resolution precedence:**
-
-1. `## Verify` in the plan (per-issue, planner-emitted) — strongest.
-2. `verify.command` in `.ralphy/settings.json` (per-repo default) — used when a plan has
-   no `## Verify` section. Set it with `ralphy config set verify.command "cargo test"`.
-3. Nothing resolves → the issue closes on the agent's self-report with a **loud warning**
-   in the log (the absence of a gate is always a visible decision, never a silent hole).
-
-`## Verify: none` on its own line is the **only** explicit opt-out — for an issue with
-nothing machine-verifiable — and it skips the per-repo fallback.
-
-## Usage limits
-
-There's no dollar cap to set — there's no API spend. On **Claude** and **Codex**, when you
-hit a usage limit Ralphy **waits for the reset and resumes the same issue** automatically
-(pass `--stop-on-limit` if you'd rather it stop and report). Both emit a trustworthy reset
-time — Codex an absolute timestamp, Claude a relative one. **Kimi** and **OpenCode** always
-stop and report — re-run once the limit clears. (Kimi keys the limit off the CLI's exit
-code 75, so there's no reset timestamp to wait on; the stop is forced.)
-
-## Cost reporting
-
-You don't pay per token, but Ralphy still **measures** what each run consumed so you can
-see how efficient a task was. Every run harvests the token counts each agent CLI already
-reports and accumulates them durably per project in an append-only ledger
-(`.ralphy/usage.jsonl`). The end-of-run footer shows the run total and the project's
-cumulative balance as a token meter (`↑` input, `⚡` cache write, `❄` cache read,
-`↓` output) plus a read-time USD estimate priced per model (`~$?` when a model has no
-known price). USD is only ever a read-time projection — it never enters the ledger, so
-re-pricing never rewrites history.
-
-Read the ledger after the fact with `ralphy usage`:
-
-```powershell
-ralphy usage                       # the project balance: total tokens + estimated USD
-ralphy usage --by model            # group by model (also: phase, actor, version)
-ralphy usage --since 2026-06-01    # only rows on/after a date
-ralphy usage --format csv          # export (also: json) instead of the table
-ralphy usage --project owner/repo  # read another project's ledger
-```
-
-## Telegram run monitor (optional)
+## 📱 Keep an eye on it from your phone (optional)
 
 Since a run is unattended, Ralphy can post a live **status card** to a Telegram chat and
-keep it updated through the whole run — planning, execution, usage-limit waits, and the
-final summary — with a quick ping at the moments that matter. It's read-only; the bot
-just reports. Once set up it's on by default for real runs; mute one run with
-`--no-telegram`.
+keep it updated the whole way through — planning, coding, and the final summary. It's
+read-only; the bot just tells you how things are going.
 
-```powershell
-ralphy telegram setup    # store the bot token, then send /start to capture your chat
+```bash
+ralphy telegram setup    # store your bot token, then send /start to link your chat
 ralphy telegram test     # send a ping to confirm it works
-ralphy telegram status   # show the configured chat and a masked token
-ralphy telegram disable  # remove the stored config
 ```
 
-## Streaming run events (optional)
+[More on the Telegram monitor →](docs/telegram.md)
 
-Beyond the console, `ralphy.log`, and the Telegram card, Ralphy can POST every run
-event as **CloudEvents 1.0 JSON** to an HTTP endpoint — a dashboard, or the web
-platform that consumes the stream. It's additive and best-effort: it never blocks
-or fails a run, and it's off until you set an endpoint.
+---
 
-```powershell
-ralphy config set events.url https://example.com/hook   # turn the sink on
-ralphy config set events.token s3cret                   # optional bearer token
-```
+## 💡 More you can do
 
-The full payload — the envelope, the emitter identity on every event, the reserved
-`git`/`issue`/`agent` blocks, and the event catalog — is documented field by field
-in the [event contract](docs/events.md).
+Everything below is optional — reach for it when you need it.
 
-## Credits
+| Feature | What it's for | Start here |
+|---|---|---|
+| 🤖 **Choose your agent** | Claude, Codex, OpenCode, and more — even plan with one, code with another | [docs/agents.md](docs/agents.md) |
+| 🔍 **The verify gate** | why "green" means *the tests actually passed*, not *the agent said so* | [docs/verify-gate.md](docs/verify-gate.md) |
+| 📊 **Cost reporting** | see how many tokens each run used, with a $ estimate | [docs/usage-and-cost.md](docs/usage-and-cost.md) |
+| ⚙️ **Persistent settings** | stop retyping the same flags every run | [docs/configuration.md](docs/configuration.md) |
+| ⏰ **Scheduled runs** | drain the queue nightly on a timer | [docs/scheduling.md](docs/scheduling.md) |
+| 📡 **Event streaming** | POST every run event to a dashboard or webhook | [docs/events.md](docs/events.md) |
+| 🧠 **Knowledge cache** | Ralphy remembers hard-won setup facts across runs | `ralphy consolidate --help` |
+
+---
+
+## 🛡️ Why it's safe to leave running
+
+Ralphy is built to run while you're asleep, so it ships its own guardrails:
+
+- 🧹 **Won't start on a dirty repo** — your uncommitted work is never at risk.
+- 🚫 **Never pushes, never opens a PR** — it only commits locally. You deliver.
+- ⏱️ **Time budgets** — a hung issue can't run forever.
+- 🛑 **Stops at the first failure** — one stuck issue ends the run instead of burning the
+  whole night.
+- ✅ **Runner-enforced tests** — an issue closes only when Ralphy *itself* watched the tests
+  pass. → [docs/verify-gate.md](docs/verify-gate.md)
+- 🧯 **Command guardrails** — destructive commands like `git push` and `reset --hard` are
+  blocked mid-run.
+
+---
+
+## 🙏 Credits
 
 - **The Ralph loop** — the unattended plan-execute-commit pattern is
   [Geoffrey Huntley](https://ghuntley.com/ralphy/)'s.
-- **Triage vocabulary** — the canonical labels (`ready-for-agent`, `ready-for-human`, …)
-  are **[Matt Pocock](https://github.com/mattpocock)'s**, from his
+- **Triage vocabulary** — the labels (`ready-for-agent`, `ready-for-human`, …) are
+  **[Matt Pocock](https://github.com/mattpocock)'s**, from his
   [engineering skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/setup-matt-pocock-skills).
 
-## License
+## 📄 License
 
 GPLv3 — see [LICENSE](LICENSE). Copyright (C) 2026 Paulo Corcino.

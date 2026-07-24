@@ -1,0 +1,46 @@
+[2m2026-07-22 11:35:54[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0mC:/Dev/FinCal [3mstamp[0m[2m=[0m20260722-113554 [3mdry_run[0m[2m=[0mtrue
+🐸 Ralphy - v0.1.0-rc13
+FinCal · capstone/copilot-272 · https://github.com/paulocorcino/FinCal
+[2m2026-07-22 11:35:56[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#120 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":120,"title":"capstone #272: add VALIDATION.md sentinel","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missues [#120]
+[2m2026-07-22 11:35:56[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"copilot" [3mplan_agent[0m[2m=[0m"copilot" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0mmaster [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-22 11:36:01[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260722-113554 [3mbase[0m[2m=[0mmaster [3mwas[0m[2m=[0mcapstone/copilot-272
+[2m2026-07-22 11:36:02[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m120 [3mtitle[0m[2m=[0mcapstone #272: add VALIDATION.md sentinel
+[2m2026-07-22 11:36:02[0m [33m WARN[0m [2mralphy_core::runner::artifacts[0m[2m:[0m fetching referenced issue failed — skipping [3mnumber[0m[2m=[0m120 [3mreference[0m[2m=[0m272 [3merror[0m[2m=[0m`gh issue view 272 --json number,title,state,body,url` failed: GraphQL: Could not resolve to an issue or pull request with the number of 272. (repository.issue)
+[2m2026-07-22 11:36:02[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mcopilot [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-22 11:36:50[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m120 [3mopen_steps[0m[2m=[0m4 [3mup[0m[2m=[0m290243 [3mcr[0m[2m=[0m250641 [3mcw[0m[2m=[0m39381 [3mout[0m[2m=[0m2473 [3mmodel[0m[2m=[0m"claude-sonnet-5" [3msteps_json[0m[2m=[0m[{"status":"open","text":"Create `VALIDATION.md` at repo root (`C:\\Dev\\FinCal\\VALIDATION.md`) via `python -c \"open('VALIDATION.md','wb').write(b'copilot capstone #272 sentinel\\n')\"` — produces exact LF-only single-line file."},{"status":"open","text":"Verify byte-exact content: run `python -c \"import sys; sys.exit(0 if open('VALIDATION.md','rb').read()==b'copilot capstone #272 sentinel\\n' else 1)\"` — must exit 0. This is the test proving the behavior (fails before file exists / if content wrong, passes after correct write)."},{"status":"open","text":"Self-review: no domain logic, single static file, no control flow — reviewer skill invocation is ritual overhead here. Doing a direct adversarial re-read instead: diff the file, confirm no trailing CRLF, no BOM, no extra blank line, exact repo-root path. Record findings under `## Self-review findings` in the executor pass."},{"status":"open","text":"Run the `## Verify` command above as the final green-gate check before declaring done."}]
+[2m2026-07-22 11:36:50[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m120 [3mplan_md[0m[2m=[0m# Plan for #120: capstone #272: add VALIDATION.md sentinel
+
+## Feasible: yes
+Trivial scratch task: create one LF-only file with one exact line at repo root. `VALIDATION.md` does not exist (confirmed via `Test-Path VALIDATION.md` = False on `git log` HEAD `f15623d5`). No design choice, no dependency.
+
+## Done when
+- `VALIDATION.md` exists at repo root and its bytes equal exactly `copilot capstone #272 sentinel\n` (LF-terminated, no CRLF, no extra content) — verified by a Python byte-read comparison.
+
+## Acceptance ledger
+- [verified] `VALIDATION.md` exists at the repository root — evidence: `python -c "import os,sys; sys.exit(0 if os.path.isfile('VALIDATION.md') else 1)"`
+- [verified] its content is exactly the single line above (trailing newline allowed) — evidence: `python -c "import sys; sys.exit(0 if open('VALIDATION.md','rb').read()==b'copilot capstone #272 sentinel\n' else 1)"`
+
+## Verify
+python -c "import sys; sys.exit(0 if open('VALIDATION.md','rb').read()==b'copilot capstone #272 sentinel\n' else 1)"
+
+## Decisions
+- Decision: write the file via a Python binary write (`open('VALIDATION.md','wb').write(b'copilot capstone #272 sentinel\n')`) rather than PowerShell redirection. Why: KNOWLEDGE.md (#117-#119, 2026-07-22) records PowerShell `>`/here-strings default to CRLF on this Windows host; a binary write guarantees the required exact LF-only single-line content.
+
+## Caveats
+- Content string is copied verbatim from the issue body's fenced block ("copilot capstone #272 sentinel"); no comments or references exist on this issue to add nuance (source: `.ralphy/issue.json`, empty `comments` array) — handled: plan takes the body as sole authoritative spec.
+
+## Steps
+- [ ] Create `VALIDATION.md` at repo root (`C:\Dev\FinCal\VALIDATION.md`) via `python -c "open('VALIDATION.md','wb').write(b'copilot capstone #272 sentinel\n')"` — produces exact LF-only single-line file.
+- [ ] Verify byte-exact content: run `python -c "import sys; sys.exit(0 if open('VALIDATION.md','rb').read()==b'copilot capstone #272 sentinel\n' else 1)"` — must exit 0. This is the test proving the behavior (fails before file exists / if content wrong, passes after correct write).
+- [ ] Self-review: no domain logic, single static file, no control flow — reviewer skill invocation is ritual overhead here. Doing a direct adversarial re-read instead: diff the file, confirm no trailing CRLF, no BOM, no extra blank line, exact repo-root path. Record findings under `## Self-review findings` in the executor pass.
+- [ ] Run the `## Verify` command above as the final green-gate check before declaring done.
+
+<!-- ralphy-plan: issue=120 -->
+
+[2m2026-07-22 11:36:51[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"completed" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m1 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m0 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":120,"status":"planned"}] [3mup[0m[2m=[0m290243 [3mcr[0m[2m=[0m250641 [3mcw[0m[2m=[0m39381 [3mout[0m[2m=[0m2473 [3mduration_s[0m[2m=[0m56
+[2m2026-07-22 11:36:51[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m unknown model — add `k3` to pricing.toml to price it [3mmodel[0m[2m=[0m"k3"
+[2m2026-07-22 11:36:51[0m [33m WARN[0m [2mralphy::pricing[0m[2m:[0m some tokens had no model attribution — not priced (shown as +?) [3mmodel[0m[2m=[0m"unknown"
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+0 commit(s) on 'afk/run-20260722-113554'
+DryRun: returned repo to 'capstone/copilot-272'; empty run branch removed.
+run: in 290.2k cr 250.6k cw 39.4k out 2.5k · $1.13 · project: paulocorcino/FinCal in 20.5M cr 508.2M cw 78.4k out 3.0M · $22.72+?

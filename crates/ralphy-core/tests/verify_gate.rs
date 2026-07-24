@@ -22,8 +22,9 @@ fn child_argv(mode: &str) -> Vec<String> {
 fn leaked_grandchild_holding_stdout_does_not_hang_the_gate() {
     // The load-bearing fix: the foreground command exits 0 in moments, but an
     // orphaned grandchild keeps the inherited stdout pipe open. An unbounded output
-    // drain would block forever (the observed ~43 min hang); the bounded collect
-    // grace must let the gate return with the already-captured exit 0.
+    // drain would block forever (the observed ~43 min hang); the pre-collect
+    // tree-kill must close the pipe so the gate returns promptly WITH the
+    // foreground's output captured.
     let started = Instant::now();
     let report = run(
         &[child_argv("exit-leaking-grandchild")],
@@ -42,10 +43,19 @@ fn leaked_grandchild_holding_stdout_does_not_hang_the_gate() {
         "the foreground command exited, it did not time out"
     );
     assert_eq!(cmd.exit_code, Some(0), "its exit code is captured");
-    // Returns within the ~5s collect grace (plus slack), NOT the grandchild's 60s.
+    // The reader delivers its buffer only at EOF, so capturing the marker proves
+    // the tree-kill closed the leaked write-end — before that fix, the collect
+    // grace expired and this stream came back EMPTY (the repair brief a failing
+    // gate hands the executor lost its whole output tail).
+    assert!(
+        cmd.output_tail.contains("foreground-marker-before-leak"),
+        "the foreground's output is captured despite the leaked pipe holder — got {:?}",
+        cmd.output_tail
+    );
+    // Returns promptly, NOT after the grandchild's 60s lifetime.
     assert!(
         elapsed < Duration::from_secs(30),
-        "the gate returned within the collect grace, not the grandchild's lifetime (took {elapsed:?})"
+        "the gate returned promptly, not after the grandchild's lifetime (took {elapsed:?})"
     );
 }
 

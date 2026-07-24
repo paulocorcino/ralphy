@@ -220,3 +220,176 @@ source, either way.
   off the hot path); D2 (tokens-truth, USD read-time) and D1 (no network in the
   run) are upheld. ADR-0033's scan gains `provider` and shares the counting
   normalization.
+
+## Amendment (#257, 2026-07-21): the Gemini rows and their mandatory key transform
+
+Five Gemini rows join `PriceTable::defaults` — `gemini-3.1-pro-preview`,
+`gemini-3-flash-preview`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`,
+`gemini-2.5-flash` — at the indicative ai.google.dev list prices captured in
+`docs/research/gemini-cli-adapter-spike.md` §4. `gemini-3.5-flash` is NOT added:
+the row Cursor already contributed carries the same figures and the key is now
+shared by two vendors.
+
+**`ralphy_agent_gemini::price_key` is the mandatory transform** between a model
+id a Gemini run recorded and a `PriceTable` lookup. It is not cosmetic:
+
+- `gemini-3-flash` is the CLI's constant for an engine served by the **3.5**
+  backend, while the identically spelled row in this table is Cursor's catalogue
+  price for Google's *preview* Flash — **3× apart**. Looking up the raw id prices
+  a Gemini run at a third of its cost. `price_key` renames it; the table keeps one
+  correct row per vendor.
+- `gemini-3-pro-preview` is retired for pinning but still costs out, as its
+  successor `gemini-3.1-pro-preview` — a historical run record must price.
+- The routing aliases (`auto`, `pro`, `flash`, `flash-lite`, `auto-gemini-3`,
+  `auto-gemini-2.5`) fold onto the sentinel **`gemini-routed`**, deliberately
+  **unpriced**. `auto` is already a Cursor row (grok-4.5 rates), so passing it
+  through would attribute a Gemini run to another vendor's engine.
+
+`gemini-3.1-pro-preview-customtools` gets **no row**: it has no published price
+(spike Trap 3), and this table reports unpriced (`~$?`) rather than guessing —
+even though it is the model that actually served two probe runs. The two Gemma
+ids (`gemma-4-31b-it`, `gemma-4-26b-a4b-it`) are unpriced for the same reason:
+they are pinnable and pass through `price_key` verbatim, and no list price was
+captured for them. Three families are therefore intentionally `~$?` —
+`gemini-routed`, `-customtools`, and the Gemma pair.
+
+The adapter already applies the transform to `Usage::model`. **#263, which parses
+the stream's usage envelope, must apply it to every key it writes into
+`stats.models`** — an unmapped id there re-opens the 3× misattribution.
+
+Known under-bill: these are flat per-model scalars, and Pro prices differently
+above a 200 k prompt (Ralphy's charter alone is ~30 k of it), so a long Pro run
+is under-billed. Tiered pricing is out of scope here (PRD #252) and lands with the
+`ralphy-pricing` crate this ADR already specifies.
+
+## Amendment (slice A): CLI-first models.dev fetch, a machine-refreshed seed floor, the daemon made optional
+
+The body of this ADR is a whole: the models.dev fetch, the `(provider, model)`
+domain key, the curated alias map, the `Tokens` unification, the `ralphy-pricing`
+crate, and the daemon-as-only-fetcher, landing together. That whole stays
+`proposed`. This amendment carves out and **accepts** a first shippable
+increment — **slice A** — that delivers the price-*freshness* half without the
+domain surgery, and in doing so **revises D3, D6 and D7** on three points. The
+remainder (**slice B** — the `(provider, model)` key, the alias map, the `Tokens`
+unification, the `ralphy-pricing` crate, tiers D5) stays as this ADR's proposed
+future.
+
+### A1 — Scope: freshness + fallback only; the domain is untouched
+
+Slice A swaps the *source* of the majors' prices and replaces the hand-maintained
+floor. It keeps the current **per-`model`** keying end to end: the ledger record
+(ADR-0008 D6) gains **no** `provider` field, `ralphy_core::Usage` is **not**
+unified into `Tokens`, and `(provider, model)` exists only **transiently at
+lookup** (below), never stored. This narrows D1–D3 to "price side only, and even
+there without the provider key" for now — the honest consequence is that the
+OpenCode-alias accuracy that motivated *Why now* is **deferred to slice B**; the
+vendor slugs stay hand-priced (A3).
+
+### A2 — Source stays models.dev; the fetch refreshes only the metered majors
+
+D4's choice of models.dev is upheld, and LiteLLM/OpenRouter re-rejected for slice
+A specifically: LiteLLM's inconsistent keying is usable only through the
+multi-index + fuzzy resolver tokscale builds to tame it (and even that needs the
+curated alias map to resolve `k2p6`), OpenRouter publishes *marketplace* price,
+not the vendor **list** price the counterfactual wants, and LiteLLM's one edge —
+long-context tiers — is out of slice-A scope (D5). models.dev's clean
+`provider/model` keying is what makes the resolver unnecessary.
+
+Because the ids the adapters report are **bare** (`claude-opus-4-8`, `gpt-5.5`)
+while models.dev keys `provider/model`, the lookup **synthesizes the provider by a
+deterministic prefix rule** (`claude-*`→`anthropic`, `gpt-*`→`openai`,
+`gemini-*`→`google`, `kimi-*`→`moonshotai`), builds `provider/model`, and looks it
+up in the fetched dataset. A hit prices fresh; a miss falls through to the floor.
+This is *not* slice B's alias map — it is a rule, not a table, and it only ever
+touches lookup, never the record. The date-collision (`anthropic/claude-opus-4-8`
+vs a dated catalog id) is closed by applying the existing `strip_release_date`
+normalization to **both** sides at ingest.
+
+**Boundary, load-bearing:** the fetch refreshes **only** the metered majors that
+synthesize and match. Every vendor-internal id — `k2p6`, the Cursor families,
+`gemini-routed`/`-customtools`, the OpenCode plan slugs — is absent from
+models.dev by construction and **stays on the hand floor**. Slice A therefore
+ends the manual maintenance of *the majors' numbers*, not of the slug rates.
+
+### A3 — The floor is a machine-refreshed seed + a hand overlay, not hardcoded Rust
+
+D6/D7 assumed the offline floor is the "embedded hardcoded defaults"
+(`pricing/defaults.rs`). Slice A **replaces that Rust table** with two
+`include_str!` data files so the majors' floor cannot rot by neglect:
+
+- **`assets/pricing/models-dev-seed.json`** — a curated subset of a real
+  models.dev snapshot (the providers Ralphy drives), **machine-generated** by a
+  checked-in script / scheduled-CI job that opens a diffable PR, **never** by
+  `build.rs`. It is consumed as a **pre-seeded stale cache**: identical shape and
+  parser to the runtime cache.
+- **`assets/pricing/slug-overlay.json`** — the ~dozen vendor-slug/family rates no
+  catalog publishes, **hand-maintained**, keyed by the bare id. The script never
+  touches it; the human never touches the seed — one owner per file, no merge.
+
+The build stays **hermetic and offline** (`cargo build` only `include_str!`s
+checked-in files; no network at compile). Precedence becomes: `pricing.toml` >
+fresh cache > stale cache > **seed ⊕ slug-overlay**. `defaults.rs` is retired. The
+irreducible residue of hand-work shrinks to the slug rates — which slice B's alias
+map finally removes.
+
+### A4 — The run never fetches; `ralphy usage` is the sole trigger; the daemon is optional
+
+This **revises D6's "the daemon is the only fetcher."** ADR-0008 D1's real
+invariant — the run never blocks on the network — is upheld strictly: the run
+(`plan`/`execute`/`consolidate`) **and the run-end footer** read cache-or-floor
+only and **never** touch the network, even post-drain. The **CLI `ralphy usage`**
+command is the sole fetch trigger: a **bounded-blocking, best-effort** refresh when
+the cache is older than D7's 24h TTL — ~2–3 s timeout, a `--refresh` flag to force,
+and on any failure/timeout it serves stale-or-seed and logs once (network never
+yields `~$?`; only an unknown *model* does). The footer piggybacks on whatever
+fresh cache a prior `usage` wrote. The daemon, **when present**, still refreshes
+proactively on start and every TTL — but it is now an **optional accelerator**, not
+a requirement, so a machine whose daemon never ran still refreshes on its next
+`ralphy usage` rather than being stranded on the floor (the limitation D6 accepted).
+
+### A5 — Fetch is on by default, with an explicit offline opt-out
+
+The refresh is **on by default** — opt-in would leave the seed stale for most
+operators and strand the feature. This is defensible because it is a plain
+**unauthenticated GET of a public price file**: no operator data, tokens, or usage
+leave the machine — it is not telemetry. For air-gapped or egress-restricted
+environments, **`RALPHY_PRICING_OFFLINE=1` or `offline = true` in `pricing.toml`**
+skips the fetch entirely — it never even *attempts* the connection (which matters
+where the attempt itself is a policy event), resolving from `pricing.toml` > cache
+> seed. No consent prompt: Ralphy is automation-oriented and a prompt would break
+scripting. This honours the opt-in security posture in the correct direction — the
+capability ships on, the operator keeps the switch.
+
+### A6 — Implementation boundaries
+
+- **HTTP via `ureq`** (the workspace's sync/blocking client), **not `reqwest`** —
+  honouring ADR-0032 §10, which confines tokio/async to the daemon. The
+  bounded-blocking `ralphy usage` path is a synchronous one-shot, exactly ureq's
+  model. Code stays in `ralphy-cli/src/pricing.rs`; the `ralphy-pricing` crate
+  extraction (D6) is **deferred** — slice A has a single consumer (the CLI footer
+  and `ralphy usage`); the daemon web summary that justified the crate is slice B.
+- **Cache and seed share one shape**: `{ timestamp, data: { "provider/model" →
+  {input, output, cache_read, cache_creation} per-1M } }`. Ingest maps models.dev's
+  `cache_write` → `cache_creation`, keeps per-1M, and **drops any entry without a
+  usable input+output cost** — the `$0`/subscription trap tokscale filters
+  (`github_copilot/`), so a `$0` catalog row is never stored as "free". A null
+  cache field becomes `0`, **not** a guessed input-rate — that convention lives in
+  the hand layer, never the machine catalog.
+- **Cache write** = temp file in the same dir → `std::fs::rename` (atomic for
+  same-volume files on both OSes); on failure keep the old cache and log once.
+- **The ADR-0008 D8 opus oracle splits in two** so the majors moving to the seed
+  cannot break the green gate: (a) a frozen inline-fixture **arithmetic** test
+  (15/75/1.5/18.75 → 110.25) guarding `cost_usd` math, decoupled from any data;
+  (b) a **pipeline** test that `claude-opus-4-8` resolves via synthesis to the
+  checked-in seed and prices, its expected value tracking the seed in the same PR.
+- **The fetch is tested against a local `127.0.0.1:0` `TcpListener`** serving
+  canned responses (tokscale's cross-platform pattern) — no external network in CI.
+
+### A7 — Explicitly out of slice A (still this ADR's proposed future)
+
+The ledger record and `InteractiveRecord` gain no `provider`; `Usage` is not
+unified into `Tokens`; the `(provider, model)` key never enters the domain; there
+is no curated alias map, no `ralphy-pricing` crate, no long-context tiers (D5), no
+`build.rs`, and no daemon change. Each remains specified by the body above and
+lands with slice B.
+

@@ -208,6 +208,7 @@ fn issue_closed_has_full_envelope_shape() {
     let ev = RunEvent::IssueClosed {
         number: 7,
         tokens: 42,
+        invocations: 0,
         usage: UsageLite {
             input: 1,
             cache_read: 2,
@@ -723,6 +724,7 @@ fn run_finished_maps_outcome_totals_without_subject() {
     state.apply(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     state.apply(RunEvent::Skipped {
@@ -838,6 +840,7 @@ fn run_finished_falls_back_to_the_fold_without_a_rollup() {
     state.apply(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     let v = map(

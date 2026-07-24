@@ -67,6 +67,7 @@ fn spec_at(cwd: PathBuf) -> SessionSpec {
         cwd,
         rows: 24,
         cols: 80,
+        env: Vec::new(),
     }
 }
 

@@ -2,7 +2,7 @@
 //! (ADR-0020).
 //!
 //! The runner's queue loop decides, per issue, whether it is eligible, parked by a
-//! human-return label (ADR-0016), gated by an open blocker (ADR-0002), or the
+//! human-return label (ADR-0016), gated by an open blocker (ADR-0045), or the
 //! `stop-before` point where the run halts. That judgment used to live only inside
 //! `run_queue`'s loop. [`resolve_queue_view`] reproduces the SAME precedence over a
 //! queue as pure data — reusing the very predicates the loop uses
@@ -29,7 +29,7 @@ pub enum QueueStatus {
     /// A human-return label (ADR-0016) outranks the queue label — the run skips it
     /// and continues. `skip_reason` names the parking label.
     Skipped,
-    /// One or more declared blockers are still open (ADR-0002) — the run skips it
+    /// One or more declared blockers are still open (ADR-0045) — the run skips it
     /// and continues. `blocked_by` lists the open blockers.
     Blocked,
     /// The first `stop-before` issue in queue order — the run halts BEFORE it
@@ -52,7 +52,7 @@ pub struct IssueView {
     /// The parking label on a [`QueueStatus::Skipped`] issue (ADR-0016); `None`
     /// for every other status.
     pub skip_reason: Option<String>,
-    /// The open blockers gating a [`QueueStatus::Blocked`] issue (ADR-0002); empty
+    /// The open blockers gating a [`QueueStatus::Blocked`] issue (ADR-0045); empty
     /// for every other status.
     pub blocked_by: Vec<u64>,
     /// The 1-based rank of this issue among the [`QueueStatus::Eligible`] issues in
@@ -79,7 +79,7 @@ pub struct QueueView {
 ///    (only the first, matching the scalar boundary);
 /// 2. else a human-return label (ADR-0016) → [`QueueStatus::Skipped`] with the
 ///    label as `skip_reason` (a `forced` selection does NOT suppress this);
-/// 3. else open blockers (ADR-0002) → [`QueueStatus::Blocked`] with `blocked_by`;
+/// 3. else open blockers (ADR-0045) → [`QueueStatus::Blocked`] with `blocked_by`;
 /// 4. else [`QueueStatus::Eligible`], assigned a 1-based `position` among eligibles.
 ///
 /// `forced` is the operator's explicit selection (`--issues`/`--only-issue`), which

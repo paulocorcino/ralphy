@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-cli"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -32,6 +32,9 @@ unicode-width = "0.2"
 ralphy-core.workspace = true
 ralphy-agent-claude.workspace = true
 ralphy-agent-codex.workspace = true
+ralphy-agent-copilot.workspace = true
+ralphy-agent-cursor.workspace = true
+ralphy-agent-gemini.workspace = true
 ralphy-agent-kimi.workspace = true
 ralphy-agent-opencode.workspace = true
 ralphy-adapter-support.workspace = true

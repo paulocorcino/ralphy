@@ -151,6 +151,7 @@ fn run_queue_with(
         agent: agent.name(),
         run_usage: Usage::default(),
         run_usage_by_model: BTreeMap::new(),
+        invocations: 0,
     };
 
     let mut worked: Vec<IssueResult> = Vec::new();
@@ -490,6 +491,7 @@ fn run_queue_with(
         oneline,
         run_usage: ledger.run_usage,
         run_usage_by_model: ledger.run_usage_by_model,
+        invocations: ledger.invocations,
     })
 }
 

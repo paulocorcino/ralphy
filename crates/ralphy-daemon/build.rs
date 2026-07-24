@@ -10,6 +10,10 @@ fn main() {
     // Re-run when HEAD or the tag set moves so the embedded version stays current.
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs/tags");
+    // lib.rs embeds assets/ui via include_dir!, which Cargo does not track on
+    // its own: without this line an edit to a UI asset leaves the binary
+    // serving the stale embedded copy after a "successful" rebuild.
+    println!("cargo:rerun-if-changed=assets/ui");
 
     let version = git_describe().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
     println!("cargo:rustc-env=RALPHY_VERSION={version}");

@@ -1,0 +1,44 @@
+[2m2026-07-22 14:22:48[0m [32m INFO[0m [2mralphy::run[0m[2m:[0m ralphy run [3mrepo[0m[2m=[0m/home/corcino/FinCal-wsl [3mstamp[0m[2m=[0m20260722-142248 [3mdry_run[0m[2m=[0mtrue
+🐸 Ralphy - v0.1.0-rc13
+FinCal-wsl · master · https://github.com/paulocorcino/FinCal
+[2m2026-07-22 14:22:52[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m queue built [3mcount[0m[2m=[0m1 [3morder[0m[2m=[0m#125 [3mstop_before[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":125,"title":"capstone #272: WSL parity — add VALIDATION_WSL.md sentinel","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] [3massignee_filter[0m[2m=[0m [3mscope[0m[2m=[0missues [#125]
+[2m2026-07-22 14:22:52[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run started [3mrepo[0m[2m=[0mpaulocorcino/FinCal [3mqueue_labels[0m[2m=[0mready-for-agent,AFK [3magent[0m[2m=[0m"copilot" [3mplan_agent[0m[2m=[0m"copilot" [3mbranch_mode[0m[2m=[0m"new" [3mbase[0m[2m=[0mmaster [3mdeadline_hours[0m[2m=[0m0.0
+[2m2026-07-22 14:22:56[0m [32m INFO[0m [2mralphy_core::runner::branch[0m[2m:[0m run branch created [3mbranch[0m[2m=[0mafk/run-20260722-142248 [3mbase[0m[2m=[0mmaster [3mwas[0m[2m=[0mmaster
+[2m2026-07-22 14:23:04[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m issue started [3mnumber[0m[2m=[0m125 [3mtitle[0m[2m=[0mcapstone #272: WSL parity — add VALIDATION_WSL.md sentinel
+[2m2026-07-22 14:23:04[0m [33m WARN[0m [2mralphy_core::runner::artifacts[0m[2m:[0m fetching referenced issue failed — skipping [3mnumber[0m[2m=[0m125 [3mreference[0m[2m=[0m272 [3merror[0m[2m=[0m`gh issue view 272 --json number,title,state,body,url` failed: GraphQL: Could not resolve to an issue or pull request with the number of 272. (repository.issue)
+[2m2026-07-22 14:23:04[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m planning [3mcmd[0m[2m=[0mcopilot [3mmodel[0m[2m=[0m [3meffort[0m[2m=[0m
+[2m2026-07-22 14:23:45[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan written [3mnumber[0m[2m=[0m125 [3mopen_steps[0m[2m=[0m4 [3mup[0m[2m=[0m231157 [3mcr[0m[2m=[0m194926 [3mcw[0m[2m=[0m36215 [3mout[0m[2m=[0m2355 [3mmodel[0m[2m=[0m"claude-sonnet-5" [3msteps_json[0m[2m=[0m[{"status":"open","text":"Create `VALIDATION_WSL.md` at repo root with exactly one line: `copilot capstone #272 wsl sentinel` (with trailing newline)."},{"status":"open","text":"Verify content and line count: run `sh -c \"test \\\"$(cat VALIDATION_WSL.md)\\\" = 'copilot capstone #272 wsl sentinel'\"` and `sh -c \"test $(wc -l < VALIDATION_WSL.md) -eq 1\"`, both must exit 0."},{"status":"open","text":"Self-review: this is a pure data/fixture file with no domain logic (single static text file, no control flow) — omit the reviewer-skill step per charter's \"no domain logic at all\" exception; instead do a direct adversarial re-read of the file's exact byte content (no trailing whitespace beyond the newline, no BOM, correct spelling of \"capstone #272 wsl sentinel\") before finishing. Record findings under `## Self-review findings`."},{"status":"open","text":"Run the `## Verify` commands above and confirm both exit 0 with no new warnings elsewhere in the repo (this change touches only the new file, no build/format tooling applies)."}]
+[2m2026-07-22 14:23:45[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m plan opened [3mnumber[0m[2m=[0m125 [3mplan_md[0m[2m=[0m# Plan for #125: capstone #272: WSL parity — add VALIDATION_WSL.md sentinel
+
+## Feasible: yes
+Fully specified: add `VALIDATION_WSL.md` at repo root containing exactly one line. Confirmed via `find . -maxdepth 1 -iname "VALIDATION*"` that no such file exists yet on this branch.
+
+## Done when
+- `VALIDATION_WSL.md` exists at repo root and its content is exactly `copilot capstone #272 wsl sentinel` (one line, no extra blank lines).
+
+## Acceptance ledger
+- [verified] `VALIDATION_WSL.md` exists at repo root with exactly that line — evidence: `sh -c "test \"$(cat VALIDATION_WSL.md)\" = 'copilot capstone #272 wsl sentinel'"` and `sh -c "test $(wc -l < VALIDATION_WSL.md) -eq 1"`
+
+## Verify
+sh -c "test \"$(cat VALIDATION_WSL.md)\" = 'copilot capstone #272 wsl sentinel'"
+sh -c "test $(wc -l < VALIDATION_WSL.md) -eq 1"
+
+## Decisions
+- Decision: use a trailing newline (standard POSIX text file, one line) so `wc -l` reports 1 and `cat` yields the exact string via command substitution stripping trailing newline. Why: matches the issue's "exactly one line" requirement and keeps the gate simple and portable on this environment (bash/sh confirmed present).
+
+## Caveats
+- none
+
+## Steps
+- [ ] Create `VALIDATION_WSL.md` at repo root with exactly one line: `copilot capstone #272 wsl sentinel` (with trailing newline).
+- [ ] Verify content and line count: run `sh -c "test \"$(cat VALIDATION_WSL.md)\" = 'copilot capstone #272 wsl sentinel'"` and `sh -c "test $(wc -l < VALIDATION_WSL.md) -eq 1"`, both must exit 0.
+- [ ] Self-review: this is a pure data/fixture file with no domain logic (single static text file, no control flow) — omit the reviewer-skill step per charter's "no domain logic at all" exception; instead do a direct adversarial re-read of the file's exact byte content (no trailing whitespace beyond the newline, no BOM, correct spelling of "capstone #272 wsl sentinel") before finishing. Record findings under `## Self-review findings`.
+- [ ] Run the `## Verify` commands above and confirm both exit 0 with no new warnings elsewhere in the repo (this change touches only the new file, no build/format tooling applies).
+
+<!-- ralphy-plan: issue=125 -->
+
+[2m2026-07-22 14:23:45[0m [32m INFO[0m [2mralphy_core::emit[0m[2m:[0m run finished [3moutcome[0m[2m=[0m"completed" [3missues_done[0m[2m=[0m0 [3missues_skipped[0m[2m=[0m1 [3missues_total[0m[2m=[0m1 [3missues_blocked[0m[2m=[0m0 [3missues_hitl[0m[2m=[0m0 [3missues_json[0m[2m=[0m[{"number":125,"status":"planned"}] [3mup[0m[2m=[0m231157 [3mcr[0m[2m=[0m194926 [3mcw[0m[2m=[0m36215 [3mout[0m[2m=[0m2355 [3mduration_s[0m[2m=[0m57
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+0 commit(s) on 'afk/run-20260722-142248'
+DryRun: returned repo to 'master'; empty run branch removed.
+run: in 231.2k cr 194.9k cw 36.2k out 2.4k · $0.92 · project: paulocorcino/FinCal in 299.0k cr 869.4k cw 36.2k out 12.3k · $1.46

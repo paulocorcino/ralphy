@@ -152,6 +152,7 @@ pub(crate) fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
         "\n{}",
         forced(Style::new().cyan().bold()).apply_to("Environment")
     );
+    println!("  {} git", mark(f.git));
     println!("  {} python", mark(f.python));
     println!("  {} gh auth", mark(f.gh_authenticated));
     println!("  {} GitHub remote", mark(f.github_remote));

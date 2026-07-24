@@ -1,0 +1,2 @@
+[2m2026-07-22 11:45:06[0m [32m INFO[0m [2mralphy_daemon[0m[2m:[0m daemon listening — open http://127.0.0.1:7260 (Ctrl+C to stop) [3maddr[0m[2m=[0m127.0.0.1:7260
+[2m2026-07-22 11:45:06[0m [32m INFO[0m [2mralphy_daemon[0m[2m:[0m daemon has no identity yet — run `ralphy daemon setup` to baptize it

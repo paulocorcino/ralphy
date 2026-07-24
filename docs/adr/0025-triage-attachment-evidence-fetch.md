@@ -138,7 +138,7 @@ planner→executor handoff here). The selected adapter is known before the fetch
 - If it can, the image is downloaded under the guardrails and the **per-adapter
   invocation** wires the pixels to the model (Claude references the path in the
   prompt; Codex uses its image-input flag). This delivery is the one vendor-specific
-  piece — exactly what ADR-0004 says lives in the adapter. The core fetch stays
+  piece — exactly what ADR-0002 says lives in the adapter. The core fetch stays
   neutral: it downloads the file and lists it; *how* the pixel reaches the model is
   the adapter's.
 

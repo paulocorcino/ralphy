@@ -125,14 +125,16 @@ _Avoid_: model selection (reserved for Claude complexity routing).
 The shared machinery every **adapter** leans on but that is specific to *no*
 vendor — the headless child-driving loop (spawn, drain stdout/stderr, poll to
 completion-or-timeout, kill on deadline), the `RALPHY_DONE_EXIT` /
-`RALPHY_BLOCKED_EXIT` sentinel parser, and skill/plugin materialization. It is
+`RALPHY_BLOCKED_EXIT` sentinel parser, and skill/plugin materialization —
+including the `.agents/skills` exposure dance (link-or-copy, symlink-safe
+removal, merged per-entry `.gitignore`) that Codex and Copilot both drive. It is
 the deliberate counterpart of **Adapter**: where an adapter holds what is
 vendor-specific, adapter support holds what is common. It owns **no** completion
 protocol and produces **no** `Outcome` — it hands back raw captured output and
-each adapter still classifies it (the seam ADR-0004 protects). Lives in
+each adapter still classifies it (the seam ADR-0002 protects). Lives in
 `ralphy-adapter-support`; depended on by the vendor adapter crates, never by the
 core.
-_Avoid_: shared runner, headless runner (ADR-0004 forbids a shared *Outcome*
+_Avoid_: shared runner, headless runner (ADR-0002 forbids a shared *Outcome*
 runner — this is only the plumbing), utils, helpers.
 
 **Run deadline / per-issue budget / idle watchdog**:
@@ -164,7 +166,7 @@ beats closing a throttled session) and a `timeout`; a `done` needs only
 protocol-completion and flake-repair hand-backs legitimately finish with no commit
 (the plan lives in gitignored `.ralphy/plan.md`). `committed` is a *progress* signal
 feeding the Claude headless no-commit **streak**, not a gate on **green**. This
-*narrows* — does not reopen — ADR-0004: raw→signal extraction (including limit
+*narrows* — does not reopen — ADR-0002: raw→signal extraction (including limit
 trustworthiness and exit normalization) stays per-adapter; only the signal→`Outcome`
 ordering is shared (ADR-0023). Claude is the reference implementation; the behavior
 change lands on the Codex and OpenCode adapters.
@@ -186,6 +188,20 @@ An **optional adapter capability**, not a core guarantee — a deterministic ada
 (fixed model + fixed effort) is a first-class citizen. Distinct from **effort**,
 which is a deterministic knob the operator sets, not an auto-judged choice.
 _Avoid_: model selection (too broad), auto-model.
+
+**Effort**:
+The deterministic reasoning-depth knob the operator sets per phase
+(`--plan-effort`/`--exec-effort`), on the fixed five-rung ladder
+`low | medium | high | xhigh | max` (ADR-0044) — the cross-vendor intersection of
+the CLIs that expose one. `low`/`medium`/`high` are the guaranteed-universal core;
+`xhigh`/`max` are accepted but clamp down on a model that cannot honour them, so
+asking for more never silently delivers less. One word, translated to each
+vendor's dialect **inside** the adapter (clamp where the vendor degrades silently,
+passthrough where it errors loudly, a documented no-op where there is no effort
+axis) — never a raw passthrough. Distinct from **complexity routing** (auto-judged
+model choice) and from model selection: effort is *how hard*, not *which model*.
+_Avoid_: reasoning level (vendor-specific), variant (that is OpenCode's dialect,
+not the Ralphy word).
 
 **Supervised session**:
 Live human oversight of a *running* agent session — following it and intervening
@@ -406,7 +422,7 @@ An issue's `## Blocked by` section names other issues (`#N`) it depends on. The
 runner gates on it: if any named blocker is still **open**, the blocked issue is
 *skipped* this run (not closed, not a stop) and picked up by a later run once the
 blocker clears. A blocker counts as satisfied when simply **closed** — safe only
-because every issue in a run shares one branch (see ADR-0002).
+because every issue in a run shares one branch (see ADR-0045).
 _Avoid_: depends-on, prerequisite, stop-before (that's flow control, not a dependency).
 
 **stop-before**:

@@ -6,7 +6,7 @@
 //! ladder (typed limit → auth bail → generic "no plan") or the execute-time auth
 //! bail. [`run_plan_session`] and [`run_exec_session`] own that shell.
 //!
-//! It stays core-free (ADR-0004): the vendor step is a `run` closure returning a
+//! It stays core-free (ADR-0002): the vendor step is a `run` closure returning a
 //! [`HeadlessRun`] plus an opaque payload `P` (the usage snapshot the vendor folds
 //! itself), the auth check and the typed-limit lift are closures, and the scaffold
 //! names no `Plan`/`Outcome`/`PlanLimit`. The plan-time limit is threaded as an

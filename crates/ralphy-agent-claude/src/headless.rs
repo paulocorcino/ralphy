@@ -19,34 +19,43 @@ use crate::auth::{
 use crate::plan::materialize_plugin;
 use crate::ClaudeAgent;
 
+fn headless_args(
+    settings: &Path,
+    plugin_dir: &Path,
+    model: &str,
+    effort: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "-p".into(),
+        "--dangerously-skip-permissions".into(),
+        "--settings".into(),
+        settings.to_string_lossy().into_owned(),
+        "--plugin-dir".into(),
+        plugin_dir.to_string_lossy().into_owned(),
+        "--model".into(),
+        model.into(),
+    ];
+    args.extend(crate::effort_args(effort));
+    args
+}
+
 impl ClaudeAgent {
     /// Spawn a single `claude -p` call for headless execution, piping
     /// `PROMPT_EXECUTE` on stdin and draining stdout/stderr via reader threads
     /// to avoid pipe-buffer deadlock. Polls `try_wait` until `timeout` fires;
     /// kills the child on expiry and returns `exited = false`.
+    #[allow(clippy::too_many_arguments)]
     fn run_headless_call(
         &self,
         cmd_dir: &Path,
         settings: &Path,
         plugin_dir: &Path,
         model: &str,
+        effort: Option<&str>,
         timeout: Duration,
         call_index: u32,
     ) -> Result<(bool, String)> {
-        let mut args: Vec<String> = vec![
-            "-p".into(),
-            "--dangerously-skip-permissions".into(),
-            "--settings".into(),
-            settings.to_string_lossy().into_owned(),
-            "--plugin-dir".into(),
-            plugin_dir.to_string_lossy().into_owned(),
-            "--model".into(),
-            model.into(),
-        ];
-        if let Some(e) = &self.exec.exec_effort {
-            args.push("--effort".into());
-            args.push(e.clone());
-        }
+        let args = headless_args(settings, plugin_dir, model, effort);
 
         let mut cmd = Command::new(crate::interactive::resolve_claude_binary());
         cmd.args(&args)
@@ -88,6 +97,9 @@ impl ClaudeAgent {
         let settings_path = self.write_exec_settings()?;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
+        // Effort follows the model's precedence: operator flag wins, else the
+        // plan's `opus-high` rung raises it to high (ADR-0002, Amendment 2026-07-24).
+        let exec_effort = self.resolve_exec_effort(plan);
         let deadline = self.issue_deadline();
 
         // budget_min field consumed by the telegram notifier / presenter — keep stable
@@ -98,7 +110,8 @@ impl ClaudeAgent {
             ),
             self.exec.max_minutes_per_issue,
             &exec_model,
-            self.exec.exec_effort.as_deref().unwrap_or("medium"),
+            exec_effort.as_deref().unwrap_or(""),
+            "",
         );
 
         let mut no_commit_streak = 0u32;
@@ -119,6 +132,7 @@ impl ClaudeAgent {
                 &settings_path,
                 &plugin_dir,
                 &exec_model,
+                exec_effort.as_deref(),
                 remaining,
                 i,
             )?;
@@ -276,6 +290,29 @@ fn headless_reason_to_outcome(r: HeadlessReason) -> Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headless_command_maps_high_and_omits_unset() {
+        let set = headless_args(
+            Path::new("settings.json"),
+            Path::new("plugin"),
+            "sonnet",
+            Some("high"),
+        );
+        assert_eq!(
+            set.windows(2)
+                .filter(|pair| pair == &["--effort", "high"])
+                .count(),
+            1
+        );
+        let unset = headless_args(
+            Path::new("settings.json"),
+            Path::new("plugin"),
+            "sonnet",
+            None,
+        );
+        assert!(!unset.iter().any(|arg| arg == "--effort"));
+    }
 
     /// One real transcript api-error line carrying the limit banner `text`, in the
     /// exact shape Claude Code writes (`isApiErrorMessage`+`error`+`apiErrorStatus`).

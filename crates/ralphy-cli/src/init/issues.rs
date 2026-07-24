@@ -244,6 +244,16 @@ pub(crate) fn draft_with_agent(
             ralphy_agent_codex::draft_issues(repo, out_path, req, model, effort, timeout)
         }
 
+        Agent::Copilot => {
+            ralphy_agent_copilot::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+        Agent::Gemini => {
+            ralphy_agent_gemini::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+        Agent::Cursor => {
+            ralphy_agent_cursor::draft_issues(repo, out_path, req, model, effort, timeout)
+        }
+
         Agent::Kimi => ralphy_agent_kimi::draft_issues(repo, out_path, req, model, effort, timeout),
 
         Agent::Opencode => {

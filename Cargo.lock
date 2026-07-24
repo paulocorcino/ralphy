@@ -622,8 +622,19 @@ checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
  "libc",
- "r-efi",
+ "r-efi 5.3.0",
  "wasip2",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi 6.0.0",
 ]
 
 [[package]]
@@ -1507,8 +1518,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
+name = "r-efi"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
 name = "ralphy-adapter-support"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -1520,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-claude"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -1536,7 +1553,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-codex"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -1549,8 +1566,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-agent-copilot"
+version = "0.1.0-rc15"
+dependencies = [
+ "anyhow",
+ "include_dir",
+ "ralphy-adapter-support",
+ "ralphy-core",
+ "ralphy-usage-scan",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "ralphy-agent-cursor"
+version = "0.1.0-rc15"
+dependencies = [
+ "anyhow",
+ "include_dir",
+ "ralphy-adapter-support",
+ "ralphy-core",
+ "ralphy-proc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "ralphy-agent-gemini"
+version = "0.1.0-rc15"
+dependencies = [
+ "anyhow",
+ "include_dir",
+ "ralphy-adapter-support",
+ "ralphy-core",
+ "ralphy-proc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 0.8.23",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ralphy-agent-kimi"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -1562,7 +1629,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-opencode"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -1577,7 +1644,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-cli"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1591,6 +1658,9 @@ dependencies = [
  "ralphy-adapter-support",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
+ "ralphy-agent-copilot",
+ "ralphy-agent-cursor",
+ "ralphy-agent-gemini",
  "ralphy-agent-kimi",
  "ralphy-agent-opencode",
  "ralphy-core",
@@ -1611,7 +1681,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-core"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1626,7 +1696,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-daemon"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "axum",
@@ -1661,11 +1731,17 @@ dependencies = [
 
 [[package]]
 name = "ralphy-proc-util"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "ralphy-pty"
-version = "0.1.0-rc13"
+version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
  "portable-pty",
@@ -2553,6 +2629,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "uuid"
+version = "1.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
+dependencies = [
+ "getrandom 0.4.3",
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3034,6 +3121,16 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "ureq",
+]
 
 [[package]]
 name = "yoke"

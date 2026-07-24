@@ -10,7 +10,7 @@ CLI Ralphy is built on — re-exposing it through a local server would be a
 proxy nobody asked to maintain. Second, the one thing no other tool can
 answer is **Ralphy's judgment** of the backlog: which issue is eligible,
 which is parked by a human-return label (ADR-0016), which is gated by an open
-blocker (ADR-0002), where `stop-before` will halt the run — logic that lives
+blocker (ADR-0045), where `stop-before` will halt the run — logic that lives
 in the queue builder and nowhere else. The 80% case is not "browse GitHub in
 the terminal"; it is "see the backlog the way the runner will".
 

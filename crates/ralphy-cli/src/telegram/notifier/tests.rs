@@ -99,6 +99,7 @@ fn live_animate_card() {
         state.apply(RunEvent::IssueClosed {
             number: n,
             tokens: 0,
+            invocations: 0,
             usage: UsageLite::default(),
         });
         push(&client, &state, &mut last_card);
@@ -239,6 +240,7 @@ fn render_card_small_queue_one_line_per_issue() {
     state.apply(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     state.apply(RunEvent::IssueStarted {
@@ -375,6 +377,7 @@ fn footer_marks_a_run_that_processed_nothing_as_stopped() {
     state.apply(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     let done_footer = render_final_push(&state);
@@ -418,6 +421,7 @@ fn render_card_shows_live_consolidation_line_then_footer_segment() {
     state.apply(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     // Mid-consolidation: the live 📚 line shows, no footer yet.
@@ -468,6 +472,7 @@ fn render_card_shows_footer_only_when_finished() {
     state.apply(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
     // During the run: no footer.
@@ -508,6 +513,7 @@ fn render_card_collapses_large_queue_within_limit() {
             state.apply(RunEvent::IssueClosed {
                 number: n,
                 tokens: 0,
+                invocations: 0,
                 usage: UsageLite::default(),
             });
         }
@@ -613,6 +619,7 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
     queue.push(RunEvent::IssueClosed {
         number: 1,
         tokens: 0,
+        invocations: 0,
         usage: UsageLite::default(),
     });
 

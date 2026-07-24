@@ -33,11 +33,7 @@ async fn bearer_policy_gates_the_ws_upgrade() {
         Some(anvil()),
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
+        ralphy_daemon::StorePaths::default(),
         Instant::now(),
         rx,
         AuthState::fixed(

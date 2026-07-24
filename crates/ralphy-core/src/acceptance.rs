@@ -83,12 +83,51 @@ fn normalize_ac(s: &str) -> String {
         .to_string()
 }
 
+/// Collect the checkbox list items of a body as *logical* bullets: each item
+/// is the physical line index where its `- [` bullet starts, paired with the
+/// bullet's full text — soft-wrapped continuation lines joined by a single
+/// space. Issue bodies hard-wrap their AC prose at ~78 columns, so a criterion
+/// routinely spans several physical lines; matching against the physical line
+/// alone can never tick those (the #266 failure). A continuation line is a
+/// non-empty indented line that does not itself start a new bullet or heading;
+/// a blank line ends the item.
+fn logical_checkbox_items(lines: &[String]) -> Vec<(usize, String)> {
+    let mut items = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].trim_start().starts_with("- [") {
+            let mut text = lines[i].clone();
+            let mut j = i + 1;
+            while j < lines.len() {
+                let trimmed = lines[j].trim_start();
+                let continues = !trimmed.is_empty()
+                    && lines[j].starts_with(char::is_whitespace)
+                    && !trimmed.starts_with('-')
+                    && !trimmed.starts_with('#');
+                if !continues {
+                    break;
+                }
+                text.push(' ');
+                text.push_str(trimmed);
+                j += 1;
+            }
+            items.push((i, text));
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    items
+}
+
 /// Apply verified verdicts to an issue body by flipping `- [ ] <criterion>` to
-/// `- [x] <criterion>`. Matching is verbatim *modulo inline markdown and
-/// whitespace* (see [`normalize_ac`]) — the ledger criterion is frequently
-/// transcribed without the issue line's `**bold**`/`` `code` `` markers, and an
-/// exact-string match would silently drop those ticks. Review-only verdicts are
-/// never ticked. Already-ticked lines are left untouched.
+/// `- [x] <criterion>`. Matching is verbatim *modulo inline markdown,
+/// whitespace and soft wrapping* (see [`normalize_ac`] and
+/// [`logical_checkbox_items`]) — the ledger criterion is frequently transcribed
+/// without the issue line's `**bold**`/`` `code` `` markers and as one logical
+/// line where the issue hard-wraps, and an exact per-line match would silently
+/// drop those ticks. Review-only verdicts are never ticked. Already-ticked
+/// lines are left untouched.
 pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
     let mut body_lines: Vec<String> = body.lines().map(str::to_string).collect();
     let had_trailing_newline = body.ends_with('\n');
@@ -100,14 +139,19 @@ pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
             continue;
         }
         let target = normalize_ac(&format!("- [ ] {}", verdict.criterion));
+        // Recomputed per verdict so a bullet ticked by an earlier verdict no
+        // longer matches (its `[x]` normalizes differently), letting duplicate
+        // criteria tick successive occurrences exactly as before.
         let mut found = false;
-        for line in body_lines.iter_mut() {
-            // Compare normalized forms, but flip the box on the original line so
-            // its markdown survives. Replacing `[ ]` (not `- [ ]`) tolerates
-            // bullet/whitespace variants the normalized match also accepts.
-            if !found && normalize_ac(line) == target {
-                *line = line.replacen("[ ]", "[x]", 1);
+        for (start, text) in logical_checkbox_items(&body_lines) {
+            // Compare normalized logical bullets, but flip the box on the
+            // original first line so its markdown and wrapping survive.
+            // Replacing `[ ]` (not `- [ ]`) tolerates bullet/whitespace
+            // variants the normalized match also accepts.
+            if normalize_ac(&text) == target {
+                body_lines[start] = body_lines[start].replacen("[ ]", "[x]", 1);
                 found = true;
+                break;
             }
         }
         if found {
@@ -350,6 +394,70 @@ some note
         assert!(result.new_body.contains(
             "- [x] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` pass on Windows and Linux."
         ));
+    }
+
+    #[test]
+    fn apply_ledger_ticks_through_soft_wrapped_bullets() {
+        // The #266 failure: the issue's AC bullets are hard-wrapped at ~78
+        // columns with indented continuation lines, but the ledger transcribed
+        // each criterion as one logical line. Per-physical-line matching left
+        // every wrapped criterion flagged NEEDS REVIEW while the one
+        // single-line criterion ticked. Logical-bullet matching ticks them and
+        // preserves the original wrapping.
+        // Built with join so the continuation lines keep their literal
+        // indentation (a `\n\` string continuation would strip it).
+        let body = [
+            "## Acceptance criteria",
+            "",
+            "- [ ] A quota failure stops the run and is reported as a limit, not as a crash",
+            "      and not as a mute stall — the operator sees the vendor's own sentence",
+            "- [ ] Ralphy performs no retry of its own on a quota failure",
+            "- [ ] A quota stop reached **after** the session committed real work is reported",
+            "      as such: the partial work is named, not silently discarded, and the branch",
+            "      is handed back for inspection",
+            "",
+        ]
+        .join("\n");
+        let verdicts = vec![
+            Verdict {
+                criterion: "A quota failure stops the run and is reported as a limit, not as a crash and not as a mute stall — the operator sees the vendor's own sentence".into(),
+                kind: VerdictKind::Verified,
+                evidence: "fixture test".into(),
+            },
+            Verdict {
+                criterion: "Ralphy performs no retry of its own on a quota failure".into(),
+                kind: VerdictKind::Verified,
+                evidence: "pin test".into(),
+            },
+            Verdict {
+                // Bold stripped in transcription AND wrapped across three lines.
+                criterion: "A quota stop reached after the session committed real work is reported as such: the partial work is named, not silently discarded, and the branch is handed back for inspection".into(),
+                kind: VerdictKind::Verified,
+                evidence: "midturn fixture test".into(),
+            },
+        ];
+        let result = apply_ledger(&body, &verdicts);
+        assert!(
+            result.unmatched.is_empty(),
+            "soft wrapping must not block matching: {:?}",
+            result.unmatched
+        );
+        assert_eq!(result.ticked.len(), 3, "all verified criteria tick");
+        // Only the box on the first physical line flips; the wrapped
+        // continuation lines are untouched.
+        let wrapped_first = [
+            "- [x] A quota failure stops the run and is reported as a limit, not as a crash",
+            "      and not as a mute stall — the operator sees the vendor's own sentence",
+        ]
+        .join("\n");
+        assert!(result.new_body.contains(&wrapped_first));
+        let wrapped_third = [
+            "- [x] A quota stop reached **after** the session committed real work is reported",
+            "      as such: the partial work is named, not silently discarded, and the branch",
+            "      is handed back for inspection",
+        ]
+        .join("\n");
+        assert!(result.new_body.contains(&wrapped_third));
     }
 
     #[test]

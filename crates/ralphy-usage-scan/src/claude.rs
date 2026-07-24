@@ -172,14 +172,15 @@ fn parse_transcript(
                 session_id: session_id.to_string(),
                 project: project.clone(),
                 actor_email: actor_email.clone(),
-                tokens: Tokens {
+                tokens: Some(Tokens {
                     input: total[0],
                     output: total[1],
                     cache_read: total[2],
                     cache_creation: total[3],
-                },
+                }),
                 first_ts: group.first_ts.unwrap_or_default(),
                 last_ts: group.last_ts.unwrap_or_default(),
+                lower_bound: false,
             }
         })
         .collect()
@@ -333,7 +334,8 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(
-            records[0].tokens.input, 350,
+            records[0].tokens.as_ref().unwrap().input,
+            350,
             "m1 max 300 + m2 50, not 650+50 sum"
         );
     }

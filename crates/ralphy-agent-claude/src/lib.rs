@@ -17,7 +17,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -53,6 +53,37 @@ pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issue
 /// The one-line charter the interactive session is launched with; it points the
 /// agent at the embedded charter and the plan, and names the exit sentinel.
 pub(crate) const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.";
+
+fn effort_args(effort: Option<&str>) -> Vec<String> {
+    effort
+        .map(|value| vec!["--effort".into(), value.into()])
+        .unwrap_or_default()
+}
+
+fn planning_args(
+    model: Option<&str>,
+    effort: Option<&str>,
+    settings_path: &Path,
+    plugin_dir: &Path,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(model) = model {
+        args.extend(["--model".into(), model.into()]);
+    }
+    args.extend([
+        "-p".into(),
+        "--dangerously-skip-permissions".into(),
+        "--output-format".into(),
+        "stream-json".into(),
+        "--verbose".into(),
+        "--settings".into(),
+        settings_path.to_string_lossy().into_owned(),
+        "--plugin-dir".into(),
+        plugin_dir.to_string_lossy().into_owned(),
+    ]);
+    args.extend(effort_args(effort));
+    args
+}
 
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
 /// the `exec_*` fields configure the interactive execution session. `run_dir` is
@@ -169,29 +200,16 @@ impl Agent for ClaudeAgent {
         let (prompt, staged) = plan_prompt_for(issue);
         write_plan_charter(ws, prompt)?;
 
-        // `--model` first (as the ps1 oracle does), then the headless flags.
-        let mut args: Vec<String> = Vec::new();
-        if let Some(m) = &self.plan_model {
-            args.push("--model".into());
-            args.push(m.clone());
-        }
-        args.push("-p".into());
-        args.push("--dangerously-skip-permissions".into());
         // Capture per-invocation token usage off the result event (ADR-0008 D5).
         // `stream-json` requires `--verbose` on the pinned CLI; the plan markdown
         // is still written to disk by the session, so the stdout format is free to
         // change. `parse_plan_usage` skips the non-JSON warning preamble.
-        args.push("--output-format".into());
-        args.push("stream-json".into());
-        args.push("--verbose".into());
-        args.push("--settings".into());
-        args.push(settings_path.to_string_lossy().into_owned());
-        args.push("--plugin-dir".into());
-        args.push(plugin_dir.to_string_lossy().into_owned());
-        if let Some(e) = &self.plan_effort {
-            args.push("--effort".into());
-            args.push(e.clone());
-        }
+        let args = planning_args(
+            self.plan_model.as_deref(),
+            self.plan_effort.as_deref(),
+            &settings_path,
+            &plugin_dir,
+        );
 
         ralphy_core::emit::planning(
             if staged {
@@ -200,7 +218,8 @@ impl Agent for ClaudeAgent {
                 "claude -p"
             },
             self.plan_model.as_deref().unwrap_or(""),
-            self.plan_effort.as_deref().unwrap_or("medium"),
+            self.plan_effort.as_deref().unwrap_or(""),
+            "",
         );
         let mut cmd = Command::new(resolve_claude_binary());
         cmd.args(&args)
@@ -303,6 +322,24 @@ mod tests {
     use ralphy_adapter_support::PROMPT_EXECUTE;
     use std::path::PathBuf;
     use std::time::Duration;
+
+    #[test]
+    fn planning_command_maps_high_and_omits_unset() {
+        let set = planning_args(
+            Some("opus"),
+            Some("high"),
+            Path::new("settings.json"),
+            Path::new("plugin"),
+        );
+        assert_eq!(
+            set.windows(2)
+                .filter(|pair| pair == &["--effort", "high"])
+                .count(),
+            1
+        );
+        let unset = planning_args(None, None, Path::new("settings.json"), Path::new("plugin"));
+        assert!(!unset.iter().any(|arg| arg == "--effort"));
+    }
 
     /// Anti-drift: the charter this adapter launches sessions with and the
     /// embedded execution prompt must both name the shared completion sentinel;

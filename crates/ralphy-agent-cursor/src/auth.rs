@@ -1,0 +1,215 @@
+//! Cursor authentication detection (ADR-0042 D8), in two tiers: a free,
+//! machine-readable preflight, and an in-flight stderr matcher for a token that
+//! expires mid-run.
+
+use std::time::Duration;
+
+use serde_json::Value;
+
+/// The actionable message surfaced when a run hits a Cursor authentication
+/// failure. It quotes the login command **verbatim** — `agent login` is what the
+/// CLI itself prints, regardless of which of its two binary names was invoked.
+pub const CURSOR_AUTH_ERROR_MSG: &str =
+    "Cursor is not authenticated — run `agent login` (or `cursor-agent login`) and retry";
+
+/// Return `true` when `text` shows a Cursor authentication failure.
+///
+/// Three distinct vendor strings exist and a naive matcher misses one (D8): the
+/// listing path and the execution path both say `Authentication required`, but the
+/// invalid-key warning — `⚠ Warning: The provided API key is invalid.` — shares no
+/// words with them. Matching only the first phrase would let an invalid key
+/// masquerade as a generic "no plan".
+pub(crate) fn is_cursor_auth_error(text: &str) -> bool {
+    ralphy_adapter_support::auth_error(
+        text,
+        &[
+            &["authentication required"],
+            &["the provided api key is invalid"],
+        ],
+    )
+}
+
+/// Parse `agent status --format json` into "is the operator logged in".
+///
+/// **The exit code is not a parameter, deliberately: `status` exits 0 while logged
+/// out** (D8), so a caller that gated on it would report every logged-out operator
+/// as authenticated. The verdict comes from `isAuthenticated` alone; an
+/// unparsable or absent answer is `false`, which fails toward telling the operator
+/// to log in rather than toward a spawn that cannot work.
+pub(crate) fn cursor_status_verdict(stdout: &str) -> bool {
+    stdout
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter_map(|v| v.get("isAuthenticated").and_then(Value::as_bool))
+        .next_back()
+        .unwrap_or(false)
+}
+
+/// Preflight for the resume path (#271): when a finalized plan for this issue is
+/// already on disk, `run_plan_session` resumes WITHOUT spawning a child, so the
+/// in-flight stderr matcher never runs and a logged-out operator is served the
+/// stale plan instead of the `agent login` stop. Gate the resume on a fresh
+/// status verdict — probed **lazily**, so a fresh plan (nothing to mask) never
+/// pays for the extra spawn. `Some(msg)` = stop, logged out; `None` = proceed
+/// (no finalized plan to mask an error, or still logged in).
+pub(crate) fn resume_requires_login(
+    finalized: bool,
+    logged_in: impl FnOnce() -> bool,
+) -> Option<&'static str> {
+    (finalized && !logged_in()).then_some(CURSOR_AUTH_ERROR_MSG)
+}
+
+/// Ask the CLI itself whether the operator is logged in — the ADR-0013 preflight,
+/// and what `ralphy init`'s gate reports. Behavioural detection: the vendor's own
+/// answer, never inspection of its credential file.
+///
+/// This is the crate's SECOND child-spawning site, and it carries the same three
+/// refusals the run does, for the same reasons:
+/// - **cwd is a throwaway temp directory, never the operator's repository** (D6,
+///   the Copilot `fetch_catalog` precedent). D6's rule is stated over the child's
+///   cwd, and the indexing service is spawned by the CLI, not by Ralphy's run
+///   loop — so a probe run from inside a repository would upload it exactly as a
+///   run does. Outside any repository there is nothing to upload, which is the
+///   case D6 explicitly lets through rather than a gate being skipped.
+/// - **`CURSOR_CONFIG_DIR` points at a scratch dir** (D17), so the probe cannot
+///   write `statsig-cache.json` or anything else into `~/.cursor`.
+/// - **the debug log is off** (D18), so `ralphy init` does not leave a file in the
+///   operator's temp directory naming their repositories.
+///
+/// A missing binary, a wedged probe or a timeout all read as "not logged in": the
+/// gate's job is to tell the operator what to fix, and `agent login` is the right
+/// advice in every one of those states. The credential itself lives outside the
+/// config dir (`%APPDATA%\Cursor\auth.json`), so the isolation does not make a
+/// logged-in operator look logged out — the spike measured exactly this.
+pub fn probe_cursor_login() -> bool {
+    let Ok(scratch) = tempfile::tempdir() else {
+        return false;
+    };
+    let mut cmd = std::process::Command::new(crate::command::resolve_cursor_program());
+    cmd.current_dir(scratch.path())
+        .arg("status")
+        .arg("--format")
+        .arg("json")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .env("CURSOR_CONFIG_DIR", scratch.path().join("config"))
+        .env("CURSOR_AGENT_DISABLE_DEBUG_LOG", "1");
+    let verdict = match ralphy_adapter_support::run_headless(cmd, "", Duration::from_secs(30)) {
+        Ok(out) if !out.timed_out => cursor_status_verdict(&out.stdout),
+        _ => false,
+    };
+    drop(scratch);
+    verdict
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The three literal strings the spike captured. The third is the reason the
+    /// predicate is a disjunction rather than one phrase.
+    const LISTING_PATH: &str = "Error: Authentication required. Run 'agent login', pass --api-key/--auth-token, or set CURSOR_API_KEY/CURSOR_AUTH_TOKEN.";
+    const EXECUTION_PATH: &str = "Error: Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable.";
+    const INVALID_KEY: &str = "⚠ Warning: The provided API key is invalid.";
+
+    #[test]
+    fn all_three_vendor_strings_classify_as_auth() {
+        for s in [LISTING_PATH, EXECUTION_PATH, INVALID_KEY] {
+            assert!(is_cursor_auth_error(s), "should classify as auth: {s}");
+        }
+        assert!(!is_cursor_auth_error("everything is fine"));
+    }
+
+    /// The one that a two-string matcher would miss: it contains neither
+    /// `Authentication` nor `required`.
+    #[test]
+    fn the_invalid_key_warning_shares_no_words_with_the_other_two() {
+        let lower = INVALID_KEY.to_ascii_lowercase();
+        assert!(!lower.contains("authentication required"));
+        assert!(is_cursor_auth_error(INVALID_KEY));
+    }
+
+    /// The whole point of D8's tier 1: `status` exits **0** while logged out, so a
+    /// verdict that consulted the exit code would be wrong in exactly the case it
+    /// exists to catch. The exit code is passed here only to show it is ignored.
+    #[test]
+    fn status_json_verdict_ignores_the_exit_code() {
+        const LOGGED_OUT: &str = r#"{"status":"unauthenticated","isAuthenticated":false,"hasAccessToken":false,"hasRefreshToken":false,"message":"Not logged in"}"#;
+        assert!(
+            !cursor_status_verdict(LOGGED_OUT),
+            "exit 0 + isAuthenticated:false is NOT logged in"
+        );
+
+        const LOGGED_IN: &str = r#"{"status":"authenticated","isAuthenticated":true,"hasAccessToken":true,"hasRefreshToken":true,"message":"Logged in"}"#;
+        assert!(cursor_status_verdict(LOGGED_IN));
+
+        // Junk, an empty answer and a missing key all fail toward "log in".
+        assert!(!cursor_status_verdict(""));
+        assert!(!cursor_status_verdict("not json"));
+        assert!(!cursor_status_verdict(r#"{"status":"authenticated"}"#));
+
+        assert!(
+            CURSOR_AUTH_ERROR_MSG.contains("agent login"),
+            "the message must quote the login command verbatim: {CURSOR_AUTH_ERROR_MSG}"
+        );
+    }
+
+    /// #271: the resume-path preflight maps `(finalized, logged_in)` to a stop.
+    /// Only a finalized plan on disk that a logged-out operator would otherwise
+    /// resume warrants the `agent login` stop.
+    #[test]
+    fn resume_requires_login_maps_the_four_states() {
+        // Logged-out resume is the ONLY state that stops.
+        assert_eq!(
+            resume_requires_login(true, || false),
+            Some(CURSOR_AUTH_ERROR_MSG)
+        );
+        // Logged in, or no finalized plan to mask an error: proceed.
+        assert_eq!(resume_requires_login(true, || true), None);
+        assert_eq!(resume_requires_login(false, || false), None);
+        assert_eq!(resume_requires_login(false, || true), None);
+    }
+
+    /// The zero-cost guarantee: a fresh plan (nothing finalized to mask an error)
+    /// must NEVER pay for the status probe. The closure panics if invoked; a `None`
+    /// return proves it was short-circuited. The complementary direction — the
+    /// probe IS consulted when a finalized plan exists — is recorded via a `Cell`.
+    #[test]
+    fn resume_requires_login_probes_only_when_a_finalized_plan_exists() {
+        assert_eq!(
+            resume_requires_login(false, || panic!("must not probe on a fresh plan")),
+            None
+        );
+        let probed = std::cell::Cell::new(false);
+        let _ = resume_requires_login(true, || {
+            probed.set(true);
+            true
+        });
+        assert!(
+            probed.get(),
+            "a finalized plan must consult the login probe"
+        );
+    }
+
+    /// The verdict must never be derived from an exit status — pin the source, since
+    /// no test here spawns a real child. Fragments assembled with `concat!` so the
+    /// assertion cannot match itself.
+    #[test]
+    fn the_verdict_never_reads_an_exit_status() {
+        let production = include_str!("auth.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        for banned in [
+            concat!("status", "().success()"),
+            concat!("exit", "_code"),
+            concat!("exit", "_status"),
+        ] {
+            assert!(
+                !production.contains(banned),
+                "`status` exits 0 while logged out (D8); found {banned}"
+            );
+        }
+    }
+}
