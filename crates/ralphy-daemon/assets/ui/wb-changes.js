@@ -110,5 +110,74 @@
     };
   }
 
-  window.WBChanges = { fold, marker, shouldReload, diffTarget };
+  // The sync row's model, folded from the daemon's `sync.status` Query reply
+  // (`reply.sync.sync` — the CLI's `{sync:…}` nested under the verb's reply
+  // field, exactly as `fold` reads `reply.changes.changes`).
+  //
+  // "No upstream" and "detached" are their own STATES with empty counts: an
+  // absent upstream rendered as `↑0 ↓0` would assert the branch is in sync with
+  // something it does not track. `now` is injected so the staleness label is
+  // testable; it defaults to the wall clock.
+  function foldSync(reply, now) {
+    const unknown = {
+      state: "unknown",
+      branch: "",
+      upstream: "",
+      ahead: 0,
+      behind: 0,
+      lastFetch: null,
+      counts: "",
+      note: "sync unavailable",
+      fetched: "",
+    };
+    if (!reply || reply.status !== "ok") return unknown;
+    const body = reply.sync && reply.sync.sync;
+    if (!body || !body.head || typeof body.head.kind !== "string") return unknown;
+
+    const lastFetch = body.last_fetch || null;
+    const base = {
+      branch: "",
+      upstream: "",
+      ahead: 0,
+      behind: 0,
+      lastFetch,
+      counts: "",
+      note: "",
+      fetched: staleness(lastFetch, now),
+    };
+    if (body.head.kind === "detached") {
+      return { ...base, state: "detached", branch: body.head.sha || "", note: "detached HEAD" };
+    }
+    const branch = body.head.name || "";
+    const t = body.tracking;
+    if (!t || typeof t !== "object") {
+      return { ...base, state: "no-upstream", branch, note: "no upstream" };
+    }
+    const ahead = Number(t.ahead) || 0;
+    const behind = Number(t.behind) || 0;
+    return {
+      ...base,
+      state: "tracking",
+      branch,
+      upstream: t.upstream || "",
+      ahead,
+      behind,
+      counts: "↑" + ahead + " ↓" + behind,
+    };
+  }
+
+  // How stale the counts are, as a locale-free RELATIVE string: a formatted date
+  // would follow the browser locale and could carry no exact-string oracle.
+  function staleness(lastFetch, now) {
+    if (!lastFetch) return "never fetched";
+    const then = Date.parse(lastFetch);
+    if (isNaN(then)) return "fetch time unknown";
+    const d = (typeof now === "number" ? now : Date.now()) - then;
+    if (d < 60000) return "fetched just now";
+    if (d < 3600000) return "fetched " + Math.floor(d / 60000) + "m ago";
+    if (d < 86400000) return "fetched " + Math.floor(d / 3600000) + "h ago";
+    return "fetched " + Math.floor(d / 86400000) + "d ago";
+  }
+
+  window.WBChanges = { fold, foldSync, marker, shouldReload, diffTarget };
 })(window);

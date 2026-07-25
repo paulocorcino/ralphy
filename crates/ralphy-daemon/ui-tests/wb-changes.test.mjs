@@ -339,3 +339,92 @@ test("diffTarget resolves both sides of one changes entry (#311)", () => {
     assert.equal(t.title, entry.path.split("/").pop() + " ↔ HEAD");
   }
 });
+
+// ---- foldSync (#316) --------------------------------------------------------
+
+const NOW = Date.parse("2026-07-25T12:00:00Z");
+const syncReply = (body) => ({ status: "ok", sync: { sync: body } });
+const tracking = (ahead, behind, lastFetch = null) =>
+  syncReply({
+    head: { kind: "branch", name: "main" },
+    tracking: { upstream: "origin/main", ahead, behind },
+    last_fetch: lastFetch,
+  });
+
+test("foldSync reads the branch, its upstream and the counts (#316)", () => {
+  const s = load().foldSync(tracking(1, 2), NOW);
+  assert.equal(s.state, "tracking");
+  assert.equal(s.branch, "main");
+  assert.equal(s.upstream, "origin/main");
+  assert.equal(s.ahead, 1);
+  assert.equal(s.behind, 2);
+  assert.equal(s.counts, "↑1 ↓2");
+  assert.equal(s.note, "", "a tracking branch needs no note");
+});
+
+test("foldSync marks a branch with no upstream (#316)", () => {
+  // The whole point: an absent upstream must never render as `↑0 ↓0`, which
+  // would claim the branch is in sync with something it does not track.
+  const s = load().foldSync(
+    syncReply({ head: { kind: "branch", name: "wip" }, tracking: null, last_fetch: null }),
+    NOW,
+  );
+  assert.equal(s.state, "no-upstream");
+  assert.equal(s.branch, "wip");
+  assert.equal(s.note, "no upstream");
+  assert.equal(s.counts, "", "no counts without an upstream");
+});
+
+test("foldSync marks a detached HEAD (#316)", () => {
+  const s = load().foldSync(
+    syncReply({ head: { kind: "detached", sha: "0018522" }, tracking: null, last_fetch: null }),
+    NOW,
+  );
+  assert.equal(s.state, "detached");
+  assert.equal(s.branch, "0018522");
+  assert.equal(s.note, "detached HEAD");
+  assert.equal(s.counts, "");
+});
+
+test("foldSync never throws on a malformed or failed frame (#316)", () => {
+  const foldSync = load().foldSync;
+  for (const reply of [
+    null,
+    undefined,
+    {},
+    { status: "error", message: "refused" },
+    { status: "ok" },
+    { status: "ok", sync: {} },
+    { status: "ok", sync: { sync: {} } },
+    { status: "ok", sync: { sync: { head: "main" } } },
+  ]) {
+    const s = foldSync(reply, NOW);
+    assert.equal(s.state, "unknown", `frame ${JSON.stringify(reply)}`);
+    assert.equal(s.counts, "");
+    assert.equal(s.note, "sync unavailable");
+    assert.equal(s.fetched, "");
+  }
+});
+
+test("foldSync labels how stale the counts are (#316)", () => {
+  const foldSync = load().foldSync;
+  const at = (ms) => new Date(NOW - ms).toISOString();
+  const cases = [
+    [null, "never fetched"],
+    ["not-a-date", "fetch time unknown"],
+    [at(30 * 1000), "fetched just now"],
+    [at(5 * 60 * 1000), "fetched 5m ago"],
+    [at(2 * 3600 * 1000), "fetched 2h ago"],
+    [at(3 * 86400 * 1000), "fetched 3d ago"],
+  ];
+  for (const [stamp, expected] of cases) {
+    assert.equal(foldSync(tracking(0, 0, stamp), NOW).fetched, expected, `stamp ${stamp}`);
+  }
+});
+
+test("foldSync stays pure (#316)", () => {
+  const reply = tracking(1, 2, "2026-07-25T11:00:00Z");
+  const before = structuredClone(reply);
+  load().foldSync(reply, NOW);
+  assert.deepEqual(reply, before, "foldSync stays pure — no DOM, no fetch, no mutation");
+});
