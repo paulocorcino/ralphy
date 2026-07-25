@@ -126,6 +126,7 @@ pub(crate) mod tests {
             human_blockers,
             status,
             skip,
+            review_only: 0,
         }
     }
 

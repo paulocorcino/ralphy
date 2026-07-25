@@ -23,7 +23,7 @@ use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
 use super::{
     synthetic_reset, IssueResult, QueueConfig, ResultStatus, RunClock, RunLedger, WaitOutcome,
-    NEEDS_SPLIT_LABEL,
+    NEEDS_HUMAN_REVIEW_LABEL, NEEDS_SPLIT_LABEL,
 };
 
 /// Consecutive plan-time usage limits that make no progress before the runner
@@ -963,6 +963,17 @@ pub(crate) fn close_and_record(
     // carry the *execution* phase breakdown so the live UI can combine it
     // with the planning usage it stashed at `plan written` (ADR-0008 D11).
     crate::emit::issue_closed(issue.number, issue_total, invocations, exec_usage);
+    // Read the plan once: the ledger's review-only count rides the result, and
+    // the same parse feeds the evidence write below.
+    let plan_md = std::fs::read_to_string(cx.ws.plan_path()).ok();
+    let verdicts = plan_md
+        .as_deref()
+        .map(acceptance::parse_ledger)
+        .unwrap_or_default();
+    let review_only = verdicts
+        .iter()
+        .filter(|v| v.kind == acceptance::VerdictKind::ReviewOnly)
+        .count() as u64;
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),
@@ -971,7 +982,17 @@ pub(crate) fn close_and_record(
         human_blockers: Vec::new(),
         status: ResultStatus::Done,
         skip: None,
+        review_only,
     });
+
+    // Best-effort, and BEFORE every fallible write below: the issue closed
+    // carrying criteria only a person can certify, and the label is what
+    // survives the terminal scrollback.
+    if review_only > 0 {
+        if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_HUMAN_REVIEW_LABEL) {
+            warn!(number = issue.number, error = %e, "applying needs-human-review label failed");
+        }
+    }
 
     // Write acceptance evidence when the plan carries a ledger, and
     // publish the session's handoff + plan friction so successors (and
@@ -979,11 +1000,10 @@ pub(crate) fn close_and_record(
     // missing ledger is now caught by the ADR-0015 lint before this point
     // (the close proceeds anyway after the one bounce); a missing or empty
     // handoff stays a graceful no-op.
-    if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
+    if let Some(plan_md) = plan_md {
         // Capture the raw plan at close (before the next issue's `plan()` overwrites
         // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
         crate::emit::plan_closed(issue.number, &plan_md);
-        let verdicts = acceptance::parse_ledger(&plan_md);
         if !verdicts.is_empty() {
             cx.tracker
                 .write_evidence(issue.number, &issue.body, &verdicts)?;

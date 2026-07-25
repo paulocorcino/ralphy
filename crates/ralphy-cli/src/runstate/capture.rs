@@ -165,6 +165,7 @@ mod tests {
                 human_blockers: Vec::new(),
                 status: ResultStatus::Done,
                 skip: None,
+                review_only: 0,
             }],
             stop: None,
             commits: 1,

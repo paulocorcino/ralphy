@@ -218,6 +218,7 @@ fn run_queue_with(
                 human_blockers: Vec::new(),
                 status: ResultStatus::Skipped,
                 skip: Some(SkipReason::HumanReturn),
+                review_only: 0,
             });
             continue;
         }
@@ -242,6 +243,7 @@ fn run_queue_with(
                     human_blockers: human,
                     status,
                     skip: (status == ResultStatus::Skipped).then_some(SkipReason::BlockedBy),
+                    review_only: 0,
                 });
                 continue;
             }
@@ -268,6 +270,7 @@ fn run_queue_with(
                         ResultStatus::Infeasible
                     },
                     skip: None,
+                    review_only: 0,
                 });
                 continue;
             }
@@ -280,6 +283,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::NonGreen,
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -307,6 +311,7 @@ fn run_queue_with(
                 human_blockers: Vec::new(),
                 status: ResultStatus::Planned,
                 skip: None,
+                review_only: 0,
             });
             continue;
         }
@@ -334,6 +339,7 @@ fn run_queue_with(
                         ResultStatus::NonGreen
                     },
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(if deadline_cut {
                     StopReason::Deadline
@@ -367,6 +373,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::NonGreen,
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -390,6 +397,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::NonGreen,
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(StopReason::Limit { number, reset });
                 break;
@@ -410,6 +418,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::Skipped,
                     skip: Some(SkipReason::VerifyFailed),
+                    review_only: 0,
                 });
                 continue;
             }
@@ -438,6 +447,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::Done,
                     skip: None,
+                    review_only: 0,
                 });
                 continue;
             }

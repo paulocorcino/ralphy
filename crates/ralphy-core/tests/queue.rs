@@ -2484,6 +2484,73 @@ fn green_close_calls_write_evidence_with_parsed_verdicts() {
 }
 
 #[test]
+fn green_close_records_review_only_count_and_labels_the_issue() {
+    let repo = init_repo("review-only-label");
+    let ledger = "- [verified] Some AC — evidence: unit test proves it\n\
+                  - [review-only] CONTEXT.md reads correctly — evidence: human reads the prose\n\
+                  - [review-only] ADR-0037 amended — evidence: human reads the prose\n";
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-review-only", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        report.worked[0].review_only, 2,
+        "both review-only ledger lines counted on the closed issue"
+    );
+    let labels = tracker.labels.borrow();
+    assert!(
+        labels.contains(&(1, "needs-human-review".to_string())),
+        "review debt labels the closed issue: {labels:?}"
+    );
+    // ADR-0014: review debt must never re-enter the human-blocker path.
+    assert!(
+        !labels
+            .iter()
+            .any(|(_, l)| l == "ready-for-human" || l == "HITL"),
+        "no human-return label applied: {labels:?}"
+    );
+
+    drop(labels);
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_close_with_no_review_only_lines_adds_no_label() {
+    let repo = init_repo("review-only-none");
+    let ledger = "- [verified] Some AC — evidence: unit test proves it\n";
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-review-none", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(report.worked[0].review_only, 0);
+    assert!(
+        tracker.labels.borrow().is_empty(),
+        "a fully verified ledger applies no label: {:?}",
+        tracker.labels.borrow()
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
 fn ledgerless_plan_bounces_and_writes_no_evidence() {
     let repo = init_repo("evidence-noop");
     // Otherwise lint-clean plan, but no `## Acceptance ledger` section — the
