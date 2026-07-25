@@ -193,6 +193,38 @@ window.WBKanban = {
     return null;
   },
 
+  // --- refresh policy (#301) ---------------------------------------------
+  // The board fold is NOT an in-daemon read: each load spawns a CLI that makes
+  // several tracker calls, so the two machine-driven triggers must coalesce —
+  // `runs` arrives on every snapshot write (~every few hundred ms during a run)
+  // and `visible` fires on every alt-tab. The two operator-driven ones (`manual`,
+  // `label`) skip the gap entirely: the operator asked, and lag would read as a
+  // broken control.
+  REFRESH_MIN_GAP_MS: 5000,
+  REFRESH_BACKSTOP_MS: 120000,
+
+  // Should a refresh happen? A pure function of the trigger, the time since the
+  // last load, and the board/document state — no board state is read here, which
+  // is what makes the policy testable in isolation. The trigger vocabulary is
+  // closed: an unrecognised one never refreshes. `focused` is consulted ONLY by
+  // `backstop` — a slow tick on a background tab is exactly the blind polling
+  // this design refuses.
+  shouldRefresh({ trigger, sinceMs, boardOpen, docVisible, focused = true }) {
+    if (!boardOpen || !docVisible) return false;
+    switch (trigger) {
+      case "manual":
+      case "label":
+        return true;
+      case "visible":
+      case "runs":
+        return sinceMs >= this.REFRESH_MIN_GAP_MS;
+      case "backstop":
+        return !!focused && sinceMs >= this.REFRESH_BACKSTOP_MS;
+      default:
+        return false;
+    }
+  },
+
   // --- filter / sort (Backlog) ------------------------------------------
   matches(iss, q) {
     if (!q) return true;
