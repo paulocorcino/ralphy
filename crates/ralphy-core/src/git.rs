@@ -269,17 +269,7 @@ pub fn commit_all_snapshot(repo: &Path) -> Result<()> {
 /// Clean ignoring anything under `.ralphy/` — scratch and logs never count as
 /// a dirty tree (they live in the gitignored run dir).
 pub fn is_clean_ignoring_ralphy(repo: &Path) -> Result<bool> {
-    let status = git(repo, &["status", "--porcelain"])?;
-    for line in status.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if line.contains(".ralphy/") || line.contains(".ralphy\\") {
-            continue;
-        }
-        return Ok(false);
-    }
-    Ok(true)
+    Ok(crate::changes::changes(repo)?.is_empty())
 }
 
 #[cfg(test)]

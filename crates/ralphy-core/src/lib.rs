@@ -76,6 +76,7 @@ mod types;
 
 pub mod acceptance;
 pub mod blocked;
+pub mod changes;
 pub mod cmdcost;
 pub mod diagnosis;
 pub mod emit;
@@ -103,6 +104,7 @@ pub use blocked::{
     parse_blocked_by, parse_blocked_by_all, referenced_issues, structured_refs,
     CONSOLIDATED_SPEC_MARKER, PROMOTE_EVIDENCE_MARKER,
 };
+pub use changes::{changes, Change, ChangeStatus};
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use effort::Effort;
 pub use init_session::{
