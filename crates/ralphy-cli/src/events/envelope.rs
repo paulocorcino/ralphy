@@ -505,6 +505,12 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                         if let Some(blocked_by) = e.get("blocked_by") {
                             obj.insert("blocked_by".to_string(), blocked_by.clone());
                         }
+                        // Only the run's own rollup can supply this: `RunState`
+                        // never learns the ledger verdicts, so the fold fallback
+                        // below carries no `review_only` (#313).
+                        if let Some(review_only) = e.get("review_only") {
+                            obj.insert("review_only".to_string(), review_only.clone());
+                        }
                         Value::Object(obj)
                     })
                     .collect(),
