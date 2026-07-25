@@ -171,6 +171,8 @@ pub enum Verb {
     BranchCreate,
     /// Add/remove a label on an issue (Mutate: `label set <n> --{op}=<label>`).
     LabelSet,
+    /// List the repo's working-tree changes (Query: `changes list --format json`).
+    ChangesList,
 }
 
 impl Verb {
@@ -198,6 +200,7 @@ impl Verb {
             "branch.switch" => Some(Verb::BranchSwitch),
             "branch.create" => Some(Verb::BranchCreate),
             "label.set" => Some(Verb::LabelSet),
+            "changes.list" => Some(Verb::ChangesList),
             _ => None,
         }
     }
@@ -223,6 +226,7 @@ impl Verb {
         Verb::BranchSwitch,
         Verb::BranchCreate,
         Verb::LabelSet,
+        Verb::ChangesList,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -232,9 +236,11 @@ impl Verb {
     pub fn effect_class(self) -> EffectClass {
         match self {
             Verb::TreeList | Verb::FileRead | Verb::RunsList => EffectClass::Observe,
-            Verb::ConfigGet | Verb::BoardList | Verb::IssueShow | Verb::BranchList => {
-                EffectClass::Query
-            }
+            Verb::ConfigGet
+            | Verb::BoardList
+            | Verb::IssueShow
+            | Verb::BranchList
+            | Verb::ChangesList => EffectClass::Query,
             Verb::ConfigSet
             | Verb::ConfigUnset
             | Verb::BranchSwitch
@@ -310,7 +316,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchList
         | Verb::BranchSwitch
         | Verb::BranchCreate
-        | Verb::LabelSet => Err(ArgvError::BadParam("verb")),
+        | Verb::LabelSet
+        | Verb::ChangesList => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -348,6 +355,16 @@ pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvE
 /// listing branches for the switcher can never be widened by remote input.
 pub fn branch_list_argv() -> Vec<String> {
     ["branch", "list", "--format", "json"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// The static argv for the changes-list Query verb: `changes list --format json`
+/// (issue #307). Takes no client input; the verb alone fixes the command line, so
+/// reading the working-tree change set can never be widened by remote input.
+pub fn changes_list_argv() -> Vec<String> {
+    ["changes", "list", "--format", "json"]
         .iter()
         .map(|s| s.to_string())
         .collect()
@@ -725,8 +742,8 @@ mod tests {
         assert_eq!(Verb::LabelSet.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            19,
-            "the registry holds exactly nineteen verbs"
+            20,
+            "the registry holds exactly twenty verbs"
         );
     }
 
@@ -754,6 +771,17 @@ mod tests {
             vec!["branch", "list", "--format", "json"],
             "the branch-list verb takes no client input"
         );
+    }
+
+    #[test]
+    fn changes_list_argv_is_static() {
+        assert_eq!(
+            changes_list_argv(),
+            vec!["changes", "list", "--format", "json"],
+            "the changes-list verb takes no client input"
+        );
+        assert_eq!(Verb::from_query("changes.list"), Some(Verb::ChangesList));
+        assert_eq!(Verb::ChangesList.effect_class(), EffectClass::Query);
     }
 
     #[test]

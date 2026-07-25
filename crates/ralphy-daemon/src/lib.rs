@@ -1022,7 +1022,9 @@ async fn command_ws(
     // answer ONCE on THIS id — no live stream. The verb picks BOTH the argv and
     // the reply field: `config.get`→`config get --json`/`config`,
     // `board.list`→`issues --format json --board`/`board`,
-    // `issue.show`→`issues show <n> --format json`/`issue`. The parsed JSON rides
+    // `issue.show`→`issues show <n> --format json`/`issue`,
+    // `branch.list`→`branch list --format json`/`branches`,
+    // `changes.list`→`changes list --format json`/`changes`. The parsed JSON rides
     // that field; a non-JSON stdout falls back to a raw string.
     if verb.effect_class() == dispatch::EffectClass::Query {
         let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb {
@@ -1030,7 +1032,8 @@ async fn command_ws(
             dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
             dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
             dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
-            // Unreachable: only the four Query verbs reach this branch.
+            dispatch::Verb::ChangesList => (Ok(dispatch::changes_list_argv()), "changes"),
+            // Unreachable: only the Query verbs reach this branch.
             _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
         };
         let payload = match argv_result {
