@@ -198,6 +198,37 @@ def launch(daemon_dir):
     )
 
 
+def open_menu(page):
+    """Open the New console dropdown and return its rendered rows."""
+    if not page.evaluate(f"() => {SH}.agentMenu"):
+        page.evaluate(f"() => {{ {SH}.agentMenu = true; }}")
+    page.wait_for_timeout(250)
+    return page.locator(f"{MENU} .dropdown-item")
+
+
+def close_menu(page):
+    page.evaluate(f"() => {{ {SH}.agentMenu = false; }}")
+    page.wait_for_timeout(150)
+
+
+def row_by_label(page, label):
+    return page.locator(f"{MENU} .dropdown-item", has=page.locator(f"span:text-is('{label}')")).first
+
+
+def menu_live(page):
+    """`{row label: live text}` for the menu rows showing a VISIBLE live badge.
+    `.row-live` is `x-show`-gated (display:none, not removed), so a bare count
+    would report every row as live."""
+    return page.evaluate(
+        f"""() => Object.fromEntries(
+             [...document.querySelectorAll('{MENU} .dropdown-item')].map((b) => {{
+               const lab = b.querySelector('span:not(.row-live):not(.row-new)')?.textContent.trim();
+               const el = b.querySelector('.row-live');
+               return [lab, el && el.offsetParent !== null ? el.textContent.trim() : null];
+             }}).filter(([, v]) => v !== null))"""
+    )
+
+
 def open_console(page, slug):
     """Open a free console and wait for its live terminal."""
     before = page.locator(".session-window").count()
@@ -367,6 +398,63 @@ def main():
                 r3["left"] == r2["left"] and r3["top"] == r2["top"],
                 f"{(r2['left'], r2['top'])} -> {(r3['left'], r3['top'])}",
             )
+
+            # =============== scenario 3: the console menu IS the roster =======
+            # Compared against the daemon's own `GET /api/agents`, never a
+            # hardcoded vendor list: hardcoding would re-create in the test the
+            # second enumeration site ADR-0040 and #304 removed from the frontend.
+            roster = page.request.get(BASE + "api/agents").json()
+            check("GET /api/agents serves a non-empty roster", len(roster) >= 1, f"got={len(roster)} rows")
+            rows = open_menu(page)
+            check(
+                "the menu renders one row per roster entry, plus the plain console",
+                rows.count() == len(roster) + 1,
+                f"rows={rows.count()} roster={len(roster)}",
+            )
+            labels = rows.locator("span:not(.row-live):not(.row-new)").all_inner_texts()
+            check(
+                "…carrying the daemon's ids, in the daemon's order, console LAST",
+                labels == [r["id"] for r in roster] + ["console"],
+                f"got={labels}",
+            )
+            # Scenario 2 left ONE free console running, so the plain-console row
+            # is legitimately live here — no VENDOR row is, and that is the state
+            # the launch below has to change.
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(400)
+            before_live = menu_live(page)
+            check(
+                "before any agent launch only the plain-console row is marked live",
+                before_live == {"console": "1 live"},
+                f"got={before_live}",
+            )
+
+            row_by_label(page, "claude").click()
+            page.wait_for_timeout(300)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window .xterm').length === 2", timeout=20000
+            )
+            page.wait_for_timeout(800)
+            live_sessions = page.request.get(BASE + "api/sessions").json()
+            check(
+                "clicking the claude row launches an agent session",
+                any(s["agent"] == "claude" and s["kind"] == "agent" for s in live_sessions),
+                f"got={live_sessions}",
+            )
+            # The presence tick feeds the fold; ask for it now rather than waiting.
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(400)
+            open_menu(page)
+            claude_live = row_by_label(page, "claude").locator(".row-live").inner_text()
+            check("…and the claude row now reads its live session", claude_live == "1 live", f"got={claude_live!r}")
+            after_live = menu_live(page)
+            check(
+                "…and it is the ONLY vendor row marked live",
+                after_live == {"console": "1 live", "claude": "1 live"},
+                f"got={after_live}",
+            )
+            page.screenshot(path=os.path.join(SHOT_DIR, "306-agent-menu-2026-07-25.png"))
+            close_menu(page)
 
             ctx.close()
             browser.close()
