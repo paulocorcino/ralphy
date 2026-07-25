@@ -71,6 +71,20 @@ would contain. The single status stays the DERIVED projection — the first non-
 side — and is what the clean-tree definition reads.
 _Avoid_: diff, status, dirty list.
 
+**Sync status**:
+Where a repo's branch stands against its upstream: the branch HEAD is on (or the
+sha, when HEAD is detached), the upstream it tracks or the absence of one, and
+the ahead/behind counts. Read by `ralphy_core::sync`, which makes NO network
+call, so the counts are stale by design and always travel with a last-fetch
+stamp — the mtime of `FETCH_HEAD`, absent until something actually fetched. "No
+upstream" and "detached" are STATES, never zeroed counts. **Fetch** is the
+operator's own act, never a timer's: nothing in Ralphy refreshes remote-tracking
+refs on a schedule. **Pull** is fast-forward ONLY — a diverged branch, a detached
+HEAD, a missing upstream or an obstructing working tree each refuse by VALUE,
+carrying their own reason as prose; git's error string is never relayed and no
+merge or rebase is ever started.
+_Avoid_: sync, remote state, tracking info.
+
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
 Code, Codex, Kimi, and OpenCode), behind the core's agent contract. Each
