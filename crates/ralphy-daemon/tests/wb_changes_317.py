@@ -522,6 +522,59 @@ def main():
                 f"got={gone}",
             )
 
+            # --- scenarios 6-7: the layout budget, at two widths ---------------
+            open_changes(page, slug_d)
+            wait_rows(page, 60)
+            for label, size in (
+                ("desktop", {"width": 1440, "height": 900}),
+                ("phone", {"width": 390, "height": 844}),
+            ):
+                page.set_viewport_size(size)
+                # the shell's grid-template-columns transition is 0.2s
+                page.wait_for_timeout(400)
+                # Vertical containment reads FLOATS: integer scrollWidth cannot
+                # see a sub-pixel overflow (#315's HIGH defect hid behind that).
+                box = page.evaluate(
+                    f"() => {{ const v = {VIEW};"
+                    " const r = (sel) => { const e = (sel === '.side' ? document : v)"
+                    "     .querySelector(sel);"
+                    "   if (!e || e.offsetParent === null) return null;"
+                    "   const b = e.getBoundingClientRect();"
+                    "   return { top: b.top, bottom: b.bottom, height: b.height }; };"
+                    " const list = v.querySelector('.changes-list');"
+                    " return { side: r('.side'), toolbar: r('.chg-toolbar'),"
+                    "   compose: r('.chg-compose'), msg: r('.chg-msg'),"
+                    "   list: r('.changes-list'),"
+                    "   clientHeight: list.clientHeight, scrollHeight: list.scrollHeight,"
+                    "   scrollWidth: list.scrollWidth, clientWidth: list.clientWidth }; }"
+                )
+                ok = all(box[k] for k in ("side", "toolbar", "compose", "msg", "list"))
+                check(
+                    f"[{label}] the toolbar stays inside the sidebar",
+                    ok and box["toolbar"]["bottom"] <= box["side"]["bottom"],
+                    f"got={box}",
+                )
+                check(
+                    f"[{label}] the message box stays inside the sidebar",
+                    ok and box["compose"]["bottom"] <= box["side"]["bottom"],
+                    f"toolbar/compose vs side: {box}",
+                )
+                check(
+                    f"[{label}] the file list is still usable, and scrolls its 60 rows",
+                    ok
+                    and box["clientHeight"] >= 120
+                    and box["scrollHeight"] > box["clientHeight"],
+                    f"clientHeight={box['clientHeight']} scrollHeight={box['scrollHeight']}",
+                )
+                check(
+                    f"[{label}] …with no horizontal bleed",
+                    box["scrollWidth"] == box["clientWidth"],
+                    f"scrollWidth={box['scrollWidth']} clientWidth={box['clientWidth']}",
+                )
+                page.screenshot(
+                    path=os.path.join(SHOT_DIR, f"317-changes-rail-{label}-2026-07-25.png")
+                )
+
             info("fixtures", f"a={dir_a} b={dir_b} c={dir_c} d={dir_d}")
             info("slugs", f"a={slug_a} b={slug_b} d={slug_d}")
             check("the page threw nothing", not thrown, f"pageerrors={thrown}")
