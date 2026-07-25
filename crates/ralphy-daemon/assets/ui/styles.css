@@ -1273,7 +1273,7 @@ body.runs-open .runs {
   color: var(--text);
 }
 
-/* the stage is the dotted floor shared by the Agents workspace and viewers */
+/* the stage is the dotted floor shared by the Consoles workspace and viewers */
 .stage {
   position: relative;
   flex: 1;

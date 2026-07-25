@@ -85,7 +85,7 @@ right-hand panel, **Kanban** (`toggleKanban`) opens the tasks board as a canvas
 overlay (module: [wb-kanban.js](../crates/ralphy-daemon/assets/ui/wb-kanban.js) — see its section below), and a
 **Settings gear** pinned to the rail's bottom (`.rail-spacer` +
 `openSettings`) opens the Settings modal. There is **no "Sessions" button** — live
-sessions surface as the floating consoles on the Agents tab.
+sessions surface as the floating consoles on the Consoles tab.
 
 The **topbar avatar** is an account menu (`avatarMenu`): **Security settings**
 (`openSecurity`) and **Log off** (`logOff`). Auth is modelled **opt-in**, faithful to
@@ -110,9 +110,9 @@ of `#workspace`, so a panel toggle that resizes the canvas could clip them under
 on `#workspace` — resizes/repositions every window back inside the box, so consoles
 reflow for **both** the sidebar and the Runs panel.
 
-### Tabbed canvas (Agents tab + file tabs)
+### Tabbed canvas (Consoles tab + file tabs)
 The canvas is a **tabbed workspace**, not a single view. A tab strip (`.tabbar`)
-runs across the top: tab 0 is the fixed **Agents** tab (never closes) and hosts the
+runs across the top: tab 0 is the fixed **Consoles** tab (never closes) and hosts the
 floating agent consoles; every opened file rides in after it as a **closable** tab.
 The console controls (**New console ▾**, **Arrange**) are pinned at the strip's
 right edge, above the workspace, so a floating console can never cover them. Tab
@@ -120,7 +120,7 @@ state + lifecycle live in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`t
 `openTab`, `closeTab`); the panes are owned by the viewer / console modules. On
 open, the pane is chosen by extension (`classify`): markdown → rendered, binaries →
 refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
-Agents fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
+Consoles fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
 
 ### Project accordion (sidebar)
 `projects` is the daemon's repo list (a mirror of `/api/repos`): each has a
@@ -213,7 +213,7 @@ contract), or update this table when they change.
 | Project count | `.count` | repos located (`projects.length`) | — |
 | Provenance icon | `.remote` (`bi-github`/`bi-hdd`) | GitHub-backed vs local-only, before the name | — |
 | Canvas | `.canvas` / `.stage` | tabbed workspace: tab strip + dotted stage | — |
-| Tab strip | `.tabbar` / `.tabstrip` / `.tab` | Agents (fixed) + closable file tabs | — |
+| Tab strip | `.tabbar` / `.tabstrip` / `.tab` | Consoles (fixed) + closable file tabs | — |
 | Tab lifecycle | `openTab` / `activate` / `closeTab` | open / switch / close a file tab | — |
 | Console tools | `.canvas-tools` | New-console picker + Arrange, pinned right | `console-open` / `console-close` |
 | Chrome tone | `--chrome` token | panels one step above `--bg` | — |
@@ -394,7 +394,7 @@ for intent + the real ralphy sources it mirrors:
   heading outline and in-page find. Per-file toolbar is **Find · Reload · Edit ·
   Save · Detach**; editing emits `save`, Reload reloads from source
   (`reload`), binaries are refused (`open-refused`).
-- **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Agents
+- **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Consoles
   tab; mirrors the real daemon window chrome (`crates/ralphy-daemon/assets/ui/`).
   The New-console picker lists the agents and, **last**, a plain **console** (no
   agent — a shell in the repo dir, `plain:true`); each row has an **Alt+Shift+digit**
@@ -512,6 +512,6 @@ until then. No CloudEvents relay is built in the daemon now.
    table (ADR-0036 §1); the three git Mutate subcommands (`branch switch/create`,
    `label set`) are the only new CLI surface.
 4. **Promote hardened decisions to ADRs** and link them back here — "canvas is a
-   tabbed workspace, Agents tab fixed" is now
+   tabbed workspace, Consoles tab fixed" is now
    [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md); the daemon protocol
    is frozen in [ADR-0036](adr/0036-workbench-daemon-integration-protocol.md).

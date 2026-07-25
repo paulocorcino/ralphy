@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — floating consoles (the Agents tab)
+   ralphy workbench shell — floating consoles (the Consoles tab)
 
    The canvas is a workspace where consoles live as draggable, resizable windows
    over the dotted floor. This module contributes the window chrome (workspace-
@@ -832,7 +832,7 @@ window.WBConsole = (function () {
     restoreDesk();
   }
 
-  // Refit every open console. Called when the Agents tab returns to view: a
+  // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
   function refitAll() {
     for (const win of wins) {

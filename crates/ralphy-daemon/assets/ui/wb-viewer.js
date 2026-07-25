@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — file viewers (the closable tabs)
 
-   Two flavours, both opening as their own tab after the fixed Agents tab:
+   Two flavours, both opening as their own tab after the fixed Consoles tab:
      • source code — CodeMirror 5: syntax highlight, in-place editing, and a
        find dialog (Ctrl-F). Binaries never reach here (app.js refuses them).
      • Markdown  — rendered with `marked`, sanitized with DOMPurify, mermaid
@@ -432,7 +432,7 @@
       else buildCode(rec);
     },
 
-    // Show one pane (or none, when the Agents tab is active). CodeMirror and
+    // Show one pane (or none, when the Consoles tab is active). CodeMirror and
     // mermaid both need a laid-out container, so we (re)paint on first show.
     setActive(id) {
       for (const rec of map.values()) {
