@@ -177,8 +177,9 @@ relative path (also writes clipboard), New file/folder, Delete. Every item calls
 Every scroll surface is themed to the warm-dark palette (`--border` thumb,
 `--border-focus` on hover, transparent track): the sidebar and the Wunderbaum
 viewport (which needs its own rule — it lost the page default), the **file viewers**
-(CodeMirror's own `.CodeMirror-vscrollbar`/`-hscrollbar` + the markdown `.md-scroll`
-pane), and the **Runs panel** scroll areas (`.plan-md`, `.branch-list`). No native
+(the markdown `.md-scroll` pane; Monaco paints its own scrollbars, so it gets the
+colour via `.monaco-scrollable-element > .scrollbar > .slider` rather than the
+`::-webkit-scrollbar` geometry), and the **Runs panel** scroll areas (`.plan-md`, `.branch-list`). No native
 scrollbar is left unstyled.
 
 ### Typography
@@ -193,8 +194,48 @@ overrides them to the same warm tone so a selected row doesn't flash white on bl
 ### Vendored libraries (loaded locally, no CDN at runtime)
 `alpine.min.js` (reactivity), `lucide.min.js` (chrome icons — prune to a subset
 when the icon set stabilises), `wunderbaum/` (tree), `devicon/` +
-`bootstrap-icons/` (file icons). Later modules added `codemirror/`, `marked`,
+`bootstrap-icons/` (file icons). Later modules added `monaco/`, `marked`,
 `mermaid`, `dompurify`, `qrcode` — see their modules.
+
+#### Vendored Monaco (pinned `0.56.0`)
+Monaco is the workbench's **one** editor engine (#308; CodeMirror 5 was removed in
+the same change). It lives at `assets/ui/vendor/monaco/vs/`, copied from the
+`monaco-editor@0.56.0` npm tarball's `min/vs/**` — the **minified AMD**
+distribution only — with these exclusions:
+
+| Excluded | Why |
+| --- | --- |
+| `language/**` | a redundant 7.7 MB standalone-services copy of the four LSP modes |
+| `nls/lang/**` | localizations (the whole `nls/` dir, in 0.56) |
+| `*.d.ts`, `*.map` | types and sourcemaps |
+| `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB) — language *services* are out of scope, and `wb-monaco.js` disables all four mode configurations at boot so nothing requests them |
+
+`assets/editor.worker-*.js` and `assets/editorWebWorkerMain-*.js` are **kept**:
+they are the BASE editor worker, which `editor.main.js`'s `MonacoEnvironment
+.getWorker` falls back to for every non-language request.
+
+The result is **113 files / 5,570,129 bytes (5.31 MiB)**, and embedding it cost the
+daemon crate's clean build +8.5% (8.47s → 9.19s).
+
+0.56 ships **content-hashed** chunk filenames (`editor-KLE6jdfb.js`,
+`rust-Bfetafyc.js`, …), so the exclusion rule above is prefix/directory-based on
+purpose: a future Monaco bump must **re-derive the file set from the tarball**, not
+diff filenames. The embed-pin test
+(`ralphy-daemon` `src/lib.rs` `monaco_replaced_codemirror_in_the_embedded_ui`)
+asserts by prefix and fails if a language worker sneaks back in.
+
+Individual `basic-languages` grammars are deliberately **not** pruned: they are
+lazily-loaded top-level chunks reached through a map inside the minified
+`basic-languages/monaco.contribution.js`, so deleting one leaves the language
+registered and 404s on open. All ~90 Monarch grammars together are ~600 KB.
+
+Boot lives in [wb-monaco.js](../crates/ralphy-daemon/assets/ui/wb-monaco.js):
+one memoised `require(["vs/editor/editor.main"])`, the ADR-0035 `wb` theme, the
+`.toml`→`ini` extension registration, and the four disabled mode configurations.
+**Load order is load-bearing** — `vendor/monaco/vs/loader.js` installs a global
+`define` with `define.amd`, so it must come AFTER every UMD vendor on the page
+(marked, DOMPurify, mermaid, Wunderbaum, xterm + addons) or they register as
+anonymous AMD modules and never set their globals.
 
 ---
 
@@ -389,8 +430,9 @@ own.
 These were built out after the foundation; read the top-of-file comment in each
 for intent + the real ralphy sources it mirrors:
 
-- **[wb-viewer.js](../crates/ralphy-daemon/assets/ui/wb-viewer.js)** — the closable file tabs: source via CodeMirror
-  (highlight + edit + find), Markdown via marked + DOMPurify + mermaid, with a
+- **[wb-viewer.js](../crates/ralphy-daemon/assets/ui/wb-viewer.js)** — the closable file tabs: source via Monaco
+  (highlight + edit + find; the language comes from the model's file URI, not a
+  filename map), Markdown via marked + DOMPurify + mermaid, with a
   heading outline and in-page find. Per-file toolbar is **Find · Reload · Edit ·
   Save · Detach**; editing emits `save`, Reload reloads from source
   (`reload`), binaries are refused (`open-refused`).
