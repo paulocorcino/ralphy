@@ -70,6 +70,20 @@ pub enum ReadError {
     NotFound,
 }
 
+impl ReadError {
+    /// The refusal as the WIRE spells it. `ralphy blob read`'s JSON serves the
+    /// same three literals for the HEAD side of a diff; the daemon deliberately
+    /// does not depend on `ralphy-core`, so this is the daemon-side pin and
+    /// `tests::refusal_reasons_are_the_wire_vocabulary` reds if it drifts.
+    pub fn reason(self) -> &'static str {
+        match self {
+            ReadError::Binary => "binary",
+            ReadError::TooLarge => "too large",
+            ReadError::NotFound => "not found",
+        }
+    }
+}
+
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -135,6 +149,15 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("bin.dat"), [0x00, 0x01]).unwrap();
         assert_eq!(read(root.path(), "bin.dat"), Err(ReadError::Binary));
+    }
+
+    #[test]
+    fn refusal_reasons_are_the_wire_vocabulary() {
+        // These three literals are the wire contract the workbench matches on,
+        // shared with `ralphy blob read --format json`'s HEAD side.
+        assert_eq!(ReadError::Binary.reason(), "binary");
+        assert_eq!(ReadError::TooLarge.reason(), "too large");
+        assert_eq!(ReadError::NotFound.reason(), "not found");
     }
 
     #[test]

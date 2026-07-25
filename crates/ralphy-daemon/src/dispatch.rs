@@ -173,6 +173,9 @@ pub enum Verb {
     LabelSet,
     /// List the repo's working-tree changes (Query: `changes list --format json`).
     ChangesList,
+    /// Read a file's content at a revision (Query: `blob read --revision head
+    /// --path <p> --format json`) — the diff tab's original side.
+    BlobRead,
 }
 
 impl Verb {
@@ -201,6 +204,7 @@ impl Verb {
             "branch.create" => Some(Verb::BranchCreate),
             "label.set" => Some(Verb::LabelSet),
             "changes.list" => Some(Verb::ChangesList),
+            "blob.read" => Some(Verb::BlobRead),
             _ => None,
         }
     }
@@ -227,6 +231,7 @@ impl Verb {
         Verb::BranchCreate,
         Verb::LabelSet,
         Verb::ChangesList,
+        Verb::BlobRead,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -240,7 +245,8 @@ impl Verb {
             | Verb::BoardList
             | Verb::IssueShow
             | Verb::BranchList
-            | Verb::ChangesList => EffectClass::Query,
+            | Verb::ChangesList
+            | Verb::BlobRead => EffectClass::Query,
             Verb::ConfigSet
             | Verb::ConfigUnset
             | Verb::BranchSwitch
@@ -317,7 +323,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchSwitch
         | Verb::BranchCreate
         | Verb::LabelSet
-        | Verb::ChangesList => Err(ArgvError::BadParam("verb")),
+        | Verb::ChangesList
+        | Verb::BlobRead => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -368,6 +375,52 @@ pub fn changes_list_argv() -> Vec<String> {
         .iter()
         .map(|s| s.to_string())
         .collect()
+}
+
+/// Compose the argv for the blob-read Query verb: `blob read --revision head
+/// --path <p> --format json` (issue #311). Two client inputs, both closed down:
+/// `revision` is a one-value enum (`head`), and `path` is validated BY SHAPE —
+/// backslashes normalised to `/`, then refused when empty, leading-dash (which
+/// would read as a flag), rooted, drive-prefixed, or carrying any `..` segment.
+///
+/// PURE by contract: no `std::fs`, no `canonicalize`, no `Path::is_absolute` —
+/// the host's own filesystem must not decide what a remote path means, and a
+/// Windows daemon must refuse a POSIX-absolute path just as a Linux one refuses
+/// `C:\`. Real containment is the CLI's job, standing in the repo.
+pub fn blob_read_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let revision = match payload.get("revision").and_then(|v| v.as_str()) {
+        Some("head") => "head",
+        _ => return Err(ArgvError::BadParam("revision")),
+    };
+
+    let raw = payload
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or(ArgvError::BadParam("path"))?;
+    let path = raw.replace('\\', "/");
+    let drive_prefixed = {
+        let b = path.as_bytes();
+        b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+    };
+    if path.is_empty()
+        || path.starts_with('-')
+        || path.starts_with('/')
+        || drive_prefixed
+        || path.split('/').any(|seg| seg == "..")
+    {
+        return Err(ArgvError::BadParam("path"));
+    }
+
+    Ok(vec![
+        "blob".to_string(),
+        "read".to_string(),
+        "--revision".to_string(),
+        revision.to_string(),
+        "--path".to_string(),
+        path,
+        "--format".to_string(),
+        "json".to_string(),
+    ])
 }
 
 /// Compose the argv for a branch Mutate verb: `branch switch -- <name>` /
@@ -648,6 +701,7 @@ impl Child for ProcessChild {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::sync::Mutex;
 
     /// Records what `dispatch` asked to spawn and hands back a child with a preset
@@ -742,8 +796,69 @@ mod tests {
         assert_eq!(Verb::LabelSet.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            20,
-            "the registry holds exactly twenty verbs"
+            21,
+            "the registry holds exactly twenty-one verbs"
+        );
+    }
+
+    #[test]
+    fn blob_read_argv_composes_exact_vector_and_refuses() {
+        assert_eq!(Verb::from_query("blob.read"), Some(Verb::BlobRead));
+        assert_eq!(Verb::BlobRead.effect_class(), EffectClass::Query);
+
+        let expected: Vec<String> = [
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "src/main.rs",
+            "--format",
+            "json",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head", "path": "src/main.rs" })).unwrap(),
+            expected
+        );
+        // A Windows-shaped path from the browser composes the SAME vector: the
+        // separator is normalised, not a second accepted spelling.
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head", "path": "src\\main.rs" })).unwrap(),
+            expected
+        );
+
+        for bad in [
+            "/etc/passwd",
+            "C:\\Windows\\x",
+            "../../secret",
+            "-rf",
+            "",
+            "src/../../secret",
+        ] {
+            assert_eq!(
+                blob_read_argv(&json!({ "revision": "head", "path": bad })),
+                Err(ArgvError::BadParam("path")),
+                "{bad:?} must yield NO argv"
+            );
+        }
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head" })),
+            Err(ArgvError::BadParam("path")),
+            "a missing path yields no argv"
+        );
+
+        // The revision is a closed enum: HEAD is the only side this slice diffs against.
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "work", "path": "a" })),
+            Err(ArgvError::BadParam("revision"))
+        );
+        assert_eq!(
+            blob_read_argv(&json!({ "path": "a" })),
+            Err(ArgvError::BadParam("revision"))
         );
     }
 
@@ -762,6 +877,7 @@ mod tests {
         assert_eq!(Verb::from_query("branch.switch"), Some(Verb::BranchSwitch));
         assert_eq!(Verb::from_query("branch.create"), Some(Verb::BranchCreate));
         assert_eq!(Verb::from_query("label.set"), Some(Verb::LabelSet));
+        assert_eq!(Verb::from_query("blob.read"), Some(Verb::BlobRead));
     }
 
     #[test]

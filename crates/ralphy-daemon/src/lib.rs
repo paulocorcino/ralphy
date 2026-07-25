@@ -960,12 +960,7 @@ async fn command_ws(
             dispatch::Verb::FileRead => match tree::read(root, rel) {
                 Ok(content) => serde_json::json!({ "status": "ok", "content": content }),
                 Err(e) => {
-                    let reason = match e {
-                        tree::ReadError::Binary => "binary",
-                        tree::ReadError::TooLarge => "too large",
-                        tree::ReadError::NotFound => "not found",
-                    };
-                    serde_json::json!({ "status": "error", "reason": reason })
+                    serde_json::json!({ "status": "error", "reason": e.reason() })
                 }
             },
             // No `path` input: the verb alone fixes what is read (ADR-0047 §9).
@@ -1043,8 +1038,9 @@ async fn command_ws(
     // `board.list`→`issues --format json --board`/`board`,
     // `issue.show`→`issues show <n> --format json`/`issue`,
     // `branch.list`→`branch list --format json`/`branches`,
-    // `changes.list`→`changes list --format json`/`changes`. The parsed JSON rides
-    // that field; a non-JSON stdout falls back to a raw string.
+    // `changes.list`→`changes list --format json`/`changes`,
+    // `blob.read`→`blob read --revision head --path <p> --format json`/`blob`. The
+    // parsed JSON rides that field; a non-JSON stdout falls back to a raw string.
     if verb.effect_class() == dispatch::EffectClass::Query {
         let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb {
             dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
@@ -1052,6 +1048,7 @@ async fn command_ws(
             dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
             dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
             dispatch::Verb::ChangesList => (Ok(dispatch::changes_list_argv()), "changes"),
+            dispatch::Verb::BlobRead => (dispatch::blob_read_argv(&cmd.payload), "blob"),
             // Unreachable: only the Query verbs reach this branch.
             _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
         };
