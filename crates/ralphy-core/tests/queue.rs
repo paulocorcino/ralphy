@@ -282,7 +282,8 @@ struct RecordingTracker {
     closed_issues: HashSet<u64>,
     /// Every `comment` call (handoff at close, infeasible-skip reasoning).
     comments: RefCell<Vec<(u64, String)>>,
-    /// Every `add_label` call (the needs-split label on a bundle verdict).
+    /// Every `add_label` call (`needs-split` on a bundle verdict,
+    /// `needs-human-review` on a close carrying review-only ledger lines).
     labels: RefCell<Vec<(u64, String)>>,
     /// Every `remove_label` call (the label swaps `ralphy triage` performs).
     removed_labels: RefCell<Vec<(u64, String)>>,
@@ -2506,20 +2507,14 @@ fn green_close_records_review_only_count_and_labels_the_issue() {
         report.worked[0].review_only, 2,
         "both review-only ledger lines counted on the closed issue"
     );
-    let labels = tracker.labels.borrow();
-    assert!(
-        labels.contains(&(1, "needs-human-review".to_string())),
-        "review debt labels the closed issue: {labels:?}"
-    );
-    // ADR-0014: review debt must never re-enter the human-blocker path.
-    assert!(
-        !labels
-            .iter()
-            .any(|(_, l)| l == "ready-for-human" || l == "HITL"),
-        "no human-return label applied: {labels:?}"
+    // The EXACT set, not a `contains`: `ready-for-human`/`HITL` are excluded by
+    // the same assertion that pins the one label the close is allowed to apply
+    // (ADR-0014 — review debt must never re-enter the human-blocker path).
+    assert_eq!(
+        tracker.labels.borrow().as_slice(),
+        [(1, "needs-human-review".to_string())]
     );
 
-    drop(labels);
     fs::remove_dir_all(&repo).ok();
 }
 
@@ -2540,6 +2535,9 @@ fn green_close_with_no_review_only_lines_adds_no_label() {
     )
     .unwrap();
 
+    // The close must actually have happened, or `review_only == 0` is vacuous:
+    // ten non-close paths hardcode the field to `0`.
+    assert_eq!(tracker.closes.borrow().len(), 1, "the issue closed");
     assert_eq!(report.worked[0].review_only, 0);
     assert!(
         tracker.labels.borrow().is_empty(),

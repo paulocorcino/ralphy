@@ -466,18 +466,31 @@ pub fn add_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
         return Ok(());
     }
     // The most common failure is a missing label; create it and retry once.
+    let (color, description) = label_bootstrap_spec(label);
     let _ = gh(repo_root)
         .args([
             "label",
             "create",
             label,
             "--color",
-            "D93F0B",
+            &color,
             "--description",
-            "Ralphy: bundle issue awaiting split into child issues",
+            &description,
         ])
         .output();
     edit(repo_root)
+}
+
+/// The colour + description [`add_label`]'s create-on-missing bootstrap gives a
+/// label, looked up in the canonical roster so a label born here is identical to
+/// the one `ralphy init` would have created. A name outside the roster falls
+/// back to a neutral grey with a generic description — never another label's.
+fn label_bootstrap_spec(label: &str) -> (String, String) {
+    super::labels::ralphy_label_specs(None)
+        .into_iter()
+        .find(|s| s.name == label)
+        .map(|s| (s.color, s.description))
+        .unwrap_or_else(|| ("ededed".to_string(), format!("Ralphy: {label}")))
 }
 
 /// Remove a label from an issue via `gh issue edit <n> --remove-label <label>`.
@@ -577,6 +590,30 @@ pub fn fetch_issue(number: u64, repo_root: &Path) -> Result<Issue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bootstrap must not stamp one label with another's identity: before
+    /// #313 it hardcoded `needs-split`'s description (and a colour matching no
+    /// spec at all) onto every label it created.
+    #[test]
+    fn label_bootstrap_spec_reads_the_canonical_roster() {
+        for name in [
+            crate::runner::NEEDS_HUMAN_REVIEW_LABEL,
+            crate::runner::NEEDS_SPLIT_LABEL,
+        ] {
+            let spec = super::super::labels::ralphy_label_specs(None)
+                .into_iter()
+                .find(|s| s.name == name)
+                .expect("the roster carries every label the runner applies");
+            assert_eq!(label_bootstrap_spec(name), (spec.color, spec.description));
+        }
+        assert_eq!(
+            label_bootstrap_spec("not-a-ralphy-label"),
+            (
+                "ededed".to_string(),
+                "Ralphy: not-a-ralphy-label".to_string()
+            )
+        );
+    }
 
     /// The non-`@me` arm returns the value verbatim and spawns NO process — so it
     /// resolves against a nonexistent `repo_root` without error (proof of no `gh`).

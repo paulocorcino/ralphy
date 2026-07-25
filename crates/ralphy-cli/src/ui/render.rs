@@ -386,7 +386,9 @@ pub(crate) fn render_line(
 }
 
 /// Render the end-of-run totals panel as a `Vec<String>` of lines ready to
-/// `println!`. Produces: a counts line (`✅/⛔/⏭️`), a commits line, an optional
+/// `println!`. Produces: a counts line (`✅/⛔/⏭️`), an optional `🙋 waiting on
+/// human` line, an optional review-debt line (#313, only when `review_only` is
+/// non-empty), a commits line, an optional
 /// stop-reason line, a per-mode/dry-run closing-state line, and — only for `New`
 /// mode when not `(dry_run && commits == 0)` — a `➜  git merge <branch>` next-step
 /// line. ANSI colour is applied only when `opts.color`; the non-TTY path is

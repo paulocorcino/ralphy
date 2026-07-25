@@ -155,7 +155,9 @@ pub struct IssueResult {
     pub skip: Option<SkipReason>,
     /// How many of the issue's acceptance-ledger lines closed `[review-only]` —
     /// attention debt on a *delivered* issue, not unfinished work. Counted at
-    /// the close, so `0` for every non-close path.
+    /// the close, so `0` for every non-close path — including the ADR-0015
+    /// no-verify-gate hole, which reports `Done` on an issue left OPEN and
+    /// therefore carries no review debt on any carrier.
     pub review_only: u64,
 }
 
