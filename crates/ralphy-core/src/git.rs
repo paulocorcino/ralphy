@@ -6,7 +6,9 @@ use std::process::{Command, Output};
 
 use anyhow::{bail, Context, Result};
 
-fn raw(repo: &Path, args: &[&str]) -> Result<Output> {
+/// Run a git command and hand back the raw [`Output`]. Crate-internal because
+/// `git()`'s trimming would corrupt byte-exact payloads (see [`crate::blob`]).
+pub(crate) fn raw(repo: &Path, args: &[&str]) -> Result<Output> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).args(args);
     // Hidden console so a `git` call under the console-less daemon child never

@@ -75,6 +75,7 @@ mod tracker;
 mod types;
 
 pub mod acceptance;
+pub mod blob;
 pub mod blocked;
 pub mod changes;
 pub mod cmdcost;
@@ -100,6 +101,7 @@ pub mod verify;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
+pub use blob::{Blob, Revision};
 pub use blocked::{
     parse_blocked_by, parse_blocked_by_all, referenced_issues, structured_refs,
     CONSOLIDATED_SPEC_MARKER, PROMOTE_EVIDENCE_MARKER,
