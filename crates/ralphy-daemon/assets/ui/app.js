@@ -82,6 +82,11 @@ function shell() {
     // rows under a headline while the badge already reads `—`.
     changesStaged: {},
     changesUnstaged: {},
+    // The sync row per project (#316): the fold of `sync.status`. Read on the
+    // same three triggers as the change set — never on a timer, because a fetch
+    // is the operator's own act and a status read must not become a habit the
+    // UI schedules.
+    syncByProject: {},
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -106,6 +111,9 @@ function shell() {
     // Same token for the Changes count: #310's nudge makes overlapping
     // `changes.list` reads routine (a nudge during the open's own read).
     _changesSeq: 0,
+    // Same token for the sync row: it rides the same three triggers, plus the
+    // reload a Fetch/Pull click performs.
+    _syncSeq: 0,
 
     // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
     // plan <script> blocks) is present.
@@ -249,6 +257,7 @@ function shell() {
         this.reposLoading = false;
         // The sidebar refresh button is the Changes count's manual reload (#307).
         if (this.openSlug) this.loadChanges(this.openSlug);
+        if (this.openSlug) this.loadSync(this.openSlug);
       }
     },
 
@@ -446,6 +455,60 @@ function shell() {
         }
         // Demo (static shell): leave whatever the seed/previous load holds.
       }
+    },
+
+    // The open project's sync state (#316), served read-only via the
+    // `sync.status` Query verb — which makes NO network call, so this read is
+    // safe on every trigger `loadChanges` rides. There is deliberately no timer:
+    // a launcher holding N repos must never become a scheduled network client.
+    async loadSync(slug) {
+      if (!slug) return;
+      const seq = ++this._syncSeq;
+      try {
+        const reply = await window.WBDaemon.observe("sync.status", { repo: slug });
+        if (seq !== this._syncSeq) return; // superseded → the newer read owns it
+        this.syncByProject[slug] = window.WBChanges.foldSync(reply);
+      } catch {
+        if (seq === this._syncSeq && window.WBMode.isDaemon()) {
+          // Honest absence beats a stale row: an unreachable daemon must not
+          // leave yesterday's counts on screen looking current.
+          this.syncByProject[slug] = window.WBChanges.foldSync(null);
+        }
+        // Demo (static shell): leave whatever the previous load holds.
+      }
+    },
+
+    // Fetch from the upstream — the operator's own act, never a timer's. A
+    // refusal arrives as the Mutate branch's `{status:"error"}` and its message
+    // IS the core's prose (`sync fetch` exits non-zero carrying it).
+    async syncFetch(slug) {
+      try {
+        const reply = await window.WBDaemon.observe("sync.fetch", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "fetch refused"));
+        }
+      } catch {
+        this._flashAction("fetch refused");
+      }
+      this.loadSync(slug);
+    },
+
+    // Fast-forward from the upstream. A successful pull moves the working tree,
+    // so the change set is reloaded beside the counts.
+    async syncPull(slug) {
+      let moved = false;
+      try {
+        const reply = await window.WBDaemon.observe("sync.pull", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "pull refused"));
+        } else {
+          moved = true;
+        }
+      } catch {
+        this._flashAction("pull refused");
+      }
+      this.loadSync(slug);
+      if (moved) this.loadChanges(slug);
     },
 
     // Toggle the Changes list open/closed (#309). No reload — the rows
@@ -1891,6 +1954,7 @@ function shell() {
         if (this.openSlug) this.hydrateRuns();
         // The Changes count is scoped to the open project (#307).
         if (this.openSlug) this.loadChanges(this.openSlug);
+        if (this.openSlug) this.loadSync(this.openSlug);
         window.lucide?.createIcons();
       });
     },
@@ -2210,7 +2274,10 @@ function shell() {
         // Optional-chained like the mount guard above: a frame arriving before
         // (or without) wb-changes.js must not throw inside `onmessage` and kill
         // the nudge path for this connection.
-        if (window.WBChanges?.shouldReload?.(frame, this.openSlug)) this.loadChanges(this.openSlug);
+        if (window.WBChanges?.shouldReload?.(frame, this.openSlug)) {
+          this.loadChanges(this.openSlug);
+          this.loadSync(this.openSlug);
+        }
       });
     },
     destroyChangesSub() {

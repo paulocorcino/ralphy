@@ -1237,6 +1237,62 @@ body.runs-open .runs {
   font-size: 0.68rem;
   color: var(--text-muted);
 }
+/* The sync row (#316): branch + counts + staleness on ONE line. `overflow:
+   hidden` on the container is what bounds a long branch name inside the row
+   instead of bleeding the sidebar (same rule the change rows follow). */
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.72rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.sync-branch {
+  flex: 0 999 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-counts {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sync-note {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sync-fetched {
+  flex: 0 4 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.sync-act {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.sync-act + .sync-act {
+  margin-left: 0;
+}
+.sync-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
 /* The file name must be FROZEN, not merely out-weighted. Flexbox distributes
    negative free space across every unfrozen item in proportion to its scaled
    shrink factor, so even at 1-against-999 the name still absorbs

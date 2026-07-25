@@ -195,6 +195,18 @@
                  log or a DOM dump; Alpine itself keys per `<template>`, so the
                  prefix is legibility, not a correctness requirement. -->
             <div class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
+              <!-- The sync row (#316). Fetch is the operator's own act: nothing
+                   here fires on open or on a timer, only on these two clicks. -->
+              <div class="sync-row">
+                <span class="sync-branch" x-text="(syncByProject[p.slug] || {}).branch"></span>
+                <span class="sync-counts" x-text="(syncByProject[p.slug] || {}).counts"></span>
+                <span class="sync-note" x-text="(syncByProject[p.slug] || {}).note"></span>
+                <span class="sync-fetched" x-text="(syncByProject[p.slug] || {}).fetched"></span>
+                <button class="sync-act" data-act="fetch" title="fetch from the upstream"
+                        @click.stop="syncFetch(p.slug)">Fetch</button>
+                <button class="sync-act" data-act="pull" title="fast-forward from the upstream"
+                        @click.stop="syncPull(p.slug)">Pull</button>
+              </div>
               <div class="chg-group-head" x-show="(changesStaged[p.slug] || []).length">Staged Changes</div>
               <ul class="chg-group" x-show="(changesStaged[p.slug] || []).length">
                 <template x-for="c in (changesStaged[p.slug] || [])" :key="'s:' + c.path">
