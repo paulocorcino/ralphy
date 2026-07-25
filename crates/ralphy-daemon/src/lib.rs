@@ -3679,4 +3679,78 @@ mod tests {
             );
         }
     }
+
+    /// Every path embedded in [`UI`], slash-separated and relative to
+    /// `assets/ui` — `include_dir` exposes only one directory level at a time.
+    fn embedded_ui_paths() -> Vec<String> {
+        fn walk(dir: &include_dir::Dir<'_>, out: &mut Vec<String>) {
+            for f in dir.files() {
+                out.push(f.path().to_string_lossy().replace('\\', "/"));
+            }
+            for d in dir.dirs() {
+                walk(d, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(&UI, &mut out);
+        out
+    }
+
+    /// #308 pins the editor swap where it can actually regress: the embedded
+    /// asset tree. Monaco is vendored, CodeMirror is gone, and the four heavy
+    /// language workers stay excluded (the exclusion rule is prefix-based
+    /// because Monaco 0.56 ships content-hashed chunk names).
+    #[test]
+    fn monaco_replaced_codemirror_in_the_embedded_ui() {
+        let paths = embedded_ui_paths();
+
+        for required in [
+            "vendor/monaco/vs/loader.js",
+            "vendor/monaco/vs/editor/editor.main.js",
+        ] {
+            assert!(
+                paths.iter().any(|p| p == required),
+                "{required} must be embedded in the UI assets"
+            );
+        }
+
+        let leftover: Vec<_> = paths
+            .iter()
+            .filter(|p| p.starts_with("vendor/codemirror/"))
+            .collect();
+        assert!(
+            leftover.is_empty(),
+            "CodeMirror must be deleted from the tree, found: {leftover:?}"
+        );
+
+        for worker in [
+            "vs/assets/ts.worker",
+            "vs/assets/css.worker",
+            "vs/assets/html.worker",
+            "vs/assets/json.worker",
+        ] {
+            let hits: Vec<_> = paths.iter().filter(|p| p.contains(worker)).collect();
+            assert!(
+                hits.is_empty(),
+                "language worker {worker} must not be vendored, found: {hits:?}"
+            );
+        }
+
+        assert!(
+            include_str!("../assets/ui/wb-monaco.js").contains("monaco.editor.create"),
+            "wb-monaco.js must build the editor through Monaco's own factory"
+        );
+
+        let viewer = include_str!("../assets/ui/wb-viewer.js");
+        assert!(
+            viewer.contains("WBMonaco.create"),
+            "wb-viewer.js must mount its editor through WBMonaco"
+        );
+        // Built from parts so this pin cannot trip on its own source text.
+        let outgoing = concat!("Code", "Mirror(");
+        assert!(
+            !viewer.contains(outgoing),
+            "wb-viewer.js must not construct a {outgoing} editor"
+        );
+    }
 }
