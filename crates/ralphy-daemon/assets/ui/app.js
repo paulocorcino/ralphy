@@ -95,6 +95,14 @@ function shell() {
       this.loadRepos();
       this.subscribePresence();
       this.loadIdentity();
+      // The board's two time-driven refresh triggers (#301). Both are registered
+      // ONCE for the page's life and both defer the decision to the predicate —
+      // the listener/timer only names the trigger, so "board open? tab focused?
+      // long enough ago?" lives in one testable place (wb-kanban.js).
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") this.maybeRefreshBoard("visible");
+      });
+      this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
     },
 
     // The daemon's real identity (name + avatar), shown in the topbar brand. A

@@ -294,6 +294,71 @@ def main():
             n = board_calls(page)
             check("a run snapshot change refreshes the board", n == before + 1, f"{before} -> {n}")
 
+            # --- scenario 6a: a HIDDEN tab never refreshes ---------------------
+            # A second page in the same context takes the foreground, so page 1's
+            # real `document.visibilityState` flips to `hidden` (no stubbing).
+            other = ctx.new_page()
+            other.goto("about:blank")
+            other.bring_to_front()
+            page.wait_for_timeout(400)
+            vis = page.evaluate("() => document.visibilityState")
+            if vis != "hidden":
+                # Headless chromium does not background a page just because a
+                # sibling took the foreground. Stub the STATE (the predicate's
+                # own input) rather than lose the scenario; the handler, the
+                # predicate and the wiring under test all stay real.
+                page.evaluate(
+                    "() => { Object.defineProperty(document, 'visibilityState',"
+                    " { get: () => 'hidden', configurable: true }); }"
+                )
+            check(
+                "the backgrounded page reads a hidden document",
+                page.evaluate("() => document.visibilityState") == "hidden",
+                f"natural={vis!r} (stubbed={vis != 'hidden'})",
+            )
+
+            # Back-date the clock so the ONLY thing blocking a refresh is hiddenness.
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            before = board_calls(page)
+            doc_a.write_text(json.dumps(snapshot(RUN_A, "planning", "planning")), encoding="utf-8")
+            page.wait_for_function(f"() => {SH}.projectRuns()[0]?.phase === 'planning'", timeout=15000)
+            page.wait_for_timeout(600)
+            n = board_calls(page)
+            check("a hidden tab never refreshes the board", n == before, f"{before} -> {n}")
+            check(
+                "…while its run channel keeps advancing",
+                page.evaluate(f"() => {SH}.projectRuns()[0].phase") == "planning",
+                "",
+            )
+
+            # --- scenario 6b: becoming visible again refreshes ------------------
+            doc_a.write_text(json.dumps(snapshot(RUN_A, "executing", "executing")), encoding="utf-8")
+            page.wait_for_function(f"() => {SH}.projectRuns()[0]?.phase === 'executing'", timeout=15000)
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            before = board_calls(page)
+            if vis != "hidden":
+                page.evaluate("() => { delete document.visibilityState; }")
+            other.close()
+            page.bring_to_front()
+            if vis != "hidden":
+                page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
+            page.wait_for_timeout(800)
+            n = board_calls(page)
+            check("the board reloads when the document becomes visible again", n == before + 1, f"{before} -> {n}")
+
+            # --- scenario 7: the slow backstop --------------------------------
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 130000; }}")
+            before = board_calls(page)
+            page.evaluate(f"() => {SH}.boardBackstopTick()")
+            page.wait_for_timeout(400)
+            n = board_calls(page)
+            check("a backstop tick past its window reloads the board", n == before + 1, f"{before} -> {n}")
+
+            page.evaluate(f"() => {SH}.boardBackstopTick()")
+            page.wait_for_timeout(400)
+            n2 = board_calls(page)
+            check("the very next backstop tick coalesces away", n2 == n, f"{n} -> {n2}")
+
             ctx.close()
             browser.close()
     finally:
