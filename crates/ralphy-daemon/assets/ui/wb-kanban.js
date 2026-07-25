@@ -174,7 +174,9 @@ window.WBKanban = {
     return out;
   },
 
-  // --- running cross-ref (against WB_RUNS via window.WBRun) --------------
+  // --- running cross-ref (against the CALLER's runs, via window.WBRun) ----
+  // `projectRuns` is whatever the panel holds: live snapshots in daemon mode,
+  // the WB_RUNS seed under `file://` (#300). Nothing is read from the seed here.
   // If `number` is the *active* node of one of the project's live runs, return a
   // descriptor for the card's run pill; else null. Only the actively-worked
   // issue (planning / executing / sleeping) is flagged — a run's pending or
