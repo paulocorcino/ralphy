@@ -10,7 +10,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, telegram,
+    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, sync, telegram,
     triage, usage,
 };
 
@@ -91,6 +91,10 @@ pub(crate) enum Command {
     /// Read-only file content at a git revision (the diff's original side).
     #[command(subcommand)]
     Blob(blob::BlobCommand),
+    /// The branch's upstream state, plus an operator-triggered fetch and a
+    /// fast-forward-only pull (ADR-0036 §6).
+    #[command(subcommand)]
+    Sync(sync::SyncCommand),
 }
 
 #[derive(Subcommand)]

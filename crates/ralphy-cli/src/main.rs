@@ -29,6 +29,7 @@ mod runlock;
 mod runstate;
 mod schedule;
 mod split_agent;
+mod sync;
 mod telegram;
 mod triage;
 mod ui;
@@ -62,6 +63,7 @@ fn main() -> Result<()> {
         Command::Label(cmd) => mutate::label(cmd),
         Command::Changes(cmd) => changes::changes(cmd),
         Command::Blob(cmd) => blob::blob(cmd),
+        Command::Sync(cmd) => sync::sync(cmd),
     }
 }
 
