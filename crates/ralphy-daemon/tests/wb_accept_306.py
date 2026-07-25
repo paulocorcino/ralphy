@@ -198,6 +198,43 @@ def launch(daemon_dir):
     )
 
 
+def open_console(page, slug):
+    """Open a free console and wait for its live terminal."""
+    before = page.locator(".session-window").count()
+    page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', plain: true }})")
+    page.wait_for_function(
+        f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=8000
+    )
+    win = page.locator(".session-window").nth(before)
+    win.locator(".xterm").wait_for(timeout=15000)
+    page.wait_for_timeout(400)
+    return win
+
+
+def rect_of(page, index):
+    return page.evaluate(
+        "(i) => { const w = document.querySelectorAll('.session-window')[i];"
+        " return { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth, height: w.offsetHeight }; }",
+        index,
+    )
+
+
+def drag_handle(page, index, dir_, dx, dy):
+    """Press the given window's `dir` handle and drag it by (dx, dy)."""
+    box = page.evaluate(
+        "([i, d]) => { const w = document.querySelectorAll('.session-window')[i];"
+        " const h = w.querySelector('.h-' + d); const r = h.getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
+        [index, dir_],
+    )
+    page.mouse.move(box["x"], box["y"])
+    page.mouse.down()
+    page.mouse.move(box["x"] + dx / 2, box["y"] + dy / 2, steps=3)
+    page.mouse.move(box["x"] + dx, box["y"] + dy, steps=3)
+    page.mouse.up()
+    page.wait_for_timeout(350)
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -272,6 +309,64 @@ def main():
             check("GET /wb-translate.js returns 404", resp.status == 404, f"got={resp.status}")
             page.evaluate(f"() => {SH}.toggleRuns()")
             page.wait_for_timeout(300)
+
+            # =============== scenario 2: resize from an edge and a corner =====
+            # The Consoles tab must be in view or every terminal measures 0x0 —
+            # opening README.md above made the file tab the active one (#303).
+            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page.wait_for_timeout(300)
+            open_console(page, slug)
+            # Park it mid-workspace first: a window already against the origin
+            # would clamp, and every drag below would prove the CLAMP rather than
+            # the anchored edge it exists to pin (#303).
+            page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                " w.style.left = '200px'; w.style.top = '140px';"
+                " w.style.width = '460px'; w.style.height = '320px'; }"
+            )
+            page.wait_for_timeout(250)
+            r0 = rect_of(page, 0)
+            check(
+                "the console under test sits clear of the workspace origin",
+                r0["left"] >= 120 and r0["top"] >= 100,
+                f"got={r0}",
+            )
+
+            drag_handle(page, 0, "w", -120, 0)
+            r1 = rect_of(page, 0)
+            check("a west-edge drag widens the window", r1["width"] > r0["width"], f"{r0['width']} -> {r1['width']}")
+            check(
+                "…holding the right edge in place",
+                r1["left"] + r1["width"] == r0["left"] + r0["width"],
+                f"{r0['left'] + r0['width']} -> {r1['left'] + r1['width']}",
+            )
+            check("…and the top edge untouched", r1["top"] == r0["top"], f"{r0['top']} -> {r1['top']}")
+
+            drag_handle(page, 0, "n", 0, -90)
+            r2 = rect_of(page, 0)
+            check(
+                "a north-edge drag grows the window upward",
+                r2["height"] > r1["height"],
+                f"{r1['height']} -> {r2['height']}",
+            )
+            check(
+                "…holding the bottom edge in place",
+                r2["top"] + r2["height"] == r1["top"] + r1["height"],
+                f"{r1['top'] + r1['height']} -> {r2['top'] + r2['height']}",
+            )
+
+            drag_handle(page, 0, "se", 80, 60)
+            r3 = rect_of(page, 0)
+            check(
+                "an se-corner drag grows BOTH axes",
+                r3["width"] > r2["width"] and r3["height"] > r2["height"],
+                f"{r2['width']}x{r2['height']} -> {r3['width']}x{r3['height']}",
+            )
+            check(
+                "…moving neither the left nor the top edge",
+                r3["left"] == r2["left"] and r3["top"] == r2["top"],
+                f"{(r2['left'], r2['top'])} -> {(r3['left'], r3['top'])}",
+            )
 
             ctx.close()
             browser.close()
