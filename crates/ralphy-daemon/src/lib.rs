@@ -2053,6 +2053,7 @@ fn content_type(path: &str) -> &'static str {
         Some("js") => "text/javascript; charset=utf-8",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
+        Some("ico") => "image/x-icon",
         Some("woff") => "font/woff",
         Some("woff2") => "font/woff2",
         Some("ttf") => "font/ttf",
@@ -3415,6 +3416,32 @@ mod tests {
             shell.contains("wb-mode.js"),
             "the shell HTML must load the mode module"
         );
+    }
+
+    #[tokio::test]
+    async fn favicon_is_served_for_both_pages_and_the_bare_request() {
+        // The browser asks for /favicon.ico on its own, whatever the markup says,
+        // so the .ico must exist even though the SVG is what a modern browser
+        // picks. A 404 here is the console error this replaced.
+        let resp = get_local("/favicon.ico").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET /favicon.ico → 200");
+        assert_eq!(
+            resp.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/x-icon"
+        );
+        let resp = get_local("/favicon.svg").await;
+        assert_eq!(resp.status(), StatusCode::OK, "GET /favicon.svg → 200");
+        assert_eq!(
+            resp.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/svg+xml"
+        );
+        for page in ["/index.html", "/detached.html"] {
+            let html = body_string(get_local(page).await).await;
+            assert!(
+                html.contains("favicon.svg") && html.contains("favicon.ico"),
+                "{page} must link both favicon forms"
+            );
+        }
     }
 
     #[tokio::test]
