@@ -5,9 +5,24 @@
 (function (window) {
   "use strict";
 
-  // `entries` rides along unused by this slice's count-only render: the fold is
-  // one JSON-to-list-model step, and splitting it would mean rewriting it when
-  // the list lands.
+  // Closed marker vocabulary for the producer's six-value status enum
+  // (`ralphy-core/src/changes.rs` `ChangeStatus`, `#[serde(rename_all =
+  // "snake_case")]`) — anything outside it renders as `?`/`st-unknown` so a
+  // future seventh variant stays legible instead of blank.
+  const MARKS = {
+    modified: "M",
+    added: "A",
+    deleted: "D",
+    renamed: "R",
+    untracked: "U",
+    conflicted: "!",
+  };
+
+  function marker(status) {
+    const mark = MARKS[status];
+    return mark ? { mark, cls: "st-" + status } : { mark: "?", cls: "st-unknown" };
+  }
+
   function fold(reply) {
     // A non-ok reply can still carry a `changes` body (an error frame the daemon
     // built over a partial read); folding it would report a count nobody proved.
@@ -16,13 +31,20 @@
     if (!Array.isArray(rows)) return { count: 0, entries: [] };
     const entries = rows
       .filter((r) => r && typeof r.path === "string")
-      .map((r) => ({
-        path: r.path,
-        originalPath: r.original_path || null,
-        status: r.status || "modified",
-      }));
+      .map((r) => {
+        const status = r.status || "modified";
+        const { mark, cls } = marker(status);
+        return {
+          path: r.path,
+          originalPath: r.original_path || null,
+          status,
+          mark,
+          cls,
+          title: r.original_path ? r.original_path + " → " + r.path : r.path,
+        };
+      });
     return { count: entries.length, entries };
   }
 
-  window.WBChanges = { fold };
+  window.WBChanges = { fold, marker };
 })(window);

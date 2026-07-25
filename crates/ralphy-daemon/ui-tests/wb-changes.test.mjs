@@ -40,6 +40,9 @@ test("a change set folds to its count and one entry per row", () => {
     path: "new.txt",
     originalPath: "old.txt",
     status: "renamed",
+    mark: "R",
+    cls: "st-renamed",
+    title: "old.txt → new.txt",
   });
   assert.equal(folded.entries[0].originalPath, null);
 });
@@ -48,6 +51,39 @@ test("an empty change set is zero, not absent", () => {
   const folded = load().fold({ status: "ok", changes: { changes: [] } });
   assert.equal(folded.count, 0);
   assert.deepEqual(folded.entries, []);
+});
+
+test("the list model carries a status marker per row", () => {
+  const reply = {
+    status: "ok",
+    changes: {
+      changes: [
+        { path: "README.md", original_path: null, status: "modified" },
+        { path: "added.txt", original_path: null, status: "added" },
+        { path: "gone.txt", original_path: null, status: "deleted" },
+        { path: "new name.txt", original_path: "old name.txt", status: "renamed" },
+        { path: "docs/café.md", original_path: null, status: "untracked" },
+        { path: "merge.txt", original_path: null, status: "conflicted" },
+        { path: "weird.txt", original_path: null, status: "vaporized" },
+      ],
+    },
+  };
+  const folded = load().fold(reply);
+  assert.equal(folded.count, 7);
+  assert.deepEqual(
+    folded.entries.map((e) => e.mark),
+    ["M", "A", "D", "R", "U", "!", "?"],
+  );
+  assert.deepEqual(folded.entries[3], {
+    path: "new name.txt",
+    originalPath: "old name.txt",
+    status: "renamed",
+    mark: "R",
+    cls: "st-renamed",
+    title: "old name.txt → new name.txt",
+  });
+  assert.equal(folded.entries[6].cls, "st-unknown");
+  assert.equal(folded.entries[0].title, "README.md");
 });
 
 test("an error, absent or malformed reply reads as zero — never a stale count", () => {
