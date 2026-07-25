@@ -30,6 +30,7 @@ pub mod identity;
 pub mod password;
 pub mod protocol;
 pub mod registry;
+pub mod roster;
 pub mod session;
 pub mod totp;
 pub mod tree;
@@ -243,6 +244,7 @@ pub fn router(
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route("/api/about", get(about_route))
+        .route("/api/agents", get(agents_route))
         .route(
             "/api/repos",
             get({
@@ -1577,6 +1579,14 @@ async fn about_route() -> Response {
     .into_response()
 }
 
+/// `GET /api/agents`: the daemon's own adapter enumeration (`id`, `label`,
+/// `accelerator`), so the workbench console menu renders from the daemon rather
+/// than from a second vendor list of its own. Read-only, no secrets; it reports
+/// what the daemon can launch, never whether a vendor CLI is installed here.
+async fn agents_route() -> Response {
+    Json(roster::roster()).into_response()
+}
+
 /// The `POST /api/login` form: the current TOTP `code` and, when a password is
 /// enrolled, the operator's `password`. `password` is `Option` so a bind with no
 /// password enrolled accepts a form carrying only `code`.
@@ -2242,6 +2252,31 @@ mod tests {
         assert!(
             body.contains("Paulo Corcino"),
             "about must carry the creator; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_agents_serves_the_roster() {
+        let resp = get("/api/agents").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let rows: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(rows.len(), session::Agent::ALL.len());
+        let served: std::collections::BTreeSet<String> = rows
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        let expected: std::collections::BTreeSet<String> = [
+            "claude", "codex", "opencode", "kimi", "copilot", "cursor", "gemini",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(served, expected, "served roster ids: {served:?}");
+        assert_eq!(
+            rows[0],
+            serde_json::json!({ "id": "claude", "label": "claude", "accelerator": "1" }),
+            "the roster is served in accelerator order, claude first"
         );
     }
 
