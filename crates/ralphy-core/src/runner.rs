@@ -734,7 +734,8 @@ mod tests {
             let closing = if self.lint_dirty {
                 ""
             } else {
-                "\n## Handoff\n\n- **Delivered**: scripted work\n\n## Plan friction\n\n- none\n"
+                "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n\n\
+                 ## Handoff\n\n- **Delivered**: scripted work\n\n## Plan friction\n\n- none\n"
             };
             let body = format!(
                 "# Plan for #{}\n\n## Steps\n{step}{extra}{closing}",
@@ -759,7 +760,8 @@ mod tests {
             if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
                 let plan_md = fs::read_to_string(ws.plan_path())?;
                 let fixed = plan_md.replace("- [ ]", "- [x]")
-                    + "\n## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
+                    + "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n\n\
+                       ## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
                 fs::write(ws.plan_path(), fixed)?;
             }
             let outcome = self

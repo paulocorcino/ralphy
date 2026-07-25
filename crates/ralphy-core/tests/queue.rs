@@ -47,6 +47,10 @@ struct ScriptedAgent {
     steps: usize,
     /// If set, appended to the plan as a `## Acceptance ledger` section.
     ledger: Option<String>,
+    /// When true, `plan` omits the default `## Acceptance ledger` section
+    /// (ADR-0015) that a lint-clean plan otherwise carries — used to test the
+    /// lint's ledger-presence check in isolation.
+    omit_ledger: bool,
     /// If set, appended verbatim to the plan body (extra sections such as
     /// `## Feasible`, `## Handoff`, `## Plan friction`).
     extra: Option<String>,
@@ -85,6 +89,7 @@ impl ScriptedAgent {
             plan_attempts: RefCell::new(0),
             steps: 1,
             ledger: None,
+            omit_ledger: false,
             extra: None,
             extra_by_issue: Vec::new(),
             lint_dirty: false,
@@ -108,6 +113,13 @@ impl ScriptedAgent {
 
     fn with_ledger(mut self, ledger: impl Into<String>) -> Self {
         self.ledger = Some(ledger.into());
+        self
+    }
+
+    /// Omit the default `## Acceptance ledger` section from an otherwise
+    /// lint-clean plan, so the ledger-presence check alone bounces it.
+    fn without_ledger(mut self) -> Self {
+        self.omit_ledger = true;
         self
     }
 
@@ -190,6 +202,11 @@ impl Agent for ScriptedAgent {
             extra_section,
         );
         if !self.lint_dirty {
+            if !self.omit_ledger && !body.contains("## Acceptance ledger") {
+                body.push_str(
+                    "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n",
+                );
+            }
             if !body.contains("## Handoff") {
                 body.push_str("\n## Handoff\n\n- **Delivered**: scripted work\n");
             }
@@ -215,7 +232,8 @@ impl Agent for ScriptedAgent {
         if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
             let plan_md = fs::read_to_string(ws.plan_path())?;
             let fixed = plan_md.replace("- [ ]", "- [x]")
-                + "\n## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
+                + "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n\n\
+                   ## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
             fs::write(ws.plan_path(), fixed)?;
         }
         let n = self.executed.borrow().len();
@@ -2466,11 +2484,13 @@ fn green_close_calls_write_evidence_with_parsed_verdicts() {
 }
 
 #[test]
-fn green_close_with_no_ledger_skips_write_evidence() {
+fn ledgerless_plan_bounces_and_writes_no_evidence() {
     let repo = init_repo("evidence-noop");
-    // No ledger section in the plan — write_evidence must not be called.
+    // Otherwise lint-clean plan, but no `## Acceptance ledger` section — the
+    // ADR-0015 lint's ledger-presence check ALONE bounces it once (ADR-0015),
+    // and write_evidence is never called on the eventual close.
     let queue = vec![issue(2)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]); // no ledger
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]).without_ledger();
     let tracker = RecordingTracker::default();
 
     run_queue(
@@ -2482,8 +2502,15 @@ fn green_close_with_no_ledger_skips_write_evidence() {
     )
     .unwrap();
 
-    // Issue was closed (green) but write_evidence was never called.
+    // One protocol bounce: plan + two executes (the lint fails after the
+    // first execute, the runner hands the session back once).
+    assert_eq!(*agent.executed.borrow(), vec![2, 2]);
     assert_eq!(tracker.closes.borrow().len(), 1, "issue still closed");
+    let (_, comment) = &tracker.closes.borrow()[0];
+    assert!(
+        comment.contains("\u{2717} ## Acceptance ledger present"),
+        "close comment must report the failed ledger check: {comment}"
+    );
     assert!(
         tracker.evidence_writes.borrow().is_empty(),
         "no evidence-write when ledger is absent"
