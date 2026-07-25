@@ -426,6 +426,15 @@ per-browser-profile; there is no machine-wide store.
 _Avoid_: workspace (the DOM element the windows live in), geometry store (the
 retired session-keyed key it replaces).
 
+**Adapter roster**:
+The daemon's own enumeration of the **adapters** it can launch, served read-only
+(`GET /api/agents`) as one row per adapter: `id`, `label`, and the keyboard
+`accelerator` digit. It is what the workbench's console menu renders from, so
+onboarding a vendor ([ADR-0040](docs/adr/0040-agent-adapter-onboarding-contract.md))
+never touches the frontend. The roster reports what the daemon *can launch* —
+never whether the vendor CLI is installed or authenticated on this host.
+_Avoid_: agent list, capabilities (it advertises no capability, only identity).
+
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the
 **fleet** converges: it consumes run telemetry (the CloudEvents sink,

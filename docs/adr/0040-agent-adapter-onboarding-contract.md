@@ -251,8 +251,11 @@ and `interactive_records` · the daemon's store-path plumbing — a new
 `router`/`usage_route` signatures take the whole struct, so they are no longer
 per-vendor edits) ·
 **`daemon/src/session.rs::Agent`** — the third agent enum, plus its two matches
-(`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and the
-`agents` / `consoleItems` / accelerator-map trio in `daemon/assets/ui/app.js`.
+(`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and
+`daemon/src/roster.rs::accelerator` — an exhaustive match, so a new variant does not compile until it is given a keyboard digit (`8`/`9` are free; `0` is the plain console's).
+The workbench itself is NOT an edit site: since #304 it enumerates no vendors,
+rendering the console menu from `GET /api/agents` — the roster the daemon serves
+from its own `Agent::ALL`.
 
 A vendor whose CLI is **not on `PATH`** (Cursor: two names, three install roots,
 on `PATH` under neither) needs one more thing here: a **core-free locator the
