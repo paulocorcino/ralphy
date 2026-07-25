@@ -16,7 +16,7 @@ a real ADR and link it from here.
 > **Scope of this file.** It documents the **shell foundation** — the pieces
 > established first: the layout, the project accordion, the file tree, and the
 > `workbench:action` seam. The later modules (file viewers, floating consoles,
-> Runs panel, run verbs, branch switcher, on-device translation, Settings/Security)
+> Runs panel, run verbs, branch switcher, Settings/Security)
 > each carry their own header comment describing intent and backend sources; this
 > guide points at them rather than restating.
 
@@ -194,9 +194,7 @@ overrides them to the same warm tone so a selected row doesn't flash white on bl
 `alpine.min.js` (reactivity), `lucide.min.js` (chrome icons — prune to a subset
 when the icon set stabilises), `wunderbaum/` (tree), `devicon/` +
 `bootstrap-icons/` (file icons). Later modules added `codemirror/`, `marked`,
-`mermaid`, `dompurify`, `qrcode` — see their modules. **Translation adds no
-library** — it uses the browser's built-in Translator/LanguageDetector APIs
-(see [wb-translate.js](../crates/ralphy-daemon/assets/ui/wb-translate.js)).
+`mermaid`, `dompurify`, `qrcode` — see their modules.
 
 ---
 
@@ -273,7 +271,7 @@ in the tree today (a per-daemon revocable credential is ADR-0032 §8, Phase 2, u
 
 ---
 
-## Runs panel, run verbs & translation (added after the foundation)
+## Runs panel & run verbs (added after the foundation)
 
 The Runs panel became a real surface (module: [wb-runs.js](../crates/ralphy-daemon/assets/ui/wb-runs.js)). It is
 project-scoped and shows what's *running* in ralphy for the open repo. A project can
@@ -297,14 +295,6 @@ reveals a second picker to **plan with a different agent** (`--plan-agent`), and
 branch-mode segmented control — with a live `ralphy run …` preview. It emits
 `run-start {agent,planAgent,branchMode,command}`.
 
-**On-device translation** (module: [wb-translate.js](../crates/ralphy-daemon/assets/ui/wb-translate.js)) reads plan/doc
-prose in another language using the browser's built-in **Translator + LanguageDetector
-APIs** — free, on-device, no network, no key (Chrome/Edge 138+). It's wired into two
-places: each **Runs plan block** and the **markdown viewer** (preview only, never the
-editor). A per-block target picker (PT/EN/ES/…) drives it; a same-language target says
-"already X" instead of silently doing nothing; results are cached per target. Where the
-API is absent the control is **hidden entirely** (not disabled).
-
 | Element | Identifier | Purpose | Events / actions |
 |---|---|---|---|
 | Branch chip | `.branch-chip` + `canSwitchBranch(p)` | project-row chip → branch switcher; inert when unreachable | — |
@@ -315,7 +305,6 @@ API is absent the control is **hidden entirely** (not disabled).
 | Issue trail | `.trail` / `.trail-node.st-*` | run queue, glyph-coded by `IssueStatus`; active node = phase / 🌙 sleep | `run-issue-focus {runid,issue}` |
 | Plan viewer | `.plan-block` (`Steps` fixed + section dropdown) | render the active issue's plan.md | — |
 | Inbound run events | `applyRunEvent` / `window.WBRuns.emit` | seam **into** the panel; folds CloudEvents to advance the run | consumes `ralphy:run-event {type,runid,data}` |
-| Translate toggle | `.plan-xlate` (Runs) · `[data-act="xlate"]` (md viewer) | on-device translate of rendered prose; hidden where the API is absent | — |
 | Console shortcuts | `consoleItems()` + Alt+Shift+`1/2/3/0` | New-console accelerators, matched by physical key (`e.code`), guarded off inputs/modals | `console-open {agent,plain}` |
 
 Faithful sources: run/issue vocabulary and glyphs mirror `ralphy-cli/src/runstate/`
@@ -403,9 +392,8 @@ for intent + the real ralphy sources it mirrors:
 - **[wb-viewer.js](../crates/ralphy-daemon/assets/ui/wb-viewer.js)** — the closable file tabs: source via CodeMirror
   (highlight + edit + find), Markdown via marked + DOMPurify + mermaid, with a
   heading outline and in-page find. Per-file toolbar is **Find · Reload · Edit ·
-  **Translate** · Save · Detach**; editing emits `save`, Reload reloads from source
-  (`reload`), binaries are refused (`open-refused`). **Translate** (preview only —
-  hidden in Edit) runs the shared on-device translator over the rendered markdown.
+  Save · Detach**; editing emits `save`, Reload reloads from source
+  (`reload`), binaries are refused (`open-refused`).
 - **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Agents
   tab; mirrors the real daemon window chrome (`crates/ralphy-daemon/assets/ui/`).
   The New-console picker lists the agents and, **last**, a plain **console** (no
@@ -421,10 +409,6 @@ for intent + the real ralphy sources it mirrors:
   seed (`WB_KANBAN`) and the pure helpers (`WBKanban`) — column classification, the
   Kahn graph-order port of `blocked.rs`, the running cross-ref into `WB_RUNS`, label
   metadata/colors, and filter/sort. Read-only except labels; see the section above.
-- **[wb-translate.js](../crates/ralphy-daemon/assets/ui/wb-translate.js)** — shared on-device translation
-  (`window.WBTranslate`) over the browser's Translator + LanguageDetector APIs; used
-  by both the Runs plan blocks and the markdown viewer. Free, on-device, degrades
-  where the API is absent.
 - **[wb-settings.js](../crates/ralphy-daemon/assets/ui/wb-settings.js)** — data-driven Settings + Security (TOTP);
   its header lists the exact real config sources per key.
 - **[detached.html](../crates/ralphy-daemon/assets/ui/detached.html)** — a torn-off file viewer in its own popup

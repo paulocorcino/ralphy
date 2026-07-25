@@ -475,20 +475,6 @@ function shell() {
     runMenu: false,
     planSection: "",
 
-    // On-device translation of a plan block via the browser's built-in
-    // Translator API (Chrome/Edge 138+), with LanguageDetector for the source.
-    // No network, no key. Per-block toggle; results cached by run/section/target.
-    // Degrades to a disabled button where the API is absent.
-    xlate: {
-      on: {}, // block id ("steps" | "more") -> translating?
-      busy: {}, // block id -> in-flight?
-      err: {}, // block id -> last error message
-      note: {}, // block id -> hint (e.g. "already PT")
-      target: window.WBTranslate.browserLang(),
-      cache: {}, // `${runid}::${name}::${target}` -> translated markdown
-    },
-    xlateLangs: window.WBTranslate.LANGS,
-
     // Hydrate runs from the seed: copy each run's plan.md out of its hidden
     // <script> block into a live, mutable `planMd` the fold can update.
     // `file://`-ONLY since #300: the seed runs, the `seed-plan-*` blocks and the
@@ -673,81 +659,13 @@ function shell() {
     planHeadings(run) {
       return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
-    // Render one `##` section as sanitized HTML. When the block is toggled to
-    // translate, the cached translation is shown once ready (original until then).
+    // Render one `##` section as sanitized HTML.
     // Steps render as glyph bullets so the checkbox state survives sanitising.
-    renderPlanSection(run, name, block) {
+    renderPlanSection(run, name) {
       if (!run || !name) return "";
       let body = window.WBRun.section(run.planMd, name);
-      if (block && this.xlate.on[block]) {
-        const hit = this.xlate.cache[this.xlateKey(run, name)];
-        if (hit != null) body = hit;
-      }
       if (name.toLowerCase() === "steps") body = window.WBRun.stepsToGlyphs(body);
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
-    },
-
-    // --- on-device translation (shared helper: window.WBTranslate) --------
-    xlateSupported() {
-      return window.WBTranslate.supported();
-    },
-    xlateTitle() {
-      return this.xlateSupported()
-        ? "translate this block on-device (browser Translator API)"
-        : "translation needs Chrome/Edge 138+ (built-in Translator API)";
-    },
-    xlateKey(run, name) {
-      return `${run.runid}::${name}::${this.xlate.target}`;
-    },
-    toggleXlate(block, name) {
-      if (!this.xlateSupported()) return;
-      this.xlate.on = { ...this.xlate.on, [block]: !this.xlate.on[block] };
-      if (this.xlate.on[block]) this.ensureXlate(block, name);
-      this.$nextTick(() => window.lucide?.createIcons());
-    },
-    // the section dropdown changed → re-translate that block if it's on
-    onSectionChange() {
-      if (this.xlate.on.more) {
-        this.ensureXlate("more", this.planSection || this.planHeadings(this.currentRun())[0]);
-      }
-    },
-    // target language changed → refresh every active block
-    retranslate() {
-      if (this.xlate.on.steps) this.ensureXlate("steps", "Steps");
-      if (this.xlate.on.more) {
-        this.ensureXlate("more", this.planSection || this.planHeadings(this.currentRun())[0]);
-      }
-    },
-    // Fetch (and cache) the translation for one block. Detects the source
-    // language, then runs the on-device Translator; a same-language target is a
-    // clean no-op. Reverts the toggle on failure so the UI stays honest.
-    async ensureXlate(block, name) {
-      const run = this.currentRun();
-      if (!run || !name || !this.xlateSupported()) return;
-      const src = window.WBRun.section(run.planMd, name);
-      if (!src) return;
-      const key = this.xlateKey(run, name);
-      if (this.xlate.cache[key] != null) return; // already translated
-      this.xlate.busy = { ...this.xlate.busy, [block]: true };
-      this.xlate.err = { ...this.xlate.err, [block]: "" };
-      this.xlate.note = { ...this.xlate.note, [block]: "" };
-      try {
-        const res = await window.WBTranslate.translate(src, this.xlate.target, (msg) => {
-          this.xlate.note = { ...this.xlate.note, [block]: msg };
-        });
-        this.xlate.cache = { ...this.xlate.cache, [key]: res.text };
-        // a same-language target changes nothing — say so, so it doesn't look broken
-        if (res.same) {
-          this.xlate.note = { ...this.xlate.note, [block]: `already ${this.xlate.target.toUpperCase()}` };
-        } else {
-          this.xlate.note = { ...this.xlate.note, [block]: "" }; // clear the download-progress note
-        }
-      } catch (e) {
-        this.xlate.err = { ...this.xlate.err, [block]: e?.message || "translate failed" };
-        this.xlate.on = { ...this.xlate.on, [block]: false }; // revert on failure
-      } finally {
-        this.xlate.busy = { ...this.xlate.busy, [block]: false };
-      }
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------

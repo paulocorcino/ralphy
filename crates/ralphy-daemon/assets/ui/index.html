@@ -554,49 +554,20 @@
               <div class="plan-block-head">
                 <i data-lucide="list-checks"></i><span>Steps</span>
                 <span class="spacer"></span>
-                <span class="plan-xlate-note" x-show="xlate.on.steps && (xlate.err.steps || xlate.note.steps)"
-                      x-text="xlate.err.steps || xlate.note.steps"></span>
                 <span class="plan-issue" x-show="currentRun()?.active != null" x-text="'#' + currentRun()?.active"></span>
-                <!-- on-device translate toggle (browser Translator API) —
-                     hidden entirely where the API is absent -->
-                <button class="plan-xlate" x-show="xlateSupported()"
-                        :class="{ on: xlate.on.steps, busy: xlate.busy.steps }"
-                        @click="toggleXlate('steps', 'Steps')" :title="xlateTitle()">
-                  <i data-lucide="languages"></i>
-                </button>
-                <!-- target language, shown while this block is translating -->
-                <select class="plan-xlate-target" x-show="xlate.on.steps"
-                        x-model="xlate.target" @change="retranslate()" title="translate to">
-                  <template x-for="l in xlateLangs" :key="l.code">
-                    <option :value="l.code" x-text="l.label"></option>
-                  </template>
-                </select>
               </div>
-              <div class="plan-md md" x-html="renderPlanSection(currentRun(), 'Steps', 'steps')"></div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), 'Steps')"></div>
             </div>
             <div class="plan-block plan-block-more">
               <div class="plan-block-head">
                 <i data-lucide="book-open"></i>
-                <select class="plan-picker" x-model="planSection" @change="onSectionChange()">
+                <select class="plan-picker" x-model="planSection">
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
-                <span class="plan-xlate-note" x-show="xlate.on.more && (xlate.err.more || xlate.note.more)"
-                      x-text="xlate.err.more || xlate.note.more"></span>
-                <button class="plan-xlate" x-show="xlateSupported()"
-                        :class="{ on: xlate.on.more, busy: xlate.busy.more }"
-                        @click="toggleXlate('more', planSection || planHeadings(currentRun())[0])" :title="xlateTitle()">
-                  <i data-lucide="languages"></i>
-                </button>
-                <select class="plan-xlate-target" x-show="xlate.on.more"
-                        x-model="xlate.target" @change="retranslate()" title="translate to">
-                  <template x-for="l in xlateLangs" :key="'m-' + l.code">
-                    <option :value="l.code" x-text="l.label"></option>
-                  </template>
-                </select>
               </div>
-              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0], 'more')"></div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
             </div>
           </div>
         </div>
@@ -1335,7 +1306,6 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="vendor/xterm-addon-web-links.js"></script>
     <script src="wb-mode.js"></script>
     <script src="wb-fail.js"></script>
-    <script src="wb-translate.js"></script>
     <script src="wb-agents.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-viewer.js"></script>

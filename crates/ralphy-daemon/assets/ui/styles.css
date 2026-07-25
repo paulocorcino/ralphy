@@ -720,65 +720,6 @@ body.runs-open .runs {
   color: var(--console-text);
   font-variant-numeric: tabular-nums;
 }
-/* on-device translate toggle + target picker */
-.plan-xlate {
-  all: unset;
-  cursor: pointer;
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  color: var(--text-muted);
-}
-.plan-xlate:hover {
-  background: var(--surface-hi);
-  color: var(--text);
-}
-.plan-xlate.on {
-  color: var(--info);
-}
-.plan-xlate.busy {
-  animation: xlatePulse 1s ease-in-out infinite;
-}
-.plan-xlate:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.plan-xlate [data-lucide] {
-  width: 13px;
-  height: 13px;
-}
-@keyframes xlatePulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-.plan-xlate-target {
-  all: unset;
-  cursor: pointer;
-  font-size: 0.66rem;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 0.25rem;
-}
-.plan-xlate-target:hover {
-  color: var(--text);
-}
-.plan-xlate-target option {
-  background: var(--chrome);
-  color: var(--text);
-}
-/* a compact hint next to a plan block's translate toggle ("already PT" / error) */
-.plan-xlate-note {
-  font-size: 0.66rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 9rem;
-}
 .plan-picker {
   all: unset;
   flex: 1;
@@ -1758,26 +1699,6 @@ body.runs-open .runs {
   color: var(--console-text);
   border-color: var(--console-border);
   background: var(--console-bg);
-}
-/* translate toggle in the markdown toolbar */
-.vbtn.on {
-  color: var(--info);
-  border-color: color-mix(in srgb, var(--info) 45%, var(--border));
-}
-.vbtn.busy {
-  animation: xlatePulse 1s ease-in-out infinite;
-}
-.md-xlate-target {
-  padding: 0.2rem 0.35rem;
-}
-.md-xlate-target option {
-  background: var(--chrome);
-  color: var(--text);
-}
-.md-xlate-note {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 .viewer-body {
   flex: 1;

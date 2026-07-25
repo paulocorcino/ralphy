@@ -9,7 +9,6 @@ three extras reproduce anymore:
   A2 Kanban stays above a focused floating console (#208)
   A4/A5 tree integrity: .ralphy/.github visible, .git/.env excluded, no
         duplication across a reconcile (#203)
-  M8 translation errors/decisions are actionable, mapped pure functions (#206)
   M1 topbar uptime is a live heartbeat, not a static string (#204)
   A6 viewer external-edit refresh mechanism (#203)
 
@@ -319,27 +318,6 @@ def main():
             page.wait_for_timeout(300)
             body_text = page.locator(".md-body").inner_text()
             check("extra: a clean tab re-applies external content on a directory nudge", "changed externally" in body_text, f"body={body_text[:80]!r}")
-            ctx.close()
-
-            # --- symptom 5: translation actionable (M8, #206) ------------------
-            ctx, page = fresh()
-            ready(page)
-            explained = page.evaluate(
-                "() => window.WBTranslate.explainError('Other generic failures occurred.', 'pt', 'en')"
-            )
-            check(
-                "symptom5: explainError maps the generic Chromium failure",
-                explained == "couldn't download the pt→en model — check your connection and free disk space",
-                f"got={explained!r}",
-            )
-            decided = page.evaluate("() => window.WBTranslate.decide(null, 'en', 'available')")
-            check(
-                "symptom5: decide(null,...) fails honestly with no guessed source",
-                decided == {"action": "fail", "message": "couldn't detect the source language — translation skipped"},
-                f"got={decided!r}",
-            )
-            progress = page.evaluate("() => window.WBTranslate.progressText(0.42)")
-            check("symptom5: progressText renders a percentage", progress == "downloading model — 42%", f"got={progress!r}")
             ctx.close()
 
             # --- extra: topbar live uptime (M1, #204) --------------------------

@@ -3355,7 +3355,6 @@ mod tests {
             "/wb-mode.js",
             "/wb-runs.js",
             "/wb-settings.js",
-            "/wb-translate.js",
             "/wb-viewer.js",
         ];
         for path in FILES {
@@ -3374,6 +3373,27 @@ mod tests {
             assert!(
                 !lc.contains("any 6-digit code"),
                 "{path} still claims \"any 6-digit code\""
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn translation_is_gone_from_the_served_ui() {
+        let resp = get_local("/wb-translate.js").await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "GET /wb-translate.js must 404, the module is deleted"
+        );
+        const FILES: &[&str] = &["/index.html", "/app.js", "/wb-viewer.js", "/styles.css"];
+        for path in FILES {
+            let resp = get_local(path).await;
+            assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
+            let lc = body_string(resp).await.to_ascii_lowercase();
+            assert!(!lc.contains("xlate"), "{path} still contains \"xlate\"");
+            assert!(
+                !lc.contains("wbtranslate"),
+                "{path} still contains \"wbtranslate\""
             );
         }
     }
