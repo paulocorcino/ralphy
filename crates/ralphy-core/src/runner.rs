@@ -44,6 +44,21 @@ pub const STOP_BEFORE_LABEL: &str = "stop-before";
 /// so triage and run never race.
 pub const TRIAGE_AGENT_LABEL: &str = "triage-agent";
 
+/// The label applied to an issue the planner judged a bundle (multiple backlog
+/// tasks under one number): the queue is parked on a human running `/to-issues`
+/// to open the children (`## Parent: #N`) and close the bundle — the
+/// follow-the-split blocker gate handles the rest. Fixed-name like
+/// `stop-before`/`triage-agent`, never resolved through `triage-labels.md`.
+pub const NEEDS_SPLIT_LABEL: &str = "needs-split";
+
+/// The label applied to an issue the runner closed **green** whose acceptance
+/// ledger still carried `[review-only]` criteria — delivered work whose evidence
+/// is "a human reads it", which the runner cannot self-certify. It marks
+/// *attention* debt, not unfinished work, and deliberately sits outside
+/// [`HUMAN_GATE_LABELS`]: a closed issue must never re-enter the ADR-0014
+/// blocker path. Fixed-name, never resolved through `triage-labels.md`.
+pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "needs-human-review";
+
 /// Labels that mark an issue as a human gate (ADR-0014): a blocker parked until a
 /// person acts, not agent work the queue will clear. The canonical
 /// `ready-for-human` triage role and its fixed `HITL` alias (ADR-0001). A human

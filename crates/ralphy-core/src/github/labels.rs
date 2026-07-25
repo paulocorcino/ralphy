@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::github::client::gh_output;
-use crate::runner::TRIAGE_AGENT_LABEL;
+use crate::runner::{NEEDS_HUMAN_REVIEW_LABEL, NEEDS_SPLIT_LABEL, TRIAGE_AGENT_LABEL};
 
 use super::client::gh;
 
@@ -51,11 +51,17 @@ fn normalize_color(c: &str) -> String {
     c.trim().trim_start_matches('#').to_ascii_lowercase()
 }
 
-/// The 8 canonical Ralphy labels, with triage-role names resolved through
+/// The canonical Ralphy labels, with triage-role names resolved through
 /// `triage_doc` when provided.  Each canonical triage role is looked up via
 /// `parse_triage_mapping`; if absent in the doc the canonical name is kept.
-/// Fixed-name specs (`AFK`, `HITL`, `stop-before`) are appended after the five
-/// triage roles.  The result is deduped by `name` preserving first occurrence.
+/// Fixed-name specs (`AFK`, `HITL`, `stop-before`, `needs-split`,
+/// `needs-human-review`) are appended after the five triage roles — the runner
+/// applies those by literal name, so they are never remapped.  The result is
+/// deduped by `name` preserving first occurrence.
+///
+/// Every label the runner can apply must be listed here, or `ralphy init` will
+/// not create it and the first `gh issue edit --add-label` fails with
+/// `'<name>' not found` — a non-transient failure the runner only warns about.
 pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
     let doc = triage_doc.unwrap_or("");
     let resolve = |canonical: &str| -> String {
@@ -81,7 +87,8 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
         LabelSpec {
             name: resolve("ready-for-human"),
             color: "5319e7".into(),
-            description: "Agent finished — waiting for human review and merge".into(),
+            description: "Needs human implementation or decision before an agent can proceed"
+                .into(),
         },
         LabelSpec {
             name: resolve("wontfix"),
@@ -102,6 +109,18 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
             name: "stop-before".into(),
             color: "d93f0b".into(),
             description: "Fixed flow-control: agent must stop before acting on this issue".into(),
+        },
+        LabelSpec {
+            name: NEEDS_SPLIT_LABEL.into(),
+            color: "d93f0b".into(),
+            description: "Ralphy: bundle issue awaiting split into child issues".into(),
+        },
+        LabelSpec {
+            name: NEEDS_HUMAN_REVIEW_LABEL.into(),
+            color: "bfd4f2".into(),
+            description: "Ralphy closed it green, but its acceptance ledger left review-only \
+                          criteria for a human to confirm"
+                .into(),
         },
         LabelSpec {
             name: TRIAGE_AGENT_LABEL.into(),
@@ -367,10 +386,10 @@ mod tests {
     }
 
     #[test]
-    fn ralphy_label_specs_returns_9_names_including_triage_agent() {
+    fn ralphy_label_specs_returns_11_names_including_triage_agent() {
         let specs = ralphy_label_specs(None);
         let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names.len(), 9, "expected 9 specs, got: {names:?}");
+        assert_eq!(names.len(), 11, "expected 11 specs, got: {names:?}");
         for expected in &[
             "needs-triage",
             "needs-info",
@@ -380,10 +399,62 @@ mod tests {
             "AFK",
             "HITL",
             "stop-before",
+            "needs-split",
+            "needs-human-review",
             "triage-agent",
         ] {
             assert!(names.contains(expected), "missing {expected} in {names:?}");
         }
+    }
+
+    /// Every label the runner can apply by literal name must be in the roster
+    /// `ralphy init` creates, or the first `add_label` fails with `not found`.
+    /// This is the check that was missing when `needs-split` drifted out.
+    #[test]
+    fn runner_applied_labels_are_all_in_the_init_roster() {
+        let names: Vec<String> = ralphy_label_specs(None)
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        for label in [
+            crate::runner::NEEDS_SPLIT_LABEL,
+            crate::runner::NEEDS_HUMAN_REVIEW_LABEL,
+            crate::runner::TRIAGE_AGENT_LABEL,
+            crate::runner::STOP_BEFORE_LABEL,
+        ] {
+            assert!(
+                names.iter().any(|n| n == label),
+                "runner applies `{label}` but init never creates it: {names:?}"
+            );
+        }
+    }
+
+    /// The post-run review-debt label must never be a human gate: it lands on a
+    /// *closed* issue, and a human-return label would park it back out of the
+    /// queue as an ADR-0014 blocker.
+    #[test]
+    fn needs_human_review_is_not_a_human_return_label() {
+        assert!(
+            !human_return_labels(None).contains(&NEEDS_HUMAN_REVIEW_LABEL.to_string()),
+            "needs-human-review must stay out of the human-gate path"
+        );
+    }
+
+    /// Fixed-name labels are applied by literal string at the call site, so a
+    /// `triage-labels.md` remap must not move them out from under the runner.
+    #[test]
+    fn fixed_operational_labels_are_never_remapped() {
+        let doc = "| Canonical | Mapped |\n\
+                   |-----------|--------|\n\
+                   | `needs-split` | `split-me` |\n\
+                   | `needs-human-review` | `eyeball-it` |\n";
+        let names: Vec<String> = ralphy_label_specs(Some(doc))
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert!(names.iter().any(|n| n == "needs-split"), "{names:?}");
+        assert!(names.iter().any(|n| n == "needs-human-review"), "{names:?}");
+        assert!(!names.iter().any(|n| n == "split-me"), "{names:?}");
     }
 
     #[test]
@@ -451,7 +522,7 @@ mod tests {
     fn plan_label_actions_empty_existing_yields_all_create() {
         let desired = ralphy_label_specs(None);
         let actions = plan_label_actions(&desired, &[]);
-        assert_eq!(actions.len(), 9);
+        assert_eq!(actions.len(), desired.len());
         assert!(
             actions.iter().all(|a| matches!(a, LabelAction::Create(_))),
             "expected all Create, got: {actions:?}"
@@ -482,13 +553,13 @@ mod tests {
             .count();
         assert_eq!(n_create, 0, "expected 0 Create");
         assert_eq!(n_update, 0, "expected 0 UpdateColor");
-        assert_eq!(n_skip, 9, "expected 9 Skip");
+        assert_eq!(n_skip, desired.len(), "expected every spec to Skip");
     }
 
     #[test]
     fn plan_label_actions_differing_color_yields_update_no_create_for_present() {
         let desired = ralphy_label_specs(None);
-        // Provide all 9 labels as existing, but one with a wrong color.
+        // Provide every spec as existing, but one with a wrong color.
         let mut existing: Vec<(String, String)> = desired
             .iter()
             .map(|s| (s.name.clone(), normalize_color(&s.color)))
@@ -512,7 +583,11 @@ mod tests {
             .count();
         assert_eq!(n_create, 0, "no Create expected for any present name");
         assert_eq!(n_update, 1, "expected exactly 1 UpdateColor");
-        assert_eq!(n_skip, 8, "expected 8 Skip");
+        assert_eq!(
+            n_skip,
+            desired.len() - 1,
+            "expected every spec but the recoloured one to Skip"
+        );
         // Verify `to` carries the desired color and `from` the stale one.
         let afk_spec = desired.iter().find(|s| s.name == "AFK").unwrap();
         assert!(

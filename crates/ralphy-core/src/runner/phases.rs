@@ -23,18 +23,13 @@ use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
 use super::{
     synthetic_reset, IssueResult, QueueConfig, ResultStatus, RunClock, RunLedger, WaitOutcome,
+    NEEDS_SPLIT_LABEL,
 };
 
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
 /// spinning the resume loop, mirroring the execute-path no-commit cap.
 const MAX_PLAN_LIMIT_RESUMES: u32 = 2;
-
-/// The label applied to an issue the planner judged a bundle (multiple backlog
-/// tasks under one number): the queue is parked on a human running `/to-issues`
-/// to open the children (`## Parent: #N`) and close the bundle — the
-/// follow-the-split blocker gate handles the rest.
-const NEEDS_SPLIT_LABEL: &str = "needs-split";
 
 /// How many times a failed verify gate is handed back to the agent to repair
 /// before the runner gives up and stops the run (ADR-0011 amendment). The gate

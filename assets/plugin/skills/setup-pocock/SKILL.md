@@ -59,6 +59,8 @@ The five canonical roles:
 
 Default: each role's string equals its name. Ask the user if they want to override any. If their issue tracker has no existing labels, the defaults are fine.
 
+Alongside the five roles, `triage-labels.md` records the **fixed operational labels** (`AFK`, `HITL`, `stop-before`, `triage-agent`, `needs-split`, `needs-human-review`). Those are applied by literal string from Ralphy's code and are **not** renameable — carry them into the file as-is and don't offer them for override.
+
 **Section C — Domain docs.**
 
 > Explainer: Some skills (`improve-codebase-architecture`, `diagnose`, `tdd`) read a `CONTEXT.md` file to learn the project's domain language, and `docs/adr/` for past architectural decisions. They need to know whether the repo has one global context or multiple (e.g. a monorepo with separate frontend/backend contexts) so they look in the right place.
