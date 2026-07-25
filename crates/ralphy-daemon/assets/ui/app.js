@@ -517,7 +517,10 @@ function shell() {
         this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
           ? this.currentRunId
           : listed[0]?.runid || null;
-        await this.loadRunPlan();
+        // Only when the panel is showing: a push lands every few hundred ms
+        // during a run, and a whole-plan `file.read` nobody can see is pure cost.
+        // `toggleRuns()` hydrates on open, so the plan arrives with the panel.
+        if (this.runsOpen) await this.loadRunPlan();
       } catch (err) {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.

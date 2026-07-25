@@ -73,9 +73,26 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
         .unwrap();
 }
 
+/// Poll `cond` until it holds or 10s pass. Returns whether it held.
+async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
+    for _ in 0..100 {
+        if cond() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
 /// Wait up to 10s for a frame with `verb` and return its `repo` payload field.
 async fn recv_verb(ws: &mut Ws, verb: &str) -> Option<String> {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    recv_verb_within(ws, verb, Duration::from_secs(10)).await
+}
+
+/// The bounded form — used for the NEGATIVE assertion, where a 10s wait would
+/// only make the suite slow.
+async fn recv_verb_within(ws: &mut Ws, verb: &str, dur: Duration) -> Option<String> {
+    tokio::time::timeout(dur, async {
         while let Some(msg) = ws.next().await {
             let bytes = match msg {
                 Ok(Message::Binary(b)) => b,
@@ -124,13 +141,14 @@ async fn runstate_write_pushes_runs_dirty() {
 
     let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
     send_verb(&mut ws, "runs.watch", &slug, "ignored/path").await;
-    // Let the server create the snapshot dir and establish the OS watch before the
-    // write that must be caught.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Poll rather than sleep-then-assert: a fixed nap used as synchronization
+    // fails a conformant daemon on a loaded host.
     assert!(
-        runstate.is_dir(),
+        wait_until(|| runstate.is_dir()).await,
         "runs.watch creates the snapshot dir so a first run is never invisible"
     );
+    // The dir now exists; give the OS watch a beat to attach before the write.
+    tokio::time::sleep(Duration::from_millis(300)).await;
 
     std::fs::write(runstate.join(format!("{RUNID}.json")), document()).unwrap();
 
@@ -138,6 +156,38 @@ async fn runstate_write_pushes_runs_dirty() {
         recv_verb(&mut ws, "runs.dirty").await,
         Some(slug.clone()),
         "a snapshot write pushes runs.dirty despite `.ralphy/` being gitignored"
+    );
+}
+
+/// `runs.unwatch` really releases: after it, the same connection receives
+/// nothing more — even though `runs.watch` was sent TWICE, so the duplicate
+/// took no second hold that one release would fail to undo.
+#[tokio::test]
+async fn runs_unwatch_stops_the_pushes() {
+    let (url, slug, root) = serve_repo().await;
+    let runstate = root.join(".ralphy").join("runstate");
+
+    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    send_verb(&mut ws, "runs.watch", &slug, "").await;
+    send_verb(&mut ws, "runs.watch", &slug, "some/other/path").await;
+    assert!(wait_until(|| runstate.is_dir()).await, "the watch is up");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    std::fs::write(runstate.join(format!("{RUNID}.json")), document()).unwrap();
+    assert_eq!(
+        recv_verb(&mut ws, "runs.dirty").await,
+        Some(slug.clone()),
+        "the subscription is live before the release"
+    );
+
+    send_verb(&mut ws, "runs.unwatch", &slug, "").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    std::fs::write(runstate.join("01OTHERRUNIDOTHERRUNID.json"), document()).unwrap();
+    assert_eq!(
+        recv_verb_within(&mut ws, "runs.dirty", Duration::from_secs(3)).await,
+        None,
+        "a released subscription pushes nothing further"
     );
 }
 

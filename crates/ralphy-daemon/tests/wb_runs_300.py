@@ -327,7 +327,9 @@ def main():
             plan_texts = page.locator(".plan-md").all_inner_texts()
             check(
                 "no seed plan block reaches the daemon-served viewer",
-                not any("Walking skeleton" in t for t in plan_texts),
+                # the count guard is load-bearing: with zero rendered blocks the
+                # `not any(...)` would pass vacuously on an empty plan viewer.
+                len(plan_texts) > 0 and not any("Walking skeleton" in t for t in plan_texts),
                 f"blocks={len(plan_texts)}",
             )
             before = page.evaluate(STATE_JSON)

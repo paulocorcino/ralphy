@@ -1322,8 +1322,7 @@ async fn tree_ws(
                                 // `ralphy run` never ran has no snapshot dir — without
                                 // this, a first run started while the panel is open would
                                 // stay invisible until reopen (ADR-0036 §4 amendment).
-                                if let Err(e) =
-                                    std::fs::create_dir_all(root.join(".ralphy").join("runstate"))
+                                if let Err(e) = std::fs::create_dir_all(root.join(watch::RUNSTATE_REL))
                                 {
                                     tracing::warn!(error = %e, "runs watch: creating the runstate dir");
                                 }
