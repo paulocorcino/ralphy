@@ -9,6 +9,7 @@ use clap::Parser;
 use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
+mod blob;
 mod changes;
 mod cli;
 mod config;
@@ -60,6 +61,7 @@ fn main() -> Result<()> {
         Command::Branch(cmd) => mutate::branch(cmd),
         Command::Label(cmd) => mutate::label(cmd),
         Command::Changes(cmd) => changes::changes(cmd),
+        Command::Blob(cmd) => blob::blob(cmd),
     }
 }
 

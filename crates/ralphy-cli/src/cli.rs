@@ -10,8 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    changes, config, daemon, init, install, issues, models, mutate, schedule, telegram, triage,
-    usage,
+    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, telegram,
+    triage, usage,
 };
 
 #[derive(Parser)]
@@ -88,6 +88,9 @@ pub(crate) enum Command {
     /// Read-only working-tree change set of a repo.
     #[command(subcommand)]
     Changes(changes::ChangesCommand),
+    /// Read-only file content at a git revision (the diff's original side).
+    #[command(subcommand)]
+    Blob(blob::BlobCommand),
 }
 
 #[derive(Subcommand)]
@@ -755,6 +758,27 @@ mod tests {
         let Command::Changes(changes::ChangesCommand::List(a)) = cli.command else {
             panic!("expected `changes list`");
         };
+        assert_eq!(a.format.as_deref(), Some("json"));
+    }
+
+    #[test]
+    fn blob_read_subcommand_parses() {
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "a/b.rs",
+            "--format",
+            "json",
+        ])
+        .expect("blob read must parse");
+        let Command::Blob(blob::BlobCommand::Read(a)) = cli.command else {
+            panic!("expected `blob read`");
+        };
+        assert_eq!(a.path, "a/b.rs");
         assert_eq!(a.format.as_deref(), Some("json"));
     }
 
