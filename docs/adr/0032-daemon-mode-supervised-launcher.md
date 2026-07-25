@@ -113,6 +113,38 @@ terminal streams + control commands + presence heartbeat):
   bridge; session state stays in the daemon. The relay host sits in the trust
   path and is therefore critical infrastructure.
 
+**The cross-site gate names the daemon by its BIND, not by loopback.** Loopback
+is not a trust boundary against the operator's own browser: any page they visit
+can address the listener, and a WebSocket handshake is never CORS-preflighted
+(RFC 6455 §10.2 puts the origin check on the server). So every request is
+refused unless its `Origin` and `Host` name this daemon. The accepted set is
+**derived from the bind**: a loopback bind accepts the loopback spellings; a
+specific network bind accepts that address and *drops loopback*, which it does
+not answer on. Pinning the set to loopback would refuse the browser this section
+exists to serve — the Phase 1 remote-access path is precisely a network bind
+over an overlay VPN.
+
+Reaching the daemon by **name** is an explicit declaration: `--allowed-host`,
+repeatable, empty by default. That allowlist *is* the DNS-rebinding boundary — a
+literal address cannot be rebound to, but a name can, so an undeclared name is
+refused however it resolves. Same shape as the `server.allowedHosts` allowlist
+Vite added for CVE-2025-24010: fails closed, and the operator opts in per name.
+A declared host matches on the host alone (whatever fronts the daemon rewrites
+the scheme to https and drops the port to the scheme default, neither of which
+this listener can see); a derived spelling stays pinned to this listener's scheme
+and port. Declare the **exact** hostname: a wildcard suffix would admit every
+other tenant of a shared tunnel domain, on `Host` *and* on `Origin`.
+
+**The name is usually a tunnel's, not an interface's.** Reverse tunnels (dev
+tunnels, ngrok) are the common remote-access path, and they invert the shape §4
+assumed: the daemon stays on **loopback** and the tunnel agent dials out to it,
+so there is no network `--bind` and therefore no `for_bind` token requirement —
+`AuthPolicy::Localhost` resolves, which authorizes everything without a
+credential, while the endpoint is published on the public internet. **In tunnel
+mode the login gate (amendment §A) is not optional**; it is the only credential
+in the path. The tunnel provider's own access control (a private dev tunnel
+requiring a sign-in) is an outer layer, not a substitute.
+
 **Rejected: direct internet exposure** (inherits the whole attack surface for
 one user) and **building the relay first** (two systems in the dark; Phase 1
 matures the protocol with a real user before it becomes a contract).

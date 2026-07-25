@@ -42,6 +42,13 @@ function extOf(name) {
   return n.includes(".") ? n.split(".").pop() : "";
 }
 
+// The directory containing `rel`, as a repo-relative path; "" for a top-level
+// entry (which is the repo root, the same value the tree verbs take for it).
+function parentRel(rel) {
+  const i = rel.lastIndexOf("/");
+  return i < 0 ? "" : rel.slice(0, i);
+}
+
 // What kind of viewer a file gets: markdown gets the rendered pane, binaries
 // are refused, everything else opens as source code.
 function classify(name) {
@@ -1723,6 +1730,23 @@ function shell() {
       danger: false,
     },
     _confirmResolve: null,
+    // The design-system prompt dialog (replaces window.prompt), same shape as
+    // the confirm above. `askPrompt` opens it and resolves the typed string, or
+    // null when the operator backs out. Naming a new file is the one gesture the
+    // workbench cannot complete without a word from the operator, so it gets a
+    // real dialog rather than the browser's — which is unstyled, is suppressible
+    // per-origin by a single "prevent this page from creating more dialogues"
+    // tick, and never appears at all in a detached popup that has lost focus.
+    promptModal: {
+      open: false,
+      title: "",
+      message: "",
+      value: "",
+      placeholder: "",
+      confirmLabel: "Create",
+      error: "",
+    },
+    _promptResolve: null,
     tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-robot", closable: false }],
     active: "consoles",
 
@@ -1875,10 +1899,18 @@ function shell() {
       return state === "live" ? "live" : state === "offline" ? "offline" : "";
     },
 
-    // Wunderbaum marks folders via the source `folder:true` flag / a children
-    // array; there is no isFolder() method on the node.
+    // Is this node a directory? Wunderbaum has no isFolder() on the node, and
+    // reading `node.folder` does NOT work: the tree copies source keys it does
+    // not itself define into `node.data`, so our `folder:true` lands at
+    // `node.data.folder` and `node.folder` is forever `undefined`. Nor is
+    // `node.children` a fallback on its own — a lazy folder holds `null` there
+    // until it is expanded, and an empty one still holds `null` afterwards.
+    // Reading either alone made EVERY collapsed folder answer "file", which is
+    // why the tree offered no New file/New folder, watched no subdirectory, and
+    // tried to open a folder as bytes on double-click.
     isFolder(node) {
-      return !!(node.folder || node.children);
+      if (!node) return false;
+      return !!(node.data?.folder || node.lazy || Array.isArray(node.children));
     },
 
     // --- file-type icons (Devicon font; folders use Wunderbaum defaults) ---
@@ -1969,13 +2001,14 @@ function shell() {
         this._treeSub.watch("");
       }
 
-      // Right-click anywhere in the tree → our own context menu.
+      // Right-click anywhere in the tree → our own context menu. Empty space
+      // below the rows resolves to NO node, which is the repo root, not a
+      // no-op: it is the only gesture that can create a top-level entry.
       host.addEventListener("contextmenu", (ev) => {
         const node = mar10.Wunderbaum.getNode(ev);
-        if (!node) return;
         ev.preventDefault();
-        node.setActive();
-        this.showMenu(ev.clientX, ev.clientY, node);
+        node?.setActive();
+        this.showMenu(ev.clientX, ev.clientY, node || null);
       });
     },
 
@@ -2444,17 +2477,25 @@ function shell() {
     },
 
     // --- context menu -----------------------------------------------------
+    // `node` is null for a right-click on empty tree space, which addresses the
+    // repo root: the create items still apply (and are the only way to make a
+    // top-level entry), while the per-node items drop out.
     showMenu(x, y, node) {
       const menu = document.getElementById("ctxmenu");
       const isFolder = this.isFolder(node);
       const items = [
-        !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
-        { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
-        { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node) },
-        isFolder && { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emit("create", node, { kind: "file" }) },
-        isFolder && { label: "New folder…", icon: "bi-folder-plus", run: () => this.emit("create", node, { kind: "folder" }) },
-        { sep: true },
-        { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
+        node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
+        node && { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
+        node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node) },
+        node && { sep: true },
+        // Creating targets the node's own directory: the folder itself, or the
+        // folder CONTAINING the clicked file. Right-clicking a file to make its
+        // sibling is the gesture every file explorer has, and refusing it was
+        // half of why nothing could be created.
+        { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
+        { label: "New folder…", icon: "bi-folder-plus", run: () => this.emitCreate(node, "folder") },
+        node && { sep: true },
+        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
       ].filter(Boolean);
 
       menu.innerHTML = "";
@@ -2505,6 +2546,33 @@ function shell() {
       this.emit("copy-path", node, { path });
     },
 
+    // A `create` intent carries the DIRECTORY the new entry goes into, already
+    // resolved — a folder node addresses itself, a file node addresses its
+    // parent, and no node at all addresses the repo root (""). The listener only
+    // has to append the name it prompts for.
+    emitCreate(node, kind) {
+      WB.emit("create", { project: this.openSlug, path: this.createDir(node), kind, isFolder: true });
+    },
+
+    // The directory a create addressed at `node` lands in: the folder itself,
+    // the folder CONTAINING a file, or the repo root ("") for no node at all.
+    createDir(node) {
+      const rel = node ? this.relPath(node) : "";
+      return !node || this.isFolder(node) ? rel : parentRel(rel);
+    },
+
+    // The Files-header buttons create relative to the tree's active node, so
+    // clicking a folder and hitting "New file" does the obvious thing. Nothing
+    // selected is the repo root.
+    createHere(kind) {
+      this.emitCreate(this._tree?.getActiveNode() || null, kind);
+    },
+
+    // What the header buttons' tooltip names as the destination.
+    createTargetLabel() {
+      return this.createDir(this._tree?.getActiveNode() || null) || "the repo root";
+    },
+
     // Node-shaped gestures funnel through the shared WB.emit.
     emit(action, node, extra = {}) {
       WB.emit(action, {
@@ -2539,6 +2607,62 @@ function shell() {
       const resolve = this._confirmResolve;
       this._confirmResolve = null;
       if (resolve) resolve(ok);
+    },
+
+    // Open the prompt dialog and resolve the typed string, or `null` when the
+    // operator backs out. Mirrors askConfirm, including settling a pending
+    // dialog first so a second call never strands the prior promise.
+    askPrompt(opts = {}) {
+      if (this._promptResolve) this.promptRespond(null);
+      this.promptModal = {
+        open: true,
+        title: opts.title || "Name",
+        message: opts.message || "",
+        value: opts.value || "",
+        placeholder: opts.placeholder || "",
+        confirmLabel: opts.confirmLabel || "Create",
+        error: "",
+      };
+      // Focus after Alpine has painted the dialog, and put the caret at the end
+      // rather than selecting: a prefilled name is a starting point to extend.
+      queueMicrotask(() => {
+        const el = document.getElementById("prompt-input");
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+      return new Promise((resolve) => {
+        this._promptResolve = resolve;
+      });
+    },
+
+    // Submit the typed name. A name that cannot become a single directory entry
+    // is refused HERE, with the dialog left open so the operator can correct it
+    // in place. The daemon confines every path regardless (`confine_write`
+    // rejects the same shapes) — this check exists to say *which* character was
+    // wrong instead of surfacing a flat "refused" after the dialog is gone.
+    promptSubmit() {
+      const name = this.promptModal.value.trim();
+      const bad = !name
+        ? "a name is required"
+        : /[\\/]/.test(name)
+          ? "a name cannot contain a path separator"
+          : name === "." || name === ".."
+            ? "that name addresses a directory, not an entry"
+            : "";
+      if (bad) {
+        this.promptModal.error = bad;
+        return;
+      }
+      this.promptRespond(name);
+    },
+
+    // Close the dialog and settle its promise with `name` (null = cancelled).
+    promptRespond(name) {
+      this.promptModal.open = false;
+      const resolve = this._promptResolve;
+      this._promptResolve = null;
+      if (resolve) resolve(name);
     },
   };
 }
@@ -2636,12 +2760,28 @@ window.addEventListener("message", (e) => {
         call("file.write", { repo, path: d.path, content: d.content || "" });
         break;
       case "create": {
-        // The tree emits `create` on the parent folder with no name; prompt for
-        // it and compose the full rel path the daemon verb expects.
-        const name = window.prompt(d.kind === "folder" ? "New folder name" : "New file name");
+        // The tree emits `create` carrying the target DIRECTORY and no name
+        // (`emitCreate` already resolved a file node to its parent, and no node
+        // at all to the repo root ""). Ask for the name, compose the full rel
+        // path the daemon verb expects, and — for a file — open it once the
+        // write lands, so creating a file leaves the operator in it.
+        const folder = d.kind === "folder";
+        const where = d.path || "the repo root";
+        const c = getShell();
+        const name = c
+          ? await c.askPrompt({
+              title: folder ? "New folder" : "New file",
+              message: `In ${where}`,
+              placeholder: folder ? "components" : "notes.md",
+            })
+          : window.prompt(folder ? "New folder name" : "New file name");
         if (!name) return;
         const path = d.path ? `${d.path}/${name}` : name;
-        call("file.create", { repo, path, dir: d.kind === "folder" }, `created ${name}`);
+        const reply = await WBDaemon.write("file.create", { repo, path, dir: folder }).catch(() => null);
+        if (!reply) return flash("write failed");
+        if (window.WBFail.isError(reply)) return flash(window.WBFail.message(reply, "refused"));
+        flash(`created ${name}`);
+        if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
         break;
       }
       case "rename": {

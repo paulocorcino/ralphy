@@ -56,6 +56,11 @@ pub struct DaemonConfig {
     /// non-localhost bind is an explicit opt-in that REQUIRES a bearer access
     /// token, enforced at boot by [`auth::AuthPolicy::for_bind`] (ADR-0032 §4).
     pub bind: IpAddr,
+    /// Extra host names this daemon answers as, beyond the ones its bind implies:
+    /// a MagicDNS name, a reverse-proxy hostname. The cross-site gate refuses any
+    /// other `Host`, which is what keeps DNS rebinding out — so reaching the
+    /// daemon by NAME (rather than by the bound IP) is an explicit declaration.
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for DaemonConfig {
@@ -63,6 +68,7 @@ impl Default for DaemonConfig {
         Self {
             port: DEFAULT_PORT,
             bind: Ipv4Addr::LOCALHOST.into(),
+            allowed_hosts: Vec::new(),
         }
     }
 }
@@ -82,10 +88,13 @@ pub fn run(config: DaemonConfig) -> Result<()> {
         .enable_all()
         .build()
         .context("building the daemon's tokio runtime")?;
-    runtime.block_on(serve(bind_addr(config.bind, config.port)))
+    runtime.block_on(serve(
+        bind_addr(config.bind, config.port),
+        config.allowed_hosts,
+    ))
 }
 
-async fn serve(addr: SocketAddr) -> Result<()> {
+async fn serve(addr: SocketAddr, allowed_hosts: Vec<String>) -> Result<()> {
     // Captured at daemon start so every presence heartbeat reports process
     // uptime, not per-connection age.
     let start = Instant::now();
@@ -125,7 +134,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // network-bind-needs-a-token invariant, reads the on-disk seed / password /
     // require-login flag, and computes the initial policy. The policy is now
     // runtime-swappable — a security toggle rebuilds it in place, no restart.
-    let auth_state = auth::AuthState::boot(addr, token, session_epoch)?;
+    let auth_state = auth::AuthState::boot(addr, token, session_epoch, &allowed_hosts)?;
     // INVARIANT: strip the token from the process env on the boot path BEFORE any
     // child can be spawned, so every subsequent `dispatch`/`session` child
     // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
@@ -447,7 +456,7 @@ async fn require_auth(
         .headers()
         .get(header::HOST)
         .and_then(|v| v.to_str().ok());
-    if !state.same_origin(origin) || !state.host_is_local(host) {
+    if !state.same_origin(origin) || !state.host_allowed(host) {
         return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
     }
     // Read the CURRENT policy: a security toggle may have swapped it since boot
@@ -3957,6 +3966,106 @@ mod tests {
             assert!(
                 app_js.contains(symbol),
                 "app.js must keep {symbol} on the nudge path (#310)"
+            );
+        }
+    }
+
+    /// The tree's folder predicate must read Wunderbaum's `data` bag, never a
+    /// bare `node.folder`. Wunderbaum copies source keys it does not itself
+    /// define into `node.data`, so the `folder: true` the daemon-backed listing
+    /// sets lands at `node.data.folder` and `node.folder` is always `undefined`
+    /// — and `node.children` is `null` until a lazy folder expands. Reading
+    /// either alone made EVERY collapsed folder answer "file", which silently
+    /// took out five call sites at once: the context menu offered no create
+    /// items, no subdirectory was ever added to the `/ws/tree` watch set,
+    /// double-clicking a folder read it as bytes, `findFolderByRel` never
+    /// resolved so subdirectory `tree.dirty` nudges were all dropped, and the
+    /// reconcile lost descendant expansion. Only a browser sees that, and CI
+    /// runs no browser — so the shape is pinned here.
+    #[test]
+    fn the_tree_folder_predicate_reads_wunderbaums_data_bag() {
+        let js = include_str!("../assets/ui/app.js");
+        let body = js
+            .split_once("    isFolder(node) {")
+            .expect("app.js no longer defines isFolder(node)")
+            .1
+            .split_once("\n    },")
+            .expect("app.js's isFolder is never closed")
+            .0;
+        assert!(
+            body.contains("node.data?.folder"),
+            "isFolder must read node.data.folder (Wunderbaum's bag for unknown \
+             source keys); found: {body:?}"
+        );
+        assert!(
+            !body.contains("node.folder "),
+            "isFolder must not read a bare node.folder — it is always undefined; \
+             found: {body:?}"
+        );
+        assert!(
+            body.contains("node.lazy"),
+            "isFolder must accept a collapsed lazy folder, whose children are \
+             still null; found: {body:?}"
+        );
+    }
+
+    /// Creating must be reachable for every target the operator can point at:
+    /// a folder, a file (meaning its parent), and the repo root. The root has
+    /// no node — a right-click on empty tree space resolves to `null` — so the
+    /// context handler must NOT bail on a missing node, or a top-level file is
+    /// uncreatable. The Files header carries the same two actions, because
+    /// right-clicking empty space is an affordance nothing on screen advertises.
+    #[test]
+    fn the_explorer_can_create_at_every_target_including_the_repo_root() {
+        let js = include_str!("../assets/ui/app.js");
+        assert!(
+            js.contains("this.showMenu(ev.clientX, ev.clientY, node || null)"),
+            "the tree's contextmenu handler must open the menu for a NULL node \
+             (empty space = the repo root), not return early"
+        );
+        for symbol in [
+            "emitCreate(node, kind) {",
+            "createDir(node) {",
+            "createHere(kind) {",
+        ] {
+            assert!(
+                js.contains(symbol),
+                "app.js must keep {symbol} — the create-target resolution"
+            );
+        }
+        let html = include_str!("../assets/ui/index.html");
+        for symbol in ["createHere('file')", "createHere('folder')"] {
+            assert!(
+                html.contains(symbol),
+                "index.html's Files header must wire {symbol}"
+            );
+        }
+    }
+
+    /// Naming a new entry goes through the design-system prompt, not the
+    /// browser's: `window.prompt` is unstyled, is suppressible for the whole
+    /// origin by one "prevent this page from creating more dialogues" tick, and
+    /// never renders in a detached popup. It stays only as the fallback for a
+    /// shell that cannot be reached.
+    #[test]
+    fn naming_a_new_entry_uses_the_design_system_prompt() {
+        let js = include_str!("../assets/ui/app.js");
+        for symbol in [
+            "askPrompt(opts = {}) {",
+            "promptSubmit() {",
+            "promptRespond(name) {",
+        ] {
+            assert!(js.contains(symbol), "app.js must keep {symbol}");
+        }
+        assert!(
+            js.contains("await c.askPrompt({"),
+            "the create path must ask for the name through askPrompt"
+        );
+        let html = include_str!("../assets/ui/index.html");
+        for symbol in ["prompt-modal", "id=\"prompt-input\"", "promptSubmit()"] {
+            assert!(
+                html.contains(symbol),
+                "index.html must render the prompt dialog ({symbol})"
             );
         }
     }

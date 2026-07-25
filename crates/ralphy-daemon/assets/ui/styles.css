@@ -1160,6 +1160,33 @@ body.runs-open .runs {
   border-color: transparent;
   opacity: 0.45;
 }
+/* Files: the open project's tree header, carrying the create actions. Shorter
+   than a full `.side-head` — it sits INSIDE the accordion, between the project
+   row and the tree, so the 40px section height would read as a second sidebar
+   header rather than as part of the open project. */
+.files-sec {
+  min-height: 28px;
+  border-top: 1px solid var(--border);
+}
+/* An icon action in a section header (the Files create buttons). Same 24px
+   target and hover treatment as `.side-refresh`, for Bootstrap-icon glyphs
+   rather than lucide SVGs. */
+.head-act {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.head-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+
 /* Changes: pinned under the open project's tree, separated by the same hairline
    the sidebar uses between its own sections (#307). */
 .changes-sec {
@@ -2109,6 +2136,46 @@ body.runs-open .runs {
 /* no foot-note here, so right-align the Cancel / confirm buttons */
 .confirm-modal .modal-foot {
   justify-content: flex-end;
+}
+
+/* --- prompt dialog — the confirm's sibling, with one text field ----------- */
+.modal.prompt-modal {
+  width: min(440px, 92vw);
+}
+.prompt-where {
+  margin: 0;
+  padding: 0.95rem 0.95rem 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.prompt-input {
+  margin: 0.7rem 0.95rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.6rem;
+}
+.prompt-input::placeholder {
+  color: var(--text-muted);
+}
+.prompt-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+/* The refusal sits under the field and keeps the dialog open, so the name can
+   be corrected without retyping it from scratch. */
+.prompt-error {
+  margin: 0;
+  padding: 0.45rem 0.95rem 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+.prompt-modal .modal-foot {
+  justify-content: flex-end;
+  margin-top: 1.05rem;
 }
 
 /* --- about modal ---------------------------------------------------------- */

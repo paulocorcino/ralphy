@@ -145,6 +145,22 @@
                 <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
               </button>
             </div>
+            <!-- Files header: the DISCOVERABLE way to create. The tree's own
+                 context menu can do it too, but only if you already know to
+                 right-click — and right-clicking empty space (the repo root) is
+                 an invisible affordance. These two buttons target the selected
+                 folder, the selected file's folder, or the repo root when
+                 nothing is selected; the title says which, live. -->
+            <div class="side-head files-sec" x-show="openSlug === p.slug">
+              <span>Files</span>
+              <span class="spacer"></span>
+              <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">
+                <i class="bi bi-file-earmark-plus"></i>
+              </button>
+              <button class="head-act" @click.stop="createHere('folder')" :title="'New folder in ' + createTargetLabel()">
+                <i class="bi bi-folder-plus"></i>
+              </button>
+            </div>
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
@@ -1074,6 +1090,48 @@
             @click="confirmRespond(true)"
             x-text="confirmModal.confirmLabel"
           ></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Prompt dialog — the design-system replacement for the native
+         window.prompt when the workbench needs one word from the operator
+         (naming a new file or folder). Driven by `promptModal` + `askPrompt()`
+         (app.js). Enter submits through `promptSubmit()`, which validates and
+         keeps the dialog OPEN on a bad name so it can be fixed in place;
+         Escape/scrim/✕ cancel and resolve null.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="promptModal.open" x-cloak @click.self="promptRespond(null)">
+      <div
+        class="modal prompt-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="promptModal.title"
+        @keydown.escape.window="promptModal.open && promptRespond(null)"
+      >
+        <div class="modal-head">
+          <i class="bi bi-input-cursor-text"></i>
+          <span class="modal-title" x-text="promptModal.title"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="promptRespond(null)" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <p class="prompt-where" x-text="promptModal.message" x-show="promptModal.message"></p>
+        <input
+          id="prompt-input"
+          class="prompt-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          x-model="promptModal.value"
+          :placeholder="promptModal.placeholder"
+          @input="promptModal.error = ''"
+          @keydown.enter.prevent="promptSubmit()"
+        />
+        <p class="prompt-error" x-show="promptModal.error" x-text="promptModal.error"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="promptRespond(null)">Cancel</button>
+          <button class="btn accent" @click="promptSubmit()" x-text="promptModal.confirmLabel"></button>
         </div>
       </div>
     </div>

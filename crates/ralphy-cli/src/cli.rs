@@ -540,6 +540,38 @@ mod tests {
         assert_eq!(args.bind, "100.64.0.1".parse::<std::net::IpAddr>().unwrap());
     }
 
+    /// Reaching the daemon by NAME is an explicit declaration (docs/adr/0032 §4):
+    /// the cross-site gate refuses any `Host` it was not told about, which is what
+    /// keeps DNS rebinding out. Repeatable, and empty by default so a plain
+    /// loopback daemon declares nothing.
+    #[test]
+    fn daemon_allowed_hosts_are_declared_and_repeatable() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(
+            args.allowed_hosts.is_empty(),
+            "the default declares no extra host"
+        );
+
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "daemon",
+            "--bind",
+            "100.64.0.1",
+            "--allowed-host",
+            "desk.tailnet.ts.net",
+            "--allowed-host",
+            "desk",
+        ])
+        .expect("daemon --allowed-host must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.allowed_hosts, ["desk.tailnet.ts.net", "desk"]);
+    }
+
     #[test]
     fn schedule_install_run_parses() {
         let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "run", "--every", "30m"])
