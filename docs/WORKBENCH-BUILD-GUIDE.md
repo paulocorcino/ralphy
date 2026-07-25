@@ -244,6 +244,26 @@ one memoised `require(["vs/editor/editor.main"])`, the ADR-0035 `wb` theme, the
 (marked, DOMPurify, mermaid, Wunderbaum, xterm + addons) or they register as
 anonymous AMD modules and never set their globals.
 
+**The diff editor** (`WBMonaco.createDiff`, #311) has two traps worth knowing
+before writing anything that asserts against it:
+
+- A diff editor exposes **no `getOption`**, and `getModifiedEditor().getOption(
+  EditorOption.renderSideBySide)` / `getRawOptions().renderSideBySide` both yield
+  `null` in 0.56 — so an options-based "is it side by side" check silently reads
+  as "the flag was ignored". Assert **geometry** instead (`.editor.original` and
+  `.editor.modified` equal-width, modified starting where original ends) or the
+  `.original-in-monaco-diff-editor` / `.modified-in-monaco-diff-editor` pane
+  classes. `monaco.editor.getDiffEditors()` *does* exist and is the way to reach
+  the models.
+- The `hideUnchangedRegions` collapse ruler renders as `.diff-hidden-lines`, and
+  only **after the diff computation settles** — later than the first `.view-lines`
+  paint. A browser test gated on the panes appearing measures zero collapse
+  widgets on a diff that does collapse; gate on `.diff-hidden-lines` itself.
+
+Both models of a diff editor must be disposed **before** the editor on every
+path (`m.original.dispose(); m.modified.dispose(); ed.dispose()`): a leaked model
+keeps its URI registered, so reopening the same path throws on the duplicate.
+
 ---
 
 ## Element catalogue (foundation — created here, safe to evolve)
