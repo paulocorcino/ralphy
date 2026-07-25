@@ -428,3 +428,31 @@ test("foldSync stays pure (#316)", () => {
   load().foldSync(reply, NOW);
   assert.deepEqual(reply, before, "foldSync stays pure — no DOM, no fetch, no mutation");
 });
+
+// #317 — the Projects-view per-project indicator. One slug in, one badge out:
+// an aggregate over every registered repo is structurally impossible here.
+test("projectBadge hides itself for a slug nobody read (#317)", () => {
+  assert.deepEqual(load().projectBadge({}, {}, "a"), { show: false });
+});
+
+test("projectBadge shows an em dash, never a zero, for a failed read (#317)", () => {
+  const badge = load().projectBadge({ a: null }, { a: "could not read changes" }, "a");
+  assert.equal(badge.show, true);
+  assert.equal(badge.text, "—");
+  assert.equal(badge.zero, false);
+  assert.equal(badge.title, "could not read changes");
+});
+
+test("projectBadge marks a clean tree as a quiet zero (#317)", () => {
+  const badge = load().projectBadge({ a: 0 }, {}, "a");
+  assert.equal(badge.show, true);
+  assert.equal(badge.text, "0");
+  assert.equal(badge.zero, true);
+});
+
+test("projectBadge prints the count of a dirty tree (#317)", () => {
+  const badge = load().projectBadge({ a: 3 }, {}, "a");
+  assert.equal(badge.show, true);
+  assert.equal(badge.text, "3");
+  assert.equal(badge.zero, false);
+});

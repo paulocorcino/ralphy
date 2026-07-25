@@ -179,5 +179,18 @@
     return "fetched " + Math.floor(d / 86400000) + "d ago";
   }
 
-  window.WBChanges = { fold, foldSync, marker, shouldReload, diffTarget };
+  // The Projects-view change indicator for ONE slug (#317). Taking a single slug
+  // — not the map — is what makes a cross-repo aggregate structurally impossible.
+  // A slug nobody read renders nothing at all: an em dash there would claim a
+  // failed read for a project that was never asked about, and a `0` would claim a
+  // clean tree nobody looked at.
+  function projectBadge(counts, errors, slug) {
+    const count = counts && counts[slug];
+    const error = errors && errors[slug];
+    if (error) return { show: true, text: "—", zero: false, title: String(error) };
+    if (typeof count !== "number") return { show: false };
+    return { show: true, text: String(count), zero: count === 0, title: count + " changed" };
+  }
+
+  window.WBChanges = { fold, foldSync, marker, shouldReload, diffTarget, projectBadge };
 })(window);
