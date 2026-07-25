@@ -59,14 +59,24 @@
           dir,
         };
       });
+    // A grouped row is marked by ITS OWN side, not by the derived status: under
+    // a "Changes" headline an `AM` path is a modification, and printing the
+    // derived `A` there would assert something false about the worktree.
+    const sided = (e, status) => {
+      if (!status || status === e.status) return e;
+      const { mark, cls } = marker(status);
+      return { ...e, mark, cls };
+    };
     // Every entry lands in at least one group: an older or malformed payload
     // carrying neither side field still renders under Changes rather than
     // vanishing from a list whose badge still counts it.
     return {
       count: entries.length,
       entries,
-      staged: entries.filter((e) => e.indexStatus),
-      unstaged: entries.filter((e) => e.worktreeStatus || !e.indexStatus),
+      staged: entries.filter((e) => e.indexStatus).map((e) => sided(e, e.indexStatus)),
+      unstaged: entries
+        .filter((e) => e.worktreeStatus || !e.indexStatus)
+        .map((e) => sided(e, e.worktreeStatus)),
     };
   }
 

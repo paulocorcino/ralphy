@@ -198,7 +198,7 @@ def rows_in_open_project(page):
 
 def wait_row_count(page, expected, timeout=8000):
     # Gate on VISIBLE rows (offsetParent), not the raw querySelectorAll count:
-    # rows exist in the DOM as soon as changesEntries loads, well before the
+    # rows exist in the DOM as soon as the group maps load, well before the
     # x-show flip on `.changes-list` makes them visible — a plain count check
     # here would resolve before the flip, and the very next evaluate would
     # still read the pre-flip (invisible) state (handoffs.md #307).

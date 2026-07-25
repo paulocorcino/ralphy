@@ -235,24 +235,47 @@ def groups(page):
     )
 
 
+# Measured FRACTIONALLY, never from `scrollWidth`/`clientWidth`: those are
+# integer-rounded, so a name laid out at 61.734px holding 61.766px of text reads
+# 62 == 62 and "uncut" passes on a row Chrome actually paints as `readme.…`.
+# The natural width comes from an off-screen span carrying the same computed
+# font, so the oracle never hard-codes this host's metrics.
+NATURAL_WIDTH = (
+    "const natural = (el) => { const s = document.createElement('span');"
+    "  const cs = getComputedStyle(el);"
+    "  s.style.position = 'absolute'; s.style.left = '-9999px';"
+    "  s.style.whiteSpace = 'nowrap'; s.style.fontStyle = cs.fontStyle;"
+    "  s.style.fontVariant = cs.fontVariant; s.style.fontWeight = cs.fontWeight;"
+    "  s.style.fontSize = cs.fontSize; s.style.fontFamily = cs.fontFamily;"
+    "  s.style.letterSpacing = cs.letterSpacing; s.textContent = el.textContent;"
+    "  document.body.appendChild(s);"
+    "  const w = s.getBoundingClientRect().width; s.remove(); return w; };"
+)
+
+
 def deep_row(page):
     """Texts, geometry and computed style of the `docs/deep/nested/readme.md`
-    row, read in ONE evaluate."""
+    row, read in ONE evaluate. `*W` are laid-out widths, `*Nat` the unconstrained
+    natural width of the same text — a box narrower than its natural width is a
+    box whose text is ellipsised."""
     return page.evaluate(
         f"() => {{ const li = {OPEN_LI};"
         " const r = Array.from(li.querySelectorAll('.chg-row')).filter(e => e.offsetParent !== null)"
         "   .find(e => e.querySelector('.chg-name').textContent.trim() === 'readme.md');"
         " if (!r) return null;"
         " const n = r.querySelector('.chg-name'), d = r.querySelector('.chg-dir');"
+        " const list = li.querySelector('.changes-list');"
         " const cs = (e) => getComputedStyle(e);"
         " const px = (v) => parseFloat(v);"
+        f" {NATURAL_WIDTH}"
         " return { name: n.textContent.trim(), dir: d.textContent.trim(),"
         "          title: r.getAttribute('title'),"
         "          nameX: n.getBoundingClientRect().x, dirX: d.getBoundingClientRect().x,"
         "          nameColor: cs(n).color, dirColor: cs(d).color,"
         "          nameSize: px(cs(n).fontSize), dirSize: px(cs(d).fontSize),"
-        "          nameScroll: n.scrollWidth, nameClient: n.clientWidth,"
-        "          dirScroll: d.scrollWidth, dirClient: d.clientWidth }; }"
+        "          nameW: n.getBoundingClientRect().width, nameNat: natural(n),"
+        "          dirW: d.getBoundingClientRect().width, dirNat: natural(d),"
+        "          listScroll: list.scrollWidth, listClient: list.clientWidth }; }"
     )
 
 
@@ -351,23 +374,70 @@ def main():
                 )
                 info(
                     "at the default sidebar width nothing is cut",
-                    f"nameScroll={row['nameScroll']}/{row['nameClient']} dirScroll={row['dirScroll']}/{row['dirClient']}",
+                    f"nameW={row['nameW']:.3f}/{row['nameNat']:.3f} dirW={row['dirW']:.3f}/{row['dirNat']:.3f}",
                 )
 
             page.screenshot(path=os.path.join(SHOT_DIR, "315-changes-groups-2026-07-25.png"))
 
             # --- scenario 4: squeezed, the DIRECTORY is what truncates ---------
             set_side_width(page, SQUEEZED_SIDE_W)
+            # Poll for the clip rather than trusting the transition timeout: on a
+            # slower host or a different font stack a fixed wait can read the
+            # pre-squeeze layout and the negative control goes vacuous.
+            page.wait_for_function(
+                f"() => {{ const li = {OPEN_LI}; if (!li) return false;"
+                " const r = Array.from(li.querySelectorAll('.chg-row')).filter(e => e.offsetParent !== null)"
+                "   .find(e => e.querySelector('.chg-name').textContent.trim() === 'readme.md');"
+                " if (!r) return false; const d = r.querySelector('.chg-dir');"
+                f" {NATURAL_WIDTH}"
+                " return d.getBoundingClientRect().width < natural(d) - 2; }",
+                timeout=8000,
+            )
             squeezed = deep_row(page)
             check(
                 f"at a {SQUEEZED_SIDE_W} sidebar the file name is never the part cut",
-                squeezed is not None and squeezed["nameScroll"] <= squeezed["nameClient"] + 1,
-                f"got={squeezed}",
+                # Fractional, with NO tolerance upward: a name box even a
+                # fraction narrower than its text is a name Chrome ellipsises.
+                squeezed is not None and squeezed["nameW"] >= squeezed["nameNat"] - 0.02,
+                f"nameW={squeezed and round(squeezed['nameW'], 3)} nameNat={squeezed and round(squeezed['nameNat'], 3)}",
             )
             check(
                 "…and the directory is what clips (the row really was too narrow)",
-                squeezed is not None and squeezed["dirScroll"] > squeezed["dirClient"],
-                f"got={squeezed}",
+                squeezed is not None and squeezed["dirW"] < squeezed["dirNat"] - 2,
+                f"dirW={squeezed and round(squeezed['dirW'], 3)} dirNat={squeezed and round(squeezed['dirNat'], 3)}",
+            )
+            check(
+                "…and holding the name intact does not bleed the row past the sidebar",
+                # The control against "satisfy 'never cut' by overflowing": a
+                # bare `flex-shrink: 0` passes both checks above while pushing
+                # the list wider than its container.
+                squeezed is not None and squeezed["listScroll"] <= squeezed["listClient"],
+                f"listScroll={squeezed and squeezed['listScroll']} listClient={squeezed and squeezed['listClient']}",
+            )
+            # Freezing the name only stays safe because `.chg-row` clips: swap a
+            # 200-char name in and the list must still not scroll sideways. The
+            # fixture cannot carry such a path (Windows MAX_PATH), so it is
+            # injected into the rendered row and reverted.
+            bleed = page.evaluate(
+                f"() => {{ const li = {OPEN_LI};"
+                " const r = Array.from(li.querySelectorAll('.chg-row')).filter(e => e.offsetParent !== null)"
+                "   .find(e => e.querySelector('.chg-name').textContent.trim() === 'readme.md');"
+                " const n = r.querySelector('.chg-name'); const was = n.textContent;"
+                " n.textContent = 'x'.repeat(200) + '.md';"
+                " const list = li.querySelector('.changes-list');"
+                " const side = document.querySelector('.side');"
+                " const out = { listScroll: list.scrollWidth, listClient: list.clientWidth,"
+                "               sideScroll: side.scrollWidth, sideClient: side.clientWidth,"
+                "               nameW: n.getBoundingClientRect().width };"
+                " n.textContent = was; return out; }"
+            )
+            check(
+                "a 200-character file name is clipped, not bled out of the sidebar",
+                # `.chg-row` itself DOES overflow internally — that is the clip
+                # doing its job. What must not move is the list or the sidebar.
+                bleed["listScroll"] <= bleed["listClient"]
+                and bleed["sideScroll"] <= bleed["sideClient"],
+                f"got={bleed}",
             )
             set_side_width(page, "300px")
 
@@ -383,48 +453,87 @@ def main():
                 f"badge={badge_text(page)!r} rows={visible_rows}",
             )
 
+            # --- scenario 7a/7b: a failed read empties BOTH groups -------------
+            # Run on the POPULATED project, with 2 headlines and 5 rows already
+            # on screen: on the clean fixture the groups are `[]` before the read
+            # ever fails, so deleting the clear from `app.js` would stay green.
+            for label, stub in (
+                (
+                    "a rejected changes.list",
+                    "() => { window.__realObserve = window.WBDaemon.observe;"
+                    " window.WBDaemon.observe = (verb, payload) => verb === 'changes.list'"
+                    "   ? Promise.reject(new Error('transport down'))"
+                    "   : window.__realObserve(verb, payload); }",
+                ),
+                (
+                    "a non-ok changes.list reply",
+                    "() => { window.__realObserve = window.WBDaemon.observe;"
+                    " window.WBDaemon.observe = (verb, payload) => verb === 'changes.list'"
+                    "   ? Promise.resolve({ status: 'error', message: 'query read failed' })"
+                    "   : window.__realObserve(verb, payload); }",
+                ),
+            ):
+                # Reload the real rows first, so each leg starts from a populated
+                # list rather than inheriting the previous leg's emptied one.
+                page.evaluate(f"() => {SH}.loadChanges('{slug_a}')")
+                wait_badge(page, "4")
+                wait_row_count(page, 5)
+                page.evaluate(stub)
+                page.evaluate(f"() => {SH}.loadChanges('{slug_a}')")
+                wait_badge(page, "—")
+                # The badge and the group `x-show`s flip in separate Alpine
+                # effects, so reading heads right after the badge catches the
+                # pre-flip DOM (KNOWLEDGE.md #307/#309). Wait for the flip; if
+                # the groups were NOT cleared this times out, which is the
+                # failure this leg exists to catch.
+                try:
+                    wait_head_count(page, 0)
+                except Exception as exc:  # noqa: BLE001 - reported as a check
+                    print(f"[INFO] {label}: group headlines never cleared ({type(exc).__name__})", flush=True)
+                failed = page.evaluate(
+                    f"() => {{ const li = {OPEN_LI}; const el = li.querySelector('.changes-sec .count');"
+                    " return { text: el.textContent.trim(), title: el.getAttribute('title'),"
+                    "          heads: Array.from(li.querySelectorAll('.chg-group-head')).filter(h => h.offsetParent !== null).length,"
+                    "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
+                )
+                check(
+                    f"{label} reads as `—` and explains itself",
+                    failed["text"] == "—" and "could not read changes" in (failed["title"] or ""),
+                    f"got={failed}",
+                )
+                check(
+                    f"{label} leaves no group behind the `—`",
+                    failed["heads"] == 0 and failed["rows"] == 0,
+                    f"got={failed}",
+                )
+                page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
+
             # --- scenario 5: a clean tree renders NO headline ------------------
             open_project(page, slug_b, "0")
             page.click(".changes-sec:visible")
+            # Positive control FIRST: without it `heads == 0` holds whether or
+            # not the click ever expanded the section (the Alpine x-show race).
+            page.wait_for_function(
+                f"() => {{ const li = {OPEN_LI}; if (!li) return false;"
+                " const list = li.querySelector('.changes-list');"
+                " return !!list && list.offsetParent !== null; }",
+                timeout=8000,
+            )
             wait_head_count(page, 0)
             clean_state = page.evaluate(
                 f"() => {{ const li = {OPEN_LI};"
-                " return { heads: Array.from(li.querySelectorAll('.chg-group-head')).filter(h => h.offsetParent !== null).length,"
-                "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
-            )
-            check(
-                "a clean tree renders no group headline, not two empty ones",
-                clean_state["heads"] == 0 and clean_state["rows"] == 0,
-                f"got={clean_state}",
-            )
-            check("the clean badge still reads 0", badge_text(page) == "0")
-
-            # --- scenario 7: a failed read empties both groups -----------------
-            page.evaluate(
-                "() => { window.__realObserve = window.WBDaemon.observe;"
-                " window.WBDaemon.observe = (verb, payload) => verb === 'changes.list'"
-                "   ? Promise.reject(new Error('transport down'))"
-                "   : window.__realObserve(verb, payload); }"
-            )
-            page.evaluate(f"() => {SH}.loadChanges('{slug_b}')")
-            wait_badge(page, "—")
-            failed = page.evaluate(
-                f"() => {{ const li = {OPEN_LI}; const el = li.querySelector('.changes-sec .count');"
-                " return { text: el.textContent.trim(), title: el.getAttribute('title'),"
+                " return { listVisible: li.querySelector('.changes-list').offsetParent !== null,"
                 "          heads: Array.from(li.querySelectorAll('.chg-group-head')).filter(h => h.offsetParent !== null).length,"
                 "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
             )
             check(
-                "a failed read reads as `—` and explains itself",
-                failed["text"] == "—" and "could not read changes" in (failed["title"] or ""),
-                f"got={failed}",
+                "a clean tree renders no group headline, not two empty ones",
+                clean_state["listVisible"]
+                and clean_state["heads"] == 0
+                and clean_state["rows"] == 0,
+                f"got={clean_state}",
             )
-            check(
-                "a failed read leaves no group behind the `—`",
-                failed["heads"] == 0 and failed["rows"] == 0,
-                f"got={failed}",
-            )
-            page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
+            check("the clean badge still reads 0", badge_text(page) == "0")
 
             ctx.close()
             browser.close()

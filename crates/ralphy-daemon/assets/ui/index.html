@@ -190,8 +190,10 @@
             </div>
             <!-- Two groups, each header AND its list gated on that group's
                  length, so a clean tree renders neither headline (#315). The
-                 `:key` is prefixed per group: a staged-then-modified path is in
-                 BOTH, and a bare `c.path` would make Alpine collide the rows. -->
+                 `:key` is prefixed per group so the two rows a
+                 staged-then-modified path produces stay distinguishable in a
+                 log or a DOM dump; Alpine itself keys per `<template>`, so the
+                 prefix is legibility, not a correctness requirement. -->
             <div class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
               <div class="chg-group-head" x-show="(changesStaged[p.slug] || []).length">Staged Changes</div>
               <ul class="chg-group" x-show="(changesStaged[p.slug] || []).length">

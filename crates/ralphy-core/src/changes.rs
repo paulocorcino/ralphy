@@ -320,10 +320,12 @@ mod tests {
     }
 
     /// The regression guard for the index split (#315): the derived `status`
-    /// must read exactly as it did before the two side fields existed. `AM` and
-    /// `RM` are the negative control — reading the WORKTREE side instead of the
-    /// first non-`.` char turns both into `Modified`, and nothing else here
-    /// would notice.
+    /// must read exactly as it did before the two side fields existed. `AM` is
+    /// the live negative control — reading the WORKTREE side instead of the
+    /// first non-`.` char turns it into `Modified`, and nothing else here would
+    /// notice. `RM` is NOT a control for `ordinary_status` (the `2` arm returns
+    /// a literal `Renamed` and never calls it); it is asserted here because the
+    /// two readings must AGREE, which the `2` arm's own check below pins.
     #[test]
     fn the_derived_status_is_unchanged_by_the_index_split() {
         let dir = init_repo("derived-projection");
@@ -372,6 +374,15 @@ mod tests {
             find(&list, "new.txt").worktree_status,
             Some(ChangeStatus::Modified),
             "`RM`: the rename was edited again on disk"
+        );
+        // The `2` arm's literal `Renamed` and the first-non-`.` reading must
+        // AGREE — `index_status` IS that first side, so this is the comparison
+        // the literal would otherwise let drift unnoticed.
+        let renamed = find(&list, "new.txt");
+        assert_eq!(
+            renamed.index_status,
+            Some(renamed.status),
+            "the rename arm's literal status must equal its first non-`.` side"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

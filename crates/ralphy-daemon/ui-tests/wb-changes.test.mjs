@@ -156,6 +156,13 @@ test("a file staged and then modified again is in both groups (#315)", () => {
   );
   // The badge counts PATHS, not rows: `both.txt` renders twice and counts once.
   assert.equal(folded.count, 3);
+  // …and each of its two rows is marked by ITS OWN side: `A` staged, `M` under
+  // Changes. The derived status (`added`) must not leak into the unstaged row.
+  assert.equal(folded.staged[0].mark, "A");
+  assert.equal(folded.unstaged[0].mark, "M");
+  assert.equal(folded.unstaged[0].cls, "st-modified");
+  // The flat `entries` model keeps the derived status untouched.
+  assert.equal(folded.entries[0].mark, "A");
 });
 
 test("a row splits into base name and dimmed directory (#315)", () => {

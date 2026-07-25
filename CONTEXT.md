@@ -61,11 +61,14 @@ optional original path (a rename), and a status (modified, added, deleted,
 renamed, untracked, conflicted). Read by `ralphy_core::changes`, which is the
 SINGLE definition of what makes a tree dirty: `git::is_clean_ignoring_ralphy` is
 `changes(repo)?.is_empty()`, and run artifacts under the repo-root `.ralphy/`
-never count. Each entry also carries the index-side and the worktree-side status
-of git's `XY` field (either side absent when git reports `.`), so a path staged
-and then edited again is one entry visible on both sides. The single status stays
-the DERIVED projection — the first non-`.` side — and is what the clean-tree
-definition reads.
+never count. Each entry also carries an index-side and a worktree-side status —
+for a tracked change these are git's two `XY` characters (a side is absent where
+git reports `.`), so a path staged and then edited again is one entry visible on
+both sides. Two kinds are deliberately NOT read per character: an untracked path
+has no `XY` and counts as worktree-only, and an unmerged path is worktree-only
+whatever its `XY` reads, because an unresolved conflict is not what a commit
+would contain. The single status stays the DERIVED projection — the first non-`.`
+side — and is what the clean-tree definition reads.
 _Avoid_: diff, status, dirty list.
 
 **Adapter**:

@@ -3945,7 +3945,10 @@ mod tests {
             r#"class="chg-dir""#,
             r#"class="chg-group-head""#,
             ">Staged Changes<",
+            // BOTH keys: pinning only the staged one stays green if the two
+            // templates are keyed identically.
             "'s:' + c.path",
+            "'u:' + c.path",
         ] {
             assert!(
                 html.contains(pin),

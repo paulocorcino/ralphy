@@ -77,10 +77,9 @@ function shell() {
     // switching projects reads collapsed again rather than carrying the
     // previous project's expansion along.
     changesOpen: {},
-    // INVARIANT (#315): every path that clears `changesEntries` must clear
-    // `changesStaged` and `changesUnstaged` in the SAME statement — a stale group
-    // left behind renders rows under a headline while the badge already reads `—`.
-    changesEntries: {},
+    // The two rendered groups (#315). INVARIANT: every path that sets one must
+    // set the OTHER in the SAME statement — a stale group left behind renders
+    // rows under a headline while the badge already reads `—`.
     changesStaged: {},
     changesUnstaged: {},
     // True while a manual/initial repo refresh is in flight — spins the sidebar
@@ -428,7 +427,6 @@ function shell() {
             // Honest absence beats another repo's number.
             this.changesCount[slug] = null;
             this.changesError[slug] = "could not read changes";
-            this.changesEntries[slug] = [];
             this.changesStaged[slug] = [];
             this.changesUnstaged[slug] = [];
           }
@@ -436,7 +434,6 @@ function shell() {
         }
         const folded = window.WBChanges.fold(reply);
         this.changesCount[slug] = folded.count;
-        this.changesEntries[slug] = folded.entries;
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesError[slug] = "";
@@ -444,7 +441,6 @@ function shell() {
         if (seq === this._changesSeq && window.WBMode.isDaemon()) {
           this.changesCount[slug] = null;
           this.changesError[slug] = "could not read changes";
-          this.changesEntries[slug] = [];
           this.changesStaged[slug] = [];
           this.changesUnstaged[slug] = [];
         }
@@ -453,7 +449,7 @@ function shell() {
     },
 
     // Toggle the Changes list open/closed (#309). No reload — the rows
-    // already in `changesEntries` are the same snapshot the badge counts.
+    // already in the two group maps are the same snapshot the badge counts.
     toggleChanges(slug) {
       this.changesOpen[slug] = !this.changesOpen[slug];
     },

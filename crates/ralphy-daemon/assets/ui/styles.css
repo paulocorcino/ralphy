@@ -1219,6 +1219,9 @@ body.runs-open .runs {
   padding: 0.1rem 0.8rem;
   font-size: 0.78rem;
   min-width: 0;
+  /* bounds a frozen `.chg-name` (see below) — without it an absurd file name
+     widens the row and the whole list scrolls horizontally. */
+  overflow: hidden;
   cursor: pointer;
 }
 .chg-row:hover {
@@ -1234,27 +1237,39 @@ body.runs-open .runs {
   font-size: 0.68rem;
   color: var(--text-muted);
 }
-/* The name yields only after the directory has drained: shrink 1 against 999,
-   NOT `flex-shrink: 0`, which would honour "never cut" by bleeding the row past
-   the sidebar (that is what wb_changes_309.py scenario 6 measures). */
+/* The file name must be FROZEN, not merely out-weighted. Flexbox distributes
+   negative free space across every unfrozen item in proportion to its scaled
+   shrink factor, so even at 1-against-999 the name still absorbs
+   `overflow x Wname / (999 x Wdir + Wname)` — measured 0.03px here, above
+   Chrome's 1/64px LayoutUnit, which is enough to trip `text-overflow: ellipsis`
+   and paint `readme.…`. `flex-shrink: 0` is the only value that cannot.
+   `.chg-row { overflow: hidden }` is the other half: it bounds an absurd file
+   name inside the row instead of bleeding the sidebar, which is the regression
+   `flex-shrink: 0` alone would have caused. */
 .chg-name {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .chg-dir,
 .chg-from {
-  flex: 0 999 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
 }
+/* The directory drains first; the rename origin only after it, so `← old.txt`
+   is not squeezed to nothing while a directory still shows. */
 .chg-dir {
+  flex: 0 999 auto;
   font-size: 0.72rem;
+}
+.chg-from {
+  flex: 0 4 auto;
 }
 .chg-mark {
   width: 1em;

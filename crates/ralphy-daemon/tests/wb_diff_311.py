@@ -349,11 +349,17 @@ def main():
                     e.getAttribute('data-act') || "",
                   ].join(" ");
                   // #315's `Staged Changes` group HEADLINE matches /stage/ and is
-                  // not a control — skip the headline ELEMENT only, so a mutating
-                  // button nested inside one is still scanned.
+                  // not a control. Exempt it by exact TEXT, not by class: a
+                  // headline that grows a `data-act="stage-all"` or a title stops
+                  // matching this and is scanned again — which is exactly where
+                  // PRD #314's next slice would put a staging verb.
+                  const headline = (e) => e.classList.contains('chg-group-head')
+                    && /^(Staged Changes|Changes)$/.test((e.textContent || "").trim())
+                    && !e.getAttribute('title') && !e.getAttribute('aria-label')
+                    && !e.getAttribute('data-act');
                   const scan = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
-                    .filter(e => !e.classList.contains('chg-group-head'))
+                    .filter(e => !headline(e))
                     .filter(e => re.test(hay(e))).length;
                   return {
                     vbtns: Array.from(root.querySelectorAll('.vbtn')).map(b => b.textContent.trim()),
