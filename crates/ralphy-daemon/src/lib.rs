@@ -3748,7 +3748,9 @@ mod tests {
         }
         let typed: Vec<_> = paths
             .iter()
-            .filter(|p| p.starts_with("vendor/monaco/") && (p.ends_with(".d.ts") || p.ends_with(".map")))
+            .filter(|p| {
+                p.starts_with("vendor/monaco/") && (p.ends_with(".d.ts") || p.ends_with(".map"))
+            })
             .collect();
         assert!(
             typed.is_empty(),
