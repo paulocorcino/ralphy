@@ -682,6 +682,8 @@ window.WBConsole = (function () {
       },
     });
     win._term = t;
+    // The id this window is attaching to, known before the terminal reports one.
+    if (termOpts.id != null) win._wantsSession = termOpts.id;
 
     closeBtn.onclick = () => {
       const id = t.sessionId;
@@ -778,7 +780,12 @@ window.WBConsole = (function () {
   // second session (issue #304).
   function reach({ id, agent, repo }) {
     for (const win of wins) {
-      if (win._term?.sessionId === id) {
+      // `_term.sessionId` lands only on the first terminal frame, and the daemon
+      // skips the replay frame for a session that has printed nothing — so a
+      // brand-new console's window still reads `null` here. `_wantsSession` is
+      // recorded at spawn time, without which `reach` would miss its own window
+      // and ask the operator to take over the console they are looking at.
+      if (win._term?.sessionId === id || win._wantsSession === id) {
         focusWin(win);
         return win;
       }

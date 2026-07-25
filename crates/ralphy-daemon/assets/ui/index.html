@@ -205,8 +205,10 @@
                   <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
                   <span x-text="it.label"></span>
                   <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
-                  <span class="row-new" x-show="it.live > 0" role="button" tabindex="0"
+                  <span class="row-new" x-show="it.action === 'attach'" role="button" tabindex="0"
                         @click.stop="openConsoleItem(it, { fresh: true })"
+                        @keydown.enter.stop.prevent="openConsoleItem(it, { fresh: true })"
+                        @keydown.space.stop.prevent="openConsoleItem(it, { fresh: true })"
                         title="launch a new console anyway">+</span>
                   <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
                 </button>

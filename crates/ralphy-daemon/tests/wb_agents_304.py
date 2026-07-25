@@ -14,6 +14,11 @@ Scenario 4   a live claude console makes its row read "1 live"; clicking the row
              REACHES it — no new session, and the only socket opened carries `id=`
 Scenario 5   the row's "+" launches a second session — 2 sessions, row reads "2 live"
 Scenario 6   `Alt+Shift+Digit2` still opens a `/ws/session?…agent=codex` console
+Scenario 7   `Alt+Shift+Digit1` on a LIVE row REACHES it — no duplicate session
+Scenario 8   a disabled row's accelerator is inert (no repo selected)
+Scenario 9   a 500 from `/api/agents` in DAEMON mode leaves the roster empty —
+             the demo seed is never shown to a daemon that cannot answer
+Scenario 10  the plain console row never advertises `attach`
 
 Boots a Localhost daemon on 7399 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -399,6 +404,82 @@ def main():
                 f"got={sessions_of(page)}",
             )
 
+            # --- scenario 7: the accelerator takes its ROW's action ------------
+            # The keyboard is the path that could reintroduce the duplicate the
+            # menu refuses, so assert it on a row that is already live.
+            mark = len([u for u in sockets if "/ws/session" in u])
+            windows_before = page.locator(".session-window").count()
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(400)
+            page.keyboard.press("Alt+Shift+Digit1")
+            page.wait_for_timeout(1500)
+            check(
+                "Alt+Shift+1 on a LIVE claude row reaches it — no fourth session",
+                len(sessions_of(page)) == 3,
+                f"got={sessions_of(page)}",
+            )
+            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            check(
+                "…opening no launch socket, and no new window",
+                not any("agent=" in u for u in opened)
+                and page.locator(".session-window").count() == windows_before,
+                f"new sockets={opened}",
+            )
+
+            # --- scenario 8: a DISABLED row's accelerator is inert -------------
+            page.evaluate(f"() => {{ {SH}.openSlug = null; }}")
+            page.wait_for_timeout(300)
+            mark = len([u for u in sockets if "/ws/session" in u])
+            windows_before = page.locator(".session-window").count()
+            page.keyboard.press("Alt+Shift+Digit3")
+            page.wait_for_timeout(1200)
+            check(
+                "with no repo selected an agent accelerator launches nothing",
+                len(sessions_of(page)) == 3
+                and [u for u in sockets if "/ws/session" in u][mark:] == []
+                and page.locator(".session-window").count() == windows_before,
+                f"sessions={len(sessions_of(page))}",
+            )
+            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; }}")
+            page.wait_for_timeout(200)
+
+            # --- scenario 9: a FAILED /api/agents in DAEMON mode shows nothing -
+            # The demo seed is for `file://` only; a daemon that cannot answer
+            # must not have adapters invented for it.
+            page.route("**/api/agents", lambda route: route.fulfill(status=500, body="nope"))
+            page.evaluate(f"async () => {SH}.loadAgents()")
+            page.wait_for_timeout(400)
+            check(
+                "a 500 from /api/agents leaves the roster EMPTY in daemon mode",
+                page.evaluate(f"() => [{SH}.roster.length, {SH}.agents.length]") == [0, 0],
+                f"got={page.evaluate(f'() => {SH}.roster')}",
+            )
+            open_menu(page)
+            check(
+                "…so the menu offers the plain console alone, never the demo seed",
+                page.locator(f"{MENU} .dropdown-item").count() == 1
+                and page.locator(f"{MENU} .dropdown-item span").first.inner_text() == "console",
+                f"rows={page.locator(f'{MENU} .dropdown-item').all_inner_texts()}",
+            )
+            close_menu(page)
+            page.unroute("**/api/agents")
+            page.evaluate(f"async () => {SH}.loadAgents()")
+            page.wait_for_timeout(400)
+
+            # --- scenario 10: the plain console row never claims to reach ------
+            # It counts its live shells but always launches; a row that said
+            # "attach" while the click launched would lie about its own click.
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(300)
+            plain = page.evaluate(
+                f"() => {SH}.consoleItems().find((r) => r.plain)"
+            )
+            check(
+                "the plain console row always launches, and offers no session to reach",
+                plain["action"] == "launch" and plain["sessionId"] is None,
+                f"got={plain}",
+            )
+
             # --- teardown: leave no helper child behind -----------------------
             for s in sessions_of(page):
                 page.request.post(BASE + f"api/sessions/close?id={s['id']}")
@@ -412,7 +493,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 25
+    ok = all(results) and len(results) >= 31
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("AGENT ROSTER")

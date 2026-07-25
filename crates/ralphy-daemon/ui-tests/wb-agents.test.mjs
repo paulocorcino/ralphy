@@ -86,10 +86,25 @@ test("live counts are scoped to the open repo and the row's agent; attach target
   assert.equal(codex.action, "launch");
   assert.equal(codex.sessionId, null);
 
-  // The plain console counts its own sessions, not the agents'.
+  // The plain console counts its own sessions, not the agents' — but it never
+  // offers to reach one, because `openConsoleItem` always launches a free shell.
   const plain = rows.find((r) => r.plain);
   assert.equal(plain.live, 1);
-  assert.equal(plain.sessionId, 11);
+  assert.equal(plain.action, "launch");
+  assert.equal(plain.sessionId, null);
+});
+
+test("the plain console row never advertises an action it does not take", () => {
+  // Its `openSlug || "~"` scope is the daemon's own label for a repo-less shell.
+  const rows = load().menuRows({
+    roster: ROSTER,
+    sessions: [{ id: 5, agent: "console", repo: "~" }],
+    openSlug: "",
+  });
+  const plain = rows.find((r) => r.plain);
+  assert.equal(plain.live, 1, "a home-dir console counts against the plain row");
+  assert.equal(plain.action, "launch");
+  assert.equal(plain.sessionId, null);
 });
 
 test("a vendor the frontend has never heard of renders from the roster alone", () => {

@@ -41,8 +41,13 @@
       disabled,
       title: disabled ? NEEDS_REPO : "",
       live: mine.length,
-      action: mine.length ? "attach" : "launch",
-      sessionId,
+      // The plain console ALWAYS launches: a free shell is idempotent and the
+      // operator opens one per task, so reaching an existing one would be
+      // surprising. It must therefore never report `attach` — the row's action
+      // is what the menu renders its "reach" affordances from, and a row that
+      // said "attach" while the click launched would lie about its own click.
+      action: !plain && mine.length ? "attach" : "launch",
+      sessionId: plain ? null : sessionId,
     };
   }
 

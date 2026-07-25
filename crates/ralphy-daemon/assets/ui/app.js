@@ -1674,6 +1674,9 @@ function shell() {
       this.reposError = "";
       this.loadRepos();
       this.loadIdentity();
+      // `/api/agents` is gated too, so the pre-login load left the roster empty:
+      // without this the console menu offers only the plain console after login.
+      this.loadAgents();
     },
 
     async submitLogin() {

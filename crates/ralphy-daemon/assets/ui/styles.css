@@ -1450,6 +1450,11 @@ body.runs-open .runs {
 .dropdown-item .row-new:hover {
   color: var(--text);
 }
+/* it is a focus stop (Enter/Space activate it), so it must show that it has focus */
+.dropdown-item .row-new:focus-visible {
+  outline: 1px solid var(--console-text);
+  color: var(--text);
+}
 /* keyboard-accelerator hint, right-aligned in the row */
 .dropdown-item .kbd {
   margin-left: auto;

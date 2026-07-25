@@ -1129,11 +1129,19 @@ mod tests {
         );
 
         // The `agents` binding survives (the run dialog's pickers bind it) but it
-        // is now filled from the roster, so its literal must be EMPTY.
+        // is now filled from the roster, so its literal must be EMPTY. Anchored on
+        // the leading space so `planAgents: [` cannot satisfy it, and required to
+        // be UNIQUE — a second, populated `agents: [ … ]` further down would
+        // otherwise leave this first (empty) one answering for it.
+        assert_eq!(
+            js.matches(" agents: [").count(),
+            1,
+            "app.js must declare exactly one `agents: [` literal"
+        );
         let start = js
-            .find("agents: [")
+            .find(" agents: [")
             .expect("app.js no longer declares `agents: [`");
-        let rest = &js[start + "agents: [".len()..];
+        let rest = &js[start + " agents: [".len()..];
         let end = rest
             .find(']')
             .expect("app.js's `agents: [` is never closed");
@@ -1151,17 +1159,22 @@ mod tests {
 
         // No launchable vendor is named in `app.js` — except `claude`, which
         // survives ONLY as the run dialog's default value (a default naming one
-        // vendor is not an enumeration; it is the CLI's own default).
+        // vendor is not an enumeration; it is the CLI's own default). Checked
+        // QUOTE-AGNOSTICALLY: `app.js` is full of template literals and single
+        // quotes, so pinning only `"codex"` would wave `'codex'` and `` `codex` ``
+        // straight through — the reintroduced list would look exactly like that.
         for a in Agent::ALL {
             let flag = agent_flag(a);
             if flag == "claude" {
                 continue;
             }
-            let quoted = format!("\"{flag}\"");
-            assert!(
-                !js.contains(&quoted),
-                "app.js names {flag} — the frontend must hold no vendor list"
-            );
+            for quote in ['"', '\'', '`'] {
+                let quoted = format!("{quote}{flag}{quote}");
+                assert!(
+                    !js.contains(&quoted),
+                    "app.js names {flag} ({quoted}) — the frontend must hold no vendor list"
+                );
+            }
         }
         let defaults =
             js.matches(r#"agent: "claude""#).count() + js.matches(r#"planAgent: "claude""#).count();

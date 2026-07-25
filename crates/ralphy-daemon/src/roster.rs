@@ -44,7 +44,10 @@ pub fn roster() -> Vec<AgentRow> {
             accelerator: accelerator(a),
         })
         .collect();
-    rows.sort_by_key(|r| r.accelerator);
+    // Numeric, not lexicographic: a future two-digit accelerator would otherwise
+    // sort "10" between "1" and "2". `Agent::ALL` is alphabetical, so the sort
+    // is doing real work — it is not a no-op guarding a list already in order.
+    rows.sort_by_key(|r| r.accelerator.parse::<u32>().unwrap_or(u32::MAX));
     rows
 }
 

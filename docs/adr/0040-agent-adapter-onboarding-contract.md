@@ -253,9 +253,13 @@ per-vendor edits) ·
 **`daemon/src/session.rs::Agent`** — the third agent enum, plus its two matches
 (`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and
 `daemon/src/roster.rs::accelerator` — an exhaustive match, so a new variant does not compile until it is given a keyboard digit (`8`/`9` are free; `0` is the plain console's).
-The workbench itself is NOT an edit site: since #304 it enumerates no vendors,
-rendering the console menu from `GET /api/agents` — the roster the daemon serves
-from its own `Agent::ALL`.
+Since #304 the workbench's LIVE menu is no longer an edit site: it renders from
+`GET /api/agents`, the roster the daemon serves from its own `Agent::ALL`. One
+frontend site remains, and only one:
+`daemon/assets/ui/wb-agents.js::DEMO_ROSTER` — the seed the `file://` walkthrough falls back to when no daemon answers.
+It is deliberately unpinned (a test would re-impose the frontend edit this
+removed), so a vendor missing from it costs nothing but its absence from the
+static demo.
 
 A vendor whose CLI is **not on `PATH`** (Cursor: two names, three install roots,
 on `PATH` under neither) needs one more thing here: a **core-free locator the
