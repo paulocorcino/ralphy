@@ -197,18 +197,65 @@ window.WBConsole = (function () {
     });
   }
 
-  function makeResizable(win, handle) {
-    handle.addEventListener("mousedown", (e) => {
+  // ---- resize geometry ---------------------------------------------------------
+  // The eight directions differ only in which rectangle components move, so the
+  // whole resize is one pure function: `dir` (`n`/`s`/`e`/`w` and the four
+  // corners), the workspace-relative start `rect`, the pointer `delta`, the
+  // minimum size and the workspace `bounds` yield a new rect. East/south move the
+  // far edge; west/north move `left`/`top` and derive the size, so the OPPOSITE
+  // edge stays put and the window does not slide under the cursor.
+  const RESIZE_MIN = { width: 240, height: 150 }; // matches .session-window's CSS minimums
+  const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+
+  function resizeRect(dir, rect, delta, min, bounds) {
+    let { left, top, width, height } = rect;
+    const right = rect.left + rect.width;
+    const bottom = rect.top + rect.height;
+    if (dir.includes("e")) {
+      width = Math.max(min.width, Math.min(rect.width + delta.dx, bounds.width - left));
+    } else if (dir.includes("w")) {
+      // Anchor the right edge: clamp the new left, then derive the width from it.
+      left = Math.max(0, Math.min(rect.left + delta.dx, right - min.width));
+      width = right - left;
+    }
+    if (dir.includes("s")) {
+      height = Math.max(min.height, Math.min(rect.height + delta.dy, bounds.height - top));
+    } else if (dir.includes("n")) {
+      top = Math.max(0, Math.min(rect.top + delta.dy, bottom - min.height));
+      height = bottom - top;
+    }
+    return { left, top, width, height };
+  }
+
+  // Wire one handle: drag it and the window's rect follows `resizeRect`. Every
+  // exit path (mouseup anywhere on the document) drops BOTH listeners and
+  // persists exactly once.
+  function startResize(win, dir) {
+    return (e) => {
       focusWin(win);
       if (win.classList.contains("maximized")) return;
-      const rect = win.getBoundingClientRect();
+      const ws = workspace();
+      const rect = {
+        left: win.offsetLeft,
+        top: win.offsetTop,
+        width: win.offsetWidth,
+        height: win.offsetHeight,
+      };
+      const bounds = { width: ws.clientWidth, height: ws.clientHeight };
       const startX = e.clientX;
       const startY = e.clientY;
-      const startW = rect.width;
-      const startH = rect.height;
       const onMove = (ev) => {
-        win.style.width = Math.max(240, startW + ev.clientX - startX) + "px";
-        win.style.height = Math.max(150, startH + ev.clientY - startY) + "px";
+        const out = resizeRect(
+          dir,
+          rect,
+          { dx: ev.clientX - startX, dy: ev.clientY - startY },
+          RESIZE_MIN,
+          bounds,
+        );
+        win.style.left = out.left + "px";
+        win.style.top = out.top + "px";
+        win.style.width = out.width + "px";
+        win.style.height = out.height + "px";
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
@@ -218,7 +265,8 @@ window.WBConsole = (function () {
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
       e.preventDefault();
-    });
+      e.stopPropagation();
+    };
   }
 
   // The workbench session codec, mirrored from src/protocol.rs. A terminal frame
@@ -490,11 +538,18 @@ window.WBConsole = (function () {
     const grip = document.createElement("div");
     grip.className = "session-resize";
     win.append(titlebar, body, grip);
+    // Eight interaction handles (the corner grip above is decoration only, so
+    // there is exactly ONE resize code path).
+    for (const dir of DIRS) {
+      const h = document.createElement("div");
+      h.className = `session-handle h-${dir}`;
+      h.addEventListener("mousedown", startResize(win, dir));
+      win.append(h);
+    }
     workspace().append(win);
 
     win.addEventListener("mousedown", () => focusWin(win));
     makeDraggable(win, titlebar);
-    makeResizable(win, grip);
     // Maximize/restore: the button, or a double-click on the titlebar.
     maxBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -620,5 +675,5 @@ window.WBConsole = (function () {
     return wins.size;
   }
 
-  return { open, arrange, count, refitAll };
+  return { open, arrange, count, refitAll, resizeRect };
 })();
