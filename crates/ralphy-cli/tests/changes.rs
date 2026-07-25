@@ -74,3 +74,28 @@ fn changes_list_without_format_prints_one_entry_per_line() {
         "plain output: {stdout:?}"
     );
 }
+
+#[test]
+fn a_rename_prints_both_of_its_paths() {
+    let repo = init_repo();
+    // Undo the seeded edit so the rename is the only change on the line.
+    std::fs::write(repo.path().join("README.md"), "hello\n").unwrap();
+    std::fs::write(repo.path().join("old.txt"), "old\n").unwrap();
+    run_git(repo.path(), &["add", "."]);
+    run_git(repo.path(), &["commit", "--quiet", "-m", "seed rename"]);
+    run_git(repo.path(), &["mv", "old.txt", "new.txt"]);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args(["changes", "list", "--repo", &repo.path().to_string_lossy()])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "changes list must succeed");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["renamed old.txt -> new.txt"],
+        "a rename names where it came from: {stdout:?}"
+    );
+}

@@ -157,11 +157,13 @@
             <div class="side-head changes-sec" x-show="openSlug === p.slug">
               <span>Changes</span>
               <span class="spacer"></span>
+              <!-- A failed read renders `—`, never `0`: a quiet zero would let a
+                   broken daemon read exactly like a clean tree. -->
               <span
                 class="count"
-                :class="{ zero: (changesCount[p.slug] || 0) === 0 }"
-                x-text="changesCount[p.slug] ?? 0"
-                title="working-tree changes"
+                :class="{ zero: changesCount[p.slug] === 0 }"
+                x-text="changesCount[p.slug] ?? '—'"
+                :title="changesError[p.slug] || 'working-tree changes'"
               ></span>
             </div>
           </li>

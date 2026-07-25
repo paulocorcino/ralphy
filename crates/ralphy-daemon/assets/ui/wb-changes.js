@@ -5,13 +5,14 @@
 (function (window) {
   "use strict";
 
-  const EMPTY = { count: 0, entries: [] };
-
   // `entries` rides along unused by this slice's count-only render: the fold is
   // one JSON-to-list-model step, and splitting it would mean rewriting it when
   // the list lands.
   function fold(reply) {
-    const rows = reply && reply.changes && reply.changes.changes;
+    // A non-ok reply can still carry a `changes` body (an error frame the daemon
+    // built over a partial read); folding it would report a count nobody proved.
+    if (!reply || reply.status !== "ok") return { count: 0, entries: [] };
+    const rows = reply.changes && reply.changes.changes;
     if (!Array.isArray(rows)) return { count: 0, entries: [] };
     const entries = rows
       .filter((r) => r && typeof r.path === "string")
@@ -23,5 +24,5 @@
     return { count: entries.length, entries };
   }
 
-  window.WBChanges = { fold, EMPTY };
+  window.WBChanges = { fold };
 })(window);

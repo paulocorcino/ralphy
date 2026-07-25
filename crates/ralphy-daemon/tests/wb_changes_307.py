@@ -255,6 +255,34 @@ def main():
                 ".find(e => e.offsetParent !== null); return el.querySelector('.count').classList.contains('zero'); }"
             )
             check("the zero badge carries the quiet `zero` class", quiet)
+            # A FAILED read must not be indistinguishable from this clean tree:
+            # stub the transport so `changes.list` rejects, reload the count, and
+            # assert the badge stops claiming a number.
+            page.evaluate(
+                "() => { window.__realObserve = window.WBDaemon.observe;"
+                " window.WBDaemon.observe = (verb, payload) => verb === 'changes.list'"
+                "   ? Promise.reject(new Error('transport down'))"
+                "   : window.__realObserve(verb, payload); }"
+            )
+            page.evaluate(f"() => {SH}.loadChanges('{slug_c}')")
+            wait_badge(page, "—")
+            failed = page.evaluate(
+                f"() => {{ const el = {VISIBLE_SECS}[0].querySelector('.count');"
+                " return { text: el.textContent.trim(), zero: el.classList.contains('zero'),"
+                "          title: el.getAttribute('title') }; }"
+            )
+            check(
+                "a failed read reads as `—`, never as a clean tree's 0",
+                failed["text"] == "—" and not failed["zero"],
+                f"got={failed}",
+            )
+            check(
+                "the failed read explains itself in the badge title",
+                "could not read changes" in (failed["title"] or ""),
+                f"title={failed['title']!r}",
+            )
+            page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
+
             page.evaluate(f"() => {SH}.toggle('{slug_c}')")
             page.wait_for_function(f"() => {VISIBLE_SECS}.length === 0", timeout=8000)
             check("closing the clean project hides its section", badge_text(page) is None)
@@ -278,7 +306,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 13
+    ok = all(results) and len(results) >= 15
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES COUNT LIVE")

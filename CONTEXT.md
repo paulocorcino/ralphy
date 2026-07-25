@@ -51,6 +51,16 @@ criteria are left unticked and flagged for the human merging the branch.
 Where commits land. `BranchMode new` cuts a fresh `afk/run-<stamp>` off the base;
 `BranchMode current` commits onto the branch the repo is already on.
 
+**Change set**:
+A repo's working-tree changes as one ordered list — each entry a path, an
+optional original path (a rename), and a status (modified, added, deleted,
+renamed, untracked, conflicted). Read by `ralphy_core::changes`, which is the
+SINGLE definition of what makes a tree dirty: `git::is_clean_ignoring_ralphy` is
+`changes(repo)?.is_empty()`, and run artifacts under the repo-root `.ralphy/`
+never count. It answers "what differs from HEAD" — the index/worktree split is
+not modelled.
+_Avoid_: diff, status, dirty list.
+
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
 Code, Codex, Kimi, and OpenCode), behind the core's agent contract. Each

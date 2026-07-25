@@ -5,11 +5,12 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 /// What happened to a path, as the change set reports it. Answers "what differs
-/// from HEAD" — the index/worktree split is not modelled.
+/// from HEAD" — the index/worktree split is not modelled, so a path staged as
+/// added and then deleted from disk still reports `Added`: the index side wins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChangeStatus {
@@ -31,8 +32,14 @@ pub struct Change {
 
 /// The repo's working-tree change set, in git's own emission order. Entries
 /// under the gitignored run directory (`.ralphy/`) are never reported.
+///
+/// `repo` must be the git TOPLEVEL: git reports the whole repo's change set from
+/// any directory inside it, while the run-artifact filter anchors at the root, so
+/// a subdirectory path would yield root-relative entries under a mismatched
+/// filter. Callers resolve with [`crate::git::resolve_toplevel`].
 pub fn changes(repo: &Path) -> Result<Vec<Change>> {
-    let out = crate::git::git(repo, &["status", "--porcelain=v2", "-z"])?;
+    let out = crate::git::git(repo, &["status", "--porcelain=v2", "-z"])
+        .with_context(|| format!("reading the change set of {}", repo.display()))?;
     let records: Vec<&str> = out.split('\0').filter(|t| !t.is_empty()).collect();
 
     let mut list = Vec::new();
@@ -225,6 +232,74 @@ mod tests {
         let list = changes(&dir).unwrap();
         assert_eq!(list.len(), 1, "only the tracked edit: {list:?}");
         assert_eq!(list[0].path, "README.md");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_run_artifact_filter_is_anchored_at_the_repo_root() {
+        // The behaviour this reader deliberately changed: the old rule matched
+        // `.ralphy/` ANYWHERE in the porcelain line, so a nested run directory
+        // escaped too — and `runner::branch` refuses a run on a non-clean tree,
+        // so that miss silently let a dirty repo through.
+        let dir = init_repo("nested-ralphy");
+        std::fs::write(dir.join("README.md"), "hello\n").unwrap();
+        git(&dir, &["add", "."]).unwrap();
+        git(&dir, &["commit", "-q", "-m", "init"]).unwrap();
+
+        std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
+        std::fs::write(dir.join(".ralphy").join("plan.md"), "scratch\n").unwrap();
+        std::fs::create_dir_all(dir.join("sub").join(".ralphy")).unwrap();
+        std::fs::write(dir.join("sub").join(".ralphy").join("real.md"), "real\n").unwrap();
+
+        let list = changes(&dir).unwrap();
+        let paths: Vec<&str> = list.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(list.len(), 1, "only the nested path is a change: {list:?}");
+        assert!(
+            paths[0].starts_with("sub/"),
+            "a nested `.ralphy/` is real work, not run scratch: {paths:?}"
+        );
+        assert!(
+            !crate::git::is_clean_ignoring_ralphy(&dir).unwrap(),
+            "a repo dirty under a NESTED .ralphy/ is not clean"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_merge_conflict_reads_as_conflicted() {
+        let dir = init_repo("conflict");
+        std::fs::write(dir.join("README.md"), "base\n").unwrap();
+        git(&dir, &["add", "."]).unwrap();
+        git(&dir, &["commit", "-q", "-m", "init"]).unwrap();
+
+        git(&dir, &["checkout", "-q", "-b", "other"]).unwrap();
+        std::fs::write(dir.join("README.md"), "theirs\n").unwrap();
+        git(&dir, &["commit", "-q", "-am", "theirs"]).unwrap();
+        git(&dir, &["checkout", "-q", "main"]).unwrap();
+        std::fs::write(dir.join("README.md"), "ours\n").unwrap();
+        git(&dir, &["commit", "-q", "-am", "ours"]).unwrap();
+        // The merge FAILS by design — `git()` bails on a non-zero exit, so the
+        // conflict is provoked through the raw command.
+        let merged = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["merge", "other"])
+            .output()
+            .unwrap();
+        assert!(!merged.status.success(), "the merge must conflict");
+
+        let list = changes(&dir).unwrap();
+        assert_eq!(
+            list,
+            vec![Change {
+                path: "README.md".to_string(),
+                original_path: None,
+                status: ChangeStatus::Conflicted,
+            }],
+            "an unmerged path reads as Conflicted"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

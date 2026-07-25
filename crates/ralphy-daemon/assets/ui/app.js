@@ -61,9 +61,9 @@ function shell() {
     // instead of the seed projects. Empty when repos loaded (or in demo).
     reposError: "",
     // Working-tree change count per slug (#307), loaded when a project opens and
-    // on the sidebar refresh. A slug is absent until its first successful load;
-    // `changesError` carries the daemon-mode failure so the badge can stay honest
-    // rather than showing another repo's number.
+    // on the sidebar refresh. A slug holds `null` until a load succeeds — the
+    // badge renders that as `—`, so a failed read never reads like a clean tree —
+    // and `changesError` carries the reason into the badge's title.
     changesCount: {},
     changesError: {},
     // True while a manual/initial repo refresh is in flight — spins the sidebar

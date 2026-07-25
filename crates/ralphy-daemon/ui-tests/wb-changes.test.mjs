@@ -54,6 +54,9 @@ test("an error, absent or malformed reply reads as zero — never a stale count"
   const fold = load().fold;
   for (const reply of [
     { status: "error", message: "query read failed" },
+    // An error frame that DOES carry rows: folding its body would report a
+    // count the daemon never confirmed — status wins over shape.
+    { status: "error", message: "boom", changes: { changes: REPLY.changes.changes } },
     undefined,
     null,
     {},
