@@ -130,6 +130,14 @@ issue with the failure report published for the human reviewer.
      across an unrelated boundary, or past a step whose failure would change
      how you write the next one — the commit must stay one reviewable,
      revertable unit.
+     Two gate realities shape the batch: (a) when the project lint denies
+     unused/dead code, a red test or a producer committed without its consumer
+     fails the gate alone — commit red+green as ONE unit, never split them to
+     honor step granularity; (b) a checkpoint is only green on the gate's OWN
+     target set — before the batch's commit, run the cheapest command that
+     builds what the gate builds (in Rust, `cargo test` does not build what
+     `clippy --all-targets` builds; an import only tests need looks unused
+     until the test target compiles).
    - MECHANICAL MULTI-SITE EDITS (a changed signature, a renamed symbol, a new
      argument): re-run the impact search yourself before editing — a call-site
      inventory inherited from the plan is a lead, not a truth — and include the

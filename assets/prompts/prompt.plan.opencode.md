@@ -204,6 +204,11 @@ on one.
   a prefix of today. And before specifying an "X appears nowhere in <scope>"
   assertion, search that scope THIS pass for pre-existing unrelated matches
   and narrow the scope to where the assertion is true today.
+  Finally, an oracle you never saw RED proves nothing: when a step adds a
+  guard, validator, or derived rule (an arithmetic relation, a filter, a
+  classification), the step also names the one input that must trip it — a
+  negative-control fixture that fails when the rule is inverted or the guard
+  removed. A checker that has never rejected anything is not yet a checker.
 - Price the environment, never assume it: when any step depends on external
   infrastructure (containers, databases, network services, an external repo,
   a vendor CLI backed by a remote service),
