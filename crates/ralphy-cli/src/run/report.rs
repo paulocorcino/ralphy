@@ -224,6 +224,7 @@ pub(crate) fn render_final_panel(
         blocked: summary.blocked,
         skipped: summary.skipped,
         hitl: summary.hitl,
+        review_only: summary.review_only_issues.clone(),
         commits: report.commits,
         stop: panel_stop,
         branch_mode: panel_mode,

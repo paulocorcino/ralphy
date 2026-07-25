@@ -178,6 +178,10 @@ pub struct PanelData {
     /// Issues stalled on a human gate in their path (ADR-0014) — surfaced in the
     /// counts line only when non-zero, so ordinary runs stay unchanged.
     pub hitl: u64,
+    /// The issue numbers that closed carrying `[review-only]` ledger lines,
+    /// folded in `run/summary.rs` (#313) — numbers only, never ledger data, so
+    /// the renderer cannot re-derive the predicate. Empty on an ordinary run.
+    pub review_only: Vec<u64>,
     pub commits: usize,
     pub stop: Option<PanelStop>,
     pub branch_mode: PanelBranchMode,
@@ -417,6 +421,33 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
             Style::new().yellow().apply_to(&hitl_raw).to_string()
         } else {
             hitl_raw
+        });
+    }
+
+    // Review debt (#313) — an attribute of DONE issues, so it never touches the
+    // counts line above and stays out of the yellow "waiting on human" bucket.
+    if !data.review_only.is_empty() {
+        let review_icon = pick("🔎", "[review]", opts.emoji);
+        let n = data.review_only.len();
+        let (noun, verb) = if n == 1 {
+            ("issue", "needs")
+        } else {
+            ("issues", "need")
+        };
+        let numbers = data
+            .review_only
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let review_raw = format!(
+            "{review_icon} {n} {noun} {verb} your eyes: {numbers} \
+             — review-only criteria, delivered but not machine-checked"
+        );
+        lines.push(if opts.color {
+            Style::new().cyan().apply_to(&review_raw).to_string()
+        } else {
+            review_raw
         });
     }
 
