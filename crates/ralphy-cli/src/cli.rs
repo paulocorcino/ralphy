@@ -347,6 +347,19 @@ impl From<CliBranchMode> for BranchMode {
 mod tests {
     use super::*;
 
+    /// The contract test for #302: the daemon's detail verb composes exactly the
+    /// ADR-0020 documented form, so the CLI must parse it. Deliberately
+    /// parse-level — no tracker, no network, no authentication.
+    #[test]
+    fn issues_show_documented_form_parses() {
+        let parsed = Cli::try_parse_from(["ralphy", "issues", "show", "302", "--format", "json"]);
+        assert!(
+            parsed.is_ok(),
+            "the ADR-0020 documented form must parse: {:?}",
+            parsed.err()
+        );
+    }
+
     #[test]
     fn run_effort_flags_accept_only_the_core_lexicon() {
         let cli = Cli::try_parse_from([

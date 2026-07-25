@@ -70,6 +70,46 @@ fn human() -> Vec<String> {
         .collect()
 }
 
+fn spec(tokens: &[&str]) -> Vec<String> {
+    tokens.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn parse_show_spec_accepts_both_forms() {
+    assert_eq!(parse_show_spec(&spec(&[])).unwrap(), None);
+    assert_eq!(parse_show_spec(&spec(&["302"])).unwrap(), Some(302));
+    assert_eq!(parse_show_spec(&spec(&["show", "302"])).unwrap(), Some(302));
+
+    let bare = parse_show_spec(&spec(&["show"])).unwrap_err().to_string();
+    assert!(
+        bare.contains("needs an issue number"),
+        "bare `show` must name the missing number: {bare}"
+    );
+    for bad in [vec!["abc"], vec!["302", "303"]] {
+        assert!(
+            parse_show_spec(&spec(&bad)).is_err(),
+            "must reject {bad:?} rather than silently listing the queue"
+        );
+    }
+}
+
+/// The doc comment is part of the shipped interface (#302: it used to promise a
+/// form the parser rejected). Needle built by concatenation so this file does not
+/// trip its own absence assertion.
+#[test]
+fn spec_doc_comment_matches_the_shipped_form() {
+    let src = include_str!("../issues.rs");
+    assert!(
+        src.contains("/// `show <n>` (ADR-0020) or the bare `<n>` shorthand."),
+        "the `spec` doc comment must describe the shipped form"
+    );
+    let stale = format!("{} {}", "subcommand word", "is optional");
+    assert!(
+        !src.contains(&stale),
+        "the stale doc claim must be gone from issues.rs"
+    );
+}
+
 #[test]
 fn render_json_emits_full_key_set_and_fields_selects_subset() {
     let queue = vec![issue(7, &["queue"], "")];

@@ -28,10 +28,10 @@ pub struct IssuesArgs {
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
-    /// Show one issue in detail instead of listing the queue: `ralphy issues
-    /// show <n>` (the `show` subcommand word is optional — a bare number works).
-    #[arg(value_name = "NUMBER")]
-    pub show: Option<u64>,
+    /// Show one issue in detail instead of listing the queue:
+    /// `show <n>` (ADR-0020) or the bare `<n>` shorthand.
+    #[arg(value_name = "SPEC", num_args = 0..=2)]
+    pub spec: Vec<String>,
 
     /// Output format: the default human table, or `json`.
     #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -114,6 +114,7 @@ struct ShowView {
 /// `ralphy issues` entry point: resolve the repo, then either list the judged
 /// queue or show one issue, in text or JSON.
 pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
+    let show = parse_show_spec(&args.spec)?;
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let tracker = GhTracker::new(&repo_root);
     let human_return = github::resolve_human_return_labels(&repo_root);
@@ -134,7 +135,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     // array; JSON-only, list-only, so it cannot combine with `show <n>` or a
     // non-JSON format.
     if args.board {
-        if args.show.is_some() {
+        if show.is_some() {
             anyhow::bail!(
                 "`--board` emits the whole board fold and cannot be combined with `show <n>`"
             );
@@ -167,7 +168,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     // printing it — the on-demand twin of the runner's enriched `queue.built`.
     // It is a queue-level operation, so it cannot be combined with `show <n>`.
     if args.push {
-        if args.show.is_some() {
+        if show.is_some() {
             anyhow::bail!(
                 "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
             );
@@ -184,7 +185,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         return push_snapshot(&repo_root, &view, assignee_filter.as_deref());
     }
 
-    if let Some(number) = args.show {
+    if let Some(number) = show {
         let issue = github::fetch_issue(number, &repo_root)?;
         // Best-effort: a comment-fetch failure degrades to body-only, never a stop
         // (matching the runner's own tolerance).
@@ -308,6 +309,33 @@ fn issue_history(slug: &str, n: u64) -> Vec<UsageRow> {
         .into_iter()
         .filter(|r| r.issue == n)
         .collect()
+}
+
+/// Resolve the positional selector into "list the queue" (`None`) or "show issue
+/// n" (`Some(n)`). Accepts the ADR-0020 documented form `show <n>` and the bare
+/// `<n>` shorthand; anything else is an explicit error rather than a silent
+/// fallback to listing the queue. Clap cannot express "an optional literal word
+/// then a number" on a typed positional, hence the raw tokens.
+fn parse_show_spec(spec: &[String]) -> Result<Option<u64>> {
+    let number = |t: &str| -> Result<u64> {
+        t.parse::<u64>().map_err(|_| {
+            anyhow::anyhow!(
+                "unrecognized issue selector `{t}` — use `issues show <n>` or `issues <n>`"
+            )
+        })
+    };
+    match spec {
+        [] => Ok(None),
+        [one] if one == "show" => {
+            anyhow::bail!("`issues show` needs an issue number — use `issues show <n>`")
+        }
+        [one] => Ok(Some(number(one)?)),
+        [word, n] if word == "show" => Ok(Some(number(n)?)),
+        [word, _] => anyhow::bail!(
+            "unrecognized issue selector `{word}` — use `issues show <n>` or `issues <n>`"
+        ),
+        _ => anyhow::bail!("too many arguments — use `issues show <n>` or `issues <n>`"),
+    }
 }
 
 /// Build the single-issue detail view: reuse [`resolve_queue_view`] over a
