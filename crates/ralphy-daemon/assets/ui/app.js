@@ -2231,6 +2231,94 @@ function shell() {
       });
     },
 
+    // --- opening a Changes row into a diff tab ----------------------------
+    // HEAD on one side, the working tree on the other, so reviewing what the
+    // agent wrote is one gesture away from noticing it (#311). Read-only: no
+    // commit, no discard, no staging. Monaco computes the diff from the two
+    // texts, so nothing here — and nothing in the daemon — produces a patch.
+    openDiff(project, entry) {
+      const t = window.WBChanges.diffTarget(entry, project);
+      if (this.tabs.some((x) => x.id === t.id)) {
+        this.activate(t.id);
+        return;
+      }
+      this.tabs.push({
+        id: t.id,
+        kind: "diff",
+        title: t.title,
+        path: t.workingPath,
+        project,
+        icon: "bi bi-file-earmark-diff",
+        closable: true,
+      });
+      this.active = t.id;
+      WB.emit("open-diff", { project, path: t.workingPath });
+      this.$nextTick(() => {
+        const refuse = (reason) => {
+          this._flashAction?.(reason);
+          this.closeTab(t.id);
+          return null;
+        };
+        Promise.all([this.diffHeadSide(project, t, refuse), this.diffWorkSide(project, t, refuse)])
+          .then(([head, work]) => {
+            // A refusal on EITHER side aborts: half a diff would read as
+            // "no changes" on the side that resolved.
+            if (head == null || work == null) return;
+            WBViewer.open({
+              id: t.id,
+              project,
+              path: t.workingPath,
+              ftype: "diff",
+              content: work,
+              original: head,
+            });
+            WBViewer.setActive(t.id);
+            window.lucide?.createIcons();
+          })
+          .catch(() => refuse("diff read failed"));
+      });
+    },
+
+    // The diff's HEAD side. An added/untracked path has none — it diffs against
+    // emptiness, which is the whole point of reviewing a new file.
+    diffHeadSide(project, t, refuse) {
+      if (t.headAbsent) return Promise.resolve("");
+      if (!this.useDaemonTree()) {
+        return Promise.resolve(fakeContent(t.headPath, "code"));
+      }
+      return WBDaemon.observe("blob.read", {
+        repo: project,
+        revision: "head",
+        path: t.headPath,
+      }).then((reply) => {
+        if (window.WBFail.isError(reply)) return refuse(window.WBFail.message(reply, "refused"));
+        const blob = reply.blob || {};
+        if (blob.status === "present") return blob.content;
+        if (blob.status === "absent") return "";
+        return refuse(blob.reason || "refused");
+      });
+    },
+
+    // The diff's working side. A `not found` is NOT a refusal here: the row may
+    // be stale (the file deleted between the list and the click), and a stale row
+    // must still diff against emptiness rather than close the tab.
+    diffWorkSide(project, t, refuse) {
+      if (t.workingAbsent) return Promise.resolve("");
+      if (!this.useDaemonTree()) {
+        // The static demo has no daemon; a synthesised one-line delta keeps the
+        // pane demonstrable without fabricating anything in daemon mode.
+        return Promise.resolve("// (demo) edited line\n" + fakeContent(t.workingPath, "code"));
+      }
+      // Deliberately NOT `fetchContent`: it collapses every refusal to `null`, so
+      // a stale row would be indistinguishable from a binary one, and it closes
+      // the `file:` tab id rather than this diff's.
+      return WBDaemon.observe("file.read", { repo: project, path: t.workingPath }).then((reply) => {
+        if (!window.WBFail.isError(reply)) return reply.content;
+        const reason = window.WBFail.message(reply, "refused");
+        return reason === "not found" ? "" : refuse(reason);
+      });
+    },
+
     // Pop a file tab out into a standalone browser popup, so it can be read
     // side-by-side with an agent console in the main window. The descriptor is
     // handed over via a shared same-origin global (no serialisation limits); the

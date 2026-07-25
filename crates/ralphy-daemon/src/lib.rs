@@ -3869,6 +3869,21 @@ mod tests {
                 "wb-changes.js must keep the {status} marker"
             );
         }
+
+        // The diff tab (#311) is JS/HTML only, so no other Rust gate compiles it:
+        // pin the row's click wiring and the diff editor's factory here.
+        assert!(
+            html.contains("openDiff(p.slug, c)"),
+            "index.html must open a diff from a changes row"
+        );
+        assert!(
+            include_str!("../assets/ui/wb-viewer.js").contains("WBMonaco.createDiff"),
+            "wb-viewer.js must mount the diff through WBMonaco.createDiff"
+        );
+        assert!(
+            js.contains("diffTarget"),
+            "wb-changes.js must expose diffTarget"
+        );
     }
 
     /// The browser half of the run-completion nudge (#310) is exercised by

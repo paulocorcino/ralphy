@@ -136,3 +136,43 @@ test("shouldReload answers false — never throws — on a malformed frame (#310
   // …and an empty open slug never matches an empty repo.
   assert.equal(shouldReload({ verb: "changes.dirty", payload: { repo: "" } }, ""), false);
 });
+
+test("diffTarget resolves both sides of one changes entry (#311)", () => {
+  const diffTarget = load().diffTarget;
+  const P = "owner/repo";
+
+  // A rename diffs the OLD path at HEAD against the NEW path on disk: reading
+  // `entry.path` at HEAD would report the whole file as added.
+  const renamed = diffTarget(
+    { path: "new.txt", originalPath: "old.txt", status: "renamed" },
+    P,
+  );
+  assert.equal(renamed.headPath, "old.txt");
+  assert.equal(renamed.workingPath, "new.txt");
+  assert.equal(renamed.headAbsent, false);
+  assert.equal(renamed.workingAbsent, false);
+
+  // Added / untracked: nothing at HEAD, so the original side is empty.
+  for (const status of ["added", "untracked"]) {
+    const t = diffTarget({ path: "brand-new.txt", originalPath: null, status }, P);
+    assert.equal(t.headAbsent, true, `${status} has no HEAD side`);
+    assert.equal(t.workingAbsent, false);
+    assert.equal(t.headPath, "brand-new.txt");
+  }
+
+  // Deleted: still at HEAD, gone from the working tree.
+  const deleted = diffTarget({ path: "gone.txt", originalPath: null, status: "deleted" }, P);
+  assert.equal(deleted.workingAbsent, true);
+  assert.equal(deleted.headAbsent, false);
+
+  // The id is stable per project+path — that is what makes a second click on the
+  // same row activate the open tab instead of stacking a duplicate.
+  for (const entry of [
+    { path: "new.txt", originalPath: "old.txt", status: "renamed" },
+    { path: "src/deep/mod.rs", originalPath: null, status: "modified" },
+  ]) {
+    const t = diffTarget(entry, P);
+    assert.equal(t.id, `diff:${P}:${entry.path}`);
+    assert.equal(t.title, entry.path.split("/").pop() + " ↔ HEAD");
+  }
+});

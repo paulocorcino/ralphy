@@ -1192,6 +1192,10 @@ body.runs-open .runs {
   padding: 0.1rem 0.8rem;
   font-size: 0.78rem;
   min-width: 0;
+  cursor: pointer;
+}
+.chg-row:hover {
+  background: var(--surface-hi);
 }
 .chg-path {
   overflow: hidden;
@@ -1781,6 +1785,10 @@ body.runs-open .runs {
    Colours live in the "wb" theme (wb-monaco.js) — Monaco paints its own
    surfaces from the theme API, so CSS here is layout only. */
 .viewer-body .monaco-editor {
+  height: 100%;
+}
+/* The diff pane is the box; its two inner editors are sized inline by Monaco. */
+.viewer-body .monaco-diff-editor {
   height: 100%;
 }
 /* the read-only degrade when Monaco's AMD loader cannot boot (file:// demo) */

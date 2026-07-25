@@ -155,5 +155,37 @@
     });
   }
 
-  window.WBMonaco = { ready, create, TOKENS };
+  // A side-by-side diff pane: HEAD on the left, the working tree on the right.
+  // Monaco computes the diff itself from the two texts, so nothing on the Rust
+  // side produces a patch. The two model URIs must DIFFER (Monaco throws on a
+  // duplicate), hence the `head`/`work` segment — and `uid` still separates a
+  // reopened tab from the closed one whose models are being torn down.
+  function createDiff(container, { original, modified, path, uid, project }) {
+    const monaco = window.monaco;
+    const at = (side) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
+    const ed = monaco.editor.createDiffEditor(container, {
+      theme: "wb",
+      // See create(): without Monaco's own ResizeObserver the panes stay clipped
+      // through a sidebar collapse or a window resize.
+      automaticLayout: true,
+      readOnly: true,
+      originalEditable: false,
+      renderSideBySide: true,
+      // Unchanged regions collapse to a click-to-expand ruler: reviewing what the
+      // agent wrote must not mean scrolling past what it left alone.
+      hideUnchangedRegions: { enabled: true },
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontSize: 13,
+      lineNumbers: "on",
+    });
+    ed.setModel({
+      original: monaco.editor.createModel(original, undefined, at("head")),
+      modified: monaco.editor.createModel(modified, undefined, at("work")),
+    });
+    return ed;
+  }
+
+  window.WBMonaco = { ready, create, createDiff, TOKENS };
 })();

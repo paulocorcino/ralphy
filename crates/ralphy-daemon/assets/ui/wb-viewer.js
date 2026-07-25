@@ -87,9 +87,78 @@
 
   function disposeEditor(rec) {
     if (!rec.ed) return;
-    rec.ed.getModel()?.dispose();
+    if (rec.kind === "diff") {
+      // A diff editor holds TWO models, and BOTH must go before the editor on
+      // EVERY path: a leaked model keeps its URI registered, so reopening the
+      // same path throws "model already exists" and the tab never mounts.
+      const m = rec.ed.getModel();
+      m?.original?.dispose();
+      m?.modified?.dispose();
+    } else {
+      rec.ed.getModel()?.dispose();
+    }
     rec.ed.dispose();
     rec.ed = undefined;
+  }
+
+  // --- a diff tab (read-only, two-sided) ----------------------------------
+  function mountDiff(rec, container) {
+    if (rec.mounting || rec.mountFailed) return Promise.resolve();
+    rec.mounting = true;
+    return WBMonaco.ready()
+      .then((monaco) => {
+        rec.mounting = false;
+        // Same record-identity liveness rule as mountEditor: a diff tab closed
+        // inside the boot window must mount nothing on its detached container.
+        if (!monaco || !alive(rec)) return;
+        const ed = WBMonaco.createDiff(container, {
+          original: rec.original,
+          modified: rec.content,
+          path: rec.path,
+          uid: rec.uid,
+          project: rec.project,
+        });
+        rec.ed = ed;
+        if (rec.visible) ed.layout();
+      })
+      .catch((err) => {
+        // No `<pre>` degrade here: two texts side by side have no honest
+        // single-pane fallback, and one of them rendered alone would read as
+        // "no changes". Say it failed and close the tab (#311).
+        rec.mounting = false;
+        rec.mountFailed = true;
+        console.error("[workbench] monaco diff failed to mount", err);
+        getShell()?._flashAction?.("editor failed to mount");
+        getShell()?.closeTab(rec.id);
+      });
+  }
+
+  function buildDiff(rec) {
+    const el = document.createElement("div");
+    el.className = "viewer diff-viewer";
+    el.dataset.tabId = rec.id;
+    el.style.display = "none";
+    // Find ONLY: no Save, no Reload, no disk badge, no Detach. This surface is
+    // read-only by design (#311) — no commit, discard or staging control — and a
+    // detached popup folds back a single-file descriptor a two-sided pane has no
+    // representation in.
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <span class="viewer-path"></span>
+        <span class="spacer"></span>
+        <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
+      </div>
+      <div class="viewer-body"></div>`;
+    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path} ↔ HEAD`;
+    viewers.append(el);
+
+    el.querySelector('[data-act="find"]').onclick = () => {
+      const mod = rec.ed?.getModifiedEditor();
+      mod?.focus();
+      mod?.getAction("actions.find")?.run();
+    };
+    rec.el = el;
+    mountDiff(rec, el.querySelector(".viewer-body"));
   }
 
   // --- a source-code editor tab ------------------------------------------
@@ -130,6 +199,9 @@
   }
 
   function save(rec) {
+    // A diff is read-only: a `save` intent from here would be a mutation this
+    // surface forbids, so it never reaches the action seam.
+    if (rec.kind === "diff") return;
     const content = contentOf(rec);
     rec.content = content;
     rec.dirty = false;
@@ -143,6 +215,7 @@
   // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
   // `rec.content` is still authoritative.
   function contentOf(rec) {
+    if (rec.kind === "diff") return rec.content;
     if (rec.ed && (rec.kind === "code" || rec.editing)) return rec.ed.getValue();
     return rec.content;
   }
@@ -175,6 +248,9 @@
   }
 
   function applyFresh(rec, fresh) {
+    // A diff pane has no single "fresh bytes" to apply: reloading it means
+    // re-resolving BOTH sides, which is a reopen, not a refresh.
+    if (rec.kind === "diff") return;
     // `rec.content` FIRST: bytes that land before Monaco boots are picked up by
     // the pending `create()`, and setValue fires the change event, so the dirty
     // flag is cleared *after* the update, not before.
@@ -447,11 +523,13 @@
   // --- public API ---------------------------------------------------------
   let uidSeq = 0;
   const API = {
-    open({ id, project, path, ftype, content, detached }) {
+    // `original` is the diff's HEAD side and is read only by `ftype === "diff"`.
+    open({ id, project, path, ftype, content, original, detached }) {
       if (map.has(id)) return;
-      const rec = { id, project, path, kind: ftype, content, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
+      const rec = { id, project, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
       map.set(id, rec);
       if (ftype === "markdown") buildMarkdown(rec);
+      else if (ftype === "diff") buildDiff(rec);
       else buildCode(rec);
     },
 
@@ -487,6 +565,9 @@
     externalChange(id, content) {
       const rec = map.get(id);
       if (!rec) return;
+      // A diff tab never auto-refreshes: it is a two-sided read, and a
+      // single-side update would silently misrepresent the comparison.
+      if (rec.kind === "diff") return;
       if (content === rec.content) return;
       if (!rec.dirty) {
         applyFresh(rec, content);

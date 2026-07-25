@@ -170,7 +170,7 @@
             </div>
             <ul class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
               <template x-for="c in (changesEntries[p.slug] || [])" :key="c.path">
-                <li class="chg-row" :title="c.title">
+                <li class="chg-row" :title="c.title" @click="openDiff(p.slug, c)">
                   <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
                   <span class="chg-path" x-text="c.path"></span>
                   <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>

@@ -61,5 +61,20 @@
     );
   }
 
-  window.WBChanges = { fold, marker, shouldReload };
+  // What a diff tab needs to resolve both of its sides from one changes entry.
+  // A rename diffs the OLD path at HEAD against the NEW path in the working tree
+  // — reading `entry.path` at HEAD would report the whole file as added. An added
+  // or untracked path has no HEAD side; a deleted one has no working side.
+  function diffTarget(entry, project) {
+    return {
+      id: "diff:" + project + ":" + entry.path,
+      title: entry.path.split("/").pop() + " ↔ HEAD",
+      headPath: entry.originalPath || entry.path,
+      workingPath: entry.path,
+      headAbsent: entry.status === "added" || entry.status === "untracked",
+      workingAbsent: entry.status === "deleted",
+    };
+  }
+
+  window.WBChanges = { fold, marker, shouldReload, diffTarget };
 })(window);
