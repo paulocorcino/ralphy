@@ -897,6 +897,10 @@ function shell() {
     // mode (issue #207 / audit C2) — kept apart from the empty-state "No issues"
     // so a broken tracker connection never reads as "no work to do".
     boardError: {},
+    // The open drawer's detail-fetch failure, daemon mode only (#302). One
+    // string, not a per-number map: exactly one drawer is open at a time, and an
+    // empty drawer must never lie about an issue that has content.
+    issueError: null,
     // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START, so
     // the min-gap measures spacing between fold STARTS: stamping on completion
     // would give a fold slower than the gap zero idle time, and a push arriving
@@ -1130,21 +1134,41 @@ function shell() {
 
     async loadIssueDetail(number) {
       const slug = this.openSlug;
+      this.issueError = null;
+      // Cross-path invariant (#302): a reply — content OR error — is applied only
+      // while `number` is still the selected issue, so a drawer switched
+      // mid-fetch never inherits another issue's error or content.
+      const stale = () => this.kanbanSel !== number;
+      const fail = (msg) => {
+        if (stale() || !window.WBMode.isDaemon()) return;
+        this.issueError = msg;
+        this._flashAction?.(msg);
+      };
       try {
         const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
-        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") return;
+        if (window.WBFail.isError(reply)) {
+          fail(window.WBFail.message(reply, "could not load issue detail"));
+          return;
+        }
+        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
+          fail("could not load issue detail");
+          return;
+        }
         const detail = reply.issue;
         const iss = (this.boardIssues[slug] || []).find((i) => i.number === number);
-        if (!iss) return;
+        if (!iss || stale()) return;
         if (typeof detail.body === "string") iss.body = detail.body;
         if (Array.isArray(detail.comments)) iss.comments = detail.comments;
         if (Array.isArray(detail.blocked_by)) iss.blockedBy = detail.blocked_by;
       } catch {
-        // Leave the board row's empty body on any failure.
+        // Transport error: the board row keeps its empty body, but the drawer
+        // says so rather than reading as an issue with nothing in it.
+        fail("could not load issue detail");
       }
     },
     closeIssue() {
       this.kanbanSel = null;
+      this.issueError = null;
     },
     // The real GitHub URL of an issue on the OPEN project — the drawer's editing
     // door (read-only here; edits happen on GitHub). Rebuilt from the project's

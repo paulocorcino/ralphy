@@ -405,6 +405,13 @@
                 </div>
               </div>
 
+              <!-- a failed detail fetch: an empty drawer must never read as an
+                   issue with no content (#302) -->
+              <div class="kd-error" x-show="issueError">
+                <i data-lucide="alert-triangle"></i>
+                <span x-text="issueError"></span>
+              </div>
+
               <!-- body -->
               <div class="kd-body md" x-html="renderIssueMd(selectedIssue().body)"></div>
 

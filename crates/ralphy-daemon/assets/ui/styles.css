@@ -2908,6 +2908,19 @@ body.locked .runs {
   justify-content: center;
 }
 
+/* the issue drawer's detail-fetch failure banner (#302) */
+.kd-error {
+  margin: 0 0 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger, #e5484d);
+  border-radius: 6px;
+  color: var(--danger, #e5484d);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
 /* the four columns */
 .kanban-cols {
   flex: 1;
@@ -3101,7 +3114,7 @@ body.locked .runs {
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(460px, 48%);
+  width: min(760px, 62%);
   z-index: 40;
   background: var(--chrome);
   border-left: 1px solid var(--border);
