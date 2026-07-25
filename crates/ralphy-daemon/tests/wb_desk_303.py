@@ -20,6 +20,8 @@ Scenario 7   a DAEMON restart: the free console relaunches itself, the agent
              console waits as a placeholder, and no agent session is launched
 Scenario 8   one click on the placeholder opens `/ws/session?repo=…&agent=gemini`
              and reuses the record's id and rectangle
+Scenario 9   a REFUSED `/api/sessions` (500, then aborted) restores nothing, opens
+             no socket, and leaves the saved desk intact
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -518,6 +520,14 @@ def main():
             # --- scenario 6: the desk survives a browser reload ---------------
             open_console(page, slug)
             drag_handle(page, 1, "s", 0, 60)
+            # The box it must un-maximize back to — captured BEFORE the class goes
+            # on, because `.maximized` pins all four offsets via `!important`.
+            pre_max = rect_of(page, 1)
+            check(
+                "the window to be maximized sits away from the workspace corner",
+                pre_max["left"] > 0 and pre_max["top"] > 0,
+                f"got={pre_max}",
+            )
             page.locator(".session-window").nth(1).locator(".session-max").click()
             page.wait_for_timeout(400)
             before = [rect_of(page, 0), rect_of(page, 1)]
@@ -550,12 +560,14 @@ def main():
                 f"got={[r['max'] for r in records]}",
             )
             # The RESTORE box, not the full-bleed screen: a maximized window's
-            # record must still describe the box it un-maximizes to.
+            # record must describe the box it un-maximizes to — position included.
+            # `.maximized` pins left/top to 0 with `!important`, so reading
+            # `offsetLeft`/`offsetTop` here silently stores the workspace corner.
             restore_box = records[1]["rect"]
             check(
-                "…and its PRE-maximize rect, not the full-bleed one",
-                restore_box["width"] < before[1]["width"],
-                f"record={restore_box} onscreen={before[1]}",
+                "…and its PRE-maximize rect, position and all, not the full-bleed one",
+                restore_box == pre_max,
+                f"record={restore_box} pre-max={pre_max} onscreen={before[1]}",
             )
             # The session id is an ATTRIBUTE, not the key: clearing it must still
             # restore the windows (they relaunch instead of attaching).
@@ -592,6 +604,17 @@ def main():
                 page.evaluate("() => document.querySelectorAll('.session-window .xterm').length") == 2,
                 "",
             )
+            # …and it still knows the box to un-maximize to, after the round trip.
+            page.locator(".session-window").nth(1).locator(".session-max").click()
+            page.wait_for_timeout(400)
+            check(
+                "a restored-then-un-maximized window returns to its pre-maximize box",
+                rect_of(page, 1) == pre_max,
+                f"want={pre_max} got={rect_of(page, 1)}",
+            )
+            page.locator(".session-window").nth(1).locator(".session-max").click()
+            page.wait_for_timeout(400)
+
             after_recs = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
             check(
                 "…under the SAME window ids (attach, not adopt)",
@@ -721,6 +744,42 @@ def main():
                 f"records={[r['id'] for r in reconnected]} rect={rect_of(page, 1)}",
             )
 
+            # --- scenario 9: a REFUSED session list leaves the desk alone -----
+            # The branch that keeps a page load from relaunching consoles against
+            # a daemon it cannot read. Without it, a 500 would look like "no live
+            # sessions" and every record would relaunch or show a phantom.
+            for status in (500, None):
+                if status is None:
+                    page.route("**/api/sessions", lambda route: route.abort())
+                    what = "an ABORTED"
+                else:
+                    page.route(
+                        "**/api/sessions",
+                        lambda route: route.fulfill(status=500, body="nope"),
+                    )
+                    what = "a 500"
+                mark = [u for u in sockets if "/ws/session" in u]
+                page.reload()
+                page.wait_for_selector("[x-data]", timeout=8000)
+                page.wait_for_timeout(1500)
+                check(
+                    f"{what} session list restores NO window",
+                    page.locator(".session-window").count() == 0,
+                    f"got={page.locator('.session-window').count()}",
+                )
+                opened = [u for u in sockets if "/ws/session" in u]
+                check(
+                    "…and opens no session socket at all",
+                    opened == mark,
+                    f"new={opened[len(mark):]}",
+                )
+                check(
+                    "…leaving the saved desk intact for the next load",
+                    len(page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")) == 2,
+                    "",
+                )
+                page.unroute("**/api/sessions")
+
             ctx.close()
             browser.close()
     finally:
@@ -728,7 +787,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 94
+    ok = all(results) and len(results) >= 102
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")

@@ -55,17 +55,24 @@ window.WBConsole = (function () {
     }
   }
   // Keep the `max` newest records by `ts`, preserving layout order (the order
-  // decides which record wins a contended session in `reconcileDesk`).
-  function pruneDesk(records, max) {
+  // decides which record wins a contended session in `reconcileDesk`). `live`
+  // names ids that must NEVER be evicted — a window still on screen losing its
+  // record would strand it, unrestorable, on the next load.
+  function pruneDesk(records, max, live) {
     if (records.length <= max) return records.slice();
+    const pinned = live || new Set();
     const keep = new Set(
-      [...records].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, max),
+      [...records]
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+        .sort((a, b) => (pinned.has(b.id) ? 1 : 0) - (pinned.has(a.id) ? 1 : 0))
+        .slice(0, max),
     );
     return records.filter((r) => keep.has(r));
   }
   function saveDesk(records) {
+    const live = new Set([...wins].map((w) => w._deskId));
     try {
-      localStorage.setItem(DESK_KEY, JSON.stringify(pruneDesk(records, DESK_MAX)));
+      localStorage.setItem(DESK_KEY, JSON.stringify(pruneDesk(records, DESK_MAX, live)));
     } catch {}
   }
   function newDeskId() {
@@ -73,27 +80,44 @@ window.WBConsole = (function () {
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
     return "w-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   }
-  // Snapshot a window's placement. A maximized window reports its *pre-maximize*
-  // inline rect (the class drives the full-bleed via CSS), so `max` restores the
+  // A window's RESTORE box. While maximized the `.maximized` class pins all four
+  // offsets via `!important` (left/top to 0, width/height to the full bleed), so
+  // every component must be read from the inline styles — those still hold the
+  // pre-maximize rect. Reading `offsetLeft`/`offsetTop` here would persist 0,0 and
+  // the window would restore to the workspace corner instead of where it was.
+  function restoreRect(win) {
+    if (!win.classList.contains("maximized")) {
+      return {
+        left: win.offsetLeft,
+        top: win.offsetTop,
+        width: win.offsetWidth,
+        height: win.offsetHeight,
+      };
+    }
+    const inline = (prop, fallback) => parseInt(win.style[prop], 10) || fallback;
+    return {
+      left: inline("left", win.offsetLeft),
+      top: inline("top", win.offsetTop),
+      width: inline("width", win.offsetWidth),
+      height: inline("height", win.offsetHeight),
+    };
+  }
+
+  // Snapshot a window's placement. A maximized window stores its *pre-maximize*
+  // rect (the class drives the full-bleed via CSS), so `max` restores the
   // full-screen state while the stored rect still restores the underlying box.
   function persistWin(win) {
-    if (!win._deskId) return;
-    const maxed = win.classList.contains("maximized");
+    // A detached window measures 0×0 at 0,0 — and because this upserts by id, a
+    // late mouseup after the window was removed would RESURRECT a record that
+    // `forgetRecord` just deleted.
+    if (!win._deskId || !win.isConnected) return;
     const rec = {
       id: win._deskId,
       repo: win._deskRepo,
       agent: win._deskAgent,
       kind: win._deskKind,
-      rect: {
-        left: win.offsetLeft,
-        top: win.offsetTop,
-        // While maximized the inline width/height still hold the restore rect, but
-        // offsetWidth/Height report the full-bleed size — read the inline values so
-        // we persist the box to restore to, not the screen.
-        width: maxed ? parseInt(win.style.width, 10) || win.offsetWidth : win.offsetWidth,
-        height: maxed ? parseInt(win.style.height, 10) || win.offsetHeight : win.offsetHeight,
-      },
-      max: maxed,
+      rect: restoreRect(win),
+      max: win.classList.contains("maximized"),
       sessionId: win._term?.sessionId ?? null,
       ts: Date.now(),
     };
@@ -230,6 +254,10 @@ window.WBConsole = (function () {
   function makeDraggable(win, handle) {
     handle.addEventListener("mousedown", (e) => {
       if (e.target.closest("button")) return;
+      // Primary button only: a right/middle press is followed by a `contextmenu`
+      // (or no `mouseup` at all), which would strand `onMove` on the document and
+      // leave the window tracking a cursor with no button held.
+      if (e.button !== 0) return;
       focusWin(win);
       // Maximized windows don't drag — the titlebar double-click still restores.
       if (win.classList.contains("maximized")) return;
@@ -289,6 +317,7 @@ window.WBConsole = (function () {
   // persists exactly once.
   function startResize(win, dir) {
     return (e) => {
+      if (e.button !== 0) return; // primary button only — see makeDraggable
       focusWin(win);
       if (win.classList.contains("maximized")) return;
       const ws = workspace();
@@ -682,19 +711,13 @@ window.WBConsole = (function () {
   // The window's current placement as a desk record — used to carry a window's
   // identity and box across a rebuild (takeover, placeholder → live console).
   function deskOf(win) {
-    const maxed = win.classList.contains("maximized");
     return {
       id: win._deskId,
       repo: win._deskRepo,
       agent: win._deskAgent,
       kind: win._deskKind,
-      rect: {
-        left: win.offsetLeft,
-        top: win.offsetTop,
-        width: maxed ? parseInt(win.style.width, 10) || win.offsetWidth : win.offsetWidth,
-        height: maxed ? parseInt(win.style.height, 10) || win.offsetHeight : win.offsetHeight,
-      },
-      max: maxed,
+      rect: restoreRect(win),
+      max: win.classList.contains("maximized"),
     };
   }
 
@@ -820,6 +843,9 @@ window.WBConsole = (function () {
       win.style.width = cw + "px";
       win.style.height = ch + "px";
       focusWin(win);
+      // Tiling is a layout act like any drag: record it, or a reload would replay
+      // the pre-Arrange rects and the desk would silently disagree with the screen.
+      persistWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
   }
