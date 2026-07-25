@@ -403,8 +403,8 @@ def main():
             reconcile_table(page)
             prune_table(page)
 
-            # The Agents tab must be in view or every terminal measures 0x0.
-            page.evaluate(f"() => {{ {SH}.active = 'agents'; }}")
+            # The Consoles tab must be in view or every terminal measures 0x0.
+            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
             page.wait_for_timeout(300)
 
             # --- scenario 4: a live edge resize -------------------------------

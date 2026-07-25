@@ -1284,7 +1284,7 @@ body.runs-open .runs {
   overflow: hidden;
   isolation: isolate;
 }
-.agents-tab {
+.consoles-tab {
   position: absolute;
   inset: 0;
 }

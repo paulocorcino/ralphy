@@ -260,7 +260,7 @@ def main():
 
             # --- scenario 3: selecting a repo enables them --------------------
             close_menu(page)
-            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; {SH}.active = 'agents'; }}")
+            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; {SH}.active = 'consoles'; }}")
             page.wait_for_timeout(300)
             open_menu(page)
             enabled = page.evaluate(

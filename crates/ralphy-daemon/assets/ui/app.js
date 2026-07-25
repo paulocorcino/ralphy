@@ -6,7 +6,7 @@
    dependency-free tree lib — loaded from a JSON tree the backend would send.
 
    The canvas is a tabbed workspace:
-     • the first tab, "Agents", is fixed (never closes) and hosts the floating
+     • the first tab, "Consoles", is fixed (never closes) and hosts the floating
        console windows (see wb-console.js);
      • every opened file rides in as its own closable tab, rendered by a viewer
        (source code via CodeMirror, Markdown rendered with mermaid — see
@@ -1645,7 +1645,7 @@ function shell() {
     },
 
     // --- canvas tabs ------------------------------------------------------
-    // The Agents tab is permanent; file tabs are appended and closable.
+    // The Consoles tab is permanent; file tabs are appended and closable.
     // The adapter roster comes from the daemon (`/api/agents`), never from a
     // list here: onboarding a vendor must not need a frontend change (#304).
     // `agents` is the flat id list the run dialog's executor/planner pickers bind.
@@ -1664,8 +1664,8 @@ function shell() {
       danger: false,
     },
     _confirmResolve: null,
-    tabs: [{ id: "agents", kind: "agents", title: "Agents", icon: "bi bi-robot", closable: false }],
-    active: "agents",
+    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-robot", closable: false }],
+    active: "consoles",
 
     // Projects carry a *nested* file tree (folder → children), the shape a
     // backend would deliver as JSON. `state` is daemon reachability (the dot);
@@ -2151,7 +2151,7 @@ function shell() {
     // Pop a file tab out into a standalone browser popup, so it can be read
     // side-by-side with an agent console in the main window. The descriptor is
     // handed over via a shared same-origin global (no serialisation limits); the
-    // in-app tab then closes and we drop back to the Agents workspace.
+    // in-app tab then closes and we drop back to the Consoles workspace.
     detachFile(desc) {
       const id = `file:${desc.project}:${desc.path}`;
       // file:// windows get opaque origins, so a shared global on window.opener
@@ -2165,34 +2165,34 @@ function shell() {
       }
       WB.emit("detach", { project: desc.project, path: desc.path });
       this.closeTab(id);
-      this.activate("agents");
+      this.activate("consoles");
     },
 
     activate(id) {
       this.active = id;
       this.$nextTick(() => {
-        WBViewer.setActive(this.active === "agents" ? null : this.active);
+        WBViewer.setActive(this.active === "consoles" ? null : this.active);
         window.lucide?.createIcons();
         // A console opened/reattached while another tab was active measured 0×0
-        // (its tab was display:none); refit now that the Agents tab is visible.
-        if (id === "agents") window.WBConsole?.refitAll?.();
+        // (its tab was display:none); refit now that the Consoles tab is visible.
+        if (id === "consoles") window.WBConsole?.refitAll?.();
       });
     },
 
     closeTab(id) {
       const idx = this.tabs.findIndex((t) => t.id === id);
       const tab = this.tabs[idx];
-      if (!tab || !tab.closable) return; // Agents never closes
+      if (!tab || !tab.closable) return; // Consoles never closes
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
       if (this.active === id) {
-        // fall back to the neighbour, else the Agents tab
+        // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
         this.activate(next.id);
       }
     },
 
-    // --- consoles (the Agents tab) ----------------------------------------
+    // --- consoles (the Consoles tab) ----------------------------------------
     // The "New console" menu: the daemon's roster folded against the live
     // sessions and the open repo (wb-agents.js), plus a plain console (no agent
     // — a shell in the repo dir) the fold pins LAST. Each row carries an
@@ -2219,7 +2219,7 @@ function shell() {
       if (item.disabled) return;
       if (item.plain) this.newPlainConsole();
       else if (item.action === "attach" && !opts.fresh) {
-        if (this.active !== "agents") this.activate("agents");
+        if (this.active !== "consoles") this.activate("consoles");
         WBConsole.reach({ id: item.sessionId, agent: item.kind, repo: this.openSlug });
         this.consoleCount = WBConsole.count();
       } else this.newConsole(item.kind);
@@ -2230,13 +2230,13 @@ function shell() {
       // Defense-in-depth: the accelerator path calls this directly, so refuse an
       // agent launch with no repo here too (the dropdown already disables it).
       if (!this.openSlug) return;
-      if (this.active !== "agents") this.activate("agents");
+      if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, agent });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console
     newPlainConsole() {
-      if (this.active !== "agents") this.activate("agents");
+      if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true });
       this.consoleCount = WBConsole.count();
     },

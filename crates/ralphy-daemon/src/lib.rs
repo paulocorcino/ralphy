@@ -3399,6 +3399,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn consoles_tab_is_fixed_and_named() {
+        let body = body_string(get_local("/app.js").await).await;
+        assert!(
+            !body.contains(r#"title: "Agents""#),
+            "app.js must not carry the old tab title \"Agents\""
+        );
+        let hit = body.lines().find(|line| line.contains(r#"id: "consoles""#));
+        let line = hit.unwrap_or_else(|| panic!("no line in app.js sets id: \"consoles\""));
+        assert!(
+            line.contains(r#"title: "Consoles""#),
+            "the line setting id: \"consoles\" must also set title: \"Consoles\"; got: {line}"
+        );
+        assert!(
+            line.contains("closable: false"),
+            "the line setting id: \"consoles\" must also set closable: false; got: {line}"
+        );
+    }
+
+    #[tokio::test]
     async fn root_serves_wb_fail() {
         let resp = get_local("/wb-fail.js").await;
         assert_eq!(resp.status(), StatusCode::OK, "GET wb-fail.js → 200");

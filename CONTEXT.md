@@ -402,18 +402,19 @@ drives; no run is involved.
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
 the session), remote session (too generic).
 
-**Canvas / Agents tab**:
+**Canvas / Consoles tab**:
 The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
 Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
-strip** runs across the top where **tab 0 is the fixed Agents tab** — it never
+strip** runs across the top where **tab 0 is the fixed Consoles tab** — it never
 closes and hosts the floating agent (**workbench session**) consoles — and every
 opened file rides in after it as a **closable** tab. Decided in
 [ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md).
 _Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
-"main tab" for the Agents tab (it is fixed, not merely first).
+"main tab" for the Consoles tab (it is fixed, not merely first); Agents tab
+(the tab holds consoles, not agents; renamed in #305).
 
 **Desk layout**:
-The browser's record of *what* was open on the **Agents tab** — one entry per
+The browser's record of *what* was open on the **Consoles tab** — one entry per
 console window: a stable client-side window id, its repo, agent, **workbench
 session** kind, rectangle and maximized flag. The daemon's session id is a
 volatile **attribute**, not the key: a restarted daemon issues ids from 1

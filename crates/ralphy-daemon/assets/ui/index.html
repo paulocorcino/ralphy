@@ -156,13 +156,13 @@
 
     <!-- canvas -->
     <main class="canvas">
-      <!-- tab strip: the first tab (Agents) is fixed and never closes; every
+      <!-- tab strip: the first tab (Consoles) is fixed and never closes; every
            opened file rides in after it and can be closed. The console controls
            live at the strip's right edge — kept above the workspace so a
            floating console can never cover them. -->
       <div class="tabbar">
         <div class="tabstrip">
-          <!-- one tab per entry in `tabs`: index 0 is the fixed Agents tab
+          <!-- one tab per entry in `tabs`: index 0 is the fixed Consoles tab
                (not closable); the rest are opened files. Click activates,
                middle-click / × closes. -->
           <template x-for="t in tabs" :key="t.id">
@@ -182,8 +182,8 @@
           </template>
         </div>
 
-        <!-- console controls, only meaningful on the Agents tab -->
-        <div class="canvas-tools" x-show="active === 'agents'">
+        <!-- console controls, only meaningful on the Consoles tab -->
+        <div class="canvas-tools" x-show="active === 'consoles'">
           <!-- New console: pick an agent → spawns a floating console for the
                selected repo (openSlug), or the home dir if none. impl: this is
                where a real session/PTY is launched (agent × repo), like the
@@ -223,9 +223,9 @@
       </div>
 
       <div class="stage">
-        <!-- Agents tab: the floating-console workspace. Consoles live here as
+        <!-- Consoles tab: the floating-console workspace. Consoles live here as
              draggable windows over the dotted floor. -->
-        <section class="agents-tab" x-show="active === 'agents'">
+        <section class="consoles-tab" x-show="active === 'consoles'">
           <!-- floating console windows are appended here by wb-console.js. impl:
                each window's body is a faux terminal (local echo) as a seed —
                swap for a real xterm.js attached to a session over a WebSocket. -->
