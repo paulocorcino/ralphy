@@ -2335,15 +2335,20 @@ function shell() {
     // in-app tab then closes and we drop back to the Consoles workspace.
     detachFile(desc) {
       const id = `file:${desc.project}:${desc.path}`;
-      // file:// windows get opaque origins, so a shared global on window.opener
-      // is unreadable (SecurityError). Hand the descriptor over in the URL hash
-      // instead; the popup talks back over postMessage (see the listener below).
-      const payload = encodeURIComponent(JSON.stringify(desc));
-      const win = window.open("detached.html#" + payload, "_blank", "popup,width=920,height=760");
+      // The descriptor is handed over by postMessage, NOT in the URL hash. A
+      // hash is readable by whoever composed the link, so a bare
+      // `detached.html#<json>` let anyone render content of their choosing on
+      // the daemon's own origin. The popup instead asks its opener for the
+      // descriptor with `targetOrigin = location.origin`, which is the whole
+      // discriminator: a page on any other origin never receives that request,
+      // so it can never answer it. Passing the bytes (rather than re-reading the
+      // file) is what keeps unsaved edits alive across a detach.
+      const win = window.open("detached.html", "_blank", "popup,width=920,height=760");
       if (!win) {
         WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;
       }
+      detachedWindows.set(win, desc);
       WB.emit("detach", { project: desc.project, path: desc.path });
       this.closeTab(id);
       this.activate("consoles");
@@ -2558,13 +2563,35 @@ document.addEventListener("workbench:detach-request", (e) => {
   getShell()?.detachFile(e.detail);
 });
 
-// Messages from detached popups (postMessage, since file:// blocks shared-global
-// access): re-emit their save/reload intents on our seam so the backend sees
-// them in one place, and fold a re-attached file back into the shell.
+// The popups this shell opened, each mapped to the descriptor it is waiting for.
+// Membership is the authorisation for every message below: a window we did not
+// open is not a detached pane of ours, whatever it claims in `type`.
+const detachedWindows = new Map();
+
+// The origin we accept messages from and send them to. `file://` documents get
+// an opaque origin, where the only usable target is `"*"` — acceptable there
+// because the static demo has no backend to drive and no session to ride.
+const wbPeerOrigin = () => (window.WBMode?.isDemo() ? "*" : window.location.origin);
+
+// Messages from detached popups: hand over the descriptor the popup asks for,
+// re-emit its save/reload intents on our seam so the backend sees them in one
+// place, and fold a re-attached file back into the shell.
+//
+// Both guards matter and neither replaces the other. `e.origin` refuses a page
+// on another origin (which is how a cross-site opener is kept from driving the
+// seam); `e.source` refuses a same-origin window we did not open ourselves.
+// Without them this listener accepted `file.write` from anyone holding a handle
+// to this window.
 window.addEventListener("message", (e) => {
+  if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+  if (!detachedWindows.has(e.source)) return;
   const m = e.data;
   if (!m || typeof m !== "object") return;
-  if (m.type === "wb-emit") {
+  if (m.type === "wb-detach-ready") {
+    // The popup booted and is asking for its file. Answering same-origin-only is
+    // what stops a foreign opener from ever supplying one of its own.
+    e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, wbPeerOrigin());
+  } else if (m.type === "wb-emit") {
     WB.emit(m.action, m.detail || {});
   } else if (m.type === "wb-reattach" && m.desc) {
     getShell()?.openTab({
@@ -2574,6 +2601,7 @@ window.addEventListener("message", (e) => {
       ftype: m.desc.ftype,
       content: m.desc.content,
     });
+    detachedWindows.delete(e.source);
   }
 });
 
