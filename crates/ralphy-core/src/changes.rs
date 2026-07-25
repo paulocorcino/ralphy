@@ -23,11 +23,17 @@ pub enum ChangeStatus {
 }
 
 /// One changed path. `original_path` is set only for a rename/copy.
+///
+/// `index_status` and `worktree_status` are the two sides of git's `XY` field,
+/// `None` meaning unmodified on that side (git's `.`). `status` is the derived
+/// projection over both — see [`ChangeStatus`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Change {
     pub path: String,
     pub original_path: Option<String>,
     pub status: ChangeStatus,
+    pub index_status: Option<ChangeStatus>,
+    pub worktree_status: Option<ChangeStatus>,
 }
 
 /// The repo's working-tree change set, in git's own emission order. Entries
@@ -54,25 +60,42 @@ pub fn changes(repo: &Path) -> Result<Vec<Change>> {
                 path,
                 original_path: None,
                 status: ChangeStatus::Untracked,
+                index_status: None,
+                worktree_status: Some(ChangeStatus::Untracked),
             }),
-            Some(b'1') => field(record, 9).map(|path| Change {
-                path,
-                original_path: None,
-                status: ordinary_status(record),
+            Some(b'1') => field(record, 9).map(|path| {
+                let (index_status, worktree_status) = sides(record);
+                Change {
+                    path,
+                    original_path: None,
+                    status: ordinary_status(record),
+                    index_status,
+                    worktree_status,
+                }
             }),
             Some(b'2') => {
                 let original = records.get(i).map(|t| t.to_string());
                 i += 1;
-                field(record, 10).map(|path| Change {
-                    path,
-                    original_path: original,
-                    status: ChangeStatus::Renamed,
+                field(record, 10).map(|path| {
+                    let (index_status, worktree_status) = sides(record);
+                    Change {
+                        path,
+                        original_path: original,
+                        status: ChangeStatus::Renamed,
+                        index_status,
+                        worktree_status,
+                    }
                 })
             }
+            // An unresolved conflict is worktree work whatever its XY reads: a
+            // per-char split would file `AA` under the index side and claim a
+            // commit would contain it.
             Some(b'u') => field(record, 11).map(|path| Change {
                 path,
                 original_path: None,
                 status: ChangeStatus::Conflicted,
+                index_status: None,
+                worktree_status: Some(ChangeStatus::Conflicted),
             }),
             // `!` (ignored) and `#` (headers) carry no change.
             _ => None,
@@ -100,18 +123,43 @@ fn field(record: &str, count: usize) -> Option<String> {
         .map(|p| p.to_string())
 }
 
+/// The two-char `XY` status field of a `1`/`2` record.
+fn xy(record: &str) -> &str {
+    record.split(' ').nth(1).unwrap_or("")
+}
+
+/// One side of `XY`: `.` is unmodified on that side, and every other char falls
+/// back to `Modified` (`M`, `T`, and anything a future git adds).
+fn side_status(c: char) -> Option<ChangeStatus> {
+    Some(match c {
+        '.' => return None,
+        'A' => ChangeStatus::Added,
+        'D' => ChangeStatus::Deleted,
+        'R' | 'C' => ChangeStatus::Renamed,
+        'U' => ChangeStatus::Conflicted,
+        _ => ChangeStatus::Modified,
+    })
+}
+
+/// Both sides of a `1`/`2` record, index first. A short or absent `XY` reads as
+/// no change on the missing side rather than a guess.
+fn sides(record: &str) -> (Option<ChangeStatus>, Option<ChangeStatus>) {
+    let mut chars = xy(record).chars();
+    let index = chars.next().and_then(side_status);
+    let worktree = chars.next().and_then(side_status);
+    (index, worktree)
+}
+
 /// Status of an ordinary (`1 `) record: the first non-`.` char of its two-char
 /// `XY` field. The surface answers "what differs from HEAD", so a staged add
-/// that was then edited is one `Added`, not two states.
+/// that was then edited is one `Added`, not two states. Expressed over
+/// [`side_status`] so the projection and the split can never drift apart.
 fn ordinary_status(record: &str) -> ChangeStatus {
-    let xy = record.split(' ').nth(1).unwrap_or("");
-    match xy.chars().find(|c| *c != '.') {
-        Some('A') => ChangeStatus::Added,
-        Some('D') => ChangeStatus::Deleted,
-        Some('R') | Some('C') => ChangeStatus::Renamed,
-        Some('U') => ChangeStatus::Conflicted,
-        _ => ChangeStatus::Modified,
-    }
+    xy(record)
+        .chars()
+        .find(|c| *c != '.')
+        .and_then(side_status)
+        .unwrap_or(ChangeStatus::Modified)
 }
 
 /// Anchored at the repo root: a nested `docs/.ralphy/x` is a real change, only
@@ -171,6 +219,8 @@ mod tests {
                 path: "new.txt".to_string(),
                 original_path: Some("old.txt".to_string()),
                 status: ChangeStatus::Renamed,
+                index_status: Some(ChangeStatus::Renamed),
+                worktree_status: None,
             }
         );
         assert_eq!(find(&list, "untracked.txt").status, ChangeStatus::Untracked);
@@ -297,6 +347,8 @@ mod tests {
                 path: "README.md".to_string(),
                 original_path: None,
                 status: ChangeStatus::Conflicted,
+                index_status: None,
+                worktree_status: Some(ChangeStatus::Conflicted),
             }],
             "an unmerged path reads as Conflicted"
         );
