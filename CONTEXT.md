@@ -112,6 +112,22 @@ enriched `queue.built` event, and the on-demand `queue.snapshot` event from
 `ralphy issues --push` (ADR-0020).
 _Avoid_: backlog dump, issue list (the GitHub-side raw list, without judgment).
 
+**Run snapshot**:
+The live state of one **run**, projected from its `RunState` fold and published
+by the run itself as a versioned JSON document at
+`<repo>/.ralphy/runstate/<runid>.json`, rewritten atomically whenever the
+projection changes (ADR-0047). It is **state, not a log**: applied by
+replacement, so it needs no ordering, no replay and no catch-up on reattach.
+The **daemon** reads the directory to discover runs — including runs it never
+spawned — and never receives a push. The document encodes no liveness: a
+snapshot whose pid is dead is an **orphan** (a crashed run) and is swept, the
+same recovery the run lock's stale-PID takeover uses. Published by a third
+destination on the ADR-0024 delivery seam, alongside the Telegram notifier and
+the **event sink**.
+_Avoid_: run event / run log (the event sink's stream — durable history, a
+different species), **queue snapshot** (the backlog view, no run attached),
+heartbeat, run history (finished runs are removed, not archived).
+
 **OpenCode model resolution**:
 The precedence Ralphy uses to pick the OpenCode execution model:
 `--exec-model` (per-run) **>** `settings.json` `opencode.model` (persistent
@@ -471,6 +487,11 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   a normal run that additionally carries the daemon's identity in its events;
   a cron or manual run (including one typed inside a **free console**) simply
   doesn't. Observability never depends on a daemon existing.
+- A **run snapshot** flows one way, run → disk → **daemon**: the run publishes it
+  unconditionally (so a run started in a terminal is as visible as one the daemon
+  spawned) and the daemon only reads. It answers "what is happening now"; the
+  **event sink** answers "what happened" — same fold, different species, and
+  neither is derived from the other.
 - A **workbench session** involves no run; a **Supervised session** watches a
   run. Tokens either kind burns are **interactive usage** — visible to the
   **usage scan**, never in the ledger. The **control plane** sees both worlds — tunnel (interactive) and
