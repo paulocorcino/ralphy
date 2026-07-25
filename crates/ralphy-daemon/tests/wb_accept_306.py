@@ -4,8 +4,11 @@ One consolidated Playwright pass over a REAL daemon and ONE browser process,
 asserting that none of the symptoms PRD #296 set out to fix reproduce anymore.
 Every scenario asserts external behaviour an operator can see.
 
-Scenario 1  the canvas tab reads "Consoles", and no translation affordance is
-            reachable anywhere (#305)
+Scenario 1  the canvas tab reads "Consoles"; `window.WBTranslate` is undefined
+            and `GET /wb-translate.js` 404s (#305)
+Scenario 1b the DOM half of that sweep, DEFERRED until scenario 6 has put a run
+            on disk: the plan pane is `x-if`-gated on a live run, so a count of
+            0 taken earlier would prove nothing. Positive controls first.
 Scenario 2  a console window resizes from the west and north EDGES holding the
             opposite edge, and from the se CORNER in both axes (#303)
 Scenario 3  the console menu renders the daemon's own roster, in order, and
@@ -22,7 +25,7 @@ Scenario 8  a DAEMON restart restores the desk: the free console comes back on
             its own, the agent console as a placeholder, both in their saved
             rectangles, with no agent session launched (#303)
 Scenario 9  no uncaught page error over the whole pass, and all four dated
-            screenshots exist non-empty
+            screenshots exist non-empty AND were written by THIS run
 
 Stub / real boundary. `board.list`, `label.set` and `issue.show` are stubbed at
 `WBDaemon.observe`, which FALLS THROUGH to the real transport for every other
@@ -54,6 +57,7 @@ Linux: RALPHY_WB_TARGET=/w/target/linux/debug python crates/ralphy-daemon/tests/
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -198,6 +202,16 @@ def snapshot(phase, status_72):
 
 
 results = []
+# Every scratch dir this pass creates, swept in `main()`'s `finally` — a daemon
+# registry, a git fixture repo, a snapshot staging dir and one empty vendor-store
+# dir per daemon launch would otherwise leak per run.
+temp_dirs = []
+
+
+def scratch(prefix):
+    d = tempfile.mkdtemp(prefix=prefix)
+    temp_dirs.append(d)
+    return d
 
 
 def check(name, ok, detail=""):
@@ -228,7 +242,7 @@ def empty_env(daemon_dir):
     """A scratch registry + empty vendor stores, and every agent launch pointed at
     the session test child: the operator's daemon dir is never touched and no
     vendor CLI is required to prove the launch path (#304)."""
-    empty = tempfile.mkdtemp(prefix="wb306_empty_")
+    empty = scratch("wb306_empty_")
     return dict(
         os.environ,
         RALPHY_DAEMON_DIR=daemon_dir,
@@ -246,7 +260,7 @@ def make_fixture_repo():
     """A throwaway git repo with a real plan.md and an EMPTY runstate dir — the
     Runs panel starts at zero runs and scenario 6's documents all arrive while it
     is open. `.gitignore` hides `.ralphy/`, so the watcher's exemption is live."""
-    d = tempfile.mkdtemp(prefix="wb306_fixture_")
+    d = scratch("wb306_fixture_")
     p = Path(d)
     (p / ".gitignore").write_text(".ralphy/\n", encoding="utf-8")
     (p / ".ralphy").mkdir()
@@ -368,7 +382,7 @@ def main():
     started = time.time() - 1  # -1s of slack against filesystem mtime granularity
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
-    daemon_dir = tempfile.mkdtemp(prefix="wb306_reg_")
+    daemon_dir = scratch("wb306_reg_")
     fixture_dir = make_fixture_repo()
     slug = register_fixture(daemon_dir, fixture_dir)
 
@@ -418,7 +432,11 @@ def main():
                                     title: 'README.md', ftype: 'markdown' }});
                 }}"""
             )
-            page.wait_for_timeout(500)
+            # POSITIVE CONTROL for the viewer half of the sweep below: `openTab`
+            # defers through `$nextTick` and a `file.read`, and mounts NOTHING when
+            # the read fails — so a viewer that never appeared would report 0
+            # `[data-act="xlate"]` for a reason unrelated to #305's removal.
+            page.wait_for_selector('[data-act="reload"]', timeout=10000)
             tab_state = page.evaluate(f"() => {SH}.tabs.map((t) => ({{ id: t.id, closable: t.closable }}))")
             check(
                 "a file tab rides in AFTER the fixed consoles tab",
@@ -427,19 +445,19 @@ def main():
                 and tab_state[1]["closable"] is True,
                 f"got={tab_state}",
             )
+            check(
+                "…and IT renders a visible close button",
+                page.locator(".tabstrip .tab").nth(1).locator(".tab-close:visible").count() > 0,
+                "",
+            )
 
             check("window.WBTranslate is undefined", page.evaluate("() => typeof window.WBTranslate") == "undefined")
-            # With the Runs panel AND a markdown tab open — the two surfaces the
-            # removed feature used to hang its affordances off.
-            page.evaluate(f"() => {SH}.toggleRuns()")
-            page.wait_for_timeout(400)
-            check("the Runs panel is open for the translation sweep", page.evaluate(f"() => {SH}.runsOpen") is True)
-            for sel in (".plan-xlate", '[data-act="xlate"]', ".md-xlate-note"):
-                check(f"{sel} count is 0 anywhere in the interface", page.locator(sel).count() == 0)
             resp = page.request.get(BASE + "wb-translate.js")
             check("GET /wb-translate.js returns 404", resp.status == 404, f"got={resp.status}")
-            page.evaluate(f"() => {SH}.toggleRuns()")
-            page.wait_for_timeout(300)
+            # The DOM sweep for `.plan-xlate` is DEFERRED to scenario 6: the plan
+            # pane lives inside `x-if="openSlug && projectRuns().length"`
+            # (index.html:496), so with no run on disk the whole subtree is absent
+            # and a count of 0 here would prove nothing about the removal.
 
             # =============== scenario 2: resize from an edge and a corner =====
             # The Consoles tab must be in view or every terminal measures 0x0 —
@@ -504,7 +522,16 @@ def main():
             # hardcoded vendor list: hardcoding would re-create in the test the
             # second enumeration site ADR-0040 and #304 removed from the frontend.
             roster = page.request.get(BASE + "api/agents").json()
-            check("GET /api/agents serves a non-empty roster", len(roster) >= 1, f"got={len(roster)} rows")
+            ids = [r["id"] for r in roster]
+            # The exact count is pinned in Rust (`roster.rs::accelerators_are_unique_and_stable`);
+            # here a floor + uniqueness is what keeps a COLLAPSED roster from
+            # satisfying the relation below trivially, without re-enumerating
+            # vendors in a second place (ADR-0040).
+            check(
+                "GET /api/agents serves the full roster, ids unique",
+                len(roster) >= 5 and len(set(ids)) == len(ids),
+                f"got={ids}",
+            )
             rows = open_menu(page)
             check(
                 "the menu renders one row per roster entry, plus the plain console",
@@ -512,9 +539,12 @@ def main():
                 f"rows={rows.count()} roster={len(roster)}",
             )
             labels = rows.locator("span:not(.row-live):not(.row-new)").all_inner_texts()
+            # The row renders `label || id` (wb-agents.js), so compare against the
+            # SAME fallback — an adapter whose label differs from its id is the
+            # onboarding case this relation exists to survive.
             check(
-                "…carrying the daemon's ids, in the daemon's order, console LAST",
-                labels == [r["id"] for r in roster] + ["console"],
+                "…carrying the daemon's labels, in the daemon's order, console LAST",
+                labels == [(r.get("label") or r["id"]) for r in roster] + ["console"],
                 f"got={labels}",
             )
             # Scenario 2 left ONE free console running, so the plain-console row
@@ -557,7 +587,12 @@ def main():
             close_menu(page)
 
             # =============== scenario 4: when the board refreshes =============
-            check("no fold ran while the board was closed", board_calls(page) == 0, f"got={board_calls(page)}")
+            # Drive the one automatic trigger there is, rather than trusting that
+            # nothing happened to fire: the 30s backstop is gated on a 120s gap,
+            # so an undriven "0 folds" is only true because no tick was eligible.
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 130000; {SH}.boardBackstopTick(); }}")
+            page.wait_for_timeout(500)
+            check("a backstop tick with the board CLOSED spawns no fold", board_calls(page) == 0, f"got={board_calls(page)}")
             page.evaluate(f"() => {SH}.toggleKanban()")
             page.wait_for_timeout(600)
             check("opening the board loads it once", board_calls(page) == 1, f"got={board_calls(page)}")
@@ -591,7 +626,11 @@ def main():
                 f"{n} -> {board_calls(page)}",
             )
             trig = page.evaluate("() => window.__triggers")
-            check("…attributed to the `visible` trigger, not a stray push", trig[-1] == "visible", f"got={trig[-3:]}")
+            check(
+                "…attributed to the `visible` trigger, not a stray push",
+                (trig[-1] if trig else None) == "visible",
+                f"got={trig[-3:]}",
+            )
 
             # =============== scenario 5: the issue drawer =====================
             cards = page.locator(".kanban-card")
@@ -628,7 +667,7 @@ def main():
             page.wait_for_function(f"() => {SH}.projectRuns().length === 0", timeout=10000)
             check("the Runs panel opens empty — no run document on disk yet", True)
 
-            staging = Path(tempfile.mkdtemp(prefix="wb306_snap_"))
+            staging = Path(scratch("wb306_snap_"))
             v1, v2 = staging / "v1.json", staging / "v2.json"
             v1.write_text(json.dumps(snapshot("planning", "planning")), encoding="utf-8")
             v2.write_text(json.dumps(snapshot("executing", "executing")), encoding="utf-8")
@@ -651,8 +690,27 @@ def main():
             prog = page.locator(".run-select-btn .run-prog").inner_text().strip()
             check("the progress counter reads completed/queue-total", prog == "1/3", f"got={prog!r}")
             page.screenshot(path=os.path.join(SHOT_DIR, "306-runs-live-2026-07-25.png"))
-            writer.wait(timeout=30)
+            try:
+                writer.wait(timeout=30)
+            finally:
+                if writer.poll() is None:  # never leave it rewriting the snapshot
+                    writer.kill()
             check("the out-of-process writer exited cleanly", writer.returncode == 0, f"rc={writer.returncode}")
+
+            # =============== scenario 1b: the translation sweep, for real =====
+            # NOW the plan pane exists: `.runs-body` is `x-if`-gated on a live run
+            # (index.html:496), and the markdown viewer from scenario 1 is still
+            # mounted. Both positive controls are asserted FIRST, so a count of 0
+            # below can only mean the affordance is gone.
+            check(
+                "the plan pane is rendered (positive control for the sweep)",
+                page.locator(".plan-wrap").count() == 1,
+                f"got={page.locator('.plan-wrap').count()}",
+            )
+            reload_btns = page.locator('[data-act="reload"]').count()
+            check("…and the markdown viewer toolbar is still mounted", reload_btns >= 1, f"got={reload_btns}")
+            for sel in (".plan-xlate", '[data-act="xlate"]', ".md-xlate-note"):
+                check(f"{sel} count is 0 anywhere in the interface", page.locator(sel).count() == 0)
 
             # =============== scenario 7: the running card, and back to the run =
             page.evaluate(f"() => {{ if ({SH}.runsOpen) {SH}.toggleRuns(); }}")
@@ -664,7 +722,11 @@ def main():
                      const pill = c && c.querySelector('.kc-run');
                      return {
                        num: c ? c.querySelector('.kc-num').textContent.trim() : null,
-                       shown: !!pill && pill.offsetParent !== null,
+                       // A rendered WIDTH, not `offsetParent`: the card's
+                       // `running` class and the pill's `x-show` evaluate the
+                       // SAME expression, so an offsetParent read cannot fail
+                       // independently of the class asserted beside it.
+                       shown: !!pill && pill.getBoundingClientRect().width > 0,
                        txt: (c?.querySelector('.kc-run .kc-run-txt')?.textContent || '').trim(),
                        others: document.querySelectorAll('.kanban-card.running').length,
                      };
@@ -750,6 +812,12 @@ def main():
             )
             post = [rect_of(page, 0), rect_of(page, 1)]
             check("both windows return to their saved rectangles", post == pre, f"{pre} -> {post}")
+
+            # The two NEGATIVE assertions below are point-in-time reads in the
+            # false-pass direction — a vendor spawn arriving late would be
+            # invisible. Take them only AFTER every positive assertion above has
+            # landed, plus one more settle window.
+            page.wait_for_timeout(2500)
             sessions = page.request.get(BASE + "api/sessions").json()
             check(
                 "restoring the desk launched NO agent session",
@@ -782,10 +850,14 @@ def main():
                 check(f"{name} was written by THIS run, non-empty", size > 0 and fresh, f"bytes={size} fresh={fresh}")
     finally:
         stop(proc)
+        for d in temp_dirs:
+            shutil.rmtree(d, ignore_errors=True)  # git objects are read-only on Windows
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
-    # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 30
+    # never ran must not report success on a handful of passing checks. Pinned at
+    # the REAL count, not a loose lower bound — at 30 the last five scenarios
+    # could be deleted wholesale and the script would still report success.
+    ok = all(results) and len(results) >= 72
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("ALL SYMPTOMS NOT REPRODUCIBLE")
