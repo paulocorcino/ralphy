@@ -617,7 +617,9 @@ pub(crate) fn protocol_gate(
     let mut plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
     let mut lint = protocol::lint(&plan_md);
     // Tokens the one protocol bounce consumes, accounted as their own
-    // phase like verify repairs (ADR-0008).
+    // phase like verify repairs (ADR-0008). Taken from the bounce whole —
+    // model included — rather than summed in with `add_tokens`, which drops
+    // the model and would land the line in the unpriced `unknown` bucket (D8).
     let mut protocol_usage = Usage::default();
     // Set when the bounce itself hits a usage limit: that is the run's
     // limit, so stop on the reset instead of judging the lint again.
@@ -637,7 +639,7 @@ pub(crate) fn protocol_gate(
             usage,
             session_id,
         } = cx.agent.execute(plan, cx.ws)?;
-        protocol_usage.add_tokens(&usage);
+        protocol_usage = usage;
         if session_id.is_some() {
             protocol_session_id = session_id;
         }
@@ -720,8 +722,11 @@ pub(crate) fn verify_gate(
 ) -> Result<VerifyGate> {
     // Tokens the agent spends on repairs, accounted as their own phase so
     // the initial execute line stays truthful and the repair cost is never
-    // hidden (ADR-0008). Folded into the run totals either way.
-    let mut repair_usage = Usage::default();
+    // hidden (ADR-0008). One usage per attempt, folded after the loop via
+    // `fold_usage` — the ONE place accumulated-usage model derivation lives
+    // (D8). Accumulating with `add_tokens` instead would drop the model and
+    // land the whole repair line in the unpriced `unknown` bucket.
+    let mut repair_attempts: Vec<Usage> = Vec::new();
     // Last non-empty vendor session across the repair loop — the repair line
     // carries the terminal attempt's session (ADR-0033 §5, last-non-empty-wins).
     let mut repair_session_id: Option<String> = None;
@@ -823,7 +828,7 @@ pub(crate) fn verify_gate(
                     usage,
                     session_id,
                 } = cx.agent.execute(plan, cx.ws)?;
-                repair_usage.add_tokens(&usage);
+                repair_attempts.push(usage);
                 if session_id.is_some() {
                     repair_session_id = session_id;
                 }
@@ -884,6 +889,11 @@ pub(crate) fn verify_gate(
             GateDecision::Green
         }
     };
+
+    // Model attribution happens once, after the loop, like the execute phase:
+    // the runner stays vendor-neutral and passes no fallback (ADR-0002 — alias
+    // fallback lives in the adapter).
+    let repair_usage = Usage::fold_usage(&repair_attempts, None);
 
     // Account the repair phase before branching on the gate result, so the
     // run totals and the per-issue ledger are honest whether the gate went

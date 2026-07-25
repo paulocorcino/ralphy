@@ -1002,6 +1002,13 @@ mod tests {
         let repair = records.iter().find(|r| r.phase == "repair").unwrap();
         assert_eq!(repair.outcome, "verify-failed");
         assert_eq!(repair.tokens.total(), 10, "two repair executes accumulated");
+        // …and the accumulation keeps the model: a repair folded with
+        // `add_tokens` dropped it, so the line landed in the `unknown` bucket
+        // and its cost never priced (the run figure showed a bare `+?`).
+        assert_eq!(
+            repair.model, "fake-model",
+            "the folded repair line carries the attempts' model, not `unknown`"
+        );
 
         // The honesty artifact was posted on each gate run.
         assert!(tracker
@@ -1114,6 +1121,12 @@ mod tests {
             .find(|r| r.phase == "protocol-repair")
             .unwrap();
         assert_eq!(bounce.outcome, "done");
+        // The bounce's usage is taken whole, model included — summing it into a
+        // default `Usage` dropped the model and left the line unpriced.
+        assert_eq!(
+            bounce.model, "fake-model",
+            "the protocol-bounce line carries the bounce's model, not `unknown`"
+        );
 
         let _ = fs::remove_dir_all(&root);
     }
