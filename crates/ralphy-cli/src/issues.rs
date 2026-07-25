@@ -88,6 +88,16 @@ struct HistoryRow {
     ts: String,
 }
 
+/// One comment on the wire (ADR-0020 amendment, #302): the core record folded to
+/// the keys the workbench drawer reads, `at` being the short name for the
+/// creation timestamp.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct CommentView {
+    author: String,
+    at: String,
+    body: String,
+}
+
 /// The `ralphy issues show <n>` detail view: enough to decide without opening
 /// GitHub. Body, labels, the ADR-0017 consolidated-spec (when present), the queue
 /// judgment (flattened from the single-issue [`IssueView`]), and the run history.
@@ -100,7 +110,7 @@ struct ShowView {
     body: String,
     /// The issue's full comment thread, in order (raw, unlike
     /// `consolidated_spec` which extracts just the marked comment).
-    comments: Vec<String>,
+    comments: Vec<CommentView>,
     labels: Vec<String>,
     /// The authoritative consolidated-spec comment (ADR-0017), surfaced
     /// first-class when a marked comment exists; `None` otherwise.
@@ -189,7 +199,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         let issue = github::fetch_issue(number, &repo_root)?;
         // Best-effort: a comment-fetch failure degrades to body-only, never a stop
         // (matching the runner's own tolerance).
-        let comments = tracker.issue_comments(number).unwrap_or_default();
+        let comments = github::issue_comments_detailed(number, &repo_root).unwrap_or_default();
         let slug = git::project_slug(&repo_root);
         let history = issue_history(&slug, number);
         let view = show_view(&issue, &comments, &history, &human_return, &tracker)?;
@@ -343,7 +353,7 @@ fn parse_show_spec(spec: &[String]) -> Result<Option<u64>> {
 /// project the ledger rows into the history list.
 fn show_view(
     issue: &ralphy_core::Issue,
-    comments: &[String],
+    comments: &[github::IssueComment],
     history: &[UsageRow],
     human_return: &[String],
     tracker: &dyn IssueTracker,
@@ -354,7 +364,8 @@ fn show_view(
         .into_iter()
         .next()
         .expect("one issue in, one issue out");
-    let consolidated_spec = blocked::find_consolidated_spec(comments).map(str::to_string);
+    let bodies: Vec<String> = comments.iter().map(|c| c.body.clone()).collect();
+    let consolidated_spec = blocked::find_consolidated_spec(&bodies).map(str::to_string);
     let history = history
         .iter()
         .map(|r| HistoryRow {
@@ -370,7 +381,14 @@ fn show_view(
         number: iv.number,
         title: iv.title,
         body: issue.body.clone(),
-        comments: comments.to_vec(),
+        comments: comments
+            .iter()
+            .map(|c| CommentView {
+                author: c.author.clone(),
+                at: c.created_at.clone(),
+                body: c.body.clone(),
+            })
+            .collect(),
         labels: iv.labels,
         consolidated_spec,
         queue_status: iv.queue_status,
@@ -620,6 +638,14 @@ fn render_show_text(view: &ShowView) -> String {
                 "{}  {}  {}  {}  {} tok\n",
                 h.ts, h.phase, h.outcome, h.model, h.tokens
             ));
+        }
+    }
+    if !view.comments.is_empty() {
+        out.push_str(&format!("\n--- comments ({}) ---\n", view.comments.len()));
+        for c in &view.comments {
+            out.push_str(&format!("{}  {}\n", c.author, c.at));
+            out.push_str(&c.body);
+            out.push('\n');
         }
     }
     out.trim_end().to_string()

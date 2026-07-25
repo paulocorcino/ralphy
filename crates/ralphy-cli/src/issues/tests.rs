@@ -74,6 +74,15 @@ fn spec(tokens: &[&str]) -> Vec<String> {
     tokens.iter().map(|s| s.to_string()).collect()
 }
 
+/// A structured comment for the `show_view` call sites.
+fn comment(author: &str, at: &str, body: &str) -> github::IssueComment {
+    github::IssueComment {
+        author: author.to_string(),
+        created_at: at.to_string(),
+        body: body.to_string(),
+    }
+}
+
 #[test]
 fn parse_show_spec_accepts_both_forms() {
     assert_eq!(parse_show_spec(&spec(&[])).unwrap(), None);
@@ -230,8 +239,10 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     assert_eq!(history.len(), 2, "only #7's two rows");
 
     let issue = issue(7, &["queue"], "the issue body");
-    let comments = vec![format!(
-        "{CONSOLIDATED_SPEC_MARKER}\n## Consolidated spec\nthe real spec\n"
+    let comments = vec![comment(
+        "octocat",
+        "2026-07-23T17:21:43Z",
+        &format!("{CONSOLIDATED_SPEC_MARKER}\n## Consolidated spec\nthe real spec\n"),
     )];
     let tr = FakeTracker::default();
     let view = show_view(&issue, &comments, &history, &human(), &tr).unwrap();
@@ -265,16 +276,39 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// ADR-0020's amendment (#302) pins this name: `comments[]` carries the
+/// structured record the drawer renders, not a bare string.
 #[test]
 fn show_view_json_includes_comments() {
     let issue = issue(7, &["queue"], "the issue body");
-    let comments = vec!["a comment".to_string()];
+    let comments = vec![comment("octocat", "2026-07-23T17:21:43Z", "a comment")];
     let tr = FakeTracker::default();
     let view = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
     let json = render_show_json(&view, None).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
     assert_eq!(val["body"], "the issue body");
-    assert_eq!(val["comments"], serde_json::json!(["a comment"]));
+    assert_eq!(
+        val["comments"][0],
+        serde_json::json!({
+            "author": "octocat",
+            "at": "2026-07-23T17:21:43Z",
+            "body": "a comment",
+        })
+    );
+}
+
+#[test]
+fn show_text_renders_comment_author_and_date() {
+    let issue = issue(7, &["queue"], "the issue body");
+    let comments = vec![comment("octocat", "2026-07-23T17:21:43Z", "a comment")];
+    let tr = FakeTracker::default();
+    let view = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
+    let text = render_show_text(&view);
+    assert!(
+        text.contains("octocat  2026-07-23T17:21:43Z"),
+        "the comment must name its author and date: {text}"
+    );
+    assert!(text.contains("a comment"), "got: {text}");
 }
 
 #[test]
@@ -423,7 +457,12 @@ fn list_and_show_never_mutate_the_tracker() {
     let _ = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
 
     let issue = issue(7, &["queue"], "body");
-    let comments = tr.issue_comments(7).unwrap();
+    let comments: Vec<_> = tr
+        .issue_comments(7)
+        .unwrap()
+        .iter()
+        .map(|b| comment("octocat", "2026-07-23T17:21:43Z", b))
+        .collect();
     let _ = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
 
     assert_eq!(
