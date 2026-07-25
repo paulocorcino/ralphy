@@ -1653,7 +1653,6 @@ dependencies = [
  "directories",
  "hostname",
  "indicatif",
- "libc",
  "qrcode",
  "ralphy-adapter-support",
  "ralphy-agent-claude",
@@ -1665,6 +1664,8 @@ dependencies = [
  "ralphy-agent-opencode",
  "ralphy-core",
  "ralphy-daemon",
+ "ralphy-proc-util",
+ "ralphy-run-snapshot",
  "regex",
  "serde",
  "serde_json",
@@ -1675,7 +1676,6 @@ dependencies = [
  "ulid",
  "unicode-width",
  "ureq",
- "windows-sys 0.59.0",
  "winresource",
 ]
 
@@ -1734,6 +1734,7 @@ name = "ralphy-proc-util"
 version = "0.1.0-rc15"
 dependencies = [
  "anyhow",
+ "libc",
  "tempfile",
  "tracing",
  "windows-sys 0.59.0",

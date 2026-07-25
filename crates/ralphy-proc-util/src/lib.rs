@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
 pub mod cursor;
+pub mod pid;
+
+pub use pid::pid_is_alive;
 
 /// Put `cmd`'s child into its own process group (Unix) so a later [`kill_tree`]
 /// can signal the whole tree via the negative pgid, not just the direct child.
