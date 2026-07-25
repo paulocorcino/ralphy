@@ -19,6 +19,7 @@ use crate::{config, events, runlock, runstate, split_agent, telegram, ui};
 // `pub(crate)` only so `runstate::capture`'s #[cfg(test)] pins can drive the real
 // `emit_run_finished` (#219). Bin crate: no public surface is widened.
 pub(crate) mod report;
+mod snapshot_engine;
 pub(crate) mod summary;
 mod wiring;
 
@@ -38,6 +39,9 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     preflight_agents(args.agent, plan_agent)?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    // The process `runid` is minted HERE, not inside the events-sink branch: the
+    // run snapshot is keyed by it and is published unconditionally (ADR-0047 §4).
+    let runid = events::emitter::new_runid();
     let ws = Workspace::new(&repo_root);
     let run_dir = ws.run_dir(&stamp);
     std::fs::create_dir_all(&run_dir).ok();
@@ -96,15 +100,17 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             );
             // The run never cut a branch, so report the branch the repo is actually
             // on — not the `afk/run-<stamp>` a real run would have created.
-            let (notifier, events_handle) = start_delivery(
+            let (notifier, events_handle, snapshot_handle) = start_delivery(
                 &obs,
                 &title,
                 0,
                 &git::current_branch(&repo_root).unwrap_or_default(),
                 &repo_root,
                 &ws,
+                &runid,
+                None,
             );
-            return finish_if_idle(presenter, &msg, notifier, events_handle);
+            return finish_if_idle(presenter, &msg, notifier, events_handle, snapshot_handle);
         }
         runlock::LockState::HeldAlive(info) => {
             warn!(
@@ -124,6 +130,13 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     }
     // Held for the rest of run_cmd; Drop removes the file on every exit path.
     let _run_lock = runlock::acquire(&ws.run_lock_path())?;
+    // CROSS-PATH INVARIANT (ADR-0047 §8): bound immediately after the run lock, so
+    // on EVERY exit path — `?` propagation, the empty-queue border, the normal end
+    // — it drops AFTER the worker handles are shut down and the document cannot
+    // outlive the process. A worker DETACHED by the 5s shutdown bound
+    // (`delivery.rs`) may still write after this drop; that leftover is exactly the
+    // §8 orphan the reader's dead-pid sweep deletes.
+    let _snapshot_guard = ralphy_run_snapshot::SnapshotGuard::new(&repo_root, &runid);
 
     // Load the persisted settings once here (ADR-0010) BEFORE the queue build so the
     // `queue.assignee` default is available to the label-queue path (and, further
@@ -283,13 +296,22 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     // Start both delivery workers now that the run context is known. Events emitted
     // before this point (`queue built`) are buffered in the rings and drained on start.
-    let (notifier, events_handle) = start_delivery(
+    let (notifier, events_handle, snapshot_handle) = start_delivery(
         &obs,
         &title,
         queue.len(),
         &operating_branch,
         &repo_root,
         &ws,
+        &runid,
+        Some(runstate::snapshot::SnapshotCtx {
+            runid: runid.clone(),
+            pid: std::process::id(),
+            repo: obs.events_slug.clone(),
+            branch: operating_branch.clone(),
+            started_at: chrono::Local::now().to_rfc3339(),
+            plan_path: repo_relative_plan_path(&repo_root, &ws),
+        }),
     );
 
     // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
@@ -350,7 +372,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // to consolidate. Both `shutdown()`s run here, after the emit, so the rings drain.
     if queue.is_empty() {
         report::emit_run_finished_no_work(run_start);
-        finish_border(presenter, notifier, events_handle);
+        finish_border(presenter, notifier, events_handle, snapshot_handle);
         return Ok(());
     }
 
@@ -504,6 +526,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         run_start,
         notifier,
         events_handle,
+        snapshot_handle,
     );
 
     let report = result?;
@@ -531,9 +554,10 @@ fn finish_if_idle(
     msg: &str,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events: Option<events::sink::EventsHandle>,
+    snapshot: Option<crate::delivery::WorkerHandle>,
 ) -> Result<()> {
     ralphy_core::emit::run_skipped(msg);
-    finish_border(presenter, notifier, events);
+    finish_border(presenter, notifier, events, snapshot);
     Ok(())
 }
 
@@ -545,6 +569,7 @@ fn finish_border(
     presenter: &ui::PresenterHandle,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events: Option<events::sink::EventsHandle>,
+    snapshot: Option<crate::delivery::WorkerHandle>,
 ) {
     // finalize before printing so the live region is cleared first (ADR-0006).
     presenter.finalize();
@@ -554,6 +579,10 @@ fn finish_border(
     }
     if let Some(e) = events {
         e.shutdown();
+    }
+    // Drained last, before the caller returns and the removal guard drops.
+    if let Some(s) = snapshot {
+        s.shutdown();
     }
 }
 
@@ -566,6 +595,7 @@ fn finish_border(
 /// `try_start_notifier` runs `getMe` and `try_start_sink` spawns a thread; either
 /// failing warns once and returns `None`, leaving the installed Layer inert and the
 /// run unaffected (ADR-0007 D7).
+#[allow(clippy::too_many_arguments)]
 fn start_delivery(
     obs: &Observability,
     title: &str,
@@ -573,9 +603,12 @@ fn start_delivery(
     branch: &str,
     repo_root: &std::path::Path,
     ws: &Workspace,
+    runid: &str,
+    snapshot_ctx: Option<runstate::snapshot::SnapshotCtx>,
 ) -> (
     Option<telegram::notifier::NotifierHandle>,
     Option<events::sink::EventsHandle>,
+    Option<crate::delivery::WorkerHandle>,
 ) {
     let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
     if let (Some(event_queue), Some(cfg)) = (obs.event_queue.as_ref(), obs.tg_cfg.as_ref()) {
@@ -596,7 +629,7 @@ fn start_delivery(
     if let (Some(queue), Some(url)) = (obs.event_sink_queue.as_ref(), obs.events_url.as_ref()) {
         let ctx = events::envelope::EventCtx {
             source: events::emitter::source(&obs.events_slug),
-            runid: events::emitter::new_runid(),
+            runid: runid.to_string(),
             emitter: serde_json::to_value(events::emitter::detect(repo_root)).unwrap_or_default(),
             git: serde_json::json!({
                 "repository": obs.events_slug,
@@ -608,7 +641,30 @@ fn start_delivery(
         events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
     }
 
-    (notifier, events_handle)
+    // The snapshot publisher (ADR-0047 §2). `None` on the `--if-idle` deferral: it
+    // never acquired the run lock and never returns to a scope holding the removal
+    // guard, so publishing there would leak a document for a run that never ran.
+    let snapshot_handle = snapshot_ctx.and_then(|ctx| {
+        snapshot_engine::try_start_snapshot(
+            ctx,
+            runstate::RunState::new(title.to_string(), queue_len),
+            repo_root.to_path_buf(),
+            obs.snapshot_queue.clone(),
+        )
+    });
+
+    (notifier, events_handle, snapshot_handle)
+}
+
+/// The run's plan path relative to the repo root, with forward slashes — the form
+/// the browser hands straight to the confined `file.read` verb (ADR-0047 §5), which
+/// rejects an absolute path and a backslash-separated one alike.
+fn repo_relative_plan_path(repo_root: &std::path::Path, ws: &Workspace) -> String {
+    let plan = ws.plan_path();
+    plan.strip_prefix(repo_root)
+        .unwrap_or(&plan)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// The observability bundle installed once at run boot: the presenter handle plus
@@ -620,6 +676,9 @@ struct Observability {
     event_queue: Option<Arc<telegram::notifier::EventQueue>>,
     tg_cfg: Option<telegram::config::TelegramConfig>,
     event_sink_queue: Option<Arc<telegram::notifier::EventQueue>>,
+    /// The run-snapshot ring (ADR-0047 §1): unconditional — no config gates it,
+    /// which is exactly what makes a terminal-started run visible in the panel.
+    snapshot_queue: Arc<telegram::notifier::EventQueue>,
     events_url: Option<String>,
     events_token: Option<String>,
     events_slug: String,
@@ -680,13 +739,26 @@ fn install_observability(
         .as_ref()
         .map(|q| events::sink::new_events_layer(q.clone()));
 
-    let presenter = init_tracing(log_file, args.verbose, notifier_layer, events_layer);
+    // The run-snapshot ring + Layer (ADR-0047 §1/§2): installed unconditionally, so
+    // the panel sees every run — including one typed by hand in a terminal.
+    let snapshot_queue = Arc::new(telegram::notifier::EventQueue::new());
+    let snapshot_layer =
+        crate::delivery::DeliveryLayer::new(snapshot_queue.clone(), "run::snapshot");
+
+    let presenter = init_tracing(
+        log_file,
+        args.verbose,
+        notifier_layer,
+        events_layer,
+        snapshot_layer,
+    );
 
     Observability {
         presenter,
         event_queue,
         tg_cfg,
         event_sink_queue,
+        snapshot_queue,
         events_url,
         events_token,
         events_slug,
@@ -768,6 +840,7 @@ fn finalize_run(
     run_start: std::time::Instant,
     notifier: Option<telegram::notifier::NotifierHandle>,
     events_handle: Option<events::sink::EventsHandle>,
+    snapshot_handle: Option<crate::delivery::WorkerHandle>,
 ) -> ralphy_core::Usage {
     // Flush the queue bar to N/N and clear the live region before anything else
     // prints — whether that is the panel or `anyhow`'s error on the `?` propagation.
@@ -799,6 +872,11 @@ fn finalize_run(
     }
     if let Some(events_handle) = events_handle {
         events_handle.shutdown();
+    }
+    // The snapshot worker last: its terminal document is written by `on_finish`,
+    // and the caller's removal guard drops after this returns (ADR-0047 §8).
+    if let Some(snapshot_handle) = snapshot_handle {
+        snapshot_handle.shutdown();
     }
 
     consolidation_usage
@@ -891,6 +969,7 @@ mod tests {
                 "skipped: run in progress since 2026-07-19 10:00:00, pid 4242",
                 None,
                 events,
+                None,
             ));
         });
         assert!(out.expect("the border ran").is_ok(), "a deferral exits 0");
@@ -904,7 +983,7 @@ mod tests {
         let presenter = ui::PresenterHandle::plain();
         let types = envelopes_delivered_by(|events| {
             report::emit_run_finished_no_work(std::time::Instant::now());
-            finish_border(&presenter, None, events);
+            finish_border(&presenter, None, events, None);
         });
         assert_eq!(types, vec!["dev.ralphy.run.finished"]);
     }

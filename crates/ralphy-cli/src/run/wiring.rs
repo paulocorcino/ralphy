@@ -416,6 +416,7 @@ pub(crate) fn init_tracing(
     verbose: bool,
     notifier: Option<delivery::DeliveryLayer>,
     events: Option<delivery::DeliveryLayer>,
+    snapshot: delivery::DeliveryLayer,
 ) -> ui::PresenterHandle {
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -460,6 +461,7 @@ pub(crate) fn init_tracing(
         .with(file_layer)
         .with(notifier)
         .with(events)
+        .with(snapshot)
         .with(ui::EdgeNoticeLayer::new(std::sync::Arc::clone(&edge)));
 
     if raw_stderr {

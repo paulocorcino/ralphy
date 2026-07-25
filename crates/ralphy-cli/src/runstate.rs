@@ -22,6 +22,7 @@ mod event;
 mod fields;
 #[cfg(test)]
 mod roundtrip;
+pub mod snapshot;
 mod state;
 
 pub use event::{event_to_runevent, RunEvent};
@@ -76,6 +77,20 @@ pub enum SkipKind {
     StopBefore,
     HumanReturn,
     VerifyFailed,
+}
+
+impl SkipKind {
+    /// The wire name on an `issue.skipped` event (docs/events.md) and on the run
+    /// snapshot's issue block (ADR-0047 §5) — one vocabulary, so the two cannot
+    /// drift.
+    pub fn skip_wire(self) -> &'static str {
+        match self {
+            SkipKind::BlockedBy => "blocked_by",
+            SkipKind::StopBefore => "stop_before",
+            SkipKind::HumanReturn => "human_return",
+            SkipKind::VerifyFailed => "verify_failed",
+        }
+    }
 }
 
 /// A normalized token-usage breakdown carried on a [`RunEvent`] for the live UI.

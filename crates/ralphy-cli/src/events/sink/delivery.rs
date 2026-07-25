@@ -15,7 +15,7 @@ use super::poller::StepPoller;
 use crate::delivery::{spawn_worker, DeliveryEngine, EventQueue, WorkerHandle};
 use crate::events::client::{EventSink, PostOutcome};
 use crate::events::envelope::{runevent_to_cloudevent, EventCtx};
-use crate::runstate::{IssueStatus, RunEvent, RunState, UsageLite};
+use crate::runstate::{RunEvent, RunState, UsageLite};
 
 /// The heartbeat cadence (ADR-0019: ~30s, carried on the wire as `interval_s` so a
 /// consumer never hardcodes it).
@@ -57,17 +57,7 @@ impl Totals {
 /// initial `starting`. A sleep reports `sleeping` even with an executing issue so a
 /// long usage-limit pause is never mistaken for progress or for death.
 fn phase(state: &RunState) -> &'static str {
-    if state.sleep.is_some() {
-        return "sleeping";
-    }
-    if state.consolidating.is_some() {
-        return "consolidating";
-    }
-    match state.active_issue().map(|e| &e.status) {
-        Some(IssueStatus::Executing) => "executing",
-        Some(IssueStatus::Planning) => "planning",
-        _ => "starting",
-    }
+    state.run_phase()
 }
 
 /// Build a `run.heartbeat` envelope from the folded state and running totals: the

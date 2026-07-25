@@ -193,12 +193,7 @@ fn subject_for(n: u64) -> String {
 
 /// The [`SkipKind`] wire name on an `issue.skipped` event (docs/events.md).
 fn skip_kind_name(kind: SkipKind) -> &'static str {
-    match kind {
-        SkipKind::BlockedBy => "blocked_by",
-        SkipKind::StopBefore => "stop_before",
-        SkipKind::HumanReturn => "human_return",
-        SkipKind::VerifyFailed => "verify_failed",
-    }
+    kind.skip_wire()
 }
 
 /// Resolve a possibly-zero issue number (the adapter's planning/execution events
