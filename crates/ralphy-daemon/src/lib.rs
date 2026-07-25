@@ -1246,6 +1246,12 @@ async fn command_ws(
 /// pushed back as `Frame::Command{verb:"tree.dirty", payload:{repo,path}}`, and
 /// the browser re-reads that subtree via the Observe `tree.list` path.
 ///
+/// The socket carries a SECOND subscription kind (#300, ADR-0047 §9): `runs.watch`
+/// / `runs.unwatch` hold [`watch::RUNSTATE_REL`], the repo's run-snapshot dir, and
+/// a change there pushes `runs.dirty {repo}` — the browser re-reads `runs.list`.
+/// Both kinds live in the SAME `watched` list, so the teardown below releases them
+/// identically.
+///
 /// TEARDOWN INVARIANT: on EVERY exit path — daemon shutdown OR client close/error
 /// — the connection releases EVERY dir it watched (tracked in `watched`) so the
 /// last release tears the repo watcher down, and aborts its forwarder tasks. A
@@ -1289,10 +1295,14 @@ async fn tree_ws(
                         cmd.payload.get("path").and_then(|v| v.as_str()).unwrap_or(""),
                     );
                     match cmd.verb.as_str() {
-                        "watch" => {
+                        "watch" | "runs.watch" => {
                             if repo.is_empty() {
                                 continue;
                             }
+                            // The runs subscription ignores the payload path: its dir is
+                            // fixed (ADR-0047 §9), so a client cannot aim it elsewhere.
+                            let runs = cmd.verb == "runs.watch";
+                            let rel = if runs { watch::RUNSTATE_REL.to_string() } else { rel };
                             // Idempotent per connection: a repeat watch must NOT take a
                             // second manager refcount this teardown would never release.
                             let key = (repo.clone(), rel.clone());
@@ -1307,6 +1317,17 @@ async fn tree_ws(
                                 }
                             };
                             let Some(root) = root else { continue };
+                            if runs {
+                                // `notify` errors on a missing path, and a repo where
+                                // `ralphy run` never ran has no snapshot dir — without
+                                // this, a first run started while the panel is open would
+                                // stay invisible until reopen (ADR-0036 §4 amendment).
+                                if let Err(e) =
+                                    std::fs::create_dir_all(root.join(".ralphy").join("runstate"))
+                                {
+                                    tracing::warn!(error = %e, "runs watch: creating the runstate dir");
+                                }
+                            }
                             match watchers.watch(&repo, &root, &rel) {
                                 Ok(rx) => {
                                     // First dir for this repo on this connection → spawn its
@@ -1319,7 +1340,12 @@ async fn tree_ws(
                                 Err(e) => tracing::warn!(error = %e, "tree watch failed"),
                             }
                         }
-                        "unwatch" => {
+                        "unwatch" | "runs.unwatch" => {
+                            let rel = if cmd.verb == "runs.unwatch" {
+                                watch::RUNSTATE_REL.to_string()
+                            } else {
+                                rel
+                            };
                             let key = (repo.clone(), rel.clone());
                             if !watched.contains(&key) {
                                 continue; // not held → nothing to release (no double-unwatch)
@@ -1346,13 +1372,27 @@ async fn tree_ws(
                 // THIS connection subscribed to.
                 if let Some((repo, rel)) = nudge {
                     if watched.iter().any(|(r, p)| r == &repo && p == &rel) {
-                        send_command(
-                            &mut socket,
-                            0,
-                            "tree.dirty",
-                            serde_json::json!({ "repo": repo, "path": rel }),
-                        )
-                        .await;
+                        // Discriminated by REL, not by the verb that subscribed, so
+                        // both subscription kinds share ONE `watched` list (and one
+                        // exactly-once teardown). The browser's two consumers react
+                        // differently: re-read a subtree vs re-read `runs.list`.
+                        if rel == watch::RUNSTATE_REL {
+                            send_command(
+                                &mut socket,
+                                0,
+                                "runs.dirty",
+                                serde_json::json!({ "repo": repo }),
+                            )
+                            .await;
+                        } else {
+                            send_command(
+                                &mut socket,
+                                0,
+                                "tree.dirty",
+                                serde_json::json!({ "repo": repo, "path": rel }),
+                            )
+                            .await;
+                        }
                     }
                 }
             }
