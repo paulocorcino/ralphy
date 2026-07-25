@@ -295,3 +295,33 @@ either way.
   the boundary) as exhaustively as reads.
 - Deletion stays a plain confined unlink/rmdir; any confirmation UX is the
   browser's job, not a daemon semantic.
+
+## Amendment (2026-07-25, issue #300): the run-snapshot subscription
+
+The `/ws/tree` socket carries a **second subscription kind**, so the live Runs
+panel (ADR-0047 §9) reuses the watcher manager of §4 rather than introducing a
+second push mechanism. A client sends `runs.watch { repo }` (the payload path is
+ignored — the target dir is fixed) and `runs.unwatch { repo }`; a settled change
+under that repo's snapshot dir is pushed as `runs.dirty { repo }`, and the
+browser re-reads `runs.list`. Push discrimination is by the watched **rel dir**,
+not by the verb that subscribed, so both kinds share ONE per-connection watched
+list and one exactly-once teardown.
+
+`.ralphy/runstate` is the ONE directory exempt from §4's "never descend
+`.ralphy`" filter. Every repo ralphy touches gitignores `.ralphy/`, so without
+the exemption the pump would drop every snapshot event and §9 of ADR-0047 could
+not be built on this watcher at all. The exemption is a single constant
+(`watch::RUNSTATE_REL`) matched on the event's parent dir, and is still gated on
+the watch-set: nothing is watched that a client did not ask for.
+
+Establishing that watch **creates** the directory when it is absent. This is a
+named, bounded exception to §3's observe-never-mutate: `notify` errors on a
+missing path, and a repo where `ralphy run` has never run has no snapshot dir —
+so a first run started while the panel is open would stay invisible until the
+operator reopened the project. What is created is an empty, gitignored directory
+that ralphy itself owns; no repo content is written, read, or interpreted.
+
+The consequence for the browser: a snapshot is **state**, not a log, so the
+client applies it by replacement and the extra read on every (re)connect is free.
+The client-side run-event fold and the demo advance control therefore have no
+role in daemon mode and are reachable only from the static `file://` demo.
