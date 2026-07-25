@@ -947,7 +947,16 @@ async fn command_ws(
                     serde_json::json!({ "status": "error", "reason": reason })
                 }
             },
-            // Unreachable: only TreeList/FileRead are Observe verbs.
+            // No `path` input: the verb alone fixes what is read (ADR-0047 §9).
+            dispatch::Verb::RunsList => {
+                let listing = ralphy_run_snapshot::list_runs(root, ralphy_proc_util::pid_is_alive);
+                serde_json::json!({
+                    "status": "ok",
+                    "runs": listing.live,
+                    "unreadable": listing.unreadable,
+                })
+            }
+            // Unreachable: only TreeList/FileRead/RunsList are Observe verbs.
             _ => serde_json::json!({ "status": "error", "reason": "refused" }),
         };
         send_command(&mut socket, id, &cmd.verb, payload).await;

@@ -1713,6 +1713,7 @@ dependencies = [
  "qrcode",
  "ralphy-proc-util",
  "ralphy-pty",
+ "ralphy-run-snapshot",
  "ralphy-usage-scan",
  "rusqlite",
  "serde",
