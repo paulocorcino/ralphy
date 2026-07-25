@@ -176,6 +176,14 @@ pub enum Verb {
     /// Read a file's content at a revision (Query: `blob read --revision head
     /// --path <p> --format json`) — the diff tab's original side.
     BlobRead,
+    /// Read the branch's upstream state (Query: `sync status --format json`) —
+    /// never a network call.
+    SyncStatus,
+    /// Fetch the branch's remote (Mutate: `sync fetch`, run-lock-aware) — the
+    /// operator's own act, never a timer's.
+    SyncFetch,
+    /// Fast-forward from the upstream (Mutate: `sync pull`, run-lock-aware).
+    SyncPull,
 }
 
 impl Verb {
@@ -205,6 +213,9 @@ impl Verb {
             "label.set" => Some(Verb::LabelSet),
             "changes.list" => Some(Verb::ChangesList),
             "blob.read" => Some(Verb::BlobRead),
+            "sync.status" => Some(Verb::SyncStatus),
+            "sync.fetch" => Some(Verb::SyncFetch),
+            "sync.pull" => Some(Verb::SyncPull),
             _ => None,
         }
     }
@@ -232,6 +243,9 @@ impl Verb {
         Verb::LabelSet,
         Verb::ChangesList,
         Verb::BlobRead,
+        Verb::SyncStatus,
+        Verb::SyncFetch,
+        Verb::SyncPull,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -246,12 +260,15 @@ impl Verb {
             | Verb::IssueShow
             | Verb::BranchList
             | Verb::ChangesList
-            | Verb::BlobRead => EffectClass::Query,
+            | Verb::BlobRead
+            | Verb::SyncStatus => EffectClass::Query,
             Verb::ConfigSet
             | Verb::ConfigUnset
             | Verb::BranchSwitch
             | Verb::BranchCreate
-            | Verb::LabelSet => EffectClass::Mutate,
+            | Verb::LabelSet
+            | Verb::SyncFetch
+            | Verb::SyncPull => EffectClass::Mutate,
             Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
                 EffectClass::Write
             }
@@ -324,7 +341,10 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchCreate
         | Verb::LabelSet
         | Verb::ChangesList
-        | Verb::BlobRead => Err(ArgvError::BadParam("verb")),
+        | Verb::BlobRead
+        | Verb::SyncStatus
+        | Verb::SyncFetch
+        | Verb::SyncPull => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -421,6 +441,29 @@ pub fn blob_read_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvEr
         "--format".to_string(),
         "json".to_string(),
     ])
+}
+
+/// The static argv for the sync-status Query verb: `sync status --format json`
+/// (issue #316). Takes no client input; the verb alone fixes the command line,
+/// and the command itself makes no network call.
+pub fn sync_status_argv() -> Vec<String> {
+    ["sync", "status", "--format", "json"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Compose the argv for a sync Mutate verb: `sync fetch` / `sync pull` (issue
+/// #316). These verbs take NO client input, so the verb argument is the only
+/// parameter there is to malform — anything else yields [`ArgvError`] and NO
+/// argv, mirroring [`branch_argv`]'s guard.
+pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
+    let sub = match verb {
+        Verb::SyncFetch => "fetch",
+        Verb::SyncPull => "pull",
+        _ => return Err(ArgvError::BadParam("verb")),
+    };
+    Ok(vec!["sync".to_string(), sub.to_string()])
 }
 
 /// Compose the argv for a branch Mutate verb: `branch switch -- <name>` /
@@ -813,10 +856,44 @@ mod tests {
         assert_eq!(Verb::BranchSwitch.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::BranchCreate.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::LabelSet.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::SyncStatus.effect_class(), EffectClass::Query);
+        assert_eq!(Verb::SyncFetch.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::SyncPull.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            21,
-            "the registry holds exactly twenty-one verbs"
+            24,
+            "the registry holds exactly twenty-four verbs"
+        );
+    }
+
+    #[test]
+    fn sync_argv_composes_exact_vectors_and_refuses() {
+        assert_eq!(Verb::from_query("sync.status"), Some(Verb::SyncStatus));
+        assert_eq!(Verb::from_query("sync.fetch"), Some(Verb::SyncFetch));
+        assert_eq!(Verb::from_query("sync.pull"), Some(Verb::SyncPull));
+
+        assert_eq!(
+            sync_status_argv(),
+            vec!["sync", "status", "--format", "json"]
+        );
+        assert_eq!(sync_argv(Verb::SyncFetch).unwrap(), vec!["sync", "fetch"]);
+        assert_eq!(sync_argv(Verb::SyncPull).unwrap(), vec!["sync", "pull"]);
+
+        // The verbs carry no client input, so the verb itself is the only
+        // parameter there is to malform — and a bad one yields NO argv.
+        assert_eq!(sync_argv(Verb::Run), Err(ArgvError::BadParam("verb")));
+        assert_eq!(
+            sync_argv(Verb::ChangesList),
+            Err(ArgvError::BadParam("verb"))
+        );
+        assert_eq!(
+            spawn_argv(Verb::SyncFetch, &serde_json::json!({})),
+            Err(ArgvError::BadParam("verb")),
+            "a Mutate verb never reaches the spawn path"
+        );
+        assert_eq!(
+            spawn_argv(Verb::SyncStatus, &serde_json::json!({})),
+            Err(ArgvError::BadParam("verb"))
         );
     }
 

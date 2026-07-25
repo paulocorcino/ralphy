@@ -1064,8 +1064,9 @@ async fn command_ws(
     // `issue.show`→`issues show <n> --format json`/`issue`,
     // `branch.list`→`branch list --format json`/`branches`,
     // `changes.list`→`changes list --format json`/`changes`,
-    // `blob.read`→`blob read --revision head --path <p> --format json`/`blob`. The
-    // parsed JSON rides that field; a non-JSON stdout falls back to a raw string.
+    // `blob.read`→`blob read --revision head --path <p> --format json`/`blob`,
+    // `sync.status`→`sync status --format json`/`sync`. The parsed JSON rides
+    // that field; a non-JSON stdout falls back to a raw string.
     if verb.effect_class() == dispatch::EffectClass::Query {
         let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb {
             dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
@@ -1074,6 +1075,7 @@ async fn command_ws(
             dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
             dispatch::Verb::ChangesList => (Ok(dispatch::changes_list_argv()), "changes"),
             dispatch::Verb::BlobRead => (dispatch::blob_read_argv(&cmd.payload), "blob"),
+            dispatch::Verb::SyncStatus => (Ok(dispatch::sync_status_argv()), "sync"),
             // Unreachable: only the Query verbs reach this branch.
             _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
         };
@@ -1119,6 +1121,7 @@ async fn command_ws(
                 dispatch::branch_argv(verb, &cmd.payload)
             }
             dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
+            dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull => dispatch::sync_argv(verb),
             _ => Err(dispatch::ArgvError::BadParam("verb")),
         };
         let payload = match argv_result {
