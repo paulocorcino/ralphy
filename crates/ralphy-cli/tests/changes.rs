@@ -56,6 +56,44 @@ fn changes_list_json_shape_is_the_wire_contract() {
     );
 }
 
+/// The index split (#315) rides the same wire: the two side fields arrive
+/// alongside the unchanged `status`, so the daemon can group without a second
+/// read.
+#[test]
+fn changes_list_json_carries_both_sides() {
+    let repo = init_repo();
+    // Undo the seeded edit so the staged-then-modified path is the only change.
+    std::fs::write(repo.path().join("README.md"), "hello\n").unwrap();
+    std::fs::write(repo.path().join("added.txt"), "new\n").unwrap();
+    run_git(repo.path(), &["add", "added.txt"]);
+    std::fs::write(repo.path().join("added.txt"), "new\nand edited\n").unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args([
+            "changes",
+            "list",
+            "--format",
+            "json",
+            "--repo",
+            &repo.path().to_string_lossy(),
+        ])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "changes list must succeed");
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("changes list emits JSON");
+    let list = v["changes"].as_array().expect("changes array");
+    assert_eq!(list.len(), 1, "one staged-then-modified file: {list:?}");
+    assert_eq!(v["changes"][0]["index_status"], "added");
+    assert_eq!(v["changes"][0]["worktree_status"], "modified");
+    assert_eq!(
+        v["changes"][0]["status"], "added",
+        "the derived projection is untouched by the split"
+    );
+    assert!(v["changes"][0]["original_path"].is_null());
+}
+
 #[test]
 fn changes_list_without_format_prints_one_entry_per_line() {
     let repo = init_repo();

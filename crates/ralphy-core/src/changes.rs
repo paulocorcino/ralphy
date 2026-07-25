@@ -8,9 +8,11 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-/// What happened to a path, as the change set reports it. Answers "what differs
-/// from HEAD" — the index/worktree split is not modelled, so a path staged as
-/// added and then deleted from disk still reports `Added`: the index side wins.
+/// What happened to a path, as the change set reports it. Used three ways on one
+/// entry: the derived `status`, which answers "what differs from HEAD" (the first
+/// non-`.` side, so a path staged as added and then deleted from disk still
+/// reports `Added` — the index side wins), plus the index and worktree sides
+/// separately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChangeStatus {
