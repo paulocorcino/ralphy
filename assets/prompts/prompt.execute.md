@@ -162,8 +162,9 @@ issue with the failure report published for the human reviewer.
    COMPLETION LINT: the runner accepts the token only after a deterministic
    lint of `.ralphy/plan.md` — no step left `- [ ]`, every `- [!]` carrying
    its inline `— blocked:`/`— noticed:` reason, `## Handoff`, `## Plan
-   friction`, and `## Self-review findings` present with real content, and no
-   planner placeholder `evidence:` text left in the `## Acceptance ledger`.
+   friction`, and `## Self-review findings` present with real content, an
+   `## Acceptance ledger` present and parsing to at least one verdict line,
+   and no planner placeholder `evidence:` text left in it.
    Each artifact is specified in its own section below; complete them all
    BEFORE emitting the token.
 

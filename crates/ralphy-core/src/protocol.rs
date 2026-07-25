@@ -4,9 +4,10 @@
 //! the runner runs these structural checks over the plan before accepting the
 //! self-report. The lint asserts
 //! PRESENCE AND SHAPE only — no step left open, the charter's closing sections
-//! written, no planner placeholder left in the acceptance ledger. It never
-//! judges the truthfulness of what a section says; that stays with the human at
-//! merge. Pure functions over markdown strings — no I/O, no `gh` calls.
+//! written, the acceptance ledger present and parsed, no planner placeholder
+//! left in it. It never judges the truthfulness of what a section says; that
+//! stays with the human at merge. Pure functions over markdown strings — no
+//! I/O, no `gh` calls.
 
 use regex::Regex;
 
@@ -51,6 +52,9 @@ impl ProtocolReport {
 ///     (`— blocked: <text>` or `— noticed: <text>`) — a bare `- [!]` would be
 ///     a silent tick in disguise;
 ///   - `## Handoff` and `## Plan friction` sections present and non-blank;
+///   - `## Acceptance ledger` present and parses to at least one verdict line
+///     (#312) — an absent, blank, or prose-only section fails this check;
+///     presence only, not truthfulness;
 ///   - `## Self-review findings` present when the steps carry a self-review
 ///     step (the charter forbids ticking that step without the artifact);
 ///   - no `## Acceptance ledger` line still carrying planner placeholder
