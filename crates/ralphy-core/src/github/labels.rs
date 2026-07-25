@@ -68,15 +68,21 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
         parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_string())
     };
 
+    // Colour is a signal, not decoration: labels in the same family share a hue,
+    // and no two specs — nor a spec and a GitHub default — share an exact colour.
+    //   green  = go, the queue set (`resolve_queue_labels`)
+    //   purple = blocked on a person (`HUMAN_GATE_LABELS` and human-return)
+    //   amber  = the triage pipeline
+    //   red    = the run stopped here
     let mut specs = vec![
         LabelSpec {
             name: resolve("needs-triage"),
-            color: "e4e669".into(),
+            color: "fbca04".into(),
             description: "Needs a human triage pass before it can be worked".into(),
         },
         LabelSpec {
             name: resolve("needs-info"),
-            color: "0075ca".into(),
+            color: "d4c5f9".into(),
             description: "Blocked — waiting for more information from the author".into(),
         },
         LabelSpec {
@@ -97,12 +103,12 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
         },
         LabelSpec {
             name: "AFK".into(),
-            color: "f9d0c4".into(),
+            color: "9be9a8".into(),
             description: "Agent away — run paused, will resume".into(),
         },
         LabelSpec {
             name: "HITL".into(),
-            color: "b60205".into(),
+            color: "8957e5".into(),
             description: "Human-in-the-loop required before the agent can continue".into(),
         },
         LabelSpec {
@@ -112,7 +118,7 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
         },
         LabelSpec {
             name: NEEDS_SPLIT_LABEL.into(),
-            color: "d93f0b".into(),
+            color: "e99695".into(),
             description: "Ralphy: bundle issue awaiting split into child issues".into(),
         },
         LabelSpec {
@@ -124,7 +130,7 @@ pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
         },
         LabelSpec {
             name: TRIAGE_AGENT_LABEL.into(),
-            color: "fbca04".into(),
+            color: "ffe0a6".into(),
             description:
                 "Awaiting an agent triage pass (`ralphy triage`) before it enters the queue".into(),
         },
@@ -426,6 +432,45 @@ mod tests {
                 names.iter().any(|n| n == label),
                 "runner applies `{label}` but init never creates it: {names:?}"
             );
+        }
+    }
+
+    /// Colour is the only signal in a label list once the names wrap, so two
+    /// specs sharing one is a bug — `needs-split` and `stop-before` were both
+    /// `d93f0b` and read as the same thing at a glance.
+    #[test]
+    fn no_two_specs_share_a_colour() {
+        let specs = ralphy_label_specs(None);
+        let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for s in &specs {
+            let colour = normalize_color(&s.color);
+            if let Some(other) = seen.insert(colour.clone(), s.name.clone()) {
+                panic!("`{}` and `{}` share colour #{colour}", other, s.name);
+            }
+        }
+    }
+
+    /// A spec that reuses a GitHub default label's colour is indistinguishable
+    /// from it in the picker — `needs-triage` collided with `invalid` and
+    /// `needs-info` with `documentation`.
+    #[test]
+    fn no_spec_collides_with_a_github_default_colour() {
+        // The palette GitHub seeds every new repository with.
+        let defaults = [
+            ("bug", "d73a4a"),
+            ("documentation", "0075ca"),
+            ("duplicate", "cfd3d7"),
+            ("enhancement", "a2eeef"),
+            ("good first issue", "7057ff"),
+            ("help wanted", "008672"),
+            ("invalid", "e4e669"),
+            ("question", "d876e3"),
+        ];
+        for s in ralphy_label_specs(None) {
+            let colour = normalize_color(&s.color);
+            if let Some((name, _)) = defaults.iter().find(|(_, c)| *c == colour) {
+                panic!("`{}` reuses GitHub's `{name}` colour #{colour}", s.name);
+            }
         }
     }
 
