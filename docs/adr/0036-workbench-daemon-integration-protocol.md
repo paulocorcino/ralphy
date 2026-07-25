@@ -325,3 +325,27 @@ The consequence for the browser: a snapshot is **state**, not a log, so the
 client applies it by replacement and the extra read on every (re)connect is free.
 The client-side run-event fold and the demo advance control therefore have no
 role in daemon mode and are reachable only from the static `file://` demo.
+
+## Amendment (2026-07-25, issue #310): the run-completion nudge
+
+The `/ws/tree` socket carries a **third push kind**, `changes.dirty { repo }`,
+which is NOT fed by the §4 watcher. Its source is a daemon-wide broadcast the
+Spawn path (§1) sends when a dispatched child exits: the daemon already sees
+that exit, and a run that just touched the working tree is exactly when the
+Changes count (issue #307) goes stale.
+
+This push kind has **no subscription verb and no per-connection state**. Every
+`/ws/tree` connection gets every nudge, and the browser filters by the repo
+it currently has open — a nudge for another repo is a no-op it drops. The
+alternative (a `changes.watch` / `changes.unwatch` pair) would add a teardown
+obligation for a push that costs nothing to ignore.
+
+Two boundaries hold. The §4 **watch-set is not widened**: it stays bounded by
+what the browser expanded, so no repo-wide filesystem watch is established.
+And **no timer is introduced**: the nudge is edge-triggered by the child exit,
+not polled. The Changes count therefore stays a snapshot between events — a
+tree change with no run and no manual refresh stays invisible by design.
+
+The send lives inside the blocking wait task, not the socket `select!` loop,
+so it fires on EVERY exit path of the run — including the daemon-shutdown and
+client-disconnect arms that abandon the socket while the run keeps living.

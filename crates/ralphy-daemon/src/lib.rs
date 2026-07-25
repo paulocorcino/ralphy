@@ -191,6 +191,11 @@ pub struct StorePaths {
     pub gemini_dir: PathBuf,
 }
 
+/// Buffered run-exit nudges per `/ws/tree` subscriber. A lagging subscriber
+/// only skips ahead (the browser's re-read is idempotent), so this bounds
+/// memory rather than correctness.
+const RUN_EXIT_CAP: usize = 32;
+
 /// The daemon's HTTP surface. Real routes sit *before* the embedded-UI
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
@@ -219,6 +224,14 @@ pub fn router(
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    // The run-completion nudge bus (#310, ADR-0036 amendment): the Spawn path
+    // sends the repo slug of every dispatched child that exits, and every
+    // `/ws/tree` connection relays it as `changes.dirty`. Daemon-wide and
+    // subscription-free — same ownership model as `watchers`, so the public
+    // `router` signature holds.
+    let run_exits = tokio::sync::broadcast::channel::<String>(RUN_EXIT_CAP).0;
+    let command_run_exits = run_exits.clone();
+    let tree_run_exits = run_exits.clone();
     let tree_watchers = watchers.clone();
     let tree_registry = registry_path.clone();
     let tree_shutdown = shutdown.clone();
@@ -306,9 +319,10 @@ pub fn router(
                 let registry_path = command_registry.clone();
                 let shutdown = command_shutdown.clone();
                 let daemon_id = command_daemon_id.clone();
+                let run_exits = command_run_exits.clone();
                 async move {
                     ws.on_upgrade(move |socket| {
-                        command_ws(socket, registry_path, shutdown, daemon_id)
+                        command_ws(socket, registry_path, shutdown, daemon_id, run_exits)
                     })
                 }
             }),
@@ -319,8 +333,11 @@ pub fn router(
                 let watchers = tree_watchers.clone();
                 let registry_path = tree_registry.clone();
                 let shutdown = tree_shutdown.clone();
+                let run_exits = tree_run_exits.clone();
                 async move {
-                    ws.on_upgrade(move |socket| tree_ws(socket, watchers, registry_path, shutdown))
+                    ws.on_upgrade(move |socket| {
+                        tree_ws(socket, watchers, registry_path, shutdown, run_exits)
+                    })
                 }
             }),
         )
@@ -872,6 +889,7 @@ async fn command_ws(
     registry_path: PathBuf,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     daemon_id: Option<String>,
+    run_exits: tokio::sync::broadcast::Sender<String>,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     let Some(Ok(Message::Binary(bytes))) = socket.recv().await else {
@@ -1174,7 +1192,19 @@ async fn command_ws(
     }
 
     // `Child::wait` is blocking and must not sit on the tokio runtime.
-    let mut wait = tokio::task::spawn_blocking(move || child.wait());
+    //
+    // The run-completion nudge (#310) is sent HERE, inside the blocking task, and
+    // not from the wait arm below: the shutdown and client-disconnect arms `break`
+    // without ever polling that arm while the run keeps living (the teardown
+    // invariant above), and tokio never cancels a blocking task — so this is the
+    // only site that fires on EVERY exit path. A send with no `/ws/tree`
+    // subscriber is `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
+    let nudge_slug = slug.to_string();
+    let mut wait = tokio::task::spawn_blocking(move || {
+        let result = child.wait();
+        let _ = run_exits.send(nudge_slug);
+        result
+    });
     // Disables the output arm once the drain channel closes (child pipe EOF), so
     // a closed `rx` never busy-loops and the other arms keep being polled.
     let mut output_open = true;
@@ -1257,6 +1287,11 @@ async fn command_ws(
 /// Both kinds live in the SAME `watched` list, so the teardown below releases them
 /// identically.
 ///
+/// A THIRD push kind (#310, ADR-0036 amendment) is NOT watcher-fed: `changes.dirty
+/// {repo}` relays the daemon-wide run-exit broadcast, so it has no subscription
+/// verb, no entry in `watched`, and nothing to release — the browser filters it by
+/// the repo it has open.
+///
 /// TEARDOWN INVARIANT: on EVERY exit path — daemon shutdown OR client close/error
 /// — the connection releases EVERY dir it watched (tracked in `watched`) so the
 /// last release tears the repo watcher down, and aborts its forwarder tasks. A
@@ -1266,6 +1301,7 @@ async fn tree_ws(
     watchers: Arc<watch::WatcherManager>,
     registry_path: PathBuf,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
+    run_exits: tokio::sync::broadcast::Sender<String>,
 ) {
     // Fan-in: one forwarder task per subscribed repo pipes that repo's broadcast
     // into this shared channel, so the select! loop watches ONE receiver regardless
@@ -1281,6 +1317,11 @@ async fn tree_ws(
     // Doubles as the per-connection push filter (a repo's broadcast carries every
     // dir, including ones other connections watch).
     let mut watched: Vec<(String, String)> = Vec::new();
+    // The run-completion nudge bus (#310): daemon-wide, held by NO watch, so it
+    // needs no subscription verb and adds nothing to the teardown below. Every
+    // connection relays every nudge; the browser filters by its open repo.
+    let mut run_exits_rx = run_exits.subscribe();
+    let mut exits_open = true;
 
     loop {
         tokio::select! {
@@ -1400,6 +1441,22 @@ async fn tree_ws(
                     }
                 }
             }
+            exited = run_exits_rx.recv(), if exits_open => match exited {
+                Ok(repo) => {
+                    send_command(
+                        &mut socket,
+                        0,
+                        "changes.dirty",
+                        serde_json::json!({ "repo": repo }),
+                    )
+                    .await;
+                }
+                // Skipped nudges are free: the browser's re-read is idempotent.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                // Load-bearing: a closed broadcast makes `recv()` return
+                // immediately forever, which would spin this loop.
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => exits_open = false,
+            },
         }
     }
 
