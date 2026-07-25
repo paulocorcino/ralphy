@@ -1126,7 +1126,12 @@ function shell() {
           if (window.WBFail.isError(reply)) {
             iss.labels = prev;
             this._flashAction(window.WBFail.message(reply, "label change refused"));
+            return; // a refused write changed nothing to re-read
           }
+          // The write landed: re-fold so the card's column (and every other
+          // row the tracker may have touched) reflects the server, not just
+          // our optimistic edit (#301).
+          this.maybeRefreshBoard("label");
         } catch {
           // No daemon reachable — leave the optimistic edit in place.
         }
@@ -2017,7 +2022,14 @@ function shell() {
     // mode only — the `file://` demo has no socket to push over.
     mountRunsSub() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeRuns || !this.openSlug) return;
-      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => this.hydrateRuns());
+      // A snapshot change also means the tracker may have moved (an issue closed,
+      // a label set by the run) — so the same push nudges the board (#301). The
+      // predicate coalesces it: pushes arrive every few hundred ms, board folds
+      // spawn a CLI.
+      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
+        this.hydrateRuns();
+        this.maybeRefreshBoard("runs");
+      });
     },
     destroyRunsSub() {
       try {

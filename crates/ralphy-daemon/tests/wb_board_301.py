@@ -272,6 +272,28 @@ def main():
             n = board_calls(page)
             check("the refresh control reloads the board", n == 2, f"got={n}")
 
+            # --- scenario 4: a label mutation reply refreshes ------------------
+            before = board_calls(page)
+            page.evaluate(
+                f"async () => {{ const d = {SH};"
+                f" d.toggleLabel(d.projectIssues().find(i => i.number === 72), 'AFK');"
+                f" await new Promise(r => setTimeout(r, 300)); }}"
+            )
+            page.wait_for_timeout(400)
+            n = board_calls(page)
+            check("a label mutation reply refreshes the board", n == before + 1, f"{before} -> {n}")
+
+            # --- scenario 5: a run snapshot change refreshes -------------------
+            # Back-date the load clock past REFRESH_MIN_GAP_MS: the coalescing
+            # itself is pinned by scenario 1's table, this pins the WIRING.
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            before = board_calls(page)
+            doc_a.write_text(json.dumps(snapshot(RUN_A, "executing", "executing")), encoding="utf-8")
+            page.wait_for_function(f"() => {SH}.projectRuns().length === 1", timeout=15000)
+            page.wait_for_timeout(600)
+            n = board_calls(page)
+            check("a run snapshot change refreshes the board", n == before + 1, f"{before} -> {n}")
+
             ctx.close()
             browser.close()
     finally:
