@@ -75,6 +75,11 @@ function shell() {
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
     _runsSub: null, // the live run-snapshot subscription for the open project, if any
+    // Monotonic hydration token: pushes arrive faster than a `runs.list` round
+    // trip, so two hydrations overlap and their replies can land OUT OF ORDER —
+    // an older reply would then overwrite a newer snapshot. Only the newest
+    // hydration is allowed to commit.
+    _runsSeq: 0,
 
     // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
     // plan <script> blocks) is present.
@@ -481,8 +486,12 @@ function shell() {
       this.runsError = "";
       if (!slug) return;
       const prevRuns = this.runsByProject[slug] || [];
+      const seq = ++this._runsSeq;
       try {
         const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
+        // Superseded while this read was in flight → drop it; the newer
+        // hydration owns the state (and re-read the same disk anyway).
+        if (seq !== this._runsSeq || this.openSlug !== slug) return;
         if (reply?.status !== "ok") {
           this.runsByProject[slug] = [];
           this.runsError = reply?.reason || reply?.message || "could not read runs";
@@ -510,6 +519,7 @@ function shell() {
           : listed[0]?.runid || null;
         await this.loadRunPlan();
       } catch (err) {
+        if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
         this.runsByProject[slug] = [];
         this.runsError = String(err?.message || err || "could not reach the daemon");
@@ -533,6 +543,10 @@ function shell() {
       } catch {
         run.planMd = "";
       }
+      // A replacement mints new run objects, so a `run` that is no longer the
+      // current one belongs to a superseded hydration — its section choice must
+      // not overwrite the live one (same out-of-order reason as `_runsSeq`).
+      if (this.currentRun() !== run) return;
       // Same reason as the run selection: reassign the section dropdown only when
       // the operator's chosen heading is gone from the reloaded plan.
       const hs = this.planHeadings(run);
