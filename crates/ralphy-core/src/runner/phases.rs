@@ -976,7 +976,9 @@ pub(crate) fn close_and_record(
     // Write acceptance evidence when the plan carries a ledger, and
     // publish the session's handoff + plan friction so successors (and
     // dependent issues' planners) inherit what this session learned. A
-    // missing or empty ledger/handoff is a graceful no-op.
+    // missing ledger is now caught by the ADR-0015 lint before this point
+    // (the close proceeds anyway after the one bounce); a missing or empty
+    // handoff stays a graceful no-op.
     if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
         // Capture the raw plan at close (before the next issue's `plan()` overwrites
         // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
@@ -985,6 +987,11 @@ pub(crate) fn close_and_record(
         if !verdicts.is_empty() {
             cx.tracker
                 .write_evidence(issue.number, &issue.body, &verdicts)?;
+        } else {
+            warn!(
+                number = issue.number,
+                "no acceptance ledger in the plan — no evidence comment written"
+            );
         }
         if let Some(report) = handoff::close_report(&plan_md) {
             cx.tracker.comment(issue.number, &report)?;
