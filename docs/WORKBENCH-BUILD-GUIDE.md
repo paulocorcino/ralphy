@@ -211,8 +211,15 @@ distribution only — with these exclusions:
 | `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB) — language *services* are out of scope, and `wb-monaco.js` disables all four mode configurations at boot so nothing requests them |
 
 `assets/editor.worker-*.js` and `assets/editorWebWorkerMain-*.js` are **kept**:
-they are the BASE editor worker, which `editor.main.js`'s `MonacoEnvironment
-.getWorker` falls back to for every non-language request.
+they are the BASE editor worker. Nothing on either page sets
+`globalThis.MonacoEnvironment` — `vs/workers-*.js` reads it, finds it undefined,
+and falls through to the per-call `createWorker()` factory, which is what
+actually resolves the base worker from those two files. **Do not "fix" a worker
+problem by setting `MonacoEnvironment.getWorkerUrl`**: that would route the four
+surviving 200-byte language-worker shims (`vs/{ts,css,html,json}.worker-*.js`,
+which `require.toUrl` to `./assets/<name>.worker-*.js`) at paths deliberately not
+vendored. They are inert today because `wb-monaco.js` disables the mode
+configurations that would request them.
 
 The result is **113 files / 5,570,129 bytes (5.31 MiB)**, and embedding it cost the
 daemon crate's clean build +8.5% (8.47s → 9.19s).

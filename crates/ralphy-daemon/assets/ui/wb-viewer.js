@@ -27,11 +27,38 @@
   // single source of truth until `rec.ed` exists (so bytes arriving mid-boot
   // are picked up by `create()`'s value), and a tab closed mid-boot must never
   // mount an orphan editor.
+  //
+  // The liveness check is `map.get(rec.id) === rec`, NOT `map.has(rec.id)`: tab
+  // ids are stable per file (`file:<project>:<path>`), so closing and reopening
+  // the same file inside the boot window puts a DIFFERENT record under the same
+  // key — a `has` check would let the dead record mount an undisposable editor
+  // on a detached container.
+  const alive = (rec) => map.get(rec.id) === rec;
+
   function mountEditor(rec, container, opts) {
     const path = (opts && opts.path) || rec.path;
+    if (rec.mounting || rec.mountFailed) return Promise.resolve();
+    rec.mounting = true;
     return WBMonaco.ready()
+      .catch((err) => {
+        // The `file://` demo has no backend and may not boot the AMD loader —
+        // degrade to read-only bytes rather than leave an empty pane (#308).
+        // Only a BOOT failure lands here; a throw from create()/wiring below
+        // must not masquerade as one.
+        rec.mounting = false;
+        rec.mountFailed = true;
+        if (!alive(rec)) return null;
+        const pre = document.createElement("pre");
+        pre.className = "code-fallback";
+        pre.textContent = rec.content;
+        container.append(pre);
+        rec.fallbackEl = pre;
+        console.warn("[workbench] monaco did not boot; read-only fallback", err);
+        return null;
+      })
       .then((monaco) => {
-        if (!map.has(rec.id)) return;
+        rec.mounting = false;
+        if (!monaco || !alive(rec)) return;
         const ed = WBMonaco.create(container, {
           value: rec.content,
           path,
@@ -39,23 +66,22 @@
           project: rec.project,
           wordWrap: opts && opts.wordWrap,
         });
-        rec.ed = ed;
         ed.onDidChangeModelContent(() => {
           rec.dirty = true;
           rec.saveBtn?.classList.add("dirty");
         });
         ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(rec));
+        // Assigned LAST: a throw while wiring must not leave a half-live editor
+        // that the rest of the module would treat as ready.
+        rec.ed = ed;
         if (rec.visible) ed.layout();
       })
       .catch((err) => {
-        // The `file://` demo has no backend and may not boot the AMD loader —
-        // degrade to read-only bytes rather than leave an empty pane (#308).
-        if (!map.has(rec.id) || rec.ed) return;
-        const pre = document.createElement("pre");
-        pre.className = "code-fallback";
-        pre.textContent = rec.content;
-        container.append(pre);
-        console.warn("[workbench] monaco did not boot; read-only fallback", err);
+        // A create()/wiring failure is NOT a boot failure: the pane would look
+        // editable while nothing is wired, so say so instead of degrading.
+        rec.mounting = false;
+        console.error("[workbench] monaco editor failed to mount", err);
+        getShell()?._flashAction?.("editor failed to mount");
       });
   }
 
@@ -154,7 +180,10 @@
     // flag is cleared *after* the update, not before.
     rec.content = fresh;
     if (rec.kind === "code" || rec.editing) {
-      rec.ed?.setValue(fresh);
+      if (rec.ed) rec.ed.setValue(fresh);
+      // In the read-only fallback there is no editor to update, and leaving the
+      // <pre> stale would show bytes that no longer match rec.content.
+      else if (rec.fallbackEl) rec.fallbackEl.textContent = fresh;
     } else {
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);

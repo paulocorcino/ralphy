@@ -12,6 +12,12 @@ Scenario 5  window.CodeMirror is undefined and its vendor path 404s
 Scenario 6  the editor ground is ADR-0035's --log-bg (rgb(26, 22, 19))
 Scenario 7  Cargo.toml resolves to the `ini` language
 Scenario 8  the file:// demo mounts Monaco OR degrades to .code-fallback
+Scenario 9  a .json tab is tokenized (its tokenizer is a mode-config provider,
+            and JSON has no basic-languages grammar to fall back on)
+Scenario 10 the async boot gap: mid-boot bytes reach the model, close disposes
+            the model, close-then-reopen leaves exactly one
+Scenario 11 the markdown raw-source editor mounts Monaco and its edits survive
+            the toggle back to preview
 
 Boots a Localhost daemon on 7408 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -73,6 +79,10 @@ tokio = { version = "1", features = ["full"] }
 """
 
 PKG_JSON = '{\n  "name": "wb308",\n  "version": "0.1.0",\n  "private": true\n}\n'
+
+# Pinned exactly (see the exit gate): a scenario that silently stops running
+# must fail the run, not shrink it.
+EXPECTED_CHECKS = 22
 
 results = []
 
@@ -249,11 +259,19 @@ def main():
             )
             # …and the colours are the theme's, not vs-dark's: `fn`/`let` are
             # `keyword`, which the wb theme paints #c98a7d.
-            kw = page.evaluate(
-                "() => { const el = Array.from(document.querySelectorAll("
+            KW = (
+                "(() => { const el = Array.from(document.querySelectorAll("
                 "'.code-viewer .view-lines span[class*=mtk]')).find(e => e.textContent.trim() === 'fn');"
-                " return el ? getComputedStyle(el).color : null; }"
+                " return el ? getComputedStyle(el).color : null; })()"
             )
+            # The retokenize repaint can land a frame after the slot count rises,
+            # so wait on the predicate rather than reading once (flake vector).
+            kw = None
+            try:
+                page.wait_for_function(f"() => {KW} === 'rgb(201, 138, 125)'", timeout=10000)
+                kw = page.evaluate(f"() => {KW}")
+            except Exception as exc:
+                kw = f"timeout: {exc.__class__.__name__}"
             check(
                 "a rust keyword is painted by the wb theme (#c98a7d)",
                 kw == "rgb(201, 138, 125)",
@@ -266,23 +284,39 @@ def main():
                 "('.code-viewer .monaco-editor .monaco-editor-background')).backgroundColor"
             )
             check("the editor ground is ADR-0035's --log-bg", bg == "rgb(26, 22, 19)", f"got={bg!r}")
-            cm_css = page.evaluate(
-                "() => Array.from(document.styleSheets).some(s => { try {"
-                " return Array.from(s.cssRules).some(r => (r.selectorText || '').includes('.cm-s-wb'));"
-                " } catch (e) { return false; } })"
+            # Assert the sheet is REACHABLE first: a swallowed cssRules error (or
+            # a styles.css that failed to load) would otherwise read as "the rule
+            # is gone" and pass against a page with no styles at all.
+            css = page.evaluate(
+                "() => { let seen = 0, cm = 0;"
+                " for (const s of document.styleSheets) { let rules;"
+                "   try { rules = Array.from(s.cssRules); } catch (e) { continue; }"
+                "   for (const r of rules) { const sel = r.selectorText || '';"
+                "     if (sel.includes('.viewer-body')) seen++;"
+                "     if (sel.includes('.cm-s-wb')) cm++; } }"
+                " return { seen, cm }; }"
             )
-            check("styles.css no longer ships a .cm-s-wb rule", not cm_css)
+            check(
+                "styles.css is reachable and no longer ships a .cm-s-wb rule",
+                css["seen"] > 0 and css["cm"] == 0,
+                f"got={css}",
+            )
 
             page.screenshot(path=os.path.join(SHOT_DIR, "308-monaco-source-2026-07-25.png"))
 
             # --- scenario 3: Monaco's own find widget -------------------------
             page.click(".code-viewer [data-act='find']")
-            page.wait_for_function(
-                "() => { const w = document.querySelector('.code-viewer .monaco-editor .find-widget');"
-                " return !!w && w.classList.contains('visible'); }",
-                timeout=10000,
-            )
-            check("the Find button opens Monaco's find widget", True)
+            # try/except, not a bare wait: a raise here would abort the run and
+            # erase the Save and CodeMirror-removal evidence below.
+            try:
+                page.wait_for_function(
+                    "() => { const w = document.querySelector('.code-viewer .monaco-editor .find-widget');"
+                    " return !!w && w.classList.contains('visible'); }",
+                    timeout=10000,
+                )
+                check("the Find button opens Monaco's find widget", True)
+            except Exception as exc:
+                check("the Find button opens Monaco's find widget", False, f"{exc.__class__.__name__}")
             page.keyboard.press("Escape")
 
             # --- scenario 4: Save still goes through the Write path -----------
@@ -327,6 +361,117 @@ def main():
             toml_lang = language_of(page, "Cargo.toml")
             check("Cargo.toml resolves to the ini language", toml_lang == "ini", f"got={toml_lang!r}")
 
+            # --- scenario 9: JSON still tokenizes ------------------------------
+            # JSON is the ONE language with no basic-languages Monarch grammar:
+            # its tokenizer is the `tokens` provider on jsonDefaults, so a mode
+            # configuration that switches that off leaves .json as plaintext.
+            open_file(page, slug, "pkg.json", "pkg.json")
+            json_lang = language_of(page, "pkg.json")
+            check("pkg.json resolves to the json language", json_lang == "json", f"got={json_lang!r}")
+            JSON_MTK = (
+                "Array.from(new Set(Array.from(document.querySelectorAll("
+                "'.code-viewer .view-lines span[class*=mtk]')).flatMap(e => "
+                "Array.from(e.classList).filter(c => /^mtk[0-9]+$/.test(c)))))"
+            )
+            json_slots = []
+            try:
+                page.wait_for_function(f"() => {JSON_MTK}.length >= 2", timeout=15000)
+                json_slots = page.evaluate(f"() => {JSON_MTK}")
+            except Exception as exc:
+                json_slots = [f"timeout: {exc.__class__.__name__}"]
+            check(
+                "a .json tab is tokenized, not plaintext",
+                len(set(json_slots)) >= 2,
+                f"got={sorted(set(json_slots))}",
+            )
+
+            # --- scenario 10: the async boot gap -------------------------------
+            # Every scenario above waits for the mount first. These two exercise
+            # what the swap actually introduced: bytes and a close landing while
+            # Monaco is still booting.
+            baseline_models = page.evaluate("() => monaco.editor.getModels().length")
+            page.evaluate(
+                "([project, path]) => { const id = `file:${project}:${path}`;"
+                " WBViewer.open({ id, project, path, ftype: 'code', content: 'before boot\\n' });"
+                " WBViewer.externalChange(id, 'landed mid-boot\\n'); }",
+                [slug, "src/gap.rs"],
+            )
+            page.wait_for_function(
+                "() => { const m = monaco.editor.getModels().find(m => m.uri.path.endsWith('gap.rs'));"
+                " return !!m; }",
+                timeout=30000,
+            )
+            gap = page.evaluate(
+                "() => monaco.editor.getModels().find(m => m.uri.path.endsWith('gap.rs')).getValue()"
+            )
+            check(
+                "bytes arriving mid-boot reach the mounted model",
+                gap == "landed mid-boot\n",
+                f"got={gap!r}",
+            )
+            page.evaluate(f"() => WBViewer.close('file:{slug}:src/gap.rs')")
+            after_close = page.evaluate("() => monaco.editor.getModels().length")
+            check(
+                "closing a tab disposes its model",
+                after_close == baseline_models,
+                f"baseline={baseline_models} after={after_close}",
+            )
+            # A tab closed WHILE Monaco boots must not mount an orphan editor.
+            # Monaco is warm by now, so drive the same race through the record
+            # identity guard: open, close, reopen the SAME id, and assert exactly
+            # one model survives for that path.
+            page.evaluate(
+                "([project, path]) => { const id = `file:${project}:${path}`;"
+                " WBViewer.open({ id, project, path, ftype: 'code', content: 'first\\n' });"
+                " WBViewer.close(id);"
+                " WBViewer.open({ id, project, path, ftype: 'code', content: 'second\\n' }); }",
+                [slug, "src/race.rs"],
+            )
+            page.wait_for_function(
+                "() => monaco.editor.getModels().filter(m => m.uri.path.endsWith('race.rs')).length >= 1",
+                timeout=30000,
+            )
+            page.wait_for_timeout(500)
+            race = page.evaluate(
+                "() => monaco.editor.getModels().filter(m => m.uri.path.endsWith('race.rs'))"
+                ".map(m => m.getValue())"
+            )
+            check(
+                "close-then-reopen inside the boot window leaves exactly one model",
+                race == ["second\n"],
+                f"got={race!r}",
+            )
+            page.evaluate(f"() => WBViewer.close('file:{slug}:src/race.rs')")
+
+            # --- scenario 11: the markdown raw-source editor -------------------
+            page.evaluate(
+                "([project, path]) => WBViewer.open({ id: `file:${project}:${path}`, project, path,"
+                " ftype: 'markdown', content: '# heading\\n\\nbody text\\n' })",
+                [slug, "NOTES.md"],
+            )
+            page.evaluate(f"() => WBViewer.setActive('file:{slug}:NOTES.md')")
+            page.click(".md-viewer [data-act='toggle']")
+            page.wait_for_function(
+                "() => { const m = monaco.editor.getModels().find(m => m.uri.path.endsWith('NOTES.md'));"
+                " return !!m && !!document.querySelector('.md-editor .monaco-editor'); }",
+                timeout=30000,
+            )
+            md_lang = page.evaluate(
+                "() => monaco.editor.getModels().find(m => m.uri.path.endsWith('NOTES.md')).getLanguageId()"
+            )
+            check("the markdown raw editor resolves markdown", md_lang == "markdown", f"got={md_lang!r}")
+            page.evaluate(
+                "() => monaco.editor.getModels().find(m => m.uri.path.endsWith('NOTES.md'))"
+                ".setValue('# edited heading\\n\\nbody text\\n')"
+            )
+            page.click(".md-viewer [data-act='toggle']")
+            page.wait_for_function(
+                "() => document.querySelector('.md-viewer .md-body').textContent.includes('edited heading')",
+                timeout=10000,
+            )
+            check("toggling back to preview keeps the edited bytes", True)
+            page.evaluate(f"() => WBViewer.close('file:{slug}:NOTES.md')")
+
             # --- scenario 8: the file:// demo ---------------------------------
             demo = ctx.new_page()
             demo.goto("file:///" + os.path.join(UI_DIR, "index.html").replace("\\", "/"))
@@ -345,7 +490,17 @@ def main():
             branch = demo.evaluate(
                 "() => document.querySelector('.code-viewer .monaco-editor') ? 'monaco' : 'fallback'"
             )
-            check(f"the file:// demo reaches a readable pane ({branch})", True)
+            if branch == "monaco":
+                ok = demo.evaluate(
+                    "() => { const m = window.monaco.editor.getModels()"
+                    ".find(m => m.uri.path.endsWith('demo.rs')); return !!m && m.getValue().length > 0; }"
+                )
+            else:
+                ok = demo.evaluate(
+                    "() => { const pre = document.querySelector('.code-viewer .code-fallback');"
+                    " return !!pre && pre.textContent.length > 0; }"
+                )
+            check(f"the file:// demo pane carries the file's bytes ({branch})", ok)
             demo.close()
 
             ctx.close()
@@ -353,8 +508,11 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 13
+    # Pinned exactly: a `>=` gate lets a scenario vanish and still print success.
+    ok = all(results) and len(results) == EXPECTED_CHECKS
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
+    if len(results) != EXPECTED_CHECKS:
+        print(f"EXPECTED {EXPECTED_CHECKS} checks, ran {len(results)}", flush=True)
     if ok:
         print("MONACO IS THE ONE EDITOR")
     sys.exit(0 if ok else 1)

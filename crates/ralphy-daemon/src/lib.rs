@@ -3736,6 +3736,25 @@ mod tests {
             );
         }
 
+        // The other three exclusion rows of docs/WORKBENCH-BUILD-GUIDE.md, so a
+        // future Monaco bump that re-copies the tarball wholesale fails here
+        // rather than silently doubling the payload.
+        for excluded in ["vendor/monaco/vs/language/", "vendor/monaco/vs/nls/"] {
+            let hits: Vec<_> = paths.iter().filter(|p| p.starts_with(excluded)).collect();
+            assert!(
+                hits.is_empty(),
+                "{excluded} must not be vendored, found: {hits:?}"
+            );
+        }
+        let typed: Vec<_> = paths
+            .iter()
+            .filter(|p| p.starts_with("vendor/monaco/") && (p.ends_with(".d.ts") || p.ends_with(".map")))
+            .collect();
+        assert!(
+            typed.is_empty(),
+            "no .d.ts / .map may be vendored with Monaco, found: {typed:?}"
+        );
+
         assert!(
             include_str!("../assets/ui/wb-monaco.js").contains("monaco.editor.create"),
             "wb-monaco.js must build the editor through Monaco's own factory"

@@ -69,13 +69,16 @@
   // are deliberately NOT vendored — leaving a provider on means a lazily-loaded
   // mode chunk asking for a worker that 404s. Language *services* are out of
   // scope (PRD #297); Monarch highlighting needs none of this.
+  // NOTE `tokens` is deliberately absent. It is the ONLY provider here that is
+  // not a worker client: `jsonMode` gates `setTokensProvider` on it, and JSON is
+  // the one language with no `basic-languages` Monarch grammar to fall back on,
+  // so switching it off would leave every .json file unstyled for nothing.
   const NO_PROVIDERS = {
     documentFormattingEdits: false,
     documentRangeFormattingEdits: false,
     completionItems: false,
     hovers: false,
     documentSymbols: false,
-    tokens: false,
     colors: false,
     foldingRanges: false,
     diagnostics: false,
@@ -84,7 +87,7 @@
 
   function disableLanguageServices(monaco) {
     const langs = monaco.languages;
-    langs.json?.jsonDefaults?.setModeConfiguration({ ...NO_PROVIDERS, documentFormattingEdits: false });
+    langs.json?.jsonDefaults?.setModeConfiguration(NO_PROVIDERS);
     langs.json?.jsonDefaults?.setDiagnosticsOptions({ validate: false, schemaValidation: "ignore" });
     langs.css?.cssDefaults?.setModeConfiguration(NO_PROVIDERS);
     langs.css?.cssDefaults?.setOptions({ validate: false });
@@ -132,7 +135,12 @@
     return monaco.editor.create(container, {
       model: monaco.editor.createModel(value, undefined, uri),
       theme: "wb",
-      automaticLayout: false, // WBViewer.setActive drives relayout explicitly
+      // Monaco sizes itself from inline dimensions, so it does NOT reflow from
+      // CSS the way CodeMirror 5 did: without this its own ResizeObserver, a
+      // sidebar collapse or a window resize leaves the pane clipped and the
+      // mouse-to-text mapping offset until the next tab switch — and the
+      // detached popup, which has no tab bar, would never relayout at all.
+      automaticLayout: true,
       readOnly: false,
       minimap: { enabled: false },
       wordBasedSuggestions: "off",
