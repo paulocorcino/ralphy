@@ -54,8 +54,9 @@ pub struct IssueComment {
 }
 
 /// Parse `gh issue view --json comments` into structured records. The author is a
-/// nested optional object — a deleted account yields `{}`, which renders an empty
-/// author rather than failing the whole thread's parse.
+/// nested optional object — a deleted account yields `{}` (and, defensively,
+/// `null` is tolerated too), which renders an empty author rather than failing the
+/// whole thread's parse and losing every comment.
 pub fn parse_issue_comments_detailed(json: &str) -> Result<Vec<IssueComment>> {
     #[derive(Default, serde::Deserialize)]
     struct AuthorJson {
@@ -65,7 +66,7 @@ pub fn parse_issue_comments_detailed(json: &str) -> Result<Vec<IssueComment>> {
     #[derive(serde::Deserialize)]
     struct CommentJson {
         #[serde(default)]
-        author: AuthorJson,
+        author: Option<AuthorJson>,
         #[serde(default, rename = "createdAt")]
         created_at: String,
         #[serde(default)]
@@ -81,7 +82,7 @@ pub fn parse_issue_comments_detailed(json: &str) -> Result<Vec<IssueComment>> {
     Ok(c.comments
         .into_iter()
         .map(|c| IssueComment {
-            author: c.author.login,
+            author: c.author.unwrap_or_default().login,
             created_at: c.created_at,
             body: c.body,
         })
@@ -197,6 +198,15 @@ mod tests {
         let got = parse_issue_comments_detailed(deleted).expect("parse");
         assert_eq!(got[0].author, "");
         assert_eq!(got[0].body, "orphan");
+
+        // An explicit null author must not take the whole thread down with it —
+        // `unwrap_or_default()` collapsing to an empty author beats losing every
+        // comment to a failed parse.
+        let null_author =
+            r#"{"comments":[{"author":null,"createdAt":"2026-07-24T09:00:00Z","body":"ghost"}]}"#;
+        let got = parse_issue_comments_detailed(null_author).expect("parse");
+        assert_eq!(got[0].author, "");
+        assert_eq!(got[0].body, "ghost");
     }
 
     #[test]

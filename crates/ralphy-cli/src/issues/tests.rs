@@ -94,22 +94,26 @@ fn parse_show_spec_accepts_both_forms() {
         bare.contains("needs an issue number"),
         "bare `show` must name the missing number: {bare}"
     );
-    for bad in [vec!["abc"], vec!["302", "303"]] {
+    // ADR-0020's amendment makes the MESSAGE the contract (an explicit error, not
+    // a clap usage error), and the wrong token is named for `["302","303"]`.
+    for (bad, blamed) in [(vec!["abc"], "`abc`"), (vec!["302", "303"], "`303`")] {
+        let err = parse_show_spec(&spec(&bad)).unwrap_err().to_string();
         assert!(
-            parse_show_spec(&spec(&bad)).is_err(),
-            "must reject {bad:?} rather than silently listing the queue"
+            err.contains("unrecognized issue selector") && err.contains(blamed),
+            "must reject {bad:?} naming {blamed}, not silently list the queue: {err}"
         );
     }
 }
 
 /// The doc comment is part of the shipped interface (#302: it used to promise a
-/// form the parser rejected). Needle built by concatenation so this file does not
-/// trip its own absence assertion.
+/// form the parser rejected). A doc-drift guard only — the parser's behaviour is
+/// covered by `parse_show_spec_accepts_both_forms` and the `cli.rs` parse test.
+/// The needles are short fragments so a re-wrap of the comment cannot red it.
 #[test]
 fn spec_doc_comment_matches_the_shipped_form() {
     let src = include_str!("../issues.rs");
     assert!(
-        src.contains("/// `show <n>` (ADR-0020) or the bare `<n>` shorthand."),
+        src.contains("/// `show <n>` (ADR-0020) or the bare"),
         "the `spec` doc comment must describe the shipped form"
     );
     let stale = format!("{} {}", "subcommand word", "is optional");
@@ -455,7 +459,9 @@ fn push_without_events_url_errors_naming_events_url() {
 fn list_and_show_never_mutate_the_tracker() {
     // Criterion #6: the surface is read-only. Drive both the list resolution
     // (over a blocked issue, exercising is_closed/open_children/issue_labels)
-    // and the show view (exercising issue_comments), then assert zero mutations.
+    // and the show view, then assert zero mutations. Since #302 the detail
+    // thread is fetched by the free `github::issue_comments_detailed` rather
+    // than through the port, so this covers the tracker calls only.
     let mut tr = FakeTracker::default();
     tr.open.insert(99);
     tr.comments.insert(7, vec!["a comment".into()]);

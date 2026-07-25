@@ -7,12 +7,18 @@ CLI<->daemon contract itself is covered deterministically by
 `cli::tests::issues_show_documented_form_parses` — a parse-level assertion that
 needs no tracker, no network and no authentication (PRD #296).
 
+Because `issue.show` is stubbed, these scenarios cover the CLIENT render path
+only — the wire shape itself is pinned by `issues::tests::show_view_json_includes_comments`
+and the argv contract by `cli::tests::issues_show_documented_form_parses`.
+
 Scenario 1   the board loads and a card opens the drawer
-Scenario 2   the drawer renders the issue BODY (empty before #302, always)
-Scenario 3   each comment names its author and a FORMATTED date
+Scenario 2   the drawer renders the issue BODY delivered by `issue.show`
+Scenario 3   each comment renders its author and a FORMATTED date from
+             the `{author, at, body}` record
 Scenario 4   the drawer is wide enough to read a long issue
 Scenario 5   a failed detail fetch shows a visible error banner — and the banner
              CLEARS on the next successful open
+Scenario 6   a STALE failed load never paints over the newer successful one
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -142,7 +148,8 @@ def launch(daemon_dir):
 SPY_JS = """
 (k) => {
   window.__showCalls = [];
-  window.__showMode = "ok";        // "ok" | "error"
+  window.__showMode = "ok";        // "ok" | "error" | "deferError"
+  window.__deferred = null;        // the held resolver, for the stale-reply leg
   const real = window.WBDaemon.observe.bind(window.WBDaemon);
   const row = (n, title) => ({
     number: n, title, state: "open", labels: ["ready-for-agent"],
@@ -162,6 +169,12 @@ SPY_JS = """
       window.__showCalls.push(payload);
       if (window.__showMode === "error") {
         return Promise.resolve({ status: "error", message: "detail read failed" });
+      }
+      // A failure held open, released by the test after a LATER load settles.
+      if (window.__showMode === "deferError") {
+        return new Promise((res) => {
+          window.__deferred = () => res({ status: "error", message: "stale failure" });
+        });
       }
       return Promise.resolve({
         status: "ok",
@@ -295,6 +308,29 @@ def main():
             body_txt = page.locator(".kanban-detail.open .kd-body").inner_text().strip()
             check("…and the recovered drawer shows the body", BODY in body_txt, f"got={body_txt[:60]!r}")
 
+            # --- scenario 6: a STALE failure never paints over a good drawer ---
+            # The board fold re-fires `loadIssueDetail` for the open drawer on
+            # every refresh (#301), so two loads for the SAME number can be in
+            # flight. The newest one owns the drawer: an older failure landing
+            # after it must be dropped, or the banner lies over real content.
+            page.evaluate("() => { window.__showMode = 'deferError'; window.__deferred = null; }")
+            # Fire-and-forget on purpose: returning the promise would make
+            # `evaluate` await a load this leg deliberately leaves hanging.
+            page.evaluate(f"() => {{ {SH}.loadIssueDetail(71); }}")
+            page.wait_for_function("() => !!window.__deferred", timeout=5000)
+            page.evaluate("() => { window.__showMode = 'ok'; }")
+            page.evaluate(f"() => {{ {SH}.loadIssueDetail(71); }}")
+            page.wait_for_timeout(500)
+            page.evaluate("() => window.__deferred()")
+            page.wait_for_timeout(500)
+            check(
+                "a stale failed load never overwrites the newer good one",
+                page.evaluate(f"() => {SH}.issueError") in (None, ""),
+                f"issueError={page.evaluate(f'() => {SH}.issueError')!r}",
+            )
+            body_txt = page.locator(".kanban-detail.open .kd-body").inner_text().strip()
+            check("…and the drawer keeps its body", BODY in body_txt, f"got={body_txt[:60]!r}")
+
             ctx.close()
             browser.close()
     finally:
@@ -302,7 +338,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 15
+    ok = all(results) and len(results) >= 18
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("ISSUE DETAIL HONEST")

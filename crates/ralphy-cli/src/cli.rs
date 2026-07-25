@@ -353,11 +353,16 @@ mod tests {
     #[test]
     fn issues_show_documented_form_parses() {
         let parsed = Cli::try_parse_from(["ralphy", "issues", "show", "302", "--format", "json"]);
-        assert!(
-            parsed.is_ok(),
-            "the ADR-0020 documented form must parse: {:?}",
-            parsed.err()
-        );
+        let cli = match parsed {
+            Ok(cli) => cli,
+            Err(e) => panic!("the ADR-0020 documented form must parse: {e}"),
+        };
+        let Command::Issues(args) = cli.command else {
+            panic!("expected the issues command");
+        };
+        // Not just "it parsed": a permissive positional that swallowed the tokens
+        // would also be Ok, and the detail would still never load.
+        assert_eq!(args.spec, ["show", "302"]);
     }
 
     #[test]

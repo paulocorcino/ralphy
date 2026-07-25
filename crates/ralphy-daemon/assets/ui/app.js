@@ -1136,9 +1136,14 @@ function shell() {
       const slug = this.openSlug;
       this.issueError = null;
       // Cross-path invariant (#302): a reply — content OR error — is applied only
-      // while `number` is still the selected issue, so a drawer switched
-      // mid-fetch never inherits another issue's error or content.
-      const stale = () => this.kanbanSel !== number;
+      // by the NEWEST fetch, and only while its own project+issue is still the
+      // open drawer. The number alone is not enough on either axis: the board
+      // fold re-fires this for the open drawer on every refresh (two loads for
+      // the same number can be in flight, and a slow failure must not paint over
+      // a fast success), and two projects routinely carry the same issue number.
+      const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
+      const stale = () =>
+        gen !== this._issueDetailGen || this.openSlug !== slug || this.kanbanSel !== number;
       const fail = (msg) => {
         if (stale() || !window.WBMode.isDaemon()) return;
         this.issueError = msg;
@@ -1160,6 +1165,9 @@ function shell() {
         if (typeof detail.body === "string") iss.body = detail.body;
         if (Array.isArray(detail.comments)) iss.comments = detail.comments;
         if (Array.isArray(detail.blocked_by)) iss.blockedBy = detail.blocked_by;
+        // Success owns the banner too: an older failed load cleared at entry is
+        // not enough when this one lands second.
+        this.issueError = null;
       } catch {
         // Transport error: the board row keeps its empty body, but the drawer
         // says so rather than reading as an issue with nothing in it.

@@ -6,8 +6,10 @@
 //! can never disagree. `ralphy issues show <n>` adds body, comments (with the
 //! ADR-0017 consolidated-spec surfaced first-class), labels, the queue judgment,
 //! and the issue's run history from the usage ledger (ADR-0008). The surface is
-//! strictly read-only: it calls only read methods on the tracker and never a
-//! label, comment, or state mutation.
+//! strictly read-only: it calls only read methods on the tracker — plus, for the
+//! detail thread, the free `github::issue_comments_detailed` read outside the
+//! port (#302: the port's `issue_comments` drops author and timestamp) — and
+//! never a label, comment, or state mutation.
 
 use std::path::PathBuf;
 
@@ -325,7 +327,9 @@ fn issue_history(slug: &str, n: u64) -> Vec<UsageRow> {
 /// n" (`Some(n)`). Accepts the ADR-0020 documented form `show <n>` and the bare
 /// `<n>` shorthand; anything else is an explicit error rather than a silent
 /// fallback to listing the queue. Clap cannot express "an optional literal word
-/// then a number" on a typed positional, hence the raw tokens.
+/// then a number" on a typed positional, hence the raw tokens. The 3+ arm is
+/// unreachable through the CLI (`num_args = 0..=2` caps it) and guards the pure
+/// function against a future widening.
 fn parse_show_spec(spec: &[String]) -> Result<Option<u64>> {
     let number = |t: &str| -> Result<u64> {
         t.parse::<u64>().map_err(|_| {
@@ -341,8 +345,10 @@ fn parse_show_spec(spec: &[String]) -> Result<Option<u64>> {
         }
         [one] => Ok(Some(number(one)?)),
         [word, n] if word == "show" => Ok(Some(number(n)?)),
-        [word, _] => anyhow::bail!(
-            "unrecognized issue selector `{word}` — use `issues show <n>` or `issues <n>`"
+        // Blame the token that is actually wrong: in `issues 302 303` the first
+        // one is valid and naming it sends the reader hunting the wrong end.
+        [_, extra] => anyhow::bail!(
+            "unrecognized issue selector `{extra}` — use `issues show <n>` or `issues <n>`"
         ),
         _ => anyhow::bail!("too many arguments — use `issues show <n>` or `issues <n>`"),
     }
