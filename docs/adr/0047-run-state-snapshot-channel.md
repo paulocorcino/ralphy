@@ -1,8 +1,8 @@
 # The run publishes a run snapshot on disk; the daemon reads it
 
-Status: **proposed** — drafted for a maintainer to settle (#298, under PRD #296).
-Sections marked **OPEN** carry the questions that must be answered before code is
-written; nothing here is implemented.
+Status: **accepted** (2026-07-24, issue #298, under PRD #296) — decided, not yet
+implemented. This ADR gates the run-state track: the implementation issues under
+#296 build what is written here.
 
 _Extends [ADR-0024](./0024-unified-delivery-worker-seam.md) with a third
 destination on the delivery-worker seam, and touches
@@ -168,22 +168,21 @@ conservative on Windows — a process it can see but not open counts as alive).
 A snapshot whose pid is dead is an **orphan**: the run crashed or was killed.
 An orphan is reported as dead and swept — never rendered as a live run.
 
-**OPEN 1 — whose pid, and from where?** The issue this ADR answers says to
-cross-check against the repo-scoped run lock (`.ralphy/run.lock`), which already
-records the holder's pid and start time. That works for one run per repo. It
-does not work for the concurrent runs the parent PRD explicitly wants to show
-(user story 9): the lock is a *signal, not a mutex* by design — `acquire`
-overwrites it — so with two runs in flight the lock names only the newer one,
-and the older run's snapshot would classify as dead while it is working.
+**The pid travels in the snapshot header, not in the run lock.** The obvious
+carrier is the repo-scoped run lock (`.ralphy/run.lock`), which already records
+its holder's pid and start time — and it is the wrong one, because the lock has
+one slot and this channel has N documents. The lock is a *signal, not a mutex*
+by design: `acquire` overwrites it, so with two runs in flight in one repo it
+names only the newer one, and the older run's snapshot would classify as dead
+while that run is working. Concurrent runs in a repo are a supported case (PRD
+#296, user story 9), so the carrier must be per-document.
 
-Recommendation: the **pid travels in the snapshot header** and the reader
-classifies it with the run lock's `pid_is_alive` predicate. What §7 forbids is a
-*liveness assertion* in the document; a pid is an identity fact, exactly as it
-is in the lock's own `LockInfo`. The mechanism the acceptance criterion names —
-one stale-pid classifier with injectable liveness — is reused; only the pid's
-carrier changes, and it must, because the lock has one slot and this channel has
-N documents. If the maintainer prefers the lock as the sole carrier, then
-concurrent runs must be declared out of scope and story 9 dropped.
+This does not weaken §7. What §7 forbids is a *liveness assertion* — a flag or a
+timestamp the document maintains about itself. A pid is an identity fact, exactly
+as it is in the lock's own `LockInfo`; the document states who wrote it and stays
+silent about whether that process still lives. The mechanism is unchanged and
+unduplicated: one stale-pid classifier, with injectable liveness, shared by the
+lock and by this reader.
 
 ### 8. Lifecycle: created at start, rewritten on change, removed at exit
 
@@ -203,13 +202,15 @@ concurrent runs must be declared out of scope and story 9 dropped.
   lock's recovery story exactly: there is no signal handler, a killed process
   leaves the file behind, and stale-pid takeover is the recovery mechanism.
 
-**OPEN 2 — does a finished run linger?** Removing at exit means a run that
-completes vanishes from the panel immediately; the operator who blinks never
-sees the terminal state. Keeping the terminal document instead would show the
-finished run until something prunes it — but "how long, and pruned by whom" is
-run history, which the parent PRD puts explicitly out of scope. Recommendation:
-**remove at exit** as above, and revisit only if the vanishing is felt in use;
-lingering is an additive change (stop deleting, start pruning), not a redesign.
+**A finished run does not linger.** Its document is deleted at exit, so it leaves
+the panel at once — which is what the parent PRD asks for (user story 12: a
+finished run leaves cleanly). The alternative, keeping the terminal document
+until something prunes it, immediately raises "how long, and pruned by whom",
+and that is **run history** — explicitly out of scope for this channel. The cost
+is accepted: an operator who is not looking at the moment a run ends does not see
+its terminal state in the panel (the run report, the log and the events all still
+have it). If that proves to matter in use, lingering is an additive change — stop
+deleting, start pruning — not a redesign.
 
 ### 9. The daemon reads; it does not spawn
 
