@@ -66,6 +66,11 @@ function shell() {
     // and `changesError` carries the reason into the badge's title.
     changesCount: {},
     changesError: {},
+    // Expand state + row model per slug (#309): a map, not one flag, so
+    // switching projects reads collapsed again rather than carrying the
+    // previous project's expansion along.
+    changesOpen: {},
+    changesEntries: {},
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -401,18 +406,28 @@ function shell() {
             // Honest absence beats another repo's number.
             this.changesCount[slug] = null;
             this.changesError[slug] = "could not read changes";
+            this.changesEntries[slug] = [];
           }
           return;
         }
-        this.changesCount[slug] = window.WBChanges.fold(reply).count;
+        const folded = window.WBChanges.fold(reply);
+        this.changesCount[slug] = folded.count;
+        this.changesEntries[slug] = folded.entries;
         this.changesError[slug] = "";
       } catch {
         if (window.WBMode.isDaemon()) {
           this.changesCount[slug] = null;
           this.changesError[slug] = "could not read changes";
+          this.changesEntries[slug] = [];
         }
         // Demo (static shell): leave whatever the seed/previous load holds.
       }
+    },
+
+    // Toggle the Changes list open/closed (#309). No reload — the rows
+    // already in `changesEntries` are the same snapshot the badge counts.
+    toggleChanges(slug) {
+      this.changesOpen[slug] = !this.changesOpen[slug];
     },
 
     // Filtered (case-insensitive substring), current pinned to the top.

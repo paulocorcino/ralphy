@@ -145,12 +145,18 @@
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
             <div class="wb-host" x-show="openSlug === p.slug"></div>
-            <!-- Changes: the open project's working-tree change count (#307).
-                 Collapsed by design — no chevron, because there is no list
-                 behind it yet; the next slice adds both together. Reuses the
-                 Projects header's `.side-head` + `.count`, so the two read as
-                 one visual language. -->
-            <div class="side-head changes-sec" x-show="openSlug === p.slug">
+            <!-- Changes: the open project's working-tree change set (#307, #309).
+                 Collapsed by default; the chevron toggles the row list below.
+                 Reuses the Projects header's `.side-head` + `.count`, so the
+                 two read as one visual language. -->
+            <div
+              class="side-head changes-sec"
+              x-show="openSlug === p.slug"
+              @click="toggleChanges(p.slug)"
+            >
+              <span class="chg-chev" :class="{ open: changesOpen[p.slug] }"
+                ><i class="bi bi-chevron-right"></i
+              ></span>
               <span>Changes</span>
               <span class="spacer"></span>
               <!-- A failed read renders `—`, never `0`: a quiet zero would let a
@@ -162,6 +168,15 @@
                 :title="changesError[p.slug] || 'working-tree changes'"
               ></span>
             </div>
+            <ul class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
+              <template x-for="c in (changesEntries[p.slug] || [])" :key="c.path">
+                <li class="chg-row" :title="c.title">
+                  <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                  <span class="chg-path" x-text="c.path"></span>
+                  <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                </li>
+              </template>
+            </ul>
           </li>
         </template>
       </ul>

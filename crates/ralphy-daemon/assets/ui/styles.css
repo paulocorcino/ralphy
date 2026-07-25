@@ -1164,6 +1164,66 @@ body.runs-open .runs {
    the sidebar uses between its own sections (#307). */
 .changes-sec {
   border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+/* Row list under the Changes header (#309): capped height keeps a long list
+   from squeezing the file tree out of the sidebar entirely — the tree's own
+   min-height (line ~310) is the other half of that floor. */
+.chg-chev {
+  color: var(--text-muted);
+  display: inline-flex;
+  transition: transform 0.15s ease;
+}
+.chg-chev.open {
+  transform: rotate(90deg);
+}
+.changes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.2rem 0;
+  max-height: 45%;
+  overflow-y: auto;
+  flex: 0 1 auto;
+}
+.chg-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.8rem;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+.chg-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chg-from {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.chg-mark {
+  width: 1em;
+  text-align: center;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.st-modified {
+  color: var(--console-text);
+}
+.st-added {
+  color: var(--live);
+}
+.st-deleted,
+.st-conflicted {
+  color: var(--danger);
+}
+.st-renamed {
+  color: var(--info);
+}
+.st-untracked,
+.st-unknown {
+  color: var(--text-muted);
 }
 /* manual project-list refresh — a quiet icon button (mirrors .modal-x), spinning
    while a reload is in flight. */
