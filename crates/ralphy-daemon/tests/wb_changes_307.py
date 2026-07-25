@@ -215,11 +215,11 @@ def main():
                 " return !!el && el.querySelector('.count').offsetParent !== null; }"
             )
             check("the badge is visible with no click on the section", visible)
-            clicked = page.evaluate(
+            chevs = page.evaluate(
                 "() => { const el = Array.from(document.querySelectorAll('.changes-sec'))"
-                ".find(e => e.offsetParent !== null); return el.querySelectorAll('button, [x-on\\\\:click], .chev').length; }"
+                ".find(e => e.offsetParent !== null); return el.querySelectorAll('.chg-chev').length; }"
             )
-            check("the collapsed section offers no toggle control", clicked == 0, f"controls={clicked}")
+            check("the section header carries the expand affordance (#309)", chevs == 1, f"chevs={chevs}")
 
             # --- scenario 3: it sits below the file tree ----------------------
             geom = page.evaluate(
