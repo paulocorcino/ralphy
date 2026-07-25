@@ -1092,30 +1092,26 @@ body.runs-open .runs {
 .security-body::-webkit-scrollbar-track {
   background: transparent;
 }
-/* File viewers: the rendered markdown pane, its outline, and CodeMirror's own
+/* File viewers: the rendered markdown pane, its outline, and Monaco's own
    scroll surfaces (code editor + markdown source editor) — all lose the page
-   default, so they get the same warm-dark treatment. */
+   default, so they get the same warm-dark treatment. Monaco paints its
+   scrollbars itself inside `.monaco-scrollable-element`, so it gets the colour
+   rather than the ::-webkit-scrollbar geometry. */
 .md-scroll,
 .md-outline,
-.viewer-body,
-.CodeMirror-vscrollbar,
-.CodeMirror-hscrollbar {
+.viewer-body {
   scrollbar-width: thin; /* Firefox */
   scrollbar-color: var(--border) transparent;
 }
 .md-scroll::-webkit-scrollbar,
 .md-outline::-webkit-scrollbar,
-.viewer-body ::-webkit-scrollbar,
-.CodeMirror-vscrollbar::-webkit-scrollbar,
-.CodeMirror-hscrollbar::-webkit-scrollbar {
+.viewer-body ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 .md-scroll::-webkit-scrollbar-thumb,
 .md-outline::-webkit-scrollbar-thumb,
-.viewer-body ::-webkit-scrollbar-thumb,
-.CodeMirror-vscrollbar::-webkit-scrollbar-thumb,
-.CodeMirror-hscrollbar::-webkit-scrollbar-thumb {
+.viewer-body ::-webkit-scrollbar-thumb {
   background: var(--border);
   border: 2px solid transparent;
   background-clip: content-box;
@@ -1123,18 +1119,22 @@ body.runs-open .runs {
 }
 .md-scroll::-webkit-scrollbar-thumb:hover,
 .md-outline::-webkit-scrollbar-thumb:hover,
-.viewer-body ::-webkit-scrollbar-thumb:hover,
-.CodeMirror-vscrollbar::-webkit-scrollbar-thumb:hover,
-.CodeMirror-hscrollbar::-webkit-scrollbar-thumb:hover {
+.viewer-body ::-webkit-scrollbar-thumb:hover {
   background: var(--border-focus);
   background-clip: content-box;
 }
 .md-scroll::-webkit-scrollbar-track,
 .md-outline::-webkit-scrollbar-track,
-.viewer-body ::-webkit-scrollbar-track,
-.CodeMirror-vscrollbar::-webkit-scrollbar-track,
-.CodeMirror-hscrollbar::-webkit-scrollbar-track {
+.viewer-body ::-webkit-scrollbar-track {
   background: transparent;
+}
+.monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--border);
+  border-radius: 6px;
+}
+.monaco-scrollable-element > .scrollbar > .slider:hover,
+.monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--border-focus);
 }
 
 /* --- sidebar: count badge + provenance icon ------------------------------- */
@@ -1717,102 +1717,22 @@ body.runs-open .runs {
   min-height: 0;
 }
 
-/* --- CodeMirror, themed warm-dark (theme "wb") ---------------------------- */
-.cm-s-wb.CodeMirror {
+/* --- Monaco: the pane box only -----------------------------------------
+   Colours live in the "wb" theme (wb-monaco.js) — Monaco paints its own
+   surfaces from the theme API, so CSS here is layout only. */
+.viewer-body .monaco-editor {
   height: 100%;
+}
+/* the read-only degrade when Monaco's AMD loader cannot boot (file:// demo) */
+.code-fallback {
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
   background: var(--log-bg);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82rem;
-}
-.cm-s-wb .CodeMirror-gutters {
-  background: var(--log-bg);
-  border-right: 1px solid var(--border);
-}
-.cm-s-wb .CodeMirror-linenumber {
-  color: var(--text-muted);
-}
-.cm-s-wb .CodeMirror-cursor {
-  border-left: 1px solid var(--text);
-}
-.cm-s-wb .CodeMirror-selected {
-  background: var(--surface-hi);
-}
-.cm-s-wb .CodeMirror-activeline-background {
-  background: rgba(255, 255, 255, 0.03);
-}
-.cm-s-wb .CodeMirror-matchingbracket {
-  color: var(--console-text) !important;
-  text-decoration: underline;
-}
-.cm-s-wb .cm-comment {
-  color: var(--text-muted);
-  font-style: italic;
-}
-.cm-s-wb .cm-keyword {
-  color: #c98a7d;
-}
-.cm-s-wb .cm-atom,
-.cm-s-wb .cm-type {
-  color: #cba6c3;
-}
-.cm-s-wb .cm-number {
-  color: #d8a76a;
-}
-.cm-s-wb .cm-def {
-  color: var(--console-text);
-}
-.cm-s-wb .cm-variable-2 {
-  color: #9db7c9;
-}
-.cm-s-wb .cm-variable-3 {
-  color: #cba6c3;
-}
-.cm-s-wb .cm-property {
-  color: #cbb98a;
-}
-.cm-s-wb .cm-string,
-.cm-s-wb .cm-string-2 {
-  color: #9fb98a;
-}
-.cm-s-wb .cm-operator {
-  color: var(--text-muted);
-}
-.cm-s-wb .cm-meta {
-  color: var(--text-muted);
-}
-.cm-s-wb .cm-tag {
-  color: #c98a7d;
-}
-.cm-s-wb .cm-attribute {
-  color: var(--console-text);
-}
-.cm-s-wb .cm-link {
-  color: #9db7c9;
-}
-.cm-s-wb .cm-header {
-  color: var(--console-text);
-}
-.cm-s-wb span.CodeMirror-selectedtext {
-  color: var(--text);
-}
-.cm-s-wb .cm-searching {
-  background: rgba(232, 217, 168, 0.28);
-}
-/* CodeMirror's find dialog, themed */
-.cm-s-wb .CodeMirror-dialog {
-  background: var(--surface);
-  color: var(--text);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.8rem;
-}
-.cm-s-wb .CodeMirror-dialog input {
-  font: inherit;
-  color: var(--text);
-  background: var(--log-bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.1rem 0.3rem;
 }
 
 /* --- markdown viewer ------------------------------------------------------ */
@@ -1869,7 +1789,7 @@ body.runs-open .runs {
   flex: 1;
   min-height: 0;
 }
-.md-editor .CodeMirror {
+.md-editor .monaco-editor {
   height: 100%;
 }
 .md-split.editing .md-outline,

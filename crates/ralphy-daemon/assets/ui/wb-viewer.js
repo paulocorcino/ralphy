@@ -2,8 +2,8 @@
    ralphy workbench shell — file viewers (the closable tabs)
 
    Two flavours, both opening as their own tab after the fixed Consoles tab:
-     • source code — CodeMirror 5: syntax highlight, in-place editing, and a
-       find dialog (Ctrl-F). Binaries never reach here (app.js refuses them).
+     • source code — Monaco: syntax highlight, in-place editing, and its own
+       find widget. Binaries never reach here (app.js refuses them).
      • Markdown  — rendered with `marked`, sanitized with DOMPurify, mermaid
        fences drawn as diagrams (Cursor-style), a heading outline to jump around,
        an in-page find, and an edit/preview toggle over the raw source.
@@ -19,31 +19,52 @@
     mermaidReady = true;
   }
 
-  const ext = (p) => {
-    const n = p.toLowerCase();
-    return n.includes(".") ? n.split(".").pop() : "";
-  };
-
-  // Map a filename to a CodeMirror mode/MIME (modes are vendored in index.html).
-  function cmMode(path) {
-    const e = ext(path);
-    const m = {
-      js: "text/javascript", mjs: "text/javascript", cjs: "text/javascript",
-      json: "application/json",
-      ts: "text/typescript", tsx: "text/typescript-jsx", jsx: "text/jsx",
-      css: "text/css", scss: "text/css", less: "text/css",
-      html: "htmlmixed", xml: "xml", svg: "xml",
-      rs: "text/x-rustsrc", py: "text/x-python",
-      toml: "text/x-toml", yml: "text/x-yaml", yaml: "text/x-yaml",
-      sh: "text/x-sh", bash: "text/x-sh",
-      sql: "text/x-sql", go: "text/x-go",
-      prisma: "text/x-csrc", md: "text/x-markdown", markdown: "text/x-markdown",
-    };
-    return m[e] || "text/plain";
-  }
-
   const viewers = document.getElementById("viewers");
   const map = new Map(); // tab id → viewer record
+
+  // Monaco boots through an AMD loader, so an editor can only be created
+  // asynchronously. Two invariants hold across that gap: `rec.content` is the
+  // single source of truth until `rec.ed` exists (so bytes arriving mid-boot
+  // are picked up by `create()`'s value), and a tab closed mid-boot must never
+  // mount an orphan editor.
+  function mountEditor(rec, container, opts) {
+    const path = (opts && opts.path) || rec.path;
+    return WBMonaco.ready()
+      .then((monaco) => {
+        if (!map.has(rec.id)) return;
+        const ed = WBMonaco.create(container, {
+          value: rec.content,
+          path,
+          uid: rec.uid,
+          project: rec.project,
+          wordWrap: opts && opts.wordWrap,
+        });
+        rec.ed = ed;
+        ed.onDidChangeModelContent(() => {
+          rec.dirty = true;
+          rec.saveBtn?.classList.add("dirty");
+        });
+        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(rec));
+        if (rec.visible) ed.layout();
+      })
+      .catch((err) => {
+        // The `file://` demo has no backend and may not boot the AMD loader —
+        // degrade to read-only bytes rather than leave an empty pane (#308).
+        if (!map.has(rec.id) || rec.ed) return;
+        const pre = document.createElement("pre");
+        pre.className = "code-fallback";
+        pre.textContent = rec.content;
+        container.append(pre);
+        console.warn("[workbench] monaco did not boot; read-only fallback", err);
+      });
+  }
+
+  function disposeEditor(rec) {
+    if (!rec.ed) return;
+    rec.ed.getModel()?.dispose();
+    rec.ed.dispose();
+    rec.ed = undefined;
+  }
 
   // --- a source-code editor tab ------------------------------------------
   function buildCode(rec) {
@@ -65,28 +86,10 @@
     el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
     viewers.append(el);
 
-    const cm = CodeMirror(el.querySelector(".viewer-body"), {
-      value: rec.content,
-      mode: cmMode(rec.path),
-      theme: "wb",
-      lineNumbers: true,
-      matchBrackets: true,
-      styleActiveLine: true,
-      lineWrapping: false,
-      extraKeys: {
-        "Ctrl-S": () => save(rec),
-        "Cmd-S": () => save(rec),
-      },
-    });
-    rec.cm = cm;
     const saveBtn = el.querySelector('[data-act="save"]');
-    cm.on("change", () => {
-      rec.dirty = true;
-      saveBtn.classList.add("dirty");
-    });
     el.querySelector('[data-act="find"]').onclick = () => {
-      cm.focus();
-      cm.execCommand("find");
+      rec.ed?.focus();
+      rec.ed?.getAction("actions.find")?.run();
     };
     saveBtn.onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
@@ -97,10 +100,11 @@
     el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
+    mountEditor(rec, el.querySelector(".viewer-body"), {});
   }
 
   function save(rec) {
-    const content = rec.editing ? rec.cm.getValue() : rec.cm ? rec.cm.getValue() : rec.content;
+    const content = contentOf(rec);
     rec.content = content;
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
@@ -109,10 +113,11 @@
     if (rec.kind === "markdown" && !rec.editing) renderMarkdown(rec); // keep preview fresh
   }
 
-  // The pane's current bytes, whether shown as source (CodeMirror) or as a
-  // rendered markdown preview.
+  // The pane's current bytes, whether shown as source (Monaco) or as a rendered
+  // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
+  // `rec.content` is still authoritative.
   function contentOf(rec) {
-    if (rec.cm && (rec.kind === "code" || rec.editing)) return rec.cm.getValue();
+    if (rec.ed && (rec.kind === "code" || rec.editing)) return rec.ed.getValue();
     return rec.content;
   }
 
@@ -144,11 +149,12 @@
   }
 
   function applyFresh(rec, fresh) {
+    // `rec.content` FIRST: bytes that land before Monaco boots are picked up by
+    // the pending `create()`, and setValue fires the change event, so the dirty
+    // flag is cleared *after* the update, not before.
     rec.content = fresh;
-    // setValue fires CodeMirror's change event, so clear the dirty flag *after*
-    // updating content, not before.
     if (rec.kind === "code" || rec.editing) {
-      rec.cm.setValue(fresh);
+      rec.ed?.setValue(fresh);
     } else {
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
@@ -223,10 +229,7 @@
 
     // edit / preview toggle
     el.querySelector('[data-act="toggle"]').onclick = () => toggleEdit(rec);
-    el.querySelector('[data-act="save"]').onclick = () => {
-      if (rec.editing) rec.content = rec.cm.getValue();
-      save(rec);
-    };
+    el.querySelector('[data-act="save"]').onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
     el.querySelector('[data-act="disk"]').onclick = () => {
       applyFresh(rec, rec.pendingDisk);
@@ -393,26 +396,17 @@
     if (rec.editing) {
       split.classList.add("editing");
       editor.style.display = "block";
-      if (!rec.cm) {
-        rec.cm = CodeMirror(editor, {
-          value: rec.content,
-          mode: "text/x-markdown",
-          theme: "wb",
-          lineNumbers: true,
-          lineWrapping: true,
-          extraKeys: { "Ctrl-S": () => save(rec), "Cmd-S": () => save(rec) },
-        });
-        rec.cm.on("change", () => {
-          rec.dirty = true;
-          rec.saveBtn.classList.add("dirty");
-        });
+      if (!rec.ed) {
+        mountEditor(rec, editor, { wordWrap: "on" });
       } else {
-        rec.cm.setValue(rec.content);
+        rec.ed.setValue(rec.content);
       }
       toggle.innerHTML = '<i class="bi bi-eye"></i> Preview';
-      setTimeout(() => rec.cm.refresh(), 0);
+      setTimeout(() => rec.ed?.layout(), 0);
     } else {
-      rec.content = rec.cm.getValue();
+      // `rec.editing` is already false here, so read the editor directly —
+      // contentOf() would hand back the pre-edit bytes.
+      if (rec.ed) rec.content = rec.ed.getValue();
       split.classList.remove("editing");
       editor.style.display = "none";
       toggle.innerHTML = '<i class="bi bi-pencil"></i> Edit';
@@ -432,7 +426,7 @@
       else buildCode(rec);
     },
 
-    // Show one pane (or none, when the Consoles tab is active). CodeMirror and
+    // Show one pane (or none, when the Consoles tab is active). Monaco and
     // mermaid both need a laid-out container, so we (re)paint on first show.
     setActive(id) {
       for (const rec of map.values()) {
@@ -440,7 +434,7 @@
         rec.el.style.display = on ? "flex" : "none";
         rec.visible = on;
         if (on) {
-          if (rec.cm) setTimeout(() => rec.cm.refresh(), 0);
+          setTimeout(() => rec.ed?.layout(), 0);
           if (rec.kind === "markdown") drawMermaid(rec);
         }
       }
@@ -449,8 +443,11 @@
     close(id) {
       const rec = map.get(id);
       if (!rec) return;
-      rec.el.remove();
+      // Delete from the map FIRST: a pending mountEditor() checks membership
+      // before touching the DOM, so a tab closed mid-boot mounts nothing.
       map.delete(id);
+      disposeEditor(rec);
+      rec.el.remove();
     },
 
     // An external write to this file's bytes landed (a directory nudge → re-read).
@@ -527,7 +524,7 @@ flowchart LR
 | Kind     | Viewer        | Editable |
 | -------- | ------------- | -------- |
 | \`.md\`    | rendered      | yes      |
-| \`.rs\`    | CodeMirror    | yes      |
+| \`.rs\`    | Monaco        | yes      |
 | \`.png\`   | (refused)     | no       |
 
 ## Code sample

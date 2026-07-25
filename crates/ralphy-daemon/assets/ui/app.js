@@ -9,7 +9,7 @@
      • the first tab, "Consoles", is fixed (never closes) and hosts the floating
        console windows (see wb-console.js);
      • every opened file rides in as its own closable tab, rendered by a viewer
-       (source code via CodeMirror, Markdown rendered with mermaid — see
+       (source code via Monaco, Markdown rendered with mermaid — see
        wb-viewer.js).
 
    Every user gesture (open, rename, delete, save, console-open…) is turned into
@@ -2285,7 +2285,7 @@ function shell() {
       const el = document.activeElement;
       return !!(
         el &&
-        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".CodeMirror"))
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
       );
     },
 
