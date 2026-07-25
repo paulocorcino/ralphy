@@ -166,12 +166,13 @@ def launch(daemon_dir):
     )
 
 
-# The `li.project` whose Changes section is the visible one — `page.click` and a
-# bare querySelector both resolve to the FIRST DOM match, which is hidden once
-# more than one project is registered.
+# The Changes surface, which #317 promoted out of the project accordion into a
+# rail VIEW of the sidebar. It is scoped to the open project by construction, so
+# there is one of it — but it is still `x-show`-gated, hence the offsetParent
+# check that every downstream wait depends on.
 OPEN_LI = (
-    "Array.from(document.querySelectorAll('li.project'))"
-    ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null)"
+    "(() => { const v = document.querySelector('.changes-view');"
+    " return v && v.offsetParent !== null ? v : null; })()"
 )
 
 # The OPEN project's sync row as plain data — Playwright's sync `evaluate`
@@ -209,15 +210,16 @@ def open_and_expand(page, slug):
     # The slug rides as an ARGUMENT, never interpolated into the source: a clone
     # of a local path is registered under a slug carrying Windows backslashes,
     # which a string literal would swallow as escapes and silently open nothing.
-    page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
-    page.wait_for_function(
-        f"() => {{ const li = {OPEN_LI}; return !!li; }}", timeout=15000
-    )
-    # The section starts collapsed per project; expanding is what mounts the row.
+    # `toggle` is a TOGGLE — calling it on the already-open project closes it.
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    # Reaching the change set is now a rail click, not an accordion expand (#317);
+    # clicking the rail button of the view already showing would COLLAPSE the
+    # sidebar, so this is guarded on the view's own visibility.
     page.evaluate(
-        f"() => {{ const li = {OPEN_LI};"
-        " const list = li.querySelector('.changes-list');"
-        " if (!list || list.offsetParent === null) li.querySelector('.changes-sec').click(); }"
+        "() => { const v = document.querySelector('.changes-view');"
+        " if (!v || v.offsetParent === null)"
+        "   document.querySelector('nav.rail button[title=\"Changes\"]').click(); }"
     )
     page.wait_for_function(
         f"() => {{ const li = {OPEN_LI}; if (!li) return false;"
