@@ -3774,4 +3774,33 @@ mod tests {
             "wb-viewer.js must not construct a {outgoing} editor"
         );
     }
+
+    /// #309's deliverable is JS/HTML no Rust gate compiles — this pin over the
+    /// served assets is the same reason the #308 Monaco pin above and
+    /// `usage.rs:544` exist, so `cargo test` reds after a deletion.
+    #[test]
+    fn the_changes_section_renders_a_status_marked_list() {
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains(r#"class="changes-list""#),
+            "index.html must render the changes-list"
+        );
+        assert!(
+            html.contains(r#"class="chg-mark""#),
+            "index.html must render a chg-mark per row"
+        );
+        assert!(
+            html.contains("toggleChanges(p.slug)"),
+            "index.html must wire the Changes header to toggleChanges"
+        );
+
+        let js = include_str!("../assets/ui/wb-changes.js");
+        assert!(js.contains("st-unknown"), "wb-changes.js must keep the st-unknown fallback");
+        for status in ["modified", "added", "deleted", "renamed", "untracked", "conflicted"] {
+            assert!(
+                js.contains(status),
+                "wb-changes.js must keep the {status} marker"
+            );
+        }
+    }
 }
