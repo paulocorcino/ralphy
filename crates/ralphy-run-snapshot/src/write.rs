@@ -22,6 +22,9 @@ pub fn write_atomic(repo_root: &Path, snap: &RunSnapshot) -> std::io::Result<()>
     match std::fs::rename(&tmp, snapshot_path(repo_root, &snap.runid)) {
         Ok(()) => Ok(()),
         Err(e) => {
+            // The rename error is what the caller must see; a failure to clean
+            // the temp file would only mask it, and the next write overwrites
+            // that name (it carries this pid).
             let _ = std::fs::remove_file(&tmp);
             Err(e)
         }

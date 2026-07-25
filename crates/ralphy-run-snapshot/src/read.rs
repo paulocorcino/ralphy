@@ -37,17 +37,35 @@ pub struct RunListing {
 /// pattern); production passes `ralphy_proc_util::pid_is_alive`. A document
 /// whose pid is dead is an orphan: deleted and not reported. A malformed one,
 /// or one written by a newer ralphy, is reported and LEFT on disk — deleting a
-/// live newer run's document would be destructive. A missing directory is an
-/// empty listing, not an error.
+/// live newer run's document would be destructive.
+///
+/// An ABSENT directory is an empty listing (a repo that has never run is not an
+/// error); any OTHER directory-read failure — a permission error, the path
+/// being a file — is reported, because ADR-0047 §6 requires "no runs" and
+/// "could not read runs" to stay distinguishable.
 pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing {
     let mut listing = RunListing::default();
     let dir = snapshot_dir(repo_root);
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
-        Err(_) => return listing,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return listing,
+        Err(e) => {
+            listing
+                .unreadable
+                .push(UnreadableRun::new("runstate", &format!("unreadable: {e}")));
+            return listing;
+        }
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(e) => {
+                listing
+                    .unreadable
+                    .push(UnreadableRun::new("runstate", &format!("unreadable: {e}")));
+                continue;
+            }
+        };
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
@@ -100,6 +118,16 @@ pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing
                 continue;
             }
         };
+        // `pid` is `#[serde(default)]`, so a document that omits it parses as 0
+        // — and 0 is not a process: on Unix `kill(0, 0)` targets the CALLER's
+        // process group and would classify it alive forever, so the orphan sweep
+        // could never reclaim it. Refuse it before the predicate ever sees it.
+        if snap.pid == 0 {
+            listing
+                .unreadable
+                .push(UnreadableRun::new(&name, "malformed"));
+            continue;
+        }
         if is_alive(snap.pid) {
             listing.live.push(snap);
         } else {
@@ -210,6 +238,48 @@ mod tests {
         assert!(
             snapshot_dir(dir.path()).join("01FUTURE.json").exists(),
             "a newer ralphy's live run must not have its document deleted"
+        );
+    }
+
+    #[test]
+    fn list_runs_reports_a_document_with_no_version() {
+        // Valid JSON, no `v`: the version pre-check must classify it, since
+        // `RunSnapshot::v` has no serde default to fall back on.
+        let dir = tempfile::tempdir().unwrap();
+        seed_raw(dir.path(), "01NOVERSION.json", r#"{"runid":"01NOVERSION"}"#);
+        let listing = list_runs(dir.path(), |_| true);
+        assert!(listing.live.is_empty());
+        assert_eq!(listing.unreadable[0].reason, "malformed");
+        assert!(snapshot_dir(dir.path()).join("01NOVERSION.json").exists());
+    }
+
+    #[test]
+    fn list_runs_refuses_a_zero_pid_instead_of_classifying_it() {
+        // A document omitting `pid` parses as 0. It must never reach the
+        // liveness predicate (see the note at the call site).
+        let dir = tempfile::tempdir().unwrap();
+        seed_raw(dir.path(), "01NOPID.json", r#"{"v":1,"runid":"01NOPID"}"#);
+        let listing = list_runs(dir.path(), |pid| {
+            panic!("pid {pid} must not reach the liveness predicate")
+        });
+        assert!(listing.live.is_empty());
+        assert_eq!(listing.unreadable[0].reason, "malformed");
+    }
+
+    #[test]
+    fn list_runs_reports_an_unreadable_directory() {
+        // `.ralphy/runstate` present but NOT a directory: "could not read runs"
+        // must stay distinguishable from "no runs" (ADR-0047 §6).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".ralphy")).unwrap();
+        std::fs::write(snapshot_dir(dir.path()), b"not a directory").unwrap();
+        let listing = list_runs(dir.path(), |_| true);
+        assert!(listing.live.is_empty());
+        assert_eq!(listing.unreadable.len(), 1, "{:?}", listing.unreadable);
+        assert!(
+            listing.unreadable[0].reason.starts_with("unreadable"),
+            "{:?}",
+            listing.unreadable[0]
         );
     }
 

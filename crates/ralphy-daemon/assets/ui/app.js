@@ -475,6 +475,9 @@ function shell() {
     async hydrateRuns() {
       if (!window.WBMode.isDaemon()) return;
       const slug = this.openSlug;
+      // Clear FIRST: a stale error from the previous project must not outlive
+      // the project it described (nor an early return below).
+      this.runsError = "";
       if (!slug) return;
       try {
         const reply = await window.WBDaemon.observe("runs.list", { repo: slug });

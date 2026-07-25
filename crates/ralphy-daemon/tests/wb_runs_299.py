@@ -204,8 +204,10 @@ def main():
     )
     try:
         if not wait_listening(BASE):
+            # A bare `return` here would skip the exit gate below and report
+            # success with ZERO browser assertions run.
             check("daemon listening on 7399", False)
-            return
+            sys.exit(1)
         check("daemon listening on 7399", True)
 
         with sync_playwright() as p:

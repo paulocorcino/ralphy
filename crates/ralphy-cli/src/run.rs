@@ -294,6 +294,15 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // the format literal in `runner.rs`), the current branch in `current` mode.
     let operating_branch = operating_branch(branch_mode, &stamp, start_branch.as_deref());
 
+    // Resolved HERE, above `start_delivery`, because both calls can `?`: every
+    // `?` must bail while the rings are still unstarted. A `?` BELOW the worker
+    // start would return without any `shutdown()`, leaving a live snapshot
+    // worker free to re-publish the document after `_snapshot_guard` removed it.
+    let resolved_effort = ResolvedEffort {
+        plan: config::resolve_effort(args.plan_effort, claude_settings.plan_effort.clone(), None)?,
+        exec: config::resolve_effort(args.exec_effort, claude_settings.exec_effort.clone(), None)?,
+    };
+
     // Start both delivery workers now that the run context is known. Events emitted
     // before this point (`queue built`) are buffered in the rings and drained on start.
     let (notifier, events_handle, snapshot_handle) = start_delivery(
@@ -397,10 +406,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             args.no_remote_control,
             settings.remote_control,
         ),
-    };
-    let resolved_effort = ResolvedEffort {
-        plan: config::resolve_effort(args.plan_effort, claude_settings.plan_effort.clone(), None)?,
-        exec: config::resolve_effort(args.exec_effort, claude_settings.exec_effort.clone(), None)?,
     };
     let resolved_copilot = wiring::resolve_copilot(
         args.plan_model.clone(),
@@ -986,6 +991,17 @@ mod tests {
             finish_border(&presenter, None, events, None);
         });
         assert_eq!(types, vec!["dev.ralphy.run.finished"]);
+    }
+
+    /// The document carries the plan's REPO-RELATIVE path, forward-slashed —
+    /// the confined `file.read` verb rejects an absolute path and a
+    /// backslash-separated one alike, so on Windows a regression here breaks
+    /// the panel's plan viewer while every Rust test stays green.
+    #[test]
+    fn repo_relative_plan_path_is_forward_slashed_and_relative() {
+        let root = std::env::temp_dir().join("ralphy-planpath-test");
+        let ws = Workspace::new(&root);
+        assert_eq!(repo_relative_plan_path(&root, &ws), ".ralphy/plan.md");
     }
 
     #[test]

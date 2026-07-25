@@ -12,8 +12,10 @@ pub const SNAPSHOT_VERSION: u32 = 1;
 
 /// A run's `RunState` projected at a moment in time — the panel's view of a run.
 ///
-/// Every field carries `#[serde(default)]` so a reader parses a newer document
-/// permissively within its version, ignoring what it does not know.
+/// Every field EXCEPT `v` carries `#[serde(default)]`, so a reader parses a
+/// newer document permissively within its version, ignoring what it does not
+/// know. `v` deliberately has no default: a document that cannot state its own
+/// version is malformed, not version 0 ([`crate::list_runs`] classifies it).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSnapshot {
     pub v: u32,

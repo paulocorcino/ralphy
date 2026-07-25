@@ -256,6 +256,64 @@ mod tests {
         assert_eq!(snap.issues[0].status, "planning");
     }
 
+    /// Every `IssueStatus`, with an exhaustiveness guard: a new variant stops
+    /// this match compiling, so the pin below can never silently miss one.
+    fn all_statuses() -> Vec<IssueStatus> {
+        let all = vec![
+            IssueStatus::Planning,
+            IssueStatus::Executing,
+            IssueStatus::Planned,
+            IssueStatus::Done,
+            IssueStatus::Skipped,
+            IssueStatus::Blocked,
+            IssueStatus::Infeasible,
+            IssueStatus::NeedsSplit,
+            IssueStatus::NonGreen,
+            IssueStatus::Hitl,
+        ];
+        for s in &all {
+            match s {
+                IssueStatus::Planning
+                | IssueStatus::Executing
+                | IssueStatus::Planned
+                | IssueStatus::Done
+                | IssueStatus::Skipped
+                | IssueStatus::Blocked
+                | IssueStatus::Infeasible
+                | IssueStatus::NeedsSplit
+                | IssueStatus::NonGreen
+                | IssueStatus::Hitl => {}
+            }
+        }
+        all
+    }
+
+    /// The closed-vocabulary gate (ADR-0047 §10, PRD #296's defect class): the
+    /// snapshot ships `status` as a string, and the Runs panel is the consumer
+    /// with no compiler between them. `planned` was missing from all three JS
+    /// tables and rendered as `○ pending`, undercounting the progress counter.
+    /// Every status the projection can emit must be known to the panel.
+    #[test]
+    fn every_issue_status_is_known_to_the_runs_panel() {
+        const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.js");
+        let terminal_line = PANEL
+            .lines()
+            .find(|l| l.contains("TERMINAL: new Set("))
+            .expect("wb-runs.js declares a TERMINAL set");
+        for status in all_statuses() {
+            let wire = status_wire(&status);
+            assert!(
+                PANEL.contains(&format!("{wire}: \"")),
+                "wb-runs.js GLYPH/LABEL has no `{wire}` key — the panel would render it as pending"
+            );
+            assert_eq!(
+                terminal_line.contains(&format!("\"{wire}\"")),
+                status.is_terminal(),
+                "wb-runs.js TERMINAL disagrees with IssueStatus::is_terminal on `{wire}`"
+            );
+        }
+    }
+
     #[test]
     fn project_is_pure_over_runstate() {
         // Same state in, byte-identical document out: no clock, no pid read, no

@@ -30,6 +30,9 @@ window.WBRun = {
   GLYPH: {
     planning: "🧠",
     executing: "⚙️",
+    // a plan-only pass superseded by the next `issue started` (a dry run):
+    // terminal, and it reaches the panel via status_wire (state.rs).
+    planned: "📝",
     done: "✅",
     skipped: "⏭️",
     blocked: "⛔",
@@ -43,6 +46,7 @@ window.WBRun = {
   LABEL: {
     planning: "planning",
     executing: "executing",
+    planned: "planned only",
     done: "done",
     skipped: "skipped",
     blocked: "blocked",
@@ -53,8 +57,10 @@ window.WBRun = {
     sleep: "usage limit — sleeping",
     pending: "pending",
   },
-  // terminal per-issue statuses (state.rs:29-40) — these won't change further.
-  TERMINAL: new Set(["done", "skipped", "blocked", "infeasible", "needs_split", "non_green", "hitl"]),
+  // terminal per-issue statuses — these won't change further. MUST mirror
+  // IssueStatus::is_terminal (crates/ralphy-cli/src/runstate/state.rs); every
+  // name here is a `status_wire` string the run snapshot ships verbatim.
+  TERMINAL: new Set(["planned", "done", "skipped", "blocked", "infeasible", "needs_split", "non_green", "hitl"]),
 
   // The visual state of one issue *within its run*: a terminal status as-is; the
   // active issue reflects the live phase (planning/executing, or sleep when the
@@ -174,7 +180,8 @@ window.WBRun = {
       phase: doc.phase?.state || "starting",
       active: doc.phase?.active ?? null,
       completed: issues.filter((i) => this.TERMINAL.has(i.status)).length,
-      queueTotal: doc.queue?.total || issues.length,
+      // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
+      queueTotal: doc.queue?.total ?? issues.length,
       sleep: doc.phase?.sleep || null,
       planPath: doc.plan_path || "",
       planMd: "",
