@@ -412,6 +412,20 @@ opened file rides in after it as a **closable** tab. Decided in
 _Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
 "main tab" for the Agents tab (it is fixed, not merely first).
 
+**Desk layout**:
+The browser's record of *what* was open on the **Agents tab** — one entry per
+console window: a stable client-side window id, its repo, agent, **workbench
+session** kind, rectangle and maximized flag. The daemon's session id is a
+volatile **attribute**, not the key: a restarted daemon issues ids from 1
+again, so the layout is reconciled against the live session list on load.
+Restoration is asymmetric on purpose: a **free console** relaunches by itself
+(a shell is free and idempotent), while an agent console returns as a
+**placeholder** the operator reconnects with one click — loading a page must
+never spawn vendor CLIs and spend quota nobody authorised. Client-side and
+per-browser-profile; there is no machine-wide store.
+_Avoid_: workspace (the DOM element the windows live in), geometry store (the
+retired session-keyed key it replaces).
+
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the
 **fleet** converges: it consumes run telemetry (the CloudEvents sink,
