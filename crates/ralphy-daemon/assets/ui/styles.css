@@ -1278,9 +1278,12 @@ body.runs-open .runs {
   list-style: none;
   margin: 0;
   padding: 0.2rem 0;
-  /* `min-height: 0` is THE layout invariant of the rail view: without it a
-     60-row list grows this flex item past its share and pushes `.chg-compose`
-     below the sidebar's bottom edge instead of scrolling inside itself. */
+  /* `overflow-y: auto` is THE layout invariant of the rail view — MEASURED:
+     drop it and a 60-row list grows this flex item to 1077px, pushing
+     `.chg-compose` to bottom 1254 against a sidebar ending at 900. It also
+     zeroes the flex item's automatic minimum size, which is why `min-height: 0`
+     below is belt-and-braces (removing it alone changes no geometry) and not
+     the invariant it looks like. */
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
