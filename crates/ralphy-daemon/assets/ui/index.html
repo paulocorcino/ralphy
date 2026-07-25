@@ -149,6 +149,21 @@
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
             <div class="wb-host" x-show="openSlug === p.slug"></div>
+            <!-- Changes: the open project's working-tree change count (#307).
+                 Collapsed by design — no chevron, because there is no list
+                 behind it yet; the next slice adds both together. Reuses the
+                 Projects header's `.side-head` + `.count`, so the two read as
+                 one visual language. -->
+            <div class="side-head changes-sec" x-show="openSlug === p.slug">
+              <span>Changes</span>
+              <span class="spacer"></span>
+              <span
+                class="count"
+                :class="{ zero: (changesCount[p.slug] || 0) === 0 }"
+                x-text="changesCount[p.slug] ?? 0"
+                title="working-tree changes"
+              ></span>
+            </div>
           </li>
         </template>
       </ul>
@@ -1307,6 +1322,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="wb-mode.js"></script>
     <script src="wb-fail.js"></script>
     <script src="wb-agents.js"></script>
+    <script src="wb-changes.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>

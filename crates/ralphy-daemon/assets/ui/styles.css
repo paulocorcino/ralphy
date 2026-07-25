@@ -1153,6 +1153,18 @@ body.runs-open .runs {
   font-size: 0.68rem;
   line-height: 1.4;
 }
+/* A clean tree is a non-event: the zero badge recedes rather than announcing
+   itself, so a real count is the only thing that draws the eye. */
+.side-head .count.zero {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+/* Changes: pinned under the open project's tree, separated by the same hairline
+   the sidebar uses between its own sections (#307). */
+.changes-sec {
+  border-top: 1px solid var(--border);
+}
 /* manual project-list refresh — a quiet icon button (mirrors .modal-x), spinning
    while a reload is in flight. */
 .side-refresh {

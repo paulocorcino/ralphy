@@ -60,6 +60,12 @@ function shell() {
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
     // instead of the seed projects. Empty when repos loaded (or in demo).
     reposError: "",
+    // Working-tree change count per slug (#307), loaded when a project opens and
+    // on the sidebar refresh. A slug is absent until its first successful load;
+    // `changesError` carries the daemon-mode failure so the badge can stay honest
+    // rather than showing another repo's number.
+    changesCount: {},
+    changesError: {},
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -221,6 +227,8 @@ function shell() {
         // Demo (file://): keep the seed — the shell stays navigable offline.
       } finally {
         this.reposLoading = false;
+        // The sidebar refresh button is the Changes count's manual reload (#307).
+        if (this.openSlug) this.loadChanges(this.openSlug);
       }
     },
 
@@ -379,6 +387,32 @@ function shell() {
     },
     closeBranchModal() {
       this.branchOpen = false;
+    },
+
+    // The open project's working-tree change count (#307), served read-only via
+    // the `changes.list` Query verb. The count is a snapshot: it reloads when a
+    // project is opened and on the sidebar refresh, never on a repo-wide watch.
+    async loadChanges(slug) {
+      if (!slug) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.list", { repo: slug });
+        if (!reply || reply.status !== "ok") {
+          if (window.WBMode.isDaemon()) {
+            // Honest absence beats another repo's number.
+            this.changesCount[slug] = null;
+            this.changesError[slug] = "could not read changes";
+          }
+          return;
+        }
+        this.changesCount[slug] = window.WBChanges.fold(reply).count;
+        this.changesError[slug] = "";
+      } catch {
+        if (window.WBMode.isDaemon()) {
+          this.changesCount[slug] = null;
+          this.changesError[slug] = "could not read changes";
+        }
+        // Demo (static shell): leave whatever the seed/previous load holds.
+      }
     },
 
     // Filtered (case-insensitive substring), current pinned to the top.
@@ -1796,6 +1830,8 @@ function shell() {
         this.planSection = this.planHeadings(this.currentRun())[0] || "";
         // …then re-read the newly-open project's live runs (ADR-0047 §9).
         if (this.openSlug) this.hydrateRuns();
+        // The Changes count is scoped to the open project (#307).
+        if (this.openSlug) this.loadChanges(this.openSlug);
         window.lucide?.createIcons();
       });
     },
