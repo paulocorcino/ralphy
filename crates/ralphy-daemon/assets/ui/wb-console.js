@@ -31,64 +31,121 @@ window.WBConsole = (function () {
     document.dispatchEvent(new CustomEvent("workbench:consoles-changed", { detail: { count: wins.size } }));
   }
 
-  // ---- window-geometry persistence --------------------------------------------
-  // Each console's rect (and maximized flag) is stored locally, keyed by its
-  // daemon session id, so a reload / re-login restores every window to exactly
-  // where the operator left it instead of re-cascading from scratch. Entries
-  // carry a timestamp and the map is capped (oldest dropped) so it can't grow
-  // without bound as sessions come and go.
-  const GEO_KEY = "wb.console.geometry.v1";
-  const GEO_MAX = 60;
+  // ---- the desk layout ---------------------------------------------------------
+  // What was open, not merely where a session sat: each window contributes a
+  // record keyed by a STABLE client-side id, carrying repo, agent, session kind,
+  // rect and maximized flag. The daemon's session id is a volatile ATTRIBUTE —
+  // a restarted daemon hands out ids from 1 again, so keying on it (as the
+  // retired geometry store did) leaves records pointing at sessions that no
+  // longer exist. The array is capped so it cannot grow without bound.
+  const DESK_KEY = "wb.desk.v1";
+  const DESK_MAX = 24;
+  // The store this one replaces. Dropped once at load so orphaned entries don't
+  // linger in operators' browsers.
+  try {
+    localStorage.removeItem("wb.console.geometry.v1");
+  } catch {}
 
-  function loadGeo() {
+  function loadDesk() {
     try {
-      return JSON.parse(localStorage.getItem(GEO_KEY)) || {};
+      const v = JSON.parse(localStorage.getItem(DESK_KEY));
+      return Array.isArray(v) ? v : [];
     } catch {
-      return {};
+      return [];
     }
   }
-  function saveGeo(map) {
-    // Cap the map: keep the most-recently-touched GEO_MAX entries.
-    const keys = Object.keys(map);
-    if (keys.length > GEO_MAX) {
-      keys
-        .sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0))
-        .slice(0, keys.length - GEO_MAX)
-        .forEach((k) => delete map[k]);
-    }
+  // Keep the `max` newest records by `ts`, preserving layout order (the order
+  // decides which record wins a contended session in `reconcileDesk`).
+  function pruneDesk(records, max) {
+    if (records.length <= max) return records.slice();
+    const keep = new Set(
+      [...records].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, max),
+    );
+    return records.filter((r) => keep.has(r));
+  }
+  function saveDesk(records) {
     try {
-      localStorage.setItem(GEO_KEY, JSON.stringify(map));
+      localStorage.setItem(DESK_KEY, JSON.stringify(pruneDesk(records, DESK_MAX)));
     } catch {}
+  }
+  function newDeskId() {
+    // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
+    // bind a plain-http LAN address (ADR-0032), so build the id by hand.
+    return "w-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   }
   // Snapshot a window's placement. A maximized window reports its *pre-maximize*
   // inline rect (the class drives the full-bleed via CSS), so `max` restores the
   // full-screen state while the stored rect still restores the underlying box.
   function persistWin(win) {
-    const id = win._term?.sessionId;
-    if (id == null) return;
-    const map = loadGeo();
-    map[String(id)] = {
-      left: win.offsetLeft,
-      top: win.offsetTop,
-      // While maximized the inline width/height still hold the restore rect, but
-      // offsetWidth/Height report the full-bleed size — read the inline values so
-      // we persist the box to restore to, not the screen.
-      width: win.classList.contains("maximized")
-        ? parseInt(win.style.width, 10) || win.offsetWidth
-        : win.offsetWidth,
-      height: win.classList.contains("maximized")
-        ? parseInt(win.style.height, 10) || win.offsetHeight
-        : win.offsetHeight,
-      max: win.classList.contains("maximized"),
+    if (!win._deskId) return;
+    const maxed = win.classList.contains("maximized");
+    const rec = {
+      id: win._deskId,
+      repo: win._deskRepo,
+      agent: win._deskAgent,
+      kind: win._deskKind,
+      rect: {
+        left: win.offsetLeft,
+        top: win.offsetTop,
+        // While maximized the inline width/height still hold the restore rect, but
+        // offsetWidth/Height report the full-bleed size — read the inline values so
+        // we persist the box to restore to, not the screen.
+        width: maxed ? parseInt(win.style.width, 10) || win.offsetWidth : win.offsetWidth,
+        height: maxed ? parseInt(win.style.height, 10) || win.offsetHeight : win.offsetHeight,
+      },
+      max: maxed,
+      sessionId: win._term?.sessionId ?? null,
       ts: Date.now(),
     };
-    saveGeo(map);
+    const records = loadDesk();
+    const i = records.findIndex((r) => r.id === rec.id);
+    if (i >= 0) records[i] = rec;
+    else records.push(rec);
+    saveDesk(records);
   }
-  function forgetWin(id) {
-    if (id == null) return;
-    const map = loadGeo();
-    delete map[String(id)];
-    saveGeo(map);
+  function forgetRecord(deskId) {
+    if (!deskId) return;
+    saveDesk(loadDesk().filter((r) => r.id !== deskId));
+  }
+
+  // The restore decision, as a pure fold of the saved layout over the live
+  // session list. Each live session is consumed by AT MOST ONE record (the first
+  // in layout order), because a restarted daemon reuses ids and two stale records
+  // could otherwise both claim id 1 — hence the full `sessionId`+`repo`+`agent`+
+  // `kind` tuple rather than a bare id match.
+  function reconcileDesk({ layout, sessions }) {
+    const live = sessions || [];
+    const used = new Set();
+    const out = [];
+    for (const record of layout || []) {
+      const i = live.findIndex(
+        (s, idx) =>
+          !used.has(idx) &&
+          s.id === record.sessionId &&
+          s.repo === record.repo &&
+          s.agent === record.agent &&
+          s.kind === record.kind,
+      );
+      if (i >= 0) {
+        used.add(i);
+        out.push({ record, session: live[i], action: "attach" });
+      } else {
+        // A shell is free and idempotent, so it comes back by itself; an agent
+        // console waits for one deliberate click (loading a page must never spawn
+        // a vendor CLI and spend quota nobody authorized).
+        out.push({
+          record,
+          session: null,
+          action: record.kind === "console" ? "relaunch" : "placeholder",
+        });
+      }
+    }
+    // A live session no record claims (opened in another tab, or by an older
+    // build) is adopted, so it stays visible and closable.
+    live.forEach((s, idx) => {
+      if (!used.has(idx)) out.push({ record: null, session: s, action: "adopt" });
+    });
+    return out;
   }
 
   // Toggle a console between its floating rect and full-workspace bleed. The
@@ -494,19 +551,24 @@ window.WBConsole = (function () {
     };
   }
 
-  // Build the floating-window chrome and attach a live terminal into it. Shared
-  // by `open()` (a new console) and the load-time reattach (one window per live
-  // session). Keeps the shared workspace-relative drag/tiling; `termOpts` is the
-  // `attachTerminal` opts, `label`/`repo` drive the titlebar.
-  function spawnWindow(termOpts, label, repo, geo) {
+  // The floating-window chrome, shared by a live console and a placeholder: the
+  // rect (restored from a desk record, else cascaded), the titlebar with its
+  // maximize/close controls, the body, and the eight resize handles. `desk` is a
+  // desk record (or a partial carrying at least `kind`); everything the record
+  // needs to be rewritten later is hung off the element.
+  function buildChrome(label, repo, desk, kind) {
     const win = document.createElement("div");
     win.className = "session-window";
-    // Restore a saved rect if we have one for this session; otherwise cascade.
-    if (geo) {
-      win.style.left = geo.left + "px";
-      win.style.top = geo.top + "px";
-      win.style.width = geo.width + "px";
-      win.style.height = geo.height + "px";
+    win._deskId = desk?.id || newDeskId();
+    win._deskRepo = repo || "~";
+    win._deskAgent = label;
+    win._deskKind = desk?.kind || kind;
+    const rect = desk?.rect;
+    if (rect) {
+      win.style.left = rect.left + "px";
+      win.style.top = rect.top + "px";
+      win.style.width = rect.width + "px";
+      win.style.height = rect.height + "px";
     } else {
       cascade = (cascade + 1) % 8;
       win.style.left = 30 + cascade * 24 + "px";
@@ -561,22 +623,33 @@ window.WBConsole = (function () {
     });
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
-    if (geo && geo.max) toggleMax(win, maxBtn);
+    if (rect && desk.max) toggleMax(win, maxBtn);
     focusWin(win);
+    return { win, body, maxBtn, closeBtn };
+  }
+
+  // Build the chrome and attach a live terminal into it. Shared by `open()` (a
+  // new console) and the load-time restore (one window per reconciled record);
+  // `termOpts` is the `attachTerminal` opts, `label`/`repo` drive the titlebar,
+  // `desk` is the record this window continues (absent for a fresh launch).
+  function spawnWindow(termOpts, label, repo, desk) {
+    const kind = termOpts.console ? "console" : "agent";
+    const { win, body, closeBtn } = buildChrome(label, repo, desk, kind);
 
     const t = attachTerminal(body, {
       ...termOpts,
-      // Once the daemon assigns/echoes this window's session id, snapshot its
-      // placement so it survives a reload even if the operator never moves it.
+      // Once the daemon assigns/echoes this window's session id, record it on the
+      // desk so the layout knows which live session this window is holding.
       onSession: () => persistWin(win),
       // Busy-reattach → tear THIS window down and relaunch as a takeover, so no
-      // dead empty window lingers.
+      // dead empty window lingers. The desk record travels with it.
       onRefused: () => {
+        const carry = deskOf(win);
         t.dispose();
         win.remove();
         wins.delete(win);
         changed();
-        spawnWindow({ id: termOpts.id, takeover: true }, label, repo);
+        spawnWindow({ id: termOpts.id, takeover: true }, label, repo, carry);
       },
     });
     win._term = t;
@@ -585,7 +658,7 @@ window.WBConsole = (function () {
       const id = t.sessionId;
       const finish = () => {
         t.dispose();
-        forgetWin(id);
+        forgetRecord(win._deskId);
         win.remove();
         wins.delete(win);
         WB.emit("console-close", { repo: repo || null, agent: label });
@@ -602,6 +675,68 @@ window.WBConsole = (function () {
 
     wins.add(win);
     changed();
+    persistWin(win);
+    return win;
+  }
+
+  // The window's current placement as a desk record — used to carry a window's
+  // identity and box across a rebuild (takeover, placeholder → live console).
+  function deskOf(win) {
+    const maxed = win.classList.contains("maximized");
+    return {
+      id: win._deskId,
+      repo: win._deskRepo,
+      agent: win._deskAgent,
+      kind: win._deskKind,
+      rect: {
+        left: win.offsetLeft,
+        top: win.offsetTop,
+        width: maxed ? parseInt(win.style.width, 10) || win.offsetWidth : win.offsetWidth,
+        height: maxed ? parseInt(win.style.height, 10) || win.offsetHeight : win.offsetHeight,
+      },
+      max: maxed,
+    };
+  }
+
+  // An agent console the daemon no longer runs: the same chrome and the same box,
+  // but no session — one click relaunches it into this very record. Loading the
+  // page must never spawn a vendor CLI on its own.
+  function spawnPlaceholder(record) {
+    const { win, body, closeBtn } = buildChrome(record.agent, record.repo, record, record.kind);
+    win.classList.add("placeholder");
+
+    const note = document.createElement("div");
+    note.className = "session-offline";
+    const text = document.createElement("p");
+    text.textContent = "agent console — not running";
+    const btn = document.createElement("button");
+    btn.className = "session-reconnect";
+    btn.textContent = "reconnect";
+    note.append(text, btn);
+    body.append(note);
+
+    const drop = () => {
+      win.remove();
+      wins.delete(win);
+      changed();
+    };
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const carry = deskOf(win);
+      drop();
+      // The same launch path the agent menu uses, reusing this record's id, rect
+      // and maximized state, so the relaunched console lands where it stood.
+      spawnWindow({ repo: record.repo, agent: record.agent }, record.agent, record.repo, carry);
+    });
+    closeBtn.onclick = () => {
+      forgetRecord(win._deskId);
+      drop();
+      WB.emit("console-close", { repo: record.repo || null, agent: record.agent });
+    };
+
+    wins.add(win);
+    changed();
+    persistWin(win);
     return win;
   }
 
@@ -613,25 +748,43 @@ window.WBConsole = (function () {
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
   }
 
-  // Reattach every live daemon session as its own floating window, so reopening
-  // the browser restores the running consoles (with replayed scrollback).
-  function reattachLive() {
+  // Restore the desk: reconcile the saved layout against the daemon's live
+  // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
+  // desk untouched — the static demo (and a daemon that is merely unreachable)
+  // must not relaunch anything or show phantom placeholders.
+  function restoreDesk() {
+    if (!window.WBMode?.isDaemon()) return;
     fetch("/api/sessions")
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("sessions unavailable"))))
       .then((sessions) => {
-        const geo = loadGeo();
-        for (const s of sessions) {
-          // Restore each live session to its saved rect (position + maximized
-          // state), so a reload / re-login reopens the exact same workspace.
-          spawnWindow({ id: s.id }, s.agent || "console", s.repo, geo[String(s.id)]);
+        for (const { record, session, action } of reconcileDesk({
+          layout: loadDesk(),
+          sessions,
+        })) {
+          if (action === "attach") {
+            spawnWindow({ id: session.id }, session.agent || "console", session.repo, record);
+          } else if (action === "relaunch") {
+            // The daemon labels a repo-less console "~"; passing that back as a
+            // slug would hit `unknown repo`, so it relaunches with no repo at all.
+            const repo = record.repo === "~" ? undefined : record.repo;
+            spawnWindow({ console: true, repo }, record.agent, record.repo, record);
+          } else if (action === "placeholder") {
+            spawnPlaceholder(record);
+          } else {
+            // `adopt`: a cascaded window with a fresh record, keeping the live
+            // session's own kind so the desk relaunches it correctly next time.
+            spawnWindow({ id: session.id }, session.agent || "console", session.repo, {
+              kind: session.kind,
+            });
+          }
         }
       })
       .catch(() => {});
   }
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", reattachLive);
+    document.addEventListener("DOMContentLoaded", restoreDesk);
   } else {
-    reattachLive();
+    restoreDesk();
   }
 
   // Refit every open console. Called when the Agents tab returns to view: a
@@ -675,5 +828,5 @@ window.WBConsole = (function () {
     return wins.size;
   }
 
-  return { open, arrange, count, refitAll, resizeRect };
+  return { open, arrange, count, refitAll, resizeRect, reconcileDesk, pruneDesk };
 })();

@@ -1543,6 +1543,40 @@ body.runs-open .runs {
   min-height: 0;
   overflow: hidden;
 }
+/* A restored agent console the daemon no longer runs: same box, no session. It
+   reads as dormant (dashed border, muted body) until the operator reconnects. */
+.session-window.placeholder {
+  border-style: dashed;
+}
+.session-offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  height: 100%;
+  padding: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+.session-offline p {
+  margin: 0;
+}
+.session-reconnect {
+  padding: 0.32rem 0.8rem;
+  color: var(--text);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.session-reconnect:hover {
+  color: var(--console-text);
+  border-color: var(--border-focus);
+}
 /* The eight resize handles: 6px strips along the edges, 12px squares in the
    corners, stacked above the terminal body so a drag never lands in xterm. The
    corner grip below keeps the familiar visual affordance but is inert

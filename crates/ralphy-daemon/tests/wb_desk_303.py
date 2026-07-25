@@ -206,6 +206,117 @@ def geometry_table(page):
             )
 
 
+# --- scenario 2: the pure reconciliation ------------------------------------
+# A live session is `{id, repo, agent, kind}` as `/api/sessions` serves it; a
+# record is a desk entry. Expected is the ACTION sequence, in output order
+# (layout order first, then one `adopt` per unclaimed live session).
+def rec(rid, sid, repo="fix", agent="console", kind="console"):
+    return {"id": rid, "repo": repo, "agent": agent, "kind": kind, "sessionId": sid, "ts": 1}
+
+
+def ses(sid, repo="fix", agent="console", kind="console"):
+    return {"id": sid, "repo": repo, "agent": agent, "kind": kind}
+
+
+RECONCILE_ROWS = [
+    ("a record whose whole tuple matches a live session attaches", [rec("w1", 1)], [ses(1)], ["attach"]),
+    (
+        "the same id in a DIFFERENT repo does not attach — the console relaunches",
+        [rec("w1", 1, repo="other")],
+        [ses(1)],
+        ["relaunch", "adopt"],
+    ),
+    (
+        "the same id under a different agent does not attach either",
+        [rec("w1", 1, agent="claude", kind="agent")],
+        [ses(1)],
+        ["placeholder", "adopt"],
+    ),
+    (
+        "the same id with a different kind does not attach",
+        [rec("w1", 1, agent="claude", kind="agent")],
+        [ses(1, agent="claude")],
+        ["placeholder", "adopt"],
+    ),
+    (
+        "two records claiming ONE session: the first attaches, the second relaunches",
+        [rec("w1", 1), rec("w2", 1)],
+        [ses(1)],
+        ["attach", "relaunch"],
+    ),
+    (
+        "an agent record with no live session waits as a placeholder",
+        [rec("w1", 7, agent="gemini", kind="agent")],
+        [],
+        ["placeholder"],
+    ),
+    ("a console record with no live session relaunches", [rec("w1", 7)], [], ["relaunch"]),
+    ("a live session no record claims is adopted", [], [ses(3)], ["adopt"]),
+    ("an empty layout adopts every live session", [], [ses(1), ses(2)], ["adopt", "adopt"]),
+    ("an empty layout and no sessions yields nothing", [], [], []),
+    (
+        "a mixed desk: attach the live one, relaunch the dead console, hold the agent",
+        [rec("w1", 1), rec("w2", 5), rec("w3", 9, agent="gemini", kind="agent")],
+        [ses(1), ses(4, repo="other")],
+        ["attach", "relaunch", "placeholder", "adopt"],
+    ),
+    (
+        "a record with a NULL session id never matches a live session",
+        [rec("w1", None)],
+        [ses(1)],
+        ["relaunch", "adopt"],
+    ),
+]
+
+
+def reconcile_table(page):
+    outs = page.evaluate(
+        "(rows) => rows.map((r) => { try {"
+        " return window.WBConsole.reconcileDesk({ layout: r.layout, sessions: r.sessions })"
+        "   .map((e) => e.action);"
+        " } catch (e) { return String(e); } })",
+        [{"layout": lay, "sessions": ses_} for (_, lay, ses_, _) in RECONCILE_ROWS],
+    )
+    for (label, _lay, _ses, want), got in zip(RECONCILE_ROWS, outs):
+        check(f"reconcileDesk: {label}", got == want, f"got={got} want={want}")
+    # The attach must carry the SESSION it matched, not merely say "attach".
+    paired = page.evaluate(
+        "() => window.WBConsole.reconcileDesk({"
+        " layout: [{ id: 'w1', repo: 'fix', agent: 'console', kind: 'console', sessionId: 2 }],"
+        " sessions: [{ id: 1, repo: 'fix', agent: 'console', kind: 'console' },"
+        "            { id: 2, repo: 'fix', agent: 'console', kind: 'console' }] })"
+        ".map((e) => [e.action, e.session && e.session.id, e.record && e.record.id])"
+    )
+    check(
+        "reconcileDesk pairs the record with the session it actually matched",
+        paired == [["attach", 2, "w1"], ["adopt", 1, None]],
+        f"got={paired}",
+    )
+
+
+# --- scenario 3: the cap ----------------------------------------------------
+def prune_table(page):
+    got = page.evaluate(
+        "() => { const recs = Array.from({ length: 27 }, (_, i) =>"
+        " ({ id: 'w' + (i + 1), ts: i + 1 }));"
+        " const out = window.WBConsole.pruneDesk(recs, 24);"
+        " return { len: out.length, ids: out.map((r) => r.id), inputLen: recs.length }; }"
+    )
+    check("pruneDesk caps the desk at 24 records", got["len"] == 24, f"got={got['len']}")
+    check(
+        "…dropping the three OLDEST by ts",
+        got["ids"][:3] == ["w4", "w5", "w6"] and "w1" not in got["ids"],
+        f"ids={got['ids'][:5]}…",
+    )
+    check(
+        "…keeping layout order, and not mutating its input",
+        got["ids"] == sorted(got["ids"], key=lambda s: int(s[1:])) and got["inputLen"] == 27,
+        f"got={got}",
+    )
+    under = page.evaluate("() => window.WBConsole.pruneDesk([{ id: 'a', ts: 1 }], 24).length")
+    check("…and leaves an under-cap desk alone", under == 1, f"got={under}")
+
+
 def open_console(page, slug):
     """Open a free console and wait for its live terminal."""
     before = page.locator(".session-window").count()
@@ -276,6 +387,10 @@ def main():
 
             # --- scenario 1: the geometry in isolation ------------------------
             geometry_table(page)
+
+            # --- scenarios 2 & 3: reconciliation and the cap, in isolation ----
+            reconcile_table(page)
+            prune_table(page)
 
             # The Agents tab must be in view or every terminal measures 0x0.
             page.evaluate(f"() => {{ {SH}.active = 'agents'; }}")
@@ -391,6 +506,101 @@ def main():
             page.locator(".session-window").nth(0).locator(".session-max").click()
             page.wait_for_timeout(300)
 
+            # --- scenario 6: the desk survives a browser reload ---------------
+            open_console(page, slug)
+            drag_handle(page, 1, "s", 0, 60)
+            page.locator(".session-window").nth(1).locator(".session-max").click()
+            page.wait_for_timeout(400)
+            before = [rect_of(page, 0), rect_of(page, 1)]
+            records = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            check("the desk store holds one record per window", len(records) == 2, f"got={records}")
+            keys = sorted(records[0].keys())
+            check(
+                "a record carries id, repo, agent, kind, rect, max, sessionId and ts",
+                keys == ["agent", "id", "kind", "max", "rect", "repo", "sessionId", "ts"],
+                f"got={keys}",
+            )
+            check(
+                "…with the full rect inside it",
+                sorted(records[0]["rect"].keys()) == ["height", "left", "top", "width"],
+                f"got={records[0]['rect']}",
+            )
+            check(
+                "…the repo and the session kind of the console it describes",
+                all(r["repo"] == slug and r["kind"] == "console" and r["agent"] == "console" for r in records),
+                f"got={[(r['repo'], r['kind'], r['agent']) for r in records]}",
+            )
+            check(
+                "…and the live session id as an attribute",
+                all(isinstance(r["sessionId"], int) for r in records),
+                f"got={[r['sessionId'] for r in records]}",
+            )
+            check(
+                "the maximized window's record carries max=true",
+                records[1]["max"] is True and records[0]["max"] is False,
+                f"got={[r['max'] for r in records]}",
+            )
+            # The RESTORE box, not the full-bleed screen: a maximized window's
+            # record must still describe the box it un-maximizes to.
+            restore_box = records[1]["rect"]
+            check(
+                "…and its PRE-maximize rect, not the full-bleed one",
+                restore_box["width"] < before[1]["width"],
+                f"record={restore_box} onscreen={before[1]}",
+            )
+            # The session id is an ATTRIBUTE, not the key: clearing it must still
+            # restore the windows (they relaunch instead of attaching).
+            check(
+                "records are keyed by a stable client-side window id",
+                all(isinstance(r["id"], str) and r["id"].startswith("w-") for r in records),
+                f"got={[r['id'] for r in records]}",
+            )
+
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window').length === 2", timeout=15000
+            )
+            page.locator(".session-window").nth(1).locator(".xterm").wait_for(timeout=15000)
+            page.wait_for_timeout(700)
+            after = [rect_of(page, 0), rect_of(page, 1)]
+            check(
+                "after a reload every window returns to its exact rectangle",
+                after == before,
+                f"{before} -> {after}",
+            )
+            check(
+                "…and the maximized one comes back maximized",
+                page.evaluate(
+                    "() => [...document.querySelectorAll('.session-window')]"
+                    ".map((w) => w.classList.contains('maximized'))"
+                )
+                == [False, True],
+                "",
+            )
+            check(
+                "…still attached to their live sessions, not relaunched",
+                page.evaluate("() => document.querySelectorAll('.session-window .xterm').length") == 2,
+                "",
+            )
+            after_recs = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            check(
+                "…under the SAME window ids (attach, not adopt)",
+                [r["id"] for r in after_recs] == [r["id"] for r in records],
+                f"{[r['id'] for r in records]} -> {[r['id'] for r in after_recs]}",
+            )
+
+            # Closing a window forgets its record — the desk cannot accrete.
+            gone = after_recs[1]["id"]
+            page.locator(".session-window").nth(1).locator(".session-close").click()
+            page.wait_for_timeout(900)
+            left_recs = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            check(
+                "closing a window drops its desk record",
+                [r["id"] for r in left_recs] == [after_recs[0]["id"]],
+                f"closed={gone} left={[r['id'] for r in left_recs]}",
+            )
+
             ctx.close()
             browser.close()
     finally:
@@ -398,7 +608,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 49
+    ok = all(results) and len(results) >= 79
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")
