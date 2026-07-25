@@ -10,7 +10,8 @@ Scenario 1  the rail has 5 buttons and no digits; clicking Changes shows
             `.changes-view` and hides `.projects-view`, and Projects reverses it
 Scenario 2  the visible `.chg-name` set equals the OPEN project's paths, and
             re-scopes when another project is opened
-Scenario 3  the Projects view's `.chg-badge` reads 2 on A and 3 on B while NO
+Scenario 3  the open project's `.chg-badge` is readable with the Changes view
+            closed; with no project open the rows read 2 on A and 3 on B while NO
             element on the page reads 5 (the aggregate an implementation that
             summed the map would print), an unopened project shows no badge, and
             a failed `changes.list` moves A's badge to `—`, never `0`
@@ -205,7 +206,8 @@ def open_changes(page, slug):
     # The slug rides as an ARGUMENT, never interpolated into the source: a repo
     # registered from a Windows path carries backslashes a string literal would
     # swallow as escapes, silently opening nothing (#316).
-    page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
+    # `toggle` is a TOGGLE: calling it on the already-open project closes it.
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
     page.evaluate(
         f"() => {{ const v = {VIEW};"
@@ -228,13 +230,45 @@ def wait_rows(page, n):
     )
 
 
-def visible_names(page):
+def groups(page):
+    """The Changes view as plain data: which paths it lists, how they split
+    between the two groups, and what a rename says it came from. Read inside ONE
+    evaluate — the sync API cannot round-trip a DOM handle."""
     return page.evaluate(
-        f"() => {{ const v = {VIEW}; if (!v) return [];"
-        " return Array.from(v.querySelectorAll('.chg-row'))"
-        "   .filter(e => e.offsetParent !== null)"
-        "   .map(e => (e.getAttribute('title') || '').trim()); }"
+        f"() => {{ const v = {VIEW}; if (!v) return null;"
+        " const vis = (e) => e.offsetParent !== null;"
+        " const rows = (sel) => Array.from(v.querySelectorAll(sel)).filter(vis);"
+        " const names = rows('.chg-row')"
+        "   .map(e => (e.querySelector('.chg-name') || {}).textContent.trim());"
+        # A group is found through the HEADLINE above it, never by index: when a
+        # clean side renders no headline the surviving group slides into slot 0,
+        # so `ul[0]` would silently answer for the other side.
+        " const group = (label) => {"
+        "   const h = Array.from(v.querySelectorAll('.chg-group-head')).filter(vis)"
+        "     .find(e => e.textContent.trim() === label);"
+        "   const ul = h && h.nextElementSibling;"
+        "   return ul && vis(ul)"
+        "     ? Array.from(ul.querySelectorAll('.chg-row')).filter(vis).length : 0; };"
+        " return {"
+        "   names: names.filter((n, i) => names.indexOf(n) === i),"
+        "   staged: group('Staged Changes'),"
+        "   unstaged: group('Changes'),"
+        "   heads: Array.from(v.querySelectorAll('.chg-group-head')).filter(vis)"
+        "     .map(e => e.textContent.trim()),"
+        "   from: rows('.chg-from').map(e => e.textContent.trim()) }; }"
     )
+
+
+# One project row's badge, by slug. The row is found through `.project-slug`'s
+# `title` (the full slug) because the visible label is the UPPERCASED repo name.
+BADGE_EXPR = (
+    "(() => { const r = Array.from(document.querySelectorAll('li.project'))"
+    "   .find(e => { const n = e.querySelector('.project-slug');"
+    "               return n && n.getAttribute('title') === s; });"
+    "  if (!r) return null; const b = r.querySelector('.chg-badge');"
+    "  return b ? { shown: b.offsetParent !== null, text: b.textContent.trim() }"
+    "           : { shown: false, text: null }; })()"
+)
 
 
 def main():
@@ -244,7 +278,7 @@ def main():
     dir_a, dir_b, dir_c, dir_d = make_two(), make_three(), make_clean(), make_sixty()
     slug_a = register_fixture(daemon_dir, dir_a)
     slug_b = register_fixture(daemon_dir, dir_b)
-    register_fixture(daemon_dir, dir_c)
+    slug_c = register_fixture(daemon_dir, dir_c)
     slug_d = register_fixture(daemon_dir, dir_d)
 
     proc = launch(daemon_dir)
@@ -307,6 +341,187 @@ def main():
                 f"got={back}",
             )
 
+            # --- scenario 2: the view is scoped to the OPEN project ------------
+            open_changes(page, slug_a)
+            wait_rows(page, 3)
+            a_view = groups(page)
+            check(
+                "the open project's own paths are what the view lists",
+                a_view["names"] == ["README.md", "new.txt"],
+                f"got={a_view}",
+            )
+            check(
+                "…split into its staged and unstaged sides",
+                a_view["staged"] == 2 and a_view["unstaged"] == 1,
+                f"got={a_view}",
+            )
+            # A renamed-then-modified path is ONE entry that lands in BOTH groups
+            # (#315's fold), so its origin is drawn once per group — two rows.
+            check(
+                "…and a rename still shows where it came from",
+                a_view["from"] == ["← old.txt", "← old.txt"],
+                f"got={a_view['from']}",
+            )
+
+            open_changes(page, slug_b)
+            wait_rows(page, 3)
+            b_view = groups(page)
+            check(
+                "opening another project re-scopes the view to ITS paths",
+                b_view["names"] == ["README.md", "one.txt", "two.txt"],
+                f"got={b_view}",
+            )
+            # The discriminator: A and B both render 3 rows, so a view that never
+            # re-scoped would still count 3 — the SPLIT is what separates them.
+            check(
+                "…with nothing of the previous project left in it",
+                b_view["staged"] == 0 and b_view["unstaged"] == 3,
+                f"got={b_view}",
+            )
+
+            # --- scenario 3: the count survives as a per-project indicator -----
+            # Leg (i) — the property #297 built the section for: with B still the
+            # open project and its Changes view CLOSED, B's count is on screen
+            # with no click and no navigation.
+            show_projects(page)
+            page.wait_for_function(
+                f"(s) => {{ const b = {BADGE_EXPR}; return !!b && b.shown && b.text === '3'; }}",
+                arg=slug_b,
+                timeout=15000,
+            )
+            check(
+                "the open project's count is on the Projects row, no navigation needed",
+                page.evaluate(f"(s) => {BADGE_EXPR}", arg=slug_b)["shown"],
+                "with the Changes view closed",
+            )
+            # Leg (ii) — `.projects.has-open .project:not(.open)` is display:none
+            # (styles.css:258, pre-existing), so the two rows are only comparable
+            # with NO project open. Closing it is also what proves the badge
+            # survives on a project that is merely "previously opened".
+            page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_b)
+            page.wait_for_function(f"() => !{SH}.openSlug", timeout=15000)
+            page.wait_for_function(
+                f"(s) => {{ const b = {BADGE_EXPR}; return !!b && b.shown && b.text !== ''; }}",
+                arg=slug_a,
+                timeout=15000,
+            )
+            badges = page.evaluate(
+                "(slugs) => {"
+                " const rows = Array.from(document.querySelectorAll('li.project'));"
+                " const find = (s) => rows.find(r => {"
+                "   const n = r.querySelector('.project-slug');"
+                "   return n && n.getAttribute('title') === s; });"
+                " const read = (s) => { const r = find(s); if (!r) return null;"
+                "   const b = r.querySelector('.chg-badge');"
+                "   return b ? { shown: b.offsetParent !== null, text: b.textContent.trim() }"
+                "            : { shown: false, text: null }; };"
+                # Any element whose WHOLE text is the aggregate 2+3 — the number
+                # an implementation that summed the count map would print.
+                " const five = Array.from(document.querySelectorAll('*'))"
+                "   .filter(e => (e.textContent || '').trim() === '5')"
+                "   .map(e => e.tagName + '.' + e.className);"
+                " return { a: read(slugs[0]), b: read(slugs[1]), c: read(slugs[2]), five };"
+                "}",
+                arg=[slug_a, slug_b, slug_c],
+            )
+            check(
+                "the Projects row keeps the open project's count with no navigation",
+                badges["a"] and badges["a"]["shown"] and badges["a"]["text"] == "2",
+                f"got={badges['a']}",
+            )
+            check(
+                "…per project, so the second one reads its own count",
+                badges["b"] and badges["b"]["shown"] and badges["b"]["text"] == "3",
+                f"got={badges['b']}",
+            )
+            check(
+                "…and NO element on the page reads the cross-repo aggregate",
+                badges["five"] == [],
+                f"got={badges['five']}",
+            )
+            check(
+                "a project nobody opened claims nothing at all",
+                badges["c"] and not badges["c"]["shown"],
+                f"got={badges['c']}",
+            )
+
+            # A failed read must never read like a clean tree.
+            page.evaluate(
+                "() => { const real = window.WBDaemon.observe;"
+                " window.__realObserve = real;"
+                " window.WBDaemon.observe = (verb, args) => verb === 'changes.list'"
+                "   ? Promise.reject(new Error('refused')) : real(verb, args); }"
+            )
+            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug_a)
+            page.wait_for_function(
+                f"(s) => {{ const b = {BADGE_EXPR}; return !!b && b.text === '—'; }}",
+                arg=slug_a,
+                timeout=15000,
+            )
+            failed = page.evaluate(f"(s) => {BADGE_EXPR}", arg=slug_a)
+            check(
+                "a failed read shows an em dash, never a quiet zero",
+                failed and failed["text"] == "—",
+                f"got={failed}",
+            )
+            page.evaluate(
+                "() => { window.WBDaemon.observe = window.__realObserve;"
+                " delete window.__realObserve; }"
+            )
+
+            # --- scenario 4: the diff tab is unchanged by the promotion --------
+            open_changes(page, slug_a)
+            wait_rows(page, 3)
+            page.evaluate(
+                f"() => {{ const v = {VIEW};"
+                " const row = Array.from(v.querySelectorAll('.chg-row'))"
+                "   .filter(e => e.offsetParent !== null)"
+                "   .find(e => (e.querySelector('.chg-name') || {}).textContent.trim() === 'README.md');"
+                " row.click(); }"
+            )
+            diff_id = f"diff:{slug_a}:README.md"
+            page.wait_for_function(
+                f"(want) => {SH}.tabs.map(t => t.id).join('|') === want",
+                arg=f"consoles|{diff_id}",
+                timeout=20000,
+            )
+            check(
+                "clicking a changed path still opens the diff as a canvas tab",
+                page.evaluate(f"() => {SH}.tabs.map(t => t.id)") == ["consoles", diff_id],
+                f"got={page.evaluate(f'() => {SH}.tabs.map(t => t.id)')}",
+            )
+            # A diff editor exposes no readable renderSideBySide, so the two pane
+            # classes are the oracle (KNOWLEDGE.md #311).
+            page.wait_for_function(
+                "() => document.querySelectorAll('.original-in-monaco-diff-editor').length === 1"
+                " && document.querySelectorAll('.modified-in-monaco-diff-editor').length === 1",
+                timeout=20000,
+            )
+            panes = page.evaluate(
+                "() => document.querySelectorAll('.original-in-monaco-diff-editor')"
+                ".length + document.querySelectorAll('.modified-in-monaco-diff-editor').length"
+            )
+            check("…with both of its Monaco panes mounted", panes == 2, f"got={panes}")
+
+            # --- scenario 5: the accordion is GONE, not left standing ----------
+            gone = page.evaluate(
+                "() => ({ secs: document.querySelectorAll('.changes-sec').length,"
+                " nested: document.querySelectorAll('li.project .changes-list').length,"
+                " views: document.querySelectorAll('.changes-view .changes-list').length })"
+            )
+            check(
+                "no accordion section is left in the sidebar",
+                gone["secs"] == 0 and gone["nested"] == 0,
+                f"got={gone}",
+            )
+            # …and the list did not vanish along with it: the assertion above must
+            # not pass merely because the whole surface disappeared.
+            check(
+                "…because the list moved into the rail view, not because it went away",
+                gone["views"] == 1,
+                f"got={gone}",
+            )
+
             info("fixtures", f"a={dir_a} b={dir_b} c={dir_c} d={dir_d}")
             info("slugs", f"a={slug_a} b={slug_b} d={slug_d}")
             check("the page threw nothing", not thrown, f"pageerrors={thrown}")
@@ -316,7 +531,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 5
+    ok = all(results) and len(results) >= 16
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES RAIL LIVE")
