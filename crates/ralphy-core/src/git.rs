@@ -9,8 +9,19 @@ use anyhow::{bail, Context, Result};
 /// Run a git command and hand back the raw [`Output`]. Crate-internal because
 /// `git()`'s trimming would corrupt byte-exact payloads (see [`crate::blob`]).
 pub(crate) fn raw(repo: &Path, args: &[&str]) -> Result<Output> {
+    raw_env(repo, args, &[])
+}
+
+/// [`raw`] plus extra environment for this call only. Exists for the commands
+/// that may reach the network: a console-less child that hits a credential
+/// prompt would block forever with nothing on screen, so the caller pins
+/// `GIT_TERMINAL_PROMPT=0` (see [`crate::sync::fetch`]).
+pub(crate) fn raw_env(repo: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).args(args);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
     // Hidden console so a `git` call under the console-less daemon child never
     // flashes a visible window. Output is captured here, so nothing is lost.
     ralphy_proc_util::no_window(&mut cmd);

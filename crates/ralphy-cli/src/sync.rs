@@ -4,7 +4,10 @@
 //!
 //! `status` is read-only and never consults `.ralphy/run.lock` (see
 //! `changes.rs`). `fetch` and `pull` inspect it and refuse under
-//! [`crate::runlock::LockState::HeldAlive`] BEFORE any git call (ADR-0036 §6).
+//! [`crate::runlock::LockState::HeldAlive`] before any git WRITE (ADR-0036 §6).
+//! Precisely: the one git call the guard does not precede is the read-only
+//! `rev-parse --show-toplevel` that LOCATES the lock — it has to run first,
+//! and it mirrors `mutate.rs`'s ordering.
 //!
 //! Neither write takes `--format`: a refusal reaches the workbench only through
 //! the non-zero-exit message path (the daemon's Mutate branch collapses a

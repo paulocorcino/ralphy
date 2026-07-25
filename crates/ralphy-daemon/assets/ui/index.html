@@ -199,7 +199,11 @@
                    here fires on open or on a timer, only on these two clicks. -->
               <div class="sync-row">
                 <span class="sync-branch" x-text="(syncByProject[p.slug] || {}).branch"></span>
-                <span class="sync-counts" x-text="(syncByProject[p.slug] || {}).counts"></span>
+                <!-- The counts are meaningless without the ref they measure
+                     against, and the row has no width for it — so the upstream
+                     rides the hover title. -->
+                <span class="sync-counts" x-text="(syncByProject[p.slug] || {}).counts"
+                      :title="(syncByProject[p.slug] || {}).upstream"></span>
                 <span class="sync-note" x-text="(syncByProject[p.slug] || {}).note"></span>
                 <span class="sync-fetched" x-text="(syncByProject[p.slug] || {}).fetched"></span>
                 <button class="sync-act" data-act="fetch" title="fetch from the upstream"

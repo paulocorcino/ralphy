@@ -150,6 +150,56 @@ fn sync_status_no_upstream_is_null_not_zero() {
     assert!(v["sync"]["last_fetch"].is_null(), "never fetched: {v}");
 }
 
+/// The DEFAULT output — the one a terminal operator sees — must carry the same
+/// distinction the JSON does: an absent upstream reads as its own words, and a
+/// detached HEAD as its own, never as zeroed counts.
+#[test]
+fn sync_status_without_format_never_prints_zeroed_counts_for_a_stateless_head() {
+    let repo = init_remote();
+    let noup = String::from_utf8_lossy(
+        &ralphy(&["sync", "status", "--repo", &repo.path().to_string_lossy()]).stdout,
+    )
+    .trim()
+    .to_string();
+    assert!(
+        noup.contains("no upstream"),
+        "the human line names the state: {noup:?}"
+    );
+    assert!(
+        !noup.contains("ahead") && !noup.contains("behind"),
+        "a branch with no upstream has no counts to print: {noup:?}"
+    );
+
+    run_git(repo.path(), &["checkout", "--quiet", "--detach", "HEAD"]);
+    let detached = String::from_utf8_lossy(
+        &ralphy(&["sync", "status", "--repo", &repo.path().to_string_lossy()]).stdout,
+    )
+    .trim()
+    .to_string();
+    assert!(
+        detached.contains("detached at"),
+        "the human line names the state: {detached:?}"
+    );
+    assert!(
+        !detached.contains("ahead") && !detached.contains("behind"),
+        "a detached HEAD has no counts to print: {detached:?}"
+    );
+
+    // The positive control: a branch that DOES track prints its counts, so the
+    // two assertions above are not satisfied by an empty line.
+    let remote = init_remote();
+    let clone = clone_of(remote.path());
+    let tracking = String::from_utf8_lossy(
+        &ralphy(&["sync", "status", "--repo", &clone.path().to_string_lossy()]).stdout,
+    )
+    .trim()
+    .to_string();
+    assert!(
+        tracking.contains("origin/main") && tracking.contains("0 ahead, 0 behind"),
+        "a tracking branch prints its counts: {tracking:?}"
+    );
+}
+
 #[test]
 fn sync_fetch_refuses_under_a_held_lock_before_any_git_call() {
     let remote = init_remote();

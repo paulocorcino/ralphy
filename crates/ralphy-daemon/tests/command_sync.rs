@@ -116,4 +116,16 @@ async fn sync_status_and_fetch_argv_reach_the_child() {
         fetched.get("sync").is_none(),
         "a Mutate reply carries no read field: {fetched}"
     );
+
+    // Third leg: the relay arm maps TWO verbs, so `sync.pull` is asserted too —
+    // a `sync_argv` that answered `fetch` for both would pass the leg above.
+    let pulled = ask(port, 3, "sync.pull", serde_json::json!({ "repo": slug })).await;
+    assert_eq!(pulled["status"], "error", "got {pulled}");
+    let pull_msg = pulled["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("an error message string; got {pulled}"));
+    assert!(
+        pull_msg.contains("sync pull") && !pull_msg.contains("sync fetch"),
+        "the sync-pull argv must reach the child; got: {pull_msg:?}"
+    );
 }

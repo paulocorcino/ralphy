@@ -14,10 +14,10 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
-use crate::git::{git, raw};
+use crate::git::{git, raw, raw_env};
 
 /// What HEAD points at. Detached is a STATE, not a failure: a repo mid-bisect
 /// or on a checked-out tag reports it and the UI renders it.
@@ -177,7 +177,7 @@ impl FetchOutcome {
         match self {
             FetchOutcome::Fetched { .. } => None,
             FetchOutcome::NoRemote => {
-                Some("cannot fetch: this repository has no remote".to_string())
+                Some("cannot fetch: this branch has no remote to fetch from".to_string())
             }
         }
     }
@@ -188,16 +188,37 @@ impl FetchOutcome {
 ///
 /// A transport or auth failure stays an `Err`: it is a failure, not an outcome,
 /// and the distinction is what keeps "no remote configured" legible.
+///
+/// `GIT_TERMINAL_PROMPT=0` is pinned because this call runs under a console-less
+/// daemon child: a remote whose credential is not cached would otherwise prompt
+/// on a terminal nobody can see, and the click would hang with no feedback.
 pub fn fetch(repo: &Path) -> Result<FetchOutcome> {
     let Some(remote) = remote_for_head(repo)? else {
         return Ok(FetchOutcome::NoRemote);
     };
-    git(repo, &["fetch", "--quiet", &remote]).with_context(|| format!("fetching {remote}"))?;
+    // `--end-of-options`: the remote name comes from the repo's own config, and
+    // one starting with `-` would otherwise be parsed as a git option.
+    let out = raw_env(
+        repo,
+        &["fetch", "--quiet", "--end-of-options", &remote],
+        &[("GIT_TERMINAL_PROMPT", "0")],
+    )
+    .with_context(|| format!("fetching {remote}"))?;
+    if !out.status.success() {
+        bail!(
+            "fetching {remote}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
     Ok(FetchOutcome::Fetched { remote })
 }
 
 /// The remote the current branch fetches from: its own `branch.<name>.remote`
-/// when configured, else `origin` when the repo has one, else nothing.
+/// when configured, else `origin`, else the repo's ONE remote when it has
+/// exactly one — a repo whose only remote is named `upstream` has somewhere to
+/// fetch from, and answering `NoRemote` there would be a lie. Ambiguity (several
+/// remotes, none of them `origin`, and no branch config) is `None`: this module
+/// has no way to pick, and guessing is worse than refusing.
 fn remote_for_head(repo: &Path) -> Result<Option<String>> {
     if let Head::Branch { name } = head_of(repo)? {
         let key = format!("branch.{name}.remote");
@@ -209,12 +230,19 @@ fn remote_for_head(repo: &Path) -> Result<Option<String>> {
             }
         }
     }
-    let remotes = git(repo, &["remote"]).context("listing the repo's remotes")?;
-    Ok(remotes
+    let listed = git(repo, &["remote"]).context("listing the repo's remotes")?;
+    let remotes: Vec<&str> = listed
         .lines()
         .map(str::trim)
-        .any(|r| r == "origin")
-        .then(|| "origin".to_string()))
+        .filter(|r| !r.is_empty())
+        .collect();
+    if remotes.contains(&"origin") {
+        return Ok(Some("origin".to_string()));
+    }
+    Ok(match remotes.as_slice() {
+        [only] => Some((*only).to_string()),
+        _ => None,
+    })
 }
 
 /// What a [`pull`] did — or why it refused. Every variant but the first two is
@@ -277,11 +305,33 @@ pub fn pull(repo: &Path) -> Result<PullOutcome> {
             behind: tracking.behind,
         });
     }
-    let out = raw(repo, &["merge", "--ff-only", &tracking.upstream])
-        .with_context(|| format!("fast-forwarding onto {}", tracking.upstream))?;
+    // `--end-of-options`: the upstream name comes from the repo's own config.
+    let out = raw(
+        repo,
+        &["merge", "--ff-only", "--end-of-options", &tracking.upstream],
+    )
+    .with_context(|| format!("fast-forwarding onto {}", tracking.upstream))?;
     if !out.status.success() {
-        // The counts already cleared divergence, so a local obstruction is the
-        // only cause left; git's stderr is deliberately not relayed.
+        // git's stderr never reaches the operator (the refusal prose is this
+        // module's own), but dropping it unread would erase the only account of
+        // a cause this classification does not model — so it is logged.
+        tracing::warn!(
+            upstream = %tracking.upstream,
+            stderr = %String::from_utf8_lossy(&out.stderr).trim(),
+            "`git merge --ff-only` refused"
+        );
+        // Re-read rather than assume: the counts that cleared divergence are
+        // from BEFORE the merge, and a run (or the operator) can have committed
+        // in between. Only a still-fast-forwardable branch is really blocked by
+        // the working tree.
+        if let Some(t) = status(repo)?.tracking {
+            if t.ahead > 0 && t.behind > 0 {
+                return Ok(PullOutcome::Diverged {
+                    ahead: t.ahead,
+                    behind: t.behind,
+                });
+            }
+        }
         return Ok(PullOutcome::WorkingTreeBlocked);
     }
     Ok(PullOutcome::FastForwarded {

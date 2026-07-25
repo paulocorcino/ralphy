@@ -488,7 +488,9 @@ function shell() {
           this._flashAction(window.WBFail.message(reply, "fetch refused"));
         }
       } catch {
-        this._flashAction("fetch refused");
+        // A transport throw is NOT a refusal: the repo never answered. Saying
+        // "refused" there would report a decision nobody made.
+        if (window.WBMode.isDaemon()) this._flashAction("fetch unavailable: no daemon");
       }
       this.loadSync(slug);
     },
@@ -505,7 +507,7 @@ function shell() {
           moved = true;
         }
       } catch {
-        this._flashAction("pull refused");
+        if (window.WBMode.isDaemon()) this._flashAction("pull unavailable: no daemon");
       }
       this.loadSync(slug);
       if (moved) this.loadChanges(slug);

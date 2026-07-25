@@ -217,10 +217,79 @@ fn last_fetch_is_the_fetch_head_mtime() {
         .unwrap()
         .last_fetch
         .expect("a fetched repo reports when");
-    assert!(
-        chrono::DateTime::parse_from_rfc3339(&stamp).is_ok(),
-        "last_fetch must be RFC 3339: {stamp:?}"
+    let parsed = chrono::DateTime::parse_from_rfc3339(&stamp)
+        .unwrap_or_else(|e| panic!("last_fetch must be RFC 3339: {stamp:?} ({e})"));
+
+    // The discriminating half: a reader that answered `now()` whenever
+    // FETCH_HEAD exists would satisfy every assertion above AND every staleness
+    // label downstream, so the label could always read "fetched just now" with
+    // the whole gate green. The stamp must NOT move while nothing fetches…
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    assert_eq!(
+        status(&clone).unwrap().last_fetch.as_deref(),
+        Some(stamp.as_str()),
+        "the stamp is the file's mtime, not the clock: it moved with no fetch"
     );
+
+    // …and must move when something does.
+    git(&clone, &["fetch", "-q"]).unwrap();
+    let again = status(&clone).unwrap().last_fetch.expect("still stamped");
+    let reparsed = chrono::DateTime::parse_from_rfc3339(&again).expect("RFC 3339");
+    assert!(
+        reparsed > parsed,
+        "a second fetch must advance the stamp: {stamp} -> {again}"
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+/// The absence of `FETCH_HEAD` proves "did not fetch", not "made no network
+/// call" — `git ls-remote`, the natural way to freshen counts, writes no
+/// FETCH_HEAD and would pass that oracle. Here the remote PATH is made
+/// unreachable after the clone: the remote-tracking refs stay readable, so a
+/// local-only reader answers unchanged, while anything that consults the remote
+/// fails.
+#[test]
+fn status_consults_no_remote_at_all() {
+    let remote = init_remote("unreachable-remote");
+    let clone = clone_of(&remote, "unreachable-clone");
+    commit(&remote, "b.txt", "two\n", "second");
+    git(&clone, &["fetch", "-q"]).unwrap();
+    let before = status(&clone).unwrap();
+
+    let gone = remote.with_file_name(format!("ralphy-sync-{}-gone", std::process::id()));
+    std::fs::rename(&remote, &gone).unwrap();
+    // Positive control: the remote really is unreachable now.
+    assert!(
+        crate::git::git(&clone, &["ls-remote", "origin"]).is_err(),
+        "the fixture must be unreachable, or this proves nothing"
+    );
+
+    let after = status(&clone).expect("status must answer with the remote gone");
+    assert_eq!(after, before, "the read is local-only: {after:?}");
+
+    let _ = std::fs::remove_dir_all(&gone);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn a_single_non_origin_remote_is_the_one_to_fetch() {
+    let remote = init_remote("solo-remote");
+    let clone = clone_of(&remote, "solo-clone");
+    // A repo whose only remote is `upstream` HAS somewhere to fetch from;
+    // answering `NoRemote` there would be a lie the operator cannot act on.
+    git(&clone, &["remote", "rename", "origin", "upstream"]).unwrap();
+    git(&clone, &["config", "--unset", "branch.main.remote"]).unwrap();
+    commit(&remote, "b.txt", "two\n", "second");
+
+    assert_eq!(
+        fetch(&clone).unwrap(),
+        FetchOutcome::Fetched {
+            remote: "upstream".to_string()
+        }
+    );
+    assert!(fetch_head(&clone).exists());
 
     let _ = std::fs::remove_dir_all(&remote);
     let _ = std::fs::remove_dir_all(&clone);
