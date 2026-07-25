@@ -38,6 +38,11 @@ use crate::tree::HARD_EXCLUDE;
 /// Bounded by the screen (the expanded set), so the native path comfortably fits.
 pub const MAX_WATCHES: usize = 512;
 
+/// The run-snapshot directory (ADR-0047 §9) — the ONE watch target exempt from
+/// the pump's gitignore filter. `.ralphy/` is gitignored in every repo ralphy
+/// touches, so without this narrow exemption a snapshot write could never nudge.
+pub const RUNSTATE_REL: &str = ".ralphy/runstate";
+
 /// After this quiet gap the debouncer emits a settled batch — short so the suite
 /// stays fast, long enough to coalesce an event storm into few nudges.
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(300);
@@ -333,7 +338,8 @@ async fn pump(
 /// Map one event path to the watched rel dir it belongs to, or `None` to drop it.
 /// Drops: paths outside the canonical root, [`HARD_EXCLUDE`] / gitignored children
 /// (a `NonRecursive` root watch still fires a Modify on a child dir like
-/// `node_modules`), and any parent dir not in the current watch-set.
+/// `node_modules`), and any parent dir not in the current watch-set. The single
+/// exception is [`RUNSTATE_REL`], which skips the noise/gitignore filters.
 fn map_to_watched_dir(
     root: &Path,
     path: &Path,
@@ -342,6 +348,17 @@ fn map_to_watched_dir(
 ) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let child = rel.file_name()?.to_str()?;
+    let parent = rel_to_slug(rel.parent()?);
+    // The one exemption (ADR-0047 §9): `.ralphy/runstate` is gitignored by design,
+    // so the filters below would drop every snapshot write. Still gated on the
+    // watch-set, so it nudges only a connection that asked for it.
+    if parent == RUNSTATE_REL {
+        return watch_set
+            .lock()
+            .unwrap()
+            .contains(&parent)
+            .then_some(parent);
+    }
     if HARD_EXCLUDE.contains(&child) {
         return None;
     }
@@ -354,7 +371,6 @@ fn map_to_watched_dir(
     {
         return None;
     }
-    let parent = rel_to_slug(rel.parent()?);
     let set = watch_set.lock().unwrap();
     set.contains(&parent).then_some(parent)
 }
@@ -446,6 +462,24 @@ mod tests {
             recv_in(&mut rx, window()).await,
             Some(("owner/repo".to_string(), String::new())),
             "a real child create nudges the root"
+        );
+    }
+
+    #[tokio::test]
+    async fn runstate_nudges_despite_gitignore() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".gitignore"), b".ralphy/\n").unwrap();
+        fs::create_dir_all(dir.path().join(RUNSTATE_REL)).unwrap();
+
+        let mgr = WatcherManager::new(MAX_WATCHES);
+        let mut rx = mgr.watch("owner/repo", dir.path(), RUNSTATE_REL).unwrap();
+
+        fs::write(dir.path().join(RUNSTATE_REL).join("01ABC.json"), b"{}").unwrap();
+
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            Some(("owner/repo".to_string(), RUNSTATE_REL.to_string())),
+            "the snapshot dir nudges even though `.ralphy/` is gitignored"
         );
     }
 
