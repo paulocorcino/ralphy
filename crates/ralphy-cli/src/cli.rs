@@ -10,7 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    config, daemon, init, install, issues, models, mutate, schedule, telegram, triage, usage,
+    changes, config, daemon, init, install, issues, models, mutate, schedule, telegram, triage,
+    usage,
 };
 
 #[derive(Parser)]
@@ -84,6 +85,9 @@ pub(crate) enum Command {
     /// Run-lock-aware label mutation (ADR-0036 §6).
     #[command(subcommand)]
     Label(mutate::LabelCommand),
+    /// Read-only working-tree change set of a repo.
+    #[command(subcommand)]
+    Changes(changes::ChangesCommand),
 }
 
 #[derive(Subcommand)]
@@ -740,6 +744,16 @@ mod tests {
             .expect("branch list must parse");
         let Command::Branch(mutate::BranchCommand::List(a)) = cli.command else {
             panic!("expected `branch list`");
+        };
+        assert_eq!(a.format.as_deref(), Some("json"));
+    }
+
+    #[test]
+    fn changes_list_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "changes", "list", "--format", "json"])
+            .expect("changes list must parse");
+        let Command::Changes(changes::ChangesCommand::List(a)) = cli.command else {
+            panic!("expected `changes list`");
         };
         assert_eq!(a.format.as_deref(), Some("json"));
     }

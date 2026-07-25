@@ -9,6 +9,7 @@ use clap::Parser;
 use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
+mod changes;
 mod cli;
 mod config;
 mod daemon;
@@ -58,6 +59,7 @@ fn main() -> Result<()> {
         Command::Daemon(args) => daemon::run(&args),
         Command::Branch(cmd) => mutate::branch(cmd),
         Command::Label(cmd) => mutate::label(cmd),
+        Command::Changes(cmd) => changes::changes(cmd),
     }
 }
 
