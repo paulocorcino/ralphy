@@ -249,7 +249,10 @@ function shell() {
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
       // the panel's lucide icons mount on open (they live inside x-if)
-      if (this.runsOpen) this.$nextTick(() => window.lucide?.createIcons());
+      if (this.runsOpen) {
+        this.hydrateRuns();
+        this.$nextTick(() => window.lucide?.createIcons());
+      }
     },
     toggleKanban() {
       // The tasks board: the open project's issues placed in four columns by
@@ -422,6 +425,10 @@ function shell() {
     // plan.md. A project can host several concurrent runs → a run picker. See
     // wb-runs.js for the seed + the status/glyph/plan helpers (window.WBRun).
     runsByProject: {},
+    // Why the read failed, when it did. Load-bearing: an error must never render
+    // as "No active runs" — an empty project and an unreadable one are different
+    // facts (ADR-0047 §6).
+    runsError: "",
     currentRunId: null,
     runMenu: false,
     planSection: "",
@@ -461,6 +468,57 @@ function shell() {
       this.runsByProject = out;
     },
 
+    // Hydrate the panel from the daemon's `runs.list` (ADR-0047 §9): the live
+    // snapshot documents the run processes publish under each repo's `.ralphy/`.
+    // Applied by REPLACEMENT — a snapshot is state, not a log. Fires when the
+    // panel opens and when the open project changes; the demo keeps its seed.
+    async hydrateRuns() {
+      if (!window.WBMode.isDaemon()) return;
+      const slug = this.openSlug;
+      if (!slug) return;
+      try {
+        const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
+        if (reply?.status !== "ok") {
+          this.runsByProject[slug] = [];
+          this.runsError = reply?.reason || reply?.message || "could not read runs";
+          return;
+        }
+        this.runsByProject[slug] = (reply.runs || []).map((d) => window.WBRun.fromSnapshot(d));
+        const bad = reply.unreadable || [];
+        this.runsError = bad.length
+          ? `${bad.length} unreadable run document${bad.length > 1 ? "s" : ""}: ` +
+            bad.map((u) => `${u.runid} (${u.reason})`).join(", ")
+          : "";
+        this.currentRunId = this.projectRuns()[0]?.runid || null;
+        this.planSection = this.planHeadings(this.currentRun())[0] || "";
+        await this.loadRunPlan();
+      } catch (err) {
+        // A transport failure is a read failure, not an idle project.
+        this.runsByProject[slug] = [];
+        this.runsError = String(err?.message || err || "could not reach the daemon");
+      }
+    },
+
+    // Read the selected run's plan through the confined `file.read` verb — the
+    // document carries the plan's repo-relative PATH, never its text. A refusal
+    // (no plan yet, too large) leaves the viewer empty; it is NOT a read failure
+    // of the run list, so `runsError` is untouched.
+    async loadRunPlan() {
+      if (!window.WBMode.isDaemon()) return;
+      const run = this.currentRun();
+      if (!run?.planPath) return;
+      try {
+        const reply = await window.WBDaemon.observe("file.read", {
+          repo: this.openSlug,
+          path: run.planPath,
+        });
+        run.planMd = reply?.status === "ok" ? reply.content || "" : "";
+      } catch {
+        run.planMd = "";
+      }
+      this.planSection = this.planHeadings(run)[0] || "";
+    },
+
     // The open project's runs (the panel is project-scoped).
     projectRuns() {
       return this.runsByProject[this.openSlug] || [];
@@ -475,6 +533,8 @@ function shell() {
       this.currentRunId = runid;
       // reset the section dropdown to the new run's first non-Steps heading
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      // each run has its own plan; the viewer follows the selection.
+      this.loadRunPlan();
       this.$nextTick(() => window.lucide?.createIcons());
     },
 
@@ -1583,6 +1643,8 @@ function shell() {
         // point the Runs panel at this project's first run + its first section
         this.currentRunId = this.projectRuns()[0]?.runid || null;
         this.planSection = this.planHeadings(this.currentRun())[0] || "";
+        // …then re-read the newly-open project's live runs (ADR-0047 §9).
+        if (this.openSlug) this.hydrateRuns();
         window.lucide?.createIcons();
       });
     },

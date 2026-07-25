@@ -53,7 +53,10 @@ daemon acts directly or delegates to `ralphy`:
   semantics** (no git, no issues, no config resolution), so the daemon does it
   **directly** — the same species as the `reachable` `stat` in `/api/repos` and
   the PTY multiplexing it already owns. See §3 for the boundary and §4 for the
-  watcher.
+  watcher. `runs.list` joins this class: it reads the repo's run-snapshot
+  documents from `.ralphy/runstate/` and classifies each by its header pid
+  ([ADR-0047](./0047-run-state-snapshot-channel.md) §9) — bytes on disk, no repo
+  semantics, no spawn.
 - **Query** — read-only requests whose answer requires `ralphy`'s **judgment**:
   the judged queue, an issue's thread, resolved config. Backed by a fixed
   `ralphy … --json` spawn; the daemon collects stdout and answers on the same

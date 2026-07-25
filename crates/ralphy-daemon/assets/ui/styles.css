@@ -438,6 +438,13 @@ body.runs-open .runs {
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+/* a failed runs.list read — styled like the Kanban error state so it can never
+   be mistaken for the idle `.runs-empty` line above it. */
+.runs-error {
+  padding: 1rem 0.8rem;
+  color: var(--danger, #e5484d);
+  font-size: 0.8rem;
+}
 /* count + demo/close controls in the runs header */
 .runs-count {
   margin-left: 0.4rem;

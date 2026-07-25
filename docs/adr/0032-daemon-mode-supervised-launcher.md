@@ -240,6 +240,12 @@ machine-level `/SC ONLOGON` Task Scheduler task because the daemon is a
 per-user loopback resident, not a machine service — systemd `--user` on
 Linux/WSL already has this property (#177).
 
+"Never imports the core" stands; the **leaf-crate exception** now also covers
+`ralphy-run-snapshot`, the serde-only crate owning the run-snapshot document
+the CLI writes and the daemon reads ([ADR-0047](./0047-run-state-snapshot-channel.md)
+§10) — one wire shape with one definition, alongside `ralphy-pty`,
+`ralphy-proc-util` and `ralphy-usage-scan`.
+
 ## Consequences
 
 - The surface is fixed before slices: subcommand shape, session model,

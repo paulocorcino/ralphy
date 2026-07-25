@@ -139,6 +139,48 @@ window.WBRun = {
       new Date((sleep.target_epoch || 0) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     return `waiting for reset ~${at} · resumes in ${eta}`;
   },
+
+  // --- the run-snapshot wire shape (ADR-0047) ---------------------------
+  // The daemon's `runs.list` answers with the snapshot documents verbatim. The
+  // panel's run shape predates them (it was seeded), so one mapper bridges the
+  // two — kept here, beside the vocabulary it speaks, rather than in app.js.
+
+  // A run's avatar. The document carries no face (it is the panel's chrome, not
+  // the run's state), so it is derived from the runid — deterministic, so a run
+  // keeps its face across every re-hydration and across a page reload.
+  FACES: ["🦊", "🐼", "🦉", "🐙", "🐸", "🦝", "🐻", "🐨", "🦄", "🐝", "🐧", "🦋"],
+  face(runid) {
+    let h = 0;
+    for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return this.FACES[h % this.FACES.length];
+  },
+
+  // One `runs.list` document → the panel's run shape. `planMd` starts empty:
+  // the document carries the plan's PATH, and the panel reads it through the
+  // confined `file.read` verb (ADR-0047 §5).
+  fromSnapshot(doc) {
+    const issues = (doc.issues || []).map((i) => ({
+      number: i.number,
+      title: i.title || "",
+      status: i.status,
+      blockedBy: i.blocked_by || [],
+    }));
+    return {
+      runid: doc.runid,
+      face: this.face(doc.runid),
+      agent: doc.exec_agent || "",
+      branch: doc.branch || "",
+      base: "",
+      phase: doc.phase?.state || "starting",
+      active: doc.phase?.active ?? null,
+      completed: issues.filter((i) => this.TERMINAL.has(i.status)).length,
+      queueTotal: doc.queue?.total || issues.length,
+      sleep: doc.phase?.sleep || null,
+      planPath: doc.plan_path || "",
+      planMd: "",
+      issues,
+    };
+  },
 };
 
 // Wake anchors for the seeded sleep state (relative to load time so the live

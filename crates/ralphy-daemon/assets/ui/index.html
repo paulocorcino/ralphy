@@ -462,7 +462,10 @@
       <pre class="runs-raw" x-show="rawFeed" x-text="rawFeed"></pre>
 
       <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
-      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0">
+      <!-- a failed read is its own state: an unreadable project must never be
+           rendered as an idle one (ADR-0047 §6). -->
+      <div class="runs-error" x-show="runsError" x-text="runsError"></div>
+      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
         No active runs in <b x-text="openSlug"></b> — <b>run</b> to start one.
       </div>
 
