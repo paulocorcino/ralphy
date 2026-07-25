@@ -13,7 +13,7 @@
 //! Pure sync, path-explicit like `identity`: tests pass a temp path and never
 //! mutate the process-global env (the `RALPHY_*_DIR` env-race trap).
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -290,6 +290,23 @@ impl AuthPolicy {
 
 /// Whether an `Authorization` header is `Bearer <token>` matching `expected`
 /// (constant-time). Shared by the `Bearer` and `Session` (machine) arms.
+/// The bound address the credential-free constructors report. Tests build a
+/// router without a listener, so there is no real address to name; the default
+/// port keeps [`AuthState::same_origin`] honest for anything that does send an
+/// `Origin`.
+fn default_bound_addr() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], crate::DEFAULT_PORT))
+}
+
+/// The host part of a `Host` header, minus any port. Handles the bracketed IPv6
+/// form (`[::1]:7257`), where a plain `rsplit_once(':')` would cut the address.
+fn host_name(host: &str) -> &str {
+    if let Some(rest) = host.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or(rest);
+    }
+    host.rsplit_once(':').map_or(host, |(name, _)| name)
+}
+
 fn bearer_matches(header: Option<&str>, expected: &str) -> bool {
     match header.and_then(|h| h.strip_prefix("Bearer ")) {
         Some(got) => ct_eq(got.as_bytes(), expected.as_bytes()),
@@ -402,6 +419,10 @@ pub fn compute_policy(
 pub struct AuthState {
     policy: RwLock<AuthPolicy>,
     bind_ip: IpAddr,
+    /// The address the listener actually bound, so the middleware can name the
+    /// daemon's OWN origin when refusing a cross-site request. The port matters:
+    /// another app on a different loopback port is a different origin.
+    bound_addr: SocketAddr,
     /// The token captured at boot — the signing-key fallback when the on-disk
     /// token is absent (e.g. handed via env then stripped). A re-mint writes disk,
     /// which then wins in [`AuthState::rebuild`].
@@ -419,14 +440,15 @@ impl AuthState {
     /// on-disk seed/password/require-login flag and computes the initial policy;
     /// fails closed exactly where [`for_bind`] does.
     pub fn boot(
-        bind_ip: IpAddr,
+        bound_addr: SocketAddr,
         token: Option<String>,
         epoch: epoch::SessionEpoch,
     ) -> Result<Arc<AuthState>> {
         let last_step_path = totp::last_step_path_in(&store_dir()?);
         let state = AuthState {
             policy: RwLock::new(AuthPolicy::Localhost),
-            bind_ip,
+            bind_ip: bound_addr.ip(),
+            bound_addr,
             boot_token: token,
             epoch,
             last_step_path,
@@ -442,6 +464,7 @@ impl AuthState {
         Arc::new(AuthState {
             policy: RwLock::new(AuthPolicy::Localhost),
             bind_ip: IpAddr::from([127, 0, 0, 1]),
+            bound_addr: default_bound_addr(),
             boot_token: None,
             epoch: epoch::SessionEpoch::in_memory_detached(),
             last_step_path: detached_last_step_path(),
@@ -456,11 +479,46 @@ impl AuthState {
         Arc::new(AuthState {
             policy: RwLock::new(policy),
             bind_ip: IpAddr::from([127, 0, 0, 1]),
+            bound_addr: default_bound_addr(),
             boot_token: None,
             epoch,
             last_step_path: detached_last_step_path(),
             throttle: Mutex::new(LoginThrottle::new()),
         })
+    }
+
+    /// Whether this request's `Origin` is the daemon's own, i.e. NOT cross-site.
+    ///
+    /// Loopback is not a trust boundary against the operator's OWN browser: any
+    /// web page they visit can address `127.0.0.1`, and a WebSocket handshake is
+    /// never CORS-preflighted — RFC 6455 §10.2 puts the origin check on the
+    /// server. A browser always supplies `Origin` on scripted WS connections and
+    /// on cross-site form POSTs, so a present-and-foreign `Origin` is the signal.
+    ///
+    /// An ABSENT `Origin` passes: that is a same-origin navigation or a
+    /// non-browser client (curl, a machine bearer client), which loopback already
+    /// treats as the operator. A browser cannot suppress the header on the paths
+    /// that matter, so this is not a browser-reachable hole.
+    pub fn same_origin(&self, origin: Option<&str>) -> bool {
+        let Some(origin) = origin else { return true };
+        let port = self.bound_addr.port();
+        // `null` (sandboxed iframe, `file://` document) is explicitly foreign.
+        ["127.0.0.1", "localhost", "[::1]"]
+            .iter()
+            .any(|host| origin.eq_ignore_ascii_case(&format!("http://{host}:{port}")))
+    }
+
+    /// Whether this request's `Host` names a loopback interface. Defence against
+    /// DNS rebinding: an attacker domain that re-resolves to `127.0.0.1` becomes
+    /// genuinely same-origin, so `Origin` alone would accept its later requests.
+    /// An absent `Host` passes — HTTP/1.1 requires one, so absence means a
+    /// non-browser caller (and axum's own test transport omits it).
+    pub fn host_is_local(&self, host: Option<&str>) -> bool {
+        let Some(host) = host else { return true };
+        host_name(host)
+            .parse::<IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or_else(|_| host_name(host).eq_ignore_ascii_case("localhost"))
     }
 
     /// The last consumed TOTP step (anti-replay, amendment §D), or `None`.
@@ -627,6 +685,39 @@ pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_origin_refuses_cross_site_and_allows_own_origin() {
+        let state = AuthState::localhost();
+        let port = crate::DEFAULT_PORT;
+        // The daemon's own origin, under every loopback spelling a browser uses.
+        assert!(state.same_origin(Some(&format!("http://127.0.0.1:{port}"))));
+        assert!(state.same_origin(Some(&format!("http://localhost:{port}"))));
+        assert!(state.same_origin(Some(&format!("http://[::1]:{port}"))));
+        // A page the operator merely visits — the whole point of the check.
+        assert!(!state.same_origin(Some("https://evil.example")));
+        // Another app on a DIFFERENT loopback port is a different origin.
+        assert!(!state.same_origin(Some(&format!("http://127.0.0.1:{}", port + 1))));
+        // `file://` and sandboxed iframes send the opaque origin.
+        assert!(!state.same_origin(Some("null")));
+        // Absent: same-origin navigation or a non-browser client.
+        assert!(state.same_origin(None));
+    }
+
+    #[test]
+    fn host_is_local_refuses_rebinding_names() {
+        let state = AuthState::localhost();
+        assert!(state.host_is_local(Some("127.0.0.1:7257")));
+        assert!(state.host_is_local(Some("127.0.0.1")));
+        assert!(state.host_is_local(Some("localhost:7257")));
+        assert!(state.host_is_local(Some("LocalHost")));
+        assert!(state.host_is_local(Some("[::1]:7257")));
+        // A DNS-rebinding name resolves to loopback but is NOT a loopback name.
+        assert!(!state.host_is_local(Some("rebind.evil.example:7257")));
+        assert!(!state.host_is_local(Some("192.168.1.10:7257")));
+        // Absent: HTTP/1.1 forbids it, so this is a non-browser caller.
+        assert!(state.host_is_local(None));
+    }
 
     #[test]
     fn localhost_authorizes_without_token() {

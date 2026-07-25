@@ -125,7 +125,7 @@ async fn serve(addr: SocketAddr) -> Result<()> {
     // network-bind-needs-a-token invariant, reads the on-disk seed / password /
     // require-login flag, and computes the initial policy. The policy is now
     // runtime-swappable — a security toggle rebuilds it in place, no restart.
-    let auth_state = auth::AuthState::boot(addr.ip(), token, session_epoch)?;
+    let auth_state = auth::AuthState::boot(addr, token, session_epoch)?;
     // INVARIANT: strip the token from the process env on the boot path BEFORE any
     // child can be spawned, so every subsequent `dispatch`/`session` child
     // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
@@ -434,6 +434,22 @@ async fn require_auth(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    // Cross-site first, BEFORE the policy: under `Localhost` the policy
+    // authorizes everything, so a page the operator merely visits could otherwise
+    // drive the whole surface — WS upgrades are not CORS-preflighted (RFC 6455
+    // §10.2 makes the origin check the server's job) and a form POST is
+    // CORS-simple. Refusing here covers every route and every upgrade at once.
+    let origin = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok());
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok());
+    if !state.same_origin(origin) || !state.host_is_local(host) {
+        return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
+    }
     // Read the CURRENT policy: a security toggle may have swapped it since boot
     // (ADR-0032 amendment §A). The clone is cheap (`Session` is `Arc`); the lock
     // is released before any `.await`.

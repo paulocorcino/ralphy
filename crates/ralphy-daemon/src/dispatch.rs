@@ -490,6 +490,25 @@ fn well_shaped_key(key: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
 }
 
+/// Config keys whose VALUE names a program a later run spawns. `verify.command`
+/// becomes `argv[0]` of the verification gate's child (`ralphy_core::verify`), so
+/// setting it is arbitrary deferred code execution — persistent on disk, fired
+/// under a run the operator started, and invisible in `git status` because
+/// `.ralphy/` self-ignores.
+///
+/// Shape-checking the value cannot fix this: the gate spawns with
+/// `current_dir(repo_root)` and Windows `CreateProcess` searches the current
+/// directory ahead of `PATH`, so even a bare program name resolves to a file the
+/// Write verbs can plant. Deny the KEY at the remote boundary instead — the
+/// operator's own `ralphy config set` is unaffected.
+const EXEC_ADJACENT_KEYS: [&str; 1] = ["verify.command"];
+
+/// Whether `key` may be set through the daemon's `config.set`/`config.unset`.
+/// Well-shaped AND not exec-adjacent.
+fn remotely_settable_key(key: &str) -> bool {
+    well_shaped_key(key) && !EXEC_ADJACENT_KEYS.contains(&key)
+}
+
 /// Compose the blessed argv for a config Query/Mutate verb (ADR-0036 §2). The
 /// verb picks the static shape; `ConfigSet`/`ConfigUnset` read `key` (must match
 /// `^[a-z0-9_.]+$`) and — for `set` — a non-empty `value` from `payload`, each
@@ -503,7 +522,7 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or(ArgvError::BadParam("key"))?;
-        if well_shaped_key(key) {
+        if remotely_settable_key(key) {
             Ok(key.to_string())
         } else {
             Err(ArgvError::BadParam("key"))
@@ -982,6 +1001,35 @@ mod tests {
             .unwrap(),
             vec!["config", "set", "--", "opencode.model", "--weird"]
         );
+    }
+
+    #[test]
+    fn config_argv_refuses_exec_adjacent_keys() {
+        // `verify.command` is well-shaped and a genuinely supported CLI key, so
+        // neither the character class nor the CLI's `require_known_key` refuses
+        // it. Its value becomes argv[0] of the verify gate's child, so the daemon
+        // refuses the key itself — remotely, only.
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "verify.command", "value": "C:/evil.exe" })
+            ),
+            Err(ArgvError::BadParam("key"))
+        );
+        assert_eq!(
+            config_argv(
+                Verb::ConfigUnset,
+                &serde_json::json!({ "key": "verify.command" })
+            ),
+            Err(ArgvError::BadParam("key"))
+        );
+        // A neighbouring verify key stays settable — the denylist is one key, not
+        // a namespace.
+        assert!(config_argv(
+            Verb::ConfigSet,
+            &serde_json::json!({ "key": "verify.require_verify_gate", "value": "true" })
+        )
+        .is_ok());
     }
 
     #[test]

@@ -15,7 +15,12 @@
   let mermaidReady = false;
   function initMermaid() {
     if (mermaidReady || !window.mermaid) return;
-    window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "dark" });
+    // `strict`, not `loose`: diagram source is repo bytes (an agent-written plan,
+    // a PR fixture, a cloned README), i.e. untrusted. `loose` skips mermaid's
+    // own sanitize pass over the emitted SVG and turns a `click A "javascript:…"`
+    // directive into a live <a href>. Nothing here calls `bindFunctions`, so
+    // click bindings were never wired up and `strict` costs no working feature.
+    window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
     mermaidReady = true;
   }
 
@@ -392,7 +397,11 @@
     pending.forEach((holder) => {
       window.mermaid
         .render(holder.id + "-svg", holder.dataset.src)
-        .then(({ svg }) => (holder.innerHTML = svg))
+        // The fence source is re-read RAW above (DOMPurify escaped it in the
+        // markdown pass), so the rendered SVG is the one string on this path that
+        // never met the sanitizer. Sanitize on insert. `foreignobject` is already
+        // in DOMPurify's SVG allowlist, so mermaid's HTML labels survive.
+        .then(({ svg }) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
         .catch((err) => {
           holder.classList.add("mermaid-error");
           holder.textContent = "mermaid error: " + (err?.message || err);

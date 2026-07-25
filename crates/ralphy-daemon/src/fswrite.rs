@@ -3,9 +3,11 @@
 //! [`crate::tree`] on the read side, this module carries NO repo semantics and
 //! does NOT consult the run lock (ADR-0036 amendment: "Write does not consult the
 //! run lock" — operator-owns-the-tree). Confinement ([`crate::confine`]) is the
-//! ONLY security boundary; every op resolves its target through
+//! security boundary in SPACE: every op resolves its target through
 //! [`confine::confine_write`], which confines a maybe-missing target by confining
-//! its existing parent.
+//! its existing parent. It is joined by one denylist ([`PROTECTED_DIRS`]) for the
+//! two directories that live INSIDE the root but are not the operator's working
+//! tree — `.git` and `.ralphy`.
 
 use std::path::Path;
 
@@ -49,9 +51,32 @@ fn map_confine(e: ConfineError) -> WriteError {
     }
 }
 
+/// Directories the Write path never has a legitimate reason to touch, refused
+/// wherever they appear in the target. Confinement bounds writes to the repo
+/// ROOT, and both of these live inside it: `.git` holds the history a workbench
+/// edit must never rewrite (a recursive `delete` of it is unrecoverable), and
+/// `.ralphy` is daemon-and-run state the daemon itself reads back as trusted
+/// config. Git operations go through the git verbs, not through byte-ops.
+const PROTECTED_DIRS: [&str; 2] = [".git", ".ralphy"];
+
+/// Refuse a target that traverses or names a protected directory. Compared
+/// case-insensitively: NTFS would treat `.GIT` as the same directory.
+fn refuse_protected(rel: &str) -> Result<(), WriteError> {
+    let names_protected = Path::new(rel).components().any(|c| {
+        PROTECTED_DIRS
+            .iter()
+            .any(|p| c.as_os_str().eq_ignore_ascii_case(p))
+    });
+    if names_protected {
+        return Err(WriteError::Confined);
+    }
+    Ok(())
+}
+
 /// Write `content` to the confined `rel` file under `root`, creating or
 /// overwriting it. The parent dir must exist (confinement confines it).
 pub fn write(root: &Path, rel: &str, content: &str) -> Result<(), WriteError> {
+    refuse_protected(rel)?;
     let path = confine::confine_write(root, rel).map_err(map_confine)?;
     std::fs::write(&path, content).map_err(|_| WriteError::Io)
 }
@@ -59,6 +84,7 @@ pub fn write(root: &Path, rel: &str, content: &str) -> Result<(), WriteError> {
 /// Create the confined `rel` as a directory (`dir`) or a new empty file, refusing
 /// with `Conflict` if the path already exists.
 pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
+    refuse_protected(rel)?;
     let path = confine::confine_write(root, rel).map_err(map_confine)?;
     if path.exists() {
         return Err(WriteError::Conflict);
@@ -84,6 +110,8 @@ pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
 /// refusing with `NotFound` if the source is absent and `Conflict` if the
 /// destination already exists.
 pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError> {
+    refuse_protected(from_rel)?;
+    refuse_protected(to_rel)?;
     let from = confine::confine_write(root, from_rel).map_err(map_confine)?;
     let to = confine::confine_write(root, to_rel).map_err(map_confine)?;
     if !from.exists() {
@@ -99,6 +127,7 @@ pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteErro
 /// (`remove_dir_all`), a file with `remove_file`. Confinement already bounds the
 /// blast radius to the repo root; a missing target is `NotFound`.
 pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
+    refuse_protected(rel)?;
     let path = confine::confine_write(root, rel).map_err(map_confine)?;
     let meta = std::fs::symlink_metadata(&path).map_err(|_| WriteError::NotFound)?;
     if meta.is_dir() {
@@ -112,6 +141,43 @@ pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn protected_dirs_refused_on_every_op() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".git")).unwrap();
+        fs::write(root.path().join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+        // A recursive delete of `.git` is unrecoverable — the reason this exists.
+        assert_eq!(delete(root.path(), ".git"), Err(WriteError::Confined));
+        assert!(root.path().join(".git/HEAD").exists());
+        // Nested, and through every other op.
+        assert_eq!(
+            write(root.path(), ".git/hooks/pre-commit", "#!/bin/sh"),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            create(root.path(), ".ralphy", true),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            write(root.path(), ".ralphy/settings.json", "{}"),
+            Err(WriteError::Confined)
+        );
+        // Case-insensitively: NTFS resolves `.GIT` to the same directory.
+        assert_eq!(
+            write(root.path(), ".GIT/config", "x"),
+            Err(WriteError::Confined)
+        );
+        // Refused as a rename DESTINATION as well as a source.
+        write(root.path(), "note.txt", "hi").unwrap();
+        assert_eq!(
+            rename(root.path(), "note.txt", ".ralphy/note.txt"),
+            Err(WriteError::Confined)
+        );
+        // A name that merely CONTAINS a protected name stays writable.
+        write(root.path(), ".gitignore", "target/").unwrap();
+        write(root.path(), "gitlab.yml", "x").unwrap();
+    }
 
     #[test]
     fn write_creates_and_overwrites() {
