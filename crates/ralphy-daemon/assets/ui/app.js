@@ -93,6 +93,7 @@ function shell() {
       // registry replaces it. Demo (file://) keeps the seed. Mirrors initRuns.
       if (!window.WBMode.seedAllowed()) this.projects = [];
       this.loadRepos();
+      this.loadAgents();
       this.subscribePresence();
       this.loadIdentity();
       // The board's two time-driven refresh triggers (#301). Both are registered
@@ -171,6 +172,20 @@ function shell() {
     // maps only to idle/offline this slice ("live" means an active session,
     // not yet tracked here); `remote` is inferred from the slug shape
     // (`git::project_slug`'s only `path-<hash>` fallback is a remoteless repo).
+    // The daemon's adapter roster (#304). Same demo/daemon split as loadRepos:
+    // a file:// walkthrough has no daemon to ask, so it falls back to the seed;
+    // in DAEMON mode a failed fetch leaves the roster EMPTY rather than showing
+    // adapters this daemon may not have — the menu keeps its plain console row.
+    async loadAgents() {
+      try {
+        const r = await fetch("/api/agents");
+        if (!r.ok) throw new Error(`/api/agents ${r.status}`);
+        this.roster = await r.json();
+      } catch {
+        this.roster = window.WBMode.seedAllowed() ? window.WBAgents.DEMO_ROSTER : [];
+      }
+      this.agents = this.roster.map((r) => r.id);
+    },
     async loadRepos() {
       this.reposLoading = true;
       try {
@@ -219,6 +234,9 @@ function shell() {
         const r = await fetch("/api/sessions");
         if (!r.ok) return;
         const sessions = await r.json();
+        // The console menu's fold reads this, so every presence tick refreshes
+        // the per-row live counts too (#304).
+        this.liveSessions = sessions;
         for (const p of this.projects) {
           if (p.state === "offline") continue;
           p.state = sessions.some((s) => s.repo === p.slug) ? "live" : "idle";
@@ -1707,7 +1725,11 @@ function shell() {
 
     // --- canvas tabs ------------------------------------------------------
     // The Agents tab is permanent; file tabs are appended and closable.
-    agents: ["claude", "codex", "opencode", "kimi", "copilot", "cursor", "gemini"],
+    // The adapter roster comes from the daemon (`/api/agents`), never from a
+    // list here: onboarding a vendor must not need a frontend change (#304).
+    // `agents` is the flat id list the run dialog's executor/planner pickers bind.
+    agents: [],
+    roster: [],
     agentMenu: false,
     consoleCount: 0,
     // The design-system confirm dialog (replaces window.confirm). `askConfirm`
@@ -2250,40 +2272,36 @@ function shell() {
     },
 
     // --- consoles (the Agents tab) ----------------------------------------
-    // The "New console" menu: an agent adapter per row, plus a plain console
-    // (no agent — a shell in the repo dir) pinned LAST, mirroring the daemon UI.
-    // Each has an Alt+Shift+<digit> accelerator: Alt+Shift lives outside the
-    // browser's reserved combos on Windows/Linux/macOS, and the digits are
-    // matched by physical key (e.code), so they fire regardless of layout or the
-    // glyph macOS' Option produces. Console is Alt+Shift+0 (last, the "zero").
+    // The "New console" menu: the daemon's roster folded against the live
+    // sessions and the open repo (wb-agents.js), plus a plain console (no agent
+    // — a shell in the repo dir) the fold pins LAST. Each row carries an
+    // Alt+Shift+<digit> accelerator: Alt+Shift lives outside the browser's
+    // reserved combos on Windows/Linux/macOS, and the digits are matched by
+    // physical key (e.code), so they fire regardless of layout or the glyph
+    // macOS' Option produces. Console is Alt+Shift+0 (last, the "zero").
+    liveSessions: [],
     consoleItems() {
-      return [
-        { kind: "claude", label: "claude", plain: false, digit: "1" },
-        { kind: "codex", label: "codex", plain: false, digit: "2" },
-        { kind: "opencode", label: "opencode", plain: false, digit: "3" },
-        // Kimi arrived after the first three, so it takes the next free digit
-        // rather than renumbering the accelerators already in an operator's hands.
-        { kind: "kimi", label: "kimi", plain: false, digit: "4" },
-        { kind: "copilot", label: "copilot", plain: false, digit: "5" },
-        { kind: "cursor", label: "cursor", plain: false, digit: "6" },
-        { kind: "gemini", label: "gemini", plain: false, digit: "7" },
-        { kind: "console", label: "console", plain: true, digit: "0" },
-      ];
+      return window.WBAgents.menuRows({
+        roster: this.roster,
+        sessions: this.liveSessions,
+        openSlug: this.openSlug,
+      });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
     shortcutLabel(digit) {
       return this.isMac ? `⌥⇧${digit}` : `Alt+Shift+${digit}`;
     },
-    // An agent console needs a repo to work in; a plain console falls back to the
-    // home dir, so only the agent rows gate on a selected repo (openSlug). The
-    // dropdown greys these out and the accelerators skip them.
-    consoleItemDisabled(item) {
-      return !item.plain && !this.openSlug;
-    },
-    openConsoleItem(item) {
-      if (this.consoleItemDisabled(item)) return;
+    // `opts.fresh` is the row's secondary "+" button: launch another console for
+    // this agent even though one is live, so a deliberate second console stays
+    // reachable. Without it, `action === "attach"` would remove that capability.
+    openConsoleItem(item, opts = {}) {
+      if (item.disabled) return;
       if (item.plain) this.newPlainConsole();
-      else this.newConsole(item.kind);
+      else if (item.action === "attach" && !opts.fresh) {
+        if (this.active !== "agents") this.activate("agents");
+        WBConsole.reach({ id: item.sessionId, agent: item.kind, repo: this.openSlug });
+        this.consoleCount = WBConsole.count();
+      } else this.newConsole(item.kind);
       this.agentMenu = false;
     },
 
@@ -2532,23 +2550,23 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
-// Alt+Shift+<digit> → open a console: 1 claude · 2 codex · 3 opencode · 4 kimi ·
-// 5 copilot · 6 cursor · 7 gemini · 0 plain
-// console. Matched on the physical key (e.code) so layout / macOS Option glyphs
-// don't matter; guarded so it never hijacks a text field, modal, or the login.
+// Alt+Shift+<digit> → the menu row carrying that digit, invoking the SAME row
+// action as clicking it (reach a live session, else launch): one code path, so a
+// digit can never launch the duplicate its row refuses to. The digits come from
+// the daemon's roster; digit 0 is the plain console. Matched on the physical key
+// (e.code) so layout / macOS Option glyphs don't matter; guarded so it never
+// hijacks a text field, modal, or the login.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit4: "kimi", Digit5: "copilot", Digit6: "cursor", Digit7: "gemini", Digit0: "__plain" };
-  const kind = map[e.code];
-  if (!kind) return;
+  if (!/^Digit\d$/.test(e.code)) return;
   const c = getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
-  // An agent accelerator with no repo selected is inert (mirrors the disabled
-  // dropdown row); don't swallow the key so nothing else is starved of it.
-  if (kind !== "__plain" && !c.openSlug) return;
+  const row = c.consoleItems().find((it) => e.code === "Digit" + it.digit);
+  // No row, or a row an agent console can't take yet (no repo selected): inert,
+  // and don't swallow the key so nothing else is starved of it.
+  if (!row || row.disabled) return;
   e.preventDefault();
-  if (kind === "__plain") c.newPlainConsole();
-  else c.newConsole(kind);
+  c.openConsoleItem(row);
 });
 
 // `/` → focus the project search (reuses consoleShortcutsBlocked so it never

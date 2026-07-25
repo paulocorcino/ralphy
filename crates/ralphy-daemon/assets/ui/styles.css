@@ -1426,6 +1426,29 @@ body.runs-open .runs {
 .dropdown-item .bi {
   color: var(--console-text);
 }
+/* how many live sessions this agent already has — the row reaches one instead
+   of launching a duplicate (#304) */
+.dropdown-item .row-live {
+  font-size: 0.66rem;
+  color: var(--console-text);
+}
+/* the escape hatch beside it: launch another console for this agent anyway */
+.dropdown-item .row-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.dropdown-item .row-new:hover {
+  color: var(--text);
+}
 /* keyboard-accelerator hint, right-aligned in the row */
 .dropdown-item .kbd {
   margin-left: auto;

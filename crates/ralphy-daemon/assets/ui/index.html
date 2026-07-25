@@ -194,15 +194,20 @@
             </button>
             <div class="dropdown" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
               <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
-              <!-- agents (impl: could come from daemon capabilities), then a plain
-                   console last. Each row carries its Alt+Shift+<digit> accelerator. -->
+              <!-- The daemon's adapter roster folded against the live sessions
+                   (wb-agents.js), plain console last. A row with live sessions
+                   reaches one; its "+" launches another anyway. -->
               <template x-for="it in consoleItems()" :key="it.kind">
                 <button class="dropdown-item" :class="{ 'is-console': it.plain }"
-                        :disabled="consoleItemDisabled(it)"
-                        :title="consoleItemDisabled(it) ? 'select a repo first — an agent needs one to work in' : ''"
+                        :disabled="it.disabled"
+                        :title="it.title"
                         @click="openConsoleItem(it)">
                   <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
                   <span x-text="it.label"></span>
+                  <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
+                  <span class="row-new" x-show="it.live > 0" role="button" tabindex="0"
+                        @click.stop="openConsoleItem(it, { fresh: true })"
+                        title="launch a new console anyway">+</span>
                   <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
                 </button>
               </template>
@@ -1329,6 +1334,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="wb-mode.js"></script>
     <script src="wb-fail.js"></script>
     <script src="wb-translate.js"></script>
+    <script src="wb-agents.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>

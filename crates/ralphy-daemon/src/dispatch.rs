@@ -1112,57 +1112,67 @@ mod tests {
         }
     }
 
-    /// The workbench's vendor list is hand-maintained in THREE places in `app.js`
-    /// and nothing compiles it — Kimi shipped missing from all three (issue #228).
-    /// Pins every `Agent::ALL` flag value into each of the three structures.
+    /// The workbench's vendor list used to be hand-maintained in THREE places in
+    /// `app.js` and nothing compiled it — Kimi shipped missing from all three
+    /// (issue #228). Issue #304 removed the list: the menu renders from
+    /// `GET /api/agents`, whose digits an exhaustive match owns (`roster.rs`).
+    /// So the pin INVERTED — `app.js` must hold NO vendor enumeration, and the
+    /// guarantee that every adapter reaches the menu lives in `roster.rs`.
     #[test]
-    fn the_workbench_trio_lists_every_launchable_agent() {
+    fn app_js_holds_no_vendor_list() {
         let js = include_str!("../assets/ui/app.js");
 
-        /// The text between `open` and the next `close`, starting at the first
-        /// occurrence of `open`. Panics loudly if the region moved — a silently
-        /// empty slice would make every `contains` below vacuous.
-        fn region<'a>(js: &'a str, open: &str, close: &str) -> &'a str {
-            let start = js
-                .find(open)
-                .unwrap_or_else(|| panic!("app.js region {open:?} not found"));
-            let rest = &js[start + open.len()..];
-            let end = rest
-                .find(close)
-                .unwrap_or_else(|| panic!("app.js region {open:?} never closed by {close:?}"));
+        // Non-vacuous first: the menu really does fetch the daemon's roster.
+        assert!(
+            js.contains("\"/api/agents\""),
+            "app.js must render the menu from the daemon's roster endpoint"
+        );
+
+        // The `agents` binding survives (the run dialog's pickers bind it) but it
+        // is now filled from the roster, so its literal must be EMPTY.
+        let start = js
+            .find("agents: [")
+            .expect("app.js no longer declares `agents: [`");
+        let rest = &js[start + "agents: [".len()..];
+        let end = rest
+            .find(']')
+            .expect("app.js's `agents: [` is never closed");
+        assert!(
+            rest[..end].trim().is_empty(),
+            "app.js's `agents:` must stay an empty literal; found: {:?}",
             &rest[..end]
-        }
+        );
 
-        let agents = region(js, "agents: [", "]");
-        let console_items = region(js, "consoleItems() {", "];");
-        // Anchored on `Digit1` because `const map = {` alone also matches an
-        // unrelated map earlier in the file.
-        let accelerators = region(js, "const map = { Digit1", "};");
+        // The accelerator map keyed by vendor is gone; digits come from the rows.
+        assert!(
+            !js.contains("const map = { Digit1"),
+            "app.js still maps accelerator digits to vendors"
+        );
 
+        // No launchable vendor is named in `app.js` — except `claude`, which
+        // survives ONLY as the run dialog's default value (a default naming one
+        // vendor is not an enumeration; it is the CLI's own default).
         for a in Agent::ALL {
             let flag = agent_flag(a);
-            let quoted = format!("\"{flag}\"");
-            for (name, hay, needle) in [
-                ("agents:", agents, quoted.clone()),
-                // `kind:` specifically, not a bare occurrence: the flag also appears
-                // as this row's `label:`, so a right label over a wrong or missing
-                // `kind` — the field the launch actually dispatches on — would pass.
-                ("consoleItems()", console_items, format!("kind: {quoted}")),
-                ("the accelerator map", accelerators, quoted.clone()),
-            ] {
-                assert!(
-                    hay.contains(&needle),
-                    "{flag} missing from app.js's {name} — the workbench cannot launch it"
-                );
+            if flag == "claude" {
+                continue;
             }
+            let quoted = format!("\"{flag}\"");
+            assert!(
+                !js.contains(&quoted),
+                "app.js names {flag} — the frontend must hold no vendor list"
+            );
         }
-        assert!(
-            accelerators.contains(r#"Digit6: "cursor""#),
-            "cursor has no keyboard accelerator in app.js"
+        let defaults =
+            js.matches(r#"agent: "claude""#).count() + js.matches(r#"planAgent: "claude""#).count();
+        assert_eq!(
+            js.matches("\"claude\"").count(),
+            defaults,
+            "`\"claude\"` may appear in app.js ONLY as the run dialog's agent/planAgent default"
         );
         assert!(
-            accelerators.contains(r#"Digit7: "gemini""#),
-            "gemini has no keyboard accelerator in app.js"
+            !js.contains(r#"kind: "claude""#) && !js.contains(r#"Digit1: "claude""#),
+            "app.js still routes a console launch through a hardcoded vendor"
         );
     }
 

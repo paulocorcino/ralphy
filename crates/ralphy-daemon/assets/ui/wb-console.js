@@ -771,6 +771,21 @@ window.WBConsole = (function () {
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
   }
 
+  // Reach an ALREADY LIVE session by id: focus the window already holding it,
+  // else attach a window to it. INVARIANT — no path here composes a
+  // `?repo=&agent=` launch: an unknown or busy id stays on the attach-refusal
+  // path (`onRefused` → takeover by the SAME id), so "reach" can never become a
+  // second session (issue #304).
+  function reach({ id, agent, repo }) {
+    for (const win of wins) {
+      if (win._term?.sessionId === id) {
+        focusWin(win);
+        return win;
+      }
+    }
+    return spawnWindow({ id }, agent || "console", repo);
+  }
+
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — the static demo (and a daemon that is merely unreachable)
@@ -854,5 +869,5 @@ window.WBConsole = (function () {
     return wins.size;
   }
 
-  return { open, arrange, count, refitAll, resizeRect, reconcileDesk, pruneDesk };
+  return { open, arrange, count, refitAll, resizeRect, reconcileDesk, pruneDesk, reach };
 })();
