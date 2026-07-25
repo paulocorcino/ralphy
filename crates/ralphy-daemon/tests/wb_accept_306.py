@@ -365,6 +365,7 @@ def drag_handle(page, index, dir_, dx, dy):
 
 
 def main():
+    started = time.time() - 1  # -1s of slack against filesystem mtime granularity
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
     daemon_dir = tempfile.mkdtemp(prefix="wb306_reg_")
@@ -690,11 +691,95 @@ def main():
                 f"kanbanSel={page.evaluate(f'() => {SH}.kanbanSel')!r}",
             )
 
+            # =============== scenario 8: the desk survives a DAEMON restart ===
+            page.evaluate(f"() => {{ if ({SH}.runsOpen) {SH}.toggleRuns(); }}")
+            page.evaluate(f"() => {{ if ({SH}.kanbanOpen) {SH}.toggleKanban(); }}")
+            page.wait_for_timeout(400)
+            # NOTHING is maximized here on purpose: `.maximized` pins all four
+            # offsets via `!important`, so a snapshot of one reads 0/0 and the
+            # comparison below would go blind (#303).
+            check(
+                "no window under test is maximized (the rect comparison stays honest)",
+                page.evaluate(
+                    "() => [...document.querySelectorAll('.session-window')]"
+                    ".every((w) => !w.classList.contains('maximized'))"
+                )
+                is True,
+            )
+            pre = [rect_of(page, 0), rect_of(page, 1)]
+            kinds = page.evaluate(
+                "() => JSON.parse(localStorage.getItem('wb.desk.v1')).map((r) => r.kind)"
+            )
+            check("the desk holds one free console and one agent console", kinds == ["console", "agent"], f"got={kinds}")
+
+            stop(proc)
+            proc = launch(daemon_dir)
+            check("the daemon restarted on the same port", wait_listening(BASE))
+            check(
+                "…with no sessions at all (the restart really invalidated them)",
+                page.request.get(BASE + "api/sessions").json() == [],
+                "",
+            )
+
+            sockets = []
+            page.on("websocket", lambda ws: sockets.append(ws.url))
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            # A background tab measures 0x0, and every rect below is an offset read.
+            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window').length === 2", timeout=20000
+            )
+            page.wait_for_timeout(1500)
+
+            live = page.locator(".session-window:not(.placeholder)")
+            ph = page.locator(".session-window.placeholder")
+            check("the free console comes back on its own", live.count() == 1, f"got={live.count()}")
+            check("the agent console comes back as a placeholder", ph.count() == 1, f"got={ph.count()}")
+            check(
+                "…with a live terminal in the free console only",
+                live.locator(".xterm").count() == 1 and ph.locator(".xterm").count() == 0,
+                "",
+            )
+            check("…offering one click to reconnect", ph.locator(".session-reconnect").count() == 1, "")
+            ph_title = ph.locator(".session-title").inner_text()
+            check(
+                "the placeholder keeps its agent and its repo",
+                "claude" in ph_title and slug in ph_title,
+                f"title={ph_title!r}",
+            )
+            post = [rect_of(page, 0), rect_of(page, 1)]
+            check("both windows return to their saved rectangles", post == pre, f"{pre} -> {post}")
+            sessions = page.request.get(BASE + "api/sessions").json()
+            check(
+                "restoring the desk launched NO agent session",
+                all(s["kind"] != "agent" for s in sessions),
+                f"got={sessions}",
+            )
+            # `/ws` is the daemon's control channel, always opened; only
+            # `/ws/session` sockets launch or attach a PTY (#303).
+            session_sockets = [u for u in sockets if "/ws/session" in u]
+            check(
+                "…and opened exactly one session socket, for the free console",
+                len(session_sockets) == 1
+                and "console=1" in session_sockets[0]
+                and "agent=" not in session_sockets[0],
+                f"sockets={sockets}",
+            )
+            page.screenshot(path=os.path.join(SHOT_DIR, "306-consoles-desk-2026-07-25.png"))
+
             ctx.close()
             browser.close()
 
-            # =============== scenario 9a: no uncaught error ===================
+            # =============== scenario 9: no uncaught error, real screenshots ==
             check("zero pageerror events captured over the whole pass", page_errors == [], f"got={page_errors}")
+            # `mtime >= started`, not just "exists": a previous run's committed
+            # bytes would otherwise stand in for a screenshot THIS run never took.
+            for name in SHOTS:
+                path = os.path.join(SHOT_DIR, name)
+                size = os.path.getsize(path) if os.path.exists(path) else 0
+                fresh = os.path.exists(path) and os.path.getmtime(path) >= started
+                check(f"{name} was written by THIS run, non-empty", size > 0 and fresh, f"bytes={size} fresh={fresh}")
     finally:
         stop(proc)
 
