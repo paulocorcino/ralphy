@@ -213,6 +213,27 @@ mod tests {
         );
     }
 
+    /// The Claude adapter's own current majors must price. `claude-opus-5` was
+    /// missing from the seed while its sibling `claude-sonnet-5` was present, so
+    /// every opus run reported `$?` and logged "add `claude-opus-5` to pricing.toml".
+    /// Rates are models.dev's published Anthropic table (5/25/0.5/6.25).
+    #[test]
+    fn current_claude_majors_resolve_to_a_price() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        let opus5 = table
+            .cost_usd("claude-opus-5", &tokens)
+            .expect("the Claude adapter's current opus must price");
+        assert!(
+            (opus5 - (5.0 + 25.0 + 0.5 + 6.25)).abs() < 1e-9,
+            "claude-opus-5 priced field-by-field; got {opus5}"
+        );
+        assert!(
+            table.cost_usd("claude-sonnet-5", &tokens).is_some(),
+            "its sonnet sibling must stay priced"
+        );
+    }
+
     #[test]
     fn copilot_model_ids_resolve_to_a_price() {
         let table = PriceTable::defaults();
