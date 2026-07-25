@@ -77,7 +77,12 @@ function shell() {
     // switching projects reads collapsed again rather than carrying the
     // previous project's expansion along.
     changesOpen: {},
+    // INVARIANT (#315): every path that clears `changesEntries` must clear
+    // `changesStaged` and `changesUnstaged` in the SAME statement — a stale group
+    // left behind renders rows under a headline while the badge already reads `—`.
     changesEntries: {},
+    changesStaged: {},
+    changesUnstaged: {},
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -424,18 +429,24 @@ function shell() {
             this.changesCount[slug] = null;
             this.changesError[slug] = "could not read changes";
             this.changesEntries[slug] = [];
+            this.changesStaged[slug] = [];
+            this.changesUnstaged[slug] = [];
           }
           return;
         }
         const folded = window.WBChanges.fold(reply);
         this.changesCount[slug] = folded.count;
         this.changesEntries[slug] = folded.entries;
+        this.changesStaged[slug] = folded.staged;
+        this.changesUnstaged[slug] = folded.unstaged;
         this.changesError[slug] = "";
       } catch {
         if (seq === this._changesSeq && window.WBMode.isDaemon()) {
           this.changesCount[slug] = null;
           this.changesError[slug] = "could not read changes";
           this.changesEntries[slug] = [];
+          this.changesStaged[slug] = [];
+          this.changesUnstaged[slug] = [];
         }
         // Demo (static shell): leave whatever the seed/previous load holds.
       }

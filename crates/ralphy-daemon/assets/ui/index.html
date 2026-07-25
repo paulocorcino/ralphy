@@ -188,16 +188,36 @@
                 :title="changesError[p.slug] || 'working-tree changes'"
               ></span>
             </div>
-            <ul class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
-              <template x-for="c in (changesEntries[p.slug] || [])" :key="c.path">
-                <li class="chg-row" :title="c.title" role="button" tabindex="0"
-                    @click="openDiff(p.slug, c)" @keydown.enter="openDiff(p.slug, c)">
-                  <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
-                  <span class="chg-path" x-text="c.path"></span>
-                  <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
-                </li>
-              </template>
-            </ul>
+            <!-- Two groups, each header AND its list gated on that group's
+                 length, so a clean tree renders neither headline (#315). The
+                 `:key` is prefixed per group: a staged-then-modified path is in
+                 BOTH, and a bare `c.path` would make Alpine collide the rows. -->
+            <div class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
+              <div class="chg-group-head" x-show="(changesStaged[p.slug] || []).length">Staged Changes</div>
+              <ul class="chg-group" x-show="(changesStaged[p.slug] || []).length">
+                <template x-for="c in (changesStaged[p.slug] || [])" :key="'s:' + c.path">
+                  <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                      @click="openDiff(p.slug, c)" @keydown.enter="openDiff(p.slug, c)">
+                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                    <span class="chg-name" x-text="c.name"></span>
+                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                  </li>
+                </template>
+              </ul>
+              <div class="chg-group-head" x-show="(changesUnstaged[p.slug] || []).length">Changes</div>
+              <ul class="chg-group" x-show="(changesUnstaged[p.slug] || []).length">
+                <template x-for="c in (changesUnstaged[p.slug] || [])" :key="'u:' + c.path">
+                  <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                      @click="openDiff(p.slug, c)" @keydown.enter="openDiff(p.slug, c)">
+                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                    <span class="chg-name" x-text="c.name"></span>
+                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
           </li>
         </template>
       </ul>

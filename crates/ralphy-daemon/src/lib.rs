@@ -3936,6 +3936,28 @@ mod tests {
             js.contains("diffTarget"),
             "wb-changes.js must expose diffTarget"
         );
+
+        // The staged/unstaged split (#315) is JS/HTML too: pin the row's two
+        // halves, the group headline, and the per-group `:key` prefix without
+        // which Alpine collides a staged-then-modified path's two rows.
+        for pin in [
+            r#"class="chg-name""#,
+            r#"class="chg-dir""#,
+            r#"class="chg-group-head""#,
+            ">Staged Changes<",
+            "'s:' + c.path",
+        ] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the changes-group pin {pin}"
+            );
+        }
+        for pin in ["worktreeStatus", "indexStatus", "lastIndexOf"] {
+            assert!(
+                js.contains(pin),
+                "wb-changes.js must keep the index-split pin {pin}"
+            );
+        }
     }
 
     /// The browser half of the run-completion nudge (#310) is exercised by

@@ -1224,14 +1224,37 @@ body.runs-open .runs {
 .chg-row:hover {
   background: var(--surface-hi);
 }
-.chg-path {
+.chg-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chg-group-head {
+  padding: 0.15rem 0.8rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+/* The name yields only after the directory has drained: shrink 1 against 999,
+   NOT `flex-shrink: 0`, which would honour "never cut" by bleeding the row past
+   the sidebar (that is what wb_changes_309.py scenario 6 measures). */
+.chg-name {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chg-dir,
 .chg-from {
+  flex: 0 999 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
-  flex-shrink: 0;
+}
+.chg-dir {
+  font-size: 0.72rem;
 }
 .chg-mark {
   width: 1em;
