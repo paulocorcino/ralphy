@@ -257,6 +257,11 @@
               <option :value="l" x-text="l"></option>
             </template>
           </select>
+          <!-- the explicit refresh trigger (#301): the board is signal-driven,
+               never polled, so the operator keeps a manual door -->
+          <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing" title="refresh board">
+            <i data-lucide="rotate-cw"></i>
+          </button>
           <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
 

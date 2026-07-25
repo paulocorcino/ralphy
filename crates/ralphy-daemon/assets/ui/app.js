@@ -848,6 +848,14 @@ function shell() {
     // mode (issue #207 / audit C2) — kept apart from the empty-state "No issues"
     // so a broken tracker connection never reads as "no work to do".
     boardError: {},
+    // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped on EVERY load
+    // outcome (success, fold error, transport throw) so an erroring board
+    // throttles like a healthy one instead of hammering the tracker;
+    // `boardRefreshing` is both the in-flight guard and the control's disabled
+    // state, so a slow fold can never overlap itself.
+    _boardLoadedAt: 0,
+    _boardBackstop: null,
+    boardRefreshing: false,
     kanbanSel: null, // the selected issue number → opens the detail drawer
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
@@ -866,6 +874,8 @@ function shell() {
     async loadBoard() {
       const slug = this.openSlug;
       if (!slug) return;
+      if (this.boardRefreshing) return; // a fold already in flight owns this load
+      this.boardRefreshing = true;
       try {
         const reply = await window.WBDaemon.observe("board.list", { repo: slug });
         if (window.WBFail.isError(reply)) {
@@ -900,7 +910,35 @@ function shell() {
           this._flashAction?.("could not load board");
         }
         // Demo (static shell): leave it empty, no throw.
+      } finally {
+        // Every return path above lands here — including the `isError` early
+        // return — so the guard clears and the throttle clock restarts whatever
+        // the outcome was.
+        this.boardRefreshing = false;
+        this._boardLoadedAt = Date.now();
       }
+    },
+
+    // The one door every refresh trigger goes through (#301): ask the pure
+    // predicate (wb-kanban.js), load only on a yes. Nothing here decides policy.
+    maybeRefreshBoard(trigger) {
+      const ok = window.WBKanban.shouldRefresh({
+        trigger,
+        sinceMs: Date.now() - this._boardLoadedAt,
+        boardOpen: this.kanbanOpen,
+        docVisible: document.visibilityState === "visible",
+        focused: document.hasFocus(),
+      });
+      if (ok) this.loadBoard();
+    },
+    // The board head's refresh control.
+    refreshBoard() {
+      this.maybeRefreshBoard("manual");
+    },
+    // The slow backstop: one interval for the page's life, the PREDICATE (not
+    // the timer) deciding whether an individual tick is allowed to load.
+    boardBackstopTick() {
+      this.maybeRefreshBoard("backstop");
     },
 
     // Bridge a CLI fold row (snake_case `blocked_by`, lowercased `reason`) to the
@@ -1684,8 +1722,11 @@ function shell() {
         this.destroyRunsSub();
         this.mountRunsSub();
         // Refresh the board fold for the newly-open project (issue #198) so the
-        // Kanban + drawer read this project's live tracker, not a stale slug.
-        if (this.openSlug) this.loadBoard();
+        // Kanban + drawer read this project's live tracker, not a stale slug —
+        // but only when the board is actually OPEN (#301): the fold spawns a CLI
+        // that makes several tracker calls, and nobody is looking at it.
+        // `toggleKanban()` loads on open, so the closed case loses nothing.
+        if (this.openSlug && this.kanbanOpen) this.loadBoard();
         // point the Runs panel at this project's first run + its first section
         this.currentRunId = this.projectRuns()[0]?.runid || null;
         this.planSection = this.planHeadings(this.currentRun())[0] || "";

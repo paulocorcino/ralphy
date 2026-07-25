@@ -213,6 +213,10 @@ SPY_JS = """
 """
 
 
+def board_calls(page):
+    return page.evaluate("() => window.__boardCalls.length")
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -239,6 +243,7 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
+            page.evaluate(SPY_JS)
             page.wait_for_timeout(300)
 
             # --- scenario 1: the predicate in isolation -----------------------
@@ -249,6 +254,23 @@ def main():
             )
             for (label, args, want), got in zip(PREDICATE_ROWS, verdicts):
                 check(label, got is want, f"got={got!r} want={want!r} args={args}")
+
+            # --- scenario 2: a CLOSED board never spawns the fold -------------
+            page.evaluate(f"() => {SH}.toggle('{slug}')")
+            page.wait_for_timeout(500)
+            n = board_calls(page)
+            check("opening a project with the board CLOSED spawns no fold", n == 0, f"got={n}")
+
+            page.evaluate(f"() => {SH}.toggleKanban()")
+            page.wait_for_timeout(400)
+            n = board_calls(page)
+            check("opening the board loads it once", n == 1, f"got={n}")
+
+            # --- scenario 3: the explicit refresh control ---------------------
+            page.click(".kanban-refresh")
+            page.wait_for_timeout(400)
+            n = board_calls(page)
+            check("the refresh control reloads the board", n == 2, f"got={n}")
 
             ctx.close()
             browser.close()

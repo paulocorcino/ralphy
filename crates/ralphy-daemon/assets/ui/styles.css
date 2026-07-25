@@ -2851,6 +2851,26 @@ body.locked .runs {
   outline: none;
   border-color: var(--border-focus);
 }
+.kanban-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kanban-refresh:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.kanban-refresh:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .kanban-close {
   display: inline-flex;
   align-items: center;
