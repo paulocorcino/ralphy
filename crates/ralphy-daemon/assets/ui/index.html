@@ -192,7 +192,7 @@
             <button class="btn accent" @click.stop="agentMenu = !agentMenu">
               <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>
             </button>
-            <div class="dropdown" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
+            <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
               <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
               <!-- The daemon's adapter roster folded against the live sessions
                    (wb-agents.js), plain console last. A row with live sessions

@@ -1431,6 +1431,7 @@ body.runs-open .runs {
 .dropdown-item .row-live {
   font-size: 0.66rem;
   color: var(--console-text);
+  white-space: nowrap;
 }
 /* the escape hatch beside it: launch another console for this agent anyway */
 .dropdown-item .row-new {
