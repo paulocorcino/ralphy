@@ -103,6 +103,62 @@ PLAN_MD = """# Plan for #72: the fixture issue
 - [ ] the open step
 """
 
+# The spy: count every `board.list` call and answer it from a fixed fold, answer
+# `label.set` OK, answer `issue.show` with the structured detail the CLI emits
+# (`comments[] = {author, at, body}`) — and DELEGATE every other verb to the real
+# transport. The fall-through is load-bearing: scenario 6's live `runs.*` pushes
+# ride this same `observe`.
+SPY_JS = """
+(k) => {
+  window.__boardCalls = [];
+  window.__triggers = [];
+  const real = window.WBDaemon.observe.bind(window.WBDaemon);
+  const row = (n, title) => ({
+    number: n, title, state: "open", labels: ["ready-for-agent"],
+    assignees: [], blocked_by: [], created: "2026-07-20T10:00:00Z", updated: "2026-07-24T10:00:00Z",
+  });
+  window.WBDaemon.observe = (verb, payload) => {
+    if (verb === "board.list") {
+      window.__boardCalls.push(payload);
+      return Promise.resolve({
+        status: "ok",
+        board: {
+          issues: [row(71, "the done one"), row(72, "the active one"), row(73, "the pending one")],
+          labels: [{ name: "ready-for-agent", color: "0E8A16" }],
+        },
+      });
+    }
+    if (verb === "label.set") return Promise.resolve({ status: "ok" });
+    if (verb === "issue.show") {
+      return Promise.resolve({
+        status: "ok",
+        issue: {
+          number: payload.number,
+          body: k.body,
+          comments: [
+            { author: "octocat", at: k.rawAt, body: "first comment" },
+            { author: "paulocorcino", at: "2026-07-24T09:00:00Z", body: "second comment" },
+          ],
+          blocked_by: [],
+        },
+      });
+    }
+    return real(verb, payload);
+  };
+  // Attribute each ACCEPTED load to the trigger that asked for it: the recorded
+  // payload is `{repo}` for every trigger, so a count delta alone cannot tell a
+  // `visible` refresh from a stray `runs` push.
+  const d = Alpine.$data(document.querySelector('[x-data]'));
+  const realMaybe = d.maybeRefreshBoard.bind(d);
+  d.maybeRefreshBoard = (trigger) => {
+    const before = window.__boardCalls.length;
+    const out = realMaybe(trigger);
+    if (window.__boardCalls.length > before) window.__triggers.push(trigger);
+    return out;
+  };
+}
+"""
+
 results = []
 
 
@@ -196,6 +252,10 @@ def launch(daemon_dir):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def board_calls(page):
+    return page.evaluate("() => window.__boardCalls.length")
 
 
 def open_menu(page):
@@ -295,6 +355,7 @@ def main():
             page.on("pageerror", lambda exc: page_errors.append(str(exc)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
+            page.evaluate(SPY_JS, {"body": BODY, "rawAt": RAW_AT})
             page.wait_for_timeout(300)
 
             # =============== scenario 1: the Consoles tab, no translation =====
@@ -455,6 +516,73 @@ def main():
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "306-agent-menu-2026-07-25.png"))
             close_menu(page)
+
+            # =============== scenario 4: when the board refreshes =============
+            check("no fold ran while the board was closed", board_calls(page) == 0, f"got={board_calls(page)}")
+            page.evaluate(f"() => {SH}.toggleKanban()")
+            page.wait_for_timeout(600)
+            check("opening the board loads it once", board_calls(page) == 1, f"got={board_calls(page)}")
+
+            n = board_calls(page)
+            page.click(".kanban-refresh")
+            page.wait_for_timeout(500)
+            check("the explicit refresh control reloads the board", board_calls(page) == n + 1, f"{n} -> {board_calls(page)}")
+
+            # Headless chromium does NOT background a page when a sibling takes
+            # the foreground (#301), so the STATE — the predicate's own input —
+            # is stubbed; the listener, the predicate and the wiring stay real.
+            page.evaluate(
+                "() => { Object.defineProperty(document, 'visibilityState',"
+                " { get: () => 'hidden', configurable: true }); }"
+            )
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            n = board_calls(page)
+            page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
+            page.wait_for_timeout(700)
+            check("a HIDDEN document never refreshes the board", board_calls(page) == n, f"{n} -> {board_calls(page)}")
+
+            page.evaluate("() => { delete document.visibilityState; }")
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            n = board_calls(page)
+            page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
+            page.wait_for_timeout(700)
+            check(
+                "becoming visible again refreshes it",
+                board_calls(page) == n + 1,
+                f"{n} -> {board_calls(page)}",
+            )
+            trig = page.evaluate("() => window.__triggers")
+            check("…attributed to the `visible` trigger, not a stray push", trig[-1] == "visible", f"got={trig[-3:]}")
+
+            # =============== scenario 5: the issue drawer =====================
+            cards = page.locator(".kanban-card")
+            check("the board renders the fixture rows", cards.count() == 3, f"got={cards.count()}")
+            page.locator('.kanban-card:has(.kc-num:text-is("#72"))').first.click()
+            page.wait_for_timeout(700)
+            drawer = page.locator(".kanban-detail.open")
+            check("clicking a card opens the detail drawer", drawer.is_visible())
+            body_txt = drawer.locator(".kd-body").inner_text().strip()
+            check("…showing the issue's real body", BODY in body_txt, f"got={body_txt[:80]!r}")
+            # The head is `text-transform: uppercase` in styles.css, so
+            # `inner_text()` returns "2 COMMENTS" — compare case-folded (#302).
+            head = drawer.locator(".kd-comments-head").inner_text().strip()
+            check("…and counting the comment thread", head.lower() == "2 comments", f"got={head!r}")
+            first = drawer.locator(".kd-comment").first
+            head0 = first.locator(".kd-comment-head").inner_text().strip()
+            check("the first comment names its author", "octocat" in head0, f"got={head0!r}")
+            at0 = first.locator(".kd-comment-at").inner_text().strip()
+            # Never a formatted-date LITERAL: `fmtDate` follows the browser locale
+            # (#302). Non-empty AND != the raw ISO fails both a dropped `at` and a
+            # wire shape that dumped it unformatted.
+            check(
+                "…and a rendered date, neither blank nor the raw ISO timestamp",
+                at0 != "" and at0 != RAW_AT,
+                f"got={at0!r}",
+            )
+            body0 = first.locator(".kd-comment-body").inner_text().strip()
+            check("…and its body", "first comment" in body0, f"got={body0[:60]!r}")
+            page.evaluate(f"() => {SH}.closeIssue()")
+            page.wait_for_timeout(300)
 
             ctx.close()
             browser.close()
