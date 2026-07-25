@@ -23,17 +23,29 @@
     return mark ? { mark, cls: "st-" + status } : { mark: "?", cls: "st-unknown" };
   }
 
+  // The row's two halves: the base name, and the directory that carries it.
+  // `lastIndexOf` and not a split-and-join — `docs/deep/nested/readme.md` must
+  // yield `readme.md`, not `deep/nested/readme.md`.
+  function splitPath(path) {
+    const cut = path.lastIndexOf("/");
+    return cut < 0
+      ? { name: path, dir: "" }
+      : { name: path.slice(cut + 1), dir: path.slice(0, cut) };
+  }
+
   function fold(reply) {
     // A non-ok reply can still carry a `changes` body (an error frame the daemon
     // built over a partial read); folding it would report a count nobody proved.
-    if (!reply || reply.status !== "ok") return { count: 0, entries: [] };
+    const empty = { count: 0, entries: [], staged: [], unstaged: [] };
+    if (!reply || reply.status !== "ok") return empty;
     const rows = reply.changes && reply.changes.changes;
-    if (!Array.isArray(rows)) return { count: 0, entries: [] };
+    if (!Array.isArray(rows)) return empty;
     const entries = rows
       .filter((r) => r && typeof r.path === "string")
       .map((r) => {
         const status = r.status || "modified";
         const { mark, cls } = marker(status);
+        const { name, dir } = splitPath(r.path);
         return {
           path: r.path,
           originalPath: r.original_path || null,
@@ -41,9 +53,21 @@
           mark,
           cls,
           title: r.original_path ? r.original_path + " → " + r.path : r.path,
+          indexStatus: r.index_status || null,
+          worktreeStatus: r.worktree_status || null,
+          name,
+          dir,
         };
       });
-    return { count: entries.length, entries };
+    // Every entry lands in at least one group: an older or malformed payload
+    // carrying neither side field still renders under Changes rather than
+    // vanishing from a list whose badge still counts it.
+    return {
+      count: entries.length,
+      entries,
+      staged: entries.filter((e) => e.indexStatus),
+      unstaged: entries.filter((e) => e.worktreeStatus || !e.indexStatus),
+    };
   }
 
   // The run-completion nudge filter (#310, ADR-0036 amendment): the daemon pushes

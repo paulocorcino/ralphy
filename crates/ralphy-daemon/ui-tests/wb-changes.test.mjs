@@ -43,6 +43,10 @@ test("a change set folds to its count and one entry per row", () => {
     mark: "R",
     cls: "st-renamed",
     title: "old.txt → new.txt",
+    indexStatus: null,
+    worktreeStatus: null,
+    name: "new.txt",
+    dir: "",
   });
   assert.equal(folded.entries[0].originalPath, null);
 });
@@ -81,6 +85,10 @@ test("the list model carries a status marker per row", () => {
     mark: "R",
     cls: "st-renamed",
     title: "old name.txt → new name.txt",
+    indexStatus: null,
+    worktreeStatus: null,
+    name: "new name.txt",
+    dir: "",
   });
   assert.equal(folded.entries[6].cls, "st-unknown");
   assert.equal(folded.entries[0].title, "README.md");
@@ -102,7 +110,155 @@ test("an error, absent or malformed reply reads as zero — never a stale count"
     const folded = fold(reply);
     assert.equal(folded.count, 0, `count for ${JSON.stringify(reply)}`);
     assert.deepEqual(folded.entries, []);
+    // The groups (#315) must go empty with the entries — a stale group would
+    // render rows under a headline while the badge already reads `—`.
+    assert.deepEqual(folded.staged, [], `staged for ${JSON.stringify(reply)}`);
+    assert.deepEqual(folded.unstaged, [], `unstaged for ${JSON.stringify(reply)}`);
   }
+});
+
+test("a file staged and then modified again is in both groups (#315)", () => {
+  const folded = load().fold({
+    status: "ok",
+    changes: {
+      changes: [
+        {
+          path: "both.txt",
+          original_path: null,
+          status: "added",
+          index_status: "added",
+          worktree_status: "modified",
+        },
+        {
+          path: "staged.txt",
+          original_path: null,
+          status: "added",
+          index_status: "added",
+          worktree_status: null,
+        },
+        {
+          path: "dirty.txt",
+          original_path: null,
+          status: "modified",
+          index_status: null,
+          worktree_status: "modified",
+        },
+      ],
+    },
+  });
+  assert.deepEqual(
+    folded.staged.map((e) => e.path),
+    ["both.txt", "staged.txt"],
+  );
+  assert.deepEqual(
+    folded.unstaged.map((e) => e.path),
+    ["both.txt", "dirty.txt"],
+  );
+  // The badge counts PATHS, not rows: `both.txt` renders twice and counts once.
+  assert.equal(folded.count, 3);
+});
+
+test("a row splits into base name and dimmed directory (#315)", () => {
+  const folded = load().fold({
+    status: "ok",
+    changes: {
+      changes: [
+        { path: "docs/deep/nested/readme.md", original_path: null, status: "modified" },
+        { path: "README.md", original_path: null, status: "modified" },
+      ],
+    },
+  });
+  // An `indexOf` split would leave `deep/nested/readme.md` as the name.
+  assert.equal(folded.entries[0].name, "readme.md");
+  assert.equal(folded.entries[0].dir, "docs/deep/nested");
+  assert.equal(folded.entries[1].name, "README.md");
+  assert.equal(folded.entries[1].dir, "");
+  // The full repo-relative path stays the hover title.
+  assert.equal(folded.entries[0].title, "docs/deep/nested/readme.md");
+});
+
+test("an out-of-vocabulary side status still groups and still marks ? (#315)", () => {
+  const folded = load().fold({
+    status: "ok",
+    changes: {
+      changes: [
+        {
+          path: "weird.txt",
+          original_path: null,
+          status: "vaporized",
+          index_status: "vaporized",
+          worktree_status: null,
+        },
+      ],
+    },
+  });
+  assert.equal(folded.entries[0].mark, "?");
+  assert.equal(folded.entries[0].cls, "st-unknown");
+  assert.deepEqual(
+    folded.staged.map((e) => e.path),
+    ["weird.txt"],
+  );
+  assert.deepEqual(folded.unstaged, []);
+});
+
+test("an entry carrying neither side field still renders, under Changes (#315)", () => {
+  // An older daemon (or a payload that lost the fields) must not make a row
+  // vanish from a list whose badge still counts it.
+  const folded = load().fold({
+    status: "ok",
+    changes: { changes: [{ path: "legacy.txt", original_path: null, status: "modified" }] },
+  });
+  assert.equal(folded.count, 1);
+  assert.deepEqual(folded.staged, []);
+  assert.deepEqual(
+    folded.unstaged.map((e) => e.path),
+    ["legacy.txt"],
+  );
+});
+
+test("a conflict groups under Changes, never under Staged (#315)", () => {
+  // The producer's decision, mirrored here: an unresolved conflict is worktree
+  // work, so it must never read as "what a commit would contain".
+  const folded = load().fold({
+    status: "ok",
+    changes: {
+      changes: [
+        {
+          path: "merge.txt",
+          original_path: null,
+          status: "conflicted",
+          index_status: null,
+          worktree_status: "conflicted",
+        },
+      ],
+    },
+  });
+  assert.deepEqual(folded.staged, []);
+  assert.deepEqual(
+    folded.unstaged.map((e) => e.path),
+    ["merge.txt"],
+  );
+  assert.equal(folded.unstaged[0].mark, "!");
+});
+
+test("fold does not mutate the reply it is given", () => {
+  const reply = {
+    status: "ok",
+    changes: {
+      changes: [
+        {
+          path: "docs/a.txt",
+          original_path: null,
+          status: "added",
+          index_status: "added",
+          worktree_status: "modified",
+        },
+      ],
+    },
+  };
+  const before = structuredClone(reply);
+  load().fold(reply);
+  assert.deepEqual(reply, before, "fold stays pure — no DOM, no fetch, no mutation");
 });
 
 test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", () => {
