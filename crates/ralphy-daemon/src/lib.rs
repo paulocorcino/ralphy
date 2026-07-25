@@ -191,9 +191,10 @@ pub struct StorePaths {
     pub gemini_dir: PathBuf,
 }
 
-/// Buffered run-exit nudges per `/ws/tree` subscriber. A lagging subscriber
-/// only skips ahead (the browser's re-read is idempotent), so this bounds
-/// memory rather than correctness.
+/// Capacity of the shared run-exit ring (ONE buffer for all `/ws/tree`
+/// subscribers, not one each). A subscriber that falls behind it just skips
+/// ahead — the browser's re-read is idempotent — so this bounds memory rather
+/// than correctness.
 const RUN_EXIT_CAP: usize = 32;
 
 /// The daemon's HTTP surface. Real routes sit *before* the embedded-UI
@@ -1197,7 +1198,9 @@ async fn command_ws(
     // not from the wait arm below: the shutdown and client-disconnect arms `break`
     // without ever polling that arm while the run keeps living (the teardown
     // invariant above), and tokio never cancels a blocking task — so this is the
-    // only site that fires on EVERY exit path. A send with no `/ws/tree`
+    // only site that fires on every exit path the daemon outlives (a run that
+    // outlives the process has no nudge to send — the browser's reconnect
+    // catch-up read covers that one). A send with no `/ws/tree`
     // subscriber is `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
     let nudge_slug = slug.to_string();
     let mut wait = tokio::task::spawn_blocking(move || {
@@ -3867,6 +3870,38 @@ mod tests {
             assert!(
                 js.contains(status),
                 "wb-changes.js must keep the {status} marker"
+            );
+        }
+    }
+
+    /// The browser half of the run-completion nudge (#310) is exercised by
+    /// `node --test` and a Playwright pass, neither of which CI runs — so the
+    /// three symbols the push path hangs on are pinned from the Rust gate, the
+    /// way #309 pinned the list's markup.
+    #[test]
+    fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
+        assert!(
+            include_str!("../assets/ui/wb-changes.js").contains("function shouldReload("),
+            "wb-changes.js must keep the shouldReload filter (#310)"
+        );
+        let daemon_js = include_str!("../assets/ui/wb-daemon.js");
+        assert!(
+            daemon_js.contains("function subscribeChanges("),
+            "wb-daemon.js must keep the subscribeChanges socket (#310)"
+        );
+        assert!(
+            daemon_js.contains("subscribeChanges,"),
+            "wb-daemon.js must EXPORT subscribeChanges — app.js guards on it (#310)"
+        );
+        let app_js = include_str!("../assets/ui/app.js");
+        for symbol in [
+            "mountChangesSub()",
+            "destroyChangesSub()",
+            "shouldReload?.(",
+        ] {
+            assert!(
+                app_js.contains(symbol),
+                "app.js must keep {symbol} on the nudge path (#310)"
             );
         }
     }

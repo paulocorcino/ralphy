@@ -92,6 +92,9 @@ function shell() {
     // an older reply would then overwrite a newer snapshot. Only the newest
     // hydration is allowed to commit.
     _runsSeq: 0,
+    // Same token for the Changes count: #310's nudge makes overlapping
+    // `changes.list` reads routine (a nudge during the open's own read).
+    _changesSeq: 0,
 
     // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
     // plan <script> blocks) is present.
@@ -396,12 +399,18 @@ function shell() {
     },
 
     // The open project's working-tree change count (#307), served read-only via
-    // the `changes.list` Query verb. The count is a snapshot: it reloads when a
-    // project is opened and on the sidebar refresh, never on a repo-wide watch.
+    // the `changes.list` Query verb. The count is a snapshot between events: it
+    // reloads when a project is opened, on the sidebar refresh, and on a
+    // run-completion nudge (#310) — never on a poll or a repo-wide watch.
     async loadChanges(slug) {
       if (!slug) return;
+      // Nudges (#310) can land while a read is in flight, so two reads of the
+      // same slug overlap and their replies can return OUT OF ORDER — an older
+      // reply would then overwrite a newer count (same hazard as `_runsSeq`).
+      const seq = ++this._changesSeq;
       try {
         const reply = await window.WBDaemon.observe("changes.list", { repo: slug });
+        if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
           if (window.WBMode.isDaemon()) {
             // Honest absence beats another repo's number.
@@ -416,7 +425,7 @@ function shell() {
         this.changesEntries[slug] = folded.entries;
         this.changesError[slug] = "";
       } catch {
-        if (window.WBMode.isDaemon()) {
+        if (seq === this._changesSeq && window.WBMode.isDaemon()) {
           this.changesCount[slug] = null;
           this.changesError[slug] = "could not read changes";
           this.changesEntries[slug] = [];
@@ -2158,7 +2167,10 @@ function shell() {
     mountChangesSub() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeChanges || !this.openSlug) return;
       this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame) => {
-        if (window.WBChanges.shouldReload(frame, this.openSlug)) this.loadChanges(this.openSlug);
+        // Optional-chained like the mount guard above: a frame arriving before
+        // (or without) wb-changes.js must not throw inside `onmessage` and kill
+        // the nudge path for this connection.
+        if (window.WBChanges?.shouldReload?.(frame, this.openSlug)) this.loadChanges(this.openSlug);
       });
     },
     destroyChangesSub() {

@@ -118,3 +118,21 @@ test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", (
   // No project open: a nudge must not fire a read for a null slug.
   assert.equal(shouldReload(dirty("owner/a"), null), false);
 });
+
+test("shouldReload answers false — never throws — on a malformed frame (#310)", () => {
+  const shouldReload = load().shouldReload;
+  // The daemon is the only sender today, but a throw here dies inside the
+  // socket's `onmessage` and kills the nudge path for that connection.
+  for (const frame of [
+    null,
+    undefined,
+    {},
+    { verb: "changes.dirty" },
+    { verb: "changes.dirty", payload: {} },
+    { verb: "changes.dirty", payload: { repo: "" } },
+  ]) {
+    assert.equal(shouldReload(frame, "owner/a"), false, `frame ${JSON.stringify(frame)}`);
+  }
+  // …and an empty open slug never matches an empty repo.
+  assert.equal(shouldReload({ verb: "changes.dirty", payload: { repo: "" } }, ""), false);
+});

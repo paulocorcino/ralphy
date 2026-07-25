@@ -5,12 +5,15 @@ daemon-spawned run child exits — and ONLY then (no poll, no repo-wide watch).
 
 Scenario 1  opening project A shows its Changes count (literal `1`)
 Scenario 2  a file written from OUTSIDE the browser leaves the badge at `1` for
-            a 3s window — no polling timer, no repo-wide filesystem watch
+            a 3s window AND issues no `changes.list` read — no polling timer of
+            any period, no repo-wide filesystem watch
 Scenario 3  a daemon-spawned run in A exits and the badge refreshes `1` -> `2`
-            with NO click on `.side-refresh`
-Scenario 4  a run finishing in project B (not open) leaves A's badge at `2`
-Scenario 5  manual refresh still works (`2` -> `3`)
-Scenario 6  the count stays scoped — exactly one visible `.changes-sec`
+            with NO click on `.side-refresh` and NO socket reopen (so the move
+            came from the daemon's push, not the reconnect catch-up)
+Scenario 4  a run finishing in project B (not open) leaves A's badge at `2` —
+            and B's own count proves that run really did land
+Scenario 5  manual refresh still works, and the move is bound to the click
+Scenario 6  the count stays scoped — 2 sections in the DOM, 1 visible
 
 The trigger is a REAL `ralphy run` in a remote-less fixture repo: it fails fast
 (`no git remotes found`, ~1s) and that exit is the nudge. `RALPHY_EXE_OVERRIDE`
@@ -163,6 +166,38 @@ def wait_badge(page, expected, timeout=15000):
     )
 
 
+# Installed BEFORE any app script runs, so it sees every socket the page opens
+# and every Observe call it makes. Two facts the scenarios below need:
+#   __wsOpens  — how many `/ws/tree` sockets were constructed. `subscribeChanges`
+#                synthesizes a local `changes.dirty` on each (re)open, so a badge
+#                that moved without a new socket can only have been moved by a
+#                frame that arrived over the wire.
+#   __listReads — how many `changes.list` reads were issued, i.e. the mechanism a
+#                polling timer would show up in.
+INSTRUMENT = """
+window.__wsOpens = 0;
+window.__listReads = 0;
+const RealWS = window.WebSocket;
+window.WebSocket = function (url, protocols) {
+  if (String(url).indexOf('/ws/tree') !== -1) window.__wsOpens++;
+  return protocols ? new RealWS(url, protocols) : new RealWS(url);
+};
+window.WebSocket.prototype = RealWS.prototype;
+Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+document.addEventListener('DOMContentLoaded', () => {
+  const realObserve = window.WBDaemon.observe;
+  window.WBDaemon.observe = (verb, payload) => {
+    if (verb === 'changes.list') window.__listReads++;
+    return realObserve(verb, payload);
+  };
+});
+"""
+
+
+def counters(page):
+    return page.evaluate("() => ({ ws: window.__wsOpens, reads: window.__listReads })")
+
+
 def fire_run(page, slug):
     """Dispatch the same `workbench:action` the run button emits — a real Spawn
     over `/ws/command`, whose child exit is the nudge under test."""
@@ -197,6 +232,7 @@ def main():
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             ctx = browser.new_context(viewport={"width": 1400, "height": 900})
             page = ctx.new_page()
+            page.add_init_script(INSTRUMENT)
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
@@ -210,6 +246,7 @@ def main():
             # Settle first: `toggle()` fires its own async `changes.list`, and an
             # in-flight read picking up the write would counterfeit this proof.
             page.wait_for_timeout(1000)
+            before = counters(page)
             Path(dir_a, "nudge.txt").write_text("written outside the browser\n", encoding="utf-8")
             page.wait_for_timeout(3000)
             got = badge_text(page)
@@ -218,13 +255,32 @@ def main():
                 got == "1",
                 f"got={got!r}",
             )
+            # …and the MECHANISM, not just the number: a timer of ANY period would
+            # have issued a `changes.list` in that window; zero reads means the
+            # only triggers are the ones this branch wires by hand.
+            after = counters(page)
+            check(
+                "no `changes.list` read was issued in that window (no timer at all)",
+                after["reads"] == before["reads"],
+                f"reads {before['reads']} -> {after['reads']}",
+            )
 
             # --- scenario 3: a finished run refreshes the count --------------
+            before = counters(page)
             fire_run(page, slug_a)
             wait_badge(page, "2", timeout=60000)
             check(
                 "a finished run refreshes the count to 2 with no manual refresh",
                 badge_text(page) == "2",
+            )
+            # The refresh must be the daemon's PUSH, not the socket reopening: a
+            # reconnect synthesizes its own catch-up `changes.dirty` locally, so a
+            # daemon that pushed nothing would still reach 2 if the socket flapped.
+            after = counters(page)
+            check(
+                "the refresh came over the wire — the /ws/tree socket never reopened",
+                after["ws"] == before["ws"],
+                f"ws opens {before['ws']} -> {after['ws']}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "310-changes-nudge-2026-07-25.png"))
 
@@ -238,23 +294,50 @@ def main():
                 got == "2",
                 f"got={got!r}",
             )
+            # …and B's run really did spawn AND exit — otherwise the check above
+            # passes vacuously, proving only that nothing happened at all.
+            page.evaluate(f"() => {SH}.toggle('{slug_a}')")  # close A
+            page.evaluate(f"() => {SH}.toggle('{slug_b}')")  # open B
+            wait_badge(page, "2")
+            check("the un-opened project's own run did land (B reads 2)", badge_text(page) == "2")
+            page.evaluate(f"() => {SH}.toggle('{slug_b}')")
+            page.evaluate(f"() => {SH}.toggle('{slug_a}')")
+            wait_badge(page, "2")
 
             # --- scenario 5: manual refresh still works ----------------------
+            # Settle after the reopen above: `toggle()` and the subscription's
+            # catch-up both read `changes.list`, and a read still in flight when
+            # the file lands would move the badge with no refresh and no nudge.
+            page.wait_for_timeout(1000)
             Path(dir_a, "late.txt").write_text("late arrival\n", encoding="utf-8")
+            # Bind the move to the CLICK: with no run in flight nothing can nudge,
+            # so a badge that moved before the click would be a poll.
+            page.wait_for_timeout(1500)
+            got = badge_text(page)
+            check("the count is still 2 until the refresh is clicked", got == "2", f"got={got!r}")
             page.click(".side-refresh")
             wait_badge(page, "3")
             check("the sidebar refresh still reloads the count to 3", badge_text(page) == "3")
 
             # --- scenario 6: the count stays scoped --------------------------
-            secs = page.evaluate(f"() => {VISIBLE_SECS}.length")
-            check("exactly one Changes section is visible (scoping intact)", secs == 1, f"got={secs}")
+            # Both projects have a section in the DOM; exactly one is visible.
+            secs = page.evaluate(
+                f"() => ({{ all: document.querySelectorAll('.changes-sec').length,"
+                f" visible: {VISIBLE_SECS}.length }})"
+            )
+            check(
+                "both projects hold a section but only the open one shows",
+                secs["all"] == 2 and secs["visible"] == 1,
+                f"got={secs}",
+            )
+            check("the daemon under test is still the one we launched", proc.poll() is None)
 
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 7
+    ok = all(results) and len(results) >= 12
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES NUDGE LIVE")

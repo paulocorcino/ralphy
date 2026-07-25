@@ -346,6 +346,13 @@ And **no timer is introduced**: the nudge is edge-triggered by the child exit,
 not polled. The Changes count therefore stays a snapshot between events — a
 tree change with no run and no manual refresh stays invisible by design.
 
-The send lives inside the blocking wait task, not the socket `select!` loop,
-so it fires on EVERY exit path of the run — including the daemon-shutdown and
-client-disconnect arms that abandon the socket while the run keeps living.
+The send lives inside the blocking wait task, not the socket `select!` loop, so
+it fires on every exit path the daemon outlives — including the client-disconnect
+and shutdown arms that abandon the socket while the run keeps living. A run that
+outlives the daemon process itself is the one case with no nudge to send; the
+browser's reconnect catch-up read covers it, with no operator action.
+
+The nudge is scoped to the Spawn class. The Write verbs and the branch mutations
+answer in-daemon and deliberately send NO nudge: their caller is the browser
+itself, which already knows what it just wrote. The count they leave behind is
+the same snapshot the manual refresh exists for.

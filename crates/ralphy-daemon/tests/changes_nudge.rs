@@ -89,6 +89,9 @@ async fn run_exit_pushes_changes_dirty() {
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
+    // TWO repos, and the run goes to the SECOND: with a single registry entry a
+    // daemon echoing a constant (or just the sole entry) would pass.
+    store.upsert("owner/other", &dir.path().to_string_lossy());
     let slug = "owner/nudge";
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
