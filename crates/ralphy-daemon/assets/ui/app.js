@@ -73,10 +73,6 @@ function shell() {
     // and `changesError` carries the reason into the badge's title.
     changesCount: {},
     changesError: {},
-    // Expand state + row model per slug (#309): a map, not one flag, so
-    // switching projects reads collapsed again rather than carrying the
-    // previous project's expansion along.
-    changesOpen: {},
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
@@ -286,12 +282,33 @@ function shell() {
     // panel (rail Runs button), and the Kanban/tasks board (rail Kanban button,
     // a stub for now). Each is a pure layout flip driven by a body class.
     sideOpen: true,
+    // Which view the sidebar is showing (#317): the rail switches it between
+    // `projects` and `changes`. Changes is a VIEW, not a section inside the
+    // project row — it is scoped to `openSlug` alone.
+    sideView: "projects",
     runsOpen: false,
     kanbanOpen: false,
     projectQuery: "",
 
-    toggleSide() {
-      this.sideOpen = !this.sideOpen;
+    // Clicking the rail button of the view already showing collapses the
+    // sidebar — that preserves the pre-#317 `toggleSide()` gesture for the
+    // Projects button, so the promotion adds a view without removing a feel.
+    showSideView(view) {
+      if (this.sideOpen && this.sideView === view) {
+        this.sideOpen = false;
+        return;
+      }
+      this.sideView = view;
+      this.sideOpen = true;
+      // the incoming view's lucide icons live behind x-show and mount here
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+
+    // The Projects-view change indicator for one row, delegated to the pure
+    // fold. Only slugs whose count was actually READ render one — fanning out a
+    // `changes.list` per registered repo would cost N git subprocesses on open.
+    projectBadge(slug) {
+      return window.WBChanges.projectBadge(this.changesCount, this.changesError, slug);
     },
 
     // Case-insensitive slug/branch filter over the sidebar project list. The
@@ -316,6 +333,8 @@ function shell() {
     // Opens the sidebar (if collapsed) and focuses the project search input —
     // the target of the global `/` shortcut.
     focusProjectSearch() {
+      // `/` must never focus an input the Changes view is hiding (#317).
+      this.sideView = "projects";
       this.sideOpen = true;
       this.$nextTick(() => this.$refs.projectSearch?.focus());
     },
@@ -511,12 +530,6 @@ function shell() {
       }
       this.loadSync(slug);
       if (moved) this.loadChanges(slug);
-    },
-
-    // Toggle the Changes list open/closed (#309). No reload — the rows
-    // already in the two group maps are the same snapshot the badge counts.
-    toggleChanges(slug) {
-      this.changesOpen[slug] = !this.changesOpen[slug];
     },
 
     // Filtered (case-insensitive substring), current pinned to the top.

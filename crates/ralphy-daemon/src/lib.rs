@@ -3902,8 +3902,8 @@ mod tests {
             "index.html must render a chg-mark per row"
         );
         assert!(
-            html.contains("toggleChanges(p.slug)"),
-            "index.html must wire the Changes header to toggleChanges"
+            html.contains("showSideView('changes')"),
+            "index.html must wire the rail's Changes button to showSideView"
         );
 
         let js = include_str!("../assets/ui/wb-changes.js");
@@ -3928,7 +3928,7 @@ mod tests {
         // The diff tab (#311) is JS/HTML only, so no other Rust gate compiles it:
         // pin the row's click wiring and the diff editor's factory here.
         assert!(
-            html.contains("openDiff(p.slug, c)"),
+            html.contains("openDiff(openSlug, c)"),
             "index.html must open a diff from a changes row"
         );
         assert!(
@@ -3964,6 +3964,55 @@ mod tests {
                 "wb-changes.js must keep the index-split pin {pin}"
             );
         }
+
+        // The promotion to a rail view (#317): the view's root, the rail icon
+        // that reaches it, and the per-project indicator that keeps the count
+        // reachable with no navigation.
+        for pin in [
+            r#"class="changes-view""#,
+            r#"data-lucide="git-compare""#,
+            r#"class="chg-badge""#,
+        ] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the rail-view pin {pin}"
+            );
+        }
+        // NEGATED: the accordion is removed, not left standing beside the view.
+        // Both strings occurred ONLY in the block #317 deleted, so either one
+        // reappearing means the section came back.
+        for gone in ["changes-sec", "toggleChanges"] {
+            assert!(
+                !html.contains(gone),
+                "index.html must not resurrect the Changes accordion ({gone})"
+            );
+        }
+        assert!(
+            js.contains("function projectBadge("),
+            "wb-changes.js must keep the per-project badge fold (#317)"
+        );
+    }
+
+    /// The rail view's CSS must speak the shell's token language (ADR-0035), not
+    /// invent colours: a hex literal anywhere in the block is the failure this
+    /// catches. `cargo test` is the only gate CI runs over these assets.
+    #[test]
+    fn the_changes_view_adds_no_colour_outside_the_token_set() {
+        let css = include_str!("../assets/ui/styles.css");
+        let open = "/* #317 rail view */";
+        let close = "/* #317 rail view end */";
+        let start = css
+            .find(open)
+            .expect("styles.css must keep the #317 rail-view opening marker")
+            + open.len();
+        let end = css
+            .find(close)
+            .expect("styles.css must keep the #317 rail-view closing marker");
+        let block = &css[start..end];
+        assert!(
+            !block.contains('#'),
+            "the #317 rail-view CSS must reference var(--…) tokens only, no hex literals"
+        );
     }
 
     /// The browser half of the run-completion nudge (#310) is exercised by

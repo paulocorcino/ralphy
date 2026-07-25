@@ -1187,30 +1187,104 @@ body.runs-open .runs {
   color: var(--text);
 }
 
-/* Changes: pinned under the open project's tree, separated by the same hairline
-   the sidebar uses between its own sections (#307). */
-.changes-sec {
-  border-top: 1px solid var(--border);
-  cursor: pointer;
+/* #317 rail view */
+/* The sidebar now holds two sibling views the rail switches between. Each owns
+   the whole sidebar column, so each is a flex column with `min-height: 0` —
+   without that a long child grows the item instead of scrolling inside it.
+   Named per view rather than through a shared class: the lib.rs pin matches
+   `class="changes-view"` to its closing quote. */
+.projects-view,
+.changes-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
 }
-/* Row list under the Changes header (#309): capped height keeps a long list
-   from squeezing the file tree out of the sidebar entirely — the tree's own
-   min-height (line ~310) is the other half of that floor. */
-.chg-chev {
+/* Everything below the Changes toolbar: the list plus the message box. The
+   list scrolls, the box does not — see `.changes-list` below. */
+.chg-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* The Changes toolbar. Sized like `.files-sec`, the shell's other in-view
+   action strip, so the parent PRD's staging row lands in a budget already
+   measured rather than one invented for it. (No hash character inside these
+   markers: the lib.rs pin reds on any hex literal, and on an issue ref too.) */
+.chg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.chg-toolbar .head-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.side-empty {
+  padding: 0.8rem;
   color: var(--text-muted);
-  display: inline-flex;
-  transition: transform 0.15s ease;
+  font-size: 0.78rem;
 }
-.chg-chev.open {
-  transform: rotate(90deg);
+/* The compose box never scrolls out of reach: `flex: 0 0 auto` against the
+   list's `1 1 auto` keeps it pinned to the sidebar's bottom edge. */
+.chg-compose {
+  flex: 0 0 auto;
+  padding: 0.5rem;
+  border-top: 1px solid var(--border);
 }
+.chg-msg {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem;
+}
+.chg-msg::placeholder {
+  color: var(--text-muted);
+}
+.chg-msg:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* The per-project change indicator in the Projects view — the count that
+   survives the promotion. Same geometry and same quiet-zero rule as
+   `.side-head .count`, so the two read as one badge. */
+.chg-badge {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  flex: 0 0 auto;
+}
+.chg-badge.zero {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+/* #317 rail view end */
 .changes-list {
   list-style: none;
   margin: 0;
   padding: 0.2rem 0;
-  max-height: 45%;
+  /* `min-height: 0` is THE layout invariant of the rail view: without it a
+     60-row list grows this flex item past its share and pushes `.chg-compose`
+     below the sidebar's bottom edge instead of scrolling inside itself. */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
-  flex: 0 1 auto;
 }
 .chg-row {
   display: flex;

@@ -60,7 +60,11 @@
          sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
          board as a canvas overlay (wb-kanban.js). -->
     <nav class="rail">
-      <button :class="{ active: sideOpen }" @click="toggleSide()" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
+           cross-repo aggregate this UI never computes (#317, PRD #314). The
+           count's home is the per-project row in the Projects view. -->
+      <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><i data-lucide="git-compare"></i></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
       <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
@@ -73,6 +77,7 @@
          (github|local), and a file `tree`. Opening one lifts it to the top and
          mounts its tree; only one open at a time. -->
     <aside class="side">
+      <div class="projects-view" x-show="sideView === 'projects'">
       <div class="side-head">
         <span>Projects</span>
         <span class="spacer"></span>
@@ -144,6 +149,18 @@
                 <span class="branch-chip-name" x-text="p.branch"></span>
                 <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
               </button>
+              <!-- The change count survives the promotion to a rail view (#317):
+                   it stays reachable here with no click and no navigation, which
+                   is the exact property PRD #297 built the section for. Renders
+                   ONLY for a slug whose count was actually read — an em dash on a
+                   row nobody asked about would claim a failed read. -->
+              <span
+                class="chg-badge"
+                x-show="projectBadge(p.slug).show"
+                :class="{ zero: projectBadge(p.slug).zero }"
+                :title="projectBadge(p.slug).title"
+                x-text="projectBadge(p.slug).text"
+              ></span>
             </div>
             <!-- Files header: the DISCOVERABLE way to create. The tree's own
                  context menu can do it too, but only if you already know to
@@ -165,80 +182,110 @@
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
             <div class="wb-host" x-show="openSlug === p.slug"></div>
-            <!-- Changes: the open project's working-tree change set (#307, #309).
-                 Collapsed by default; the chevron toggles the row list below.
-                 Reuses the Projects header's `.side-head` + `.count`, so the
-                 two read as one visual language. -->
-            <div
-              class="side-head changes-sec"
-              x-show="openSlug === p.slug"
-              @click="toggleChanges(p.slug)"
-            >
-              <span class="chg-chev" :class="{ open: changesOpen[p.slug] }"
-                ><i class="bi bi-chevron-right"></i
-              ></span>
-              <span>Changes</span>
-              <span class="spacer"></span>
-              <!-- A failed read renders `—`, never `0`: a quiet zero would let a
-                   broken daemon read exactly like a clean tree. -->
-              <span
-                class="count"
-                :class="{ zero: changesCount[p.slug] === 0 }"
-                x-text="changesCount[p.slug] ?? '—'"
-                :title="changesError[p.slug] || 'working-tree changes'"
-              ></span>
-            </div>
-            <!-- Two groups, each header AND its list gated on that group's
-                 length, so a clean tree renders neither headline (#315). The
-                 `:key` is prefixed per group so the two rows a
-                 staged-then-modified path produces stay distinguishable in a
-                 log or a DOM dump; Alpine itself keys per `<template>`, so the
-                 prefix is legibility, not a correctness requirement. -->
-            <div class="changes-list" x-show="openSlug === p.slug && changesOpen[p.slug]">
-              <!-- The sync row (#316). Fetch is the operator's own act: nothing
-                   here fires on open or on a timer, only on these two clicks. -->
-              <div class="sync-row">
-                <span class="sync-branch" x-text="(syncByProject[p.slug] || {}).branch"></span>
-                <!-- The counts are meaningless without the ref they measure
-                     against, and the row has no width for it — so the upstream
-                     rides the hover title. -->
-                <span class="sync-counts" x-text="(syncByProject[p.slug] || {}).counts"
-                      :title="(syncByProject[p.slug] || {}).upstream"></span>
-                <span class="sync-note" x-text="(syncByProject[p.slug] || {}).note"></span>
-                <span class="sync-fetched" x-text="(syncByProject[p.slug] || {}).fetched"></span>
-                <button class="sync-act" data-act="fetch" title="fetch from the upstream"
-                        @click.stop="syncFetch(p.slug)">Fetch</button>
-                <button class="sync-act" data-act="pull" title="fast-forward from the upstream"
-                        @click.stop="syncPull(p.slug)">Pull</button>
-              </div>
-              <div class="chg-group-head" x-show="(changesStaged[p.slug] || []).length">Staged Changes</div>
-              <ul class="chg-group" x-show="(changesStaged[p.slug] || []).length">
-                <template x-for="c in (changesStaged[p.slug] || [])" :key="'s:' + c.path">
-                  <li class="chg-row" :title="c.title" role="button" tabindex="0"
-                      @click="openDiff(p.slug, c)" @keydown.enter="openDiff(p.slug, c)">
-                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
-                    <span class="chg-name" x-text="c.name"></span>
-                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
-                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
-                  </li>
-                </template>
-              </ul>
-              <div class="chg-group-head" x-show="(changesUnstaged[p.slug] || []).length">Changes</div>
-              <ul class="chg-group" x-show="(changesUnstaged[p.slug] || []).length">
-                <template x-for="c in (changesUnstaged[p.slug] || [])" :key="'u:' + c.path">
-                  <li class="chg-row" :title="c.title" role="button" tabindex="0"
-                      @click="openDiff(p.slug, c)" @keydown.enter="openDiff(p.slug, c)">
-                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
-                    <span class="chg-name" x-text="c.name"></span>
-                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
-                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
-                  </li>
-                </template>
-              </ul>
-            </div>
           </li>
         </template>
       </ul>
+      </div>
+
+      <!-- Changes: a rail VIEW, not a section under the project row (#317).
+           PRD #297 recorded the trigger — "if Changes ever grows its own
+           toolbar it outgrows a section" — and PRD #314's write controls fire
+           it. Scoped to `openSlug` alone; the per-project count lives on the
+           Projects row above, so it stays reachable with no navigation. -->
+      <div class="changes-view" x-show="sideView === 'changes'">
+        <div class="side-head">
+          <span>Changes</span>
+          <span class="spacer"></span>
+          <!-- A failed read renders `—`, never `0`: a quiet zero would let a
+               broken daemon read exactly like a clean tree. -->
+          <span
+            class="count"
+            :class="{ zero: changesCount[openSlug] === 0 }"
+            x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
+            :title="changesError[openSlug] || 'working-tree changes'"
+          ></span>
+        </div>
+        <!-- The toolbar ships with the one act that exists today. It is sized
+             like the future stage/unstage row on purpose: an empty reserved box
+             proves nothing about the layout budget. -->
+        <div class="chg-toolbar">
+          <button
+            class="head-act"
+            :disabled="!openSlug"
+            @click="loadChanges(openSlug); loadSync(openSlug)"
+            title="Refresh the change set"
+            aria-label="Refresh changes"
+          >
+            <i data-lucide="refresh-cw"></i>
+          </button>
+        </div>
+        <div class="side-empty" x-show="!openSlug">no project open</div>
+        <div class="chg-body" x-show="openSlug">
+          <!-- Two groups, each header AND its list gated on that group's
+               length, so a clean tree renders neither headline (#315). The
+               `:key` is prefixed per group so the two rows a
+               staged-then-modified path produces stay distinguishable in a
+               log or a DOM dump; Alpine itself keys per `<template>`, so the
+               prefix is legibility, not a correctness requirement. -->
+          <div class="changes-list">
+            <!-- The sync row (#316). Fetch is the operator's own act: nothing
+                 here fires on open or on a timer, only on these two clicks. -->
+            <div class="sync-row">
+              <span class="sync-branch" x-text="(syncByProject[openSlug] || {}).branch"></span>
+              <!-- The counts are meaningless without the ref they measure
+                   against, and the row has no width for it — so the upstream
+                   rides the hover title. -->
+              <span class="sync-counts" x-text="(syncByProject[openSlug] || {}).counts"
+                    :title="(syncByProject[openSlug] || {}).upstream"></span>
+              <span class="sync-note" x-text="(syncByProject[openSlug] || {}).note"></span>
+              <span class="sync-fetched" x-text="(syncByProject[openSlug] || {}).fetched"></span>
+              <button class="sync-act" data-act="fetch" title="fetch from the upstream"
+                      @click.stop="syncFetch(openSlug)">Fetch</button>
+              <button class="sync-act" data-act="pull" title="fast-forward from the upstream"
+                      @click.stop="syncPull(openSlug)">Pull</button>
+            </div>
+            <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">Staged Changes</div>
+            <ul class="chg-group" x-show="(changesStaged[openSlug] || []).length">
+              <template x-for="c in (changesStaged[openSlug] || [])" :key="'s:' + c.path">
+                <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                    @click="openDiff(openSlug, c)" @keydown.enter="openDiff(openSlug, c)">
+                  <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                  <span class="chg-name" x-text="c.name"></span>
+                  <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                  <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                </li>
+              </template>
+            </ul>
+            <div class="chg-group-head" x-show="(changesUnstaged[openSlug] || []).length">Changes</div>
+            <ul class="chg-group" x-show="(changesUnstaged[openSlug] || []).length">
+              <template x-for="c in (changesUnstaged[openSlug] || [])" :key="'u:' + c.path">
+                <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                    @click="openDiff(openSlug, c)" @keydown.enter="openDiff(openSlug, c)">
+                  <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                  <span class="chg-name" x-text="c.name"></span>
+                  <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                  <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                </li>
+              </template>
+            </ul>
+          </div>
+          <!-- The message box the promotion exists to make room for. Inert
+               until the write controls land, and it says so — a disabled
+               control that explains itself is this shell's own idiom
+               (`branchChipTitle`). The placeholder deliberately avoids the word
+               "commit": there is no commit act in this slice, and inventing a
+               label just to be measured would lie to the operator. -->
+          <div class="chg-compose">
+            <textarea
+              class="chg-msg"
+              disabled
+              placeholder="Message"
+              title="inert until the write controls land"
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
+      </div>
     </aside>
 
     <!-- canvas -->
