@@ -184,6 +184,48 @@ window.WBDaemon = (function () {
     };
   }
 
+  // Open ONE persistent `/ws/tree` run-completion subscription for a project
+  // (#310, ADR-0036 amendment). Unlike `subscribeRuns` this sends NO watch frame:
+  // `changes.dirty` is not watcher-fed, so every connection receives every nudge
+  // and the repo filter is the caller's (`WBChanges.shouldReload`). Each decoded
+  // frame is handed over whole — the (re)open synthesizes one for this repo as the
+  // catch-up read that recovers a daemon restart. Reconnects on `close` ONLY, one
+  // fixed 3s timer (the subscribeRuns shape); no polling timer.
+  function subscribeChanges(repo, onFrame) {
+    let closed = false;
+    let ws = null;
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(WS_ORIGIN + "/ws/tree");
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => onFrame({ verb: "changes.dirty", payload: { repo } });
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] !== TAG_COMMAND) return;
+        let frame;
+        try {
+          frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+        } catch {
+          return;
+        }
+        onFrame(frame);
+      };
+      ws.onclose = () => {
+        if (!closed) setTimeout(connect, 3000);
+      };
+    };
+    connect();
+    return {
+      close: () => {
+        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
+        closed = true;
+        try {
+          ws && ws.close();
+        } catch {}
+      },
+    };
+  }
+
   // Open ONE persistent `/ws` presence subscription (#204): the daemon pushes a
   // `[0x03][JSON]` heartbeat every ~2s carrying `{name, avatar, uptime_secs}`.
   // Invoke `onPresence(payload)` per tick; reconnect after a fixed 3s backoff on
@@ -244,6 +286,7 @@ window.WBDaemon = (function () {
     write,
     subscribeTree,
     subscribeRuns,
+    subscribeChanges,
     subscribePresence,
     encodeCommand,
     ACTION_TO_VERB,

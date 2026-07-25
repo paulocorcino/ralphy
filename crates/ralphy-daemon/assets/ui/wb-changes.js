@@ -46,5 +46,20 @@
     return { count: entries.length, entries };
   }
 
-  window.WBChanges = { fold, marker };
+  // The run-completion nudge filter (#310, ADR-0036 amendment): the daemon pushes
+  // `changes.dirty` to EVERY `/ws/tree` connection with no subscription verb, so
+  // the repo match happens HERE — a nudge for a repo this browser does not have
+  // open must change nothing on screen.
+  function shouldReload(frame, openSlug) {
+    return !!(
+      frame &&
+      frame.verb === "changes.dirty" &&
+      frame.payload &&
+      frame.payload.repo &&
+      openSlug &&
+      frame.payload.repo === openSlug
+    );
+  }
+
+  window.WBChanges = { fold, marker, shouldReload };
 })(window);

@@ -86,6 +86,7 @@ function shell() {
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
     _runsSub: null, // the live run-snapshot subscription for the open project, if any
+    _changesSub: null, // the run-completion nudge subscription for the open project (#310)
     // Monotonic hydration token: pushes arrive faster than a `runs.list` round
     // trip, so two hydrations overlap and their replies can land OUT OF ORDER —
     // an older reply would then overwrite a newer snapshot. Only the newest
@@ -1834,6 +1835,9 @@ function shell() {
         // closing a project (openSlug → null) drops BOTH sockets (#300).
         this.destroyRunsSub();
         this.mountRunsSub();
+        // …and so does the run-completion nudge socket (#310).
+        this.destroyChangesSub();
+        this.mountChangesSub();
         // Refresh the board fold for the newly-open project (issue #198) so the
         // Kanban + drawer read this project's live tracker, not a stale slug —
         // but only when the board is actually OPEN (#301): the fold spawns a CLI
@@ -2146,6 +2150,22 @@ function shell() {
         this._runsSub?.close();
       } catch {}
       this._runsSub = null;
+    },
+
+    // The open project's run-completion subscription (#310, ADR-0036 amendment).
+    // The socket carries EVERY repo's nudge, so the filter is here: a nudge for
+    // another project must not re-read this one's count.
+    mountChangesSub() {
+      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeChanges || !this.openSlug) return;
+      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame) => {
+        if (window.WBChanges.shouldReload(frame, this.openSlug)) this.loadChanges(this.openSlug);
+      });
+    },
+    destroyChangesSub() {
+      try {
+        this._changesSub?.close();
+      } catch {}
+      this._changesSub = null;
     },
 
     destroyTree() {

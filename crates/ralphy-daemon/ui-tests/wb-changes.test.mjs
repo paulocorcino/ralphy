@@ -104,3 +104,17 @@ test("an error, absent or malformed reply reads as zero — never a stale count"
     assert.deepEqual(folded.entries, []);
   }
 });
+
+test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", () => {
+  const shouldReload = load().shouldReload;
+  const dirty = (repo) => ({ verb: "changes.dirty", payload: { repo } });
+  assert.equal(shouldReload(dirty("owner/a"), "owner/a"), true);
+  assert.equal(shouldReload(dirty("owner/b"), "owner/a"), false);
+  // The socket carries the watcher's pushes too — only OUR verb reloads.
+  assert.equal(
+    shouldReload({ verb: "tree.dirty", payload: { repo: "owner/a", path: "" } }, "owner/a"),
+    false,
+  );
+  // No project open: a nudge must not fire a read for a null slug.
+  assert.equal(shouldReload(dirty("owner/a"), null), false);
+});
