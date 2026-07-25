@@ -5,8 +5,8 @@ click, renders one row per changed path with a per-status marker, shows a
 rename's original path, includes untracked files, scrolls without hiding the
 tree, and stays usable on a narrow viewport.
 
-Scenario 1  collapsed on load; a header click renders exactly 5 rows in git's
-            own order
+Scenario 1  collapsed on load; a header click renders exactly 5 rows — since
+            #315, staged group first, git's own order within each group
 Scenario 2  each row carries a distinct per-status marker + class
 Scenario 3  a renamed path shows `← old.txt` and a rename title, no bare
             `old.txt` row
@@ -189,7 +189,7 @@ def rows_in_open_project(page):
         ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
         " return Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null)"
         ".map(r => { const mark = r.querySelector('.chg-mark'); const from = r.querySelector('.chg-from');"
-        "   return { path: r.querySelector('.chg-path').textContent.trim(),"
+        "   return { path: r.querySelector('.chg-name').textContent.trim(),"
         "            mark: mark.textContent.trim(), markClass: mark.className,"
         "            from: from ? from.textContent.trim() : null,"
         "            title: r.getAttribute('title') }; }); }"
@@ -245,8 +245,11 @@ def main():
             rows = rows_in_open_project(page)
             paths = [r["path"] for r in rows]
             check(
-                "one click renders exactly 5 rows in git's own order",
-                paths == ["README.md", "added.txt", "gone.txt", "new.txt", "untracked.txt"],
+                "one click renders exactly 5 rows, staged group first, git's order within each",
+                # #315 split the flat list in two: the three staged paths
+                # (`A.`/`D.`/`R.`) come first, then the two worktree-only ones —
+                # each group still in git's own emission order.
+                paths == ["added.txt", "gone.txt", "new.txt", "README.md", "untracked.txt"],
                 f"got={paths}",
             )
 
@@ -255,7 +258,7 @@ def main():
             classes = [r["markClass"] for r in rows]
             check(
                 "each row carries its own distinct status marker",
-                marks == ["M", "A", "D", "R", "U"] and len(set(marks)) == 5,
+                marks == ["A", "D", "R", "M", "U"] and len(set(marks)) == 5,
                 f"marks={marks}",
             )
             check(
@@ -307,7 +310,7 @@ def main():
                 ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
                 " const sec = li.querySelector('.changes-sec'); const list = li.querySelector('.changes-list');"
                 " const marks = Array.from(list.querySelectorAll('.chg-mark'));"
-                " const paths = Array.from(list.querySelectorAll('.chg-path'));"
+                " const paths = Array.from(list.querySelectorAll('.chg-name'));"
                 " return sec.querySelector('.count').offsetParent !== null"
                 "   && marks.length > 0 && marks.every(m => m.offsetParent !== null)"
                 "   && paths.length > 0 && paths.every(p => p.offsetParent !== null)"

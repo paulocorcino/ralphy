@@ -187,7 +187,7 @@ def click_row(page, path):
     DOM match, which may be hidden once more than one project is registered."""
     page.evaluate(
         f"(want) => {{ const r = {VISIBLE_ROWS}"
-        ".find(r => r.querySelector('.chg-path').textContent.trim() === want);"
+        ".find(r => r.querySelector('.chg-name').textContent.trim() === want);"
         " if (!r) throw new Error('no visible row for ' + want); r.click(); }",
         arg=path,
     )
@@ -348,8 +348,12 @@ def main():
                     e.getAttribute('aria-label') || "",
                     e.getAttribute('data-act') || "",
                   ].join(" ");
+                  // #315's `Staged Changes` group HEADLINE matches /stage/ and is
+                  // not a control — skip the headline ELEMENT only, so a mutating
+                  // button nested inside one is still scanned.
                   const scan = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
+                    .filter(e => !e.classList.contains('chg-group-head'))
                     .filter(e => re.test(hay(e))).length;
                   return {
                     vbtns: Array.from(root.querySelectorAll('.vbtn')).map(b => b.textContent.trim()),
