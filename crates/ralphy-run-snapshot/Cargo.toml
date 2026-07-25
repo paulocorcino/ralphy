@@ -1,0 +1,14 @@
+[package]
+name = "ralphy-run-snapshot"
+version = "0.1.0-rc15"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Leaf crate for Ralphy's run-state snapshot channel: the versioned document a run publishes under its repo's .ralphy/, the atomic writer, the RAII removal guard, and the directory reader the daemon lists runs with (ADR-0047)."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

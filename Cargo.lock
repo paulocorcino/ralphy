@@ -1748,6 +1748,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-run-snapshot"
+version = "0.1.0-rc15"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ralphy-usage-scan"
 version = "0.0.0"
 dependencies = [
