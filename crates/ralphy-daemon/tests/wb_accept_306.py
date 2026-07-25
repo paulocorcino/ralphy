@@ -159,6 +159,44 @@ SPY_JS = """
 }
 """
 
+# Scenario 6's writer, run as a SEPARATE OS process: it copies a pre-rendered
+# snapshot document into the fixture repo's runstate dir, waits, then replaces it
+# with the advanced one. Nothing in the browser spawns or drives it.
+WRITER = """
+import shutil, sys, time
+v1, v2, dst, hold = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+shutil.copyfile(v1, dst)
+time.sleep(hold)
+shutil.copyfile(v2, dst)
+"""
+
+
+def snapshot(phase, status_72):
+    return {
+        "v": 1,
+        "runid": RUN_ID,
+        "pid": os.getpid(),  # a LIVE pid, so the reader never sweeps it as an orphan
+        "title": "the #306 fixture run",
+        "repo": "owner/accept306",
+        "branch": "afk/accept-306",
+        "plan_agent": "claude",
+        "exec_agent": "opencode",
+        "started_at": "2026-07-25T10:00:00-03:00",
+        "plan_path": ".ralphy/plan.md",
+        "queue": {"total": 3, "order": [71, 72, 73], "stop_before": None},
+        # Issue 72 starts `planning`, NOT `pending`: `issueState` renders the
+        # ACTIVE non-terminal issue as `executing` for any status other than
+        # literally `planning`, so a `pending` fixture would satisfy the advance
+        # oracle before the run ever advanced (#300).
+        "issues": [
+            {"number": 71, "title": "the done one", "status": "done", "blocked_by": []},
+            {"number": 72, "title": "the active one", "status": status_72, "blocked_by": []},
+            {"number": 73, "title": "the pending one", "status": "pending", "blocked_by": []},
+        ],
+        "phase": {"active": 72, "state": phase, "sleep": None, "final_summary": None},
+    }
+
+
 results = []
 
 
@@ -583,6 +621,74 @@ def main():
             check("…and its body", "first comment" in body0, f"got={body0[:60]!r}")
             page.evaluate(f"() => {SH}.closeIssue()")
             page.wait_for_timeout(300)
+
+            # =============== scenario 6: a run started from a TERMINAL ========
+            page.evaluate(f"() => {SH}.toggleRuns()")
+            page.wait_for_function(f"() => {SH}.projectRuns().length === 0", timeout=10000)
+            check("the Runs panel opens empty — no run document on disk yet", True)
+
+            staging = Path(tempfile.mkdtemp(prefix="wb306_snap_"))
+            v1, v2 = staging / "v1.json", staging / "v2.json"
+            v1.write_text(json.dumps(snapshot("planning", "planning")), encoding="utf-8")
+            v2.write_text(json.dumps(snapshot("executing", "executing")), encoding="utf-8")
+            doc = Path(fixture_dir, ".ralphy", "runstate", f"{RUN_ID}.json")
+            writer = subprocess.Popen([sys.executable, "-c", WRITER, str(v1), str(v2), str(doc), "3.0"])
+
+            page.wait_for_function(f"() => {SH}.projectRuns().length === 1", timeout=20000)
+            check("a run started outside the browser appears with NO operator action", True)
+            page.wait_for_function(
+                f"() => {SH}.runPhaseLabel({SH}.currentRun()) === 'planning #72'", timeout=20000
+            )
+            check("…reading its planning phase", True)
+            # `wait_for_function`, never a sleep: the point is the panel advances
+            # on its own while the writer is still running.
+            page.wait_for_function(
+                f"() => {SH}.runPhaseLabel({SH}.currentRun()) === 'executing #72'", timeout=25000
+            )
+            label = page.evaluate(f"() => {SH}.runPhaseLabel({SH}.currentRun())")
+            check("…and advances live to the executing issue", label == "executing #72", f"got={label!r}")
+            prog = page.locator(".run-select-btn .run-prog").inner_text().strip()
+            check("the progress counter reads completed/queue-total", prog == "1/3", f"got={prog!r}")
+            page.screenshot(path=os.path.join(SHOT_DIR, "306-runs-live-2026-07-25.png"))
+            writer.wait(timeout=30)
+            check("the out-of-process writer exited cleanly", writer.returncode == 0, f"rc={writer.returncode}")
+
+            # =============== scenario 7: the running card, and back to the run =
+            page.evaluate(f"() => {{ if ({SH}.runsOpen) {SH}.toggleRuns(); }}")
+            page.wait_for_timeout(400)
+            check("the Runs panel is closed for the board->run leg", page.evaluate(f"() => {SH}.runsOpen") is False)
+            marked = page.evaluate(
+                """() => {
+                     const c = document.querySelector('.kanban-card.running');
+                     const pill = c && c.querySelector('.kc-run');
+                     return {
+                       num: c ? c.querySelector('.kc-num').textContent.trim() : null,
+                       shown: !!pill && pill.offsetParent !== null,
+                       txt: (c?.querySelector('.kc-run .kc-run-txt')?.textContent || '').trim(),
+                       others: document.querySelectorAll('.kanban-card.running').length,
+                     };
+                   }"""
+            )
+            check("the worked issue's card is marked running", marked["num"] == "#72", f"got={marked}")
+            check("…with a VISIBLE run pill", marked["shown"] is True, f"got={marked}")
+            check("…naming the phase and the agent", marked["txt"] == "executing · opencode", f"got={marked['txt']!r}")
+            check("…and no other card is marked", marked["others"] == 1, f"got={marked['others']}")
+            page.screenshot(path=os.path.join(SHOT_DIR, "306-board-run-2026-07-25.png"))
+
+            page.click(".kanban-card.running .kc-run")
+            page.wait_for_timeout(700)
+            check("clicking the pill opens the Runs panel", page.evaluate(f"() => {SH}.runsOpen") is True)
+            focused = page.evaluate(
+                "() => Array.from(document.querySelectorAll('.trail-node.focus'))"
+                ".map((e) => e.getAttribute('data-issue'))"
+            )
+            check("…on that issue, marked in the trail", focused == ["72"], f"got={focused}")
+            # `@click.stop` — the pill goes to the run, never to the drawer too.
+            check(
+                "…without falling through to the card's detail drawer",
+                page.evaluate(f"() => {SH}.kanbanSel") is None,
+                f"kanbanSel={page.evaluate(f'() => {SH}.kanbanSel')!r}",
+            )
 
             ctx.close()
             browser.close()
