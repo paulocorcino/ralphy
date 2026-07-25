@@ -3795,8 +3795,18 @@ mod tests {
         );
 
         let js = include_str!("../assets/ui/wb-changes.js");
-        assert!(js.contains("st-unknown"), "wb-changes.js must keep the st-unknown fallback");
-        for status in ["modified", "added", "deleted", "renamed", "untracked", "conflicted"] {
+        assert!(
+            js.contains("st-unknown"),
+            "wb-changes.js must keep the st-unknown fallback"
+        );
+        for status in [
+            "modified",
+            "added",
+            "deleted",
+            "renamed",
+            "untracked",
+            "conflicted",
+        ] {
             assert!(
                 js.contains(status),
                 "wb-changes.js must keep the {status} marker"
