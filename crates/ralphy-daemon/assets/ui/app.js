@@ -2254,7 +2254,12 @@ function shell() {
       this.active = t.id;
       WB.emit("open-diff", { project, path: t.workingPath });
       this.$nextTick(() => {
+        // Latched: both sides share this, and a path refused on BOTH (a binary
+        // one) would otherwise flash twice for one gesture.
+        let refused = false;
         const refuse = (reason) => {
+          if (refused) return null;
+          refused = true;
           this._flashAction?.(reason);
           this.closeTab(t.id);
           return null;
@@ -2264,6 +2269,11 @@ function shell() {
             // A refusal on EITHER side aborts: half a diff would read as
             // "no changes" on the side that resolved.
             if (head == null || work == null) return;
+            // Closed during the two round trips? The tab is already gone, and
+            // WBViewer holds no record to close — mounting now would build a
+            // visible pane with no tab to close it, leaking an editor and two
+            // models nothing can reach.
+            if (!this.tabs.some((x) => x.id === t.id)) return;
             WBViewer.open({
               id: t.id,
               project,

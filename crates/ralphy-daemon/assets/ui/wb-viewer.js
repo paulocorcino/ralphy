@@ -89,8 +89,10 @@
     if (!rec.ed) return;
     if (rec.kind === "diff") {
       // A diff editor holds TWO models, and BOTH must go before the editor on
-      // EVERY path: a leaked model keeps its URI registered, so reopening the
-      // same path throws "model already exists" and the tab never mounts.
+      // EVERY path. Disposing the editor does NOT dispose its models, and a
+      // reopen will not reveal the leak (createDiff's URIs carry a per-open
+      // `uid`, so they never collide) — the leak is only visible as growth in
+      // `monaco.editor.getModels()`, which is what wb_diff_311.py counts.
       const m = rec.ed.getModel();
       m?.original?.dispose();
       m?.modified?.dispose();

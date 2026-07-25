@@ -171,6 +171,14 @@
       readOnly: true,
       originalEditable: false,
       renderSideBySide: true,
+      // `renderSideBySide: true` alone does NOT hold: Monaco's own default
+      // `useInlineViewWhenSpaceIsLimited` silently swaps to the inline view under
+      // `renderSideBySideInlineBreakpoint` (900px), so a narrow window would quietly
+      // stop being the two-sided review this surface promises.
+      useInlineViewWhenSpaceIsLimited: false,
+      // The margin revert arrow WRITES to the modified side — read-only already
+      // suppresses it, but this surface forbids the control outright.
+      renderMarginRevert: false,
       // Unchanged regions collapse to a click-to-expand ruler: reviewing what the
       // agent wrote must not mean scrolling past what it left alone.
       hideUnchangedRegions: { enabled: true },
@@ -180,10 +188,22 @@
       fontSize: 13,
       lineNumbers: "on",
     });
-    ed.setModel({
-      original: monaco.editor.createModel(original, undefined, at("head")),
-      modified: monaco.editor.createModel(modified, undefined, at("work")),
-    });
+    // Built into locals, not inline in the setModel argument: a throw from the
+    // SECOND createModel would otherwise leave the editor and the first model
+    // unreachable (the caller assigns `rec.ed` only after this returns, so
+    // disposeEditor could never see them).
+    let head;
+    let work;
+    try {
+      head = monaco.editor.createModel(original, undefined, at("head"));
+      work = monaco.editor.createModel(modified, undefined, at("work"));
+    } catch (err) {
+      head?.dispose();
+      work?.dispose();
+      ed.dispose();
+      throw err;
+    }
+    ed.setModel({ original: head, modified: work });
     return ed;
   }
 

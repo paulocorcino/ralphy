@@ -233,6 +233,12 @@ def main():
             # 4 changed paths: README.md, brand-new.txt, gone.txt, logo.png.
             open_rows(page, slug, 4)
 
+            # Monaco's model registry BEFORE any diff exists: the dispose oracle
+            # below is "back to this number", so it must be read while no diff is open.
+            model_baseline = page.evaluate(
+                "() => (typeof monaco === 'undefined' ? 0 : monaco.editor.getModels().length)"
+            )
+
             # --- scenario 1: a row click opens a diff tab after Consoles -------
             diff_id = f"diff:{slug}:README.md"
             click_row(page, "README.md")
@@ -304,17 +310,53 @@ def main():
 
             page.screenshot(path=os.path.join(SHOT_DIR, "311-diff-tab-2026-07-25.png"))
 
+            # Monaco's own `useInlineViewWhenSpaceIsLimited` default swaps to the
+            # INLINE view under 900px, which `renderSideBySide: true` does not
+            # defeat — pinning side-by-side at one wide viewport would miss it.
+            page.set_viewport_size({"width": 700, "height": 900})
+            page.wait_for_timeout(600)
+            narrow = page.evaluate(
+                """(id) => {
+                  const de = document.querySelector(`.diff-viewer[data-tab-id="${id}"] .monaco-diff-editor`);
+                  const box = (sel) => { const e = de.querySelector(sel); if (!e) return null;
+                    const r = e.getBoundingClientRect(); return { left: Math.round(r.left), width: Math.round(r.width) }; };
+                  return { panes: de.querySelectorAll('.view-lines').length,
+                           original: box('.editor.original'), modified: box('.editor.modified') };
+                }""",
+                diff_id,
+            )
+            check(
+                "the diff stays SIDE BY SIDE at a 700px-wide viewport (no inline swap)",
+                narrow["panes"] == 2
+                and bool(narrow["original"] and narrow["modified"])
+                and narrow["modified"]["left"] > narrow["original"]["left"],
+                f"got={narrow}",
+            )
+            page.set_viewport_size({"width": 1500, "height": 950})
+            page.wait_for_timeout(400)
+
             # --- scenario 5: no commit / discard / staging control -------------
             controls = page.evaluate(
                 """(id) => {
                   const root = document.querySelector(`.diff-viewer[data-tab-id="${id}"]`);
-                  const re = /commit|discard|stage/i;
+                  const re = /commit|discard|stage|revert/i;
+                  // Text AND the attributes an icon-only control would hide behind:
+                  // a glyph button carries no textContent at all.
+                  const hay = (e) => [
+                    e.children.length ? "" : e.textContent || "",
+                    e.getAttribute('title') || "",
+                    e.getAttribute('aria-label') || "",
+                    e.getAttribute('data-act') || "",
+                  ].join(" ");
                   const scan = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
-                    .filter(e => !e.children.length && re.test(e.textContent || '')).length;
+                    .filter(e => re.test(hay(e))).length;
                   return {
                     vbtns: Array.from(root.querySelectorAll('.vbtn')).map(b => b.textContent.trim()),
-                    mutators: scan('.diff-viewer') + scan('.changes-list'),
+                    acts: Array.from(root.querySelectorAll('[data-act]')).map(b => b.getAttribute('data-act')),
+                    mutators: scan('.diff-viewer') + scan('.changes-list') + scan('.changes-sec') + scan('.tabbar'),
+                    // Monaco's own margin revert arrow writes to the modified side.
+                    revertGlyphs: root.querySelectorAll('.diff-review-insert, .codicon-diff-revert, .revertButton').length,
                   };
                 }""",
                 diff_id,
@@ -325,9 +367,14 @@ def main():
                 f"got={controls['vbtns']}",
             )
             check(
-                "no commit / discard / staging control exists on this surface",
-                controls["mutators"] == 0,
-                f"matches={controls['mutators']}",
+                "the only actionable control is the find action",
+                controls["acts"] == ["find"],
+                f"got={controls['acts']}",
+            )
+            check(
+                "no commit / discard / stage / revert control exists on this surface",
+                controls["mutators"] == 0 and controls["revertGlyphs"] == 0,
+                f"matches={controls['mutators']} revertGlyphs={controls['revertGlyphs']}",
             )
 
             # --- scenario 3: a newly added file diffs against absence ----------
@@ -348,6 +395,29 @@ def main():
                 "an added file's modified side carries its bytes",
                 "brand new line" in sides["modified"],
                 f"got={sides['modified']!r}",
+            )
+
+            # --- scenario 3b: a deleted row exercises the REAL blob.read reply --
+            # The added-file case short-circuits `blob.read` entirely (headAbsent),
+            # so without this the verb's `present` relay is never proved end to end.
+            deleted_id = f"diff:{slug}:gone.txt"
+            click_row(page, "gone.txt")
+            wait_diff_mounted(page, deleted_id)
+            del_sides = page.evaluate(
+                """(id) => { const eds = monaco.editor.getDiffEditors();
+                  const ed = eds[eds.length - 1]; const m = ed.getModel();
+                  return { original: m.original.getValue(), modified: m.modified.getValue() }; }""",
+                deleted_id,
+            )
+            check(
+                "a deleted row reads its HEAD side over the wire (blob.read present)",
+                "doomed" in del_sides["original"],
+                f"got={del_sides['original']!r}",
+            )
+            check(
+                "a deleted row's working side is empty",
+                del_sides["modified"] == "",
+                f"got={del_sides['modified']!r}",
             )
 
             # --- scenario 6: a binary row refuses, opening no diff tab ---------
@@ -410,18 +480,37 @@ def main():
                 f"got={after['panes']}",
             )
 
-            # A reopen proves BOTH models were disposed: a leaked model keeps its
-            # URI registered and Monaco throws on the duplicate.
+            # BOTH models disposed: counted, not inferred. A reopen does NOT prove
+            # it — `WBMonaco.createDiff` puts the viewer's per-open `uid` in each
+            # model URI, so a reopened tab can never collide with a leaked model.
+            # The only honest oracle is Monaco's own model registry returning to
+            # the baseline taken before any diff was opened.
+            leaked = page.evaluate(
+                "(base) => ({ models: monaco.editor.getModels().length,"
+                " baseline: base, diffEditors: monaco.editor.getDiffEditors().length })",
+                model_baseline,
+            )
+            check(
+                "closing the diff tabs disposes BOTH models of each (no leak)",
+                leaked["models"] == model_baseline and leaked["diffEditors"] == 0,
+                f"baseline={model_baseline} after={leaked['models']} diffEditors={leaked['diffEditors']}",
+            )
+
+            # And the path still reopens afterwards.
             click_row(page, "README.md")
             wait_diff_mounted(page, diff_id)
-            check("the same path reopens (both diff models were disposed)", True)
+            check(
+                "the same path reopens after being closed",
+                tab_ids(page) == ["consoles", diff_id],
+                f"got={tab_ids(page)}",
+            )
 
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 14
+    ok = all(results) and len(results) >= 20
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("DIFF TAB LIVE")

@@ -93,19 +93,85 @@ fn a_committed_binary_is_refused_with_the_viewers_vocabulary() {
 #[test]
 fn a_path_leaving_the_repo_is_refused_before_any_read() {
     let repo = init_repo();
-    // The sibling file exists, so a leaked read would succeed loudly.
+    // A real sibling file, so a leak would have something to leak.
     std::fs::write(repo.path().parent().unwrap().join("escape.txt"), "secret\n").unwrap();
 
-    let out = blob_read(repo.path(), "../escape.txt");
-    assert!(!out.status.success(), "an escape must exit non-zero");
-    assert!(
-        out.stdout.is_empty(),
-        "no JSON may reach stdout on a refusal: {:?}",
-        String::from_utf8_lossy(&out.stdout)
+    // One vector per arm of the guard — a single `..` case would leave the
+    // absolute / rooted / drive-prefix arms deletable with the suite still green.
+    for path in [
+        "../escape.txt",
+        "src/../../escape.txt",
+        "/etc/passwd",
+        "C:\\Windows\\win.ini",
+        "..\\escape.txt",
+        ".",
+    ] {
+        let out = blob_read(repo.path(), path);
+        assert!(
+            !out.status.success(),
+            "{path:?} must exit non-zero, got stdout {:?}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "{path:?}: no JSON may reach stdout on a refusal: {:?}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("path escapes the repo"),
+            "{path:?}: stderr must name the refusal: {stderr:?}"
+        );
+    }
+}
+
+/// Without `--format`, the command prints the raw bytes — the shape a human at a
+/// terminal gets, and the branch the JSON tests never touch.
+#[test]
+fn without_format_the_raw_bytes_go_to_stdout() {
+    let repo = init_repo();
+    std::fs::write(repo.path().join("brand-new.txt"), "loose\n").unwrap();
+    std::fs::write(repo.path().join("logo.png"), [0x89, b'P', 0x00, 0x01]).unwrap();
+    run_git(repo.path(), &["add", "logo.png"]);
+    run_git(repo.path(), &["commit", "--quiet", "-m", "add logo"]);
+
+    let plain = |path: &str| {
+        Command::new(env!("CARGO_BIN_EXE_ralphy"))
+            .args([
+                "blob",
+                "read",
+                "--revision",
+                "head",
+                "--path",
+                path,
+                "--repo",
+                &repo.path().to_string_lossy(),
+            ])
+            .output()
+            .expect("spawning ralphy")
+    };
+
+    let present = plain("README.md");
+    assert!(present.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&present.stdout),
+        "hello\n",
+        "the bytes go out verbatim, with no added newline"
     );
-    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    let absent = plain("brand-new.txt");
+    assert!(absent.status.success(), "absence is not a failure");
     assert!(
-        stderr.contains("path escapes the repo"),
-        "stderr must name the refusal: {stderr:?}"
+        absent.stdout.is_empty(),
+        "absent prints nothing: {:?}",
+        String::from_utf8_lossy(&absent.stdout)
+    );
+
+    let binary = plain("logo.png");
+    assert!(!binary.status.success(), "a refusal exits non-zero here");
+    assert!(
+        String::from_utf8_lossy(&binary.stderr).contains("binary"),
+        "stderr names the refusal: {:?}",
+        String::from_utf8_lossy(&binary.stderr)
     );
 }

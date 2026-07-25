@@ -1,7 +1,8 @@
 //! `ralphy blob read` — a file's content at a git revision, read-only. The
 //! clap surface and the wire shapes over [`ralphy_core::blob`]; the daemon's
 //! argv builder validates the path by SHAPE, and this module — the process that
-//! actually stands in the repo — enforces real containment before any read.
+//! actually stands in the repo — resolves the real toplevel and enforces
+//! containment against it before any read.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -59,7 +60,7 @@ pub(crate) fn blob(cmd: BlobCommand) -> Result<()> {
     // Containment BEFORE the read: `git rev-parse HEAD:../x` would otherwise
     // reach a sibling tree entry, and a refusal here is the last line of defence
     // for any caller that is not the daemon's pure argv builder.
-    guard_contained(&args.path)?;
+    guard_contained(&repo_root, &args.path)?;
 
     let rev = match args.revision {
         RevisionArg::Head => ralphy_core::Revision::Head,
@@ -101,20 +102,56 @@ pub(crate) fn blob(cmd: BlobCommand) -> Result<()> {
     Ok(())
 }
 
-/// Refuse a path that is absolute, rooted, drive-prefixed, or walks up out of
-/// the repo. Shape-only — no filesystem access, so a missing file still reads
-/// as absent rather than as an escape.
-fn guard_contained(path: &str) -> Result<()> {
-    let p = Path::new(path);
-    let escapes = p.is_absolute()
+/// Refuse a path that does not land inside `repo_root`.
+///
+/// Two layers, deliberately: the shape gate refuses an absolute, rooted,
+/// drive-prefixed or `..`-bearing path (and normalises `\` so a POSIX host sees
+/// the same shape a Windows one does), then the RESOLVED join is required to stay
+/// under the root — this is the real-containment check, made against the actual
+/// filesystem by the process standing in the repo. Resolution is lexical, not
+/// `canonicalize`: a path that does not exist yet must still be judged, because
+/// absence at the revision is a legitimate answer, not an escape.
+fn guard_contained(repo_root: &Path, path: &str) -> Result<()> {
+    let normalised = path.replace('\\', "/");
+    let p = Path::new(&normalised);
+    let bad_shape = normalised.is_empty()
+        || p.is_absolute()
         || p.components().any(|c| {
             matches!(
                 c,
                 Component::RootDir | Component::Prefix(_) | Component::ParentDir
             )
         });
-    if escapes {
+    if bad_shape || !lands_inside(p) {
         bail!("path escapes the repo: {path}");
     }
+    // The root must really be a repo root on THIS filesystem — the containment
+    // above is only meaningful relative to a root that exists.
+    if !repo_root.is_dir() {
+        bail!("not a repo directory: {}", repo_root.display());
+    }
     Ok(())
+}
+
+/// Whether `rel` still sits under its root once `.`/`..` are folded lexically.
+///
+/// Lexical on purpose, NOT `canonicalize`: a path committed at the revision but
+/// deleted from the working tree does not exist on disk, and refusing it would
+/// break the one case — reviewing a deletion — that most needs the HEAD side.
+fn lands_inside(rel: &Path) -> bool {
+    let mut depth = 0usize;
+    for c in rel.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            Component::Normal(_) => depth += 1,
+            Component::RootDir | Component::Prefix(_) => return false,
+        }
+    }
+    depth > 0
 }

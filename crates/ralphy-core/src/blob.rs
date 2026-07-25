@@ -67,6 +67,14 @@ pub fn read(repo: &Path, rev: Revision, path: &str) -> Result<Blob> {
     }
     let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
+    // A directory resolves to a TREE, which clears the size gate and then fails
+    // `cat-file blob` with git's raw `fatal: … not a blob` — host paths and all,
+    // relayed straight to the browser. Only a blob is a file.
+    let out = raw(repo, &["cat-file", "-t", &sha]).with_context(ctx)?;
+    if String::from_utf8_lossy(&out.stdout).trim() != "blob" {
+        return Ok(Blob::Absent);
+    }
+
     let out = raw(repo, &["cat-file", "-s", &sha]).with_context(ctx)?;
     if !out.status.success() {
         bail!(
@@ -160,12 +168,35 @@ mod tests {
     fn binary_at_the_revision_is_refused() {
         let dir = init_repo("binary");
         std::fs::write(dir.join("logo.png"), [0x89, b'P', 0x00, 0x01]).unwrap();
+        // One fixture per BRANCH of the sniff, so neither can be deleted silently:
+        // `has-nul.txt` is valid UTF-8 and only the NUL check catches it; `bad-utf8.txt`
+        // has no NUL and only the whole-file UTF-8 check catches it. Both must agree
+        // with the working-tree reader or a diff gets an unreviewable half.
+        std::fs::write(dir.join("has-nul.txt"), b"a\0b").unwrap();
+        std::fs::write(dir.join("bad-utf8.txt"), [b'a', 0xC3, 0x28, b'b']).unwrap();
         commit_all(&dir);
 
-        assert_eq!(
-            read(&dir, Revision::Head, "logo.png").unwrap(),
-            Blob::Binary
-        );
+        for path in ["logo.png", "has-nul.txt", "bad-utf8.txt"] {
+            assert_eq!(
+                read(&dir, Revision::Head, path).unwrap(),
+                Blob::Binary,
+                "{path} must be refused as binary"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_directory_at_the_revision_is_not_a_file() {
+        let dir = init_repo("tree");
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/main.rs").as_path(), "fn main() {}\n").unwrap();
+        commit_all(&dir);
+
+        // `HEAD:src` resolves to a TREE. Without the type gate this reached
+        // `cat-file blob` and relayed git's raw fatal (with host paths) as an Err.
+        assert_eq!(read(&dir, Revision::Head, "src").unwrap(), Blob::Absent);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
