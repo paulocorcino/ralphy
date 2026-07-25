@@ -359,6 +359,38 @@ def main():
             n2 = board_calls(page)
             check("the very next backstop tick coalesces away", n2 == n, f"{n} -> {n2}")
 
+            # --- scenario 8: the live card is marked --------------------------
+            # `offsetParent === null` is the x-show oracle: an Alpine-hidden pill
+            # is still in the DOM, so a textContent read alone would pass on a
+            # card that shows nothing.
+            cards = page.evaluate(
+                """() => Object.fromEntries(
+                     Array.from(document.querySelectorAll('.kanban-card')).map((c) => {
+                       const pill = c.querySelector('.kc-run');
+                       return [c.querySelector('.kc-num').textContent.trim(), {
+                         running: c.classList.contains('running'),
+                         pillShown: !!pill && pill.offsetParent !== null,
+                         txt: (c.querySelector('.kc-run .kc-run-txt')?.textContent || '').trim(),
+                       }];
+                     }))"""
+            )
+            c72 = cards.get("#72", {})
+            check("the worked issue's card is marked running", c72.get("running") is True, f"got={c72}")
+            check("its run pill is visible", c72.get("pillShown") is True, f"got={c72}")
+            check(
+                "the pill names the phase and the agent",
+                c72.get("txt") == "executing · opencode",
+                f"got={c72.get('txt')!r}",
+            )
+            idle = {k: v for k, v in cards.items() if k != "#72"}
+            check(
+                "no other card carries a run pill",
+                len(idle) == 2 and not any(v["pillShown"] or v["running"] for v in idle.values()),
+                f"got={idle}",
+            )
+
+            page.screenshot(path=os.path.join(SHOT_DIR, "301-board-live-2026-07-25.png"))
+
             ctx.close()
             browser.close()
     finally:
