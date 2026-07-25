@@ -38,6 +38,10 @@ the issue's criteria verbatim; the executor fills the evidence as it works; the
 runner transcribes it onto the issue at close. It does **not** gate green —
 green stays defined by the plan's test-verifiable "Done when". The ledger is the
 honesty record that the green gate's outcome maps back to what the issue asked.
+Its *review-only* lines reach the operator by two carriers: the
+`needs-human-review` label the runner applies at close, and the totals panel's
+review-debt line. Both name **attention** debt on a *delivered* issue — a
+review-only criterion may be fully done; it is never unfinished work.
 _Avoid_: acceptance check (sounds like a gate), checklist.
 
 **Evidence (close handoff)**:
