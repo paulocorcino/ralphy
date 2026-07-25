@@ -61,15 +61,24 @@ pub(crate) struct OpenBlockers {
 
 pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result<OpenBlockers> {
     // Refs are the union of the body's `## Blocked by` and the marked
-    // consolidated-spec comment's (ADR-0017).
+    // consolidated-spec comment's (ADR-0017). An issue never blocks itself: a
+    // self-ref is malformed, and the follow-the-split path below can name the
+    // issue itself when it declares the retired bundle as its own parent —
+    // either way it would park the issue forever on a blocker only it can clear.
     let refs = blocked::parse_blocked_by_all(&issue.body, &issue.comments);
     let mut open: Vec<u64> = Vec::new();
     let mut closed: Vec<u64> = Vec::new();
-    for n in refs {
+    for n in refs.into_iter().filter(|&n| n != issue.number) {
         match tracker.is_closed(n) {
-            Ok(true) => match tracker.open_children(n) {
-                Ok(children) if children.is_empty() => closed.push(n),
-                Ok(children) => {
+            Ok(true) => {
+                let children: Vec<u64> = tracker
+                    .open_children(n)?
+                    .into_iter()
+                    .filter(|&c| c != issue.number)
+                    .collect();
+                if children.is_empty() {
+                    closed.push(n);
+                } else {
                     info!(
                         number = issue.number,
                         blocker = n,
@@ -78,8 +87,7 @@ pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result
                     );
                     open.extend(children);
                 }
-                Err(e) => return Err(e),
-            },
+            }
             Ok(false) => open.push(n),
             Err(e) => return Err(e),
         }

@@ -2952,6 +2952,108 @@ fn closed_blocker_with_open_children_still_blocks() {
 }
 
 #[test]
+fn split_children_never_block_the_issue_on_itself() {
+    // The #299/#300 shape: #4 declares "Blocked by #3", #3 is closed, and #4 is
+    // itself among #3's open children (its `## Parent` section named #3 in prose).
+    // Substituting the children verbatim would hand #4 back to itself as a blocker
+    // — a gate only #4 could clear, so it could never run. Expected: the self-ref
+    // is dropped, the remaining child #16 blocks, and with no other child #4 runs.
+    {
+        let repo = init_repo("split-self-among-children");
+        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
+        let agent = ScriptedAgent::new(vec![]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([3]),
+            children: HashMap::from([(3u64, vec![4, 16])]),
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-split-self", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let r4 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 4)
+            .expect("#4 in worked");
+        assert_eq!(
+            r4.blocked_by,
+            vec![16],
+            "self dropped, sibling still blocks"
+        );
+
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // #4 is the ONLY open child of the closed #3: nothing else is pending, so the
+    // blocker counts as done and #4 runs instead of parking forever on itself.
+    {
+        let repo = init_repo("split-self-only-child");
+        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([3]),
+            children: HashMap::from([(3u64, vec![4])]),
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-split-self-only", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let r4 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 4)
+            .expect("#4 in worked");
+        assert!(r4.blocked_by.is_empty(), "an issue never blocks itself");
+        assert!(r4.closed, "#4 closed green");
+
+        fs::remove_dir_all(&repo).ok();
+    }
+}
+
+#[test]
+fn self_ref_in_blocked_by_is_ignored() {
+    // A malformed `## Blocked by - #5` on issue #5: the gate must drop it rather
+    // than park the issue on a blocker only itself could close.
+    let repo = init_repo("self-ref-blocker");
+    let queue = vec![issue_with_body(5, "## Blocked by\n- #5\n")];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-self-ref", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let r5 = report
+        .worked
+        .iter()
+        .find(|r| r.number == 5)
+        .expect("#5 in worked");
+    assert!(r5.blocked_by.is_empty(), "self-ref dropped");
+    assert!(r5.closed, "#5 ran and closed green");
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
 fn human_gate_blocker_is_classified_and_run_continues() {
     // #5 is blocked by #2, an OPEN issue carrying `ready-for-human` (a human
     // gate, ADR-0014). #7 is independent and runnable. Expected: #5 is skipped

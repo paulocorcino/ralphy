@@ -78,11 +78,18 @@ pub fn parse_blocked_by(body: &str) -> Vec<u64> {
         .collect()
 }
 
-/// Extract `#N` issue references from the `## Parent` section of an issue
+/// Extract the parent `#N` reference from the `## Parent` section of an issue
 /// body (the to-issues skill's provenance field, e.g. "Split from #3 (bundle
-/// retired)"). Unlike `parse_blocked_by` this accepts prose refs, because the
+/// retired)"). Unlike `parse_blocked_by` this accepts a prose ref, because the
 /// template writes the parent inline, not as a bullet list. Returns an empty
 /// list when the section is absent or carries no `#N` ref.
+///
+/// The template declares exactly ONE parent, so only the FIRST ref counts: the
+/// same section routinely carries sibling prose ("Supersedes #210 together with
+/// #299"), and treating those as parents makes the issue a child of its own
+/// siblings — which the follow-the-split blocker gate then reads as a real
+/// dependency edge, up to blocking the issue on itself. Kept as a `Vec` so the
+/// public shape (and every caller) is unchanged.
 pub fn parse_parent(body: &str) -> Vec<u64> {
     let heading_re = Regex::new(r"(?im)^##\s+Parent\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(body, &heading_re);
@@ -92,8 +99,10 @@ pub fn parse_parent(body: &str) -> Vec<u64> {
     let ref_re = Regex::new(r"#(\d+)").expect("valid regex");
     ref_re
         .captures_iter(section)
-        // See `parse_blocked_by`: an overflowing digit run must not panic.
+        // See `parse_blocked_by`: an overflowing digit run must not panic — it is
+        // dropped, so the first PARSEABLE ref is the parent.
         .filter_map(|c| c[1].parse::<u64>().ok())
+        .take(1)
         .collect()
 }
 
@@ -385,6 +394,15 @@ mod tests {
     fn parse_parent_reads_prose_ref() {
         let body = "## Parent\n\nSplit from #3 (bundle retired). Part of PRD-0002.\n\n## Blocked by\n- #16\n";
         assert_eq!(parse_parent(body), vec![3]);
+    }
+
+    #[test]
+    fn parse_parent_takes_only_the_first_ref() {
+        // The real #300 body: the parent is #296; the sibling refs that follow are
+        // prose. Reading them as parents made #300 a child of #299 — and once #299
+        // closed, the follow-the-split gate handed #300 back to itself as a blocker.
+        let body = "## Parent\n\n#296\n\nSupersedes #210 together with #299.\n\n## What to build\n";
+        assert_eq!(parse_parent(body), vec![296]);
     }
 
     #[test]
