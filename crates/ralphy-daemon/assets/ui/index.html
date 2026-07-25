@@ -307,7 +307,10 @@
                     </div>
                     <div class="kc-title" x-text="iss.title"></div>
                     <!-- run pill: the actively-worked issue of a live run -->
-                    <div class="kc-run" x-show="issueRunning(iss.number)">
+                    <!-- `.stop` is load-bearing: the parent <article> opens the
+                         detail drawer, and the pill goes to the RUN instead -->
+                    <div class="kc-run" x-show="issueRunning(iss.number)"
+                         @click.stop="openRunFor(iss.number)" title="open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
                       <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
@@ -519,7 +522,8 @@
             </div>
             <ol class="trail">
               <template x-for="iss in (currentRun()?.issues || [])" :key="iss.number">
-                <li class="trail-node" :class="'st-' + issueState(currentRun(), iss)"
+                <li class="trail-node" :data-issue="iss.number"
+                    :class="'st-' + issueState(currentRun(), iss) + (trailFocus === iss.number ? ' focus' : '')"
                     :title="nodeTitle(currentRun(), iss)" @click="focusIssue(iss.number)">
                   <span class="trail-ic" x-text="issueGlyph(currentRun(), iss)"></span>
                   <span class="trail-n" x-text="'#' + iss.number"></span>

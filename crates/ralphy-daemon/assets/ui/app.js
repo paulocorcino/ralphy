@@ -444,6 +444,9 @@ function shell() {
     // facts (ADR-0047 §6).
     runsError: "",
     currentRunId: null,
+    // The trail node the operator arrived at from the board (#301) — a marker,
+    // not a selection: the run's own state is unchanged by navigating to it.
+    trailFocus: null,
     runMenu: false,
     planSection: "",
 
@@ -605,8 +608,37 @@ function shell() {
     },
     // Clicking an issue node is a read intent — a backend could scroll its log or
     // surface that issue's plan; today it only announces it.
+    // Run → board (#301): a trail node opens that issue's detail. The Runs panel
+    // closes first — it is `z-index: 150` over the board, and the detail drawer
+    // shares the same right edge, so leaving it open would bury the destination.
+    // Order matters: `toggleKanban()` resets `kanbanSel`, so it must run BEFORE
+    // `openIssue` sets the selection.
     focusIssue(number) {
       WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
+      this.runsOpen = false;
+      if (!this.kanbanOpen) this.toggleKanban();
+      this.openIssue(number);
+    },
+
+    // Board → run (#301): the card's run pill opens the Runs panel on THAT run,
+    // marking the issue in the trail. The board stays open behind it — `.runs`
+    // floats over it — but note the reverse leg (`focusIssue`) must close the
+    // panel, because the board's detail drawer shares this right edge.
+    openRunFor(number) {
+      const hit = window.WBKanban.runningFor(number, this.projectRuns());
+      if (!hit) return;
+      this.currentRunId = hit.runid;
+      this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      this.loadRunPlan();
+      // `toggleRuns()` would CLOSE an already-open panel — only open it.
+      if (!this.runsOpen) this.toggleRuns();
+      else this.$nextTick(() => window.lucide?.createIcons());
+      this.trailFocus = number;
+      this.$nextTick(() =>
+        document
+          .querySelector('.trail-node[data-issue="' + number + '"]')
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      );
     },
 
     // --- plan viewer ------------------------------------------------------

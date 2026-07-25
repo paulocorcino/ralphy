@@ -391,12 +391,51 @@ def main():
 
             page.screenshot(path=os.path.join(SHOT_DIR, "301-board-live-2026-07-25.png"))
 
+            # --- scenario 9: card pill -> the run -----------------------------
+            check("the Runs panel starts closed", page.evaluate(f"() => {SH}.runsOpen") is False)
+            page.click(".kanban-card.running .kc-run")
+            page.wait_for_timeout(600)
+            check("clicking the run pill opens the Runs panel", page.evaluate(f"() => {SH}.runsOpen") is True)
+            rid = page.evaluate(f"() => {SH}.currentRunId")
+            check("…on that run", rid == RUN_A, f"got={rid!r}")
+            focused = page.evaluate(
+                "() => Array.from(document.querySelectorAll('.trail-node.focus'))"
+                ".map(e => e.getAttribute('data-issue'))"
+            )
+            check(
+                "…with exactly that issue marked in the trail",
+                focused == ["72"],
+                f"got={focused} trailFocus={page.evaluate(f'() => {SH}.trailFocus')!r}",
+            )
+            # The pill must NOT also open the detail drawer (`@click.stop`).
+            check(
+                "the pill click did not fall through to the card",
+                page.evaluate(f"() => {SH}.kanbanSel") is None,
+                f"kanbanSel={page.evaluate(f'() => {SH}.kanbanSel')!r}",
+            )
+
+            # --- scenario 10: trail node -> the issue detail -------------------
+            page.click('.trail-node[data-issue="73"]')
+            page.wait_for_timeout(600)
+            check("clicking a trail node keeps the board open", page.evaluate(f"() => {SH}.kanbanOpen") is True)
+            check("…and closes the Runs panel", page.evaluate(f"() => {SH}.runsOpen") is False)
+            sel = page.evaluate(f"() => {SH}.kanbanSel")
+            check("…selecting that issue", sel == 73, f"got={sel!r}")
+            drawer = page.locator(".kanban-detail.open")
+            check(
+                "…with its detail drawer open on it",
+                drawer.is_visible() and "#73" in drawer.inner_text(),
+                f"text={drawer.inner_text()[:60]!r}" if drawer.count() else "no drawer",
+            )
+
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 2
+    # The count floor is load-bearing: an early `sys.exit` or a scenario that
+    # never ran must not report success on a handful of passing checks.
+    ok = all(results) and len(results) >= 24
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("BOARD LIVE")

@@ -651,6 +651,12 @@ body.runs-open .runs {
 .trail-node.st-pending {
   opacity: 0.55;
 }
+/* the node the operator arrived at from the board (#301) — an arrival marker,
+   orthogonal to the st-* status colouring it sits on top of */
+.trail-node.focus {
+  outline: 1px solid var(--console-text);
+  outline-offset: 1px;
+}
 /* the active node (executing/planning/sleep) gets a soft pulse */
 .trail-node.st-executing,
 .trail-node.st-planning,
@@ -3069,6 +3075,7 @@ body.locked .runs {
   border-radius: 4px;
   font-size: 0.7rem;
   color: var(--text);
+  cursor: pointer; /* it navigates to the run (#301) */
 }
 .kc-run-txt {
   color: var(--text-muted);
