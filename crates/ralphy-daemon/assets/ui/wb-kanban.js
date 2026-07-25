@@ -45,23 +45,31 @@
 --------------------------------------------------------------------------- */
 
 window.WBKanban = {
-  // GitHub label vocabulary → { color, short }. Colors are the repo's real label
-  // hex (gh label list); `short` is a compact chip label where the full name is
-  // long. Unknown labels fall back to a neutral chip.
+  // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
+  // `boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
+  // answers, so the seed matters for the static demo and for a label the API
+  // returns without a colour. Ralphy's own labels are kept in step with
+  // `ralphy_label_specs` (ralphy-core/src/github/labels.rs) and grouped by its
+  // families — green = go/queue, purple = blocked on a person, amber = triage,
+  // red = the run stopped here. `short` is a compact chip label where the full
+  // name is long. Unknown labels fall back to a neutral chip.
   LABELS: {
     "ready-for-agent": { color: "#0E8A16", short: "ready · agent" },
+    AFK: { color: "#9BE9A8", short: "AFK" },
     "ready-for-human": { color: "#5319E7", short: "ready · human" },
-    AFK: { color: "#34A985", short: "AFK" },
+    HITL: { color: "#8957E5", short: "HITL" },
+    "needs-info": { color: "#D4C5F9", short: "needs-info" },
     "needs-triage": { color: "#FBCA04", short: "needs-triage" },
-    "needs-split": { color: "#D93F0B", short: "needs-split" },
-    "needs-info": { color: "#D93F0B", short: "needs-info" },
-    "triage-agent": { color: "#7F0A04", short: "triage-agent" },
+    "triage-agent": { color: "#FFE0A6", short: "triage-agent" },
+    "stop-before": { color: "#D93F0B", short: "stop-before" },
+    "needs-split": { color: "#E99695", short: "needs-split" },
+    "needs-human-review": { color: "#BFD4F2", short: "needs review" },
     bug: { color: "#D73A4A", short: "bug" },
     enhancement: { color: "#A2EEEF", short: "enhancement" },
     documentation: { color: "#0075CA", short: "docs" },
     question: { color: "#D876E3", short: "question" },
     duplicate: { color: "#CFD3D7", short: "duplicate" },
-    wontfix: { color: "#E8E2D9", short: "wontfix" },
+    wontfix: { color: "#E6E6E6", short: "wontfix" },
     invalid: { color: "#E4E669", short: "invalid" },
     "good first issue": { color: "#7057FF", short: "good first issue" },
     "help wanted": { color: "#008672", short: "help wanted" },
