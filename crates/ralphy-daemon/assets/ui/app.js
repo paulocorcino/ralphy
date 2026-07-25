@@ -102,6 +102,10 @@ function shell() {
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") this.maybeRefreshBoard("visible");
       });
+      // Anchor the clock at page load: leaving `_boardLoadedAt` at 0 makes the
+      // first tick see `sinceMs === Date.now()`, which clears the 120s floor
+      // trivially and folds the board 30s after open for no reason.
+      this._boardLoadedAt = Date.now();
       this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
     },
 
@@ -262,6 +266,9 @@ function shell() {
     },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
+      // Closing drops the board-arrival marker: it names a navigation that is
+      // over, and a same-numbered issue in another run would inherit it.
+      if (!this.runsOpen) this.trailFocus = null;
       // the panel's lucide icons mount on open (they live inside x-if)
       if (this.runsOpen) {
         this.hydrateRuns();
@@ -579,6 +586,7 @@ function shell() {
     },
     selectRun(runid) {
       this.currentRunId = runid;
+      this.trailFocus = null; // the arrival marker belonged to the run we left
       // reset the section dropdown to the new run's first non-Steps heading
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
       // each run has its own plan; the viewer follows the selection.
@@ -616,6 +624,7 @@ function shell() {
     focusIssue(number) {
       WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
       this.runsOpen = false;
+      this.trailFocus = null;
       if (!this.kanbanOpen) this.toggleKanban();
       this.openIssue(number);
     },
@@ -888,14 +897,24 @@ function shell() {
     // mode (issue #207 / audit C2) — kept apart from the empty-state "No issues"
     // so a broken tracker connection never reads as "no work to do".
     boardError: {},
-    // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped on EVERY load
-    // outcome (success, fold error, transport throw) so an erroring board
-    // throttles like a healthy one instead of hammering the tracker;
+    // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START, so
+    // the min-gap measures spacing between fold STARTS: stamping on completion
+    // would give a fold slower than the gap zero idle time, and a push arriving
+    // the instant it finished would re-fold immediately. It is stamped before
+    // any await, so an erroring board throttles exactly like a healthy one.
     // `boardRefreshing` is both the in-flight guard and the control's disabled
-    // state, so a slow fold can never overlap itself.
+    // state; `_boardPending` is what a trigger that arrived mid-fold leaves
+    // behind, so a concurrent trigger COALESCES into one follow-up load instead
+    // of being silently dropped.
     _boardLoadedAt: 0,
+    _boardPending: false,
     _boardBackstop: null,
     boardRefreshing: false,
+    // A fold that never answers must not disable the board forever: the daemon
+    // awaits the board CLI with no timeout of its own, so a wedged `gh` would
+    // leave `boardRefreshing` true (and `.kanban-refresh` disabled) for the
+    // page's life. Generous — a real whole-tracker fold makes several calls.
+    BOARD_FOLD_TIMEOUT_MS: 90000,
     kanbanSel: null, // the selected issue number → opens the detail drawer
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
@@ -914,10 +933,24 @@ function shell() {
     async loadBoard() {
       const slug = this.openSlug;
       if (!slug) return;
-      if (this.boardRefreshing) return; // a fold already in flight owns this load
+      // A fold is already in flight: remember that a trigger fired rather than
+      // dropping it. Dropping loses a project switch (the in-flight fold writes
+      // the OLD slug's rows) and loses a label write (an older fold replaces the
+      // rows wholesale, reverting the optimistic edit).
+      if (this.boardRefreshing) {
+        this._boardPending = true;
+        return;
+      }
       this.boardRefreshing = true;
+      this._boardPending = false;
+      this._boardLoadedAt = Date.now();
       try {
-        const reply = await window.WBDaemon.observe("board.list", { repo: slug });
+        const reply = await Promise.race([
+          window.WBDaemon.observe("board.list", { repo: slug }),
+          new Promise((_, rej) =>
+            setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
+          ),
+        ]);
         if (window.WBFail.isError(reply)) {
           // Drop any stale board from a prior successful load — else the error
           // banner would sit above data that looks live but isn't (self-review).
@@ -941,6 +974,10 @@ function shell() {
         }
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
+        // The fold REPLACED the rows, and fold rows carry `body: ""` — an open
+        // drawer would go blank on every refresh (and on arriving from the run
+        // trail with the board cold). Re-merge the detail for the open issue.
+        if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
       } catch {
         // Daemon mode: transport error → distinct error state + flash; drop
         // any stale board (see the isError branch above).
@@ -952,10 +989,16 @@ function shell() {
         // Demo (static shell): leave it empty, no throw.
       } finally {
         // Every return path above lands here — including the `isError` early
-        // return — so the guard clears and the throttle clock restarts whatever
-        // the outcome was.
+        // return and the timeout rejection — so the guard always clears.
         this.boardRefreshing = false;
-        this._boardLoadedAt = Date.now();
+        // Exactly ONE follow-up for whatever was coalesced away, or for a
+        // project that changed underneath this fold (whose rows landed under the
+        // old slug). `_boardPending` is cleared by the recursive call before it
+        // awaits, so this settles instead of looping.
+        if (this._boardPending || this.openSlug !== slug) {
+          this._boardPending = false;
+          if (this.openSlug && this.kanbanOpen) this.loadBoard();
+        }
       }
     },
 
@@ -1759,6 +1802,7 @@ function shell() {
       // switching projects must drop the Kanban detail drawer (its selection is
       // now stale/absent), else the empty drawer lingers on the right.
       this.kanbanSel = null;
+      this.trailFocus = null; // ditto: the marker named an issue of the old project
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();

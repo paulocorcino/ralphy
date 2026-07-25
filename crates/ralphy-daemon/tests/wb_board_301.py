@@ -6,17 +6,21 @@ tracker, which a throwaway fixture repo has not); EVERY other verb — including
 the whole run channel (`runs.list` + `runs.watch`) — stays real, so the running
 card pill is driven by the same path a real run drives.
 
-Scenario 1   the refresh predicate, in isolation: a 12-row table over
+Scenario 1   the refresh predicate, in isolation: a 15-row table over
              `WBKanban.shouldRefresh`, touching no board state
 Scenario 2   a project switch with the board CLOSED spawns no fold; opening it does
 Scenario 3   the explicit refresh control reloads the board
-Scenario 4   a label mutation reply refreshes the board
-Scenario 5   a run snapshot change refreshes the board
-Scenario 6   a hidden tab never refreshes (6a) and refreshes on becoming visible (6b)
+Scenario 4   a label mutation reply refreshes the board; a REFUSED one does not
+Scenario 5   a run snapshot change refreshes the board, attributed to `runs`;
+             an ERRORING fold still throttles; an in-flight fold COALESCES the
+             next trigger and replays it once on settle (never drops it)
+Scenario 6   a hidden tab never refreshes (6a) and refreshes on becoming visible
+             (6b), attributed to `visible`
 Scenario 7   the backstop tick fires once past the backstop window, then coalesces
 Scenario 8   the actively-worked issue's card is marked with its phase + agent
 Scenario 9   clicking the card run pill opens the Runs panel on that run, focused
-Scenario 10  clicking a trail node opens that issue's detail on the board
+Scenario 10  clicking a trail node opens that issue's detail — from a CLOSED
+             board, the leg that exercises `focusIssue`'s toggle+select ordering
 
 Boots a Localhost daemon on 7399 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -182,6 +186,12 @@ PREDICATE_ROWS = [
     ("the backstop never fires on an UNFOCUSED tab", dict(trigger="backstop", sinceMs=130000, boardOpen=True, docVisible=True, focused=False), False),
     ("the backstop never fires inside its window", dict(trigger="backstop", sinceMs=119000, boardOpen=True, docVisible=True, focused=True), False),
     ("an unknown trigger never refreshes", dict(trigger="bogus-trigger", sinceMs=999999, boardOpen=True, docVisible=True, focused=True), False),
+    # `focused` is consulted by `backstop` ONLY: an implementation that gated the
+    # operator's own control on it would kill refresh on an unfocused window, and
+    # every row above would still pass.
+    ("manual ignores focus — the operator asked", dict(trigger="manual", sinceMs=0, boardOpen=True, docVisible=True, focused=False), True),
+    ("a run push ignores focus", dict(trigger="runs", sinceMs=6000, boardOpen=True, docVisible=True, focused=False), True),
+    ("focused defaults to true when omitted", dict(trigger="backstop", sinceMs=130000, boardOpen=True, docVisible=True), True),
 ]
 
 # The spy: record every `board.list` call and answer it from a fixed fold, answer
@@ -190,24 +200,49 @@ PREDICATE_ROWS = [
 SPY_JS = """
 () => {
   window.__boardCalls = [];
+  window.__triggers = [];          // which trigger caused each accepted load
+  window.__boardMode = "ok";       // "ok" | "error" | "defer"
+  window.__labelMode = "ok";       // "ok" | "error"
+  window.__deferred = null;        // the held resolver, for the in-flight leg
   const real = window.WBDaemon.observe.bind(window.WBDaemon);
   const row = (n, title) => ({
     number: n, title, state: "open", labels: ["ready-for-agent"],
     assignees: [], blocked_by: [], created: "2026-07-20T10:00:00Z", updated: "2026-07-24T10:00:00Z",
   });
+  const okBoard = () => ({
+    status: "ok",
+    board: {
+      issues: [row(71, "the done one"), row(72, "the active one"), row(73, "the pending one")],
+      labels: [{ name: "ready-for-agent", color: "0E8A16" }, { name: "AFK", color: "34A985" }],
+    },
+  });
+  window.__okBoard = okBoard;
   window.WBDaemon.observe = (verb, payload) => {
     if (verb === "board.list") {
       window.__boardCalls.push(payload);
-      return Promise.resolve({
-        status: "ok",
-        board: {
-          issues: [row(71, "the done one"), row(72, "the active one"), row(73, "the pending one")],
-          labels: [{ name: "ready-for-agent", color: "0E8A16" }, { name: "AFK", color: "34A985" }],
-        },
-      });
+      if (window.__boardMode === "error") return Promise.resolve({ status: "error", message: "fold refused" });
+      if (window.__boardMode === "defer") {
+        return new Promise((res) => { window.__deferred = () => res(okBoard()); });
+      }
+      return Promise.resolve(okBoard());
     }
-    if (verb === "label.set") return Promise.resolve({ status: "ok" });
+    if (verb === "label.set") {
+      return Promise.resolve(
+        window.__labelMode === "error" ? { status: "error", message: "label refused" } : { status: "ok" },
+      );
+    }
     return real(verb, payload);
+  };
+  // Attribute each ACCEPTED load to the trigger that asked for it: the recorded
+  // `board.list` payload is `{repo}` for all five, so a count delta alone cannot
+  // tell a `visible` refresh from a stray `runs` push.
+  const d = Alpine.$data(document.querySelector('[x-data]'));
+  const realMaybe = d.maybeRefreshBoard.bind(d);
+  d.maybeRefreshBoard = (trigger) => {
+    const before = window.__boardCalls.length;
+    const out = realMaybe(trigger);
+    if (window.__boardCalls.length > before) window.__triggers.push(trigger);
+    return out;
   };
 }
 """
@@ -283,6 +318,20 @@ def main():
             n = board_calls(page)
             check("a label mutation reply refreshes the board", n == before + 1, f"{before} -> {n}")
 
+            # A REFUSED label write must not re-fold (the error branch reverts and
+            # flashes; nothing changed server-side worth re-reading).
+            page.evaluate("() => { window.__labelMode = 'error'; }")
+            before = board_calls(page)
+            page.evaluate(
+                f"async () => {{ const d = {SH};"
+                f" d.toggleLabel(d.projectIssues().find(i => i.number === 71), 'AFK');"
+                f" await new Promise(r => setTimeout(r, 300)); }}"
+            )
+            page.wait_for_timeout(400)
+            n = board_calls(page)
+            check("a REFUSED label write does not refresh the board", n == before, f"{before} -> {n}")
+            page.evaluate("() => { window.__labelMode = 'ok'; }")
+
             # --- scenario 5: a run snapshot change refreshes -------------------
             # Back-date the load clock past REFRESH_MIN_GAP_MS: the coalescing
             # itself is pinned by scenario 1's table, this pins the WIRING.
@@ -293,6 +342,67 @@ def main():
             page.wait_for_timeout(600)
             n = board_calls(page)
             check("a run snapshot change refreshes the board", n == before + 1, f"{before} -> {n}")
+            trig = page.evaluate("() => window.__triggers")
+            check(
+                "…and the load is attributed to the `runs` trigger",
+                trig[-1] == "runs",
+                f"triggers={trig}",
+            )
+
+            # --- an ERRORING fold throttles like a healthy one -----------------
+            # `_boardLoadedAt` is stamped before the await, so a refused fold must
+            # not leave the board un-throttled and re-folding on every push.
+            page.evaluate("() => { window.__boardMode = 'error'; }")
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            before = board_calls(page)
+            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.wait_for_timeout(400)
+            mid = board_calls(page)
+            check("an erroring fold still counts as a load", mid == before + 1, f"{before} -> {mid}")
+            check(
+                "…and raises the board error state",
+                page.evaluate(f"() => !!{SH}.boardError[{SH}.openSlug]") is True,
+                f"boardError={page.evaluate(f'() => {SH}.boardError[{SH}.openSlug]')!r}",
+            )
+            page.evaluate(f"() => {SH}.maybeRefreshBoard('runs')")
+            page.wait_for_timeout(400)
+            n = board_calls(page)
+            check("…so the next push inside the min gap is throttled away", n == mid, f"{mid} -> {n}")
+            page.evaluate("() => { window.__boardMode = 'ok'; }")
+            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.wait_for_timeout(400)
+            check(
+                "the board recovers from the error state on the next good fold",
+                page.evaluate(f"() => {SH}.boardError[{SH}.openSlug]") in (None, ""),
+                "",
+            )
+
+            # --- a fold in flight COALESCES the next trigger, never drops it ---
+            page.evaluate("() => { window.__boardMode = 'defer'; window.__deferred = null; }")
+            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            before = board_calls(page)
+            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.wait_for_timeout(300)
+            check("a deferred fold is in flight", board_calls(page) == before + 1, "")
+            check(
+                "…and the refresh control is disabled while it runs",
+                page.locator(".kanban-refresh").is_disabled(),
+                "",
+            )
+            # A second trigger while it is in flight must NOT spawn a second fold…
+            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.wait_for_timeout(300)
+            check("…a concurrent trigger spawns no second fold", board_calls(page) == before + 1, "")
+            # …but must not be lost either: releasing the first replays it once.
+            page.evaluate("() => { window.__boardMode = 'ok'; window.__deferred(); }")
+            page.wait_for_timeout(600)
+            n = board_calls(page)
+            check("…it is REPLAYED when the in-flight fold settles", n == before + 2, f"{before} -> {n}")
+            check(
+                "…and the guard clears (the control is live again)",
+                page.locator(".kanban-refresh").is_disabled() is False,
+                "",
+            )
 
             # --- scenario 6a: a HIDDEN tab never refreshes ---------------------
             # A second page in the same context takes the foreground, so page 1's
@@ -311,9 +421,15 @@ def main():
                     "() => { Object.defineProperty(document, 'visibilityState',"
                     " { get: () => 'hidden', configurable: true }); }"
                 )
+            # Not "is it hidden" (a tautology after the stub) but "does the
+            # PREDICATE see it hidden" — the input the policy actually reads.
             check(
-                "the backgrounded page reads a hidden document",
-                page.evaluate("() => document.visibilityState") == "hidden",
+                "the predicate sees a hidden document and refuses",
+                page.evaluate(
+                    "() => window.WBKanban.shouldRefresh({ trigger: 'runs', sinceMs: 99999,"
+                    " boardOpen: true, docVisible: document.visibilityState === 'visible' })"
+                )
+                is False,
                 f"natural={vis!r} (stubbed={vis != 'hidden'})",
             )
 
@@ -345,6 +461,12 @@ def main():
             page.wait_for_timeout(800)
             n = board_calls(page)
             check("the board reloads when the document becomes visible again", n == before + 1, f"{before} -> {n}")
+            trig = page.evaluate("() => window.__triggers")
+            check(
+                "…caused by the `visible` trigger, not a stray run push",
+                trig[-1] == "visible",
+                f"triggers={trig[-3:]}",
+            )
 
             # --- scenario 7: the slow backstop --------------------------------
             page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 130000; }}")
@@ -415,6 +537,13 @@ def main():
             )
 
             # --- scenario 10: trail node -> the issue detail -------------------
+            # From a CLOSED board — the leg that exercises `focusIssue`'s
+            # `if (!this.kanbanOpen) this.toggleKanban()` and its ordering against
+            # `toggleKanban`'s `kanbanSel = null` reset. With the board already
+            # open that branch never runs and the ordering hazard is untested.
+            page.evaluate(f"() => {{ if ({SH}.kanbanOpen) {SH}.toggleKanban(); }}")
+            page.wait_for_timeout(300)
+            check("the board starts CLOSED for the run->board leg", page.evaluate(f"() => {SH}.kanbanOpen") is False)
             page.click('.trail-node[data-issue="73"]')
             page.wait_for_timeout(600)
             check("clicking a trail node keeps the board open", page.evaluate(f"() => {SH}.kanbanOpen") is True)
@@ -435,7 +564,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 24
+    ok = all(results) and len(results) >= 53
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("BOARD LIVE")

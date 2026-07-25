@@ -79,6 +79,14 @@ window.WBDaemon = (function () {
         }
         ws.close();
       };
+      // A socket that closes without ever answering must REJECT, not hang: the
+      // daemon drops the connection with no reply on an undecodable frame
+      // (lib.rs `let Ok(Frame::Command(cmd)) … else { return; }`) and on
+      // shutdown/restart mid-read. A clean close fires `close`, not `error`, so
+      // without this the promise pends for the page's life and every caller
+      // awaiting it is wedged. Settling twice is a no-op, so the `ws.close()`
+      // after a resolve above is harmless.
+      ws.onclose = () => reject(new Error("connection closed before a reply"));
       ws.onerror = (err) => reject(err);
     });
   }
