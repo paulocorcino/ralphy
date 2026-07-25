@@ -260,9 +260,19 @@ before writing anything that asserts against it:
   paint. A browser test gated on the panes appearing measures zero collapse
   widgets on a diff that does collapse; gate on `.diff-hidden-lines` itself.
 
-Both models of a diff editor must be disposed **before** the editor on every
-path (`m.original.dispose(); m.modified.dispose(); ed.dispose()`): a leaked model
-keeps its URI registered, so reopening the same path throws on the duplicate.
+- `renderSideBySide: true` is **not sufficient**: Monaco's own
+  `useInlineViewWhenSpaceIsLimited` default swaps to the inline view below
+  `renderSideBySideInlineBreakpoint` (900px) regardless. Pass
+  `useInlineViewWhenSpaceIsLimited: false`, and assert side-by-side at a narrow
+  viewport too — pinning it only at a wide one cannot see the swap.
+
+Both models of a diff editor must be disposed **before** the editor on every path
+(`m.original.dispose(); m.modified.dispose(); ed.dispose()`) — disposing the
+editor does **not** dispose its models. Note the leak is *invisible* to a reopen:
+`createDiff` puts the viewer's per-open `uid` in each model URI, so a reopened tab
+never collides with a leaked model. The only honest oracle is
+`monaco.editor.getModels().length` returning to a baseline taken before the first
+open — which is what `tests/wb_diff_311.py` counts.
 
 ---
 
