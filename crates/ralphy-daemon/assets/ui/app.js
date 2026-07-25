@@ -74,6 +74,7 @@ function shell() {
     _lastHeartbeat: 0,
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
+    _runsSub: null, // the live run-snapshot subscription for the open project, if any
 
     // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
     // plan <script> blocks) is present.
@@ -449,9 +450,9 @@ function shell() {
 
     // Hydrate runs from the seed: copy each run's plan.md out of its hidden
     // <script> block into a live, mutable `planMd` the fold can update.
-    // Seed-gated (#202): in daemon mode the panel stays empty until real run
-    // events feed it (#210) — the seed is honest only in the `file://` demo, so
-    // synthetic runs never masquerade as live ones.
+    // `file://`-ONLY since #300: the seed runs, the `seed-plan-*` blocks and the
+    // fold that mutates them are unreachable in daemon mode, where the panel is
+    // fed by `runs.list` + the `runs.dirty` pushes (ADR-0047 §9).
     initRuns() {
       if (!window.WBMode.seedAllowed()) {
         this.runsByProject = {};
@@ -479,6 +480,7 @@ function shell() {
       // the project it described (nor an early return below).
       this.runsError = "";
       if (!slug) return;
+      const prevRuns = this.runsByProject[slug] || [];
       try {
         const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
         if (reply?.status !== "ok") {
@@ -486,14 +488,26 @@ function shell() {
           this.runsError = reply?.reason || reply?.message || "could not read runs";
           return;
         }
-        this.runsByProject[slug] = (reply.runs || []).map((d) => window.WBRun.fromSnapshot(d));
+        this.runsByProject[slug] = (reply.runs || []).map((d) => {
+          const run = window.WBRun.fromSnapshot(d);
+          // A push arrives on every snapshot write (~every few hundred ms during
+          // a run); re-fetching an unchanged plan on each one would blank the
+          // viewer between the replacement and the `file.read` reply.
+          const prev = prevRuns.find((p) => p.runid === run.runid);
+          if (prev && prev.planPath === run.planPath) run.planMd = prev.planMd;
+          return run;
+        });
         const bad = reply.unreadable || [];
         this.runsError = bad.length
           ? `${bad.length} unreadable run document${bad.length > 1 ? "s" : ""}: ` +
             bad.map((u) => `${u.runid} (${u.reason})`).join(", ")
           : "";
-        this.currentRunId = this.projectRuns()[0]?.runid || null;
-        this.planSection = this.planHeadings(this.currentRun())[0] || "";
+        // Replacement must not yank the operator's selection: keep the selected
+        // run while it is still listed, else fall back to the first.
+        const listed = this.projectRuns();
+        this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
+          ? this.currentRunId
+          : listed[0]?.runid || null;
         await this.loadRunPlan();
       } catch (err) {
         // A transport failure is a read failure, not an idle project.
@@ -519,7 +533,10 @@ function shell() {
       } catch {
         run.planMd = "";
       }
-      this.planSection = this.planHeadings(run)[0] || "";
+      // Same reason as the run selection: reassign the section dropdown only when
+      // the operator's chosen heading is gone from the reloaded plan.
+      const hs = this.planHeadings(run);
+      if (!hs.includes(this.planSection)) this.planSection = hs[0] || "";
     },
 
     // The open project's runs (the panel is project-scoped).
@@ -712,6 +729,10 @@ function shell() {
     // live. Handles the load-bearing types; unknown types are ignored (lossy bus
     // tolerance). Dispatched via `ralphy:run-event` (see the listener below).
     applyRunEvent(ev) {
+      // Demo-only since #300: in daemon mode the panel is driven by snapshot
+      // REPLACEMENT (`runs.dirty` → `hydrateRuns`), so a client-side fold could
+      // only produce state the next push overwrites — or contradicts.
+      if (!window.WBMode.seedAllowed()) return;
       if (!ev || !ev.runid) return;
       let run = null;
       for (const arr of Object.values(this.runsByProject)) {
@@ -773,6 +794,7 @@ function shell() {
     // event — tick a step while the active issue has open ones, else close it and
     // start the next pending issue. Proves the live-update seam end to end.
     demoTick() {
+      if (!window.WBMode.seedAllowed()) return; // the ⚡ control is demo-only (#300)
       const r = this.currentRun();
       if (!r) return;
       if ((r.planMd || "").match(/-\s+\[ \]/)) {
@@ -1640,6 +1662,10 @@ function shell() {
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();
+        // The runs subscription follows the same open/close path as the tree, so
+        // closing a project (openSlug → null) drops BOTH sockets (#300).
+        this.destroyRunsSub();
+        this.mountRunsSub();
         // Refresh the board fold for the newly-open project (issue #198) so the
         // Kanban + drawer read this project's live tracker, not a stale slug.
         if (this.openSlug) this.loadBoard();
@@ -1927,6 +1953,19 @@ function shell() {
     // mounted (so a nudge for an off-screen dir drops).
     findFolderByRel(rel) {
       return this._tree?.findFirst((n) => this.isFolder(n) && this.relPath(n) === rel) || null;
+    },
+
+    // The open project's run-snapshot subscription (#300, ADR-0047 §9). Daemon
+    // mode only — the `file://` demo has no socket to push over.
+    mountRunsSub() {
+      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeRuns || !this.openSlug) return;
+      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => this.hydrateRuns());
+    },
+    destroyRunsSub() {
+      try {
+        this._runsSub?.close();
+      } catch {}
+      this._runsSub = null;
     },
 
     destroyTree() {
@@ -2336,11 +2375,15 @@ document.addEventListener("keydown", (e) => {
   c.focusProjectSearch();
 });
 
-// Inbound run events (the backend seam): a live CloudEvents feed dispatches
-// `ralphy:run-event` with a `{ type, runid, data }` detail; the shell folds it
-// into the Runs panel. `window.WBRuns.emit(evt)` is the same door for console
-// testing, e.g. WBRuns.emit({ type: "dev.ralphy.issue.closed", runid, data }).
-document.addEventListener("ralphy:run-event", (e) => getShell()?.applyRunEvent(e.detail));
+// Inbound run events, `file://` demo ONLY (#300): the fold that advances the
+// panel from a `{ type, runid, data }` detail is the demo's stand-in for the live
+// feed. In daemon mode the panel advances by snapshot replacement instead, so the
+// listener is gated here AND in `applyRunEvent` (the method is also called
+// directly by `demoTick`). `window.WBRuns.emit(evt)` is the console door.
+document.addEventListener("ralphy:run-event", (e) => {
+  if (!window.WBMode.seedAllowed()) return;
+  getShell()?.applyRunEvent(e.detail);
+});
 window.WBRuns = {
   emit(evt) {
     document.dispatchEvent(new CustomEvent("ralphy:run-event", { detail: evt }));

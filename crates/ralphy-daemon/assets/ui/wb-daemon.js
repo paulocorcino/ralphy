@@ -132,6 +132,50 @@ window.WBDaemon = (function () {
     };
   }
 
+  // Open ONE persistent `/ws/tree` run-snapshot subscription for a project (#300,
+  // ADR-0047 §9): `runs.watch` holds the repo's `.ralphy/runstate` dir and each
+  // `runs.dirty` push invokes `onDirty()`, which re-reads `runs.list`. A snapshot
+  // is STATE, so the read is idempotent — hence the extra `onDirty()` on every
+  // (re)open, the catch-up read that recovers a daemon restart with no operator
+  // action. Reconnects on `close` ONLY, one fixed 3s timer (see subscribePresence).
+  function subscribeRuns(repo, onDirty) {
+    let closed = false;
+    let ws = null;
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(WS_ORIGIN + "/ws/tree");
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => {
+        ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
+        onDirty();
+      };
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] !== TAG_COMMAND) return;
+        let frame;
+        try {
+          frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+        } catch {
+          return;
+        }
+        if (frame.verb === "runs.dirty") onDirty();
+      };
+      ws.onclose = () => {
+        if (!closed) setTimeout(connect, 3000);
+      };
+    };
+    connect();
+    return {
+      close: () => {
+        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
+        closed = true;
+        try {
+          ws && ws.close();
+        } catch {}
+      },
+    };
+  }
+
   // Open ONE persistent `/ws` presence subscription (#204): the daemon pushes a
   // `[0x03][JSON]` heartbeat every ~2s carrying `{name, avatar, uptime_secs}`.
   // Invoke `onPresence(payload)` per tick; reconnect after a fixed 3s backoff on
@@ -191,6 +235,7 @@ window.WBDaemon = (function () {
     observe,
     write,
     subscribeTree,
+    subscribeRuns,
     subscribePresence,
     encodeCommand,
     ACTION_TO_VERB,

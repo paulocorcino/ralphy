@@ -194,9 +194,11 @@ window.WBRun = {
 // countdown reads sensibly).
 const _in = (mins) => Math.floor(Date.now() / 1000) + mins * 60;
 
-// Seed: runs keyed by project slug. `planEl` points at a hidden <script> in
-// index.html holding that run's plan.md (kept out of JS so backticks/${} in the
-// markdown need no escaping); app.js hydrates `planMd` from it at init.
+// Seed: runs keyed by project slug, reachable ONLY from the static `file://`
+// demo (#300 — `initRuns` drops it in daemon mode, where the panel reads live
+// snapshots). `planEl` points at a hidden `seed-plan-*` <script> in index.html
+// holding that run's plan.md (kept out of JS so backticks/${} in the markdown
+// need no escaping); app.js hydrates `planMd` from it at init.
 window.WB_RUNS = {
   fincal: [
     {

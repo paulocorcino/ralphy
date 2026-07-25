@@ -431,9 +431,10 @@
         <span>Runs</span>
         <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="active runs"></span>
         <span class="spacer"></span>
-        <!-- demo affordance: synthesize the next run event so the panel visibly
-             advances (a stand-in for the live CloudEvents feed). -->
-        <button class="runs-demo" x-show="openSlug && projectRuns().length" @click="demoTick()"
+        <!-- demo-ONLY affordance (#300): synthesizes the next run event so the
+             `file://` panel visibly advances. In daemon mode the panel advances
+             from the live snapshot pushes, so the control is not rendered. -->
+        <button class="runs-demo" x-show="isDemo && openSlug && projectRuns().length" @click="demoTick()"
                 title="advance — simulate the next run event"><i class="bi bi-lightning-charge"></i></button>
         <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
       </div>
