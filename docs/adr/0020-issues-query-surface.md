@@ -119,3 +119,33 @@ Two gaps ADR-0036 §Consequences named against this surface:
   (`ralphy-cli/src/issues/tests.rs`:
   `render_board_json_folds_assignees_state_reason_and_label_colors`,
   `show_view_json_includes_comments`).
+
+## Amendment (2026-07-25): structured comments and the `show` subcommand word (#302)
+
+The workbench's issue drawer read this surface for the first time and found
+two divergences between what the ADR documents and what shipped:
+
+- **The documented form `ralphy issues show <n>` is now accepted.** The CLI
+  implemented only a bare positional number, so the daemon — which composes
+  exactly the form documented here — always got a clap usage error and exit 2,
+  and the drawer stayed empty for every project. The CLI is the side corrected;
+  the bare `<n>` stays as the shorthand. The positional is raw tokens
+  (`SPEC`, `num_args = 0..=2`) resolved by the pure `parse_show_spec`, because
+  clap cannot express "an optional literal word then a number" on a typed
+  positional. A non-numeric selector is now an anyhow error (exit 1) with an
+  explicit message, not a clap usage error.
+- **`comments[]` carries `{author, at, body}`** instead of bare body strings.
+  Author and timestamp already arrive in `gh issue view --json comments` and
+  were discarded at parse time; the drawer renders both. Core gains
+  `github::IssueComment` + `parse_issue_comments_detailed` /
+  `issue_comments_detailed`; the wire keys are folded at the CLI's
+  JSON-rendering layer (`CommentView`), the same seam as `assignees` /
+  `state_reason` above. `IssueTracker::issue_comments` stays `Vec<String>` —
+  the planner's `issue.json` thread contract is unrelated. The CLI's text
+  renderer prints an `--- comments (N) ---` block with `{author}  {at}` per
+  comment.
+- The contract between the two sides is pinned by a parse-level test
+  (`ralphy-cli/src/cli.rs`: `cli::tests::issues_show_documented_form_parses`),
+  which needs no tracker, no network and no authentication and so runs
+  identically on both CI platforms. The comment shape stays pinned by
+  `show_view_json_includes_comments` (same name as above, assertion updated).

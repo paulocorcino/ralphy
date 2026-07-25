@@ -297,6 +297,16 @@ fn show_view_json_includes_comments() {
     );
 }
 
+/// The wire shape is a public contract, so the ADR must state it (#302).
+#[test]
+fn adr_0020_records_the_structured_comment_shape() {
+    let adr = include_str!("../../../../docs/adr/0020-issues-query-surface.md");
+    assert!(
+        adr.contains("carries `{author, at, body}`"),
+        "ADR-0020 must record the structured comment shape"
+    );
+}
+
 #[test]
 fn show_text_renders_comment_author_and_date() {
     let issue = issue(7, &["queue"], "the issue body");
