@@ -7,10 +7,19 @@ registered with the daemon.
 Scenario 1   `WBConsole.resizeRect` in isolation: a 20-row table over the eight
              directions, pinning the anchored-edge RELATIONS, the minimum and
              the workspace clamp
+Scenario 2   `WBConsole.reconcileDesk` in isolation: a 12-row table over literal
+             layouts and session lists, including two records claiming one session
+Scenario 3   `WBConsole.pruneDesk` caps the desk at 24, newest `ts` first
 Scenario 4   a live west/north-edge resize on a real console window: the opposite
              edge holds, the size changes, and the terminal reflows (`term.cols`)
 Scenario 5   live clamping (minimum + workspace) and a maximized window refusing
              both a resize and a titlebar drag
+Scenario 6   the desk store's shape, a browser reload restoring both windows to
+             their exact rects (one maximized), and a close forgetting its record
+Scenario 7   a DAEMON restart: the free console relaunches itself, the agent
+             console waits as a placeholder, and no agent session is launched
+Scenario 8   one click on the placeholder opens `/ws/session?repo=…&agent=gemini`
+             and reuses the record's id and rectangle
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -601,6 +610,117 @@ def main():
                 f"closed={gone} left={[r['id'] for r in left_recs]}",
             )
 
+            # --- scenarios 7 & 8: the desk survives a DAEMON restart ----------
+            # Seed an agent console into the desk. Gemini, because this fixture
+            # repo has no owned configuration root: the daemon refuses the launch
+            # with 400 BEFORE any spawn, so the reconnect path is exercised
+            # end-to-end without starting a vendor CLI or spending quota.
+            console_rec = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")[0]
+            page.evaluate(
+                "([slug, rect]) => { const recs = JSON.parse(localStorage.getItem('wb.desk.v1'));"
+                " recs.push({ id: 'w-seeded-gemini', repo: slug, agent: 'gemini', kind: 'agent',"
+                "   rect, max: false, sessionId: 999, ts: Date.now() });"
+                " localStorage.setItem('wb.desk.v1', JSON.stringify(recs)); }",
+                [slug, {"left": 420, "top": 120, "width": 460, "height": 300}],
+            )
+
+            stop(proc)
+            proc = launch(daemon_dir)
+            check("the daemon restarted on the same port", wait_listening(BASE))
+            live_after_restart = page.request.get(BASE + "api/sessions").json()
+            check(
+                "a restarted daemon has no sessions at all",
+                live_after_restart == [],
+                f"got={live_after_restart}",
+            )
+
+            sockets = []
+            page.on("websocket", lambda ws: sockets.append(ws.url))
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window').length === 2", timeout=15000
+            )
+            page.wait_for_timeout(1200)
+
+            live = page.locator(".session-window:not(.placeholder)")
+            ph = page.locator(".session-window.placeholder")
+            check("the free console comes back by itself", live.count() == 1, f"got={live.count()}")
+            check("the agent console comes back as a placeholder", ph.count() == 1, f"got={ph.count()}")
+            check(
+                "…with a live terminal in the free console only",
+                live.locator(".xterm").count() == 1 and ph.locator(".xterm").count() == 0,
+                "",
+            )
+            check(
+                "the relaunched console keeps its saved rectangle",
+                rect_of(page, 0) == before[0],
+                f"want={before[0]} got={rect_of(page, 0)}",
+            )
+            ph_title = ph.locator(".session-title").inner_text()
+            check(
+                "the placeholder keeps its agent and its repo",
+                "gemini" in ph_title and slug in ph_title,
+                f"title={ph_title!r}",
+            )
+            check(
+                "…and its rectangle",
+                rect_of(page, 1) == {"left": 420, "top": 120, "width": 460, "height": 300},
+                f"got={rect_of(page, 1)}",
+            )
+            check(
+                "…offering one click to reconnect",
+                ph.locator(".session-reconnect").count() == 1,
+                "",
+            )
+            sessions = page.request.get(BASE + "api/sessions").json()
+            check(
+                "loading the page launched NO agent session",
+                all(s["kind"] != "agent" for s in sessions),
+                f"got={sessions}",
+            )
+            # `/ws` is the daemon's control channel, always opened; only
+            # `/ws/session` sockets launch or attach a PTY.
+            session_sockets = [u for u in sockets if "/ws/session" in u]
+            check(
+                "…and opened exactly one session socket, for the free console",
+                len(session_sockets) == 1
+                and "console=1" in session_sockets[0]
+                and "agent=" not in session_sockets[0],
+                f"sockets={sockets}",
+            )
+            check(
+                "the relaunched console is a NEW session, under the SAME window id",
+                page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")[0]["id"]
+                == console_rec["id"],
+                "",
+            )
+
+            page.screenshot(path=os.path.join(SHOT_DIR, "303-console-desk-2026-07-25.png"))
+
+            # --- scenario 8: one click reconnects the agent console -----------
+            ph.locator(".session-reconnect").click()
+            page.wait_for_timeout(1800)
+            check(
+                "clicking reconnect opens the agent's session socket",
+                any("agent=gemini" in u and f"repo={slug}" in u for u in sockets),
+                f"sockets={sockets}",
+            )
+            check(
+                "…replacing the placeholder with a console window",
+                page.locator(".session-window.placeholder").count() == 0
+                and page.locator(".session-window").count() == 2
+                and page.locator(".session-window").nth(1).locator(".xterm").count() == 1,
+                f"placeholders={page.locator('.session-window.placeholder').count()}",
+            )
+            reconnected = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            check(
+                "…reusing the placeholder's record and rectangle",
+                reconnected[1]["id"] == "w-seeded-gemini"
+                and rect_of(page, 1) == {"left": 420, "top": 120, "width": 460, "height": 300},
+                f"records={[r['id'] for r in reconnected]} rect={rect_of(page, 1)}",
+            )
+
             ctx.close()
             browser.close()
     finally:
@@ -608,7 +728,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 79
+    ok = all(results) and len(results) >= 94
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")
