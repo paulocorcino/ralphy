@@ -96,6 +96,7 @@ pub mod queue_view;
 pub mod references;
 pub mod repo;
 pub mod settings;
+pub mod sync;
 pub mod triage_draft;
 pub mod verify;
 
