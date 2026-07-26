@@ -1657,7 +1657,9 @@ async fn desk_put_route(path: PathBuf, records: Vec<desk::DeskRecord>) -> Respon
     if let Some(bad) = records.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": format!("record {} has a non-finite rect", bad.id) })),
+            Json(
+                serde_json::json!({ "error": format!("record {} has a non-finite rect", bad.id) }),
+            ),
         )
             .into_response();
     }

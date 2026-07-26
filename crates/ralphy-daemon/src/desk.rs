@@ -264,7 +264,10 @@ mod tests {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| n != "desk.toml")
             .collect();
-        assert!(leftovers.is_empty(), "the rename consumed the temp: {leftovers:?}");
+        assert!(
+            leftovers.is_empty(),
+            "the rename consumed the temp: {leftovers:?}"
+        );
     }
 
     #[test]
