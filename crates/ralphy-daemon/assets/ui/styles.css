@@ -4134,3 +4134,110 @@ body.locked .runs {
 [x-cloak] {
   display: none !important;
 }
+
+/* #331 runs chrome */
+/* The raw feed is taken OUT of `.runs-body`'s `flex: 1` arithmetic: `flex: 0 0
+   auto` + a viewport-relative cap means no amount of stdout can change how the
+   run card and the plan viewer share the panel — the deformation the issue
+   names is a sizing absence, not a design choice. */
+.runs-feed {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+.runs-feed-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.66rem;
+}
+.runs-feed-head .spacer {
+  flex: 1;
+}
+.runs-feed-act {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.runs-feed-act:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.runs-raw {
+  flex: 0 0 auto;
+  max-height: 30vh;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  /* `anywhere` and not `break-word`: a 400-char URL has no break opportunity at
+     all, and clipping it mid-path is the readability defect. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.7rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--log-bg);
+  color: var(--text-muted);
+}
+/* The run lock's reason, stated where a phone can read it: a `title` on a
+   `disabled` control is unreliable (pointer events are suppressed on disabled
+   controls in several engines), so the visible line is the real affordance. */
+.runs-lock-note {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A CLI refusal, surfaced as panel state rather than a line of raw stdout. It
+   is sticky by design — cleared by the next verb click or its own ✕, never by a
+   timer, because a refusal that vanishes is the defect this replaces. */
+.runs-verb-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--danger);
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+.runs-verb-error span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.runs-verb-error button {
+  all: unset;
+  cursor: pointer;
+  color: var(--danger);
+}
+/* Dimming, never hiding — the same idiom as `.chg-act:disabled`: a verb that
+   vanishes under a run would read as a feature that does not exist. */
+.run-verb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.run-verb:disabled:hover {
+  background: var(--surface);
+}
+.run-verb.accent:disabled:hover {
+  background: var(--console-bg);
+}
+@media (max-width: 560px) {
+  .runs-feed .runs-raw {
+    max-height: 22vh;
+  }
+  .runs-actions {
+    flex-wrap: wrap;
+  }
+}
+/* #331 runs chrome end */

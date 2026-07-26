@@ -678,8 +678,22 @@
 
       <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
            run streams here live (wb-daemon.js → WBRuns.output). The structured
-           event fold stays on the ⚡ demo button. -->
-      <pre class="runs-raw" x-show="rawFeed" x-text="rawFeed"></pre>
+           event fold stays on the ⚡ demo button. Wrapped in its own sized box
+           (#331) so the feed can never deform the panel's flex distribution;
+           collapse keeps the buffer, dismiss clears it. -->
+      <div class="runs-feed" x-show="rawFeed">
+        <div class="runs-feed-head">
+          <span>output</span>
+          <span class="spacer"></span>
+          <button class="runs-feed-act" data-act="feed-collapse" @click="rawFeedOpen = !rawFeedOpen"
+                  :title="rawFeedOpen ? 'collapse the output feed' : 'expand the output feed'">
+            <i class="bi" :class="rawFeedOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+          </button>
+          <button class="runs-feed-act" data-act="feed-dismiss" @click="dismissFeed()"
+                  title="dismiss the output feed"><i class="bi bi-x"></i></button>
+        </div>
+        <pre class="runs-raw" x-show="rawFeedOpen" x-text="rawFeed"></pre>
+      </div>
 
       <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
       <!-- a failed read is its own state: an unreadable project must never be

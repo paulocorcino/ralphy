@@ -1050,8 +1050,12 @@ function shell() {
     // (optional planner), --branch-mode new|current.
     runOpen: false,
     runsActionMsg: "",
+    // A CLI refusal, held until the next verb click clears it (#331). Distinct
+    // from `runsActionMsg`, which is a 2.6 s flash shared with 20+ call sites.
+    verbError: "",
     // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.js).
     rawFeed: "",
+    rawFeedOpen: true,
     runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
 
     openRunModal() {
@@ -1075,7 +1079,14 @@ function shell() {
       s += ` --branch-mode ${c.branchMode}`;
       return s;
     },
+    // The feed is dismissible, not just collapsible: re-open defaults to shown so
+    // the next run's first chunk is never delivered into a hidden box.
+    dismissFeed() {
+      this.rawFeed = "";
+      this.rawFeedOpen = true;
+    },
     startRun() {
+      this.verbError = "";
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
       WB.emit("run-start", {
@@ -1091,8 +1102,14 @@ function shell() {
     // triage / push: no params — the verb name is the whole intent (the client
     // never composes a command line, mirroring the daemon).
     fireVerb(verb) {
+      this.verbError = "";
       WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(`${verb} requested`);
+    },
+    // Set from wb-daemon.js on a TERMINAL frame only (non-zero exit, or an error
+    // frame); an empty note is a no-op so a clean exit never raises a banner.
+    runVerbFailed(msg) {
+      if (msg) this.verbError = msg;
     },
     _flashAction(msg) {
       this.runsActionMsg = msg;
