@@ -7,8 +7,8 @@ state the reason, re-enable when it is released, and surface a CLI refusal in th
 panel instead of leaving it in the raw stdout.
 
 Scenario 1  the feed is bounded and scrolls inside itself
-Scenario 2  `.runs-body` height is byte-identical across a 3-line and a 500-line
-            feed; the run card and plan viewer keep their proportions
+Scenario 2  `.runs-body` height is identical across a 300-, 500- and 5000-line
+            feed (all past the cap); the run card and plan viewer keep theirs
 Scenario 3  a 400-char space-free URL wraps instead of clipping
 Scenario 4  the feed collapses (buffer kept) and dismisses (buffer cleared)
 Scenario 5  the panel stays usable at a phone width (390x780)
@@ -353,6 +353,9 @@ def main():
                 " return { panel: document.querySelector('.runs').getBoundingClientRect().width,"
                 " visible: verbs.filter(b => b.offsetParent !== null).length,"
                 " sw: r.scrollWidth, cw: r.clientWidth, ch: r.clientHeight,"
+                " note: (n => n && n.scrollWidth <= n.clientWidth + 1"
+                "        && n.scrollHeight <= n.clientHeight + 1)"
+                "       (document.querySelector('.runs-lock-note')),"
                 " steps: document.querySelectorAll('.plan-steps li').length }; }"
             )
             check(
@@ -364,6 +367,11 @@ def main():
                 "all three verbs stay reachable at a phone width",
                 phone["visible"] == 3,
                 f"visible={phone['visible']}",
+            )
+            check(
+                "the lock reason is still readable end to end at a phone width",
+                phone["note"] is True,
+                f"noteFits={phone['note']}",
             )
             check(
                 "the feed still wraps and yields the panel to the structured view",
@@ -403,6 +411,18 @@ def main():
                 "the reason is also VISIBLE, not only in a disabled control's title",
                 note == reason,
                 f"note={note!r}",
+            )
+            # …and READABLE end to end. Sharing the toolbar row ellipsized it to
+            # "a run holds this repo's …", which states that something is wrong
+            # but not what — a stated reason has to survive its own box.
+            fit = page.evaluate(
+                "() => { const n = document.querySelector('.runs-lock-note');"
+                " return { sw: n.scrollWidth, cw: n.clientWidth, sh: n.scrollHeight, ch: n.clientHeight }; }"
+            )
+            check(
+                "the stated reason is not truncated by its own box",
+                fit["cw"] > 0 and fit["sw"] <= fit["cw"] + 1 and fit["sh"] <= fit["ch"] + 1,
+                f"scroll={fit['sw']}x{fit['sh']} client={fit['cw']}x{fit['ch']}",
             )
             # …and the gate must not have cost the operator the panel's reading.
             live = page.evaluate(
@@ -499,7 +519,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 23
+    ok = all(results) and len(results) >= 26
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("RUNS CHROME")
