@@ -372,27 +372,19 @@ def main():
                     e.getAttribute('aria-label') || "",
                     e.getAttribute('data-act') || "",
                   ].join(" ");
-                  // #315's `Staged Changes` group HEADLINE matches /stage/ and is
-                  // not a control. Exempt it by exact TEXT, not by class: a
-                  // headline that grows a `data-act="stage-all"` or a title stops
-                  // matching this and is scanned again — which is exactly where
-                  // PRD #314's next slice would put a staging verb.
-                  const headline = (e) => e.classList.contains('chg-group-head')
-                    && /^(Staged Changes|Changes)$/.test((e.textContent || "").trim())
-                    && !e.getAttribute('title') && !e.getAttribute('aria-label')
-                    && !e.getAttribute('data-act');
                   const scan = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
-                    .filter(e => !headline(e))
                     .filter(e => re.test(hay(e))).length;
                   return {
                     vbtns: Array.from(root.querySelectorAll('.vbtn')).map(b => b.textContent.trim()),
                     acts: Array.from(root.querySelectorAll('[data-act]')).map(b => b.getAttribute('data-act')),
-                    // `.changes-view` (not the deleted `.changes-sec`) is the
-                    // promoted surface: scanning it covers the new toolbar and
-                    // message box too, so this assertion widened with #317
-                    // instead of passing because its scope vanished.
-                    mutators: scan('.diff-viewer') + scan('.changes-list') + scan('.changes-view') + scan('.tabbar'),
+                    // Scope narrowed with #318, deliberately: the Changes panel
+                    // NOW carries stage/unstage/commit controls, which is the
+                    // whole point of that slice. #311's own criterion is that
+                    // the DIFF surface exposes no commit/discard/stage/revert
+                    // control — the reader must not become a writer — and that
+                    // is exactly what `.diff-viewer` + `.tabbar` still proves.
+                    mutators: scan('.diff-viewer') + scan('.tabbar'),
                     // Monaco's own margin revert arrow writes to the modified side.
                     revertGlyphs: root.querySelectorAll('.diff-review-insert, .codicon-diff-revert, .revertButton').length,
                   };
