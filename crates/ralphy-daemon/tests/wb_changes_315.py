@@ -267,7 +267,12 @@ def groups(page):
         "   if (!k.classList.contains('chg-group-head') || k.offsetParent === null) return;"
         "   const ul = kids[i + 1];"
         "   const rows = ul ? Array.from(ul.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null) : [];"
-        "   out.push({ head: k.textContent.trim(),"
+        # The headline's LABEL, not the head's whole text: #318 hung a
+        # stage-all/unstage-all button in the same box, so `k.textContent`
+        # now trails the button's glyph. The label lives in the head's own
+        # `<span>`; the `|| k` fallback keeps this reading a bare head too.
+        "   const label = (k.querySelector('span') || k).textContent.trim();"
+        "   out.push({ head: label,"
         "              paths: rows.map(r => { const d = r.querySelector('.chg-dir');"
         "                const dir = d && d.offsetParent !== null ? d.textContent.trim() : '';"
         "                const name = r.querySelector('.chg-name').textContent.trim();"

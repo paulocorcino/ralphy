@@ -245,9 +245,14 @@ def groups(page):
         # A group is found through the HEADLINE above it, never by index: when a
         # clean side renders no headline the surviving group slides into slot 0,
         # so `ul[0]` would silently answer for the other side.
-        " const group = (label) => {"
+        # The headline's LABEL, not the head's whole text: #318 hung a
+        # stage-all/unstage-all button in the same box, so `textContent` now
+        # trails the button's glyph. The label lives in the head's own `<span>`;
+        # the `|| e` fallback keeps this reading a bare head too.
+        " const label = (e) => (e.querySelector('span') || e).textContent.trim();"
+        " const group = (name) => {"
         "   const h = Array.from(v.querySelectorAll('.chg-group-head')).filter(vis)"
-        "     .find(e => e.textContent.trim() === label);"
+        "     .find(e => label(e) === name);"
         "   const ul = h && h.nextElementSibling;"
         "   return ul && vis(ul)"
         "     ? Array.from(ul.querySelectorAll('.chg-row')).filter(vis).length : 0; };"
@@ -255,8 +260,7 @@ def groups(page):
         "   names: names.filter((n, i) => names.indexOf(n) === i),"
         "   staged: group('Staged Changes'),"
         "   unstaged: group('Changes'),"
-        "   heads: Array.from(v.querySelectorAll('.chg-group-head')).filter(vis)"
-        "     .map(e => e.textContent.trim()),"
+        "   heads: Array.from(v.querySelectorAll('.chg-group-head')).filter(vis).map(label),"
         "   from: rows('.chg-from').map(e => e.textContent.trim()) }; }"
     )
 
