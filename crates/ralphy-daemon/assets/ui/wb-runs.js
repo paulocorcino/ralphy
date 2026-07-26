@@ -240,17 +240,30 @@ window.WBRun = {
   // A disabled control that does not say why is just a control that stopped
   // working; the lock reason REPLACES the description rather than appending to
   // it, so the title answers the only question a dimmed button raises.
+  // `hasOwn`, not a bare lookup: `verbLockTitle("constructor", "")` would
+  // otherwise hand back Object's constructor instead of a string.
   verbLockTitle(verb, reason) {
-    return reason || this.VERB_TITLE[verb] || `${verb} on this project`;
+    if (reason) return reason;
+    return Object.hasOwn(this.VERB_TITLE, verb)
+      ? this.VERB_TITLE[verb]
+      : `${verb} on this project`;
   },
   // The panel's rendering of a terminal verb frame. Empty for a clean exit —
   // this is the whole guard against a success raising a refusal banner, so it
   // is the case the unit test pins first.
+  // The last line is truncated: it is whatever the CLI happened to print, and
+  // an unbounded string here becomes an unbounded box in the panel.
+  EXIT_NOTE_TAIL: 200,
   exitNote(verb, code, lastLine) {
     if (code === 0) return "";
     const shown = code === null || code === undefined ? "unknown" : code;
     const note = `${verb} refused (exit ${shown})`;
-    return lastLine ? `${note} — ${lastLine}` : note;
+    if (!lastLine) return note;
+    const tail =
+      lastLine.length > this.EXIT_NOTE_TAIL
+        ? `${lastLine.slice(0, this.EXIT_NOTE_TAIL)}…`
+        : lastLine;
+    return `${note} — ${tail}`;
   },
 };
 

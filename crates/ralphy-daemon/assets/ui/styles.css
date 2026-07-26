@@ -4216,12 +4216,24 @@ body.locked .runs {
   font-size: 0.72rem;
   border-bottom: 1px solid var(--border);
 }
+/* Bounded for the same reason the feed is: the text is whatever the CLI last
+   printed, and an unbounded banner in this flex column would deform the panel
+   exactly as the unsized <pre> did. */
 .runs-verb-error span {
   flex: 1;
+  max-height: 6em;
+  overflow: auto;
   overflow-wrap: anywhere;
 }
+/* `all: unset` collapses display to inline, leaving no hit box — restored the
+   same way `.runs-feed-act` does. */
 .runs-verb-error button {
   all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
   cursor: pointer;
   color: var(--danger);
 }

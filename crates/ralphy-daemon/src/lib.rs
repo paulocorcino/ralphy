@@ -4354,12 +4354,25 @@ mod tests {
                 "index.html must keep the #331 pin {pin}"
             );
         }
-        // The NEGATED pin: the unwrapped `<pre>` is the defect itself — an
-        // unsized sibling of the panel body. Its only occurrence was the one
-        // this issue replaced, so its return is a regression, not a duplicate.
+        // The NEGATED pin, written STRUCTURALLY rather than as one spelling of
+        // the old tag: `<pre x-show="rawFeed" class="runs-raw">` is the same
+        // defect with the attributes swapped. The invariant is that the feed
+        // occurs exactly once and is INSIDE the sized box, so the box's class
+        // must appear before it.
+        assert_eq!(
+            html.matches("runs-raw").count(),
+            1,
+            "the raw feed must occur exactly once in index.html (#331)"
+        );
+        let feed_box = html
+            .find(r#"class="runs-feed""#)
+            .expect("index.html must keep the .runs-feed box");
+        let raw = html
+            .find("runs-raw")
+            .expect("index.html must keep the raw feed");
         assert!(
-            !html.contains(r#"<pre class="runs-raw" x-show="rawFeed""#),
-            "the raw feed must stay inside its sized .runs-feed box (#331)"
+            feed_box < raw,
+            "the raw feed must stay INSIDE its sized .runs-feed box (#331)"
         );
 
         let app_js = include_str!("../assets/ui/app.js");
@@ -4367,14 +4380,13 @@ mod tests {
             assert!(app_js.contains(pin), "app.js must keep the #331 pin {pin}");
         }
         // The gate REUSES the Changes derivation rather than paralleling it —
-        // that reuse is the acceptance criterion, so it is pinned literally.
-        // Normalized first: this host checks these assets out with CRLF while
-        // the blob holds LF, so a raw multi-line substring is a Windows-only
-        // failure waiting to happen.
+        // that reuse is the acceptance criterion, so it is pinned. Whitespace
+        // is collapsed first so the pin judges the CODE and not its layout: it
+        // must survive a reformat and a CRLF checkout (this host holds LF in
+        // the blob and CRLF on disk) without blaming a design rule for either.
+        let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            app_js
-                .replace("\r\n", "\n")
-                .contains("verbLocked() {\n      return this.writeLocked();"),
+            squeezed.contains("verbLocked() { return this.writeLocked(); }"),
             "verbLocked() must be literally writeLocked(), not a second predicate (#331)"
         );
 
@@ -4391,9 +4403,10 @@ mod tests {
         );
     }
 
-    /// The runs chrome's own colour gate. The `@media` assertion is not
-    /// decoration: the phone width IS a criterion, and a block that lost its
-    /// narrow-width rule would pass the hex scan vacuously.
+    /// The runs chrome's own colour gate — plus the declarations that actually
+    /// DO the bounding. The markup pins above prove the box exists; only these
+    /// prove it is bounded, and `max-height` is a single line whose deletion
+    /// restores the original defect with every other pin still green.
     #[test]
     fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
         let css = include_str!("../assets/ui/styles.css");
@@ -4407,13 +4420,39 @@ mod tests {
             .find(close)
             .expect("styles.css must keep the #331 runs-chrome closing marker");
         let block = &css[start..end];
+        // Every assertion below is a `contains`, so an emptied block would
+        // satisfy only the negative one — check it has content first.
+        assert!(
+            !block.trim().is_empty(),
+            "the #331 runs-chrome block must not be empty"
+        );
         assert!(
             !block.contains('#'),
             "the #331 runs-chrome CSS must reference var(--…) tokens only, no hex literals"
         );
+        // The bound, the wrap, and the containment: the three declarations the
+        // issue's criteria rest on. The browser pass measures them, but neither
+        // `node --test` nor Playwright runs in CI (lib.rs doc above).
+        for decl in [
+            "max-height: 30vh",
+            "overflow-wrap: anywhere",
+            "white-space: pre-wrap",
+            "flex: 0 0 auto",
+        ] {
+            assert!(
+                block.contains(decl),
+                "the feed's containment rests on `{decl}` — it must stay in the #331 block"
+            );
+        }
+        // The phone width is a criterion, so the narrow rule is pinned by its
+        // BREAKPOINT and its payload: a bare `@media` would be satisfied by
+        // `@media print {}` while the narrow cap was deleted.
+        let narrow = block
+            .find("@media (max-width: 560px)")
+            .expect("the phone width is a criterion — keep the (max-width: 560px) rule");
         assert!(
-            block.contains("@media"),
-            "the phone width is a criterion — the block must keep its @media rule"
+            block[narrow..].contains("max-height: 22vh"),
+            "the narrow-width rule must still cap the feed"
         );
     }
 

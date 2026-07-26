@@ -583,6 +583,14 @@ function shell() {
     // The run verbs reuse the Changes derivation LITERALLY (#331) — a second
     // predicate is the drift #318 avoided, and the gate's whole contract is
     // that it agrees with the controls beside it.
+    //
+    // CAVEAT, unlike the write controls: `guard_run_lock` is called by
+    // changes/config/mutate/sync only. `ralphy run` and `ralphy triage` warn
+    // "proceeding anyway" on a live lock (run.rs, triage.rs) and `push` never
+    // reads it — runlock.rs calls the lock "a signal, never a mutex". So for
+    // these three verbs the CLI does NOT refuse, and this `disabled` is the
+    // only thing stopping the click. #331 asked for the gate explicitly; that
+    // it hardens a documented signal into a block is a maintainer's call.
     verbLocked() {
       return this.writeLocked();
     },
@@ -1094,8 +1102,16 @@ function shell() {
       this.rawFeed = "";
       this.rawFeedOpen = true;
     },
-    startRun() {
+    // What every verb click resets. The feed is cleared, not appended to: a
+    // collapsed box would otherwise swallow the next run's output silently, and
+    // its buffer would concatenate two runs with no separator between them.
+    _resetVerbSurface() {
       this.verbError = "";
+      this.rawFeed = "";
+      this.rawFeedOpen = true;
+    },
+    startRun() {
+      this._resetVerbSurface();
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
       WB.emit("run-start", {
@@ -1111,7 +1127,7 @@ function shell() {
     // triage / push: no params — the verb name is the whole intent (the client
     // never composes a command line, mirroring the daemon).
     fireVerb(verb) {
-      this.verbError = "";
+      this._resetVerbSurface();
       WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(`${verb} requested`);
     },
@@ -2210,6 +2226,12 @@ function shell() {
         this.commitMsg = "";
         this.commitMsgSlug = this.openSlug;
       }
+      // …and so does a verb refusal (#331): it named the OLD project's CLI, and
+      // a terminal frame can land long after the click, so the banner would
+      // otherwise describe a repo that is no longer on screen. It is sticky
+      // WITHIN a project, not across one — and while locked both verbs that
+      // clear it are disabled, so this is the only path that retires it.
+      this.verbError = "";
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();

@@ -73,10 +73,16 @@ test("parseSteps reads the three markers in order (the file:// demo seed)", () =
 
 // --- verb chrome (#331) -----------------------------------------------------
 
-test("verbLockTitle states the plain description when nothing holds the lock", () => {
-  const title = load().verbLockTitle("run", "");
-  assert.ok(title.length > 0, "an unlocked verb still needs a title");
-  assert.ok(!/lock/i.test(title), `an unlocked verb must not claim a lock: ${title}`);
+test("verbLockTitle states each verb's OWN description when nothing holds the lock", () => {
+  const wb = load();
+  // Per-verb equality, not just "non-empty": a helper returning "x" for all
+  // three would satisfy a length check while saying nothing about the verb.
+  for (const verb of ["run", "triage", "push"]) {
+    const title = wb.verbLockTitle(verb, "");
+    assert.equal(title, wb.VERB_TITLE[verb], verb);
+    assert.ok(!/lock/i.test(title), `an unlocked verb must not claim a lock: ${title}`);
+  }
+  assert.equal(new Set(["run", "triage", "push"].map((v) => wb.verbLockTitle(v, ""))).size, 3);
 });
 
 test("verbLockTitle states the reason VERBATIM when the lock is held", () => {
@@ -85,7 +91,22 @@ test("verbLockTitle states the reason VERBATIM when the lock is held", () => {
 });
 
 test("verbLockTitle falls back for an unknown verb rather than reading undefined", () => {
-  assert.ok(load().verbLockTitle("nope", "").includes("nope"));
+  const wb = load();
+  assert.ok(wb.verbLockTitle("nope", "").includes("nope"));
+  // A verb naming an Object.prototype member must not hand back a function —
+  // the same guard the status tables carry above.
+  for (const evil of ["toString", "constructor", "hasOwnProperty"]) {
+    const title = wb.verbLockTitle(evil, "");
+    assert.equal(typeof title, "string", evil);
+    assert.ok(title.includes(evil), `${evil}: ${title}`);
+  }
+});
+
+test("exitNote truncates a runaway last line instead of growing without bound", () => {
+  const wb = load();
+  const note = wb.exitNote("run", 1, "z".repeat(5000));
+  assert.ok(note.length < 300, `note length ${note.length}`);
+  assert.ok(note.endsWith("…"), note.slice(-20));
 });
 
 // The negative control: a note generator that never stays silent is not a gate

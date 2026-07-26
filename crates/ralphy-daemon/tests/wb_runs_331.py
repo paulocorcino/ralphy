@@ -15,9 +15,9 @@ Scenario 5  the panel stays usable at a phone width (390x780)
 Scenario 6  run/triage/push disabled with a STATED reason while locked, while
             reading and monitoring keep working
 Scenario 7  the verbs re-enable within 15 s of the lock being released
-Scenario 8  the gate is a HINT: a click path that is not gate-guarded reaches the
-            CLI, and the CLI's refusal is surfaced as a panel line that outlives
-            the 2.6 s action flash
+Scenario 8  a click path that is not gate-guarded reaches the CLI, and the CLI's
+            refusal is surfaced as a panel line that outlives the 2.6 s action
+            flash (see app.js `verbLocked` on what the gate does and does not do)
 
 Boots a Localhost daemon on 7421 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -30,6 +30,7 @@ Run: python crates/ralphy-daemon/tests/wb_runs_331.py   (exit 0 = all pass)
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -212,6 +213,13 @@ def main():
             # A bare `return` here would skip the exit gate below and report
             # success with ZERO browser assertions run.
             check(f"daemon listening on {PORT}", False)
+            sys.exit(1)
+        # …and it must be OUR daemon. If anything already held 7421, `launch()`
+        # would have failed to bind while `wait_listening` answered True against
+        # the foreign one — surfacing later as an opaque wait_for_function
+        # timeout instead of "port in use".
+        if proc.poll() is not None:
+            check(f"the daemon WE launched owns {PORT}", False, f"exited rc={proc.returncode}")
             sys.exit(1)
         check(f"daemon listening on {PORT}", True)
 
@@ -496,9 +504,22 @@ def main():
                 surfaced["last"] != "" and surfaced["last"] in surfaced["err"],
                 f"last={surfaced['last']!r}",
             )
+            # `refused (exit 1)` is synthesized from the exit CODE alone, so it
+            # would also pass on a panic or a missing `git`. The fixture's real
+            # precondition — no GitHub remote — has to be read off the message.
+            check(
+                "the surfaced refusal is the NO-REMOTE one, not any non-zero exit",
+                re.search(r"remote|github", surfaced["err"], re.I) is not None,
+                f"err={surfaced['err']!r}",
+            )
             # The 2.6 s `_flashAction` timer is the bar: a refusal that expires
-            # with it is the defect this replaces.
-            page.wait_for_timeout(3200)
+            # with it is the defect this replaces. Waiting on the FLASH's own
+            # expiry rather than a fixed sleep makes the comparison exact
+            # instead of leaving 600 ms of margin to a timing change.
+            page.wait_for_function(
+                "() => document.querySelector('.runs-action-status')?.offsetParent == null",
+                timeout=15000,
+            )
             outlived = page.evaluate(
                 "() => ({ err: document.querySelector('.runs-verb-error')?.offsetParent !== null,"
                 " flash: document.querySelector('.runs-action-status')?.offsetParent !== null })"
@@ -519,7 +540,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 26
+    ok = all(results) and len(results) >= 27
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("RUNS CHROME")

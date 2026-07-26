@@ -301,12 +301,18 @@ window.WBDaemon = (function () {
     // line" reports a fragment. Lines are finalized on the newline that ends
     // them, and the trailing partial (a CLI that does not end with one) on the
     // terminal frame.
+    // A lone `\r` is a line break here too: a CLI rendering a progress bar
+    // emits nothing else, and `pending` must not grow for the run's lifetime —
+    // an unbounded buffer feeding an unbounded banner is the very deformation
+    // this issue removes, so it is capped like the raw feed is.
+    const PENDING_CAP = 4096;
     let lastLine = "";
     let pending = "";
     const feedLines = (text) => {
       pending += text;
-      const parts = pending.split(/\r?\n/);
+      const parts = pending.split(/\r\n|\n|\r/);
       pending = parts.pop();
+      if (pending.length > PENDING_CAP) pending = pending.slice(-PENDING_CAP);
       for (const line of parts) if (line.trim() !== "") lastLine = line.trim();
     };
     const finalLine = () => {
