@@ -304,7 +304,11 @@ by hand inside a free-console session is an ordinary manual run. **One daemon
 per environment**: WSL is a plain Linux host running its own daemon; the
 **control plane** groups a machine's daemons by host. It reaches the control
 plane by dialing **out** (see **Control-plane tunnel**); it opens no inbound
-port.
+port. A spawned command's frames are `output` (RAW BYTE chunks — never
+line-aligned, so any "last line" fold must buffer across them) then exactly one
+terminal frame; **a CLI refusal is `{"status":"exited","code":N}` after its
+complaint streamed as `output`**, not an error frame, so a client that only
+watches the error branch never sees a refusal (#331).
 _Avoid_: service, server (it dials out), agent (reserved for the CLI vendors),
 instance id (the persistent key is `daemon_id`; `runid` stays run-scoped).
 
@@ -603,6 +607,14 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
   and shell-script children are not portable to Windows CI; plans that test
   child-process behavior should follow this pattern.
+- **A browser-test geometry assertion must prove the element was VISIBLE when
+  it measured.** An Alpine `x-show` flip is not visible to the very next
+  `evaluate`, and a hidden element reports every dimension as `0` — so
+  `scrollWidth <= clientWidth` PASSES vacuously on a box that never rendered
+  (measured in #331: a clipping check "passed" reading `0 <= 0`). Gate the
+  `wait_for_function` on `offsetParent !== null && clientWidth > 0`, and repeat
+  the `clientWidth > 0` guard inside the assertion itself — the wait proves
+  when, the guard proves what.
 - **A Python smoke script reading a Rust child's stdout on Windows must decode
   it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
   Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not
