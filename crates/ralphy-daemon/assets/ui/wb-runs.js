@@ -161,13 +161,6 @@ window.WBRun = {
     }
     return out.join("\n").trim();
   },
-  // Steps render more robustly as glyphs than as (sanitiser-fragile) checkboxes.
-  stepsToGlyphs(body) {
-    return body
-      .replace(/^(\s*)-\s+\[x\]/gim, "$1- ✅")
-      .replace(/^(\s*)-\s+\[ \]/gim, "$1- ⬜");
-  },
-
   // A human sleep line from the wake anchor: "waiting for reset ~20:15 · resumes
   // in ~2h 3m" (mirrors notifier.rs sleep formatting).
   sleepText(sleep) {

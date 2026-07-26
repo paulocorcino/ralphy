@@ -764,6 +764,39 @@ body.runs-open .runs {
   background: var(--chrome);
   color: var(--text);
 }
+/* the step list scrolls INSIDE its block, so a 40-step plan never pushes the
+   run picker off the panel (#330) */
+.plan-steps {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  list-style: none;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.plan-steps li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.plan-steps li.st-checked .step-tx {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.plan-steps li.st-noticed .step-tx {
+  color: var(--danger);
+}
+.plan-steps .step-ic {
+  flex: none;
+}
+.plan-steps-note,
+.plan-prose-note {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.4rem 0.6rem;
+}
 .plan-md {
   overflow: auto;
   padding: 0.5rem 0.7rem;

@@ -814,10 +814,18 @@ function shell() {
       const src = window.WB_RUNS || {};
       const out = {};
       for (const [proj, runs] of Object.entries(src)) {
-        out[proj] = runs.map((r) => ({
-          ...r,
-          planMd: (document.getElementById(r.planEl)?.textContent || "").trim(),
-        }));
+        out[proj] = runs.map((r) => {
+          const planMd = (document.getElementById(r.planEl)?.textContent || "").trim();
+          return {
+            ...r,
+            planMd,
+            // The demo has no snapshot document, so its steps are seeded from
+            // the plan text — the live panel gets them off `plan` (#330).
+            steps: window.WBRun.parseSteps(planMd),
+            planIssue: r.active ?? null,
+            planReadFailed: false,
+          };
+        });
       }
       this.runsByProject = out;
     },
@@ -851,7 +859,10 @@ function shell() {
           // a run); re-fetching an unchanged plan on each one would blank the
           // viewer between the replacement and the `file.read` reply.
           const prev = prevRuns.find((p) => p.runid === run.runid);
-          if (prev && prev.planPath === run.planPath) run.planMd = prev.planMd;
+          if (prev && prev.planPath === run.planPath) {
+            run.planMd = prev.planMd;
+            run.planReadFailed = prev.planReadFailed;
+          }
           return run;
         });
         const bad = reply.unreadable || [];
@@ -879,8 +890,10 @@ function shell() {
 
     // Read the selected run's plan through the confined `file.read` verb — the
     // document carries the plan's repo-relative PATH, never its text. A refusal
-    // (no plan yet, too large) leaves the viewer empty; it is NOT a read failure
-    // of the run list, so `runsError` is untouched.
+    // (no plan yet, too large, deleted between issues) KEEPS the last good text
+    // and only flags it (#330): the steps live in the snapshot document, so a
+    // failed prose read must not blank the viewer. It is NOT a read failure of
+    // the run list either, so `runsError` is untouched.
     async loadRunPlan() {
       if (!window.WBMode.isDaemon()) return;
       const run = this.currentRun();
@@ -890,9 +903,14 @@ function shell() {
           repo: this.openSlug,
           path: run.planPath,
         });
-        run.planMd = reply?.status === "ok" ? reply.content || "" : "";
+        if (reply?.status === "ok") {
+          run.planMd = reply.content || "";
+          run.planReadFailed = false;
+        } else {
+          run.planReadFailed = true;
+        }
       } catch {
-        run.planMd = "";
+        run.planReadFailed = true;
       }
       // A replacement mints new run objects, so a `run` that is no longer the
       // current one belongs to a superseded hydration — its section choice must
@@ -985,13 +1003,43 @@ function shell() {
     planHeadings(run) {
       return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
-    // Render one `##` section as sanitized HTML.
-    // Steps render as glyph bullets so the checkbox state survives sanitising.
+    // Render one `##` section as sanitized HTML. Steps no longer pass through
+    // here — they render from the snapshot document, not from the prose (#330).
     renderPlanSection(run, name) {
       if (!run || !name) return "";
-      let body = window.WBRun.section(run.planMd, name);
-      if (name.toLowerCase() === "steps") body = window.WBRun.stepsToGlyphs(body);
+      const body = window.WBRun.section(run?.planMd, name);
+      if (!body && !run?.planMd && !run?.planReadFailed) {
+        return DOMPurify.sanitize(marked.parse("_(no other sections read)_"));
+      }
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
+    },
+
+    // --- the step list (the plan block is state, #330) ---------------------
+    planSteps() {
+      return this.currentRun()?.steps || [];
+    },
+    stepGlyph(status) {
+      return window.WBRun.stepGlyph(status);
+    },
+    stepLabel(status) {
+      return window.WBRun.stepLabel(status);
+    },
+    stepClass(status) {
+      return window.WBRun.stepClass(status);
+    },
+    // Why the step list is empty — an unexplained blank block reads as a bug.
+    stepsNote() {
+      const run = this.currentRun();
+      if (this.planSteps().length) return "";
+      if (run?.phase === "planning") return "writing the plan…";
+      if (run?.planIssue != null) return "this plan has no steps";
+      return "no plan for this issue yet";
+    },
+    // A failed prose read, distinguished from a plan that simply has no steps.
+    proseNote() {
+      const run = this.currentRun();
+      if (!run?.planReadFailed) return "";
+      return run.planMd ? "could not read plan.md — showing the last version read" : "could not read plan.md";
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------
@@ -1073,10 +1121,13 @@ function shell() {
       if (!run) return;
       const d = ev.data || {};
       switch (ev.type) {
-        case "dev.ralphy.plan.step":
+        case "dev.ralphy.plan.step": {
           // tick the next open checkbox (the panel just advances a step)
           run.planMd = run.planMd.replace(/-\s+\[ \]/, "- [x]");
+          const open = (run.steps || []).find((s) => s.status === "open");
+          if (open) open.status = "checked";
           break;
+        }
         case "dev.ralphy.issue.closed": {
           const iss = run.issues.find((x) => x.number === d.number);
           if (iss) iss.status = "done";
@@ -1136,6 +1187,8 @@ function shell() {
       if (next) {
         this.applyRunEvent({ type: "dev.ralphy.issue.started", runid: r.runid, data: { number: next.number } });
         r.planMd = "## Steps\n- [ ] plan for #" + next.number + " (planner writing…)\n";
+        r.steps = [{ text: "plan for #" + next.number + " (planner writing…)", status: "open" }];
+        r.planIssue = next.number;
       } else {
         r.active = null;
         r.phase = "consolidating";

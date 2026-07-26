@@ -743,27 +743,39 @@
             </ol>
           </div>
 
-          <!-- ZONE 3 · plan viewer (Cursor-style) — `## Steps` pinned on top,
-               fully rendered; a dropdown below reads any other `##` section. The
-               backend updates plan.md live (plan.step / plan.opened events). -->
+          <!-- ZONE 3 · plan viewer (Cursor-style) — the steps come from the run
+               snapshot document (`plan` block, #330), so they survive a deleted
+               or unreadable plan.md; a dropdown below reads any other `##`
+               section out of the prose the `file.read` verb returns. -->
           <div class="plan-wrap">
             <div class="plan-block plan-block-steps">
               <div class="plan-block-head">
                 <i data-lucide="list-checks"></i><span>Steps</span>
                 <span class="spacer"></span>
-                <span class="plan-issue" x-show="currentRun()?.active != null" x-text="'#' + currentRun()?.active"></span>
+                <span class="plan-issue" x-show="(currentRun()?.planIssue ?? currentRun()?.active) != null"
+                      x-text="'#' + (currentRun()?.planIssue ?? currentRun()?.active)"></span>
               </div>
-              <div class="plan-md md" x-html="renderPlanSection(currentRun(), 'Steps')"></div>
+              <ul class="plan-steps">
+                <template x-for="(s, i) in planSteps()" :key="i">
+                  <li :class="stepClass(s.status)" :title="stepLabel(s.status)">
+                    <span class="step-ic" x-text="stepGlyph(s.status)"></span>
+                    <span class="step-tx" x-text="s.text"></span>
+                  </li>
+                </template>
+              </ul>
+              <div class="plan-steps-note" x-show="stepsNote()" x-text="stepsNote()"></div>
             </div>
             <div class="plan-block plan-block-more">
               <div class="plan-block-head">
                 <i data-lucide="book-open"></i>
                 <select class="plan-picker" x-model="planSection">
+                  <option value="" x-show="!planHeadings(currentRun()).length">no other sections yet</option>
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
               </div>
+              <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
               <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
             </div>
           </div>
