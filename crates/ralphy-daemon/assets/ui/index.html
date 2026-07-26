@@ -251,6 +251,7 @@
                  already sent (`groupPaths`), so no pattern is ever composed. -->
             <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">
               <span>Staged Changes</span>
+              <span class="chg-group-note" x-text="groupNote('staged')"></span>
               <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
                       :title="rowActTitle('unstage')" aria-label="Unstage every staged path"
                       @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
@@ -271,6 +272,7 @@
             </ul>
             <div class="chg-group-head" x-show="(changesUnstaged[openSlug] || []).length">
               <span>Changes</span>
+              <span class="chg-group-note" x-text="groupNote('unstaged')"></span>
               <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
                       :title="rowActTitle('stage')" aria-label="Stage every changed path"
                       @click.stop="stagePaths(openSlug, groupPaths(changesUnstaged[openSlug]))">+</button>
@@ -286,6 +288,12 @@
                   <button class="chg-act" data-act="stage" :disabled="writeLocked()"
                           :title="rowActTitle('stage')" aria-label="Stage this path"
                           @click.stop="stagePaths(openSlug, [c.path])">+</button>
+                  <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
+                       index, so a discard offered on a staged row would claim to
+                       throw away something it keeps. -->
+                  <button class="chg-act chg-discard" data-act="discard" :disabled="writeLocked()"
+                          :title="rowActTitle('discard')" aria-label="Discard this path's changes"
+                          @click.stop="discardRow(openSlug, c)">×</button>
                 </li>
               </template>
             </ul>

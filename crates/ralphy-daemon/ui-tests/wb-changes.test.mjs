@@ -569,3 +569,61 @@ test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   assert.match(held, /holds this repo's lock/);
   assert.equal(writeLockReason([{ runid: "x" }, { runid: "y" }]), held);
 });
+
+test("discardConfirm names the file in a tracked discard (#319)", () => {
+  const discardConfirm = load().discardConfirm;
+  const c = discardConfirm({ path: "src/app.js", name: "app.js", status: "modified" });
+  assert.match(c.message, /app\.js/);
+  assert.equal(c.danger, true);
+  assert.equal(c.unrecoverable, false);
+  // A tracked discard keeps the staged blob and the commits, so it must NOT
+  // borrow the untracked case's unrecoverability.
+  assert.doesNotMatch(c.message, /no commit and no reflog/);
+  assert.match(c.message, /staged for this file is kept/);
+});
+
+test("discardConfirm is more emphatic for the untracked case (#319)", () => {
+  const discardConfirm = load().discardConfirm;
+  const tracked = discardConfirm({ path: "a.txt", name: "a.txt", status: "modified" });
+  const loose = discardConfirm({ path: "fresh.txt", name: "fresh.txt", status: "untracked" });
+  assert.match(loose.message, /fresh\.txt/);
+  assert.match(loose.message, /no commit and no reflog can bring it back/);
+  assert.equal(loose.unrecoverable, true);
+  // The emphasis is a RELATION between the two dialogs, not a literal look: a
+  // build that collapsed them into one wording would red here.
+  assert.notEqual(loose.title, tracked.title);
+  assert.notEqual(loose.confirmLabel, tracked.confirmLabel);
+  assert.equal(tracked.unrecoverable, false);
+});
+
+test("discardConfirm names an untracked directory entry (#319)", () => {
+  const discardConfirm = load().discardConfirm;
+  // git reports an untracked DIRECTORY as ONE entry `newdir/`, whose split name
+  // is the empty string — the dialog must still name something.
+  const c = discardConfirm({ path: "newdir/", name: "", status: "untracked" });
+  assert.match(c.message, /newdir\//);
+  assert.match(c.message, /no commit and no reflog can bring it back/);
+});
+
+test("groupDiscardNote states what each group's discard removes (#319)", () => {
+  const groupDiscardNote = load().groupDiscardNote;
+  const unstaged = groupDiscardNote("unstaged");
+  const staged = groupDiscardNote("staged");
+  assert.ok(unstaged.length > 0 && staged.length > 0);
+  assert.notEqual(unstaged, staged);
+  assert.match(unstaged, /staged changes are kept/);
+  assert.match(staged, /unstage first/);
+  assert.equal(groupDiscardNote("nope"), "");
+  assert.equal(groupDiscardNote(undefined), "");
+});
+
+test("the discard folds are pure (#319)", () => {
+  const { discardConfirm, groupDiscardNote } = load();
+  const entry = { path: "a.txt", name: "a.txt", status: "untracked" };
+  const snapshot = JSON.stringify(entry);
+  discardConfirm(entry);
+  groupDiscardNote("unstaged");
+  assert.equal(JSON.stringify(entry), snapshot, "the input entry is unmodified");
+  // …and no input at all is answered, never thrown on.
+  assert.equal(typeof discardConfirm(undefined).message, "string");
+});

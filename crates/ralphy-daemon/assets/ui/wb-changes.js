@@ -252,6 +252,51 @@
     return "a run holds this repo's lock — write controls are disabled until it finishes";
   }
 
+  // The confirmation a discard must carry (#319). Two cases with different
+  // RECOVERABILITY, so they are two different dialogs rather than one sentence
+  // with a conditional clause: a tracked path's worktree edit is thrown away but
+  // its staged blob and its commits remain, while an untracked file has never
+  // been committed and nothing can bring it back.
+  //
+  // The name falls back to the whole path because git reports an untracked
+  // DIRECTORY as one entry ending in `/` — `splitPath("newdir/").name` is `""`,
+  // and a dialog asking to delete “” names nothing.
+  function discardConfirm(entry) {
+    const e = entry || {};
+    const name = e.name || e.path || "";
+    if (e.status === "untracked") {
+      return {
+        title: "Delete untracked file",
+        message:
+          "Delete “" +
+          name +
+          "”? This file has never been committed — no commit and no reflog can bring it back.",
+        confirmLabel: "Delete permanently",
+        danger: true,
+        unrecoverable: true,
+      };
+    }
+    return {
+      title: "Discard changes",
+      message:
+        "Discard changes to “" +
+        name +
+        "”? The working-tree changes are thrown away; anything staged for this file is kept.",
+      confirmLabel: "Discard changes",
+      danger: true,
+      unrecoverable: false,
+    };
+  }
+
+  // What a group's discard removes, stated on the group head itself. The staged
+  // group carries no discard control at all: `restore --worktree` does not touch
+  // the index, so a control there would claim to throw away something it keeps.
+  function groupDiscardNote(group) {
+    if (group === "unstaged") return "discard removes working-tree changes; staged changes are kept";
+    if (group === "staged") return "unstage first — discard is offered on Changes only";
+    return "";
+  }
+
   window.WBChanges = {
     fold,
     foldSync,
@@ -262,5 +307,7 @@
     groupPaths,
     commitTarget,
     writeLockReason,
+    discardConfirm,
+    groupDiscardNote,
   };
 })(window);

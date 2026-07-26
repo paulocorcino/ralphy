@@ -4035,6 +4035,103 @@ mod tests {
         }
     }
 
+    /// The discard control (#319) — the same CI-visible substring gate the write
+    /// controls get, plus the NEGATED pin that keeps a group-level "discard all"
+    /// out: the issue asks for one file at a time, and a one-tap discard of every
+    /// path is precisely the mis-tap PRD #297 refused to ship.
+    #[test]
+    fn the_discard_control_is_pinned_in_the_markup() {
+        let html = include_str!("../assets/ui/index.html");
+        let js = include_str!("../assets/ui/wb-changes.js");
+
+        for pin in [
+            r#"data-act="discard""#,
+            r#"class="chg-group-note""#,
+            "groupNote('unstaged')",
+            "groupNote('staged')",
+            "discardRow(openSlug, c)",
+        ] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the discard pin {pin}"
+            );
+        }
+        assert!(
+            !html.contains(r#"data-act="discard-all""#),
+            "there is no group-level discard: one file at a time (#319)"
+        );
+        for pin in ["function discardConfirm(", "function groupDiscardNote("] {
+            assert!(js.contains(pin), "wb-changes.js must keep the fold {pin}");
+        }
+    }
+
+    /// The discard block's own colour + hover gate, reusing #318's scan. It also
+    /// asserts the block still holds an `@media` rule: the touch de-emphasis IS
+    /// the criterion, and a block that lost it would pass the rest vacuously.
+    #[test]
+    fn the_discard_controls_add_no_colour_outside_the_token_set() {
+        let css = include_str!("../assets/ui/styles.css");
+        let open = "/* #319 discard */";
+        let close = "/* #319 discard end */";
+        let start = css
+            .find(open)
+            .expect("styles.css must keep the #319 discard opening marker")
+            + open.len();
+        let end = css
+            .find(close)
+            .expect("styles.css must keep the #319 discard closing marker");
+        let block = &css[start..end];
+        assert!(
+            !block.contains('#'),
+            "the #319 discard CSS must reference var(--…) tokens only, no hex literals"
+        );
+        assert!(
+            block.contains("@media"),
+            "the touch de-emphasis is the criterion — the block must keep its @media rule"
+        );
+
+        let declarations = strip_css_comments(block);
+        let mut hover_rules = 0;
+        for rule in declarations.split('}') {
+            let Some((selector, body)) = rule.split_once('{') else {
+                continue;
+            };
+            if !selector.contains(":hover") {
+                continue;
+            }
+            hover_rules += 1;
+            for banned in ["opacity", "visibility", "display", "max-height"] {
+                assert!(
+                    !body.contains(banned),
+                    "a discard control must not be hover-gated on {banned}: {selector}"
+                );
+            }
+        }
+        assert!(
+            hover_rules >= 2,
+            "the discard block must still carry its :hover rules, found {hover_rules}"
+        );
+    }
+
+    /// CSS text with every `/* … */` comment removed, so a rule scan judges
+    /// selectors and not the prose that names one as prior art.
+    fn strip_css_comments(block: &str) -> String {
+        let mut out = String::new();
+        let mut rest = block;
+        while let Some(at) = rest.find("/*") {
+            out.push_str(&rest[..at]);
+            match rest[at + 2..].find("*/") {
+                Some(end_at) => rest = &rest[at + 2 + end_at + 2..],
+                None => {
+                    rest = "";
+                    break;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
     /// The write controls' CSS must speak the shell's token language (ADR-0035)
     /// exactly as the rail view's does. Its own block, and its own marker pair:
     /// appending to #317's would silently widen a pin that names another issue.
@@ -4061,19 +4158,7 @@ mod tests {
         // judge the BODY of any rule whose selector mentions `:hover`. Comments
         // are stripped FIRST: one of them names `.branch-chip.disabled:hover` as
         // prior art, and a raw split would read that prose as a selector.
-        let mut declarations = String::new();
-        let mut rest = block;
-        while let Some(at) = rest.find("/*") {
-            declarations.push_str(&rest[..at]);
-            match rest[at + 2..].find("*/") {
-                Some(end_at) => rest = &rest[at + 2 + end_at + 2..],
-                None => {
-                    rest = "";
-                    break;
-                }
-            }
-        }
-        declarations.push_str(rest);
+        let declarations = strip_css_comments(block);
 
         let mut hover_rules = 0;
         for rule in declarations.split('}') {

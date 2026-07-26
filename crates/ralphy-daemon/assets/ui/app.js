@@ -553,7 +553,14 @@ function shell() {
       return window.WBChanges.writeLockReason(this.runsByProject[this.openSlug]);
     },
     rowActTitle(verb) {
-      return this.writeLockReason() || (verb === "stage" ? "stage this path" : "unstage this path");
+      const locked = this.writeLockReason();
+      if (locked) return locked;
+      if (verb === "stage") return "stage this path";
+      if (verb === "discard") return "discard this path's changes";
+      return "unstage this path";
+    },
+    groupNote(group) {
+      return window.WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
       return window.WBChanges.commitTarget(this.syncByProject[this.openSlug]);
@@ -609,6 +616,35 @@ function shell() {
         }
       } catch {
         if (window.WBMode.isDaemon()) this._flashAction("unstage unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
+    },
+
+    // Discard ONE row's changes (#319) — the only irreversible act on this
+    // panel, so it is the only one gated on a confirmation, and the dialog's
+    // wording comes from `discardConfirm` (the untracked case is emphatically
+    // its own). A cancel makes NO daemon call at all.
+    async discardRow(slug, entry) {
+      if (!slug || !entry || !entry.path) return;
+      const c = window.WBChanges.discardConfirm(entry);
+      const ok = await this.askConfirm({
+        title: c.title,
+        message: c.message,
+        confirmLabel: c.confirmLabel,
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.discard", {
+          repo: slug,
+          paths: [entry.path],
+        });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "discard refused"));
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("discard unavailable: no daemon");
       }
       this.loadChanges(slug);
       this.loadSync(slug);

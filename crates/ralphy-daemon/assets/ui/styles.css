@@ -1394,6 +1394,46 @@ body.runs-open .runs {
   background: var(--surface);
 }
 /* #318 write controls end */
+/* #319 discard */
+/* The destructive action keeps the same 24px flow geometry as its safe sibling
+   — no hover-gated `opacity`/`visibility`/`display` anywhere here either — but
+   `margin-left: 0` is what makes it sit AFTER the stage button instead of
+   claiming the row's auto margin for itself. Muted at rest, `--danger` only on
+   hover: at rest it must not out-shout the safe action it stands beside. */
+.chg-discard {
+  margin-left: 0;
+}
+.chg-discard:hover {
+  color: var(--danger);
+}
+.chg-discard:disabled:hover {
+  color: var(--text-muted);
+}
+/* The per-group statement of what a discard removes. `flex: 0 999 auto` lets it
+   yield the whole row before the label or the group action does. */
+.chg-group-note {
+  flex: 0 999 auto;
+  min-width: 0;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The touch criterion: on a coarse pointer or a phone-width column the
+   irreversible action carries LESS prominence than the safe ones — smaller and
+   dimmer — while staying visible and reachable. Shrinking it is the whole
+   point; hiding it would just move the mis-tap to a menu nobody can find. */
+@media (pointer: coarse), (max-width: 560px) {
+  .chg-discard {
+    min-width: 18px;
+    min-height: 18px;
+    font-size: 0.7rem;
+    opacity: 0.6;
+  }
+}
+/* #319 discard end */
 /* The sync row (#316): branch + counts + staleness on ONE line. `overflow:
    hidden` on the container is what bounds a long branch name inside the row
    instead of bleeding the sidebar (same rule the change rows follow). */
