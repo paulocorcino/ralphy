@@ -151,8 +151,11 @@ def launch(daemon_dir):
     )
 
 
+# #317 moved the count onto the Projects row and the list into a rail view, so
+# the badge is only readable while the Projects view is the one showing.
 VISIBLE_SECS = (
-    "Array.from(document.querySelectorAll('.changes-sec')).filter(e => e.offsetParent !== null)"
+    "Array.from(document.querySelectorAll('li.project.open .chg-badge'))"
+    ".filter(e => e.offsetParent !== null)"
 )
 
 # Gate every wait on the offsetParent-filtered count, never the raw
@@ -164,19 +167,40 @@ VISIBLE_ROWS = (
 )
 
 
+def show_view(page, view):
+    """Clicking the rail button of the view already showing COLLAPSES the
+    sidebar, so every switch is guarded on that view's own visibility (#317)."""
+    page.evaluate(
+        "(v) => { const el = document.querySelector('.' + v + '-view');"
+        " if (!el || el.offsetParent === null)"
+        "   document.querySelector(`nav.rail button[title=\"${v === 'changes' ? 'Changes' : 'Projects'}\"]`)"
+        "     .click(); }",
+        arg=view,
+    )
+    page.wait_for_function(
+        "(v) => { const el = document.querySelector('.' + v + '-view');"
+        " return !!el && el.offsetParent !== null; }",
+        arg=view,
+        timeout=15000,
+    )
+
+
 def wait_badge(page, expected, timeout=15000):
+    show_view(page, "projects")
     page.wait_for_function(
         f"(want) => {{ const els = {VISIBLE_SECS};"
-        " return els.length === 1 && els[0].querySelector('.count').textContent.trim() === want; }",
+        " return els.length === 1 && els[0].textContent.trim() === want; }",
         arg=expected,
         timeout=timeout,
     )
 
 
 def open_rows(page, slug, expected_count):
-    page.evaluate(f"() => {SH}.toggle('{slug}')")
+    show_view(page, "projects")
+    # `toggle` is a TOGGLE: calling it on the already-open project closes it.
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     wait_badge(page, str(expected_count))
-    page.click(".changes-sec:visible")
+    show_view(page, "changes")
     page.wait_for_function(
         f"(want) => {VISIBLE_ROWS}.length === want", arg=expected_count, timeout=8000
     )
@@ -364,7 +388,11 @@ def main():
                   return {
                     vbtns: Array.from(root.querySelectorAll('.vbtn')).map(b => b.textContent.trim()),
                     acts: Array.from(root.querySelectorAll('[data-act]')).map(b => b.getAttribute('data-act')),
-                    mutators: scan('.diff-viewer') + scan('.changes-list') + scan('.changes-sec') + scan('.tabbar'),
+                    // `.changes-view` (not the deleted `.changes-sec`) is the
+                    // promoted surface: scanning it covers the new toolbar and
+                    // message box too, so this assertion widened with #317
+                    // instead of passing because its scope vanished.
+                    mutators: scan('.diff-viewer') + scan('.changes-list') + scan('.changes-view') + scan('.tabbar'),
                     // Monaco's own margin revert arrow writes to the modified side.
                     revertGlyphs: root.querySelectorAll('.diff-review-insert, .codicon-diff-revert, .revertButton').length,
                   };

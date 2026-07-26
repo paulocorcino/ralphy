@@ -158,37 +158,79 @@ def launch(daemon_dir):
     )
 
 
+# #317 promoted the Changes section out of the project accordion into a rail
+# VIEW of the sidebar, and moved the count badge onto the Projects row. The two
+# now live in DIFFERENT sidebar views, so a reader of one has to be standing in
+# that view — hence `in_projects`.
 VISIBLE_SECS = (
-    "Array.from(document.querySelectorAll('.changes-sec')).filter(e => e.offsetParent !== null)"
+    "Array.from(document.querySelectorAll('li.project.open .chg-badge'))"
+    ".filter(e => e.offsetParent !== null)"
 )
-# The `li.project` whose Changes section is the visible one — `page.click` and a
-# bare querySelector both resolve to the FIRST DOM match, which is hidden once
-# more than one project is registered.
+# The Changes surface. Scoped to the open project by construction, so there is
+# one of it — but still `x-show`-gated, hence the offsetParent check.
 OPEN_LI = (
-    "Array.from(document.querySelectorAll('li.project'))"
-    ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null)"
+    "(() => { const v = document.querySelector('.changes-view');"
+    " return v && v.offsetParent !== null ? v : null; })()"
 )
+
+
+def show_view(page, view):
+    """Clicking the rail button of the view already showing COLLAPSES the
+    sidebar, so every switch is guarded on that view's own visibility."""
+    page.evaluate(
+        "(v) => { const el = document.querySelector('.' + v + '-view');"
+        " if (!el || el.offsetParent === null)"
+        "   document.querySelector(`nav.rail button[title=\"${v === 'changes' ? 'Changes' : 'Projects'}\"]`)"
+        "     .click(); }",
+        arg=view,
+    )
+    page.wait_for_function(
+        "(v) => { const el = document.querySelector('.' + v + '-view');"
+        " return !!el && el.offsetParent !== null; }",
+        arg=view,
+        timeout=15000,
+    )
+
+
+def in_projects(page, fn):
+    """Run a badge read in the Projects view, then restore the caller's view."""
+    prev = page.evaluate(f"() => {SH}.sideView")
+    show_view(page, "projects")
+    try:
+        return fn()
+    finally:
+        if prev == "changes":
+            show_view(page, "changes")
 
 
 def badge_text(page):
-    return page.evaluate(
-        f"() => {{ const els = {VISIBLE_SECS};"
-        " if (els.length > 1) return 'MULTI';"
-        " return els.length ? els[0].querySelector('.count').textContent.trim() : null; }"
+    return in_projects(
+        page,
+        lambda: page.evaluate(
+            f"() => {{ const els = {VISIBLE_SECS};"
+            " if (els.length > 1) return 'MULTI';"
+            " return els.length ? els[0].textContent.trim() : null; }"
+        ),
     )
 
 
 def wait_badge(page, expected, timeout=15000):
-    page.wait_for_function(
-        f"(want) => {{ const els = {VISIBLE_SECS};"
-        " return els.length === 1 && els[0].querySelector('.count').textContent.trim() === want; }",
-        arg=expected,
-        timeout=timeout,
+    in_projects(
+        page,
+        lambda: page.wait_for_function(
+            f"(want) => {{ const els = {VISIBLE_SECS};"
+            " return els.length === 1 && els[0].textContent.trim() === want; }",
+            arg=expected,
+            timeout=timeout,
+        ),
     )
 
 
 def open_project(page, slug, expected):
-    page.evaluate(f"() => {SH}.toggle('{slug}')")
+    show_view(page, "projects")
+    # `toggle` is a TOGGLE: calling it on the already-open project closes it.
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
     wait_badge(page, expected)
 
 
@@ -313,7 +355,7 @@ def main():
             page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
 
             open_project(page, slug_a, "4")
-            page.click(".changes-sec:visible")
+            show_view(page, "changes")
             wait_row_count(page, 5)
 
             # --- scenario 1: two headlines, in reading order -------------------
@@ -490,11 +532,24 @@ def main():
                     wait_head_count(page, 0)
                 except Exception as exc:  # noqa: BLE001 - reported as a check
                     print(f"[INFO] {label}: group headlines never cleared ({type(exc).__name__})", flush=True)
-                failed = page.evaluate(
-                    f"() => {{ const li = {OPEN_LI}; const el = li.querySelector('.changes-sec .count');"
-                    " return { text: el.textContent.trim(), title: el.getAttribute('title'),"
-                    "          heads: Array.from(li.querySelectorAll('.chg-group-head')).filter(h => h.offsetParent !== null).length,"
-                    "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
+                # The badge and the groups now live in DIFFERENT sidebar views
+                # (#317), so they are two reads: the count from the Projects row,
+                # the emptied groups from the Changes view.
+                failed = in_projects(
+                    page,
+                    lambda: page.evaluate(
+                        f"() => {{ const el = {VISIBLE_SECS}[0];"
+                        " return el ? { text: el.textContent.trim(),"
+                        "               title: el.getAttribute('title') } : null; }"
+                    ),
+                )
+                failed = dict(
+                    failed or {"text": None, "title": None},
+                    **page.evaluate(
+                        f"() => {{ const li = {OPEN_LI}; if (!li) return {{ heads: -1, rows: -1 }};"
+                        " return { heads: Array.from(li.querySelectorAll('.chg-group-head')).filter(h => h.offsetParent !== null).length,"
+                        "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
+                    ),
                 )
                 check(
                     f"{label} reads as `—` and explains itself",
@@ -510,7 +565,7 @@ def main():
 
             # --- scenario 5: a clean tree renders NO headline ------------------
             open_project(page, slug_b, "0")
-            page.click(".changes-sec:visible")
+            show_view(page, "changes")
             # Positive control FIRST: without it `heads == 0` holds whether or
             # not the click ever expanded the section (the Alpine x-show race).
             page.wait_for_function(
