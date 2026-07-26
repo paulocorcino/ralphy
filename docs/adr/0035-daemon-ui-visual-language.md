@@ -102,15 +102,26 @@ drawer) has its own three tokens, and everything else derives from them:
 | Token              | Value  | Role                                            |
 | ------------------ | ------ | ----------------------------------------------- |
 | `reading-size`     | `14px` | Body size for rendered prose                    |
-| `reading-measure`  | `68ch` | Line length of the text column                  |
+| `reading-measure`  | `100ch`| Line length of the text column                  |
 | `reading-leading`  | `1.7`  | Line height                                     |
 
 Three rules follow, and they are the decision:
 
-- **The article is wide; only the text is narrow.** `max-width: 96ch` on the
-  article, `68ch` on `p`/`ul`/`ol`/`blockquote`/headings. A code block, a table
-  or a screenshot spans the full column — clamping them to the measure turns a
-  wide ASCII diagram into a horizontal scroll.
+- **The article is a little wider than the text.** `max-width: 108ch` on the
+  article, `100ch` on `p`/`ul`/`ol`/`blockquote`/headings. A code block, a table
+  or a screenshot spans the article — clamping them to the measure turns a wide
+  ASCII diagram into a horizontal scroll. **The gap is deliberately small.** An
+  early cut used `96ch`/`68ch`; the table then stood ~210px past the paragraph
+  above it, the page read as two competing columns, and the prose looked
+  squeezed against a block that was not. Keep the two within about one line of
+  slack — measured on `docs/daemon-bench.md`, the gap is now ~2px.
+- **The measure is set against GitHub, not against a typographic ideal.** These
+  documents are read on GitHub too, and a column much narrower than that render
+  reads as cramped when the operator switches between them: GitHub's
+  `.markdown-body` is 1012px at 16px, about 118 characters. `100ch` at `14px`
+  is ~755px. Deliberately past the classic 45–90 character comfort band —
+  matching the other window this content lives in won here, and the earlier
+  problem was never line length alone but 13px type on a 95-character line.
 - **Hierarchy by weight and space, never by rules.** Headings are weight 600 at
   `1.9 / 1.45 / 1.15 / 1em`, separated by a `2.2em` top margin, in
   `text-strong`. The full-width hairline previously under every `h1`/`h2` sliced

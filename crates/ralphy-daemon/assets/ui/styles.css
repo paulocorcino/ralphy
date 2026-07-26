@@ -36,7 +36,7 @@
      the whole reading system — the narrow surfaces (issue drawer) override
      `--reading-size` and nothing else. */
   --reading-size: 14px;
-  --reading-measure: 68ch;
+  --reading-measure: 100ch;
   --reading-leading: 1.7;
   --radius: 4px;
   --rail-w: 48px;
@@ -366,8 +366,27 @@ body.side-collapsed {
 .wb-host.wunderbaum .wb-icon {
   color: var(--text-muted);
 }
-.wb-host.wunderbaum .wb-node.wb-folder > .wb-icon {
-  color: var(--console-text); /* folders read warmer, like VS Code's accent */
+/* A folder carries NO icon: the chevron already says "this opens", and a glyph
+   next to it says it a second time. Minimal, the way VS Code and Cursor draw a
+   tree. Only directories lose their icon — a file's glyph names its type, which
+   the chevron cannot.
+
+   `visibility: hidden` rather than `display: none`, on purpose: the icon keeps
+   its box, so folder names sit on the SAME left edge as file names and only the
+   chevron sticks out. Removing the box outdents every folder name by an icon
+   width and the tree gains a second ragged edge.
+
+   This also retires a glyph that was wrong for two other reasons, neither worth
+   fixing now that nothing is drawn — Wunderbaum's bootstrap map points
+   `folderLazy` at `bi-folder-symlink` (a folder with a shortcut arrow) and the
+   daemon marks EVERY directory `lazy` to fetch children on expand, so the whole
+   tree drew shortcuts; and the warm accent that was meant to tint them hung off
+   a `.wb-folder` class this markup does not have (the row carries `wb-lazy`),
+   so it never applied. */
+.wb-host.wunderbaum .wb-icon.bi-folder-symlink,
+.wb-host.wunderbaum .wb-icon.bi-folder2,
+.wb-host.wunderbaum .wb-icon.bi-folder2-open {
+  visibility: hidden;
 }
 /* file-type glyphs whose brand colour is near-black inherit a light tone */
 .wb-host.wunderbaum .wb-icon.md-glyph {
@@ -1981,10 +2000,15 @@ body.runs-open .runs {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
+/* 3px of breathing room so the first column/row doesn't sit flush against the
+   window border. Padding (not a margin on the terminal) keeps the black body
+   painted edge-to-edge; box-sizing keeps the fit addon measuring the inner box. */
 .session-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  box-sizing: border-box;
+  padding: 3px;
 }
 /* A restored agent console the daemon no longer runs: same box, no session. It
    reads as dormant (dashed border, muted body) until the operator reconnects. */
@@ -2330,11 +2354,16 @@ body.runs-open .runs {
   line-height: var(--reading-leading);
   color: var(--text);
 }
-/* The ARTICLE is wide; only the TEXT is narrow. A code block, a table or a
-   screenshot therefore spans the column — clamping them to the measure turned
-   the README's ASCII diagram into a horizontal scroll. */
+/* The ARTICLE is a little wider than the TEXT, so a code block, a table or a
+   screenshot spans it — clamping those to the measure turned the README's
+   88-column ASCII diagram into a horizontal scroll.
+
+   The two widths must stay CLOSE. An early cut ran 96ch against a 68ch measure:
+   the table then stood ~210px past the paragraph above it, the page read as two
+   competing columns, and the prose looked squeezed against a block that was
+   not. Keep the gap around one line of slack, no more. */
 .md-body {
-  max-width: 96ch;
+  max-width: 108ch;
   margin: 0 auto;
   padding: 2rem 1.8rem 4rem;
 }
