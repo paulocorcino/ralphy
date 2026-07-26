@@ -387,9 +387,16 @@ def main():
                 "     return { act: e.getAttribute('data-act'), opacity: s.opacity,"
                 "              visibility: s.visibility, w: b.width, h: b.height }; }); }"
             )
+            # Scoped to the SAFE acts with #319: every unstaged row now also
+            # carries a `discard`, so a bare count over `[data-act]` measures
+            # the other slice's controls too. The opacity/visibility/24px
+            # assertions below stay over EVERY row action deliberately — the
+            # touch criterion is about all of them, at this script's 1440x900
+            # viewport where #319's coarse-pointer rule does not apply.
+            safe = [a for a in acts if a["act"] in ("stage", "unstage")]
             check(
-                "every row carries its own action",
-                len(acts) == 3,
+                "every row carries its own stage/unstage action",
+                len(safe) == 3,
                 f"got={[a['act'] for a in acts]}",
             )
             check(

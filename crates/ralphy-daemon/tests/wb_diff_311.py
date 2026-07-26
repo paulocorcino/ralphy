@@ -375,13 +375,13 @@ def main():
                   const scan = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
                     .filter(e => re.test(hay(e))).length;
-                  // The Changes surface keeps a NARROWER scan: #318 put
-                  // stage/unstage/commit there on purpose, but discard and
-                  // revert are PRD #314's later slices and must not appear
-                  // before the issue that designs them. Dropping this scope
-                  // entirely would have retired the only assertion anywhere
-                  // that says so.
-                  const destructive = /discard|revert/i;
+                  // The Changes surface keeps a NARROWER scan, narrowed once
+                  // more with #319: `discard` is now a designed control there
+                  // (per-row, confirmed, untracked case apart), so scanning for
+                  // it would red an intended feature. `revert` is the word that
+                  // must still appear NOWHERE on this panel — PRD #314 names no
+                  // revert slice, so its arrival would be undesigned.
+                  const destructive = /revert/i;
                   const scanDestructive = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
                     .filter(e => destructive.test(hay(e))).length;
@@ -418,9 +418,9 @@ def main():
                 f"matches={controls['mutators']} revertGlyphs={controls['revertGlyphs']}",
             )
             check(
-                "…and the Changes panel still exposes no discard / revert",
+                "…and the Changes panel still exposes no revert (#319 keeps discard)",
                 controls["destructive"] == 0,
-                f"destructive={controls['destructive']} (PRD 314's later slices)",
+                f"revert-like={controls['destructive']} (no PRD 314 slice designs one)",
             )
 
             # --- scenario 3: a newly added file diffs against absence ----------
