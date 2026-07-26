@@ -158,7 +158,7 @@ pub fn load_current() -> Result<RegistryStore> {
 /// Restrict a freshly written store file to the owner only (mode `0o600` on
 /// unix; the per-user home ACL on Windows), mirroring the identity store.
 #[cfg(unix)]
-fn set_owner_only(path: &Path) -> Result<()> {
+pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let perms = std::fs::Permissions::from_mode(0o600);
     std::fs::set_permissions(path, perms)
@@ -166,7 +166,7 @@ fn set_owner_only(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_owner_only(_path: &Path) -> Result<()> {
+pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
     Ok(())
 }
 

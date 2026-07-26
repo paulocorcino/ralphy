@@ -23,6 +23,7 @@ pub mod auth;
 pub mod autostart;
 pub mod confine;
 pub mod cookie;
+pub mod desk;
 pub mod dispatch;
 pub mod epoch;
 pub mod fswrite;
@@ -230,6 +231,11 @@ pub fn router(
     // shutdown (it detaches, never closing the session).
     let session_shutdown = shutdown.clone();
     let session_registry = registry_path.clone();
+    // The desk (ADR-0050) is a sibling of `repos.toml`, so it inherits the
+    // `$RALPHY_DAEMON_DIR` rooting `registry_path` already resolved — same rule
+    // the `sessions`/`watchers` managers follow: derived here, never a `router`
+    // parameter, so the public signature and its call sites hold.
+    let desk_path = registry_path.with_file_name("desk.toml");
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
@@ -314,6 +320,19 @@ pub fn router(
             get({
                 let sessions = sessions.clone();
                 move || sessions_route(sessions.clone())
+            }),
+        )
+        .route(
+            "/api/desk",
+            get({
+                let path = desk_path.clone();
+                move || desk_get_route(path.clone())
+            })
+            .put({
+                let path = desk_path.clone();
+                move |Json(records): Json<Vec<desk::DeskRecord>>| {
+                    desk_put_route(path.clone(), records)
+                }
             }),
         )
         .route(
@@ -1621,6 +1640,33 @@ async fn usage_route(
     .into_response()
 }
 
+/// `GET /api/desk`: the saved desk records in layout order (ADR-0050). An
+/// absent or corrupt `desk.toml` answers `200 []` — a lost layout costs a
+/// cascaded stage, never an error the shell has to handle.
+async fn desk_get_route(path: PathBuf) -> Response {
+    Json(desk::load_from(&path).windows).into_response()
+}
+
+/// `PUT /api/desk`: replace the desk wholesale, pruned to [`desk::DESK_MAX`]
+/// newest by `ts`, answering `200` with the pruned array — the client needs the
+/// daemon's post-prune truth in one round trip (last-write-wins, no ETag).
+/// A body that is not an array of records is rejected by the `Json` extractor as
+/// `400` and never reaches here, so `desk.toml` is untouched.
+async fn desk_put_route(path: PathBuf, records: Vec<desk::DeskRecord>) -> Response {
+    let pruned = desk::prune(records);
+    let store = desk::DeskStore {
+        windows: pruned.clone(),
+    };
+    match desk::save_to(&store, &path) {
+        Ok(()) => Json(pruned).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("{e:#}") })),
+        )
+            .into_response(),
+    }
+}
+
 /// `GET /api/sessions`: the daemon's live sessions as JSON, each with its
 /// identity (`id`, `repo`, `agent`, `kind`, `started_at`) so the UI can list,
 /// reattach, and close them. A WebSocket drop leaves its session here (the child
@@ -2134,6 +2180,142 @@ mod tests {
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await
         .unwrap()
+    }
+
+    /// A router rooted at a SCRATCH registry path, so its `desk.toml` sibling
+    /// lands in a temp dir. The shared `get()` helper passes a relative
+    /// `does-not-exist`, whose desk sibling would be written into the process
+    /// cwd — every test that PUTs must build its router this way.
+    fn desk_router(dir: &Path) -> Router {
+        router(
+            None,
+            dir.join("repos.toml"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+    }
+
+    async fn body_text(res: Response) -> String {
+        String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap()
+    }
+
+    async fn desk_get(dir: &Path) -> String {
+        let res = desk_router(dir)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/desk")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        body_text(res).await
+    }
+
+    async fn desk_put(dir: &Path, records: &serde_json::Value) -> Response {
+        desk_router(dir)
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/desk")
+                    .header("content-type", "application/json")
+                    .body(Body::from(records.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn desk_json(id: &str, ts: i64, session_id: serde_json::Value, max: bool) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "repo": "owner/repo",
+            "agent": "claude",
+            "kind": "console",
+            "rect": { "left": 10.0, "top": 20.0, "width": 640.0, "height": 480.0 },
+            "max": max,
+            "sessionId": session_id,
+            "ts": ts,
+        })
+    }
+
+    #[tokio::test]
+    async fn api_desk_empty_when_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(desk_get(dir.path()).await, "[]");
+        assert!(
+            !dir.path().join("desk.toml").exists(),
+            "a GET must not create the store"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_then_get_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let payload = serde_json::json!([
+            desk_json("w-a", 1, serde_json::json!(7), true),
+            desk_json("w-b", 2, serde_json::Value::Null, false),
+        ]);
+        let res = desk_put(dir.path(), &payload).await;
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = desk_get(dir.path()).await;
+        assert!(
+            body.contains("\"sessionId\":7"),
+            "camelCase wire key: {body}"
+        );
+        assert!(body.contains("\"max\":true"), "maximized survives: {body}");
+        let a = body.find("w-a").expect("first record present");
+        let b = body.find("w-b").expect("second record present");
+        assert!(a < b, "layout order is preserved: {body}");
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_prunes_to_24_newest_by_ts() {
+        let dir = tempfile::tempdir().unwrap();
+        let payload = serde_json::Value::Array(
+            (1..=30)
+                .map(|n| desk_json(&format!("w{n}"), n, serde_json::Value::Null, false))
+                .collect(),
+        );
+        let res = desk_put(dir.path(), &payload).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let put_body: Vec<desk::DeskRecord> = serde_json::from_str(&body_text(res).await).unwrap();
+        let ids: Vec<String> = put_body.into_iter().map(|r| r.id).collect();
+        let expected: Vec<String> = (7..=30).map(|n| format!("w{n}")).collect();
+        assert_eq!(ids, expected, "the PUT answers with the pruned truth");
+
+        let get_body: Vec<desk::DeskRecord> =
+            serde_json::from_str(&desk_get(dir.path()).await).unwrap();
+        let ids: Vec<String> = get_body.into_iter().map(|r| r.id).collect();
+        assert_eq!(ids, expected, "and the persisted desk holds the same 24");
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_rejects_a_malformed_body_without_touching_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        desk_put(
+            dir.path(),
+            &serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+        )
+        .await;
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+
+        let res = desk_put(dir.path(), &serde_json::json!({ "not": "an array" })).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "axum's Json extractor rejects a non-array body"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "a rejected upload never reaches the store"
+        );
     }
 
     #[test]
