@@ -70,3 +70,41 @@ test("parseSteps reads the three markers in order (the file:// demo seed)", () =
     ["a", "b", "c"],
   );
 });
+
+// --- verb chrome (#331) -----------------------------------------------------
+
+test("verbLockTitle states the plain description when nothing holds the lock", () => {
+  const title = load().verbLockTitle("run", "");
+  assert.ok(title.length > 0, "an unlocked verb still needs a title");
+  assert.ok(!/lock/i.test(title), `an unlocked verb must not claim a lock: ${title}`);
+});
+
+test("verbLockTitle states the reason VERBATIM when the lock is held", () => {
+  const reason = "a run holds this repo's lock — write controls are disabled until it finishes";
+  assert.ok(load().verbLockTitle("triage", reason).includes(reason));
+});
+
+test("verbLockTitle falls back for an unknown verb rather than reading undefined", () => {
+  assert.ok(load().verbLockTitle("nope", "").includes("nope"));
+});
+
+// The negative control: a note generator that never stays silent is not a gate
+// — it would raise a refusal banner on every successful run.
+test("exitNote is EMPTY for a clean exit, whatever the last line said", () => {
+  assert.equal(load().exitNote("run", 0, "anything"), "");
+});
+
+test("exitNote names the verb and carries the CLI's last line on a refusal", () => {
+  const note = load().exitNote("run", 1, "working tree … is not clean");
+  assert.ok(note.includes("run"), note);
+  assert.ok(note.includes("working tree … is not clean"), note);
+});
+
+test("exitNote renders a missing code as unknown, never as `exit null`", () => {
+  const wb = load();
+  for (const code of [null, undefined]) {
+    const note = wb.exitNote("push", code, "");
+    assert.ok(note.includes("unknown"), note);
+    assert.ok(!/null|undefined/.test(note), note);
+  }
+});

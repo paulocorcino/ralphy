@@ -227,6 +227,31 @@ window.WBRun = {
       issues,
     };
   },
+
+  // --- verb chrome (#331) -------------------------------------------------
+  // What a run verb's plain description is when nothing holds the lock. The
+  // gate is a HINT (the CLI is the authority), so these stay the same strings
+  // the enabled buttons have always carried.
+  VERB_TITLE: {
+    run: "start a run — choose agent & branch",
+    triage: "triage the backlog — label + plan open issues (if idle)",
+    push: "push the queue snapshot to the events sink",
+  },
+  // A disabled control that does not say why is just a control that stopped
+  // working; the lock reason REPLACES the description rather than appending to
+  // it, so the title answers the only question a dimmed button raises.
+  verbLockTitle(verb, reason) {
+    return reason || this.VERB_TITLE[verb] || `${verb} on this project`;
+  },
+  // The panel's rendering of a terminal verb frame. Empty for a clean exit —
+  // this is the whole guard against a success raising a refusal banner, so it
+  // is the case the unit test pins first.
+  exitNote(verb, code, lastLine) {
+    if (code === 0) return "";
+    const shown = code === null || code === undefined ? "unknown" : code;
+    const note = `${verb} refused (exit ${shown})`;
+    return lastLine ? `${note} — ${lastLine}` : note;
+  },
 };
 
 // Wake anchors for the seeded sleep state (relative to load time so the live
