@@ -16,6 +16,9 @@ fn tmp(name: &str) -> PathBuf {
 fn configure(dir: &Path) {
     git(dir, &["config", "user.email", "t@example.com"]).unwrap();
     git(dir, &["config", "user.name", "Test"]).unwrap();
+    // This host leaves LF in the blob and CRLF on disk, which would make an
+    // exact-content oracle over a restored file a coin flip.
+    git(dir, &["config", "core.autocrlf", "false"]).unwrap();
 }
 
 /// A repo on `main` with NO commit yet — the unborn-HEAD fixture.
@@ -351,6 +354,183 @@ fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
     assert_eq!(
         unstage(&dir, &["renamed.txt".to_string(), "old.txt".to_string()]).unwrap(),
         UnstageOutcome::Unstaged { paths: 2 }
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_restores_a_tracked_file_from_head() {
+    let dir = init_repo("discard-tracked");
+    std::fs::write(dir.join("never-touched.txt"), "mangled\n").unwrap();
+
+    assert_eq!(
+        discard(&dir, &p("never-touched.txt")).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 1,
+            deleted: 0
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("never-touched.txt")).unwrap(),
+        "steady\n",
+        "the committed content is back on disk"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_deletes_an_untracked_file() {
+    let dir = init_repo("discard-untracked");
+    std::fs::write(dir.join("loose.txt"), "never committed\n").unwrap();
+
+    // The counts are the classifier's oracle: an inverted tracked/untracked
+    // partition flips them even though the file would still leave disk.
+    assert_eq!(
+        discard(&dir, &p("loose.txt")).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 0,
+            deleted: 1
+        }
+    );
+    assert!(!dir.join("loose.txt").exists(), "the file is gone");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_deletes_an_untracked_directory() {
+    // `git status --porcelain=v2` reports an untracked DIRECTORY as ONE entry
+    // named `newdir/` — so that entry shape is what the panel offers, and
+    // `clean -d` is what makes it discardable.
+    let dir = init_repo("discard-untracked-dir");
+    std::fs::create_dir_all(dir.join("newdir/sub")).unwrap();
+    std::fs::write(dir.join("newdir/sub/f.txt"), "deep\n").unwrap();
+
+    assert!(
+        changes(&dir).unwrap().iter().any(|c| c.path == "newdir/"),
+        "git names the whole directory as one entry, got: {:?}",
+        changes(&dir).unwrap()
+    );
+    assert_eq!(
+        discard(&dir, &p("newdir/")).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 0,
+            deleted: 1
+        }
+    );
+    assert!(!dir.join("newdir").exists(), "the directory is gone");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_leaves_every_other_path_alone() {
+    let dir = init_repo("discard-isolation");
+    commit_file(&dir, "a.txt", "one\n", "add a");
+    commit_file(&dir, "b.txt", "two\n", "add b");
+    std::fs::write(dir.join("a.txt"), "edited a\n").unwrap();
+    std::fs::write(dir.join("b.txt"), "edited b\n").unwrap();
+    std::fs::write(dir.join("loose.txt"), "loose\n").unwrap();
+
+    assert_eq!(
+        discard(&dir, &p("a.txt")).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 1,
+            deleted: 0
+        }
+    );
+    assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "one\n");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("b.txt")).unwrap(),
+        "edited b\n",
+        "the other modified path keeps its edit"
+    );
+    assert!(
+        dir.join("loose.txt").exists(),
+        "an untracked bystander is not cleaned"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The negative control for "a staged change is never silently thrown away".
+/// This is the test that reds if the implementation ever reaches for
+/// `--source=HEAD --staged`.
+#[test]
+fn discard_keeps_a_staged_change() {
+    let dir = init_repo("discard-staged");
+    commit_file(&dir, "both.txt", "base\n", "add both");
+    std::fs::write(dir.join("both.txt"), "staged\n").unwrap();
+    git(&dir, &["add", "both.txt"]).unwrap();
+    std::fs::write(dir.join("both.txt"), "worktree only\n").unwrap();
+
+    let mixed = entry(&dir, "both.txt");
+    assert!(
+        mixed.index_status.is_some() && mixed.worktree_status.is_some(),
+        "the fixture must be staged AND edited again, got {mixed:?}"
+    );
+
+    assert_eq!(
+        discard(&dir, &p("both.txt")).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 1,
+            deleted: 0
+        }
+    );
+    assert_eq!(
+        git(&dir, &["show", ":both.txt"]).unwrap(),
+        "staged",
+        "the staged blob survives an unstaged discard"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("both.txt")).unwrap(),
+        "staged\n",
+        "the working tree went back to the INDEX, not to HEAD"
+    );
+    assert_eq!(staged_paths(&dir), "both.txt", "the path is still staged");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_refuses_a_path_outside_the_change_set() {
+    let dir = init_repo("discard-unknown");
+    std::fs::write(dir.join("a.txt"), "new\n").unwrap();
+
+    let refused = discard(&dir, &p("never-touched.txt")).unwrap();
+    assert_eq!(
+        refused,
+        DiscardOutcome::NotInChangeSet {
+            path: "never-touched.txt".to_string()
+        }
+    );
+    assert_eq!(
+        refused.reason().as_deref(),
+        Some("cannot discard: never-touched.txt is not in the change set")
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("never-touched.txt")).unwrap(),
+        "steady\n",
+        "a refusal ran no git write"
+    );
+    assert!(dir.join("a.txt").exists(), "and cleaned nothing either");
+    assert_eq!(staged_paths(&dir), "");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_refuses_an_empty_list() {
+    let dir = init_repo("discard-empty");
+    std::fs::write(dir.join("a.txt"), "new\n").unwrap();
+
+    assert_eq!(discard(&dir, &[]).unwrap(), DiscardOutcome::NoPaths);
+    assert!(dir.join("a.txt").exists(), "nothing on disk moved");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("never-touched.txt")).unwrap(),
+        "steady\n"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -1,5 +1,6 @@
 //! Working-tree operations: the acts that move a path between the change set's
-//! two sides and the one that records them — [`stage`], [`unstage`], [`commit`].
+//! two sides, the one that records them, and the one that throws a path's
+//! working-tree content away — [`stage`], [`unstage`], [`commit`], [`discard`].
 //!
 //! Every refusal here is a VALUE, not an `Err`: "nothing is staged" and "the
 //! message is empty" are answers to a reasonable question, and the caller
@@ -17,7 +18,7 @@ use std::path::Path;
 
 use anyhow::{bail, Result};
 
-use crate::changes::changes;
+use crate::changes::{changes, ChangeStatus};
 use crate::git::{git, raw, raw_env};
 
 /// What a [`stage`] did — or why it refused.
@@ -58,6 +59,27 @@ impl UnstageOutcome {
             UnstageOutcome::NoPaths => "cannot unstage: no paths were given".to_string(),
             UnstageOutcome::NotInChangeSet { path } => {
                 format!("cannot unstage: {path} is not in the change set")
+            }
+        })
+    }
+}
+
+/// What a [`discard`] did — or why it refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiscardOutcome {
+    Discarded { restored: usize, deleted: usize },
+    NoPaths,
+    NotInChangeSet { path: String },
+}
+
+impl DiscardOutcome {
+    /// Prose for a refusal, `None` when there was none.
+    pub fn reason(&self) -> Option<String> {
+        Some(match self {
+            DiscardOutcome::Discarded { .. } => return None,
+            DiscardOutcome::NoPaths => "cannot discard: no paths were given".to_string(),
+            DiscardOutcome::NotInChangeSet { path } => {
+                format!("cannot discard: {path} is not in the change set")
             }
         })
     }
@@ -179,6 +201,71 @@ pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
     }
     let sha = git(repo, &["rev-parse", "--short", "HEAD"])?;
     Ok(CommitOutcome::Committed { sha })
+}
+
+/// Throw away `paths`' working-tree changes — the one irreversible act here.
+///
+/// Two cases with different recoverability, so they run as two git shapes:
+/// a TRACKED path's working tree is restored from the INDEX
+/// (`restore --worktree`), which is HEAD when nothing is staged — so a staged
+/// change is never silently thrown away by discarding the same path's
+/// working-tree edit. An UNTRACKED entry is DELETED (`clean --force -d`), and
+/// no commit and no reflog can bring it back; `-d` is what makes an untracked
+/// DIRECTORY discardable, because the change set reports one as a single entry
+/// (`newdir/`).
+///
+/// Cross-path invariant: the whole list is partitioned BEFORE either write, so
+/// no path that returns a refusal has run a git write. Within a mixed batch the
+/// restores run FIRST and the deletions LAST — the unrecoverable act happens
+/// last, so a failure in the recoverable half never leaves a file deleted for
+/// nothing.
+///
+/// A rename's ORIGINAL path is NOT discardable: it names no working-tree
+/// content, the same asymmetry [`stage`] documents.
+pub fn discard(repo: &Path, paths: &[String]) -> Result<DiscardOutcome> {
+    if paths.is_empty() {
+        return Ok(DiscardOutcome::NoPaths);
+    }
+    let mut known: HashSet<String> = HashSet::new();
+    let mut loose: HashSet<String> = HashSet::new();
+    for change in changes(repo)? {
+        if change.status == ChangeStatus::Untracked {
+            loose.insert(change.path.clone());
+        }
+        known.insert(change.path);
+    }
+    let mut tracked: Vec<String> = Vec::new();
+    let mut untracked: Vec<String> = Vec::new();
+    for path in paths {
+        if !known.contains(path) {
+            return Ok(DiscardOutcome::NotInChangeSet { path: path.clone() });
+        }
+        if loose.contains(path) {
+            untracked.push(path.clone());
+        } else {
+            tracked.push(path.clone());
+        }
+    }
+    if !tracked.is_empty() {
+        run_on_paths(
+            repo,
+            &["--literal-pathspecs", "restore", "--worktree", "--"],
+            &tracked,
+            "discarding",
+        )?;
+    }
+    if !untracked.is_empty() {
+        run_on_paths(
+            repo,
+            &["--literal-pathspecs", "clean", "--force", "-d", "--"],
+            &untracked,
+            "deleting",
+        )?;
+    }
+    Ok(DiscardOutcome::Discarded {
+        restored: tracked.len(),
+        deleted: untracked.len(),
+    })
 }
 
 /// Which side(s) of a rename count as "in the change set" for one direction.
