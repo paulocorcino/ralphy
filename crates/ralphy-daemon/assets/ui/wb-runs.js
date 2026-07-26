@@ -71,14 +71,19 @@ window.WBRun = {
     checked: "done",
     noticed: "noticed a problem",
   },
+  // `Object.hasOwn`, never `in`/truthiness: a status of "toString" would
+  // otherwise reach Object.prototype and defeat the fallback entirely.
+  stepKey(status) {
+    return Object.hasOwn(this.STEP_GLYPH, status) ? status : "open";
+  },
   stepGlyph(status) {
-    return this.STEP_GLYPH[status] || this.STEP_GLYPH.open;
+    return this.STEP_GLYPH[this.stepKey(status)];
   },
   stepLabel(status) {
-    return this.STEP_LABEL[status] || this.STEP_LABEL.open;
+    return this.STEP_LABEL[this.stepKey(status)];
   },
   stepClass(status) {
-    return "st-" + (status in this.STEP_GLYPH ? status : "open");
+    return "st-" + this.stepKey(status);
   },
   // The `file://` demo has no snapshot documents, so it seeds its steps by
   // parsing the plan text — the same three markers the Rust side parses.

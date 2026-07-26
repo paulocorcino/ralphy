@@ -160,4 +160,47 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// `reset_from_written` on a FRESH poller: the baseline it seeds is what
+    /// suppresses the emission, with no prior `poll` having set the snapshot.
+    /// (In the test above the third poll would emit nothing even if this method
+    /// were empty — the second poll already stored the checked state.)
+    #[test]
+    fn a_fold_seeded_baseline_suppresses_an_already_checked_step() {
+        let dir = std::env::temp_dir().join(format!("ralphy-step-seed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        std::fs::write(
+            &plan_path,
+            "## Steps\n- [x] do a `thing`\n- [!] surprised\n",
+        )
+        .unwrap();
+
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "a".into(),
+        });
+        let sink = RecordingSink(std::sync::Mutex::new(Vec::new()));
+        let warned = AtomicBool::new(false);
+
+        let mut poller = StepPoller::default();
+        poller.reset_from_written(&[
+            ("do a **thing**".to_string(), "checked".to_string()),
+            ("surprised".to_string(), "noticed".to_string()),
+        ]);
+        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        assert!(
+            sink.0.lock().unwrap().is_empty(),
+            "the fold's baseline suppresses both: {:?}",
+            sink.0.lock().unwrap()
+        );
+
+        // The control: the SAME first poll without a seeded baseline emits both.
+        let fresh = RecordingSink(std::sync::Mutex::new(Vec::new()));
+        StepPoller::default().poll(&fresh, &test_ctx(), &state, &plan_path, &warned);
+        assert_eq!(fresh.0.lock().unwrap().len(), 2);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

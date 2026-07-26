@@ -71,8 +71,9 @@ pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunS
 
 /// The plan block, keyed to the active issue: a plan armed for a DIFFERENT issue
 /// (the previous one's, still on disk between issues) projects as absent. The
-/// second, independent guard after the engine's arming — a mismatched plan shown
-/// as the active issue's is the lie this keying exists to prevent (#330).
+/// engine arms off the plan EVENT's own issue number, so this check is an
+/// independent second opinion — when the two disagree the document carries no
+/// plan at all, never the wrong issue's (#330).
 fn plan_block(plan: &PlanProgress, state: &RunState) -> PlanBlock {
     if plan.issue.is_none() || plan.issue != state.active {
         return PlanBlock::default();
@@ -327,10 +328,20 @@ mod tests {
                 StepStatus::Open | StepStatus::Checked | StepStatus::Noticed => {}
             }
             let wire = status.wire();
-            assert!(
-                PANEL.contains(&format!("{wire}: \"")),
-                "wb-runs.js STEP_GLYPH/STEP_LABEL has no `{wire}` key — the panel would fall back to open"
-            );
+            // BOTH tables, not "somewhere in the file": each wire word appears
+            // once per table, so a whole-file `contains` stays green when one of
+            // them loses the key and the panel silently falls back to `open`.
+            for table in ["STEP_GLYPH: {", "STEP_LABEL: {"] {
+                let from = PANEL
+                    .split_once(table)
+                    .expect("wb-runs.js declares {table}")
+                    .1;
+                let body = from.split_once("\n  },").expect("the table is closed").0;
+                assert!(
+                    body.contains(&format!("{wire}: \"")),
+                    "wb-runs.js `{table}` has no `{wire}` key — the panel would fall back to open"
+                );
+            }
         }
     }
 

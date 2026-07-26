@@ -70,16 +70,27 @@ impl DeliveryEngine for SnapshotEngine {
             self.plan = PlanProgress::default();
             self.watch = PlanFileWatch::default();
         }
+        // The arming key is the EVENT's issue number, resolving `0` (the
+        // adapter never learns it) through the fold's active issue: the ring
+        // drops its oldest entry when full, and an `IssueStarted` lost that way
+        // would leave `state.active` on the PREVIOUS issue — publishing this
+        // plan under its number. Keyed this way the projection's own
+        // `plan.issue == state.active` check becomes an independent guard, and
+        // the mismatch publishes NO plan rather than the wrong one.
         let seed = match &event {
-            RunEvent::PlanWritten { steps, .. } => Some(Some(steps.clone())),
-            RunEvent::Executing { .. } => Some(None),
+            RunEvent::PlanWritten { number, steps, .. } => Some((*number, Some(steps.clone()))),
+            RunEvent::Executing { number, .. } => Some((*number, None)),
             _ => None,
         };
         self.state.apply(event);
+        let seed = seed.map(|(number, steps)| {
+            let issue = (number != 0).then_some(number).or(self.state.active);
+            (issue, steps)
+        });
         match seed {
             // A written plan arms the poll and seeds its baseline.
-            Some(Some(steps)) => {
-                self.plan.issue = self.state.active;
+            Some((issue, Some(steps))) => {
+                self.plan.issue = issue;
                 self.plan.steps = steps
                     .iter()
                     .map(|(text, status)| PlanStep {
@@ -90,10 +101,10 @@ impl DeliveryEngine for SnapshotEngine {
             }
             // An executing issue's plan on disk is certainly its own — arm the
             // poll even when this session resumed without a `PlanWritten`.
-            Some(None) if self.plan.issue.is_none() => {
-                self.plan.issue = self.state.active;
+            Some((issue, None)) if self.plan.issue.is_none() => {
+                self.plan.issue = issue;
             }
-            Some(None) => {}
+            Some((_, None)) => {}
             None => {}
         }
     }

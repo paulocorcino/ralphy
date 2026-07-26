@@ -184,7 +184,10 @@ replacement, so it needs no ordering, no replay and no catch-up on reattach.
 The **daemon** reads the directory to discover runs — including runs it never
 spawned — and never receives a push. The document encodes no liveness: a
 snapshot whose pid is dead is an **orphan** (a crashed run) and is swept, the
-same recovery the run lock's stale-PID takeover uses. Published by a third
+same recovery the run lock's stale-PID takeover uses. It carries the active issue's **plan** block —
+the checkbox steps with their `open`/`checked`/`noticed` status and the issue
+number they belong to (#330) — but never the plan's prose, which the reader
+fetches by path through the confined `file.read` verb. Published by a third
 destination on the ADR-0024 delivery seam, alongside the Telegram notifier and
 the **event sink**.
 _Avoid_: run event / run log (the event sink's stream — durable history, a

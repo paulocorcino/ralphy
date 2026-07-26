@@ -50,6 +50,15 @@ test("an unknown status falls back to open rather than vanishing", () => {
   assert.equal(wb.stepClass("tomorrows_status"), "st-open");
 });
 
+test("a status naming an Object.prototype member still falls back to open", () => {
+  const wb = load();
+  for (const evil of ["toString", "constructor", "hasOwnProperty"]) {
+    assert.equal(wb.stepGlyph(evil), wb.stepGlyph("open"), evil);
+    assert.equal(wb.stepLabel(evil), wb.stepLabel("open"), evil);
+    assert.equal(wb.stepClass(evil), "st-open", evil);
+  }
+});
+
 test("parseSteps reads the three markers in order (the file:// demo seed)", () => {
   const steps = load().parseSteps("## Steps\n- [ ] a\n- [x] b\n- [!] c\nprose\n- not a step\n");
   assert.deepEqual(

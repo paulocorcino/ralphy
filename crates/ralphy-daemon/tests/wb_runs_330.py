@@ -357,8 +357,10 @@ def main():
                 plan_block(steps(("first step body", "checked"), ("second step body", "checked"))),
             )
             page.wait_for_function(
-                "() => Array.from(document.querySelectorAll('.plan-steps li'))"
-                ".every(li => li.className.includes('st-checked'))",
+                # the length guard is load-bearing: `every` is vacuously true on
+                # an empty list, so this would resolve on a mid-replacement frame.
+                "() => { const li = Array.from(document.querySelectorAll('.plan-steps li'));"
+                " return li.length === 2 && li.every(e => e.className.includes('st-checked')); }",
                 timeout=15000,
             )
             section = page.evaluate(f"() => {SH}.planSection")
