@@ -848,6 +848,13 @@ window.WBConsole = (function () {
             });
           }
         }
+        // A desk saved on a larger screen arrives off-canvas here. `clampAll`
+        // handles that, but its ResizeObserver has ALREADY observed the
+        // workspace by now, and restoring windows into it is not a resize — so
+        // nothing would fire until the operator happened to resize something.
+        // Measured on a 1400x900 desk reopened at 800x600: left stayed 900 in a
+        // 452px workspace until an unrelated nudge (issue #327).
+        clampAll();
       })
       .catch(() => {});
   }
@@ -860,6 +867,10 @@ window.WBConsole = (function () {
   // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
   function refitAll() {
+    // A desk restored while this tab was hidden measured a 0×0 workspace, so
+    // `clampAll` bailed out of the restore call above — this is the first moment
+    // it can place those windows on screen (issue #327).
+    clampAll();
     for (const win of wins) {
       try {
         win._term?.fit.fit();

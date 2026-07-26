@@ -367,3 +367,29 @@ rejected alternatives (a raw HTTP byte route; a fourth binary frame tag), the
 media-type allowlist and the magic-byte check live in
 [ADR-0049](./0049-workbench-serves-image-bytes.md). §5 is not reopened:
 confinement is the same kernel and the escape→`not found` masking still holds.
+
+## Amendment (2026-07-26, issue #327): the desk is a daemon-served resource
+
+The **desk** — which consoles were open and where each window sat — moves out of
+the browser's `localStorage` and into the daemon's global store, as
+[ADR-0050](./0050-desk-layout-is-daemon-state.md) decides. A workbench session
+already survives the browser; its window now does too, so opening the workbench
+from a second machine restores the stage instead of cascading it.
+
+Two REST endpoints join `/api/*`, behind the same auth guard as the rest of the
+API (no new policy, no new exemption):
+
+- `GET /api/desk` → the desk records in layout order. A missing or corrupt
+  `desk.toml` answers `200 []`: an unreadable layout costs a cascaded stage, not
+  a daemon, so there is no error state for the shell to handle.
+- `PUT /api/desk` → replaces the desk wholesale and answers `200` with the
+  stored array. The daemon prunes to 24 records, newest by `ts`, so the cap is
+  enforced server-side rather than trusting the upload; the response is the
+  post-prune truth in one round trip (last write wins — no ETag, no merge).
+  A body that is not an array of desk records is rejected before the store is
+  touched.
+
+The desk is a *typed* store (`desk.toml`, one `[[windows]]` table per record),
+not an opaque blob, and lives beside `repos.toml` — same `$RALPHY_DAEMON_DIR`
+rooting as the repo registry. Uploads are debounced and fire-and-forget in the
+shell: a failed write costs a stale position, never the drag that triggered it.
