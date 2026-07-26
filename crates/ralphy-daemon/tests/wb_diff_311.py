@@ -375,6 +375,16 @@ def main():
                   const scan = (sel) => Array.from(document.querySelectorAll(sel))
                     .flatMap(r => Array.from(r.querySelectorAll('*')))
                     .filter(e => re.test(hay(e))).length;
+                  // The Changes surface keeps a NARROWER scan: #318 put
+                  // stage/unstage/commit there on purpose, but discard and
+                  // revert are PRD #314's later slices and must not appear
+                  // before the issue that designs them. Dropping this scope
+                  // entirely would have retired the only assertion anywhere
+                  // that says so.
+                  const destructive = /discard|revert/i;
+                  const scanDestructive = (sel) => Array.from(document.querySelectorAll(sel))
+                    .flatMap(r => Array.from(r.querySelectorAll('*')))
+                    .filter(e => destructive.test(hay(e))).length;
                   return {
                     vbtns: Array.from(root.querySelectorAll('.vbtn')).map(b => b.textContent.trim()),
                     acts: Array.from(root.querySelectorAll('[data-act]')).map(b => b.getAttribute('data-act')),
@@ -385,6 +395,7 @@ def main():
                     // control — the reader must not become a writer — and that
                     // is exactly what `.diff-viewer` + `.tabbar` still proves.
                     mutators: scan('.diff-viewer') + scan('.tabbar'),
+                    destructive: scanDestructive('.changes-view'),
                     // Monaco's own margin revert arrow writes to the modified side.
                     revertGlyphs: root.querySelectorAll('.diff-review-insert, .codicon-diff-revert, .revertButton').length,
                   };
@@ -405,6 +416,11 @@ def main():
                 "no commit / discard / stage / revert control exists on this surface",
                 controls["mutators"] == 0 and controls["revertGlyphs"] == 0,
                 f"matches={controls['mutators']} revertGlyphs={controls['revertGlyphs']}",
+            )
+            check(
+                "…and the Changes panel still exposes no discard / revert",
+                controls["destructive"] == 0,
+                f"destructive={controls['destructive']} (PRD 314's later slices)",
             )
 
             # --- scenario 3: a newly added file diffs against absence ----------
@@ -540,7 +556,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 20
+    ok = all(results) and len(results) >= 21
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("DIFF TAB LIVE")

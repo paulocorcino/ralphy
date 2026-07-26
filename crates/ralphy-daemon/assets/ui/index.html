@@ -253,7 +253,7 @@
               <span>Staged Changes</span>
               <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
                       :title="rowActTitle('unstage')" aria-label="Unstage every staged path"
-                      @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug]))">−</button>
+                      @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
             </div>
             <ul class="chg-group" x-show="(changesStaged[openSlug] || []).length">
               <template x-for="c in (changesStaged[openSlug] || [])" :key="'s:' + c.path">
@@ -285,7 +285,7 @@
                   <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   <button class="chg-act" data-act="stage" :disabled="writeLocked()"
                           :title="rowActTitle('stage')" aria-label="Stage this path"
-                          @click.stop="stagePaths(openSlug, [c.path, c.originalPath].filter(Boolean))">+</button>
+                          @click.stop="stagePaths(openSlug, [c.path])">+</button>
                 </li>
               </template>
             </ul>
@@ -299,6 +299,7 @@
             <textarea
               class="chg-msg"
               x-model="commitMsg"
+              @input="commitMsgSlug = openSlug"
               :disabled="writeLocked()"
               placeholder="Message"
               :title="commitTitle()"

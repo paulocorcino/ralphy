@@ -427,9 +427,16 @@ pub fn changes_list_argv() -> Vec<String> {
 /// - empty, or a leading `-`: would read as a flag at the next hop;
 /// - a leading `/` or a `<letter>:` drive prefix: escapes the repo root;
 /// - any `..` segment: climbs out of it;
-/// - a leading `:` or a glob metacharacter (`*`, `?`, `[`): git PATHSPEC magic.
-///   A path is a path — one entry the daemon already listed — and letting a
-///   pattern through would let one click touch files nobody named.
+/// - a leading `:`: git's PATHSPEC MAGIC prefix (`:(glob)`, `:(top)`), which is
+///   a shape rule of the same family as the leading `-`.
+///
+/// Glob METACHARACTERS (`*`, `?`, `[`) are deliberately NOT refused: they are
+/// legal filenames, and common ones — `app/blog/[slug]/page.tsx` is the Next.js
+/// dynamic-route convention and `[Content_Types].xml` sits in every unpacked
+/// OOXML file. Refusing them would make those rows unreadable in the diff tab
+/// and would poison a whole group action, while buying nothing: git is invoked
+/// with `--literal-pathspecs` (so no name is ever expanded at the last hop) and
+/// `ralphy_core::worktree` refuses any path absent from the change set.
 ///
 /// PURE by contract: no `std::fs`, no `canonicalize`, no `Path::is_absolute` —
 /// the host's own filesystem must not decide what a remote path means, and a
@@ -450,7 +457,6 @@ pub(crate) fn validated_path(raw: &str) -> Option<String> {
         || path.starts_with('/')
         || path.starts_with(':')
         || drive_prefixed
-        || path.contains(['*', '?', '['])
         || path.split('/').any(|seg| seg == "..")
     {
         return None;
@@ -512,9 +518,16 @@ pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
 /// The wire bounds for the working-tree Mutate verbs. They live HERE, at the
 /// wire, and not in `ralphy-core`: the daemon must not depend on core
 /// (ADR-0032), and these bound what a REMOTE may send, not what the operation
-/// can do. 256 paths averaging 60 chars stays far under Windows' 32767-char
-/// command line.
+/// can do.
+///
+/// The count bound alone does NOT bound the command line — a path is otherwise
+/// unbounded — so `MAX_PATH_CHARS` is enforced too, and together they cap the
+/// composed argv at roughly 256 KiB: over Windows' 32767-char limit in the
+/// worst case, but a spawn failure there is graceful (`"mutation write
+/// failed"`), while an UNSTATED bound is the kind of comment that rots. The
+/// realistic shape — 256 paths averaging 60 chars — stays far under it.
 const MAX_STAGE_PATHS: usize = 256;
+const MAX_PATH_CHARS: usize = 1024;
 const MAX_COMMIT_MESSAGE: usize = 4096;
 
 /// Compose the argv for a path-carrying Mutate verb: `changes stage
@@ -545,6 +558,7 @@ pub fn changes_paths_argv(
     for value in paths {
         let path = value
             .as_str()
+            .filter(|p| p.chars().count() <= MAX_PATH_CHARS)
             .and_then(validated_path)
             .ok_or(ArgvError::BadParam("paths"))?;
         argv.push(format!("--path={path}"));
@@ -990,18 +1004,34 @@ mod tests {
             "src/../../secret",
             "-rf",
             "",
-            // Pathspec magic: a pattern is not a path.
-            "*",
-            "**/x",
+            // Pathspec MAGIC, which is a leading-`:` shape, not a glob char.
             ":(glob)x",
-            "src/*.rs",
-            "a?.txt",
-            "a[0-9].txt",
+            ":(top)etc/passwd",
+            ":!x",
         ] {
             assert_eq!(
                 validated_path(bad),
                 None,
                 "{bad:?} must be refused on every platform"
+            );
+        }
+
+        // Glob metacharacters are LEGAL FILENAMES and must survive: refusing
+        // them made `app/blog/[slug]/page.tsx` unreadable in the diff tab and
+        // poisoned every group action over such a repo. `--literal-pathspecs`
+        // plus change-set membership are what stop a pattern from expanding.
+        for legal in [
+            "app/blog/[slug]/page.tsx",
+            "[Content_Types].xml",
+            "src/*.rs",
+            "a?.txt",
+            "*",
+            "**/x",
+        ] {
+            assert_eq!(
+                validated_path(legal).as_deref(),
+                Some(legal),
+                "{legal:?} is a legal filename and must pass through unchanged"
             );
         }
 
@@ -1068,22 +1098,29 @@ mod tests {
         );
 
         // Refusals, each with NO argv.
-        for bad in [
-            "/etc/passwd",
-            "C:\\x",
-            "../x",
-            "-rf",
-            "*",
-            "**/x",
-            ":(glob)x",
-            "",
-        ] {
+        for bad in ["/etc/passwd", "C:\\x", "../x", "-rf", ":(glob)x", ":!x", ""] {
             assert_eq!(
                 changes_paths_argv(Verb::ChangesStage, &json!({ "paths": [bad] })),
                 Err(ArgvError::BadParam("paths")),
                 "{bad:?} must yield NO argv"
             );
         }
+        // …while a bracketed route file — the Next.js convention — composes its
+        // token unchanged. `--literal-pathspecs` is what keeps git from
+        // expanding it, not a refusal here.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["app/blog/[slug]/page.tsx"] })
+            )
+            .unwrap(),
+            vec!["changes", "stage", "--path=app/blog/[slug]/page.tsx"]
+        );
+        assert!(
+            blob_read_argv(&json!({ "revision": "head", "path": "app/blog/[slug]/page.tsx" }))
+                .is_ok(),
+            "the diff tab must still read a bracketed route file"
+        );
         // One bad element poisons the whole list — a partial argv would stage
         // the good half of a request the daemon refused.
         assert_eq!(
@@ -1104,6 +1141,23 @@ mod tests {
                 "{empty} must yield NO argv"
             );
         }
+        // A single over-long path is refused too — the count bound alone does
+        // not bound the command line.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["x".repeat(MAX_PATH_CHARS + 1)] })
+            ),
+            Err(ArgvError::BadParam("paths"))
+        );
+        assert!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["x".repeat(MAX_PATH_CHARS)] })
+            )
+            .is_ok(),
+            "the bound is the bound: a path of exactly MAX_PATH_CHARS is accepted"
+        );
         let over: Vec<String> = (0..257).map(|i| format!("f{i}.txt")).collect();
         assert_eq!(
             changes_paths_argv(Verb::ChangesStage, &json!({ "paths": over })),

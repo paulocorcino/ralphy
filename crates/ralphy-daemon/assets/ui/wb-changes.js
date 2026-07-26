@@ -199,14 +199,22 @@
   // ALREADY sent, so a group click can name nothing the daemon did not first
   // hand over — no glob, no pathspec, no "everything" token ever leaves here.
   //
-  // A rename contributes BOTH of its paths: git needs the old one to undo the
-  // deletion half. De-duplicated because one path can sit in both groups (an
-  // `AM` entry) and because a rename's old path can also be another entry's.
-  function groupPaths(entries) {
+  // A rename's ORIGINAL path is included only when `withOriginal` is set, i.e.
+  // for the UNSTAGE direction: `git restore --staged` needs it to undo the
+  // deletion half. It must NOT travel on the stage direction — after `git mv a
+  // b` the old path is in neither the index nor the worktree, so `git add a` is
+  // fatal, and `git add` aborts the WHOLE invocation on one unmatched pathspec.
+  // A single rename-then-edit entry would otherwise make the group's `+` stage
+  // nothing at all (reproduced live; `ralphy_core::worktree::stage` refuses it
+  // by value too, so this is the near half of a two-sided fix).
+  //
+  // De-duplicated because one path can sit in both groups (an `AM` entry) and
+  // because a rename's old path can also be another entry's.
+  function groupPaths(entries, withOriginal) {
     const out = [];
     const seen = new Set();
     for (const e of Array.isArray(entries) ? entries : []) {
-      for (const p of [e && e.path, e && e.originalPath]) {
+      for (const p of [e && e.path, withOriginal ? e && e.originalPath : null]) {
         if (typeof p === "string" && p && !seen.has(p)) {
           seen.add(p);
           out.push(p);

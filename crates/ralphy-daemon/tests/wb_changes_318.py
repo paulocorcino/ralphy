@@ -17,7 +17,11 @@ Scenario 4  a refused action reports the failure and leaves the list TRUTHFUL:
 Scenario 5  the commit box names the branch; typing a message and clicking it
             records a real commit in the fixture repo and empties the staged
             group
-Scenario 6  with a live-pid run snapshot in the repo, EVERY write control is
+Scenario 6  a group stage over a rename-then-edit (`RM`) entry stages EVERY
+            path in the group — the regression oracle for the abort `git add`
+            performs on one unmatched pathspec — and unstage-all still sends the
+            rename's old path
+Scenario 7  with a live-pid run snapshot in the repo, EVERY write control is
             disabled and its title says why, while the row count, the count
             badge and click-to-diff all keep working
 
@@ -220,8 +224,38 @@ GROUP_OF = (
 )
 
 
+# EVERY group a named path sits in. `GROUP_OF` answers the FIRST one, which is
+# wrong for a rename-then-edit (`RM`) entry: it is in both, and `Staged Changes`
+# comes first in the DOM, so the first-match reader can never see the other side.
+GROUPS_OF = (
+    "(name) => { const v = document.querySelector('.changes-view'); if (!v) return [];"
+    " const vis = (e) => e.offsetParent !== null;"
+    " const out = [];"
+    " for (const h of Array.from(v.querySelectorAll('.chg-group-head')).filter(vis)) {"
+    "   const label = (h.querySelector('span') || h).textContent.trim();"
+    "   const ul = h.nextElementSibling;"
+    "   if (!ul || !vis(ul)) continue;"
+    "   if (Array.from(ul.querySelectorAll('.chg-row')).filter(vis)"
+    "     .some(r => ((r.querySelector('.chg-name') || {}).textContent || '').trim() === name))"
+    "     out.push(label);"
+    " } return out; }"
+)
+
+
 def group_of(page, name):
     return page.evaluate(GROUP_OF, arg=name)
+
+
+def groups_of(page, name):
+    return page.evaluate(GROUPS_OF, arg=name)
+
+
+def wait_groups(page, name, labels):
+    page.wait_for_function(
+        "(a) => { const f = " + GROUPS_OF + "; return f(a[0]).sort().join('|') === a[1]; }",
+        arg=[name, "|".join(sorted(labels))],
+        timeout=20000,
+    )
 
 
 def wait_group(page, name, label):
@@ -229,6 +263,21 @@ def wait_group(page, name, label):
         "(a) => { const f = " + GROUP_OF + "; return f(a[0]) === a[1]; }",
         arg=[name, label],
         timeout=20000,
+    )
+
+
+def click_group_act(page, label, act):
+    """Click a group headline's all-at-once action, also without the mouse."""
+    page.evaluate(
+        "(a) => { const v = document.querySelector('.changes-view');"
+        " const head = Array.from(v.querySelectorAll('.chg-group-head'))"
+        "   .filter(e => e.offsetParent !== null)"
+        "   .find(e => ((e.querySelector('span') || e).textContent || '').trim() === a[0]);"
+        " if (!head) throw new Error('no group head ' + a[0]);"
+        " const btn = head.querySelector(`[data-act=\"${a[1]}\"]`);"
+        " if (!btn) throw new Error('no ' + a[1] + ' on ' + a[0]);"
+        " btn.click(); }",
+        arg=[label, act],
     )
 
 
@@ -411,11 +460,58 @@ def main():
                 label == f"Commit to {branch}",
                 f"got={label!r} branch={branch!r}",
             )
-            # A commit with nothing staged must not be offered at all.
+            # A commit with no MESSAGE must not be offered at all — asserted
+            # before anything is typed, so an always-enabled button reds here.
+            empty = page.evaluate(
+                f"() => {{ const b = {VIEW}.querySelector('.chg-commit');"
+                " return { disabled: b.disabled, title: b.getAttribute('title') || '' }; }"
+            )
+            check(
+                "with no message typed, Commit is disabled and says what is missing",
+                empty["disabled"] and "message" in empty["title"],
+                f"got={empty}",
+            )
             click_row_act(page, "README.md", "stage")
             wait_group(page, "README.md", "Staged Changes")
             before_commits = git_out(fixture, "rev-list", "--count", "HEAD")
+
+            # A REFUSED commit must report the failure and keep the message —
+            # without this leg, a UI that cleared `commitMsg` on every attempt
+            # would satisfy the "cleared on success only" check below.
+            page.evaluate(
+                "() => { const real = window.WBDaemon.observe;"
+                " window.__realObserve = real;"
+                " window.WBDaemon.observe = (verb, args) => verb === 'changes.commit'"
+                "   ? Promise.resolve({ status: 'error', message: 'hook said no' }) : real(verb, args); }"
+            )
             page.evaluate(f"() => {{ {SH}.commitMsg = 'feat: composed in the panel'; }}")
+            page.wait_for_function(
+                f"() => {{ const b = {VIEW}.querySelector('.chg-commit'); return b && !b.disabled; }}",
+                timeout=15000,
+            )
+            page.evaluate(f"() => {VIEW}.querySelector('.chg-commit').click()")
+            page.wait_for_function(
+                f"() => ({SH}.runsActionMsg || '').includes('hook said no')", timeout=15000
+            )
+            check(
+                "a refused commit reports the failure",
+                "hook said no" in page.evaluate(f"() => {SH}.runsActionMsg"),
+                "the daemon's own message, not a generic one",
+            )
+            check(
+                "…and does NOT eat the message the operator typed",
+                page.evaluate(f"() => {SH}.commitMsg") == "feat: composed in the panel",
+                f"got={page.evaluate(f'() => {SH}.commitMsg')!r}",
+            )
+            check(
+                "…and records no commit",
+                git_out(fixture, "rev-list", "--count", "HEAD") == before_commits,
+                f"count={git_out(fixture, 'rev-list', '--count', 'HEAD')}",
+            )
+            page.evaluate(
+                "() => { window.WBDaemon.observe = window.__realObserve;"
+                " delete window.__realObserve; }"
+            )
             page.wait_for_function(
                 f"() => {{ const b = {VIEW}.querySelector('.chg-commit'); return b && !b.disabled; }}",
                 timeout=15000,
@@ -455,7 +551,53 @@ def main():
             # what keeps the next scenario measuring a populated list.
             wait_rows(page, 1)
 
-            # --- scenario 6: inert under a run's lock, still readable ---------
+            # --- scenario 6: a group stage over a rename-then-edit entry ------
+            # The regression oracle for the self-review's HIGH-1. A `2 RM`
+            # record (renamed in the index, then edited on disk) lands in BOTH
+            # groups carrying its ORIGINAL path. Sending that old path on the
+            # STAGE direction is fatal to `git add`, which aborts the WHOLE
+            # invocation — so before the fix this click staged NOTHING, not even
+            # the innocent sibling.
+            (Path(fixture) / "old2.txt").write_text("l1\nl2\nl3\nl4\nl5\nl6\n", encoding="utf-8")
+            git(fixture, "add", "old2.txt")
+            git(fixture, "commit", "-m", "add old2")
+            git(fixture, "mv", "old2.txt", "renamed2.txt")
+            (Path(fixture) / "renamed2.txt").write_text(
+                "l1\nl2\nl3\nl4\nl5\nl6\nl7\n", encoding="utf-8"
+            )
+            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            wait_groups(page, "renamed2.txt", ["Changes", "Staged Changes"])
+            check(
+                "a rename-then-edit entry really lands in BOTH groups",
+                sorted(groups_of(page, "renamed2.txt")) == ["Changes", "Staged Changes"],
+                f"got={groups_of(page, 'renamed2.txt')} — the fixture must exercise the abort case",
+            )
+            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+            click_group_act(page, "Changes", "stage-all")
+            wait_groups(page, "fresh.txt", ["Staged Changes"])
+            staged_now = git_out(fixture, "diff", "--cached", "--name-only").split("\n")
+            check(
+                "stage-all stages EVERY path in the group, rename included",
+                "fresh.txt" in staged_now and "renamed2.txt" in staged_now,
+                f"staged={staged_now}",
+            )
+            check(
+                "…and no failure was flashed",
+                page.evaluate(f"() => {SH}.runsActionMsg") == "",
+                f"flash={page.evaluate(f'() => {SH}.runsActionMsg')!r}",
+            )
+            # …and the reverse direction still sends the old path, which is the
+            # half `git restore --staged` genuinely needs.
+            click_group_act(page, "Staged Changes", "unstage-all")
+            wait_groups(page, "fresh.txt", ["Changes"])
+            check(
+                "unstage-all empties the index, both halves of the rename with it",
+                git_out(fixture, "diff", "--cached", "--name-only") == "",
+                f"staged={git_out(fixture, 'diff', '--cached', '--name-only')!r}",
+            )
+            wait_rows(page, 3)
+
+            # --- scenario 7: inert under a run's lock, still readable ---------
             runstate = Path(fixture) / ".ralphy" / "runstate"
             runstate.mkdir(parents=True, exist_ok=True)
             (runstate / "wb318.json").write_text(
@@ -487,8 +629,12 @@ def main():
             )
             check(
                 "under a held lock every visible write control is present",
-                len(locked) >= 3,
-                f"got={[c['what'] for c in locked]}",
+                # The EXACT measured set, not a `>= n` floor: a loose floor lets
+                # a regression hide exactly one control and still satisfy every
+                # `all()` below it.
+                sorted(c["what"] for c in locked)
+                == ["chg-commit", "chg-msg", "stage", "stage", "stage", "stage-all"],
+                f"got={sorted(c['what'] for c in locked)}",
             )
             check(
                 "…and every one of them is disabled",
@@ -513,7 +659,7 @@ def main():
             )
             check(
                 "…while the file list still renders its rows",
-                still["rows"] == 1,
+                still["rows"] == 3,
                 f"got={still}",
             )
             check(
@@ -565,7 +711,7 @@ def main():
 
     # The floor is the ACTUAL measured count, not a loose lower bound: a slack
     # floor lets assertions vanish silently and still print the banner.
-    ok = all(results) and len(results) >= 27
+    ok = all(results) and len(results) >= 35
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES WRITE LIVE")

@@ -296,3 +296,89 @@ fn a_commit_message_beginning_with_a_dash_is_recorded_verbatim() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The regression test for the group-stage abort. REPRODUCED live before the
+/// fix: `git --literal-pathspecs add -- renamed.txt old.txt other.txt` exits
+/// 128 with `fatal: pathspec 'old.txt' did not match any files` AND stages
+/// nothing but `renamed.txt` — `git add` aborts the WHOLE invocation on one
+/// unmatched pathspec. So a single rename-then-edit entry made the panel's
+/// group `+` stage nothing, relaying git's raw prose on the way out.
+#[test]
+fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
+    let dir = init_repo("rename-stage");
+    commit_file(&dir, "old.txt", "l1\nl2\nl3\nl4\nl5\nl6\n", "add old");
+    std::fs::write(dir.join("other.txt"), "loose\n").unwrap();
+    git(&dir, &["mv", "old.txt", "renamed.txt"]).unwrap();
+    // …then edit it, so the entry is `RM` and lands in BOTH groups.
+    std::fs::write(dir.join("renamed.txt"), "l1\nl2\nl3\nl4\nl5\nl6\nl7\n").unwrap();
+    let before = staged_paths(&dir);
+
+    let refused = stage(
+        &dir,
+        &[
+            "renamed.txt".to_string(),
+            "old.txt".to_string(),
+            "other.txt".to_string(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        refused,
+        StageOutcome::NotInChangeSet {
+            path: "old.txt".to_string()
+        },
+        "the rename's original path is not stageable"
+    );
+    assert_eq!(
+        refused.reason().as_deref(),
+        Some("cannot stage: old.txt is not in the change set"),
+        "the operator reads this module's prose, never git's `fatal:`"
+    );
+    assert_eq!(
+        staged_paths(&dir),
+        before,
+        "a refusal stages NOTHING — not even the good half of the list"
+    );
+
+    // The positive control: without the old path the same request succeeds, so
+    // the refusal above is about that path and not about the fixture.
+    assert_eq!(
+        stage(&dir, &["renamed.txt".to_string(), "other.txt".to_string()]).unwrap(),
+        StageOutcome::Staged { paths: 2 }
+    );
+    // …and `unstage` still accepts the original path, which is the direction
+    // that genuinely needs it.
+    assert_eq!(
+        unstage(&dir, &["renamed.txt".to_string(), "old.txt".to_string()]).unwrap(),
+        UnstageOutcome::Unstaged { paths: 2 }
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `--literal-pathspecs` is what keeps a filename from being read as a pattern
+/// at the LAST hop. Without the flag `git add "a[0].txt"` treats the name as a
+/// glob, matches nothing (there is no `a0.txt`), and exits non-zero — so
+/// deleting the flag reds this test. `[` is legal on both platforms, unlike `*`,
+/// which Windows forbids in a filename.
+#[test]
+fn a_bracketed_filename_is_staged_literally_not_globbed() {
+    let dir = init_repo("literal-pathspecs");
+    std::fs::write(dir.join("a[0].txt"), "bracketed\n").unwrap();
+
+    assert_eq!(
+        stage(&dir, &p("a[0].txt")).unwrap(),
+        StageOutcome::Staged { paths: 1 }
+    );
+    assert_eq!(
+        entry(&dir, "a[0].txt").index_status,
+        Some(ChangeStatus::Added),
+        "the literal name reached the index"
+    );
+    assert_eq!(
+        unstage(&dir, &p("a[0].txt")).unwrap(),
+        UnstageOutcome::Unstaged { paths: 1 }
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -485,16 +485,45 @@ test("groupPaths emits both sides of a rename, de-duplicated (#318)", () => {
       ],
     },
   });
-  // A rename contributes BOTH paths: git needs the old one to undo the
-  // deletion half of a staged rename.
-  assert.deepEqual(groupPaths(folded.staged), ["new.txt", "old.txt", "both.txt"]);
+  // UNSTAGE asks for both paths: `git restore --staged` needs the old one to
+  // undo the deletion half of a staged rename.
+  assert.deepEqual(groupPaths(folded.staged, true), ["new.txt", "old.txt", "both.txt"]);
   // `both.txt` sits in BOTH groups, so folding the two lists together must not
   // send it twice.
-  assert.deepEqual(groupPaths([...folded.staged, ...folded.unstaged]), [
+  assert.deepEqual(groupPaths([...folded.staged, ...folded.unstaged], true), [
     "new.txt",
     "old.txt",
     "both.txt",
   ]);
+});
+
+test("groupPaths never sends a rename's old path on the STAGE direction (#318)", () => {
+  const { fold, groupPaths } = load();
+  // `RM`: renamed in the index, then edited on disk — so it lands in the
+  // UNSTAGED group carrying `originalPath`. After `git mv a b` the old path is
+  // in neither the index nor the worktree, so `git add a` is fatal AND aborts
+  // the whole invocation, which made the group's `+` stage nothing at all.
+  const folded = fold({
+    status: "ok",
+    changes: {
+      changes: [
+        {
+          path: "renamed.txt",
+          original_path: "old.txt",
+          status: "renamed",
+          index_status: "renamed",
+          worktree_status: "modified",
+        },
+        { path: "other.txt", status: "modified", worktree_status: "modified" },
+      ],
+    },
+  });
+  assert.equal(folded.unstaged.length, 2);
+  // The default (stage) omits the original path entirely…
+  assert.deepEqual(groupPaths(folded.unstaged), ["renamed.txt", "other.txt"]);
+  assert.deepEqual(groupPaths(folded.unstaged, false), ["renamed.txt", "other.txt"]);
+  // …and only an explicit opt-in brings it back.
+  assert.deepEqual(groupPaths(folded.unstaged, true), ["renamed.txt", "old.txt", "other.txt"]);
 });
 
 test("groupPaths can only name paths it was given (#318)", () => {

@@ -182,4 +182,37 @@ async fn the_three_write_verbs_carry_their_own_argv_to_the_child() {
         no_message["message"], "invalid mutation options",
         "an absent message never reaches a child: {no_message}"
     );
+
+    // The SUCCESS shape, for each of the three rows. Without this leg a Mutate
+    // branch that could only ever answer `error` would satisfy every assertion
+    // above — the child's exit code is re-set here because it is read at spawn.
+    std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
+    for (id, verb, payload) in [
+        (
+            6,
+            "changes.stage",
+            serde_json::json!({ "repo": slug, "paths": ["a.txt"] }),
+        ),
+        (
+            7,
+            "changes.unstage",
+            serde_json::json!({ "repo": slug, "paths": ["a.txt"] }),
+        ),
+        (
+            8,
+            "changes.commit",
+            serde_json::json!({ "repo": slug, "message": "hello" }),
+        ),
+    ] {
+        let ok = ask(port, id, verb, payload).await;
+        assert_eq!(ok["status"], "ok", "{verb} on a zero exit: {ok}");
+        assert!(
+            ok.get("message").is_none(),
+            "a successful Mutate carries no message: {ok}"
+        );
+        assert!(
+            ok.get("changes").is_none(),
+            "a Mutate reply carries no read field: {ok}"
+        );
+    }
 }

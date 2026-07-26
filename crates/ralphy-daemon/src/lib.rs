@@ -4084,7 +4084,11 @@ mod tests {
                 continue;
             }
             hover_rules += 1;
-            for banned in ["opacity", "visibility"] {
+            // `display` and `max-height` are in the list because the TEXTBOOK
+            // hover-gated affordance is `display: none` + `:hover { display:
+            // … }` — banning only `opacity`/`visibility` would leave the most
+            // obvious spelling of the defect green.
+            for banned in ["opacity", "visibility", "display", "max-height"] {
                 assert!(
                     !body.contains(banned),
                     "a write control must not be hover-gated on {banned}: {selector}"

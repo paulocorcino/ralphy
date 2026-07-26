@@ -3,9 +3,14 @@
 //! names a remote, so none of it touches a network.
 //!
 //! The three held-lock tests are the oracle for "refuses under `HeldAlive`
-//! BEFORE any git call": each captures the index and `HEAD` first and asserts
+//! before any git WRITE": each captures the index and `HEAD` first and asserts
 //! both are byte-identical afterwards, so a guard placed after the core call
 //! would red them even though the exit code would look right.
+//!
+//! Precise about what they do NOT prove: a guard placed after a read-only git
+//! call would still pass, and one such call is deliberate — the
+//! `rev-parse --show-toplevel` that LOCATES the lock has to run first
+//! (`crates/ralphy-cli/src/changes.rs`'s module header states the same).
 
 use std::path::Path;
 use std::process::{Child, Command};

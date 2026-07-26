@@ -18,7 +18,7 @@ use std::path::Path;
 use anyhow::{bail, Result};
 
 use crate::changes::changes;
-use crate::git::{git, raw};
+use crate::git::{git, raw, raw_env};
 
 /// What a [`stage`] did — or why it refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,11 +93,17 @@ impl CommitOutcome {
 /// as git's "pathspec did not match": the change set is the single definition of
 /// what the panel can act on, and re-using it keeps a caller from having to read
 /// git's prose.
+///
+/// A rename's ORIGINAL path is deliberately NOT stageable. After `git mv a b`
+/// the old path exists in neither the index nor the working tree, so `git add a`
+/// is fatal — and `git add` aborts the WHOLE invocation on one unmatched
+/// pathspec, so accepting it would make a group action stage nothing at all.
+/// [`unstage`] is the direction that needs it.
 pub fn stage(repo: &Path, paths: &[String]) -> Result<StageOutcome> {
     if paths.is_empty() {
         return Ok(StageOutcome::NoPaths);
     }
-    if let Some(path) = first_unknown(repo, paths)? {
+    if let Some(path) = first_unknown(repo, paths, Rename::NewPathOnly)? {
         return Ok(StageOutcome::NotInChangeSet { path });
     }
     run_on_paths(
@@ -115,11 +121,14 @@ pub fn stage(repo: &Path, paths: &[String]) -> Result<StageOutcome> {
 /// never committed is unstaged with `git rm --cached` instead — refusing there
 /// would break the first repo an operator registers. The probe is
 /// [`crate::sync`]'s: `rev-parse --verify --quiet HEAD`.
+///
+/// A rename's ORIGINAL path IS accepted here: `git restore --staged` needs it to
+/// undo the deletion half, and it is still a live index entry.
 pub fn unstage(repo: &Path, paths: &[String]) -> Result<UnstageOutcome> {
     if paths.is_empty() {
         return Ok(UnstageOutcome::NoPaths);
     }
-    if let Some(path) = first_unknown(repo, paths)? {
+    if let Some(path) = first_unknown(repo, paths, Rename::BothPaths)? {
         return Ok(UnstageOutcome::NotInChangeSet { path });
     }
     let born = raw(repo, &["rev-parse", "--verify", "--quiet", "HEAD"])?
@@ -142,6 +151,13 @@ pub fn unstage(repo: &Path, paths: &[String]) -> Result<UnstageOutcome> {
 ///
 /// The message travels as ONE `--message=<msg>` token so a message beginning
 /// with `-` is never re-read as an option.
+///
+/// `GIT_TERMINAL_PROMPT=0` is pinned for the same reason [`crate::sync::fetch`]
+/// pins it: this call runs under a console-less daemon child, and `git commit`
+/// is the first verb here that runs the repo's own hooks and may reach a GPG
+/// signer. A prompt on a terminal nobody can see would hang the click forever.
+/// Hooks themselves are NOT skipped — `--no-verify` would silently disable the
+/// operator's own gate.
 pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
     if message.trim().is_empty() {
         return Ok(CommitOutcome::EmptyMessage);
@@ -150,7 +166,11 @@ pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
         return Ok(CommitOutcome::NothingStaged);
     }
     let arg = format!("--message={message}");
-    let out = raw(repo, &["commit", "--quiet", &arg])?;
+    let out = raw_env(
+        repo,
+        &["commit", "--quiet", &arg],
+        &[("GIT_TERMINAL_PROMPT", "0")],
+    )?;
     if !out.status.success() {
         bail!(
             "committing: {}",
@@ -161,14 +181,24 @@ pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
     Ok(CommitOutcome::Committed { sha })
 }
 
+/// Which side(s) of a rename count as "in the change set" for one direction.
+/// The two directions really do differ — see [`stage`] and [`unstage`] — and a
+/// single shared answer is what let a group stage abort on `git add <old path>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Rename {
+    NewPathOnly,
+    BothPaths,
+}
+
 /// The first of `paths` the change set does not name, `None` when every one of
-/// them is in it. A rename is known by BOTH of its paths: the panel shows the
-/// new one and git needs the old one to unstage the deletion half.
-fn first_unknown(repo: &Path, paths: &[String]) -> Result<Option<String>> {
+/// them is in it.
+fn first_unknown(repo: &Path, paths: &[String], rename: Rename) -> Result<Option<String>> {
     let mut known: HashSet<String> = HashSet::new();
     for change in changes(repo)? {
-        if let Some(original) = change.original_path {
-            known.insert(original);
+        if rename == Rename::BothPaths {
+            if let Some(original) = change.original_path {
+                known.insert(original);
+            }
         }
         known.insert(change.path);
     }

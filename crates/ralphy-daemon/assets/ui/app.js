@@ -83,10 +83,13 @@ function shell() {
     // is the operator's own act and a status read must not become a habit the
     // UI schedules.
     syncByProject: {},
-    // The commit message being composed (#318). One box for the whole shell:
-    // only one project is open at a time, and `commitStaged` clears it on
-    // success only — a refused commit must not eat what the operator typed.
+    // The commit message being composed (#318). One box for the whole shell,
+    // but it belongs to `commitMsgSlug` and NOTHING else: a message typed for
+    // repo A, abandoned, must never land as repo B's commit. `commitStaged`
+    // clears it on success only — a refused commit must not eat what the
+    // operator typed.
     commitMsg: "",
+    commitMsgSlug: null,
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -555,8 +558,9 @@ function shell() {
     commitTarget() {
       return window.WBChanges.commitTarget(this.syncByProject[this.openSlug]);
     },
-    groupPaths(list) {
-      return window.WBChanges.groupPaths(list);
+    // `withOriginal` only on the UNSTAGE direction — see `wb-changes.js`.
+    groupPaths(list, withOriginal) {
+      return window.WBChanges.groupPaths(list, withOriginal);
     },
     commitTitle() {
       const locked = this.writeLockReason();
@@ -570,6 +574,7 @@ function shell() {
     canCommit() {
       return (
         !this.writeLocked() &&
+        this.commitMsgSlug === this.openSlug &&
         !!this.commitMsg.trim() &&
         !!(this.changesStaged[this.openSlug] || []).length
       );
@@ -610,6 +615,9 @@ function shell() {
     },
 
     async commitStaged(slug) {
+      // Belt to the `toggle` braces: never commit a draft composed for another
+      // project, whatever path left the two out of step.
+      if (this.commitMsgSlug !== slug) return;
       const message = this.commitMsg.trim();
       if (!slug || !message) return;
       try {
@@ -2041,6 +2049,13 @@ function shell() {
       // now stale/absent), else the empty drawer lingers on the right.
       this.kanbanSel = null;
       this.trailFocus = null; // ditto: the marker named an issue of the old project
+      // …and so does an unsent commit message (#318): it was composed FOR the
+      // project that was open, and one click in the next project would land it
+      // on the wrong repo. Dropped whenever the open project changes.
+      if (this.commitMsgSlug !== this.openSlug) {
+        this.commitMsg = "";
+        this.commitMsgSlug = this.openSlug;
+      }
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();
