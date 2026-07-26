@@ -63,21 +63,3 @@ tab never touches the Consoles tab or its consoles.
 - Overlays that are explicitly *not* tabs (e.g. the Kanban board, which opens as
   an overlay over the canvas) stay overlays; they are a deliberate exception to
   "new canvas content is a tab," recorded here so the distinction is intentional.
-
-## Amendment (2026-07-26, ADR-0048): a fourth pane kind
-
-§3 says the pane is chosen by extension through `classify`, and enumerated the
-kinds that existed: markdown renders, binaries are refused, everything else is
-code (a diff pane joined later, under #311). ADR-0048 adds a fourth:
-**whiteboard**, for `.excalidraw`, drawn by a vendored Excalidraw.
-
-This needs no change to the decision above — it is §3 working as designed, and
-the new pane obeys every consequence already recorded: it is a **tab**, not a new
-region; it opens after the fixed Consoles tab through `openTab`; it closes
-through `closeTab`; and it never touches tab 0. It is recorded here only so the
-enumeration in §3 does not read as closed.
-
-One property of this pane is worth stating because it is new to the strip: a
-whiteboard's save writes **two** files (ADR-0048 §4 — the source and its derived
-picture). That is a fact about the save path, not about tab lifecycle; the tab is
-dirty or clean exactly as every other file tab is.

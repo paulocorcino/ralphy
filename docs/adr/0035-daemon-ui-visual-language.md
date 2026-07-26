@@ -134,28 +134,3 @@ convenience.
   literal values, and this ADR the source of their *meaning*.
 </content>
 </invoke>
-
-## Amendment (2026-07-26, ADR-0048): the whiteboard pane is exempt
-
-[ADR-0048](./0048-whiteboard-vendored-excalidraw.md) embeds Excalidraw, a
-vendored React application that ships its own complete UI and its own dark
-theme. That pane **does not wear this palette**, and the exemption is recorded
-here so a future reader does not read it as drift and "fix" it.
-
-The reason is the one ADR-0048 §3 is built on: the vendored library is pinned
-and meant to be left alone, and our code is meant to touch the smallest possible
-slice of its API. Retinting a third-party React app means reaching into its
-internals — the exact coupling that makes a version bump expensive, in service
-of a pane the operator entered deliberately and will read as a distinct tool
-anyway. Monaco set the precedent from the other side: it got the `wb` theme
-(`wb-monaco.js`) because Monaco *exposes* a theme API taking our literal tokens.
-Excalidraw offers no equivalent seam, so the honest answer is an exemption
-rather than a hack that looks like compliance.
-
-The exemption is **the pane's interior only**. Everything framing it — the tab,
-the tab strip, the toolbar around the canvas, any dialog the workbench itself
-raises over it — stays in this language. The boundary is visible on screen, and
-that is acceptable: a vendored tool that looks like a vendored tool is more
-honest than one dressed to pass as native and failing at the edges.
-
-No token below changes. Nothing else on the page is exempt.
