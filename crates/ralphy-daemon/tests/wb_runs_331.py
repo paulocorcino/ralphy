@@ -249,12 +249,138 @@ def main():
                 f"clientHeight={geom['ch']} innerHeight={geom['vh']}",
             )
 
+            # --- scenario 2: the panel's proportions ignore the feed's size ---
+            # The cap is what makes this true: past ~30vh of output, MORE output
+            # changes nothing. The old unsized <pre> grew with every chunk, so
+            # each of these three measurements differed.
+            def body_geom():
+                return page.evaluate(
+                    "() => ({ body: document.querySelector('.runs-body').clientHeight,"
+                    " picker: document.querySelector('.run-select-btn').clientHeight,"
+                    " steps: document.querySelectorAll('.plan-steps li').length })"
+                )
+
+            def refeed(text, marker):
+                page.evaluate(f"() => {SH}.dismissFeed()")
+                page.wait_for_function(
+                    f"() => {SH}.rawFeed === '' && document.querySelector('.runs-feed')?.offsetParent == null",
+                    timeout=5000,
+                )
+                feed(page, text)
+                # The `offsetParent`/`clientWidth` guards are load-bearing: an
+                # Alpine `x-show` flip is NOT visible to the next evaluate, so a
+                # text-only predicate resolves on the still-HIDDEN box and every
+                # geometry read after it measures zeros (a vacuous pass).
+                page.wait_for_function(
+                    "(m) => { const r = document.querySelector('.runs-raw');"
+                    " return !!r && r.offsetParent !== null && r.clientWidth > 0"
+                    " && r.textContent.includes(m); }",
+                    arg=marker,
+                    timeout=15000,
+                )
+
+            refeed("".join(f"line {i} A\n" for i in range(300)), "line 299 A")
+            g300 = body_geom()
+            refeed("".join(f"line {i} B\n" for i in range(500)), "line 499 B")
+            g500 = body_geom()
+            refeed("".join(f"line {i} C\n" for i in range(5000)), "line 4999 C")
+            g5000 = body_geom()
+            check(
+                "the run card + plan viewer keep their height from 300 to 5000 output lines",
+                g300["body"] == g500["body"] == g5000["body"],
+                f"300={g300['body']} 500={g500['body']} 5000={g5000['body']}",
+            )
+            check(
+                "the run picker is unchanged and the plan viewer still lists its 3 steps",
+                g300["picker"] == g5000["picker"] and g5000["steps"] == 3,
+                f"picker {g300['picker']}->{g5000['picker']} steps={g5000['steps']}",
+            )
+
+            # --- scenario 3: a long unbreakable line WRAPS, never clips --------
+            url = "https://example.invalid/" + "a" * 380
+            check("the probe line has no break opportunity", " " not in url and len(url) >= 400, f"len={len(url)}")
+            refeed(url + "\n", "example.invalid")
+            wrap = page.evaluate(
+                "() => { const r = document.querySelector('.runs-raw');"
+                " return { sw: r.scrollWidth, cw: r.clientWidth,"
+                " ws: getComputedStyle(r).whiteSpace }; }"
+            )
+            check(
+                "a 400-char space-free URL does not overflow horizontally",
+                wrap["cw"] > 0 and wrap["sw"] <= wrap["cw"] + 1,
+                f"scrollWidth={wrap['sw']} clientWidth={wrap['cw']}",
+            )
+            check("the feed preserves formatting AND wraps", wrap["ws"] == "pre-wrap", f"got={wrap['ws']!r}")
+
+            # --- scenario 4: collapse (buffer kept) and dismiss (buffer gone) --
+            refeed("".join(f"line {i} D\n" for i in range(300)), "line 299 D")
+            open_body = page.evaluate("() => document.querySelector('.runs-body').clientHeight")
+            page.click('[data-act="feed-collapse"]:visible')
+            page.wait_for_function(
+                "() => document.querySelector('.runs-raw')?.offsetParent === null", timeout=10000
+            )
+            collapsed = page.evaluate(
+                f"() => ({{ body: document.querySelector('.runs-body').clientHeight,"
+                f" buffered: {SH}.rawFeed.length,"
+                f" head: document.querySelector('.runs-feed-head')?.offsetParent !== null }})"
+            )
+            check(
+                "collapsing the feed reclaims the panel for the structured view",
+                collapsed["body"] > open_body,
+                f"open={open_body} collapsed={collapsed['body']}",
+            )
+            check(
+                "collapse KEEPS the buffer and its head, so re-opening is free",
+                collapsed["buffered"] > 0 and collapsed["head"] is True,
+                f"buffered={collapsed['buffered']} head={collapsed['head']}",
+            )
+            page.click('[data-act="feed-dismiss"]:visible')
+            page.wait_for_function(
+                "() => document.querySelector('.runs-feed')?.offsetParent == null", timeout=10000
+            )
+            check(
+                "dismissing the feed clears the buffer entirely",
+                page.evaluate(f"() => {SH}.rawFeed") == "",
+                f"got={page.evaluate(f'() => {SH}.rawFeed')[:40]!r}",
+            )
+
+            # --- scenario 5: the panel survives a phone width -----------------
+            page.set_viewport_size({"width": 390, "height": 780})
+            refeed(url + "\n" + "".join(f"line {i} E\n" for i in range(200)), "line 199 E")
+            phone = page.evaluate(
+                "() => { const r = document.querySelector('.runs-raw');"
+                " const verbs = Array.from(document.querySelectorAll('.run-verb'));"
+                " return { panel: document.querySelector('.runs').getBoundingClientRect().width,"
+                " visible: verbs.filter(b => b.offsetParent !== null).length,"
+                " sw: r.scrollWidth, cw: r.clientWidth, ch: r.clientHeight,"
+                " steps: document.querySelectorAll('.plan-steps li').length }; }"
+            )
+            check(
+                "at 390x780 the panel fits the viewport",
+                phone["panel"] <= 390,
+                f"panelWidth={phone['panel']}",
+            )
+            check(
+                "all three verbs stay reachable at a phone width",
+                phone["visible"] == 3,
+                f"visible={phone['visible']}",
+            )
+            check(
+                "the feed still wraps and yields the panel to the structured view",
+                phone["cw"] > 0
+                and phone["sw"] <= phone["cw"] + 1
+                and phone["ch"] <= 0.24 * 780
+                and phone["steps"] == 3,
+                f"sw={phone['sw']} cw={phone['cw']} ch={phone['ch']} steps={phone['steps']}",
+            )
+            page.set_viewport_size({"width": 1400, "height": 900})
+
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 3
+    ok = all(results) and len(results) >= 14
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("RUNS CHROME")
