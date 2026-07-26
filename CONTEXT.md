@@ -86,8 +86,9 @@ merge or rebase is ever started.
 _Avoid_: sync, remote state, tracking info.
 
 **Working-tree operations**:
-The acts that move a path across the **Change set**'s two sides and the one that
-records them: **stage**, **unstage**, **commit**. Owned by
+The acts that move a path across the **Change set**'s two sides, the one that
+records them, and the one that throws a path's working-tree content away:
+**stage**, **unstage**, **commit**, **discard**. Owned by
 `ralphy_core::worktree` — a sibling of `ralphy_core::sync`, not part of it: the
 upstream relation and the working tree are different questions. Every refusal is
 a VALUE carrying its own prose, never an `Err` and never git's error string:
@@ -99,7 +100,16 @@ definition of what may be acted on (both paths of a rename count), git is
 invoked with `--literal-pathspecs` so no filename is ever re-read as a pattern,
 and `commit` decides before it writes: no path that returns a refusal has run
 `git commit`.
-_Avoid_: add, index write, save, checkpoint.
+**Discard** is the one irreversible act here, and it has TWO cases with
+different recoverability. A tracked path's working tree is restored from the
+INDEX — which is HEAD when nothing is staged, so a staged change is never
+thrown away by discarding the same path's working-tree edit. An untracked
+entry is DELETED, and no commit and no reflog can bring it back; git reports an
+untracked directory as one entry (`newdir/`), which is why the deletion is
+`git clean -d` and not a file remove. Discard decides before it writes too: the
+whole list is partitioned first, and in a mixed batch the restores run BEFORE
+the deletions, so the unrecoverable act happens last.
+_Avoid_: add, index write, save, checkpoint, revert.
 
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
