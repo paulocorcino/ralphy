@@ -250,8 +250,8 @@
                  group action expands in the BROWSER to the paths the daemon
                  already sent (`groupPaths`), so no pattern is ever composed. -->
             <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">
-              <span>Staged Changes</span>
-              <span class="chg-group-note" x-text="groupNote('staged')"></span>
+              <span class="chg-group-label">Staged Changes</span>
+              <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
               <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
                       :title="rowActTitle('unstage')" aria-label="Unstage every staged path"
                       @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
@@ -271,8 +271,8 @@
               </template>
             </ul>
             <div class="chg-group-head" x-show="(changesUnstaged[openSlug] || []).length">
-              <span>Changes</span>
-              <span class="chg-group-note" x-text="groupNote('unstaged')"></span>
+              <span class="chg-group-label">Changes</span>
+              <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
               <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
                       :title="rowActTitle('stage')" aria-label="Stage every changed path"
                       @click.stop="stagePaths(openSlug, groupPaths(changesUnstaged[openSlug]))">+</button>

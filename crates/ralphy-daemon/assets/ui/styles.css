@@ -1409,8 +1409,15 @@ body.runs-open .runs {
 .chg-discard:disabled:hover {
   color: var(--text-muted);
 }
+/* The headline must not wrap now that a note sits beside it — it is the string
+   three sibling acceptance scripts read as the group's identity. */
+.chg-group-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 /* The per-group statement of what a discard removes. `flex: 0 999 auto` lets it
-   yield the whole row before the label or the group action does. */
+   yield the whole row before the label or the group action does; it truncates
+   rather than wrapping, and carries the full text in its own title. */
 .chg-group-note {
   flex: 0 999 auto;
   min-width: 0;

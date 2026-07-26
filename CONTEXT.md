@@ -96,7 +96,10 @@ staging a path the change set does not name, committing with nothing staged, and
 committing with an empty message are all ANSWERS to a reasonable question. An
 `Err` is reserved for a real failure — git missing, an unconfigured
 `user.email`, a repo that cannot be read. The change set is the single
-definition of what may be acted on (both paths of a rename count), git is
+definition of what may be acted on — and which SIDE of a rename counts is
+per-act: **unstage** takes both paths, because `restore --staged` needs the old
+one to undo the deletion half, while **stage** and **discard** take the new
+path only, the old one naming no working-tree content. Git is
 invoked with `--literal-pathspecs` so no filename is ever re-read as a pattern,
 and `commit` decides before it writes: no path that returns a refusal has run
 `git commit`.
