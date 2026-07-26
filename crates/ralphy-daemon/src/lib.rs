@@ -3997,6 +3997,106 @@ mod tests {
             js.contains("function projectBadge("),
             "wb-changes.js must keep the per-project badge fold (#317)"
         );
+
+        // The write controls (#318). Neither `node --test` nor a Playwright pass
+        // runs in CI, so these substring pins are the ONLY CI-visible gate over
+        // this markup — every control the panel's write gesture needs is named.
+        for pin in [
+            r#"data-act="stage""#,
+            r#"data-act="unstage""#,
+            r#"data-act="stage-all""#,
+            r#"data-act="unstage-all""#,
+            r#"class="chg-commit""#,
+            r#"x-model="commitMsg""#,
+            "writeLocked()",
+            "commitTarget().label",
+        ] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the write-control pin {pin}"
+            );
+        }
+        // NEGATED: the message box is no longer inert. That title string existed
+        // ONLY on the disabled `.chg-msg`, so its reappearance means the box
+        // regressed to a placeholder.
+        assert!(
+            !html.contains("inert until the write controls land"),
+            "the commit message box must no longer declare itself inert (#318)"
+        );
+        for pin in [
+            "function groupPaths(",
+            "function commitTarget(",
+            "function writeLockReason(",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-changes.js must keep the write-control helper {pin}"
+            );
+        }
+    }
+
+    /// The write controls' CSS must speak the shell's token language (ADR-0035)
+    /// exactly as the rail view's does. Its own block, and its own marker pair:
+    /// appending to #317's would silently widen a pin that names another issue.
+    #[test]
+    fn the_write_controls_add_no_colour_outside_the_token_set() {
+        let css = include_str!("../assets/ui/styles.css");
+        let open = "/* #318 write controls */";
+        let close = "/* #318 write controls end */";
+        let start = css
+            .find(open)
+            .expect("styles.css must keep the #318 write-controls opening marker")
+            + open.len();
+        let end = css
+            .find(close)
+            .expect("styles.css must keep the #318 write-controls closing marker");
+        let block = &css[start..end];
+        assert!(
+            !block.contains('#'),
+            "the #318 write-control CSS must reference var(--…) tokens only, no hex literals"
+        );
+        // The touch criterion, pinned where CI can see it: a hover-gated
+        // `opacity`/`visibility` is exactly the affordance a phone cannot find.
+        // Split on `}` so each chunk is one rule — selector, then its body — and
+        // judge the BODY of any rule whose selector mentions `:hover`. Comments
+        // are stripped FIRST: one of them names `.branch-chip.disabled:hover` as
+        // prior art, and a raw split would read that prose as a selector.
+        let mut declarations = String::new();
+        let mut rest = block;
+        while let Some(at) = rest.find("/*") {
+            declarations.push_str(&rest[..at]);
+            match rest[at + 2..].find("*/") {
+                Some(end_at) => rest = &rest[at + 2 + end_at + 2..],
+                None => {
+                    rest = "";
+                    break;
+                }
+            }
+        }
+        declarations.push_str(rest);
+
+        let mut hover_rules = 0;
+        for rule in declarations.split('}') {
+            let Some((selector, body)) = rule.split_once('{') else {
+                continue;
+            };
+            if !selector.contains(":hover") {
+                continue;
+            }
+            hover_rules += 1;
+            for banned in ["opacity", "visibility"] {
+                assert!(
+                    !body.contains(banned),
+                    "a write control must not be hover-gated on {banned}: {selector}"
+                );
+            }
+        }
+        // …and the scan must have had something to judge: a block that stopped
+        // carrying `:hover` rules would satisfy the loop above vacuously.
+        assert!(
+            hover_rules >= 2,
+            "the write-control block must still carry its :hover rules, found {hover_rules}"
+        );
     }
 
     /// The rail view's CSS must speak the shell's token language (ADR-0035), not

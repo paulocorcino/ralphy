@@ -83,6 +83,10 @@ function shell() {
     // is the operator's own act and a status read must not become a habit the
     // UI schedules.
     syncByProject: {},
+    // The commit message being composed (#318). One box for the whole shell:
+    // only one project is open at a time, and `commitStaged` clears it on
+    // success only — a refused commit must not eat what the operator typed.
+    commitMsg: "",
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -530,6 +534,97 @@ function shell() {
       }
       this.loadSync(slug);
       if (moved) this.loadChanges(slug);
+    },
+
+    // ---- write controls (#318) ------------------------------------------
+    // The disabled state is derived from the open repo's LIVE RUN list
+    // (`runs.list`, ADR-0047 §9) — already wired and already refreshed by the
+    // `runs.dirty` push. It is a HINT, not the authority: the CLI's
+    // `guard_run_lock` refuses unconditionally, and a `ralphy triage` holding
+    // the lock writes no run snapshot, so a click can still be refused while
+    // these controls look enabled. That refusal is flashed verbatim.
+    writeLocked() {
+      return !!this.writeLockReason();
+    },
+    writeLockReason() {
+      return window.WBChanges.writeLockReason(this.runsByProject[this.openSlug]);
+    },
+    rowActTitle(verb) {
+      return this.writeLockReason() || (verb === "stage" ? "stage this path" : "unstage this path");
+    },
+    commitTarget() {
+      return window.WBChanges.commitTarget(this.syncByProject[this.openSlug]);
+    },
+    groupPaths(list) {
+      return window.WBChanges.groupPaths(list);
+    },
+    commitTitle() {
+      const locked = this.writeLockReason();
+      if (locked) return locked;
+      if (!(this.changesStaged[this.openSlug] || []).length) {
+        return "nothing is staged — stage a file first";
+      }
+      if (!this.commitMsg.trim()) return "write a commit message first";
+      return this.commitTarget().label;
+    },
+    canCommit() {
+      return (
+        !this.writeLocked() &&
+        !!this.commitMsg.trim() &&
+        !!(this.changesStaged[this.openSlug] || []).length
+      );
+    },
+
+    // Stage / unstage / commit. Each follows `syncFetch`'s exact shape, and each
+    // re-reads the list from the daemon on EVERY path — success, refusal and
+    // transport throw alike. The list is never moved optimistically: a row that
+    // jumped groups on a click the daemon refused would be a lie the operator
+    // acts on next.
+    async stagePaths(slug, paths) {
+      if (!slug || !paths || !paths.length) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.stage", { repo: slug, paths });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "stage refused"));
+        }
+      } catch {
+        // A transport throw is NOT a refusal: the repo never answered.
+        if (window.WBMode.isDaemon()) this._flashAction("stage unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
+    },
+
+    async unstagePaths(slug, paths) {
+      if (!slug || !paths || !paths.length) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.unstage", { repo: slug, paths });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "unstage refused"));
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("unstage unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
+    },
+
+    async commitStaged(slug) {
+      const message = this.commitMsg.trim();
+      if (!slug || !message) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.commit", { repo: slug, message });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "commit refused"));
+        } else {
+          // Cleared on success ONLY: a refused commit must not eat the message.
+          this.commitMsg = "";
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("commit unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
     },
 
     // Filtered (case-insensitive substring), current pinned to the top.

@@ -1320,6 +1320,80 @@ body.runs-open .runs {
   font-size: 0.68rem;
   color: var(--text-muted);
 }
+/* #318 write controls */
+/* The row action is a real button in the FLOW — there is deliberately no
+   hover-gated `opacity` or `visibility` anywhere in this block. That is the
+   touch criterion: on a touch screen there is no hover with which to reveal an
+   affordance, so a control only a mouse can find is a control a phone does not
+   have. 24px on both axes is the shell's own target size (`.head-act`), and
+   `margin-left: auto` parks it at the row's end without a filler element (the
+   idiom `.sync-act` already uses).
+
+   `flex: 0 0 auto` keeps the button out of the negative-free-space split that
+   the frozen file name depends on; the row's own `overflow: hidden` still
+   bounds an absurd name. */
+.chg-act {
+  all: unset;
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.chg-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.chg-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+/* A disabled control keeps its size and its place — it states the reason in its
+   title and simply stops signalling clickable, the same idiom as
+   `.branch-chip.disabled:hover`. Dimming, never hiding: a control that vanishes
+   under a run would read as a feature that does not exist. */
+.chg-act:disabled,
+.chg-commit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chg-act:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+/* The commit button sits under the message box and carries the branch name, so
+   it can outgrow the sidebar — it truncates rather than widening the column. */
+.chg-commit {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.4rem;
+  min-height: 26px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chg-commit:hover:not(:disabled) {
+  background: var(--surface-hi);
+}
+.chg-commit:disabled:hover {
+  background: var(--surface);
+}
+/* #318 write controls end */
 /* The sync row (#316): branch + counts + staleness on ONE line. `overflow:
    hidden` on the container is what bounds a long branch name inside the row
    instead of bleeding the sidebar (same rule the change rows follow). */

@@ -195,5 +195,64 @@
     return { show: true, text: String(count), zero: count === 0, title: count + " changed" };
   }
 
-  window.WBChanges = { fold, foldSync, marker, shouldReload, diffTarget, projectBadge };
+  // A group action's path list (#318). The expansion is over entries the daemon
+  // ALREADY sent, so a group click can name nothing the daemon did not first
+  // hand over — no glob, no pathspec, no "everything" token ever leaves here.
+  //
+  // A rename contributes BOTH of its paths: git needs the old one to undo the
+  // deletion half. De-duplicated because one path can sit in both groups (an
+  // `AM` entry) and because a rename's old path can also be another entry's.
+  function groupPaths(entries) {
+    const out = [];
+    const seen = new Set();
+    for (const e of Array.isArray(entries) ? entries : []) {
+      for (const p of [e && e.path, e && e.originalPath]) {
+        if (typeof p === "string" && p && !seen.has(p)) {
+          seen.add(p);
+          out.push(p);
+        }
+      }
+    }
+    return out;
+  }
+
+  // What the commit button says. It names the branch the commit will LAND on —
+  // the operator is composing a commit in a sidebar, with no prompt to read it
+  // off. A detached HEAD says so instead of naming a sha as if it were a branch,
+  // and an unknown sync fold says the least it can rather than guessing.
+  function commitTarget(sync) {
+    if (!sync || typeof sync !== "object" || !sync.state || sync.state === "unknown") {
+      return { label: "Commit", branch: "", detached: false };
+    }
+    if (sync.state === "detached") {
+      return { label: "Commit (detached HEAD)", branch: sync.branch || "", detached: true };
+    }
+    const branch = sync.branch || "";
+    return {
+      label: branch ? "Commit to " + branch : "Commit",
+      branch,
+      detached: false,
+    };
+  }
+
+  // Why the write controls are disabled, or `""` when they are not. Derived from
+  // the repo's LIVE RUN list (`runs.list`, ADR-0047 §9): a run holding the
+  // repo's lock is exactly what the CLI guard refuses under. The guard remains
+  // the authority — this only makes the consequence visible before the click.
+  function writeLockReason(runs) {
+    if (!Array.isArray(runs) || runs.length === 0) return "";
+    return "a run holds this repo's lock — write controls are disabled until it finishes";
+  }
+
+  window.WBChanges = {
+    fold,
+    foldSync,
+    marker,
+    shouldReload,
+    diffTarget,
+    projectBadge,
+    groupPaths,
+    commitTarget,
+    writeLockReason,
+  };
 })(window);

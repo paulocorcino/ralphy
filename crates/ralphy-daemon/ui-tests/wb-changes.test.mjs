@@ -473,3 +473,70 @@ test("projectBadge prints the count of a dirty tree (#317)", () => {
   assert.equal(badge.text, "3");
   assert.equal(badge.zero, false);
 });
+
+test("groupPaths emits both sides of a rename, de-duplicated (#318)", () => {
+  const { fold, groupPaths } = load();
+  const folded = fold({
+    status: "ok",
+    changes: {
+      changes: [
+        { path: "new.txt", original_path: "old.txt", status: "renamed", index_status: "renamed" },
+        { path: "both.txt", status: "added", index_status: "added", worktree_status: "modified" },
+      ],
+    },
+  });
+  // A rename contributes BOTH paths: git needs the old one to undo the
+  // deletion half of a staged rename.
+  assert.deepEqual(groupPaths(folded.staged), ["new.txt", "old.txt", "both.txt"]);
+  // `both.txt` sits in BOTH groups, so folding the two lists together must not
+  // send it twice.
+  assert.deepEqual(groupPaths([...folded.staged, ...folded.unstaged]), [
+    "new.txt",
+    "old.txt",
+    "both.txt",
+  ]);
+});
+
+test("groupPaths can only name paths it was given (#318)", () => {
+  const groupPaths = load().groupPaths;
+  assert.deepEqual(groupPaths([]), []);
+  assert.deepEqual(groupPaths(undefined), []);
+  assert.deepEqual(groupPaths(null), []);
+  // Nothing is synthesised: no "." , no "*", no "-A".
+  assert.deepEqual(groupPaths([{ path: "a.txt", originalPath: null }]), ["a.txt"]);
+  // A malformed entry contributes nothing rather than an `undefined` token.
+  assert.deepEqual(groupPaths([{}, { path: 7 }, { path: "" }, { path: "ok" }]), ["ok"]);
+});
+
+test("commitTarget names the branch the commit lands on (#318)", () => {
+  const commitTarget = load().commitTarget;
+  const tracking = commitTarget({ state: "tracking", branch: "main" });
+  assert.equal(tracking.label, "Commit to main");
+  assert.equal(tracking.branch, "main");
+  assert.equal(tracking.detached, false);
+  // A branch with no upstream still has a name to land on.
+  assert.equal(commitTarget({ state: "no-upstream", branch: "feat/x" }).label, "Commit to feat/x");
+});
+
+test("commitTarget refuses to name a detached HEAD as a branch (#318)", () => {
+  const commitTarget = load().commitTarget;
+  const detached = commitTarget({ state: "detached", branch: "abc1234" });
+  assert.equal(detached.label, "Commit (detached HEAD)");
+  assert.equal(detached.detached, true);
+  // An unknown fold says the least it can rather than inventing a target.
+  for (const bad of [null, undefined, {}, { state: "unknown" }]) {
+    assert.equal(commitTarget(bad).label, "Commit");
+    assert.equal(commitTarget(bad).detached, false);
+  }
+});
+
+test("writeLockReason speaks only when a run holds the lock (#318)", () => {
+  const writeLockReason = load().writeLockReason;
+  assert.equal(writeLockReason([]), "");
+  assert.equal(writeLockReason(undefined), "");
+  assert.equal(writeLockReason(null), "");
+  assert.equal(writeLockReason("nope"), "");
+  const held = writeLockReason([{ runid: "x" }]);
+  assert.match(held, /holds this repo's lock/);
+  assert.equal(writeLockReason([{ runid: "x" }, { runid: "y" }]), held);
+});
