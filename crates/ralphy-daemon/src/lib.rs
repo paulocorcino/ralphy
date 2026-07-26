@@ -4333,6 +4333,90 @@ mod tests {
         }
     }
 
+    /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
+    /// in CI, so these substrings are the only CI-visible gate over the markup —
+    /// the same bargain #318/#319 struck for the write controls.
+    #[test]
+    fn the_runs_feed_is_contained_in_the_markup() {
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"class="runs-feed""#,
+            r#"data-act="feed-collapse""#,
+            r#"data-act="feed-dismiss""#,
+            r#"x-show="rawFeedOpen""#,
+            r#"class="runs-lock-note""#,
+            r#"class="runs-verb-error""#,
+            "verbLocked()",
+            "verbTitle('triage')",
+        ] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the #331 pin {pin}"
+            );
+        }
+        // The NEGATED pin: the unwrapped `<pre>` is the defect itself — an
+        // unsized sibling of the panel body. Its only occurrence was the one
+        // this issue replaced, so its return is a regression, not a duplicate.
+        assert!(
+            !html.contains(r#"<pre class="runs-raw" x-show="rawFeed""#),
+            "the raw feed must stay inside its sized .runs-feed box (#331)"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        for pin in ["dismissFeed()", "runVerbFailed(", "rawFeedOpen: true"] {
+            assert!(app_js.contains(pin), "app.js must keep the #331 pin {pin}");
+        }
+        // The gate REUSES the Changes derivation rather than paralleling it —
+        // that reuse is the acceptance criterion, so it is pinned literally.
+        // Normalized first: this host checks these assets out with CRLF while
+        // the blob holds LF, so a raw multi-line substring is a Windows-only
+        // failure waiting to happen.
+        assert!(
+            app_js
+                .replace("\r\n", "\n")
+                .contains("verbLocked() {\n      return this.writeLocked();"),
+            "verbLocked() must be literally writeLocked(), not a second predicate (#331)"
+        );
+
+        let runs_js = include_str!("../assets/ui/wb-runs.js");
+        for pin in ["verbLockTitle(", "exitNote("] {
+            assert!(
+                runs_js.contains(pin),
+                "wb-runs.js must keep the #331 helper {pin}"
+            );
+        }
+        assert!(
+            include_str!("../assets/ui/wb-daemon.js").contains("runVerbFailed?.("),
+            "wb-daemon.js must route a terminal verb frame to the panel (#331)"
+        );
+    }
+
+    /// The runs chrome's own colour gate. The `@media` assertion is not
+    /// decoration: the phone width IS a criterion, and a block that lost its
+    /// narrow-width rule would pass the hex scan vacuously.
+    #[test]
+    fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
+        let css = include_str!("../assets/ui/styles.css");
+        let open = "/* #331 runs chrome */";
+        let close = "/* #331 runs chrome end */";
+        let start = css
+            .find(open)
+            .expect("styles.css must keep the #331 runs-chrome opening marker")
+            + open.len();
+        let end = css
+            .find(close)
+            .expect("styles.css must keep the #331 runs-chrome closing marker");
+        let block = &css[start..end];
+        assert!(
+            !block.contains('#'),
+            "the #331 runs-chrome CSS must reference var(--…) tokens only, no hex literals"
+        );
+        assert!(
+            block.contains("@media"),
+            "the phone width is a criterion — the block must keep its @media rule"
+        );
+    }
+
     /// The discard block's own colour + hover gate, reusing #318's scan. It also
     /// asserts the block still holds an `@media` rule: the touch de-emphasis IS
     /// the criterion, and a block that lost it would pass the rest vacuously.
