@@ -111,11 +111,23 @@ pub(crate) fn blob(cmd: BlobCommand) -> Result<()> {
 /// filesystem by the process standing in the repo. Resolution is lexical, not
 /// `canonicalize`: a path that does not exist yet must still be judged, because
 /// absence at the revision is a legitimate answer, not an escape.
+///
+/// The shape gate is PLATFORM-INDEPENDENT by construction, matching the daemon's
+/// `dispatch::validated_path`: `Component::Prefix` exists only on Windows, so on
+/// Linux `C:\Windows\win.ini` normalises to the ordinary relative path
+/// `C:/Windows/win.ini` and every `std::path` arm above waves it through. A host
+/// must not decide what a remote path means — the drive prefix is refused on
+/// every platform, spelled out rather than delegated to `std::path`.
 fn guard_contained(repo_root: &Path, path: &str) -> Result<()> {
     let normalised = path.replace('\\', "/");
     let p = Path::new(&normalised);
+    let drive_prefixed = {
+        let b = normalised.as_bytes();
+        b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+    };
     let bad_shape = normalised.is_empty()
         || p.is_absolute()
+        || drive_prefixed
         || p.components().any(|c| {
             matches!(
                 c,

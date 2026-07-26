@@ -98,6 +98,10 @@ fn a_path_leaving_the_repo_is_refused_before_any_read() {
 
     // One vector per arm of the guard — a single `..` case would leave the
     // absolute / rooted / drive-prefix arms deletable with the suite still green.
+    // `C:\Windows\win.ini` is deliberately NOT `#[cfg(windows)]`-gated: on Linux
+    // it is a legal RELATIVE filename, so every `std::path` arm waves it through
+    // and only `guard_contained`'s explicit drive-prefix rule refuses it. That
+    // is the point — the guard must not vary by host (#317 residue, closed here).
     for path in [
         "../escape.txt",
         "src/../../escape.txt",
