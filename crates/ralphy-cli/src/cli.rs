@@ -798,6 +798,23 @@ mod tests {
     }
 
     #[test]
+    fn changes_discard_subcommand_parses() {
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "changes",
+            "discard",
+            "--repo",
+            ".",
+            "--path=a.txt",
+        ])
+        .expect("changes discard must parse");
+        let Command::Changes(changes::ChangesCommand::Discard(a)) = cli.command else {
+            panic!("expected `changes discard`");
+        };
+        assert_eq!(a.path, vec!["a.txt".to_string()]);
+    }
+
+    #[test]
     fn blob_read_subcommand_parses() {
         let cli = Cli::try_parse_from([
             "ralphy",

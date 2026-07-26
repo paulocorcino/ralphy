@@ -1,10 +1,12 @@
-//! `ralphy changes list|stage|unstage|commit` — the working-tree change set of a
-//! repo and the three acts that move paths through it. Every primitive delegates
+//! `ralphy changes list|stage|unstage|commit|discard` — the working-tree change
+//! set of a repo and the four acts that move paths through it. Every primitive
+//! delegates
 //! to an already-public [`ralphy_core::changes`] / [`ralphy_core::worktree`]
 //! function; this module is only the guard + clap surface and the output shapes.
 //!
 //! `list` is read-only and never consults `.ralphy/run.lock` (see
-//! `mutate::branch`'s `List` arm). `stage`, `unstage` and `commit` inspect it and
+//! `mutate::branch`'s `List` arm). `stage`, `unstage`, `commit` and `discard`
+//! inspect it and
 //! refuse under [`crate::runlock::LockState::HeldAlive`] before any git WRITE
 //! (ADR-0036 §6). Precisely: the one git call the guard does not precede is the
 //! read-only `rev-parse --show-toplevel` that LOCATES the lock — it has to run
@@ -18,7 +20,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
-use ralphy_core::worktree::{CommitOutcome, StageOutcome, UnstageOutcome};
+use ralphy_core::worktree::{CommitOutcome, DiscardOutcome, StageOutcome, UnstageOutcome};
 
 use crate::runlock;
 use crate::runlock::guard_run_lock;
@@ -33,6 +35,8 @@ pub(crate) enum ChangesCommand {
     Unstage(ChangesPathArgs),
     /// Record the staged index as a commit (refuses under a held run.lock).
     Commit(ChangesCommitArgs),
+    /// Discard the given paths' working-tree changes (refuses under a held run.lock).
+    Discard(ChangesPathArgs),
 }
 
 #[derive(Args)]
@@ -71,13 +75,14 @@ pub(crate) struct ChangesCommitArgs {
     pub(crate) message: String,
 }
 
-/// `ralphy changes list|stage|unstage|commit`.
+/// `ralphy changes list|stage|unstage|commit|discard`.
 pub(crate) fn changes(cmd: ChangesCommand) -> anyhow::Result<()> {
     match cmd {
         ChangesCommand::List(args) => changes_list(args),
         ChangesCommand::Stage(args) => changes_stage(args),
         ChangesCommand::Unstage(args) => changes_unstage(args),
         ChangesCommand::Commit(args) => changes_commit(args),
+        ChangesCommand::Discard(args) => changes_discard(args),
     }
 }
 
@@ -140,6 +145,21 @@ fn changes_commit(args: ChangesCommitArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes commit")?;
     match ralphy_core::worktree::commit(&repo_root, &args.message)? {
         CommitOutcome::Committed { sha } => println!("Committed {sha}."),
+        refused => anyhow::bail!(
+            "{}",
+            refused.reason().unwrap_or_else(|| format!("{refused:?}"))
+        ),
+    }
+    Ok(())
+}
+
+/// `ralphy changes discard --path <p> [--path <p>…]`.
+fn changes_discard(args: ChangesPathArgs) -> anyhow::Result<()> {
+    let repo_root = guarded_root(&args.repo, "changes discard")?;
+    match ralphy_core::worktree::discard(&repo_root, &args.path)? {
+        DiscardOutcome::Discarded { restored, deleted } => {
+            println!("Discarded {restored} path(s), deleted {deleted} untracked path(s).")
+        }
         refused => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))

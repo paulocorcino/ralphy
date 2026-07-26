@@ -39,6 +39,9 @@ fn git_output(root: &Path, args: &[&str]) -> String {
 fn configure(root: &Path) {
     run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["config", "user.name", "Test"]);
+    // Without this, this host leaves LF in the blob and CRLF on disk, and the
+    // discard tests' exact-content oracle becomes a coin flip.
+    run_git(root, &["config", "core.autocrlf", "false"]);
 }
 
 fn commit(root: &Path, file: &str, body: &str, msg: &str) {
@@ -189,6 +192,91 @@ fn changes_commit_refuses_under_a_held_lock_before_any_git_call() {
         git_state(repo.path()),
         before,
         "the guard runs BEFORE any git call: the index or HEAD moved"
+    );
+}
+
+/// The held-lock oracle for the one verb whose write lands in the WORKING TREE
+/// rather than in the index — so the file's own bytes are captured too. Without
+/// that check "before any git call" would mean nothing here: `discard` can move
+/// a file while leaving both the index and HEAD byte-identical.
+#[test]
+fn changes_discard_refuses_under_a_held_lock_before_any_git_call() {
+    let repo = init_repo();
+    std::fs::write(repo.path().join("a.txt"), "mangled\n").unwrap();
+    let before = git_state(repo.path());
+    let before_bytes = std::fs::read(repo.path().join("a.txt")).unwrap();
+
+    let child = hold_run_lock(repo.path());
+    let out = ralphy(&[
+        "changes",
+        "discard",
+        "--repo",
+        &repo.path().to_string_lossy(),
+        "--path=a.txt",
+    ]);
+    release(child);
+
+    assert!(
+        !out.status.success(),
+        "changes discard must refuse under a held run.lock"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("refusing to changes discard"),
+        "the refusal names the verb: {stderr}"
+    );
+    assert_eq!(
+        git_state(repo.path()),
+        before,
+        "the guard runs BEFORE any git call: the index or HEAD moved"
+    );
+    assert_eq!(
+        std::fs::read(repo.path().join("a.txt")).unwrap(),
+        before_bytes,
+        "the working-tree file is untouched — the write never ran"
+    );
+}
+
+/// The success leg: both cases in one call, then the refusal that proves the
+/// change set really was re-read afterwards.
+#[test]
+fn changes_discard_over_the_binary_restores_and_deletes() {
+    let repo = init_repo();
+    let root = repo.path().to_string_lossy().to_string();
+    std::fs::write(repo.path().join("a.txt"), "mangled\n").unwrap();
+
+    let out = ralphy(&[
+        "changes",
+        "discard",
+        "--repo",
+        &root,
+        "--path=a.txt",
+        "--path=b.txt",
+    ]);
+    assert!(
+        out.status.success(),
+        "changes discard must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+        "one\n",
+        "the tracked path is back to its committed content"
+    );
+    assert!(
+        !repo.path().join("b.txt").exists(),
+        "the untracked path is deleted"
+    );
+
+    let refused = ralphy(&["changes", "discard", "--repo", &root, "--path=a.txt"]);
+    assert!(
+        !refused.status.success(),
+        "a clean path is no longer in the change set"
+    );
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("is not in the change set"),
+        "the refusal is the core's prose: {}",
+        String::from_utf8_lossy(&refused.stderr)
     );
 }
 
