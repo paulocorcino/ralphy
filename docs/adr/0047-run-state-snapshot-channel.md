@@ -307,3 +307,141 @@ cannot be cleared by the failure it is meant to detect.
 - Run **history** stays out. This channel describes live runs only, and its
   documents are deleted. Browsing finished runs is a different feature with
   different storage questions, and nothing here forecloses it.
+
+## Amendment: the document carries plan step state, and plan-progress detection is spine-level
+
+Status: proposed (2026-07-26; issue #329, under PRD #328).
+
+§5 decided the document carries the plan's **path** and never its text, and the
+panel therefore reads `plan.md` through the confined `file.read` verb. In use,
+that produced two failures the channel is supposed to prevent — both observed on
+a live run in this repo:
+
+- **The plan viewer blanks for the whole plan phase.** Planning deletes
+  `plan.md` before the planner rewrites it (*plan fresh every run; never reuse a
+  stale artifact* — correct, and not the defect). A queue transition around the
+  phase change triggers a re-read at the exact moment the file is absent; the
+  refusal is rendered as *"no plan"*, and nothing ever tells the panel that the
+  new plan arrived.
+- **Steps never advance.** The executor ticks checkboxes in `plan.md`, but the
+  daemon's subscription watches `.ralphy/runstate` (§3) — not the plan file — so
+  a checkbox write produces no push, no re-read and no update. The viewer is a
+  frozen photo until some unrelated status transition happens to rewrite the
+  document.
+
+The cause is not a missing channel. `PlanWritten` already carries the plan's
+full checkbox list as `(text, status)` pairs and `PlanOpened` already carries the
+raw plan; both are `RunEvent`s on the §2 spine that the snapshot engine sits on.
+**The fold receives them and discards them, because the document has nowhere to
+put them** — and the panel is then sent to read from disk what the run process
+had in hand. This amendment closes that gap.
+
+### A1. The document carries a `plan` block
+
+The document gains a `plan` block holding the **active issue's checkbox steps**
+as `(text, status)` pairs, using the same three statuses the plan vocabulary
+already has (open, checked, noticed), plus **the issue number the plan belongs
+to**.
+
+The issue keying is load-bearing, not bookkeeping: between issues there is a
+window in which the plan on disk belongs to the previous issue, and a block that
+could not name its issue would let the panel render a stale plan as the current
+one — the same class of lie §7 refuses for liveness.
+
+### A2. Steps, not the plan's text — §5's argument survives intact
+
+§5's reason for excluding the plan was that copying "a growing markdown document
+into a file rewritten on every fold change would be the only unbounded thing in
+it". That reason is upheld: the prose is still excluded, and the plan's sections
+are still read through `file.read`.
+
+What the block adds is bounded by the plan's **step count** — tens of entries of
+normalized identity text — and it does not grow as the agent works, because
+checking a box changes a status, not the size of the block. This is the part of
+the plan that *goes stale*, which is precisely why it belongs in state; the prose
+does not change once written, which is precisely why a confined read still serves
+it.
+
+The honest cost: the document is now linear in step count rather than fully
+fixed-size. A pathological plan with hundreds of steps makes a larger document.
+No cap is imposed — a plan that large is a planning defect the panel should show,
+not hide — but the bound is stated so a future reader knows it was considered.
+
+### A3. Additive within `v = 1`; no version bump
+
+Per §6, `v` is bumped **only** for a change an older reader would misread. This
+is a new optional block: every field of the document already carries a serde
+default and readers already parse permissively within a version, so an older
+daemon meeting the new block ignores it and keeps working, and a document written
+without the block parses exactly as today. Both directions of a mixed-version
+machine degrade to current behaviour rather than to an error.
+
+`v` stays reserved for a field removed, retyped, or given a new meaning.
+
+### A4. Plan-progress detection moves from the event sink to the shared spine
+
+The mtime-driven plan-checkbox poll lives inside the **event sink** destination
+today, so it only runs when `events.url` is configured. Step progress in the
+panel would otherwise be a property of having set up a remote events platform —
+which is exactly the dependency the "considered options" section rejected this
+channel's alternative for.
+
+Decision: the detection moves onto the §2 shared spine, where both destinations
+consume it. **This is §4's defect recurring one layer over**: something the run
+needs unconditionally had been implemented inside the events-sink branch. §4
+moved the `runid` mint to run boot for that reason; the plan poll moves to the
+spine for the same one.
+
+The parsing, identity normalization and diffing become one vendor-neutral module
+with two real callers — the sink and the snapshot fold — so the step vocabulary
+has a single definition and the panel and the CloudEvents wire cannot drift about
+what a status means. The sink's `dev.ralphy.plan.step` emission is unchanged in
+shape, timing and normalized text; ADR-0019's wire contract is untouched.
+
+### A5. The write budget and the "state, not a log" posture are unchanged
+
+- §8's rule holds verbatim: an unchanged fold costs no write. A checkbox
+  transition is a real projection change and earns its write; a poll that finds
+  nothing new writes nothing.
+- §1's accepted cost also holds: the operator sees the **last written** step
+  state, not every transition. The durable log of transitions remains the event
+  sink's job. Carrying step state does not make this channel a log — it is still
+  idempotent, still applied by replacement, still with no ordering or replay
+  contract.
+- §7 is untouched: the block is state about the plan, not an assertion about
+  whether anything is alive.
+- §11 is untouched: `ralphy run` only.
+
+### A6. What this does not license
+
+The panel still reads the plan's prose sections through `file.read`. The
+follow-on requirement — that a refused or failed read **preserve the last good
+text** instead of emptying the viewer, and that "no steps" and "unreadable" be
+distinguishable on screen — is implementation, tracked under PRD #328, not a
+change to this decision.
+
+### A7. Still rejected, and why it stays rejected
+
+The alternative of giving the daemon the run's events directly resurfaced during
+this analysis in two new forms. Both are refused, and recorded here so the
+question is settled rather than re-argued:
+
+- **`events.url` pointed at the daemon** (by default, or fanned out to it when it
+  happens to be up). A push has no memory, and late-join is this panel's *normal*
+  case: it opens mid-run, and a run may outlive a daemon restart or predate the
+  daemon entirely — the exact scenarios §1 chose disk for. A conditional second
+  destination would also make the panel's fidelity depend on whether the daemon
+  was up at each event, so two identical runs could show different panels.
+- **An HTTP ingest route on the daemon.** It needs either a credential in the
+  run's environment or an unauthenticated surface, and "loopback only" is not a
+  boundary: a dev tunnel rewrites `Host` and `Origin` to loopback, which leaves
+  an origin check inert and makes the route reachable by anyone holding the tunnel
+  URL. This is measured behaviour, not a hypothetical.
+
+A **local, disk-backed event log** — a per-run append-only file of the event
+envelopes, tailed by the daemon — remains an open and plausible idea for giving
+the daemon the whole vocabulary rather than growing this document field by field.
+It is deliberately **not** decided here: it needs its own ADR to settle which
+events it carries, which envelope shape, retention, and how a reader correlates
+it (the run's log directory is keyed by timestamp while this channel is keyed by
+`runid` — §3's distinction, which any such log must respect).
