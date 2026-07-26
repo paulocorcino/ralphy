@@ -1,9 +1,9 @@
-//! `ralphy sync status|fetch|pull` — the branch's relation to its upstream and
-//! the two acts that change it. Every primitive delegates to an already-public
+//! `ralphy sync status|fetch|pull|push` — the branch's relation to its upstream
+//! and the acts that change it. Every primitive delegates to an already-public
 //! [`ralphy_core::sync`] function; this module is only the guard + clap surface.
 //!
 //! `status` is read-only and never consults `.ralphy/run.lock` (see
-//! `changes.rs`). `fetch` and `pull` inspect it and refuse under
+//! `changes.rs`). `fetch`, `pull` and `push` inspect it and refuse under
 //! [`crate::runlock::LockState::HeldAlive`] before any git WRITE (ADR-0036 §6).
 //! Precisely: the one git call the guard does not precede is the read-only
 //! `rev-parse --show-toplevel` that LOCATES the lock — it has to run first,
@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
-use ralphy_core::sync::{FetchOutcome, Head, PullOutcome};
+use ralphy_core::sync::{FetchOutcome, Head, PullOutcome, PushOutcome};
 
 use crate::runlock;
 use crate::runlock::guard_run_lock;
@@ -31,6 +31,9 @@ pub(crate) enum SyncCommand {
     Fetch(SyncArgs),
     /// Fast-forward from the upstream, never merging (refuses under a held run.lock).
     Pull(SyncArgs),
+    /// Publish the current branch, setting an upstream when it has none.
+    /// Refuses on the repo's default branch, and under a held run.lock.
+    Push(SyncArgs),
 }
 
 #[derive(Args)]
@@ -57,6 +60,7 @@ pub(crate) fn sync(cmd: SyncCommand) -> anyhow::Result<()> {
         SyncCommand::Status(args) => sync_status(args),
         SyncCommand::Fetch(args) => sync_fetch(args),
         SyncCommand::Pull(args) => sync_pull(args),
+        SyncCommand::Push(args) => sync_push(args),
     }
 }
 
@@ -119,6 +123,34 @@ fn sync_pull(args: SyncArgs) -> anyhow::Result<()> {
     match ralphy_core::sync::pull(&repo_root)? {
         PullOutcome::UpToDate => println!("Already up to date."),
         PullOutcome::FastForwarded { commits } => println!("Fast-forwarded {commits} commits."),
+        refused => anyhow::bail!(
+            "{}",
+            refused.reason().unwrap_or_else(|| format!("{refused:?}"))
+        ),
+    }
+    Ok(())
+}
+
+/// `ralphy sync push`. The OPERATOR's act — a typed command or a workbench
+/// click, never a run's (ADR-0046 amendment, #320), which is why there is no
+/// opt-in flag here and why the agent's own `git push` deny rule is untouched.
+/// Every refusal, protected ref and failed credential included, is a non-zero
+/// exit carrying the core's prose.
+fn sync_push(args: SyncArgs) -> anyhow::Result<()> {
+    let repo_root = guarded_root(&args.repo, "sync push")?;
+    match ralphy_core::sync::push(&repo_root)? {
+        PushOutcome::UpToDate => println!("Already published."),
+        PushOutcome::Pushed {
+            remote,
+            branch,
+            set_upstream,
+        } => {
+            // Setting an upstream changed the repo's own config, not just the
+            // remote — the operator is told, because the next `status` reads
+            // differently because of it.
+            let tail = if set_upstream { " (upstream set)" } else { "" };
+            println!("Pushed {branch} to {remote}{tail}.");
+        }
         refused => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))

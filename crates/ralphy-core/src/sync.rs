@@ -1,15 +1,16 @@
 //! The branch's relation to its upstream: which branch HEAD is on, whether it
 //! tracks anything, how far ahead/behind it is, and when the remote-tracking
-//! refs were last refreshed — plus the two acts that change those answers,
-//! `fetch` and a fast-forward-only `pull`.
+//! refs were last refreshed — plus the acts that change those answers: `fetch`,
+//! a fast-forward-only `pull`, and a `push` that publishes the branch.
 //!
 //! [`status`] makes NO network call, so a UI may read it freely; the counts it
 //! reports are therefore as stale as the last fetch, which is why `last_fetch`
-//! travels beside them. Fetching is the operator's own act ([`fetch`]), never a
-//! timer's.
+//! travels beside them. Every act here is the operator's own — a click or a
+//! typed command — never a timer's and never a run's ([`push`] in particular:
+//! ADR-0046 amendment, #320).
 //!
-//! Scope: this module holds status/fetch/pull only. Staging, discarding and
-//! committing are working-tree operations that arrive in a later slice; they do
+//! Scope: this module holds status/fetch/pull/push only. Staging, discarding
+//! and committing are working-tree operations that live in `changes`; they do
 //! not belong here just because they are also git.
 
 use std::path::Path;
@@ -337,6 +338,195 @@ pub fn pull(repo: &Path) -> Result<PullOutcome> {
     Ok(PullOutcome::FastForwarded {
         commits: tracking.behind,
     })
+}
+
+/// What a [`push`] did — or why it refused. Like [`PullOutcome`], every variant
+/// but the first two is a refusal whose [`PushOutcome::reason`] is the
+/// operator's message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PushOutcome {
+    /// `set_upstream` records that this push also gave the branch its upstream —
+    /// the first publication of a fresh run branch, which the CLI says out loud
+    /// because it changed the repo's config, not just the remote.
+    Pushed {
+        remote: String,
+        branch: String,
+        set_upstream: bool,
+    },
+    UpToDate,
+    NoRemote,
+    DetachedHead,
+    /// The branch is one this module will not publish over: the remote's own
+    /// default branch, or the configured `base_branch`. See [`push`].
+    ProtectedRef {
+        branch: String,
+    },
+    /// The remote moved on. Not remediated here — a force-push is exactly the
+    /// destructive act this seam must never perform on an operator's behalf.
+    Rejected {
+        remote: String,
+    },
+    /// The remote refused the credential. Reported, never remediated: there is
+    /// no credential prompt and no credential UI anywhere in this path.
+    AuthFailed {
+        remote: String,
+    },
+}
+
+impl PushOutcome {
+    /// Prose for a refusal, `None` when the push succeeded. Each refusal reads
+    /// as its own reason and names the operator's next action; none of them
+    /// relays a git error string.
+    pub fn reason(&self) -> Option<String> {
+        Some(match self {
+            PushOutcome::Pushed { .. } | PushOutcome::UpToDate => return None,
+            PushOutcome::NoRemote => {
+                "cannot push: this branch has no remote to push to".to_string()
+            }
+            PushOutcome::DetachedHead => {
+                "cannot push: HEAD is detached — check out a branch first".to_string()
+            }
+            PushOutcome::ProtectedRef { branch } => format!(
+                "cannot push: '{branch}' is this repo's default branch — push it from a terminal if you mean it"
+            ),
+            PushOutcome::Rejected { remote } => format!(
+                "cannot push: {remote} has commits this branch does not — pull first, then push again"
+            ),
+            PushOutcome::AuthFailed { remote } => format!(
+                "cannot push: {remote} refused the credential — authenticate in a terminal, this will not prompt"
+            ),
+        })
+    }
+}
+
+/// Publish the current branch to its remote. **The operator's own act**: this is
+/// called from a click or a typed command, never from a run, a timer or a
+/// scheduler (ADR-0046 amendment, #320) — which is why there is no opt-in flag
+/// guarding it and why the agent's own `git push` deny rule is untouched.
+///
+/// A branch with no upstream gets one (`--set-upstream`), so a fresh run branch
+/// is publishable without walking to a terminal.
+///
+/// Refuses on the repo's default branch ([`protected_branches`]) — the one way
+/// this feature can do real damage, refused in code rather than in prose. Never
+/// force-pushes: a remote that moved on is a refusal the operator resolves.
+///
+/// Cross-path invariant, as [`pull`]: every refusal path performs ZERO git
+/// writes. `GIT_TERMINAL_PROMPT=0` is pinned for the same reason [`fetch`] pins
+/// it — this runs under a console-less daemon child, where a credential prompt
+/// would hang a click against a terminal nobody can see.
+pub fn push(repo: &Path) -> Result<PushOutcome> {
+    let st = status(repo)?;
+    let Head::Branch { name: branch } = st.head else {
+        return Ok(PushOutcome::DetachedHead);
+    };
+    let Some(remote) = remote_for_head(repo)? else {
+        return Ok(PushOutcome::NoRemote);
+    };
+    if protected_branches(repo, &remote)?
+        .iter()
+        .any(|p| p == &branch)
+    {
+        return Ok(PushOutcome::ProtectedRef { branch });
+    }
+    // An upstream that is already level has nothing to publish; a branch with no
+    // upstream always does, because setting one IS the act being asked for.
+    let set_upstream = match &st.tracking {
+        Some(t) if t.ahead == 0 => return Ok(PushOutcome::UpToDate),
+        Some(_) => false,
+        None => true,
+    };
+    let mut argv = vec!["push", "--quiet"];
+    if set_upstream {
+        argv.push("--set-upstream");
+    }
+    // `--end-of-options`: both the remote and the branch name come from the
+    // repo's own config/refs, and either starting with `-` would otherwise be
+    // parsed as a git option.
+    argv.extend_from_slice(&["--end-of-options", &remote, &branch]);
+    let out = raw_env(repo, &argv, &[("GIT_TERMINAL_PROMPT", "0")])
+        .with_context(|| format!("pushing {branch} to {remote}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // As in `pull`: the refusal prose is this module's own, but git's stderr
+        // is the only account of a cause this classification does not model, so
+        // it is logged rather than dropped unread.
+        tracing::warn!(%remote, %branch, stderr = %stderr.trim(), "`git push` refused");
+        return Ok(classify_push_failure(&stderr, remote));
+    }
+    Ok(PushOutcome::Pushed {
+        remote,
+        branch,
+        set_upstream,
+    })
+}
+
+/// Which of git's two refusals this was. Anything unrecognized reads as
+/// `Rejected`: it is the outcome whose advice ("pull first") is harmless when
+/// wrong, whereas claiming an auth failure would send the operator to fix a
+/// credential that works.
+fn classify_push_failure(stderr: &str, remote: String) -> PushOutcome {
+    let low = stderr.to_ascii_lowercase();
+    // `terminal prompts disabled` is what GIT_TERMINAL_PROMPT=0 turns a
+    // credential prompt into — it IS the auth failure, seen through the pin
+    // that keeps this call from hanging.
+    let auth = [
+        "authentication failed",
+        "terminal prompts disabled",
+        "could not read username",
+        "could not read password",
+        "permission denied",
+        "access denied",
+        "403 forbidden",
+    ];
+    if auth.iter().any(|m| low.contains(m)) {
+        return PushOutcome::AuthFailed { remote };
+    }
+    PushOutcome::Rejected { remote }
+}
+
+/// The branches [`push`] will not publish over: the remote's own default branch
+/// (`refs/remotes/<remote>/HEAD`) and the configured `base_branch`, each reduced
+/// to a local branch name.
+///
+/// Both are ASKED rather than assumed — hardcoding `main`/`master` would be a
+/// guess, and a repo whose trunk is `develop` deserves the same protection as
+/// one whose trunk has the expected name. A repo that answers neither has no
+/// protected branch, which is the honest answer: nothing here invents one.
+fn protected_branches(repo: &Path, remote: &str) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    let head_ref = format!("refs/remotes/{remote}/HEAD");
+    let sym = raw(repo, &["symbolic-ref", "--quiet", "--short", &head_ref])?;
+    if sym.status.success() {
+        let full = String::from_utf8_lossy(&sym.stdout).trim().to_string();
+        if let Some(b) = strip_remote(&full, remote) {
+            out.push(b);
+        }
+    }
+    // `base_branch` is written as a remote-qualified ref (`origin/main`), and it
+    // is the operator's own configuration — a repo pointed at `origin/dev`
+    // protects `dev`.
+    let ws = crate::Workspace::new(repo);
+    let settings = crate::Settings::load(&ws).context("reading settings for the protected refs")?;
+    if let Some(base) = settings.base_branch.as_deref() {
+        let base = base.trim();
+        let local = strip_remote(base, remote).unwrap_or_else(|| base.to_string());
+        if !local.is_empty() && !out.contains(&local) {
+            out.push(local);
+        }
+    }
+    Ok(out)
+}
+
+/// `origin/main` → `main` for THIS remote; `None` when the ref names another
+/// remote, so a `base_branch` of `upstream/main` does not silently protect
+/// `main` on a different remote. A bare name (no slash) is returned as-is.
+fn strip_remote(reference: &str, remote: &str) -> Option<String> {
+    match reference.split_once('/') {
+        Some((head, rest)) if head == remote => Some(rest.to_string()),
+        Some(_) => None,
+        None => Some(reference.to_string()),
+    }
 }
 
 #[cfg(test)]

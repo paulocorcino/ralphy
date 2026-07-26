@@ -1508,22 +1508,65 @@ body.runs-open .runs {
   color: var(--text-muted);
   font-size: 0.68rem;
 }
-.sync-act {
+/* The remote bar. Same `flex: 0 0 auto` pin as `.chg-compose`, so the list
+   scrolls behind it and the remote acts never scroll out of reach; it sits
+   BELOW the compose box, which is why the border rides on its top edge and the
+   compose box keeps its own. The acts share the width evenly (`flex: 1 1 0`)
+   rather than hugging their labels — an even row is what makes the strip read
+   as one bar instead of two loose buttons. */
+.chg-bar {
   flex: 0 0 auto;
-  margin-left: auto;
-  padding: 0.05rem 0.35rem;
-  font-size: 0.68rem;
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.bar-act {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 26px;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.72rem;
   color: var(--text-muted);
-  background: transparent;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius);
   cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
 }
-.sync-act + .sync-act {
-  margin-left: 0;
+/* Lucide swaps the `<i>` for an `<svg>` that would otherwise inherit the
+   button's font-size as its 24px default box. */
+.bar-act svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
 }
-.sync-act:hover {
+.bar-act:hover:not(:disabled) {
   background: var(--surface-hi);
+  color: var(--text);
+}
+/* Dimming, never hiding — the panel's own idiom for an inert control
+   (`.chg-act:disabled`): it keeps its place and states the reason in its
+   title. */
+.bar-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.bar-act:disabled:hover {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+/* Push is the only act in this bar that makes work visible OUTSIDE this
+   machine, so it is the one that carries a resting accent — enough to be found
+   without hovering, not enough to out-shout the commit button above it. */
+.bar-push:not(:disabled) {
   color: var(--text);
 }
 /* The file name must be FROZEN, not merely out-weighted. Flexbox distributes

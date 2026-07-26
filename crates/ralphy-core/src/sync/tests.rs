@@ -472,3 +472,317 @@ fn pull_with_a_conflicting_local_edit_is_blocked() {
     let _ = std::fs::remove_dir_all(&remote);
     let _ = std::fs::remove_dir_all(&clone);
 }
+
+// ---------------------------------------------------------------------------
+// push (#320). The remote is a BARE local directory here — a non-bare one
+// refuses an update to its own checked-out branch, which would make every
+// assertion below read as a push failure for the wrong reason.
+// ---------------------------------------------------------------------------
+
+/// A bare clone of a one-commit `main`, usable as a push target.
+fn init_bare_remote(name: &str) -> PathBuf {
+    let source = init_remote(&format!("{name}-src"));
+    let dir = tmp(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    git(
+        &std::env::temp_dir(),
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            &source.display().to_string(),
+            &dir.display().to_string(),
+        ],
+    )
+    .unwrap();
+    let _ = std::fs::remove_dir_all(&source);
+    dir
+}
+
+/// `git rev-parse` of a ref inside the bare remote, `None` when it has no such
+/// ref — this is how a test asserts what actually landed on the other side.
+fn remote_ref(remote: &Path, name: &str) -> Option<String> {
+    let out = raw(remote, &["rev-parse", "--verify", "--quiet", name]).unwrap();
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn branch_off(repo: &Path, name: &str) {
+    git(repo, &["checkout", "-q", "-b", name]).unwrap();
+}
+
+fn write_base_branch(repo: &Path, value: &str) {
+    let ws = crate::Workspace::new(repo);
+    let mut s = crate::Settings::load(&ws).unwrap();
+    s.base_branch = Some(value.to_string());
+    s.save(&ws).unwrap();
+}
+
+#[test]
+fn push_publishes_a_branch_with_no_upstream_and_sets_one() {
+    let remote = init_bare_remote("push-new-remote");
+    let clone = clone_of(&remote, "push-new-clone");
+    branch_off(&clone, "feat/x");
+    commit(&clone, "b.txt", "work\n", "work");
+    assert!(
+        remote_ref(&remote, "refs/heads/feat/x").is_none(),
+        "the branch is unpublished before the push"
+    );
+
+    let outcome = push(&clone).unwrap();
+    assert_eq!(
+        outcome,
+        PushOutcome::Pushed {
+            remote: "origin".to_string(),
+            branch: "feat/x".to_string(),
+            set_upstream: true,
+        }
+    );
+    assert_eq!(
+        outcome.reason(),
+        None,
+        "a push that worked is not a refusal"
+    );
+    assert_eq!(
+        remote_ref(&remote, "refs/heads/feat/x").as_deref(),
+        Some(head_sha(&clone).as_str()),
+        "the remote carries exactly the commit that was pushed"
+    );
+    // The upstream it set is what makes the NEXT status meaningful.
+    let st = status(&clone).unwrap();
+    assert_eq!(
+        st.tracking,
+        Some(Tracking {
+            upstream: "origin/feat/x".to_string(),
+            ahead: 0,
+            behind: 0,
+        })
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn push_of_a_level_branch_is_up_to_date() {
+    let remote = init_bare_remote("push-level-remote");
+    let clone = clone_of(&remote, "push-level-clone");
+    branch_off(&clone, "feat/y");
+    commit(&clone, "b.txt", "work\n", "work");
+    push(&clone).unwrap();
+
+    let outcome = push(&clone).unwrap();
+    assert_eq!(outcome, PushOutcome::UpToDate);
+    assert_eq!(outcome.reason(), None, "nothing to push is not a refusal");
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn push_refuses_the_remotes_default_branch() {
+    let remote = init_bare_remote("push-prot-remote");
+    let clone = clone_of(&remote, "push-prot-clone");
+    commit(&clone, "b.txt", "work\n", "work");
+    let before = remote_ref(&remote, "refs/heads/main");
+
+    let outcome = push(&clone).unwrap();
+    assert_eq!(
+        outcome,
+        PushOutcome::ProtectedRef {
+            branch: "main".to_string()
+        }
+    );
+    assert!(
+        outcome.reason().unwrap().contains("default branch"),
+        "reason: {:?}",
+        outcome.reason()
+    );
+    assert_eq!(
+        remote_ref(&remote, "refs/heads/main"),
+        before,
+        "a refused push writes nothing to the remote"
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn push_refuses_the_configured_base_branch() {
+    let remote = init_bare_remote("push-base-remote");
+    let clone = clone_of(&remote, "push-base-clone");
+    branch_off(&clone, "dev");
+    commit(&clone, "b.txt", "work\n", "work");
+    // The operator's own configuration: a repo pointed at `origin/dev` protects
+    // `dev` exactly as it protects the remote's default branch.
+    write_base_branch(&clone, "origin/dev");
+
+    assert_eq!(
+        push(&clone).unwrap(),
+        PushOutcome::ProtectedRef {
+            branch: "dev".to_string()
+        }
+    );
+    assert!(
+        remote_ref(&remote, "refs/heads/dev").is_none(),
+        "a refused push writes nothing to the remote"
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn push_ignores_a_base_branch_naming_another_remote() {
+    let remote = init_bare_remote("push-other-remote");
+    let clone = clone_of(&remote, "push-other-clone");
+    branch_off(&clone, "dev");
+    commit(&clone, "b.txt", "work\n", "work");
+    // `upstream/dev` is a ref on a DIFFERENT remote; protecting `dev` on
+    // `origin` because of it would be a name collision mistaken for a rule.
+    write_base_branch(&clone, "upstream/dev");
+
+    assert!(
+        matches!(push(&clone).unwrap(), PushOutcome::Pushed { .. }),
+        "a base branch on another remote protects nothing here"
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn push_refuses_a_remote_that_moved_on() {
+    let remote = init_bare_remote("push-rej-remote");
+    let ours = clone_of(&remote, "push-rej-ours");
+    let theirs = clone_of(&remote, "push-rej-theirs");
+
+    // Both start from the same published branch…
+    branch_off(&ours, "feat/z");
+    commit(&ours, "b.txt", "ours-1\n", "ours-1");
+    push(&ours).unwrap();
+    git(&theirs, &["fetch", "-q", "origin"]).unwrap();
+    git(
+        &theirs,
+        &["checkout", "-q", "-b", "feat/z", "origin/feat/z"],
+    )
+    .unwrap();
+
+    // …then the other side publishes a commit ours has never seen.
+    commit(&theirs, "c.txt", "theirs\n", "theirs");
+    push(&theirs).unwrap();
+    let theirs_sha = remote_ref(&remote, "refs/heads/feat/z");
+
+    commit(&ours, "d.txt", "ours-2\n", "ours-2");
+    let outcome = push(&ours).unwrap();
+    assert_eq!(
+        outcome,
+        PushOutcome::Rejected {
+            remote: "origin".to_string()
+        }
+    );
+    assert!(
+        outcome.reason().unwrap().contains("pull first"),
+        "reason: {:?}",
+        outcome.reason()
+    );
+    assert_eq!(
+        remote_ref(&remote, "refs/heads/feat/z"),
+        theirs_sha,
+        "the rejected push never overwrote the other side's commit"
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&ours);
+    let _ = std::fs::remove_dir_all(&theirs);
+}
+
+#[test]
+fn push_from_a_detached_head_refuses() {
+    let remote = init_bare_remote("push-det-remote");
+    let clone = clone_of(&remote, "push-det-clone");
+    let sha = head_sha(&clone);
+    git(&clone, &["checkout", "-q", "--detach", &sha]).unwrap();
+
+    let outcome = push(&clone).unwrap();
+    assert_eq!(outcome, PushOutcome::DetachedHead);
+    assert!(
+        outcome.reason().unwrap().contains("check out a branch"),
+        "reason: {:?}",
+        outcome.reason()
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn push_without_a_remote_says_so() {
+    let solo = init_remote("push-solo");
+    branch_off(&solo, "feat/solo");
+    commit(&solo, "b.txt", "work\n", "work");
+
+    let outcome = push(&solo).unwrap();
+    assert_eq!(outcome, PushOutcome::NoRemote);
+    assert!(
+        outcome.reason().unwrap().contains("no remote"),
+        "reason: {:?}",
+        outcome.reason()
+    );
+
+    let _ = std::fs::remove_dir_all(&solo);
+}
+
+#[test]
+fn an_auth_failure_is_a_refusal_not_a_rejection() {
+    // The exact shapes git produces under `GIT_TERMINAL_PROMPT=0` and from a
+    // forge's HTTPS endpoint. Misfiling any of these as `Rejected` would tell
+    // the operator to pull when the credential is what failed.
+    for stderr in [
+        "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+        "remote: Authentication failed for 'https://github.com/o/r/'",
+        "remote: Permission denied to user",
+        "fatal: unable to access: The requested URL returned error: 403 Forbidden",
+    ] {
+        assert_eq!(
+            classify_push_failure(stderr, "origin".to_string()),
+            PushOutcome::AuthFailed {
+                remote: "origin".to_string()
+            },
+            "stderr: {stderr}"
+        );
+    }
+    // Anything unmodelled reads as the refusal whose advice is harmless when
+    // wrong.
+    assert_eq!(
+        classify_push_failure(
+            "! [rejected] feat -> feat (fetch first)",
+            "origin".to_string()
+        ),
+        PushOutcome::Rejected {
+            remote: "origin".to_string()
+        }
+    );
+    assert_eq!(
+        classify_push_failure("something nobody modelled", "origin".to_string()),
+        PushOutcome::Rejected {
+            remote: "origin".to_string()
+        }
+    );
+}
+
+#[test]
+fn strip_remote_only_strips_this_remote() {
+    assert_eq!(
+        strip_remote("origin/main", "origin").as_deref(),
+        Some("main")
+    );
+    assert_eq!(
+        strip_remote("origin/release/1.x", "origin").as_deref(),
+        Some("release/1.x")
+    );
+    assert_eq!(strip_remote("upstream/main", "origin"), None);
+    assert_eq!(strip_remote("main", "origin").as_deref(), Some("main"));
+}

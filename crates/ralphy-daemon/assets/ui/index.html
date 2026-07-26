@@ -228,8 +228,10 @@
                log or a DOM dump; Alpine itself keys per `<template>`, so the
                prefix is legibility, not a correctness requirement. -->
           <div class="changes-list">
-            <!-- The sync row (#316). Fetch is the operator's own act: nothing
-                 here fires on open or on a timer, only on these two clicks. -->
+            <!-- The sync row (#316) is pure STATUS: the acts it used to carry
+                 now live in the footer bar below the compose box, where the
+                 row's width no longer has to be shared between what the branch
+                 says and what the operator can do to it. -->
             <div class="sync-row">
               <span class="sync-branch" x-text="(syncByProject[openSlug] || {}).branch"></span>
               <!-- The counts are meaningless without the ref they measure
@@ -239,10 +241,6 @@
                     :title="(syncByProject[openSlug] || {}).upstream"></span>
               <span class="sync-note" x-text="(syncByProject[openSlug] || {}).note"></span>
               <span class="sync-fetched" x-text="(syncByProject[openSlug] || {}).fetched"></span>
-              <button class="sync-act" data-act="fetch" title="fetch from the upstream"
-                      @click.stop="syncFetch(openSlug)">Fetch</button>
-              <button class="sync-act" data-act="pull" title="fast-forward from the upstream"
-                      @click.stop="syncPull(openSlug)">Pull</button>
             </div>
             <!-- The row action is a real button in the flow, never a
                  hover-revealed affordance: the panel has to be operable on a
@@ -328,6 +326,26 @@
               x-text="commitTarget().label"
               @click="commitStaged(openSlug)"
             ></button>
+          </div>
+          <!-- The remote bar: the acts that talk to the upstream, parked at the
+               panel's bottom edge under the compose box. They are the
+               operator's own clicks — nothing here fires on open or on a timer.
+               Each carries its label beside the icon: an icon-only remote act
+               is the one place in this panel where a mis-click costs a network
+               round trip against the wrong branch. -->
+          <div class="chg-bar">
+            <button class="bar-act" data-act="fetch" title="fetch from the upstream"
+                    @click.stop="syncFetch(openSlug)">
+              <i data-lucide="cloud-download"></i><span>Fetch</span>
+            </button>
+            <button class="bar-act" data-act="pull" title="fast-forward from the upstream"
+                    @click.stop="syncPull(openSlug)">
+              <i data-lucide="arrow-down-to-line"></i><span>Pull</span>
+            </button>
+            <button class="bar-act bar-push" data-act="push" :disabled="writeLocked()"
+                    :title="pushTitle()" @click.stop="syncPush(openSlug)">
+              <i data-lucide="cloud-upload"></i><span>Push</span>
+            </button>
           </div>
         </div>
       </div>

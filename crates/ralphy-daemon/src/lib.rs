@@ -1136,7 +1136,9 @@ async fn command_ws(
                 dispatch::branch_argv(verb, &cmd.payload)
             }
             dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
-            dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull => dispatch::sync_argv(verb),
+            dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull | dispatch::Verb::SyncPush => {
+                dispatch::sync_argv(verb)
+            }
             dispatch::Verb::ChangesStage
             | dispatch::Verb::ChangesUnstage
             | dispatch::Verb::ChangesDiscard => dispatch::changes_paths_argv(verb, &cmd.payload),

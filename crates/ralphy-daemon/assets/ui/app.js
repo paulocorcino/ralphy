@@ -547,6 +547,26 @@ function shell() {
       if (moved) this.loadChanges(slug);
     },
 
+    // Publish the branch (#320). The OPERATOR's own click is the whole consent
+    // — there is no opt-in flag on this path (ADR-0046 amendment) — and every
+    // refusal the core models (protected ref, a remote that moved on, a
+    // credential the remote rejected) arrives as `{status:"error"}` whose
+    // message IS the core's prose. Nothing here remediates a credential: there
+    // is no prompt and no credential UI, by decision.
+    //
+    // Push moves no file, so unlike `syncPull` it reloads the counts only.
+    async syncPush(slug) {
+      try {
+        const reply = await window.WBDaemon.observe("sync.push", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "push refused"));
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("push unavailable: no daemon");
+      }
+      this.loadSync(slug);
+    },
+
     // ---- write controls (#318) ------------------------------------------
     // The disabled state is derived from the open repo's LIVE RUN list
     // (`runs.list`, ADR-0047 §9) — already wired and already refreshed by the
@@ -566,6 +586,14 @@ function shell() {
       if (verb === "stage") return "stage this path";
       if (verb === "discard") return "discard this path's changes";
       return "unstage this path";
+    },
+    // Push's own title (#320). It states the run-lock reason when there is one,
+    // exactly as `rowActTitle` does — a disabled control that explains itself
+    // is this shell's idiom. Fetch and pull keep their plain titles: they are
+    // run-lock-aware in the CLI too, but push is the one that publishes, so it
+    // is the one whose inertness has to be legible before the click.
+    pushTitle() {
+      return this.writeLockReason() || "publish this branch to its remote";
     },
     groupNote(group) {
       return window.WBChanges.groupDiscardNote(group);

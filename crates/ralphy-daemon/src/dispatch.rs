@@ -187,6 +187,9 @@ pub enum Verb {
     SyncFetch,
     /// Fast-forward from the upstream (Mutate: `sync pull`, run-lock-aware).
     SyncPull,
+    /// Publish the current branch (Mutate: `sync push`, run-lock-aware) — the
+    /// OPERATOR's own click, never a run's (ADR-0046 amendment, issue #320).
+    SyncPush,
     /// Add paths to the index (Mutate: `changes stage --path=<p>…`,
     /// run-lock-aware).
     ChangesStage,
@@ -232,6 +235,7 @@ impl Verb {
             "sync.status" => Some(Verb::SyncStatus),
             "sync.fetch" => Some(Verb::SyncFetch),
             "sync.pull" => Some(Verb::SyncPull),
+            "sync.push" => Some(Verb::SyncPush),
             "changes.stage" => Some(Verb::ChangesStage),
             "changes.unstage" => Some(Verb::ChangesUnstage),
             "changes.commit" => Some(Verb::ChangesCommit),
@@ -267,6 +271,7 @@ impl Verb {
         Verb::SyncStatus,
         Verb::SyncFetch,
         Verb::SyncPull,
+        Verb::SyncPush,
         Verb::ChangesStage,
         Verb::ChangesUnstage,
         Verb::ChangesCommit,
@@ -296,6 +301,7 @@ impl Verb {
             | Verb::LabelSet
             | Verb::SyncFetch
             | Verb::SyncPull
+            | Verb::SyncPush
             | Verb::ChangesStage
             | Verb::ChangesUnstage
             | Verb::ChangesCommit
@@ -377,6 +383,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::SyncStatus
         | Verb::SyncFetch
         | Verb::SyncPull
+        | Verb::SyncPush
         | Verb::ChangesStage
         | Verb::ChangesUnstage
         | Verb::ChangesCommit
@@ -518,13 +525,14 @@ pub fn sync_status_argv() -> Vec<String> {
 }
 
 /// Compose the argv for a sync Mutate verb: `sync fetch` / `sync pull` (issue
-/// #316). These verbs take NO client input, so the verb argument is the only
+/// #316) / `sync push` (issue #320). These verbs take NO client input, so the verb argument is the only
 /// parameter there is to malform — anything else yields [`ArgvError`] and NO
 /// argv, mirroring [`branch_argv`]'s guard.
 pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
     let sub = match verb {
         Verb::SyncFetch => "fetch",
         Verb::SyncPull => "pull",
+        Verb::SyncPush => "push",
         _ => return Err(ArgvError::BadParam("verb")),
     };
     Ok(vec!["sync".to_string(), sub.to_string()])
@@ -999,14 +1007,15 @@ mod tests {
         assert_eq!(Verb::SyncStatus.effect_class(), EffectClass::Query);
         assert_eq!(Verb::SyncFetch.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::SyncPull.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::SyncPush.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesStage.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesUnstage.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesCommit.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesDiscard.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            29,
-            "the registry holds exactly twenty-nine verbs"
+            30,
+            "the registry holds exactly thirty verbs"
         );
     }
 
@@ -1325,6 +1334,7 @@ mod tests {
         assert_eq!(Verb::from_query("sync.status"), Some(Verb::SyncStatus));
         assert_eq!(Verb::from_query("sync.fetch"), Some(Verb::SyncFetch));
         assert_eq!(Verb::from_query("sync.pull"), Some(Verb::SyncPull));
+        assert_eq!(Verb::from_query("sync.push"), Some(Verb::SyncPush));
 
         assert_eq!(
             sync_status_argv(),
@@ -1332,6 +1342,7 @@ mod tests {
         );
         assert_eq!(sync_argv(Verb::SyncFetch).unwrap(), vec!["sync", "fetch"]);
         assert_eq!(sync_argv(Verb::SyncPull).unwrap(), vec!["sync", "pull"]);
+        assert_eq!(sync_argv(Verb::SyncPush).unwrap(), vec!["sync", "push"]);
 
         // The verbs carry no client input, so the verb itself is the only
         // parameter there is to malform — and a bad one yields NO argv.
