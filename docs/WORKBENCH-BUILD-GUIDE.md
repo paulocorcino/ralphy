@@ -120,8 +120,9 @@ The console controls (**New console ▾**, **Arrange**) are pinned at the strip'
 right edge, above the workspace, so a floating console can never cover them. Tab
 state + lifecycle live in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`tabs`, `active`, `activate`,
 `openTab`, `closeTab`); the panes are owned by the viewer / console modules. On
-open, the pane is chosen by extension (`classify`): markdown → rendered, binaries →
-refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
+open, the pane is chosen by extension (`classify`): markdown → rendered, an
+allowlisted image → the image pane ([ADR-0049](adr/0049-workbench-serves-image-bytes.md)),
+other binaries → refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
 Consoles fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
 
 ### Sidebar views: Projects and Changes
@@ -491,7 +492,11 @@ for intent + the real ralphy sources it mirrors:
   filename map), Markdown via marked + DOMPurify + mermaid, with a
   heading outline and in-page find. Per-file toolbar is **Find · Reload · Edit ·
   Save · Detach**; editing emits `save`, Reload reloads from source
-  (`reload`), binaries are refused (`open-refused`).
+  (`reload`), non-image binaries are refused (`open-refused`). An allowlisted
+  image opens read-only in the **image pane** (**Actual size · Reload · Detach**)
+  from a `data:` URL the daemon's `file.image` verb served, and a markdown
+  preview resolves its repo-relative `<img>` sources through the same verb
+  ([ADR-0049](adr/0049-workbench-serves-image-bytes.md)).
 - **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Consoles
   tab; mirrors the real daemon window chrome (`crates/ralphy-daemon/assets/ui/`).
   The New-console picker lists the agents and, **last**, a plain **console** (no

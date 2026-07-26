@@ -140,6 +140,9 @@ pub enum Verb {
     TreeList,
     /// Read a repo file's text (Observe: reads state, never spawns).
     FileRead,
+    /// Read a repo file's bytes as an allowlisted image (Observe: reads state,
+    /// never spawns — ADR-0049).
+    ImageRead,
     /// List the repo's live runs from the snapshot directory (Observe: reads
     /// state, never spawns — ADR-0047 §9).
     RunsList,
@@ -209,6 +212,7 @@ impl Verb {
             "push" => Some(Verb::PushQueue),
             "tree.list" => Some(Verb::TreeList),
             "file.read" => Some(Verb::FileRead),
+            "file.image" => Some(Verb::ImageRead),
             "runs.list" => Some(Verb::RunsList),
             "config.get" => Some(Verb::ConfigGet),
             "board.list" => Some(Verb::BoardList),
@@ -243,6 +247,7 @@ impl Verb {
         Verb::PushQueue,
         Verb::TreeList,
         Verb::FileRead,
+        Verb::ImageRead,
         Verb::RunsList,
         Verb::ConfigGet,
         Verb::BoardList,
@@ -274,7 +279,9 @@ impl Verb {
     /// verbs reach the CLI through [`spawn_argv`].
     pub fn effect_class(self) -> EffectClass {
         match self {
-            Verb::TreeList | Verb::FileRead | Verb::RunsList => EffectClass::Observe,
+            Verb::TreeList | Verb::FileRead | Verb::ImageRead | Verb::RunsList => {
+                EffectClass::Observe
+            }
             Verb::ConfigGet
             | Verb::BoardList
             | Verb::IssueShow
@@ -350,6 +357,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         // defensively.
         Verb::TreeList
         | Verb::FileRead
+        | Verb::ImageRead
         | Verb::RunsList
         | Verb::ConfigGet
         | Verb::BoardList
@@ -968,6 +976,8 @@ mod tests {
     fn verb_effect_classes() {
         assert_eq!(Verb::TreeList.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::FileRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::ImageRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::from_query("file.image"), Some(Verb::ImageRead));
         assert_eq!(Verb::RunsList.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::from_query("runs.list"), Some(Verb::RunsList));
         assert_eq!(Verb::Run.effect_class(), EffectClass::Spawn);
@@ -995,8 +1005,8 @@ mod tests {
         assert_eq!(Verb::ChangesDiscard.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            28,
-            "the registry holds exactly twenty-eight verbs"
+            29,
+            "the registry holds exactly twenty-nine verbs"
         );
     }
 

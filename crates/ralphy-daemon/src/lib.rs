@@ -988,6 +988,19 @@ async fn command_ws(
                     serde_json::json!({ "status": "error", "reason": e.reason() })
                 }
             },
+            // ADR-0049 §2: the bytes ride the reply base64'd, and the browser
+            // mounts them as a `data:` URL — there is deliberately NO URL at
+            // which these bytes are same-origin navigable.
+            dispatch::Verb::ImageRead => match tree::read_image(root, rel) {
+                Ok(image) => serde_json::json!({
+                    "status": "ok",
+                    "mediaType": image.media_type,
+                    "base64": data_encoding::BASE64.encode(&image.bytes),
+                }),
+                Err(e) => {
+                    serde_json::json!({ "status": "error", "reason": e.reason() })
+                }
+            },
             // No `path` input: the verb alone fixes what is read (ADR-0047 §9).
             dispatch::Verb::RunsList => {
                 let listing = ralphy_run_snapshot::list_runs(root, ralphy_proc_util::pid_is_alive);
@@ -997,7 +1010,7 @@ async fn command_ws(
                     "unreadable": listing.unreadable,
                 })
             }
-            // Unreachable: only TreeList/FileRead/RunsList are Observe verbs.
+            // Unreachable: only TreeList/FileRead/ImageRead/RunsList are Observe.
             _ => serde_json::json!({ "status": "error", "reason": "refused" }),
         };
         send_command(&mut socket, id, &cmd.verb, payload).await;
@@ -4360,6 +4373,89 @@ mod tests {
             assert!(
                 html.contains(symbol),
                 "index.html must render the prompt dialog ({symbol})"
+            );
+        }
+    }
+
+    /// A Changes row's action buttons must sit OUTSIDE the clipped region.
+    ///
+    /// `.chg-name` is frozen on purpose (`flex: 0 0 auto`, so an absurd name is
+    /// never ellipsized while a directory can still drain), which means a long
+    /// name genuinely overflows and something must clip. When that clip lived on
+    /// `.chg-row` and the buttons were the row's LAST children, the clip ate the
+    /// buttons: `docs/adr/0032-daemon-mode-supervised-launcher.md` pushed `+`/`×`
+    /// to x=384/414 against a row edge of 347, so a path with a long file name
+    /// could not be staged or discarded from the UI at all. `.chg-face` owns the
+    /// overflow now and the controls are its siblings.
+    ///
+    /// Only a browser computes that geometry and CI runs none, so what is pinned
+    /// here is the structure the geometry follows from: the face wraps every
+    /// descriptive span, closes, and only then come the actions.
+    #[test]
+    fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
+        let html = include_str!("../assets/ui/index.html");
+        let rows: Vec<&str> = html.matches("class=\"chg-row\"").collect();
+        assert_eq!(
+            rows.len(),
+            2,
+            "expected the staged and unstaged row templates; the count changed, \
+             so re-check that each still keeps its actions outside the face"
+        );
+        for (i, block) in html.split("class=\"chg-row\"").skip(1).enumerate() {
+            let row = block.split_once("</li>").map_or(block, |(head, _)| head);
+            let face = row
+                .find("class=\"chg-face\"")
+                .unwrap_or_else(|| panic!("row {i} must wrap its spans in .chg-face"));
+            let act = row
+                .find("class=\"chg-act")
+                .unwrap_or_else(|| panic!("row {i} must carry at least one .chg-act"));
+            assert!(
+                face < act,
+                "row {i}: the face must open BEFORE the actions — an action inside \
+                 the overflow region is an action a long file name can clip away"
+            );
+            // The face must CLOSE before the first action. Counting `</span>`
+            // alone cannot see that — each descriptive child closes itself — so
+            // balance the tags: inside the face, every child pairs up, and the ONE
+            // unmatched close is the face's own. Equal counts mean the face is
+            // still open when the button arrives, which is the bug's exact shape.
+            let inner = {
+                let after_tag = row[face..]
+                    .find('>')
+                    .map(|gt| face + gt + 1)
+                    .expect("the .chg-face opening tag must close");
+                &row[after_tag..act]
+            };
+            let opens = inner.matches("<span").count();
+            let closes = inner.matches("</span>").count();
+            assert!(
+                inner.contains("chg-name"),
+                "row {i}: the file name belongs inside the face; found: {inner:?}"
+            );
+            assert_eq!(
+                closes,
+                opens + 1,
+                "row {i}: the face must close before the actions — {opens} span(s) \
+                 opened and {closes} closed, so the button is INSIDE the clipped \
+                 region a long file name overflows; found: {inner:?}"
+            );
+        }
+
+        // The overflow belongs to the face. `.chg-row` keeps one only as a
+        // backstop, and the face is what may shrink (`min-width: 0`).
+        let css = include_str!("../assets/ui/styles.css");
+        let face = css
+            .split_once(".chg-face {")
+            .expect("styles.css must define .chg-face")
+            .1
+            .split_once('}')
+            .expect("the .chg-face block must close")
+            .0;
+        for decl in ["overflow: hidden", "min-width: 0", "flex: 1 1 auto"] {
+            assert!(
+                face.contains(decl),
+                ".chg-face must declare {decl} — it is the clipping, shrinkable \
+                 region; found: {face:?}"
             );
         }
     }

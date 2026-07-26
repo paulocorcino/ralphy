@@ -135,15 +135,50 @@ this listener can see); a derived spelling stays pinned to this listener's schem
 and port. Declare the **exact** hostname: a wildcard suffix would admit every
 other tenant of a shared tunnel domain, on `Host` *and* on `Origin`.
 
-**The name is usually a tunnel's, not an interface's.** Reverse tunnels (dev
-tunnels, ngrok) are the common remote-access path, and they invert the shape §4
-assumed: the daemon stays on **loopback** and the tunnel agent dials out to it,
-so there is no network `--bind` and therefore no `for_bind` token requirement —
-`AuthPolicy::Localhost` resolves, which authorizes everything without a
-credential, while the endpoint is published on the public internet. **In tunnel
-mode the login gate (amendment §A) is not optional**; it is the only credential
-in the path. The tunnel provider's own access control (a private dev tunnel
-requiring a sign-in) is an outer layer, not a substitute.
+**A reverse tunnel inverts the shape §4 assumed, and the two providers behave
+oppositely.** A tunnel (dev tunnels, ngrok, Cloudflare Tunnel) has its agent dial
+**out** and forward to a daemon still on **loopback**, so there is no network
+`--bind` and therefore no `for_bind` token requirement — `AuthPolicy::Localhost`
+resolves, which authorizes everything without a credential, while the endpoint is
+published on the public internet. What the daemon then sees depends entirely on
+the provider. Measured 2026-07-26, forwarding a probe that echoed its received
+headers:
+
+| | `Host` | `Origin` | true hostname |
+|---|---|---|---|
+| **dev tunnels** | `localhost:<port>` | `http://localhost:<port>` | `X-Forwarded-Host` only |
+| **ngrok** | the public hostname | the public hostname | preserved in place |
+
+So `--allowed-host` is **required for ngrok** (and Cloudflare Tunnel, which
+preserves `Host` by default) and is a **no-op for dev tunnels**, which rewrites
+both headers to loopback before the daemon ever sees them.
+
+That rewrite has a consequence worth stating plainly: **dev tunnels launders the
+origin.** Every remote request arrives indistinguishable from the operator's own
+local browser, so the cross-site gate above is *inert* behind it — it cannot tell
+the operator from an attacker who has the URL. Counter-intuitively this makes
+ngrok the safer provider for this daemon: preserving the origin is what keeps the
+control working. Behind dev tunnels the login gate (amendment §A) is **the only**
+credential in the path, so in that mode it is not optional. The provider's own
+access control (a private dev tunnel requiring a sign-in) is an outer layer, not
+a substitute.
+
+Making the gate meaningful behind a rewriting tunnel would mean trusting
+`X-Forwarded-Host`, which is sound only under a declared premise (the operator
+states a tunnel fronts the daemon). Deliberately **not** done here: an
+undeclared `X-Forwarded-*` is attacker-settable, and this ADR does not yet own
+that declaration.
+
+**The accepted trade-off, stated so it is not mistaken for an oversight.** A
+reverse tunnel is **a personal remote-access path, never a public or production
+one**. It is not ideal and it carries real risk: the endpoint is on the public
+internet, and behind a rewriting provider the origin gate cannot help. That is
+accepted knowingly, and the mitigation is **TOTP** — the login gate is what
+stands between the published endpoint and the daemon, which is exactly why this
+mode is the one place it stops being optional. Ralphy does not deny the operator
+this path (it is theirs to choose, per the posture in §4 above); it refuses to
+let them take it *unknowingly*. Anything facing real users is Phase 2's
+control-plane tunnel, which was designed for it — not this.
 
 **Rejected: direct internet exposure** (inherits the whole attack surface for
 one user) and **building the relay first** (two systems in the dark; Phase 1

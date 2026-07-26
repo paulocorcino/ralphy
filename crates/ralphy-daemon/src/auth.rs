@@ -922,15 +922,15 @@ mod tests {
     #[test]
     fn a_declared_host_is_normalized_from_whatever_the_operator_pasted() {
         for pasted in [
-            "qnq4phf3-7257.brs.devtunnels.ms",
-            "https://qnq4phf3-7257.brs.devtunnels.ms/",
-            "https://qnq4phf3-7257.brs.devtunnels.ms",
-            "http://qnq4phf3-7257.brs.devtunnels.ms:443/",
-            "  QNQ4PHF3-7257.BRS.DevTunnels.ms  ",
+            "12ad-203-0-113-7.ngrok-free.app",
+            "https://12ad-203-0-113-7.ngrok-free.app/",
+            "https://12ad-203-0-113-7.ngrok-free.app",
+            "http://12ad-203-0-113-7.ngrok-free.app:443/",
+            "  12AD-203-0-113-7.Ngrok-Free.App  ",
         ] {
             assert_eq!(
                 normalize_declared(pasted),
-                "qnq4phf3-7257.brs.devtunnels.ms",
+                "12ad-203-0-113-7.ngrok-free.app",
                 "{pasted:?} must normalize to the bare host"
             );
         }
@@ -938,10 +938,10 @@ mod tests {
         let state = state_for(
             "127.0.0.1".parse().expect("a valid test address"),
             7257,
-            &["https://qnq4phf3-7257.brs.devtunnels.ms/"],
+            &["https://12ad-203-0-113-7.ngrok-free.app/"],
         );
-        assert!(state.host_allowed(Some("qnq4phf3-7257.brs.devtunnels.ms")));
-        assert!(state.same_origin(Some("https://qnq4phf3-7257.brs.devtunnels.ms")));
+        assert!(state.host_allowed(Some("12ad-203-0-113-7.ngrok-free.app")));
+        assert!(state.same_origin(Some("https://12ad-203-0-113-7.ngrok-free.app")));
         // A bracketed IPv6 literal survives the same path.
         assert_eq!(normalize_declared("https://[::1]:7257/"), "::1");
     }

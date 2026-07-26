@@ -30,8 +30,9 @@ const TOKEN: &str = "n3twork-token";
 const BOUND: &str = "100.64.0.1:7257";
 const LOOPBACK: &str = "127.0.0.1:7257";
 const DECLARED: &str = "desk.example.net";
-/// A reverse tunnel's public hostname, the shape a dev-tunnel/ngrok endpoint has.
-const TUNNEL: &str = "abc123-7257.use.devtunnels.ms";
+/// A reverse tunnel's public hostname, in the shape of a provider that PRESERVES
+/// `Host`/`Origin` (ngrok). A rewriting provider's hostname never arrives.
+const TUNNEL: &str = "12ad-203-0-113-7.ngrok-free.app";
 
 /// A fresh router each call (`oneshot` consumes it), whose auth state reports the
 /// given bind plus one declared host.
@@ -132,11 +133,13 @@ async fn the_gate_admits_the_bind_and_the_declared_name_and_nothing_else() {
         );
     }
 
-    // A REVERSE TUNNEL inverts the shape: the daemon stays on loopback and the
-    // tunnel agent dials out to it, so `Host`/`Origin` carry the tunnel's public
-    // hostname while the bind is `127.0.0.1`. Declaring the hostname is therefore
-    // required even with no `--bind` at all — the tunnel is the common remote path,
-    // so it gets its own coverage rather than riding on the network-bind case.
+    // A PRESERVING reverse tunnel inverts the shape: the daemon stays on loopback
+    // and the tunnel agent dials out to it, so `Host`/`Origin` carry the tunnel's
+    // public hostname while the bind is `127.0.0.1`. Declaring the hostname is
+    // therefore required with no `--bind` at all. Measured 2026-07-26: ngrok and
+    // Cloudflare Tunnel preserve both headers and land here; dev tunnels rewrites
+    // both to `localhost:<port>` and never reaches this path (see ADR-0032 §4), so
+    // this case is ngrok's, not every tunnel's.
     assert_eq!(
         status(LOOPBACK, browser_get(TUNNEL, &format!("https://{TUNNEL}"))).await,
         StatusCode::OK,
@@ -158,8 +161,8 @@ async fn the_gate_admits_the_bind_and_the_declared_name_and_nothing_else() {
         status(
             LOOPBACK,
             browser_get(
-                "someone-else-7257.use.devtunnels.ms",
-                "https://someone-else-7257.use.devtunnels.ms"
+                "9f77-someone-else.ngrok-free.app",
+                "https://9f77-someone-else.ngrok-free.app"
             )
         )
         .await,

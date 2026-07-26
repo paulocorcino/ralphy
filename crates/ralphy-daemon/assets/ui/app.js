@@ -29,9 +29,15 @@ window.WB = {
   },
 };
 
-// Files whose bytes aren't source we can render — refuse to open them.
+// Images the daemon serves as bytes (ADR-0049): they open in the image pane.
+// The daemon holds the authoritative allowlist and verifies the magic bytes —
+// this set only decides which VERB a click sends, never what gets rendered.
+const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
+
+// Files whose bytes aren't source we can render and aren't images — refuse to
+// open them.
 const BINARY_EXT = new Set([
-  "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "pdf", "zip", "gz",
+  "pdf", "zip", "gz",
   "tar", "rar", "7z", "exe", "dll", "so", "dylib", "bin", "class", "jar", "wasm",
   "mp3", "wav", "flac", "ogg", "mp4", "mov", "avi", "mkv", "webm", "woff",
   "woff2", "ttf", "eot", "otf",
@@ -49,11 +55,13 @@ function parentRel(rel) {
   return i < 0 ? "" : rel.slice(0, i);
 }
 
-// What kind of viewer a file gets: markdown gets the rendered pane, binaries
-// are refused, everything else opens as source code.
+// What kind of viewer a file gets: markdown gets the rendered pane, an image
+// gets the image pane, other binaries are refused, everything else opens as
+// source code.
 function classify(name) {
   const ext = extOf(name);
   if (ext === "md" || ext === "markdown") return "markdown";
+  if (IMAGE_EXT.has(ext)) return "image";
   if (BINARY_EXT.has(ext)) return "binary";
   return "code";
 }
@@ -2268,6 +2276,21 @@ function shell() {
     // Returns `null` when refused so the caller skips the viewer.
     fetchContent(project, path, ftype) {
       if (!this.useDaemonTree()) return Promise.resolve(fakeContent(path, ftype));
+      // An image is a different read (`file.image`, ADR-0049) whose "content" is
+      // a `data:` URL, not text. Same refusal shape: surface the reason, close
+      // the tab, hand back `null`.
+      if (ftype === "image") {
+        return WBDaemon.readImage(project, path, (reason) => {
+          WB.emit("open-refused", { project, path, reason });
+          this._flashAction?.(reason);
+          this.closeTab(`file:${project}:${path}`);
+        }).catch(() => {
+          WB.emit("open-refused", { project, path, reason: "transport" });
+          this._flashAction?.("read failed");
+          this.closeTab(`file:${project}:${path}`);
+          return null;
+        });
+      }
       return WBDaemon.observe("file.read", { repo: project, path })
         .then((reply) => {
           if (!window.WBFail.isError(reply)) return reply.content;
@@ -2387,10 +2410,19 @@ function shell() {
       const reads = [];
       for (const t of this.tabs) {
         if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
+        // An image tab re-reads through its OWN verb: `file.read` would refuse
+        // its bytes, and the drop-on-failure rule below would then make an image
+        // the one viewer that never refreshes (ADR-0049 §1).
+        const fresh =
+          t.kind === "image"
+            ? WBDaemon.readImage(t.project, t.path)
+            : WBDaemon.observe("file.read", { repo: t.project, path: t.path }).then((reply) =>
+                reply?.status === "ok" ? reply.content : null,
+              );
         reads.push(
-          WBDaemon.observe("file.read", { repo: t.project, path: t.path })
-            .then((reply) => {
-              if (reply?.status === "ok") WBViewer.externalChange(t.id, reply.content);
+          fresh
+            .then((content) => {
+              if (content != null) WBViewer.externalChange(t.id, content);
             })
             .catch(() => {}),
         );
@@ -2469,7 +2501,11 @@ function shell() {
       const ftype = classify(node.title);
       this.emit("open", node, { ftype });
       if (ftype === "binary") {
+        // Flash it too, not just the seam event: the daemon-side refusals all
+        // reach the operator, and a click that silently does nothing reads as a
+        // broken tree rather than a refused file.
         WB.emit("open-refused", { project: this.openSlug, path, reason: "binary" });
+        this._flashAction?.("binary");
         return;
       }
       this.openTab({ project: this.openSlug, path, title: node.title, ftype });
@@ -2483,7 +2519,12 @@ function shell() {
         this.activate(id);
         return;
       }
-      const icon = ftype === "markdown" ? "bi bi-file-earmark-text" : "bi bi-file-earmark-code";
+      const icon =
+        ftype === "markdown"
+          ? "bi bi-file-earmark-text"
+          : ftype === "image"
+            ? "bi bi-file-earmark-image"
+            : "bi bi-file-earmark-code";
       this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true });
       this.active = id;
       this.$nextTick(() => {

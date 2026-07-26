@@ -1302,10 +1302,27 @@ body.runs-open .runs {
   padding: 0.1rem 0.8rem;
   font-size: 0.78rem;
   min-width: 0;
-  /* bounds a frozen `.chg-name` (see below) — without it an absurd file name
-     widens the row and the whole list scrolls horizontally. */
+  /* Backstop only. The clipping that bounds a frozen `.chg-name` (see below)
+     belongs to `.chg-face`, NOT here: the row's last children are the action
+     buttons, so a row that clips its own overflow clips THEM — a long file name
+     pushed `+`/`×` past the edge and the path became unstageable and
+     undiscardable from the UI. Measured: buttons at 384/414 against a 347 edge. */
   overflow: hidden;
   cursor: pointer;
+}
+/* The overflow region: everything that DESCRIBES the path, with the controls
+   deliberately outside it. This is what lets `.chg-name` stay frozen (never
+   ellipsized while a directory can still drain) without the row's own clip
+   reaching the buttons — the face absorbs the shrink and clips inside itself.
+   It also grows, which is why `.chg-act`'s `margin-left: auto` still parks the
+   controls at the row's end with no filler element. */
+.chg-face {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 .chg-row:hover {
   background: var(--surface-hi);
@@ -2128,6 +2145,49 @@ body.runs-open .runs {
   font-size: 0.82rem;
 }
 
+/* --- image viewer (ADR-0049) ----------------------------------------------
+   Two states, toggled by `.actual-size` on the pane: fit-to-pane (default,
+   scaled DOWN only — a 16px favicon is not blown up to fill the window) and 1:1
+   with scrollbars. The checkerboard is what makes a transparent PNG's alpha
+   legible instead of blending into the dark surface. */
+.img-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 1rem;
+  background-color: var(--log-bg);
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.img-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-viewer.actual-size .img-scroll {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.image-viewer.actual-size .img-canvas {
+  max-width: none;
+  max-height: none;
+  /* A pixel-art asset (a favicon, a 16px glyph) reads as mush under bilinear
+     smoothing at 1:1 — the whole point of this state is seeing the pixels. */
+  image-rendering: pixelated;
+}
+/* The intrinsic size, next to the path: metadata, not a control. */
+.img-meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-left: 0.6rem;
+}
+
 /* --- markdown viewer ------------------------------------------------------ */
 .md-split {
   flex: 1;
@@ -2254,6 +2314,14 @@ body.runs-open .runs {
   padding: 0.2em 1em;
   border-left: 3px solid var(--console-border);
   color: var(--text-muted);
+}
+/* An inline image (a screenshot resolved through `file.image`, ADR-0049 §5) is
+   bounded by the prose column — a 2000px-wide screenshot must not set the
+   article's width. */
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
 }
 .md-body table {
   border-collapse: collapse;

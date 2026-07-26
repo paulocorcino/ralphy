@@ -91,6 +91,22 @@ window.WBDaemon = (function () {
     });
   }
 
+  // Read an image (`file.image`, ADR-0049) and resolve with a `data:` URL ready
+  // to hang off an `<img src>`, or `null` when the daemon refused. The MEDIA TYPE
+  // comes from the daemon, which verified it against the file's magic bytes — it
+  // is never guessed from the extension here, and the bytes never get a URL of
+  // their own on this origin (§2). A refusal reason is reported through
+  // `onRefused` rather than thrown, because every caller wants to keep going.
+  function readImage(repo, path, onRefused) {
+    return observe("file.image", { repo, path }).then((reply) => {
+      if (window.WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
+        onRefused?.(window.WBFail.message(reply, "refused"));
+        return null;
+      }
+      return `data:${reply.mediaType};base64,${reply.base64}`;
+    });
+  }
+
   // Fire a Write byte-op (`file.write`/`file.create`/`file.rename`/`file.delete`,
   // #197) and resolve with the single reply payload. Same one-socket-one-reply
   // shape as `observe` — the daemon answers ONE frame on the id and returns (no
@@ -283,6 +299,7 @@ window.WBDaemon = (function () {
   return {
     spawn,
     observe,
+    readImage,
     write,
     subscribeTree,
     subscribeRuns,

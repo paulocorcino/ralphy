@@ -30,12 +30,14 @@ pub(crate) struct DaemonArgs {
     pub(crate) bind: std::net::IpAddr,
 
     /// A host name this daemon answers as, beyond what `--bind` implies (repeat
-    /// for more): the public hostname of a reverse tunnel (dev tunnels, ngrok) or
-    /// of a TLS-terminating proxy in front, or an overlay-VPN name. Needed only to
-    /// reach the daemon by NAME — the bound IP works without it. Declaring a name
-    /// is what keeps DNS rebinding out: any other `Host` is refused. Declare the
-    /// EXACT hostname, never a wildcard suffix — `*.<tunnel-provider>` would admit
-    /// every other tenant's tunnel (docs/adr/0032 §4).
+    /// for more): the public hostname of a reverse tunnel or TLS-terminating proxy
+    /// in front, or an overlay-VPN name. Needed only to reach the daemon by NAME —
+    /// the bound IP works without it, and so does any front that rewrites `Host`
+    /// and `Origin` to loopback (dev tunnels does; ngrok and Cloudflare Tunnel
+    /// preserve them and DO need this). Declaring a name is what keeps DNS
+    /// rebinding out: any other `Host` is refused. Declare the EXACT hostname,
+    /// never a wildcard suffix — `*.<provider>` would admit every other tenant's
+    /// tunnel (docs/adr/0032 §4).
     #[arg(long = "allowed-host", value_name = "HOST")]
     pub(crate) allowed_hosts: Vec<String>,
 

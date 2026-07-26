@@ -1,12 +1,15 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — file viewers (the closable tabs)
 
-   Two flavours, both opening as their own tab after the fixed Consoles tab:
+   Four flavours, each opening as its own tab after the fixed Consoles tab:
      • source code — Monaco: syntax highlight, in-place editing, and its own
        find widget. Binaries never reach here (app.js refuses them).
      • Markdown  — rendered with `marked`, sanitized with DOMPurify, mermaid
        fences drawn as diagrams (Cursor-style), a heading outline to jump around,
        an in-page find, and an edit/preview toggle over the raw source.
+     • image     — an allowlisted image the daemon verified and served as a
+       `data:` URL (ADR-0049), fit to the pane or shown 1:1. Read-only.
+     • diff      — HEAD against the working tree, side by side. Read-only.
 
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
    `workbench:action` seam carrying the new content, for a backend to persist.
@@ -206,9 +209,11 @@
   }
 
   function save(rec) {
-    // A diff is read-only: a `save` intent from here would be a mutation this
-    // surface forbids, so it never reaches the action seam.
-    if (rec.kind === "diff") return;
+    // A diff and an image are read-only: a `save` intent from either would be a
+    // mutation those surfaces forbid, so it never reaches the action seam. (An
+    // image's `content` is a `data:` URL, not the file's bytes — saving it would
+    // write the URL over the image.)
+    if (rec.kind === "diff" || rec.kind === "image") return;
     const content = contentOf(rec);
     rec.content = content;
     rec.dirty = false;
@@ -246,6 +251,15 @@
         getShell()?._flashAction?.("reload failed");
         getShell()?.closeTab(`file:${rec.project}:${rec.path}`);
       };
+      // An image reloads through its own verb (ADR-0049): `file.read` refuses
+      // its bytes, so routing it here would turn every image Reload into a
+      // "reload failed" that closes the tab.
+      if (rec.kind === "image") {
+        WBDaemon.readImage(rec.project, rec.path)
+          .then((url) => (url ? applyFresh(rec, url) : fail()))
+          .catch(fail);
+        return;
+      }
       WBDaemon.observe("file.read", { repo: rec.project, path: rec.path })
         .then((reply) => (reply && reply.status === "ok" ? applyFresh(rec, reply.content) : fail()))
         .catch(fail);
@@ -262,7 +276,12 @@
     // the pending `create()`, and setValue fires the change event, so the dirty
     // flag is cleared *after* the update, not before.
     rec.content = fresh;
-    if (rec.kind === "code" || rec.editing) {
+    if (rec.kind === "image") {
+      // A fresh `data:` URL repaints the pane; the `onload` handler re-reads the
+      // intrinsic size, which an overwritten image may well have changed.
+      const img = rec.el?.querySelector(".img-canvas");
+      if (img) img.src = fresh;
+    } else if (rec.kind === "code" || rec.editing) {
       if (rec.ed) rec.ed.setValue(fresh);
       // In the read-only fallback there is no editor to update, and leaving the
       // <pre> stale would show bytes that no longer match rec.content.
@@ -303,6 +322,50 @@
   function detachClick(rec) {
     const evt = rec.detached ? "workbench:reattach-request" : "workbench:detach-request";
     document.dispatchEvent(new CustomEvent(evt, { detail: descOf(rec) }));
+  }
+
+  // --- an image tab (read-only) -------------------------------------------
+  // `rec.content` is a `data:` URL the daemon's verified media type built
+  // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
+  // Save, no Edit — the Write class is untouched by images.
+  function buildImage(rec) {
+    const el = document.createElement("div");
+    el.className = "viewer image-viewer";
+    el.dataset.tabId = rec.id;
+    el.style.display = "none";
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <span class="viewer-path"></span>
+        <span class="img-meta"></span>
+        <span class="spacer"></span>
+        <button class="vbtn" data-act="zoom"><i class="bi bi-arrows-angle-expand"></i> Actual size</button>
+        <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
+        ${detachBtnHtml(rec)}
+      </div>
+      <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
+    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
+    viewers.append(el);
+
+    const img = el.querySelector(".img-canvas");
+    const meta = el.querySelector(".img-meta");
+    // The intrinsic size is only known once the bytes decode, and a decode
+    // failure is worth saying out loud: the daemon verified the type, so a
+    // browser that still cannot paint it means an unsupported/corrupt file.
+    img.onload = () => (meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`);
+    img.onerror = () => (meta.textContent = "could not decode");
+    img.src = rec.content;
+
+    el.querySelector('[data-act="zoom"]').onclick = (ev) => {
+      // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
+      // slider is a feature this pane does not need to read a screenshot.
+      const actual = el.classList.toggle("actual-size");
+      ev.currentTarget.innerHTML = actual
+        ? '<i class="bi bi-arrows-angle-contract"></i> Fit'
+        : '<i class="bi bi-arrows-angle-expand"></i> Actual size';
+    };
+    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
+    el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
+    rec.el = el;
   }
 
   // --- a Markdown tab -----------------------------------------------------
@@ -385,8 +448,60 @@
       rec.mermaidPending.push(holder);
     });
 
+    resolveImages(rec, article);
     buildOutline(rec, article);
     if (rec.visible) drawMermaid(rec);
+  }
+
+  // Repo-relative `<img>` sources resolve through `file.image` (ADR-0049 §5),
+  // against the DOCUMENT's own directory. This runs on the SANITIZED DOM, after
+  // DOMPurify, so nothing set here re-enters the sanitizer's decision. An
+  // absolute or `http(s)` source is the author's explicit request for a remote
+  // asset and is left exactly as written; a source that REFUSES is left alone
+  // too — a broken image is an honest rendering of a broken link, and a
+  // placeholder would fabricate.
+  function resolveImages(rec, article) {
+    if (!window.WBMode?.isDaemon?.() || !window.WBDaemon?.readImage) return;
+    const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
+    article.querySelectorAll("img[src]").forEach((img) => {
+      const src = img.getAttribute("src") || "";
+      // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
+      // ours to resolve.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
+      const rel = repoRelative(dir, src);
+      if (!rel) return;
+      WBDaemon.readImage(rec.project, rel)
+        .then((url) => {
+          if (url) img.src = url;
+        })
+        .catch(() => {});
+    });
+  }
+
+  // A markdown `src` folded against `dir` into a repo-relative path: query and
+  // fragment dropped, percent-escapes decoded (a `%20` in a filename is the
+  // markdown spelling of a space), `.`/`..` segments resolved. Returns `null`
+  // for anything that climbs OUT of the repo — the daemon would refuse it
+  // anyway, and not asking is the honest way to spell "not ours".
+  function repoRelative(dir, src) {
+    let clean = src.split(/[?#]/)[0];
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {
+      // A malformed escape is not a path we can resolve; use it verbatim and let
+      // the daemon refuse it.
+    }
+    const out = [];
+    for (const part of (dir ? dir.split("/") : []).concat(clean.split("/"))) {
+      if (!part || part === ".") continue;
+      if (part === "..") {
+        if (!out.length) return null;
+        out.pop();
+        continue;
+      }
+      out.push(part);
+    }
+    return out.join("/") || null;
   }
 
   function drawMermaid(rec) {
@@ -541,6 +656,7 @@
       map.set(id, rec);
       if (ftype === "markdown") buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
+      else if (ftype === "image") buildImage(rec);
       else buildCode(rec);
     },
 
@@ -600,12 +716,26 @@ function fakeContent(path, ftype) {
   const base = path.split("/").pop();
   const e = base.toLowerCase().includes(".") ? base.toLowerCase().split(".").pop() : "";
   if (ftype === "markdown") return fakeMarkdown(base);
+  if (ftype === "image") return fakeImage(base);
   const gen = {
     ts: fakeTs, tsx: fakeTsx, js: fakeTs, mjs: fakeTs,
     rs: fakeRs, json: fakeJson, css: fakeCss, toml: fakeToml,
     prisma: fakePrisma, py: fakePy,
   }[e];
   return gen ? gen(base) : `// ${path}\n// (demo) source for ${base}\n\nexport const answer = 42;\n`;
+}
+
+// The image pane's demo bytes: a placeholder SVG naming the file, so the pane is
+// demonstrable with no daemon to read the real one. Returned as a `data:` URL
+// because that is exactly what the pane consumes in daemon mode.
+function fakeImage(name) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="300">
+  <rect width="480" height="300" fill="#14110f"/>
+  <rect x="8" y="8" width="464" height="284" fill="none" stroke="#e8d9a8" stroke-dasharray="6 6"/>
+  <text x="240" y="140" fill="#e8d9a8" font-family="ui-monospace, monospace" font-size="18" text-anchor="middle">${name}</text>
+  <text x="240" y="172" fill="#8a8175" font-family="ui-monospace, monospace" font-size="13" text-anchor="middle">(demo) no daemon — placeholder image</text>
+</svg>`;
+  return "data:image/svg+xml;base64," + btoa(svg);
 }
 
 function fakeMarkdown(name) {
@@ -636,7 +766,7 @@ flowchart LR
 
 ### Notes
 
-- Binary files refuse to open.
+- Images open in their own pane; other binaries refuse to open.
 - Markdown always opens **rendered**, with mermaid support.
 - Source files open with syntax highlighting.
 
@@ -646,7 +776,8 @@ flowchart LR
 | -------- | ------------- | -------- |
 | \`.md\`    | rendered      | yes      |
 | \`.rs\`    | Monaco        | yes      |
-| \`.png\`   | (refused)     | no       |
+| \`.png\`   | image pane    | no       |
+| \`.pdf\`   | (refused)     | no       |
 
 ## Code sample
 

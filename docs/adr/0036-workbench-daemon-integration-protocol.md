@@ -356,3 +356,14 @@ The nudge is scoped to the Spawn class. The Write verbs and the branch mutations
 answer in-daemon and deliberately send NO nudge: their caller is the browser
 itself, which already knows what it just wrote. The count they leave behind is
 the same snapshot the manual refresh exists for.
+
+## Amendment (2026-07-26, ADR-0049): Observe is not text-only
+
+§2's Observe class reads "the working tree as OS bytes", and `file.read` — the
+only reader built here — narrowed that to *text*. A second Observe reader,
+`file.image`, serves an allowlisted image type as base64 for a `data:` URL, so
+the workbench can display a `.png` instead of refusing it. The decision, the
+rejected alternatives (a raw HTTP byte route; a fourth binary frame tag), the
+media-type allowlist and the magic-byte check live in
+[ADR-0049](./0049-workbench-serves-image-bytes.md). §5 is not reopened:
+confinement is the same kernel and the escape→`not found` masking still holds.
