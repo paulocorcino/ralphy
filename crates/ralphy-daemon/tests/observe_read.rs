@@ -61,10 +61,10 @@ async fn serve_repo() -> (String, String) {
 
 /// Bind a daemon over a temp *git* repo seeded with committed dot-folders
 /// (`.github`, `.ralphy/plan.md`), noise dirs (`node_modules`, `target`), a
-/// gitignored `.secret/`, and a `visible.txt`. `git init` is required because
-/// the `ignore` crate honors `.gitignore` only inside a real git repo
-/// (`WalkBuilder::require_git` defaults true). Returns the `ws://…/ws/command`
-/// URL and the repo slug.
+/// gitignored `.secret/`, and a `visible.txt`. `git init` stays even though the
+/// listing no longer consults `.gitignore`: it is what makes `.secret/` a
+/// genuinely ignored entry, so the test proves the amendment rather than a
+/// no-op. Returns the `ws://…/ws/command` URL and the repo slug.
 async fn serve_git_repo() -> (String, String) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
@@ -193,8 +193,9 @@ async fn tree_list_answers_on_id_without_spawn() {
 #[tokio::test]
 async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
     // A4 oracle (issue #203): `tree.list` at the repo root surfaces committed
-    // dot-folders (`.github`) and `.ralphy`, while still dropping `.git`, the
-    // noise dirs (`node_modules`, `target`), and gitignored entries (`.secret`).
+    // dot-folders (`.github`), `.ralphy`, and — since ADR-0036's 2026-07-26
+    // amendment — gitignored entries (`.secret`); only the `HARD_EXCLUDE` noise
+    // dirs (`.git`, `node_modules`, `target`) are dropped.
     let (url, slug) = serve_git_repo().await;
     let (replies, spawned) = round_trip(
         &url,
@@ -225,7 +226,9 @@ async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
         "noise filtered: {names:?}"
     );
     assert!(!names.contains(&"target"), "noise filtered: {names:?}");
-    assert!(!names.contains(&".secret"), "gitignored dropped: {names:?}");
+    // ADR-0036, amendment 2026-07-26: gitignored entries are LISTED. The operator
+    // works in the ignored files, and `file.read` served them all along.
+    assert!(names.contains(&".secret"), "gitignored listed: {names:?}");
 }
 
 #[tokio::test]

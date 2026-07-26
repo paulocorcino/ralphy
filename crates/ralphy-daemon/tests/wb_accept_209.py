@@ -7,8 +7,8 @@ three extras reproduce anymore:
   C2 Kanban error state distinct from empty (#207)
   C3 auth honesty: loopback vs a hardened network(Session) bind (#205)
   A2 Kanban stays above a focused floating console (#208)
-  A4/A5 tree integrity: .ralphy/.github visible, .git/.env excluded, no
-        duplication across a reconcile (#203)
+  A4/A5 tree integrity: .ralphy/.github/gitignored .env visible, .git excluded,
+        no duplication across a reconcile (#203)
   M1 topbar uptime is a live heartbeat, not a static string (#204)
   A6 viewer external-edit refresh mechanism (#203)
 
@@ -279,7 +279,8 @@ def main():
             check("symptom4: root tree includes .ralphy", ".ralphy" in names1, f"{names1}")
             check("symptom4: root tree includes .github", ".github" in names1, f"{names1}")
             check("symptom4: root tree excludes .git", ".git" not in names1, f"{names1}")
-            check("symptom4: root tree excludes gitignored .env", ".env" not in names1, f"{names1}")
+            # ADR-0036, amendment 2026-07-26: gitignored entries are LISTED now.
+            check("symptom4: root tree includes gitignored .env", ".env" in names1, f"{names1}")
             page.screenshot(path=os.path.join(SHOT_DIR, "209-tree-integrity-2026-07-14.png"))
 
             # two writes to the same directory must reconcile, not append.

@@ -48,8 +48,9 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.
 qrcode = { version = "0.14", default-features = false }
-# Gitignore-aware, never-descend-noise tree listing for the Observe read path
-# (ADR-0036 §4); ripgrep's walker.
+# Never-descend-noise tree listing for the Observe read path (ADR-0036 §4);
+# ripgrep's walker, with every standard filter (gitignore, hidden) turned OFF —
+# see the 2026-07-26 amendment.
 ignore = "0.4"
 # The live file-tree watcher (ADR-0036 §4, issue #196): `notify` is the OS event
 # backend (inotify/FSEvents/ReadDirectoryChangesW) and `notify-debouncer-full` is

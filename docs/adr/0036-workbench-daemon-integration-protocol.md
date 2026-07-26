@@ -393,3 +393,48 @@ The desk is a *typed* store (`desk.toml`, one `[[windows]]` table per record),
 not an opaque blob, and lives beside `repos.toml` — same `$RALPHY_DAEMON_DIR`
 rooting as the repo registry. Uploads are debounced and fire-and-forget in the
 shell: a failed write costs a stale position, never the drag that triggered it.
+
+## Amendment (2026-07-26): the tree shows gitignored files
+
+§4's **`ignore`-crate filtering** bullet is narrowed to noise only: `tree.list`
+and the watcher pump **no longer consult `.gitignore`/`.git/info/exclude`**. The
+surviving filter is the fixed `HARD_EXCLUDE` list — `node_modules`, `target`,
+`.git` — which is a *name* list, not a git decision, and stays because a repo
+whose tree opens onto 40k transitive packages or git's own object store is
+unusable for the reason the filter was invented.
+
+The reason is the operator's day: the files that matter most while a run is
+executing are precisely the ignored ones — `.ralphy/plan.md`, `.ralphy/runs/*`,
+run logs, build output, a local `.env`. A mini-IDE that cannot open them is not
+a mini-IDE. §5 already settled this stance for *reads* ("an authenticated
+operator reads the whole repo, secrets included… a mini-IDE that hides half the
+files is not the product") and already refused gitignore as a secret filter
+("inconsistent by construction"). The listing filter was the same half-hidden
+product arriving through the UX door: the file was readable if you knew its
+name, and invisible if you did not. This amendment removes the inconsistency in
+the direction §5 already chose.
+
+**§5 is not reopened.** Confinement and the login remain the only two controls,
+both untouched. Nothing becomes readable that was not readable before — only
+*nameable without knowing the name*.
+
+Three consequences, all accepted:
+
+- **The watcher nudges on ignored paths.** The gitignore check in the pump goes
+  with it, so an expanded build directory now pushes `tree.dirty` on every
+  settled batch. §4's other three levers still hold the cost: the watch-set is
+  still the expanded set (an operator who does not open `target/` pays nothing),
+  the debouncer still coalesces a storm into one nudge, and the nudge still
+  carries no payload.
+- **`.ralphy/` becomes an ordinary directory in the tree**, which is what §4's
+  "`.ralphy` is deliberately NOT in `HARD_EXCLUDE`" (issue #203) always intended;
+  the gitignore filter had been quietly defeating it, since every repo ralphy
+  touches ignores `.ralphy/`.
+- **The `RUNSTATE_REL` exemption stops being an exemption.** The constant stays
+  (the runs subscription still names that directory), but it no longer skips a
+  filter that no longer exists.
+
+**Rejected: a per-operator "show ignored files" toggle.** It buys a preference
+where there is one operator and one answer, and it doubles the tree's truth —
+the same path present or absent depending on hidden state, which is exactly the
+confusion the removed filter caused.

@@ -1,21 +1,24 @@
 //! The Observe read path's file/tree reader (ADR-0036 §4). Three pure functions
-//! over a confined path: [`list`] returns one directory level, gitignore-aware
-//! and never descending noise; [`read`] returns a file's text or refuses a
-//! binary / oversized file; [`read_image`] returns an allowlisted image's bytes
-//! (ADR-0049). Confinement ([`crate::confine`]) is the security boundary; the
-//! gitignore filter here is UX cleanliness only (ADR-0036 §5) — a
-//! gitignored-but-named file is still readable via [`read`], by design.
+//! over a confined path: [`list`] returns one directory level, dropping only
+//! [`HARD_EXCLUDE`] noise; [`read`] returns a file's text or refuses a binary /
+//! oversized file; [`read_image`] returns an allowlisted image's bytes
+//! (ADR-0049). Confinement ([`crate::confine`]) is the security boundary.
+//! `.gitignore` is NOT consulted (ADR-0036, amendment 2026-07-26): the operator
+//! works in the ignored files — `.ralphy/`, run logs, build output — and hiding
+//! what [`read`] would serve anyway was never protection, only confusion.
 
 use std::path::Path;
 
 use crate::confine::{self, ConfineError};
 
 /// Directory-listing hard-exclude: noise dirs never surfaced in the tree —
-/// `.git`, `node_modules`, `target`. Some are NOT gitignored (`.git`), so
-/// `WalkBuilder`'s git filters alone miss them. `.ralphy` is deliberately NOT
-/// here: it is surfaced so `plan.md`/`runs/` are watchable and refresh live
-/// (issue #203). `pub(crate)` so the watcher pump ([`crate::watch`]) drops the
-/// same noise dirs a `NonRecursive` root watch still fires on.
+/// `.git`, `node_modules`, `target`. This is the ONLY listing filter left
+/// (ADR-0036, amendment 2026-07-26), and it is a fixed *name* list, not a git
+/// decision: a tree that opens onto 40k transitive packages or git's object
+/// store is unusable. `.ralphy` is deliberately NOT here: it is surfaced so
+/// `plan.md`/`runs/` are watchable and refresh live (issue #203). `pub(crate)`
+/// so the watcher pump ([`crate::watch`]) drops the same noise dirs a
+/// `NonRecursive` root watch still fires on.
 pub(crate) const HARD_EXCLUDE: &[&str] = &["node_modules", "target", ".git"];
 
 /// One tree entry: a child of the listed directory.
@@ -26,18 +29,17 @@ pub struct Entry {
 }
 
 /// List the one-level children of the confined `rel` directory under `root`,
-/// gitignore-filtered and with [`HARD_EXCLUDE`] noise dirs dropped. Entries are
-/// sorted dirs-first, then by name. A confinement failure (escape/missing)
-/// propagates as [`ConfineError`].
+/// with [`HARD_EXCLUDE`] noise dirs dropped and nothing else filtered — hidden
+/// and gitignored entries are listed. Entries are sorted dirs-first, then by
+/// name. A confinement failure (escape/missing) propagates as [`ConfineError`].
 pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
     let dir = confine::confine(root, rel)?;
 
     let mut entries: Vec<Entry> = ignore::WalkBuilder::new(&dir)
         .max_depth(Some(1))
-        .git_ignore(true)
-        .git_global(false)
-        .git_exclude(true)
-        .hidden(false)
+        // Every standard filter off: gitignore/exclude/global and the hidden-file
+        // rule. `HARD_EXCLUDE` below is the whole policy.
+        .standard_filters(false)
         .filter_entry(|e| {
             e.file_name()
                 .to_str()
