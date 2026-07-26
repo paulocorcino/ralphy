@@ -1,11 +1,11 @@
-//! The three working-tree write verbs reach the child and answer on the
-//! requesting id (issue #318; ADR-0036 §2/§6). Each spawns-and-collects
+//! The four working-tree write verbs reach the child and answer on the
+//! requesting id (issues #318, #319; ADR-0036 §2/§6). Each spawns-and-collects
 //! `command_test_child` (pointed at via `RALPHY_EXE_OVERRIDE`), which echoes its
 //! argv; a non-zero exit relays as `status:"error"` with that echo as the
 //! message — the shape a run-lock refusal takes on the wire.
 //!
 //! The legs assert each verb's OWN argv and the ABSENCE of a sibling's, so a
-//! builder that answered `stage` for all three would still red. The last leg is
+//! builder that answered `stage` for all four would still red. The last leg is
 //! the no-argv path: a malformed payload must be refused by the daemon, with no
 //! child spawned at all.
 //!
@@ -70,7 +70,7 @@ fn relayed(reply: &serde_json::Value) -> String {
 }
 
 #[tokio::test]
-async fn the_three_write_verbs_carry_their_own_argv_to_the_child() {
+async fn the_four_write_verbs_carry_their_own_argv_to_the_child() {
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
@@ -156,6 +156,23 @@ async fn the_three_write_verbs_carry_their_own_argv_to_the_child() {
         "the commit leg carries no path token: {msg:?}"
     );
 
+    let discarded = ask(
+        port,
+        9,
+        "changes.discard",
+        serde_json::json!({ "repo": slug, "paths": ["a.txt"] }),
+    )
+    .await;
+    let msg = relayed(&discarded);
+    assert!(
+        msg.contains("changes discard --path=a.txt"),
+        "the discard argv must reach the child; got: {msg:?}"
+    );
+    assert!(
+        !msg.contains("stage") && !msg.contains("commit"),
+        "no sibling's argv leaked into the discard leg: {msg:?}"
+    );
+
     // The no-argv path: a malformed payload is refused BY THE DAEMON, so the
     // reply is its own fixed prose and no child echo appears in it.
     let refused = ask(
@@ -171,6 +188,18 @@ async fn the_three_write_verbs_carry_their_own_argv_to_the_child() {
         "a malformed path never reaches a child: {refused}"
     );
 
+    let refused_discard = ask(
+        port,
+        10,
+        "changes.discard",
+        serde_json::json!({ "repo": slug, "paths": ["/etc/passwd"] }),
+    )
+    .await;
+    assert_eq!(
+        refused_discard["message"], "invalid mutation options",
+        "a malformed discard path never reaches a child: {refused_discard}"
+    );
+
     let no_message = ask(
         port,
         5,
@@ -183,7 +212,7 @@ async fn the_three_write_verbs_carry_their_own_argv_to_the_child() {
         "an absent message never reaches a child: {no_message}"
     );
 
-    // The SUCCESS shape, for each of the three rows. Without this leg a Mutate
+    // The SUCCESS shape, for each of the four rows. Without this leg a Mutate
     // branch that could only ever answer `error` would satisfy every assertion
     // above — the child's exit code is re-set here because it is read at spawn.
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
@@ -202,6 +231,11 @@ async fn the_three_write_verbs_carry_their_own_argv_to_the_child() {
             8,
             "changes.commit",
             serde_json::json!({ "repo": slug, "message": "hello" }),
+        ),
+        (
+            11,
+            "changes.discard",
+            serde_json::json!({ "repo": slug, "paths": ["a.txt"] }),
         ),
     ] {
         let ok = ask(port, id, verb, payload).await;

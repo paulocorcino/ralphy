@@ -193,6 +193,9 @@ pub enum Verb {
     /// Record the staged index (Mutate: `changes commit --message=<msg>`,
     /// run-lock-aware).
     ChangesCommit,
+    /// Discard paths' working-tree changes (Mutate: `changes discard
+    /// --path=<p>…`, run-lock-aware).
+    ChangesDiscard,
 }
 
 impl Verb {
@@ -228,6 +231,7 @@ impl Verb {
             "changes.stage" => Some(Verb::ChangesStage),
             "changes.unstage" => Some(Verb::ChangesUnstage),
             "changes.commit" => Some(Verb::ChangesCommit),
+            "changes.discard" => Some(Verb::ChangesDiscard),
             _ => None,
         }
     }
@@ -261,6 +265,7 @@ impl Verb {
         Verb::ChangesStage,
         Verb::ChangesUnstage,
         Verb::ChangesCommit,
+        Verb::ChangesDiscard,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -286,7 +291,8 @@ impl Verb {
             | Verb::SyncPull
             | Verb::ChangesStage
             | Verb::ChangesUnstage
-            | Verb::ChangesCommit => EffectClass::Mutate,
+            | Verb::ChangesCommit
+            | Verb::ChangesDiscard => EffectClass::Mutate,
             Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
                 EffectClass::Write
             }
@@ -365,7 +371,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::SyncPull
         | Verb::ChangesStage
         | Verb::ChangesUnstage
-        | Verb::ChangesCommit => Err(ArgvError::BadParam("verb")),
+        | Verb::ChangesCommit
+        | Verb::ChangesDiscard => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -531,7 +538,8 @@ const MAX_PATH_CHARS: usize = 1024;
 const MAX_COMMIT_MESSAGE: usize = 4096;
 
 /// Compose the argv for a path-carrying Mutate verb: `changes stage
-/// --path=<p>…` / `changes unstage --path=<p>…` (issue #318). Every element of
+/// --path=<p>…` / `changes unstage --path=<p>…` (issue #318) / `changes discard
+/// --path=<p>…` (issue #319). Every element of
 /// `payload.paths` goes through the shared [`validated_path`] gate; an absent,
 /// empty, over-long, or malformed list yields [`ArgvError`] and NO argv, so a
 /// glob or a pathspec can never cross the wire.
@@ -546,6 +554,7 @@ pub fn changes_paths_argv(
     let sub = match verb {
         Verb::ChangesStage => "stage",
         Verb::ChangesUnstage => "unstage",
+        Verb::ChangesDiscard => "discard",
         _ => return Err(ArgvError::BadParam("verb")),
     };
     let paths = payload
@@ -983,10 +992,11 @@ mod tests {
         assert_eq!(Verb::ChangesStage.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesUnstage.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesCommit.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ChangesDiscard.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            27,
-            "the registry holds exactly twenty-seven verbs"
+            28,
+            "the registry holds exactly twenty-eight verbs"
         );
     }
 
@@ -1053,6 +1063,82 @@ mod tests {
         // `..` is refused as a SEGMENT, not as a substring — a real filename
         // containing dots stays readable.
         assert_eq!(validated_path("v..1/x").as_deref(), Some("v..1/x"));
+    }
+
+    /// The discard verb rides the SHARED builder — no second definition of what
+    /// a path is — so this pins its exact vector and that a malformed path
+    /// yields no argv at all.
+    #[test]
+    fn changes_discard_argv_composes_an_exact_vector() {
+        assert_eq!(
+            Verb::from_query("changes.discard"),
+            Some(Verb::ChangesDiscard)
+        );
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesDiscard,
+                &json!({ "paths": ["a.txt", "b/c.txt"] })
+            )
+            .unwrap(),
+            vec!["changes", "discard", "--path=a.txt", "--path=b/c.txt"]
+        );
+        // A Windows-shaped path composes the same token as its POSIX spelling.
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": ["b\\c.txt"] })).unwrap(),
+            vec!["changes", "discard", "--path=b/c.txt"]
+        );
+        // The untracked-directory entry shape git itself reports.
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": ["newdir/"] })).unwrap(),
+            vec!["changes", "discard", "--path=newdir/"]
+        );
+    }
+
+    #[test]
+    fn changes_discard_refuses_a_malformed_path_with_no_argv() {
+        for bad in [
+            "/etc/passwd",
+            "C:\\x",
+            "../secret",
+            "-rf",
+            ":(glob)x",
+            ":!x",
+            "",
+        ] {
+            assert_eq!(
+                changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": [bad] })),
+                Err(ArgvError::BadParam("paths")),
+                "{bad:?} must yield NO argv"
+            );
+        }
+        for empty in [
+            json!({}),
+            json!({ "paths": [] }),
+            json!({ "paths": "a.txt" }),
+        ] {
+            assert_eq!(
+                changes_paths_argv(Verb::ChangesDiscard, &empty),
+                Err(ArgvError::BadParam("paths")),
+                "{empty} must yield NO argv"
+            );
+        }
+        // One bad element poisons the whole list — a partial argv would discard
+        // the good half of a request the daemon refused, unrecoverably.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesDiscard,
+                &json!({ "paths": ["ok.txt", "/etc/passwd"] })
+            ),
+            Err(ArgvError::BadParam("paths"))
+        );
+        let over: Vec<String> = (0..MAX_STAGE_PATHS + 1)
+            .map(|i| format!("f{i}.txt"))
+            .collect();
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": over })),
+            Err(ArgvError::BadParam("paths")),
+            "257 paths is over MAX_STAGE_PATHS"
+        );
     }
 
     #[test]
@@ -1207,6 +1293,7 @@ mod tests {
             Verb::ChangesStage,
             Verb::ChangesUnstage,
             Verb::ChangesCommit,
+            Verb::ChangesDiscard,
         ] {
             assert_eq!(
                 spawn_argv(verb, &json!({})),
