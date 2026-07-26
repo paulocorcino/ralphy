@@ -442,10 +442,13 @@ Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
 strip** runs across the top where **tab 0 is the fixed Consoles tab** — it never
 closes and hosts the floating agent (**workbench session**) consoles — and every
 opened file rides in after it as a **closable** tab. Decided in
-[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md).
+[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md). The sidebar
+has its own **sidebar view** — the rail switches it between **Projects** (the
+repo accordion) and **Changes** (the open project's change set).
 _Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
 "main tab" for the Consoles tab (it is fixed, not merely first); Agents tab
-(the tab holds consoles, not agents; renamed in #305).
+(the tab holds consoles, not agents; renamed in #305); panel, accordion (the
+Changes section a sidebar view replaced in #317).
 
 **Desk layout**:
 The browser's record of *what* was open on the **Consoles tab** — one entry per

@@ -80,7 +80,9 @@ a genuinely new colour is an amendment to ADR-0035.
 
 ### Rail toggles, account menu & the auth gate
 The icon rail is **interactive chrome** (handlers in [app.js](../crates/ralphy-daemon/assets/ui/app.js)): **Projects**
-(`toggleSide`) shows/hides the sidebar, **Runs** (`toggleRuns`) reveals the
+and **Changes** (`showSideView('projects'|'changes')`) switch the sidebar's
+**view** — clicking the button of the view already showing collapses the sidebar,
+which is the gesture the pre-#317 `toggleSide` had — **Runs** (`toggleRuns`) reveals the
 right-hand panel, **Kanban** (`toggleKanban`) opens the tasks board as a canvas
 overlay (module: [wb-kanban.js](../crates/ralphy-daemon/assets/ui/wb-kanban.js) — see its section below), and a
 **Settings gear** pinned to the rail's bottom (`.rail-spacer` +
@@ -121,6 +123,21 @@ state + lifecycle live in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`t
 open, the pane is chosen by extension (`classify`): markdown → rendered, binaries →
 refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
 Consoles fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
+
+### Sidebar views: Projects and Changes
+The sidebar hosts **two views** the rail switches between (`sideView`, #317):
+**Projects** (the accordion below) and **Changes** (`.changes-view`) — the open
+project's working-tree change set, with a toolbar (`.chg-toolbar`), the sync row
+(`.sync-row`, #316), the staged/unstaged groups (#315) and a message box
+(`.chg-compose`, inert until the write controls land). Changes is scoped to
+`openSlug` alone; it was a section *inside* the accordion until PRD #297's own
+trigger — "if Changes grows a toolbar it outgrows a section" — fired.
+
+The change **count** did not move into the view: it rides the Projects row as
+`.chg-badge` (`projectBadge`), so it stays readable with no click and no
+navigation. It renders only for a slug whose count was actually read; a failed
+read is `—`, never `0`. There is deliberately **no badge on the rail** — that
+would claim a cross-repo aggregate nothing computes.
 
 ### Project accordion (sidebar)
 `projects` is the daemon's repo list (a mirror of `/api/repos`): each has a
@@ -286,8 +303,10 @@ contract), or update this table when they change.
 | Element | Identifier | Purpose | Events / actions |
 |---|---|---|---|
 | Topbar | `.topbar` | brand + crumb + stats/account | — |
-| Icon rail | `.rail` | switches sidebar/panels | — |
-| Sidebar | `.side` | hosts the project accordion | — |
+| Icon rail | `.rail` | switches the sidebar's view / the panels | — |
+| Sidebar | `.side` | hosts two views: Projects and Changes | — |
+| Sidebar views | `.projects-view` / `.changes-view` (`sideView`) | the accordion · the open project's change set | — |
+| Change badge | `.chg-badge` (`projectBadge`) | per-project change count on the Projects row; `—` on a failed read | — |
 | Project count | `.count` | repos located (`projects.length`) | — |
 | Provenance icon | `.remote` (`bi-github`/`bi-hdd`) | GitHub-backed vs local-only, before the name | — |
 | Canvas | `.canvas` / `.stage` | tabbed workspace: tab strip + dotted stage | — |
@@ -332,7 +351,7 @@ they're the contract.
 
 | Element | Identifier | Purpose | Events / actions |
 |---|---|---|---|
-| Rail toggles | `toggleSide` / `toggleRuns` / `toggleKanban` | show/hide sidebar · Runs panel · Kanban board | `kanban-toggle {open}` |
+| Rail toggles | `showSideView` / `toggleRuns` / `toggleKanban` | switch the sidebar's view · Runs panel · Kanban board | `kanban-toggle {open}` |
 | Settings gear | `.rail-spacer` + `openSettings` | pinned to rail bottom; opens Settings | — |
 | Runs panel | `.runs` (+ `body.runs-open`) | right-hand column; collapses to 0 | — |
 | Account menu | `.avatar-btn` / `.account-menu` | Security settings · Log off | `logoff` / `login` |
