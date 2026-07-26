@@ -14,14 +14,16 @@
 (function () {
   // ADR-0035's warm-dark palette, as literal hex — Monaco's theme API takes no
   // CSS variables, so these mirror :root in styles.css (the ground `--log-bg`
-  // #1a1613 is what the browser acceptance asserts).
+  // #2a2521 is what the browser acceptance asserts). Keep them in lockstep with
+  // the stylesheet: a drift here shows up as an editor that is a different
+  // shade from the pane it sits in.
   const TOKENS = {
-    logBg: "#1a1613",
-    surface: "#241f1b",
-    surfaceHi: "#322b25",
-    border: "#3a332d",
-    text: "#e8e2d9",
-    textMuted: "#9b948a",
+    logBg: "#2a2521",
+    surface: "#342d27",
+    surfaceHi: "#423a31",
+    border: "#4c4239",
+    text: "#d4ccc0",
+    textMuted: "#a49c91",
     consoleText: "#e8d9a8",
   };
 
@@ -36,7 +38,7 @@
         "editorLineNumber.foreground": TOKENS.textMuted,
         "editorCursor.foreground": TOKENS.text,
         "editor.selectionBackground": TOKENS.surfaceHi,
-        "editor.lineHighlightBackground": "#1f1a17",
+        "editor.lineHighlightBackground": "#332d28",
         "editorWidget.background": TOKENS.surface,
         "editorWidget.border": TOKENS.border,
         "input.background": TOKENS.logBg,
@@ -48,7 +50,7 @@
         "editorBracketMatch.border": "#5a4a1e",
       },
       rules: [
-        { token: "comment", foreground: "9b948a", fontStyle: "italic" },
+        { token: "comment", foreground: "a49c91", fontStyle: "italic" },
         { token: "keyword", foreground: "c98a7d" },
         { token: "type", foreground: "cba6c3" },
         { token: "type.identifier", foreground: "cba6c3" },
@@ -58,9 +60,9 @@
         { token: "attribute.name", foreground: "e8d9a8" },
         { token: "attribute.value", foreground: "9fb98a" },
         { token: "tag", foreground: "c98a7d" },
-        { token: "delimiter", foreground: "9b948a" },
-        { token: "operator", foreground: "9b948a" },
-        { token: "metatag", foreground: "9b948a" },
+        { token: "delimiter", foreground: "a49c91" },
+        { token: "operator", foreground: "a49c91" },
+        { token: "metatag", foreground: "a49c91" },
       ],
     });
   }

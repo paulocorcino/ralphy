@@ -96,7 +96,7 @@ window.WBKanban = {
       g = parseInt(hex.slice(2, 4), 16),
       b = parseInt(hex.slice(4, 6), 16);
     // perceived luminance
-    return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#1b1714" : "#f2ede4";
+    return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#2b2620" : "#e9e1d4";
   },
 
   // Which column an issue belongs to — the runner's precedence, as a lens:
