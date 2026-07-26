@@ -366,6 +366,51 @@ def main():
                 f"got={fits}",
             )
             ctx_c.close()
+
+            # --- scenario 8: a REFUSED desk read must not wipe the desk -------
+            # The seam the self-review flagged. `PUT /api/desk` replaces the desk
+            # WHOLESALE, and under the `Session` policy the pre-login `GET
+            # /api/desk` answers 401. Treating that as "an empty desk" and then
+            # flushing on the first drag destroys the operator's real layout, so
+            # a page that could not READ the desk must never WRITE it.
+            saved = [desk_record(f"s{n}", n, 40 + n, 40 + n) for n in range(1, 6)]
+            http("PUT", "api/desk", saved)
+            ctx_d = browser.new_context(viewport={"width": 1400, "height": 900})
+            page_d = ctx_d.new_page()
+            page_d.route(
+                "**/api/desk",
+                lambda route: (
+                    route.fulfill(status=401, body="unauthorized")
+                    if route.request.method == "GET"
+                    else route.continue_()
+                ),
+            )
+            page_d.goto(BASE)
+            page_d.wait_for_selector("[x-data]", timeout=8000)
+            page_d.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page_d.wait_for_timeout(600)
+            open_console(page_d, slug)
+            drag_title(page_d, 0, -60, 30)
+            page_d.wait_for_timeout(1500)
+            after = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])]
+            check(
+                "a page whose desk read was REFUSED does not overwrite the saved desk",
+                after == [r["id"] for r in saved],
+                f"want={[r['id'] for r in saved]} got={after}",
+            )
+            # And the guard lifts: once a read succeeds, writes resume.
+            page_d.unroute("**/api/desk")
+            page_d.evaluate("() => window.WBConsole.afterLogin()")
+            page_d.wait_for_timeout(800)
+            drag_title(page_d, 0, 40, -20)
+            page_d.wait_for_timeout(1200)
+            resumed = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])]
+            check(
+                "…and resumes writing once the desk is readable again",
+                all(r["id"] in resumed for r in saved) and len(resumed) > len(saved),
+                f"got={resumed}",
+            )
+            ctx_d.close()
             browser.close()
 
         # --- scenario 6: a corrupt desk.toml is an empty desk, not a crash ----
@@ -379,7 +424,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 20
+    ok = all(results) and len(results) >= 22
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("DESK IS DAEMON STATE")

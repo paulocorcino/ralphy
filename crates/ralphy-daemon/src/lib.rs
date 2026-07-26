@@ -1651,8 +1651,16 @@ async fn desk_get_route(path: PathBuf) -> Response {
 /// newest by `ts`, answering `200` with the pruned array — the client needs the
 /// daemon's post-prune truth in one round trip (last-write-wins, no ETag).
 /// A body that is not an array of records is rejected by the `Json` extractor as
-/// `400` and never reaches here, so `desk.toml` is untouched.
+/// `422` and never reaches here, so `desk.toml` is untouched; a record carrying a
+/// non-finite rect is rejected here as `400`, for the same reason.
 async fn desk_put_route(path: PathBuf, records: Vec<desk::DeskRecord>) -> Response {
+    if let Some(bad) = records.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": format!("record {} has a non-finite rect", bad.id) })),
+        )
+            .into_response();
+    }
     let pruned = desk::prune(records);
     let store = desk::DeskStore {
         windows: pruned.clone(),
@@ -2315,6 +2323,45 @@ mod tests {
             std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
             before,
             "a rejected upload never reaches the store"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_rejects_a_non_finite_rect_without_touching_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        desk_put(
+            dir.path(),
+            &serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+        )
+        .await;
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+
+        // An out-of-range literal, spelled in the RAW body — a Rust `1e400_f64`
+        // will not compile, and `json!(f64::INFINITY)` becomes `null`, so the
+        // only way to reproduce what a browser can actually send is the wire.
+        let bad = desk_json("w-huge", 2, serde_json::Value::Null, false)
+            .to_string()
+            .replace("\"left\":10.0", "\"left\":1e400");
+        let res = desk_router(dir.path())
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/desk")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!("[{bad}]")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            res.status(),
+            StatusCode::OK,
+            "a non-finite rect must never be stored"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "a rejected rect never reaches the store"
         );
     }
 

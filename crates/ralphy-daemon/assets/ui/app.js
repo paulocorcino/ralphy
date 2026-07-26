@@ -1921,6 +1921,9 @@ function shell() {
       // `/api/agents` is gated too, so the pre-login load left the roster empty:
       // without this the console menu offers only the plain console after login.
       this.loadAgents();
+      // `/api/desk` is gated too: the pre-login fetch was refused, so the desk
+      // is unread AND unwritable until it is re-read here (issue #327).
+      window.WBConsole?.afterLogin();
     },
 
     async submitLogin() {

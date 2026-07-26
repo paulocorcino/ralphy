@@ -44,17 +44,53 @@ window.WBConsole = (function () {
   // what keeps `persistWin`/`forgetRecord`/`deskOf` callable from a mousemove.
   const DESK_MAX = 24;
   let desk = [];
-  // Resolves once the daemon's desk has landed in `desk`; `restoreDesk` awaits
-  // it before reconciling. Never rejects — an unreachable daemon means an empty
-  // desk, the same verdict a fresh browser used to reach.
-  const deskReady = window.WBMode?.isDaemon()
-    ? fetch("/api/desk")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((v) => {
-          desk = Array.isArray(v) ? v : [];
-        })
-        .catch(() => {})
-    : Promise.resolve();
+  // `deskLoaded` is the upload PERMIT: until the daemon's own desk has landed we
+  // do not know what we would be replacing, and `PUT /api/desk` replaces the desk
+  // wholesale. Under the `Session` policy the pre-login `/api/desk` answers 401 —
+  // treating that as "an empty desk" and then flushing would destroy the
+  // operator's layout on their first drag, so a refused load leaves this false
+  // and every flush is suppressed until `reloadDesk()` succeeds after login.
+  let deskLoaded = false;
+  // Whether this page has mutated `desk` since the load was issued. A record the
+  // operator just created or deleted must survive a later-arriving GET.
+  let deskDirty = false;
+
+  // Ids this page deleted; they must not come back on a later-arriving GET.
+  const deskRemoved = new Set();
+
+  function ingestDesk(records) {
+    const fetched = Array.isArray(records) ? records : [];
+    if (!deskDirty) {
+      desk = fetched;
+    } else {
+      // Local wins per id (it is newer by construction), and a record deleted
+      // here stays deleted — merging the daemon's copy back in would resurrect
+      // exactly what `forgetRecord` removed.
+      const mine = new Set(desk.map((r) => r.id));
+      const removed = new Set(deskRemoved);
+      desk = fetched
+        .filter((r) => !mine.has(r.id) && !removed.has(r.id))
+        .concat(desk);
+    }
+    deskLoaded = true;
+  }
+
+  // Load (or re-load, after a login) the daemon's desk. Never rejects: an
+  // unreachable daemon leaves `deskLoaded` false, which keeps this page from
+  // uploading over a desk it never read.
+  function reloadDesk() {
+    if (!window.WBMode?.isDaemon()) {
+      deskLoaded = true;
+      return Promise.resolve();
+    }
+    return fetch("/api/desk")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("desk unavailable"))))
+      .then(ingestDesk)
+      .catch(() => {});
+  }
+  // `restoreDesk` awaits this before reconciling, so the layout is never
+  // reconciled against a desk that has not landed.
+  const deskReady = reloadDesk();
 
   function loadDesk() {
     return desk.slice();
@@ -76,26 +112,63 @@ window.WBConsole = (function () {
   }
   function saveDesk(records) {
     const live = new Set([...wins].map((w) => w._deskId));
+    const before = new Set(desk.map((r) => r.id));
     desk = pruneDesk(records, DESK_MAX, live);
+    const after = new Set(desk.map((r) => r.id));
+    for (const id of before) if (!after.has(id)) deskRemoved.add(id);
+    deskDirty = true;
     scheduleDeskFlush();
   }
   // The upload, debounced and fire-and-forget. INVARIANT: no drag, resize, close
   // or `persistWin` path may await or throw on this — a refused PUT costs a stale
   // position and the next mutation supersedes it (last write wins, no ETag).
+  // Chained on the previous flush so two mutations 250 ms apart cannot land out
+  // of order over a LAN or a dev tunnel.
   let deskFlush = null;
+  let deskInFlight = Promise.resolve();
   function scheduleDeskFlush() {
     if (!window.WBMode?.isDaemon()) return;
     clearTimeout(deskFlush);
+    // Cleared when it FIRES, not only when it is replaced: a spent timer id is
+    // still truthy, and `pagehide` reads it as "a write is pending" — which
+    // re-uploaded a stale mirror over a newer desk on every reload.
     deskFlush = setTimeout(() => {
-      try {
+      deskFlush = null;
+      flushDesk();
+    }, 250);
+  }
+  function flushDesk() {
+    // Never upload over a desk this page failed to read (offline, or pre-login
+    // under the `Session` policy) — that is a wholesale replace of the
+    // operator's real layout with whatever this page happens to hold.
+    if (!deskLoaded) return;
+    const body = JSON.stringify(desk);
+    deskInFlight = deskInFlight
+      .catch(() => {})
+      .then(() =>
         fetch("/api/desk", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(desk),
-        }).catch(() => {});
-      } catch {}
-    }, 250);
+          body,
+        }).catch(() => {}),
+      );
   }
+  // A mutation inside the last 250 ms before the tab closes would otherwise be
+  // dropped — the window would come back "open" on the next load. `keepalive`
+  // lets the request outlive the document.
+  window.addEventListener("pagehide", () => {
+    if (!deskLoaded || !deskFlush) return;
+    clearTimeout(deskFlush);
+    deskFlush = null;
+    try {
+      fetch("/api/desk", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(desk),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  });
   function newDeskId() {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
@@ -912,5 +985,24 @@ window.WBConsole = (function () {
     return wins.size;
   }
 
-  return { open, arrange, count, refitAll, resizeRect, reconcileDesk, pruneDesk, reach };
+  // Re-read the daemon's desk and restore it. The `Session` policy answers the
+  // pre-login `/api/desk` with 401, so the boot load found nothing; this is the
+  // client half of that guard, called from `rehydrateAfterAuth` (issue #327).
+  function afterLogin() {
+    return reloadDesk().then(() => {
+      if (deskLoaded && wins.size === 0) restoreDesk();
+    });
+  }
+
+  return {
+    open,
+    arrange,
+    count,
+    refitAll,
+    resizeRect,
+    reconcileDesk,
+    pruneDesk,
+    reach,
+    afterLogin,
+  };
 })();

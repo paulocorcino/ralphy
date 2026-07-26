@@ -99,15 +99,32 @@ pub fn load_from(path: &Path) -> DeskStore {
     }
 }
 
+/// Whether every rect component is finite. `serde_json` turns an overflowing
+/// literal into `f64::INFINITY` without erroring, TOML writes it as `inf`, and
+/// serializing it back to JSON yields `null` — which the shell would render as
+/// `"nullpx"`. Reject the upload instead of persisting a rect that cannot survive
+/// its own round trip.
+pub fn rect_is_sane(r: &DeskRect) -> bool {
+    r.left.is_finite() && r.top.is_finite() && r.width.is_finite() && r.height.is_finite()
+}
+
 /// Write the desk to `path` owner-only, creating the parent directory.
+///
+/// ATOMIC: written to a sibling temp file and renamed over the target, because
+/// this is written on every drag, resize and close. A truncated in-place write
+/// would read back as an empty desk ([`load_from`] maps a parse error to
+/// `default()`), losing the layout silently instead of noisily.
 pub fn save_to(store: &DeskStore, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
     let text = toml::to_string_pretty(store).context("serializing desk layout")?;
-    std::fs::write(path, text).with_context(|| format!("writing {}", path.display()))?;
-    crate::registry::set_owner_only(path)?;
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
+    crate::registry::set_owner_only(&tmp)?;
+    std::fs::rename(&tmp, path)
+        .with_context(|| format!("replacing {} with {}", path.display(), tmp.display()))?;
     Ok(())
 }
 
@@ -196,6 +213,68 @@ mod tests {
         let kept: Vec<String> = prune(records).into_iter().map(|r| r.id).collect();
         let expected: Vec<String> = (1..=24).map(|n| format!("w{n}")).collect();
         assert_eq!(kept, expected);
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_previous_desk_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        let good = DeskStore {
+            windows: vec![record("w-keep", 1)],
+        };
+        save_to(&good, &path).unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        // A path whose PARENT is a regular file: `create_dir_all` fails on both
+        // Windows and unix, so the error return is exercised portably.
+        let blocked = path.join("nested").join("desk.toml");
+        let err = save_to(
+            &DeskStore {
+                windows: vec![record("w-lost", 2)],
+            },
+            &blocked,
+        )
+        .expect_err("writing under a regular file must fail");
+        assert!(
+            format!("{err:#}").contains("creating"),
+            "the context chain names the step: {err:#}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "the good desk is byte-identical after a failed save"
+        );
+        assert_eq!(load_from(&path).windows[0].id, "w-keep");
+    }
+
+    #[test]
+    fn save_leaves_no_temp_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        save_to(
+            &DeskStore {
+                windows: vec![record("w1", 1)],
+            },
+            &path,
+        )
+        .unwrap();
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n != "desk.toml")
+            .collect();
+        assert!(leftovers.is_empty(), "the rename consumed the temp: {leftovers:?}");
+    }
+
+    #[test]
+    fn a_non_finite_rect_is_not_sane() {
+        let mut r = record("w1", 1);
+        assert!(rect_is_sane(&r.rect));
+        r.rect.left = f64::INFINITY;
+        assert!(!rect_is_sane(&r.rect));
+        r.rect.left = f64::NAN;
+        assert!(!rect_is_sane(&r.rect));
     }
 
     #[test]
