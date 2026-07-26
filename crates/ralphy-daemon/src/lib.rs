@@ -1109,9 +1109,11 @@ async fn command_ws(
         return;
     }
 
-    // Mutate verbs (ADR-0036 §2/§6) spawn-and-collect a run-lock-aware write
-    // (`config set`/`config unset`) and answer once; a non-zero exit (the CLI's
-    // run-lock refusal or unknown-key error) relays as the trimmed stderr.
+    // Mutate verbs (ADR-0036 §2/§6) spawn-and-collect a run-lock-aware write —
+    // config, branch, label, sync and the working-tree writes — and answer once;
+    // a non-zero exit (the CLI's run-lock refusal, an unknown key, or an outcome
+    // that refused by value) relays as the trimmed stderr. No route, no handler
+    // and no endpoint is added per verb: the registry row IS the capability.
     if verb.effect_class() == dispatch::EffectClass::Mutate {
         let argv_result = match verb {
             dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {
@@ -1122,6 +1124,10 @@ async fn command_ws(
             }
             dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
             dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull => dispatch::sync_argv(verb),
+            dispatch::Verb::ChangesStage | dispatch::Verb::ChangesUnstage => {
+                dispatch::changes_paths_argv(verb, &cmd.payload)
+            }
+            dispatch::Verb::ChangesCommit => dispatch::changes_commit_argv(&cmd.payload),
             _ => Err(dispatch::ArgvError::BadParam("verb")),
         };
         let payload = match argv_result {
