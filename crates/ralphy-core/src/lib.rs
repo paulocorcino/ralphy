@@ -99,6 +99,7 @@ pub mod settings;
 pub mod sync;
 pub mod triage_draft;
 pub mod verify;
+pub mod worktree;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
