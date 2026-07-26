@@ -536,6 +536,190 @@ fn discard_refuses_an_empty_list() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// REPRODUCED live before the fix: `git --literal-pathspecs restore --worktree
+/// -- f.txt` on an unmerged path exits 1 with `error: path 'f.txt' is
+/// unmerged`. A conflicted entry has NO index side (`changes.rs`: a `u` record
+/// is all worktree work), so the panel's unstaged group renders its discard
+/// control — the operator would have confirmed the TRACKED dialog ("anything
+/// staged for this file is kept", false here) and been shown git's raw string.
+#[test]
+fn discard_refuses_a_conflicted_path() {
+    let dir = init_repo("discard-conflicted");
+    commit_file(&dir, "f.txt", "base\n", "add f");
+    // A REAL merge conflict, not a hand-written index: the `u` record is what
+    // the change set reads, and only git produces a faithful one.
+    git(&dir, &["branch", "other"]).unwrap();
+    git(&dir, &["checkout", "--quiet", "other"]).unwrap();
+    commit_file(&dir, "f.txt", "theirs\n", "other side");
+    git(&dir, &["checkout", "--quiet", "main"]).unwrap();
+    commit_file(&dir, "f.txt", "mine\n", "our side");
+    let merged = raw(&dir, &["merge", "other"]).unwrap();
+    assert!(
+        !merged.status.success(),
+        "the fixture must actually conflict"
+    );
+
+    let conflicted = entry(&dir, "f.txt");
+    assert_eq!(
+        conflicted.status,
+        ChangeStatus::Conflicted,
+        "got {conflicted:?}"
+    );
+    assert!(
+        conflicted.index_status.is_none() && conflicted.worktree_status.is_some(),
+        "a conflict is all worktree work — which is why the PANEL offers it a \
+         discard control, and why refusing it here matters: {conflicted:?}"
+    );
+
+    let before = std::fs::read_to_string(dir.join("f.txt")).unwrap();
+    let refused = discard(&dir, &p("f.txt")).unwrap();
+    assert_eq!(
+        refused,
+        DiscardOutcome::Conflicted {
+            path: "f.txt".to_string()
+        }
+    );
+    assert_eq!(
+        refused.reason().as_deref(),
+        Some("cannot discard: f.txt has an unresolved merge conflict — resolve it first"),
+        "the operator reads this module's prose, never git's `path … is unmerged`"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("f.txt")).unwrap(),
+        before,
+        "the refusal ran no git write"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The cross-path invariant the doc comment sells, as an ORACLE: a list whose
+/// LAST element is unknown must run NEITHER write — not the restore, and above
+/// all not the unrecoverable delete of the good untracked path in the middle.
+/// A per-path loop refactor stays green on every other test here and reds on
+/// this one.
+#[test]
+fn discard_refuses_a_mixed_batch_before_either_write() {
+    let dir = init_repo("discard-mixed-refusal");
+    commit_file(&dir, "good.txt", "committed\n", "add good");
+    std::fs::write(dir.join("good.txt"), "edited\n").unwrap();
+    std::fs::write(dir.join("loose.txt"), "loose\n").unwrap();
+
+    let refused = discard(
+        &dir,
+        &[
+            "good.txt".to_string(),
+            "loose.txt".to_string(),
+            "never-touched.txt".to_string(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        refused,
+        DiscardOutcome::NotInChangeSet {
+            path: "never-touched.txt".to_string()
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("good.txt")).unwrap(),
+        "edited\n",
+        "the restore half never ran"
+    );
+    assert!(
+        dir.join("loose.txt").exists(),
+        "the DELETE half never ran — the unrecoverable act is what this pins"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A rename's ORIGINAL path names no working-tree content, so it is not
+/// discardable — the same asymmetry `stage` documents, and the doc comment on
+/// `discard` claims it. Without this test that claim is prose only.
+#[test]
+fn discard_refuses_a_renames_original_path() {
+    let dir = init_repo("discard-rename");
+    commit_file(&dir, "old.txt", "l1\nl2\nl3\nl4\n", "add old");
+    git(&dir, &["mv", "old.txt", "renamed.txt"]).unwrap();
+
+    let refused = discard(&dir, &p("old.txt")).unwrap();
+    assert_eq!(
+        refused,
+        DiscardOutcome::NotInChangeSet {
+            path: "old.txt".to_string()
+        },
+        "the change set names the rename by its NEW path only"
+    );
+    assert!(dir.join("renamed.txt").exists(), "nothing was written");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A path removed from the WORKING TREE only (`rm f.txt`, no `git rm`) is the
+/// case discard genuinely restores — the positive control that keeps the
+/// `NothingInTheWorkingTree` refusal from over-reaching.
+#[test]
+fn discard_restores_a_worktree_deletion() {
+    let dir = init_repo("discard-worktree-delete");
+    commit_file(&dir, "gone.txt", "still here\n", "add gone");
+    std::fs::remove_file(dir.join("gone.txt")).unwrap();
+    assert_eq!(
+        entry(&dir, "gone.txt").worktree_status,
+        Some(ChangeStatus::Deleted),
+        "the fixture must be a WORKTREE deletion, not a staged one"
+    );
+
+    assert_eq!(
+        discard(&dir, &p("gone.txt")).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 1,
+            deleted: 0
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("gone.txt")).unwrap(),
+        "still here\n",
+        "the file is back"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// REPRODUCED live before the fix: `git --literal-pathspecs restore --worktree
+/// -- f.txt` on a STAGED deletion exits 1 with `error: pathspec 'f.txt' did not
+/// match any file(s) known to git` — the path is in neither the index nor the
+/// working tree, so there is nothing to restore from.
+#[test]
+fn discard_refuses_a_staged_deletion() {
+    let dir = init_repo("discard-staged-delete");
+    commit_file(&dir, "f.txt", "base\n", "add f");
+    git(&dir, &["rm", "--quiet", "f.txt"]).unwrap();
+    let staged_delete = entry(&dir, "f.txt");
+    assert!(
+        staged_delete.index_status.is_some() && staged_delete.worktree_status.is_none(),
+        "the fixture must have an index side and NO worktree side, got {staged_delete:?}"
+    );
+
+    let refused = discard(&dir, &p("f.txt")).unwrap();
+    assert_eq!(
+        refused,
+        DiscardOutcome::NothingInTheWorkingTree {
+            path: "f.txt".to_string()
+        }
+    );
+    assert_eq!(
+        refused.reason().as_deref(),
+        Some("cannot discard: f.txt has no working-tree change — unstage it instead")
+    );
+    assert_eq!(
+        staged_paths(&dir),
+        "f.txt",
+        "a refusal leaves the staged deletion exactly as it was"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// `--literal-pathspecs` is what keeps a filename from being read as a pattern
 /// at the LAST hop. Without the flag `git add "a[0].txt"` treats the name as a
 /// glob, matches nothing (there is no `a0.txt`), and exits non-zero — so

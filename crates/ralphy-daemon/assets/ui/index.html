@@ -290,8 +290,12 @@
                           @click.stop="stagePaths(openSlug, [c.path])">+</button>
                   <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
                        index, so a discard offered on a staged row would claim to
-                       throw away something it keeps. -->
-                  <button class="chg-act chg-discard" data-act="discard" :disabled="writeLocked()"
+                       throw away something it keeps. And NOT on a conflicted row:
+                       an unmerged path is all worktree work, so it lands in this
+                       group, but `restore --worktree` refuses it (`path … is
+                       unmerged`) — the core refuses it by value too. -->
+                  <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
+                          :disabled="writeLocked()"
                           :title="rowActTitle('discard')" aria-label="Discard this path's changes"
                           @click.stop="discardRow(openSlug, c)">×</button>
                 </li>

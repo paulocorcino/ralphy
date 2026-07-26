@@ -646,7 +646,7 @@ def main():
 
     # The floor is the ACTUAL measured count, not a loose lower bound: a slack
     # floor lets assertions vanish silently and still print the banner.
-    ok = all(results) and len(results) >= 24
+    ok = all(results) and len(results) >= 28
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES DISCARD LIVE")

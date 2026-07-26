@@ -67,9 +67,26 @@ impl UnstageOutcome {
 /// What a [`discard`] did — or why it refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiscardOutcome {
-    Discarded { restored: usize, deleted: usize },
+    Discarded {
+        restored: usize,
+        deleted: usize,
+    },
     NoPaths,
-    NotInChangeSet { path: String },
+    NotInChangeSet {
+        path: String,
+    },
+    /// An unresolved merge conflict: `restore --worktree` exits 1 with
+    /// `path '<p>' is unmerged`, so this is a refusal by VALUE rather than
+    /// git's prose relayed out.
+    Conflicted {
+        path: String,
+    },
+    /// A change-set entry with NO working-tree side — a staged deletion is the
+    /// reachable one: the path is in neither the index nor the working tree, so
+    /// `restore --worktree` exits 1 with `pathspec … did not match`.
+    NothingInTheWorkingTree {
+        path: String,
+    },
 }
 
 impl DiscardOutcome {
@@ -80,6 +97,14 @@ impl DiscardOutcome {
             DiscardOutcome::NoPaths => "cannot discard: no paths were given".to_string(),
             DiscardOutcome::NotInChangeSet { path } => {
                 format!("cannot discard: {path} is not in the change set")
+            }
+            DiscardOutcome::Conflicted { path } => {
+                format!(
+                    "cannot discard: {path} has an unresolved merge conflict — resolve it first"
+                )
+            }
+            DiscardOutcome::NothingInTheWorkingTree { path } => {
+                format!("cannot discard: {path} has no working-tree change — unstage it instead")
             }
         })
     }
@@ -222,15 +247,27 @@ pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
 ///
 /// A rename's ORIGINAL path is NOT discardable: it names no working-tree
 /// content, the same asymmetry [`stage`] documents.
+///
+/// Being IN the change set is not enough to be restorable, and the two rows
+/// that are not are refused as VALUES rather than relayed as git's prose
+/// (measured, both exit 1): an unresolved conflict — `path '<p>' is unmerged`
+/// — and an entry with no working-tree side at all, i.e. a staged deletion —
+/// `pathspec '<p>' did not match any file(s) known to git`.
 pub fn discard(repo: &Path, paths: &[String]) -> Result<DiscardOutcome> {
     if paths.is_empty() {
         return Ok(DiscardOutcome::NoPaths);
     }
     let mut known: HashSet<String> = HashSet::new();
     let mut loose: HashSet<String> = HashSet::new();
+    let mut conflicted: HashSet<String> = HashSet::new();
+    let mut no_worktree_side: HashSet<String> = HashSet::new();
     for change in changes(repo)? {
-        if change.status == ChangeStatus::Untracked {
+        if change.status == ChangeStatus::Conflicted {
+            conflicted.insert(change.path.clone());
+        } else if change.status == ChangeStatus::Untracked {
             loose.insert(change.path.clone());
+        } else if change.worktree_status.is_none() {
+            no_worktree_side.insert(change.path.clone());
         }
         known.insert(change.path);
     }
@@ -239,6 +276,12 @@ pub fn discard(repo: &Path, paths: &[String]) -> Result<DiscardOutcome> {
     for path in paths {
         if !known.contains(path) {
             return Ok(DiscardOutcome::NotInChangeSet { path: path.clone() });
+        }
+        if conflicted.contains(path) {
+            return Ok(DiscardOutcome::Conflicted { path: path.clone() });
+        }
+        if no_worktree_side.contains(path) {
+            return Ok(DiscardOutcome::NothingInTheWorkingTree { path: path.clone() });
         }
         if loose.contains(path) {
             untracked.push(path.clone());

@@ -280,6 +280,37 @@ fn changes_discard_over_the_binary_restores_and_deletes() {
     );
 }
 
+/// A staged deletion is IN the change set and still not restorable — measured,
+/// `git restore --worktree -- f.txt` there exits 1 with `pathspec 'f.txt' did
+/// not match any file(s) known to git`. The operator must read this module's
+/// prose, never that string.
+#[test]
+fn changes_discard_refuses_a_staged_deletion_with_prose() {
+    let repo = init_repo();
+    run_git(repo.path(), &["rm", "--quiet", "a.txt"]);
+    let before = git_state(repo.path());
+
+    let out = ralphy(&[
+        "changes",
+        "discard",
+        "--repo",
+        &repo.path().to_string_lossy(),
+        "--path=a.txt",
+    ]);
+
+    assert!(!out.status.success(), "a staged deletion must refuse");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("has no working-tree change"),
+        "the refusal reads as prose: {stderr}"
+    );
+    assert!(
+        !stderr.contains("did not match any file"),
+        "no git error string is relayed: {stderr}"
+    );
+    assert_eq!(git_state(repo.path()), before, "a refusal moves nothing");
+}
+
 /// The end-to-end oracle for the dash-safe token. MEASURED: git accepts
 /// `-m -oops` on its own, so CLAP is the hop the fusion protects — a daemon
 /// emitting `--message` and `-oops` as two tokens dies here with

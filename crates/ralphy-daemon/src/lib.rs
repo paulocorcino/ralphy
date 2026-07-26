@@ -4060,6 +4060,28 @@ mod tests {
             !html.contains(r#"data-act="discard-all""#),
             "there is no group-level discard: one file at a time (#319)"
         );
+        // A conflicted row is all worktree work, so it lands in the UNSTAGED
+        // group — but `restore --worktree` refuses an unmerged path, so the
+        // control must not be offered there either.
+        assert!(
+            html.contains(r#"x-show="c.status !== 'conflicted'""#),
+            "the discard control must be withheld from a conflicted row (#319)"
+        );
+        // The "unstaged rows ONLY" invariant, as a CI-VISIBLE oracle: neither
+        // `node --test` nor Playwright runs in CI, so scenario 2 of
+        // `wb_changes_319.py` cannot be the only thing proving it. The staged
+        // list is the block between its `x-for` key and that list's close.
+        let staged_from = html
+            .find(r#"'s:' + c.path"#)
+            .expect("index.html must keep the staged group's x-for key");
+        let staged_block = &html[staged_from..];
+        let staged_end = staged_block
+            .find("</ul>")
+            .expect("the staged group's list must close");
+        assert!(
+            !staged_block[..staged_end].contains(r#"data-act="discard""#),
+            "the staged group must carry NO discard control — unstage comes first (#319)"
+        );
         for pin in ["function discardConfirm(", "function groupDiscardNote("] {
             assert!(js.contains(pin), "wb-changes.js must keep the fold {pin}");
         }
