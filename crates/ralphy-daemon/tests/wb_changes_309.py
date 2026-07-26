@@ -1,20 +1,21 @@
-"""#309 browser acceptance: the Changes section's expandable row list.
+"""#309 browser acceptance: the Changes row list.
 
-One Playwright pass over a REAL daemon proving the list expands on a header
-click, renders one row per changed path with a per-status marker, shows a
-rename's original path, includes untracked files, scrolls without hiding the
-tree, and stays usable on a narrow viewport.
+One Playwright pass over a REAL daemon proving the list renders one row per
+changed path with a per-status marker, shows a rename's original path, includes
+untracked files, scrolls a long change set, and stays usable on a narrow
+viewport. #317 promoted the list out of the sidebar accordion into a rail view;
+reaching it is a rail click now, and the count lives on the Projects row.
 
-Scenario 1  collapsed on load; a header click renders exactly 5 rows — since
-            #315, staged group first, git's own order within each group
+Scenario 1  the rail view renders exactly 5 rows — since #315, staged group
+            first, git's own order within each group
 Scenario 2  each row carries a distinct per-status marker + class
 Scenario 3  a renamed path shows `← old.txt` and a rename title, no bare
             `old.txt` row
 Scenario 4  untracked files appear in the list
-Scenario 5  a 60-file fixture: both the tree and the list scroll; the tree
-            keeps its floor
-Scenario 6  a 390x844 viewport keeps the badge and every row visible with no
-            horizontal bleed
+Scenario 5  (deleted by #317 — the tree and the list no longer share the
+            sidebar's height; they are separate views)
+Scenario 6  a 390x844 viewport keeps every row visible with no horizontal
+            bleed
 
 Boots a Localhost daemon on 7409 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -154,30 +155,57 @@ def launch(daemon_dir):
     )
 
 
+# The count moved to the Projects row (#317); the list moved to the rail view.
 VISIBLE_SECS = (
-    "Array.from(document.querySelectorAll('.changes-sec')).filter(e => e.offsetParent !== null)"
+    "Array.from(document.querySelectorAll('li.project.open .chg-badge'))"
+    ".filter(e => e.offsetParent !== null)"
 )
+OPEN_VIEW = (
+    "(() => { const v = document.querySelector('.changes-view');"
+    " return v && v.offsetParent !== null ? v : null; })()"
+)
+
+
+def show_view(page, view):
+    """Clicking the rail button of the view already showing COLLAPSES the
+    sidebar, so every switch is guarded on that view's own visibility."""
+    page.evaluate(
+        "(v) => { const el = document.querySelector('.' + v + '-view');"
+        " if (!el || el.offsetParent === null)"
+        "   document.querySelector('nav.rail button[title=\"' +"
+        "     (v === 'changes' ? 'Changes' : 'Projects') + '\"]').click(); }",
+        arg=view,
+    )
+    page.wait_for_function(
+        "(v) => { const el = document.querySelector('.' + v + '-view');"
+        " return !!el && el.offsetParent !== null; }",
+        arg=view,
+        timeout=15000,
+    )
 
 
 def badge_text(page):
     return page.evaluate(
         f"() => {{ const els = {VISIBLE_SECS};"
         " if (els.length > 1) return 'MULTI';"
-        " return els.length ? els[0].querySelector('.count').textContent.trim() : null; }"
+        " return els.length ? els[0].textContent.trim() : null; }"
     )
 
 
 def wait_badge(page, expected, timeout=15000):
+    show_view(page, "projects")
     page.wait_for_function(
         f"(want) => {{ const els = {VISIBLE_SECS};"
-        " return els.length === 1 && els[0].querySelector('.count').textContent.trim() === want; }",
+        " return els.length === 1 && els[0].textContent.trim() === want; }",
         arg=expected,
         timeout=timeout,
     )
 
 
 def open_project(page, slug, expected):
-    page.evaluate(f"() => {SH}.toggle('{slug}')")
+    show_view(page, "projects")
+    # `toggle` is a TOGGLE: calling it on the already-open project closes it.
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     wait_badge(page, expected)
 
 
@@ -185,8 +213,7 @@ def rows_in_open_project(page):
     """Plain data per visible row — never a DOM handle across the JSON
     boundary, which Playwright's sync `evaluate` cannot round-trip."""
     return page.evaluate(
-        "() => { const li = Array.from(document.querySelectorAll('li.project'))"
-        ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
+        f"() => {{ const li = {OPEN_VIEW}; if (!li) return [];"
         " return Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null)"
         ".map(r => { const mark = r.querySelector('.chg-mark'); const from = r.querySelector('.chg-from');"
         "   return { path: r.querySelector('.chg-name').textContent.trim(),"
@@ -203,8 +230,7 @@ def wait_row_count(page, expected, timeout=8000):
     # here would resolve before the flip, and the very next evaluate would
     # still read the pre-flip (invisible) state (handoffs.md #307).
     page.wait_for_function(
-        "(want) => { const li = Array.from(document.querySelectorAll('li.project'))"
-        ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
+        f"(want) => {{ const li = {OPEN_VIEW};"
         " return !!li && Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length === want; }",
         arg=expected,
         timeout=timeout,
@@ -239,13 +265,16 @@ def main():
 
             # --- scenario 1: collapsed on load; a click renders 5 rows --------
             open_project(page, slug_a, "5")
-            check("no rows rendered while collapsed", len(rows_in_open_project(page)) == 0)
-            page.click(".changes-sec:visible")
+            check(
+                "the Changes view is not what the sidebar shows on load",
+                page.evaluate(f"() => !{OPEN_VIEW}"),
+            )
+            show_view(page, "changes")
             wait_row_count(page, 5)
             rows = rows_in_open_project(page)
             paths = [r["path"] for r in rows]
             check(
-                "one click renders exactly 5 rows, staged group first, git's order within each",
+                "the rail view renders exactly 5 rows, staged group first, git's order within each",
                 # #315 split the flat list in two: the three staged paths
                 # (`A.`/`D.`/`R.`) come first, then the two worktree-only ones —
                 # each group still in git's own emission order.
@@ -285,46 +314,46 @@ def main():
 
             page.screenshot(path=os.path.join(SHOT_DIR, "309-changes-list-2026-07-25.png"))
 
-            # --- scenario 5: the tree and list both scroll on a long list -------
+            # --- scenario 5 DELETED by #317 -------------------------------------
+            # It asserted the file tree and the changes list share the sidebar's
+            # height (tree floor, list below it, both scrolling). They are two
+            # separate rail views now, so that geometry no longer exists; the rail
+            # view's own budget is measured by wb_changes_317.py scenarios 6-7.
             open_project(page, slug_b, "60")
-            page.click(".changes-sec:visible")
+            show_view(page, "changes")
             wait_row_count(page, 60)
-            geom = page.evaluate(
-                "() => { const li = Array.from(document.querySelectorAll('li.project'))"
-                ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
-                " const host = li.querySelector('.wb-host'); const list = li.querySelector('.changes-list');"
-                " return { hostH: host.getBoundingClientRect().height, hostTop: host.getBoundingClientRect().top,"
-                "          listTop: list.getBoundingClientRect().top,"
-                "          hostScrolls: host.scrollHeight > host.clientHeight,"
-                "          listScrolls: list.scrollHeight > list.clientHeight }; }"
+            check(
+                "a 60-row change set scrolls inside the view",
+                page.evaluate(
+                    f"() => {{ const l = {OPEN_VIEW}.querySelector('.changes-list');"
+                    " return l.scrollHeight > l.clientHeight; }"
+                ),
             )
-            check("the file tree keeps its 120px floor", geom["hostH"] >= 120, f"got={geom['hostH']}")
-            check("the list sits below the tree", geom["listTop"] > geom["hostTop"], f"geom={geom}")
-            check("the file tree scrolls", geom["hostScrolls"], f"geom={geom}")
-            check("the changes list scrolls", geom["listScrolls"], f"geom={geom}")
 
             # --- scenario 6: narrow viewport stays usable ------------------------
             page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_function(
-                "() => { const li = Array.from(document.querySelectorAll('li.project'))"
-                ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
-                " const sec = li.querySelector('.changes-sec'); const list = li.querySelector('.changes-list');"
+                f"() => {{ const li = {OPEN_VIEW}; if (!li) return false;"
+                " const list = li.querySelector('.changes-list');"
+                " const head = li.querySelector('.side-head .count');"
                 " const marks = Array.from(list.querySelectorAll('.chg-mark'));"
                 " const paths = Array.from(list.querySelectorAll('.chg-name'));"
-                " return sec.querySelector('.count').offsetParent !== null"
+                " return head.offsetParent !== null"
                 "   && marks.length > 0 && marks.every(m => m.offsetParent !== null)"
                 "   && paths.length > 0 && paths.every(p => p.offsetParent !== null)"
                 "   && list.scrollWidth === list.clientWidth; }",
                 timeout=8000,
             )
-            check("the badge, marks and paths stay visible at 390x844 with no horizontal bleed", True)
+            check("the view's count, marks and paths stay visible at 390x844 with no horizontal bleed", True)
 
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 12
+    # 10, not 12: #317 deleted scenario 5's four tree-and-list geometry
+    # checks and replaced them with one scroll check on the promoted view.
+    ok = all(results) and len(results) >= 10
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES LIST LIVE")
