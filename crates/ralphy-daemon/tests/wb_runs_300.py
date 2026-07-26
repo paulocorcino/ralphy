@@ -64,6 +64,12 @@ STATE_JSON = (
     f" planSection: {SH}.planSection, runsError: {SH}.runsError }})"
 )
 
+STEPS_V1 = [{"text": "first step body", "status": "open"}]
+STEPS_V2 = [
+    {"text": "first step body", "status": "checked"},
+    {"text": "second step body", "status": "open"},
+]
+
 PLAN_V1 = "# Plan for #72\n\n## Steps\n- [ ] first step body\n\n## Verify\ncargo fmt --check\n"
 PLAN_V2 = "# Plan for #72\n\n## Steps\n- [x] first step body\n- [ ] second step body\n\n## Verify\ncargo fmt --check\n"
 
@@ -110,7 +116,8 @@ def empty_env(daemon_dir):
     )
 
 
-def snapshot(runid, phase, issues, active=None):
+def snapshot(runid, phase, issues, active=None, plan_steps=None):
+    plan_steps = STEPS_V1 if plan_steps is None else plan_steps
     return {
         "v": 1,
         "runid": runid,
@@ -125,6 +132,9 @@ def snapshot(runid, phase, issues, active=None):
         "queue": {"total": 3, "order": [71, 72, 73], "stop_before": None},
         "issues": issues,
         "phase": {"active": active, "state": phase, "sleep": None, "final_summary": None},
+        # Steps render from the document since #330, not from a plan.md read;
+        # `plan_steps` mirrors the PLAN_V1/PLAN_V2 text the fixture writes.
+        "plan": {"issue": active, "steps": plan_steps},
     }
 
 
@@ -239,7 +249,10 @@ def main():
 
             # --- scenario 2: the panel advances live --------------------------
             plan_md.write_text(PLAN_V2, encoding="utf-8")
-            doc_a.write_text(json.dumps(snapshot(RUN_A, "executing", trail("executing"), active=72)), encoding="utf-8")
+            doc_a.write_text(
+                json.dumps(snapshot(RUN_A, "executing", trail("executing"), active=72, plan_steps=STEPS_V2)),
+                encoding="utf-8",
+            )
 
             page.wait_for_function(
                 "() => Array.from(document.querySelectorAll('.trail .trail-ic'))"
@@ -259,12 +272,12 @@ def main():
             check("the progress counter reads completed/queue-total", prog == "1/3", f"got={prog!r}")
 
             page.wait_for_function(
-                "() => (document.querySelector('.plan-block-steps .plan-md')?.innerText || '')"
+                "() => (document.querySelector('.plan-block-steps .plan-steps')?.innerText || '')"
                 ".includes('second step body')",
                 timeout=15000,
             )
-            steps = page.locator(".plan-block-steps .plan-md").inner_text()
-            check("the plan viewer picks up the rewritten plan.md", "second step body" in steps, f"got={steps[:80]!r}")
+            steps = page.locator(".plan-block-steps .plan-steps").inner_text()
+            check("the plan viewer picks up the advanced plan", "second step body" in steps, f"got={steps[:80]!r}")
 
             # --- scenario 3: replacement is idempotent ------------------------
             page.wait_for_timeout(600)  # let any in-flight push settle

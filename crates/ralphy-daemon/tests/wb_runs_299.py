@@ -10,7 +10,7 @@ Scenario 1 (two live runs + one dead + one malformed):
   · the run picker lists exactly 2 runs, and both are selectable
   · the issue trail reads ✅ / ⚙️ / ○ for the done / executing / pending issues
   · the run phase label reads "executing #71" and the counter "1/3"
-  · the plan viewer's Steps block carries the repo's real plan.md text
+  · the plan viewer's Steps block carries the run document's plan steps
   · the sleeping run's line reads "waiting for reset ~14:30"
 Scenario 2 (every valid document removed, only the malformed one left):
   · the panel shows the ERROR state, and NOT the "No active runs" empty state
@@ -111,6 +111,15 @@ def snapshot(runid, pid, started_at, phase, issues, sleep=None, active=None):
         "queue": {"total": 3, "order": [71, 72, 73], "stop_before": None},
         "issues": issues,
         "phase": {"active": active, "state": phase, "sleep": sleep, "final_summary": None},
+        # Steps render from the document since #330, not from a plan.md read;
+        # the block mirrors the fixture plan.md this repo carries.
+        "plan": {
+            "issue": active,
+            "steps": [
+                {"text": "first step", "status": "open"},
+                {"text": "second step", "status": "checked"},
+            ],
+        },
     }
 
 
@@ -258,8 +267,8 @@ def main():
             prog = page.locator(".run-select-btn .run-prog").inner_text().strip()
             check("progress counter reads completed/queue-total", prog == "1/3", f"got={prog!r}")
 
-            steps = page.locator(".plan-block-steps .plan-md").inner_text()
-            check("plan viewer's Steps block carries the repo's plan.md", "first step" in steps, f"got={steps[:80]!r}")
+            steps = page.locator(".plan-block-steps .plan-steps").inner_text()
+            check("plan viewer's Steps block carries the run's plan steps", "first step" in steps, f"got={steps[:80]!r}")
 
             page.screenshot(path=os.path.join(SHOT_DIR, "299-runs-panel-2026-07-24.png"))
 
