@@ -13,7 +13,7 @@ Scenario 3  a daemon-spawned run in A exits and the badge refreshes `1` -> `2`
 Scenario 4  a run finishing in project B (not open) leaves A's badge at `2` —
             and B's own count proves that run really did land
 Scenario 5  manual refresh still works, and the move is bound to the click
-Scenario 6  the count stays scoped — 2 sections in the DOM, 1 visible
+Scenario 6  the count stays scoped — 2 badges in the DOM, 1 visible
 
 The trigger is a REAL `ralphy run` in a remote-less fixture repo: it fails fast
 (`no git remotes found`, ~1s) and that exit is the nudge. `RALPHY_EXE_OVERRIDE`
@@ -139,19 +139,23 @@ def launch(daemon_dir):
     )
 
 
+# #317 promoted the Changes section to a rail view and moved its count onto
+# the Projects row. The nudge's subject is unchanged: this is still the OPEN
+# project's count, and every other project's badge is hidden with its row.
 VISIBLE_SECS = (
-    "Array.from(document.querySelectorAll('.changes-sec')).filter(e => e.offsetParent !== null)"
+    "Array.from(document.querySelectorAll('li.project .chg-badge'))"
+    ".filter(e => e.offsetParent !== null)"
 )
 
 
 def badge_text(page):
-    """The count of the OPEN project's Changes section. Every other project's
-    section is `x-show`-hidden; returning `MULTI` when more than one is visible
-    keeps a scoping regression from reading as a passing count."""
+    """The OPEN project's change count, on its Projects row. Every other
+    project's row is hidden while one is open; returning `MULTI` when more than
+    one badge is visible keeps a scoping regression from reading as a pass."""
     return page.evaluate(
         f"() => {{ const els = {VISIBLE_SECS};"
         " if (els.length > 1) return 'MULTI';"
-        " return els.length ? els[0].querySelector('.count').textContent.trim() : null; }"
+        " return els.length ? els[0].textContent.trim() : null; }"
     )
 
 
@@ -160,7 +164,7 @@ def wait_badge(page, expected, timeout=15000):
     # visible to the very next read (KNOWLEDGE.md / #307).
     page.wait_for_function(
         f"(want) => {{ const els = {VISIBLE_SECS};"
-        " return els.length === 1 && els[0].querySelector('.count').textContent.trim() === want; }",
+        " return els.length === 1 && els[0].textContent.trim() === want; }",
         arg=expected,
         timeout=timeout,
     )
@@ -322,11 +326,11 @@ def main():
             # --- scenario 6: the count stays scoped --------------------------
             # Both projects have a section in the DOM; exactly one is visible.
             secs = page.evaluate(
-                f"() => ({{ all: document.querySelectorAll('.changes-sec').length,"
+                f"() => ({{ all: document.querySelectorAll('li.project .chg-badge').length,"
                 f" visible: {VISIBLE_SECS}.length }})"
             )
             check(
-                "both projects hold a section but only the open one shows",
+                "both projects hold a badge but only the open one shows",
                 secs["all"] == 2 and secs["visible"] == 1,
                 f"got={secs}",
             )

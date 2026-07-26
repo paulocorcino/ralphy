@@ -2,11 +2,14 @@
 
 One Playwright pass over a REAL daemon proving the count is the repo's own
 working-tree change set, visible without a click, scoped to the open project.
+#317 promoted the Changes section to a rail view; the count moved with it onto
+the Projects row, which is what every badge read below now targets.
 
 Scenario 1  opening a project shows its Changes count (literal `3`), no click
 Scenario 2  a clean repo reads `0` and carries the quiet `zero` class
-Scenario 3  the section sits BELOW the file tree inside the same open project
-Scenario 4  no new rail icon and no tab switcher was introduced
+Scenario 3  (deleted by #317 — the section it measured no longer exists)
+Scenario 4  the rail IS the switcher: 5 buttons, and still no tab strip in the
+            sidebar
 Scenario 5  switching projects re-scopes the count (`3` -> `1`)
 Scenario 6  a 4th file written from OUTSIDE the browser + `.side-refresh`
             reloads the count (`3` -> `4`)
@@ -146,32 +149,34 @@ def launch(daemon_dir):
 
 
 VISIBLE_SECS = (
-    "Array.from(document.querySelectorAll('.changes-sec')).filter(e => e.offsetParent !== null)"
+    "Array.from(document.querySelectorAll('li.project .chg-badge'))"
+    ".filter(e => e.offsetParent !== null)"
 )
 
 
 def badge_text(page):
-    """The count of the OPEN project's Changes section. Every other project's
-    section is `x-show`-hidden; returning `MULTI` when more than one is visible
-    keeps a scoping regression from reading as a passing count."""
+    """The OPEN project's change count, on its Projects row (#317). Every other
+    project's row is hidden while one is open; returning `MULTI` when more than
+    one badge is visible keeps a scoping regression from reading as a pass."""
     return page.evaluate(
         f"() => {{ const els = {VISIBLE_SECS};"
         " if (els.length > 1) return 'MULTI';"
-        " return els.length ? els[0].querySelector('.count').textContent.trim() : null; }"
+        " return els.length ? els[0].textContent.trim() : null; }"
     )
 
 
 def wait_badge(page, expected, timeout=15000):
     page.wait_for_function(
         f"(want) => {{ const els = {VISIBLE_SECS};"
-        " return els.length === 1 && els[0].querySelector('.count').textContent.trim() === want; }",
+        " return els.length === 1 && els[0].textContent.trim() === want; }",
         arg=expected,
         timeout=timeout,
     )
 
 
 def open_project(page, slug, expected):
-    page.evaluate(f"() => {SH}.toggle('{slug}')")
+    # `toggle` is a TOGGLE: calling it on the already-open project closes it.
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     wait_badge(page, expected)
 
 
@@ -210,34 +215,21 @@ def main():
             open_project(page, slug_a, "3")
             check("the open project's Changes count reads 3", badge_text(page) == "3")
             visible = page.evaluate(
-                "() => { const el = Array.from(document.querySelectorAll('.changes-sec'))"
-                ".find(e => e.offsetParent !== null);"
-                " return !!el && el.querySelector('.count').offsetParent !== null; }"
+                f"() => {{ const el = {VISIBLE_SECS}[0];"
+                " return !!el && el.offsetParent !== null"
+                "   && !!el.closest('li.project').querySelector('.wb-host'); }"
             )
-            check("the badge is visible with no click on the section", visible)
-            chevs = page.evaluate(
-                "() => { const el = Array.from(document.querySelectorAll('.changes-sec'))"
-                ".find(e => e.offsetParent !== null); return el.querySelectorAll('.chg-chev').length; }"
-            )
-            check("the section header carries the expand affordance (#309)", chevs == 1, f"chevs={chevs}")
+            check("the badge is visible on the project row, with no click", visible)
 
-            # --- scenario 3: it sits below the file tree ----------------------
-            geom = page.evaluate(
-                "() => { const li = Array.from(document.querySelectorAll('li.project'))"
-                ".find(e => e.querySelector('.changes-sec') && e.querySelector('.changes-sec').offsetParent !== null);"
-                " const host = li.querySelector('.wb-host'); const sec = li.querySelector('.changes-sec');"
-                " return { host: host.getBoundingClientRect().top, sec: sec.getBoundingClientRect().top,"
-                "          sameLi: li.contains(host) && li.contains(sec) }; }"
-            )
-            check(
-                "the Changes section sits below the tree in the same open project",
-                geom["sameLi"] and geom["sec"] > geom["host"],
-                f"host={geom['host']} sec={geom['sec']}",
-            )
+            # --- scenario 3 DELETED by #317 -----------------------------------
+            # It asserted the Changes section sits below the file tree inside the
+            # open project's accordion row. #317 removed that section; keeping the
+            # scenario alive by re-pointing it would assert a layout the design no
+            # longer has.
 
-            # --- scenario 4: no new rail icon, no tab switcher ----------------
+            # --- scenario 4 INVERTED by #317: the rail IS the switcher --------
             rail = page.evaluate("() => document.querySelectorAll('nav.rail button').length")
-            check("the rail still holds exactly 4 buttons", rail == 4, f"got={rail}")
+            check("the rail now holds 5 buttons — Changes joined it", rail == 5, f"got={rail}")
             tabs = page.evaluate("() => document.querySelectorAll('aside.side .tab').length")
             check("the sidebar introduces no tab switcher", tabs == 0, f"got={tabs}")
 
@@ -251,8 +243,7 @@ def main():
             open_project(page, slug_c, "0")
             check("a clean repo's count reads 0", badge_text(page) == "0")
             quiet = page.evaluate(
-                "() => { const el = Array.from(document.querySelectorAll('.changes-sec'))"
-                ".find(e => e.offsetParent !== null); return el.querySelector('.count').classList.contains('zero'); }"
+                f"() => {VISIBLE_SECS}[0].classList.contains('zero')"
             )
             check("the zero badge carries the quiet `zero` class", quiet)
             # A FAILED read must not be indistinguishable from this clean tree:
@@ -267,7 +258,7 @@ def main():
             page.evaluate(f"() => {SH}.loadChanges('{slug_c}')")
             wait_badge(page, "—")
             failed = page.evaluate(
-                f"() => {{ const el = {VISIBLE_SECS}[0].querySelector('.count');"
+                f"() => {{ const el = {VISIBLE_SECS}[0];"
                 " return { text: el.textContent.trim(), zero: el.classList.contains('zero'),"
                 "          title: el.getAttribute('title') }; }"
             )
@@ -283,9 +274,15 @@ def main():
             )
             page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
 
-            page.evaluate(f"() => {SH}.toggle('{slug_c}')")
-            page.wait_for_function(f"() => {VISIBLE_SECS}.length === 0", timeout=8000)
-            check("closing the clean project hides its section", badge_text(page) is None)
+            page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_c)
+            # With no project open every row shows again, and each of the three
+            # carries the badge of the count that WAS read for it (A=3, B=1,
+            # C=`—` from the stub above) — the count is per project, never one
+            # aggregate.
+            page.wait_for_function(
+                f"() => {VISIBLE_SECS}.length === 3", timeout=8000
+            )
+            check("closing the clean project un-scopes the count", badge_text(page) == "MULTI")
 
             # --- scenario 6: manual refresh reloads the count -----------------
             open_project(page, slug_a, "3")
@@ -306,7 +303,9 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 15
+    # 14, not #309's 15: #317 deleted scenario 3 (the section below the tree) and
+    # the chevron check with it — the affordances they measured no longer exist.
+    ok = all(results) and len(results) >= 14
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES COUNT LIVE")
