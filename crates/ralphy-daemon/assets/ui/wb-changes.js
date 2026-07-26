@@ -188,7 +188,10 @@
     const count = counts && counts[slug];
     const error = errors && errors[slug];
     if (error) return { show: true, text: "—", zero: false, title: String(error) };
-    if (typeof count !== "number") return { show: false };
+    // `text` is empty rather than absent: Alpine's `x-text` assigns whatever it
+    // gets straight to `textContent`, so `undefined` here would put the literal
+    // word "undefined" inside every unread row's (hidden) badge.
+    if (typeof count !== "number") return { show: false, text: "", zero: false, title: "" };
     return { show: true, text: String(count), zero: count === 0, title: count + " changed" };
   }
 

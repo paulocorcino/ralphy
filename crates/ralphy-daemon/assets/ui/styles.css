@@ -1224,6 +1224,12 @@ body.runs-open .runs {
   opacity: 0.4;
   cursor: default;
 }
+/* …and it must not keep signalling clickable while inert — the same idiom
+   as `.branch-chip.disabled:hover`. */
+.chg-toolbar .head-act:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
 .side-empty {
   padding: 0.8rem;
   color: var(--text-muted);

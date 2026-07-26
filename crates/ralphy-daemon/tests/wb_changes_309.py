@@ -351,9 +351,9 @@ def main():
     finally:
         stop(proc)
 
-    # 10, not 12: #317 deleted scenario 5's four tree-and-list geometry
-    # checks and replaced them with one scroll check on the promoted view.
-    ok = all(results) and len(results) >= 10
+    # 12, the ACTUAL count: #317 deleted scenario 5's four tree-and-list
+    # geometry checks and replaced them with one scroll check on the view.
+    ok = all(results) and len(results) >= 12
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES LIST LIVE")

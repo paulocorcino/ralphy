@@ -19,7 +19,9 @@ Scenario 4  clicking a `.chg-row` still opens the diff as a canvas tab
 Scenario 5  the accordion is gone: no `.changes-sec`, no `li.project
             .changes-list`
 Scenario 6  1440x900 over 60 changes: the toolbar and the message box stay
-            inside the sidebar and the list scrolls instead of pushing them out
+            inside the sidebar, keep a usable height, and the list scrolls
+            instead of pushing them out — plus the same at a 160px sidebar,
+            since `--side-w` is a fixed track no viewport width reflows
 Scenario 7  the same at 390x844 (a phone width)
 
 Boots a Localhost daemon on 7417 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
@@ -271,6 +273,54 @@ BADGE_EXPR = (
 )
 
 
+# Squeezing the sidebar in a browser test is a `--side-w` override plus a ~400ms
+# wait (the `grid-template-columns` transition is 0.2s). 160px, not 320: the
+# default is 300px, so any "too narrow" assertion at 320 passes vacuously.
+SQUEEZED_SIDE_W = "160px"
+
+
+def squeeze_read(page):
+    """Toolbar/compose geometry at a 160px sidebar, restoring the width after."""
+    page.evaluate(
+        "(w) => document.documentElement.style.setProperty('--side-w', w)",
+        arg=SQUEEZED_SIDE_W,
+    )
+    page.wait_for_timeout(400)
+    box = page.evaluate(
+        f"() => {{ const v = {VIEW}; const side = document.querySelector('.side');"
+        " const r = (sel) => { const e = v.querySelector(sel);"
+        "   if (!e || e.offsetParent === null) return null;"
+        "   const b = e.getBoundingClientRect();"
+        "   return { left: b.left, right: b.right, width: b.width, height: b.height }; };"
+        " const sb = side.getBoundingClientRect();"
+        " return { side: { left: sb.left, right: sb.right, width: sb.width },"
+        "   toolbar: r('.chg-toolbar'), compose: r('.chg-compose'), msg: r('.chg-msg'),"
+        "   sideBleed: side.scrollWidth - side.clientWidth }; }"
+    )
+    page.evaluate("() => document.documentElement.style.removeProperty('--side-w')")
+    page.wait_for_timeout(400)
+    return box
+
+
+def squeezed_ok(page):
+    b = squeeze_read(page)
+    if not all(b[k] for k in ("toolbar", "compose", "msg")):
+        return False
+    # The squeeze must be REAL (the whole point of 160 over 320), the strips must
+    # stay inside the sidebar's box horizontally, and the message box must keep a
+    # usable height rather than collapsing to a hairline.
+    return (
+        b["side"]["width"] < 200
+        and b["toolbar"]["right"] <= b["side"]["right"] + 0.5
+        and b["compose"]["right"] <= b["side"]["right"] + 0.5
+        and b["compose"]["left"] >= b["side"]["left"] - 0.5
+        and b["msg"]["width"] > 0
+        and b["msg"]["height"] >= 24
+        and b["toolbar"]["height"] >= 24
+        and b["sideBleed"] == 0
+    )
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -340,6 +390,51 @@ def main():
                 back["projects"] and not back["changes"],
                 f"got={back}",
             )
+
+            # The collapse gesture `showSideView` inherits from the pre-#317
+            # `toggleSide`: the rail button of the view ALREADY showing closes the
+            # sidebar. `offsetParent` cannot see this — the shell collapses with a
+            # 0px grid track and `overflow: hidden` (styles.css `body
+            # .side-collapsed`), never `display: none` — so the oracle is the
+            # sidebar's measured WIDTH, which is what a dropped `sideOpen = true`
+            # would leave at 0.
+            def side_state():
+                return page.evaluate(
+                    "() => ({ collapsed: document.body.classList.contains('side-collapsed'),"
+                    " width: document.querySelector('.side').getBoundingClientRect().width })"
+                )
+
+            before = side_state()
+            page.click(RAIL_PROJECTS)  # Projects is showing → this collapses
+            # The collapsed track is 0px but `.side` keeps its 1px right border,
+            # so the floor is <= 1, never == 0.
+            page.wait_for_function(
+                "() => document.querySelector('.side').getBoundingClientRect().width <= 1"
+                " && document.body.classList.contains('side-collapsed')",
+                timeout=8000,
+            )
+            collapsed = side_state()
+            check(
+                "clicking the showing view's rail button collapses the sidebar",
+                before["width"] > 100 and collapsed["collapsed"] and collapsed["width"] <= 1,
+                f"before={before} after={collapsed}",
+            )
+            page.click(RAIL_CHANGES)  # the OTHER view → re-opens, showing Changes
+            page.wait_for_function(
+                "() => document.querySelector('.side').getBoundingClientRect().width > 100"
+                " && !document.body.classList.contains('side-collapsed')",
+                timeout=8000,
+            )
+            reopened = page.evaluate(
+                f"() => ({{ width: document.querySelector('.side').getBoundingClientRect().width,"
+                f" changes: !!{VIEW} && {VIEW}.offsetParent !== null }})"
+            )
+            check(
+                "…and the other view's button re-opens it onto that view",
+                reopened["width"] > 100 and reopened["changes"],
+                f"got={reopened}",
+            )
+            show_projects(page)
 
             # --- scenario 2: the view is scoped to the OPEN project ------------
             open_changes(page, slug_a)
@@ -566,10 +661,30 @@ def main():
                     and box["scrollHeight"] > box["clientHeight"],
                     f"clientHeight={box['clientHeight']} scrollHeight={box['scrollHeight']}",
                 )
+                # A strip squeezed to a hairline still satisfies `bottom <=
+                # side.bottom`, so the containment checks above need a floor.
+                check(
+                    f"[{label}] …without squeezing the toolbar or the message box flat",
+                    ok
+                    and box["toolbar"]["height"] >= 24
+                    and box["msg"]["height"] >= 24,
+                    f"toolbar={box['toolbar']} msg={box['msg']}",
+                )
                 check(
                     f"[{label}] …with no horizontal bleed",
                     box["scrollWidth"] == box["clientWidth"],
                     f"scrollWidth={box['scrollWidth']} clientWidth={box['clientWidth']}",
+                )
+                # Neither viewport changes the sidebar's own WIDTH: `--side-w` is a
+                # fixed 300px track and styles.css has no `@media`, so the two legs
+                # above vary only the vertical budget. The toolbar and the message
+                # box are horizontal strips, so their real risk is a narrow
+                # sidebar — measured here with the repo's own squeeze technique
+                # (wb_changes_315.py), at 160px, which IS narrower than the default.
+                check(
+                    f"[{label}] the toolbar and message box hold at a 160px sidebar",
+                    squeezed_ok(page),
+                    f"got={squeeze_read(page)}",
                 )
                 page.screenshot(
                     path=os.path.join(SHOT_DIR, f"317-changes-rail-{label}-2026-07-25.png")
@@ -584,7 +699,9 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 16
+    # The floor is the ACTUAL count, not a loose lower bound: a slack floor
+    # lets assertions vanish silently and still print the banner.
+    ok = all(results) and len(results) >= 35
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES RAIL LIVE")

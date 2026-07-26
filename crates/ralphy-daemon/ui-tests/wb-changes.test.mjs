@@ -432,7 +432,24 @@ test("foldSync stays pure (#316)", () => {
 // #317 — the Projects-view per-project indicator. One slug in, one badge out:
 // an aggregate over every registered repo is structurally impossible here.
 test("projectBadge hides itself for a slug nobody read (#317)", () => {
-  assert.deepEqual(load().projectBadge({}, {}, "a"), { show: false });
+  // `text: ""`, never absent — `x-text` writes `undefined` into the DOM verbatim.
+  assert.deepEqual(load().projectBadge({}, {}, "a"), {
+    show: false,
+    text: "",
+    zero: false,
+    title: "",
+  });
+});
+
+test("projectBadge cannot aggregate across repos (#317)", () => {
+  const projectBadge = load().projectBadge;
+  const counts = { a: 2, b: 3 };
+  // The anti-aggregate property as a unit assertion: a many-entry map must still
+  // answer per slug. A regression to `sum(Object.values(counts))` reads 5 here.
+  assert.equal(projectBadge(counts, {}, "a").text, "2");
+  assert.equal(projectBadge(counts, {}, "b").text, "3");
+  // …and a slug absent from a POPULATED map still claims nothing.
+  assert.equal(projectBadge(counts, {}, "c").show, false);
 });
 
 test("projectBadge shows an em dash, never a zero, for a failed read (#317)", () => {
