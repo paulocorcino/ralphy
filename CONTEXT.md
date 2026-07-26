@@ -85,6 +85,22 @@ carrying their own reason as prose; git's error string is never relayed and no
 merge or rebase is ever started.
 _Avoid_: sync, remote state, tracking info.
 
+**Working-tree operations**:
+The acts that move a path across the **Change set**'s two sides and the one that
+records them: **stage**, **unstage**, **commit**. Owned by
+`ralphy_core::worktree` — a sibling of `ralphy_core::sync`, not part of it: the
+upstream relation and the working tree are different questions. Every refusal is
+a VALUE carrying its own prose, never an `Err` and never git's error string:
+staging a path the change set does not name, committing with nothing staged, and
+committing with an empty message are all ANSWERS to a reasonable question. An
+`Err` is reserved for a real failure — git missing, an unconfigured
+`user.email`, a repo that cannot be read. The change set is the single
+definition of what may be acted on (both paths of a rename count), git is
+invoked with `--literal-pathspecs` so no filename is ever re-read as a pattern,
+and `commit` decides before it writes: no path that returns a refusal has run
+`git commit`.
+_Avoid_: add, index write, save, checkpoint.
+
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
 Code, Codex, Kimi, and OpenCode), behind the core's agent contract. Each
