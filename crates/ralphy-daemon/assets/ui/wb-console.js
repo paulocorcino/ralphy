@@ -38,21 +38,26 @@ window.WBConsole = (function () {
   // a restarted daemon hands out ids from 1 again, so keying on it (as the
   // retired geometry store did) leaves records pointing at sessions that no
   // longer exist. The array is capped so it cannot grow without bound.
-  const DESK_KEY = "wb.desk.v1";
+  // The desk lives in the DAEMON (`GET`/`PUT /api/desk`, ADR-0050), not the
+  // browser: a workbench session survives the browser, so its window must too.
+  // `desk` is the in-memory mirror and the SYNCHRONOUS source of truth, which is
+  // what keeps `persistWin`/`forgetRecord`/`deskOf` callable from a mousemove.
   const DESK_MAX = 24;
-  // The store this one replaces. Dropped once at load so orphaned entries don't
-  // linger in operators' browsers.
-  try {
-    localStorage.removeItem("wb.console.geometry.v1");
-  } catch {}
+  let desk = [];
+  // Resolves once the daemon's desk has landed in `desk`; `restoreDesk` awaits
+  // it before reconciling. Never rejects — an unreachable daemon means an empty
+  // desk, the same verdict a fresh browser used to reach.
+  const deskReady = window.WBMode?.isDaemon()
+    ? fetch("/api/desk")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((v) => {
+          desk = Array.isArray(v) ? v : [];
+        })
+        .catch(() => {})
+    : Promise.resolve();
 
   function loadDesk() {
-    try {
-      const v = JSON.parse(localStorage.getItem(DESK_KEY));
-      return Array.isArray(v) ? v : [];
-    } catch {
-      return [];
-    }
+    return desk.slice();
   }
   // Keep the `max` newest records by `ts`, preserving layout order (the order
   // decides which record wins a contended session in `reconcileDesk`). `live`
@@ -71,9 +76,25 @@ window.WBConsole = (function () {
   }
   function saveDesk(records) {
     const live = new Set([...wins].map((w) => w._deskId));
-    try {
-      localStorage.setItem(DESK_KEY, JSON.stringify(pruneDesk(records, DESK_MAX, live)));
-    } catch {}
+    desk = pruneDesk(records, DESK_MAX, live);
+    scheduleDeskFlush();
+  }
+  // The upload, debounced and fire-and-forget. INVARIANT: no drag, resize, close
+  // or `persistWin` path may await or throw on this — a refused PUT costs a stale
+  // position and the next mutation supersedes it (last write wins, no ETag).
+  let deskFlush = null;
+  function scheduleDeskFlush() {
+    if (!window.WBMode?.isDaemon()) return;
+    clearTimeout(deskFlush);
+    deskFlush = setTimeout(() => {
+      try {
+        fetch("/api/desk", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(desk),
+        }).catch(() => {});
+      } catch {}
+    }, 250);
   }
   function newDeskId() {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
@@ -799,9 +820,13 @@ window.WBConsole = (function () {
   // must not relaunch anything or show phantom placeholders.
   function restoreDesk() {
     if (!window.WBMode?.isDaemon()) return;
-    fetch("/api/sessions")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("sessions unavailable"))))
-      .then((sessions) => {
+    Promise.all([
+      deskReady,
+      fetch("/api/sessions").then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error("sessions unavailable")),
+      ),
+    ])
+      .then(([, sessions]) => {
         for (const { record, session, action } of reconcileDesk({
           layout: loadDesk(),
           sessions,

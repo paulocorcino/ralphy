@@ -341,6 +341,13 @@ def open_console(page, slug):
     return win
 
 
+def desk_records(page):
+    """The saved desk, read from the DAEMON — issue #327 moved the store out of
+    the browser. Settles past the shell's 250 ms upload debounce first."""
+    page.wait_for_timeout(400)
+    return page.request.get(BASE + "api/desk").json()
+
+
 def rect_of(page, index):
     return page.evaluate(
         "(i) => { const w = document.querySelectorAll('.session-window')[i];"
@@ -531,7 +538,7 @@ def main():
             page.locator(".session-window").nth(1).locator(".session-max").click()
             page.wait_for_timeout(400)
             before = [rect_of(page, 0), rect_of(page, 1)]
-            records = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            records = desk_records(page)
             check("the desk store holds one record per window", len(records) == 2, f"got={records}")
             keys = sorted(records[0].keys())
             check(
@@ -615,7 +622,7 @@ def main():
             page.locator(".session-window").nth(1).locator(".session-max").click()
             page.wait_for_timeout(400)
 
-            after_recs = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            after_recs = desk_records(page)
             check(
                 "…under the SAME window ids (attach, not adopt)",
                 [r["id"] for r in after_recs] == [r["id"] for r in records],
@@ -626,7 +633,7 @@ def main():
             gone = after_recs[1]["id"]
             page.locator(".session-window").nth(1).locator(".session-close").click()
             page.wait_for_timeout(900)
-            left_recs = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            left_recs = desk_records(page)
             check(
                 "closing a window drops its desk record",
                 [r["id"] for r in left_recs] == [after_recs[0]["id"]],
@@ -638,14 +645,22 @@ def main():
             # repo has no owned configuration root: the daemon refuses the launch
             # with 400 BEFORE any spawn, so the reconnect path is exercised
             # end-to-end without starting a vendor CLI or spending quota.
-            console_rec = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")[0]
-            page.evaluate(
-                "([slug, rect]) => { const recs = JSON.parse(localStorage.getItem('wb.desk.v1'));"
-                " recs.push({ id: 'w-seeded-gemini', repo: slug, agent: 'gemini', kind: 'agent',"
-                "   rect, max: false, sessionId: 999, ts: Date.now() });"
-                " localStorage.setItem('wb.desk.v1', JSON.stringify(recs)); }",
-                [slug, {"left": 420, "top": 120, "width": 460, "height": 300}],
-            )
+            console_rec = desk_records(page)[0]
+            # Seeded through the daemon; the shell picks it up on the reload
+            # that the restart below forces (issue #327).
+            seeded = desk_records(page) + [
+                {
+                    "id": "w-seeded-gemini",
+                    "repo": slug,
+                    "agent": "gemini",
+                    "kind": "agent",
+                    "rect": {"left": 420, "top": 120, "width": 460, "height": 300},
+                    "max": False,
+                    "sessionId": 999,
+                    "ts": int(time.time() * 1000),
+                }
+            ]
+            page.request.put(BASE + "api/desk", data=seeded)
 
             stop(proc)
             proc = launch(daemon_dir)
@@ -714,7 +729,7 @@ def main():
             )
             check(
                 "the relaunched console is a NEW session, under the SAME window id",
-                page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")[0]["id"]
+                desk_records(page)[0]["id"]
                 == console_rec["id"],
                 "",
             )
@@ -736,7 +751,7 @@ def main():
                 and page.locator(".session-window").nth(1).locator(".xterm").count() == 1,
                 f"placeholders={page.locator('.session-window.placeholder').count()}",
             )
-            reconnected = page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")
+            reconnected = desk_records(page)
             check(
                 "…reusing the placeholder's record and rectangle",
                 reconnected[1]["id"] == "w-seeded-gemini"
@@ -775,7 +790,7 @@ def main():
                 )
                 check(
                     "…leaving the saved desk intact for the next load",
-                    len(page.evaluate("() => JSON.parse(localStorage.getItem('wb.desk.v1'))")) == 2,
+                    len(desk_records(page)) == 2,
                     "",
                 )
                 page.unroute("**/api/sessions")
