@@ -655,6 +655,7 @@ fn start_delivery(
             runstate::RunState::new(title.to_string(), queue_len),
             repo_root.to_path_buf(),
             obs.snapshot_queue.clone(),
+            ws.plan_path(),
         )
     });
 

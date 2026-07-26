@@ -6,9 +6,12 @@
 //! unit-tested like the CloudEvents envelope mapper and the fold itself; the
 //! writing lives in `run::snapshot_engine`.
 
-use ralphy_run_snapshot::{IssueBlock, PhaseBlock, QueueBlock, RunSnapshot, SleepBlock};
+use ralphy_run_snapshot::{
+    IssueBlock, PhaseBlock, PlanBlock, PlanStepBlock, QueueBlock, RunSnapshot, SleepBlock,
+};
 
 use super::{IssueStatus, RunState};
+use crate::plan_progress::PlanProgress;
 
 /// The run facts the fold does not carry: identity, where it runs, and when it
 /// started. Constant for the life of a run.
@@ -32,7 +35,10 @@ pub struct SnapshotCtx {
 /// folded entries carry their status, queue entries never entered carry
 /// `"pending"` — so the panel's trail shows queued issues without the browser
 /// merging anything.
-pub fn project(ctx: &SnapshotCtx, state: &RunState) -> RunSnapshot {
+///
+/// `plan` arrives as an argument rather than out of [`RunState`]: it is polled
+/// from the filesystem, and the fold is built from `tracing` events only (#330).
+pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunSnapshot {
     RunSnapshot {
         v: ralphy_run_snapshot::SNAPSHOT_VERSION,
         runid: ctx.runid.clone(),
@@ -59,6 +65,28 @@ pub fn project(ctx: &SnapshotCtx, state: &RunState) -> RunSnapshot {
             }),
             final_summary: state.final_summary.clone(),
         },
+        plan: plan_block(plan, state),
+    }
+}
+
+/// The plan block, keyed to the active issue: a plan armed for a DIFFERENT issue
+/// (the previous one's, still on disk between issues) projects as absent. The
+/// second, independent guard after the engine's arming — a mismatched plan shown
+/// as the active issue's is the lie this keying exists to prevent (#330).
+fn plan_block(plan: &PlanProgress, state: &RunState) -> PlanBlock {
+    if plan.issue.is_none() || plan.issue != state.active {
+        return PlanBlock::default();
+    }
+    PlanBlock {
+        issue: plan.issue,
+        steps: plan
+            .steps
+            .iter()
+            .map(|s| PlanStepBlock {
+                text: s.text.clone(),
+                status: s.status.wire().to_string(),
+            })
+            .collect(),
     }
 }
 
@@ -177,7 +205,7 @@ mod tests {
 
     #[test]
     fn project_merges_queue_order_with_folded_statuses() {
-        let snap = project(&ctx(), &two_of_three());
+        let snap = project(&ctx(), &two_of_three(), &PlanProgress::default());
         assert_eq!(
             snap.issues
                 .iter()
@@ -212,7 +240,7 @@ mod tests {
             reset: "14:30".into(),
             target_epoch: 1_700_000_000,
         });
-        let snap = project(&ctx(), &state);
+        let snap = project(&ctx(), &state, &PlanProgress::default());
         assert_eq!(snap.phase.state, "sleeping");
         let sleep = snap.phase.sleep.expect("a sleep block");
         assert_eq!(sleep.reset.as_deref(), Some("14:30"));
@@ -236,7 +264,7 @@ mod tests {
             label: None,
             blockers: vec![7],
         });
-        let snap = project(&ctx(), &state);
+        let snap = project(&ctx(), &state, &PlanProgress::default());
         assert_eq!(snap.issues[0].status, "skipped");
         assert_eq!(snap.issues[0].kind.as_deref(), Some("blocked_by"));
         assert_eq!(snap.issues[0].blocked_by, vec![7]);
@@ -250,10 +278,60 @@ mod tests {
             number: 71,
             title: "forced".into(),
         });
-        let snap = project(&ctx(), &state);
+        let snap = project(&ctx(), &state, &PlanProgress::default());
         assert_eq!(snap.issues.len(), 1);
         assert_eq!(snap.issues[0].number, 71);
         assert_eq!(snap.issues[0].status, "planning");
+    }
+
+    #[test]
+    fn plan_block_carries_steps_and_issue() {
+        // #2 is the active issue in `two_of_three()`.
+        let plan = PlanProgress {
+            issue: Some(2),
+            steps: crate::plan_progress::parse_steps("- [ ] first step\n- [x] second step\n"),
+        };
+        let snap = project(&ctx(), &two_of_three(), &plan);
+        assert_eq!(snap.plan.issue, Some(2));
+        assert_eq!(snap.plan.steps.len(), 2);
+        assert_eq!(snap.plan.steps[0].text, "first step");
+        assert_eq!(snap.plan.steps[0].status, "open");
+        assert_eq!(snap.plan.steps[1].status, "checked");
+    }
+
+    #[test]
+    fn a_previous_issues_plan_is_not_projected() {
+        // Between issues `plan.md` still holds #1's plan; #2 is active. Without the
+        // keying guard #1's steps would surface as #2's progress.
+        let plan = PlanProgress {
+            issue: Some(1),
+            steps: crate::plan_progress::parse_steps("- [x] previous issue's step\n"),
+        };
+        let snap = project(&ctx(), &two_of_three(), &plan);
+        assert_eq!(snap.plan, ralphy_run_snapshot::PlanBlock::default());
+        assert_eq!(snap.plan.issue, None);
+        assert!(snap.plan.steps.is_empty());
+    }
+
+    /// The closed-vocabulary gate for step statuses, the sibling of
+    /// [`every_issue_status_is_known_to_the_runs_panel`]: the document ships
+    /// `plan.steps[].status` as a string with no compiler between it and the panel.
+    #[test]
+    fn every_step_status_is_known_to_the_runs_panel() {
+        use crate::plan_progress::StepStatus;
+        const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.js");
+        let all = [StepStatus::Open, StepStatus::Checked, StepStatus::Noticed];
+        for status in all {
+            // Exhaustiveness guard: a new variant stops this match compiling.
+            match status {
+                StepStatus::Open | StepStatus::Checked | StepStatus::Noticed => {}
+            }
+            let wire = status.wire();
+            assert!(
+                PANEL.contains(&format!("{wire}: \"")),
+                "wb-runs.js STEP_GLYPH/STEP_LABEL has no `{wire}` key — the panel would fall back to open"
+            );
+        }
     }
 
     /// Every `IssueStatus`, with an exhaustiveness guard: a new variant stops
@@ -320,8 +398,8 @@ mod tests {
         // filesystem hides in the projection.
         let state = two_of_three();
         let ctx = ctx();
-        let a = serde_json::to_string(&project(&ctx, &state)).unwrap();
-        let b = serde_json::to_string(&project(&ctx, &state)).unwrap();
+        let a = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
+        let b = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
         assert_eq!(a, b);
     }
 }

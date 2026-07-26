@@ -23,6 +23,7 @@ mod install;
 mod issues;
 mod models;
 mod mutate;
+mod plan_progress;
 mod pricing;
 mod run;
 mod runlock;

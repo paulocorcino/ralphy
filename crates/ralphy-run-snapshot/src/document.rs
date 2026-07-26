@@ -46,6 +46,31 @@ pub struct RunSnapshot {
     pub issues: Vec<IssueBlock>,
     #[serde(default)]
     pub phase: PhaseBlock,
+    /// The active issue's plan steps, so the panel renders accumulated progress
+    /// instead of re-deriving it from an event feed (ADR-0047 §A1).
+    #[serde(default)]
+    pub plan: PlanBlock,
+}
+
+/// The plan the run is working, keyed by the issue it belongs to: between issues
+/// `plan.md` still holds the PREVIOUS issue's plan, so a reader that trusted the
+/// steps alone would attribute them to the wrong issue (ADR-0047 §A3).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlanBlock {
+    #[serde(default)]
+    pub issue: Option<u64>,
+    #[serde(default)]
+    pub steps: Vec<PlanStepBlock>,
+}
+
+/// One checkbox step: its normalized identity text and its `open`/`checked`/
+/// `noticed` status — the same vocabulary the `plan.step` events ship.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlanStepBlock {
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -115,6 +140,7 @@ impl Default for RunSnapshot {
             queue: QueueBlock::default(),
             issues: Vec::new(),
             phase: PhaseBlock::default(),
+            plan: PlanBlock::default(),
         }
     }
 }
@@ -148,6 +174,26 @@ mod tests {
         assert_eq!(snap.v, SNAPSHOT_VERSION);
         assert!(snap.issues.is_empty());
         assert_eq!(snap.phase.state, "");
+    }
+
+    #[test]
+    fn plan_block_parses_and_is_absent_by_default() {
+        let snap: RunSnapshot = serde_json::from_str(
+            r#"{"v":1,"plan":{"issue":7,"steps":[{"text":"a","status":"checked"}]},"tomorrows_field":1}"#,
+        )
+        .unwrap();
+        assert_eq!(snap.plan.issue, Some(7));
+        assert_eq!(snap.plan.steps[0].status, "checked");
+        assert_eq!(snap.plan.steps[0].text, "a");
+
+        let bare: RunSnapshot = serde_json::from_str(r#"{"v":1}"#).unwrap();
+        assert_eq!(
+            bare.plan,
+            PlanBlock::default(),
+            "a document without the block still parses"
+        );
+        // The block is additive within v = 1 (ADR-0047 §A1): no version bump.
+        assert_eq!(SNAPSHOT_VERSION, 1);
     }
 
     #[test]

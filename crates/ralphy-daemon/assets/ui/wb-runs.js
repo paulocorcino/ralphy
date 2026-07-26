@@ -57,6 +57,42 @@ window.WBRun = {
     sleep: "usage limit — sleeping",
     pending: "pending",
   },
+  // per-step vocabulary (#330). The document ships `plan.steps[].status` as a
+  // string in the ADR-0019 `plan.step` vocabulary; an unknown one falls back to
+  // `open` rather than vanishing. Pinned from Rust by
+  // `runstate::snapshot::tests::every_step_status_is_known_to_the_runs_panel`.
+  STEP_GLYPH: {
+    open: "⬜",
+    checked: "✅",
+    noticed: "⚠️",
+  },
+  STEP_LABEL: {
+    open: "open",
+    checked: "done",
+    noticed: "noticed a problem",
+  },
+  stepGlyph(status) {
+    return this.STEP_GLYPH[status] || this.STEP_GLYPH.open;
+  },
+  stepLabel(status) {
+    return this.STEP_LABEL[status] || this.STEP_LABEL.open;
+  },
+  stepClass(status) {
+    return "st-" + (status in this.STEP_GLYPH ? status : "open");
+  },
+  // The `file://` demo has no snapshot documents, so it seeds its steps by
+  // parsing the plan text — the same three markers the Rust side parses.
+  parseSteps(md) {
+    const out = [];
+    (md || "").split("\n").forEach((ln) => {
+      const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
+      if (!m) return;
+      const status = m[1] === " " ? "open" : m[1] === "!" ? "noticed" : "checked";
+      out.push({ text: m[2].replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
+    });
+    return out;
+  },
+
   // terminal per-issue statuses — these won't change further. MUST mirror
   // IssueStatus::is_terminal (crates/ralphy-cli/src/runstate/state.rs); every
   // name here is a `status_wire` string the run snapshot ships verbatim.
@@ -185,6 +221,11 @@ window.WBRun = {
       sleep: doc.phase?.sleep || null,
       planPath: doc.plan_path || "",
       planMd: "",
+      // Steps come from the DOCUMENT, not from a plan.md read: they survive a
+      // deleted/unreadable plan and are already accumulated when the panel opens.
+      steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
+      planIssue: doc.plan?.issue ?? null,
+      planReadFailed: false,
       issues,
     };
   },
