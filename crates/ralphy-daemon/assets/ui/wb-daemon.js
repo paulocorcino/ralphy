@@ -290,9 +290,42 @@ window.WBDaemon = (function () {
       d.action === "run-start"
         ? { repo: d.project, agent: d.agent, planAgent: d.planAgent, branchMode: d.branchMode }
         : { repo: d.project };
+    // The CLI refuses by EXITING NON-ZERO after streaming its complaint to
+    // stdout — `WBFail.isError` never fires for that shape, which is why a
+    // refusal used to live only in the raw feed (#331). Both terminal paths
+    // (non-zero `exited`, and an `error` frame) raise the sticky panel line;
+    // no other frame does, so a socket that dies mid-stream leaves the last
+    // state rather than a false success.
+    // `pending` is load-bearing: the chunks are raw bytes, NOT lines — a
+    // refusal measured live arrived split mid-sentence, so a per-chunk "last
+    // line" reports a fragment. Lines are finalized on the newline that ends
+    // them, and the trailing partial (a CLI that does not end with one) on the
+    // terminal frame.
+    let lastLine = "";
+    let pending = "";
+    const feedLines = (text) => {
+      pending += text;
+      const parts = pending.split(/\r?\n/);
+      pending = parts.pop();
+      for (const line of parts) if (line.trim() !== "") lastLine = line.trim();
+    };
+    const finalLine = () => {
+      if (pending.trim() !== "") lastLine = pending.trim();
+      pending = "";
+      return lastLine;
+    };
     spawn(verb, payload, (s) => {
-      if (s.status === "output") window.WBRuns?.output?.(s.chunk || "");
-      else if (window.WBFail.isError(s)) getShell()?._flashAction?.(window.WBFail.message(s, "refused"));
+      if (s.status === "output") {
+        const chunk = s.chunk || "";
+        window.WBRuns?.output?.(chunk);
+        feedLines(chunk);
+      } else if (window.WBFail.isError(s)) {
+        const msg = window.WBFail.message(s, "refused");
+        getShell()?._flashAction?.(msg);
+        getShell()?.runVerbFailed?.(msg);
+      } else if (s.status === "exited") {
+        getShell()?.runVerbFailed?.(window.WBRun.exitNote(verb, s.code, finalLine()));
+      }
     });
   });
 

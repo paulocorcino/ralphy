@@ -663,17 +663,28 @@
            and `push` are blessed no-arg invocations, fired straight onto the
            seam (the client never composes a command line). -->
       <div class="runs-actions" x-show="openSlug">
-        <button class="run-verb accent" @click="openRunModal()" title="start a run — choose agent & branch">
+        <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()" :title="verbTitle('run')">
           <i data-lucide="play"></i> run
         </button>
-        <button class="run-verb" @click="fireVerb('triage')" title="triage the backlog — label + plan open issues (if idle)">
+        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()" :title="verbTitle('triage')">
           <i data-lucide="stethoscope"></i> triage
         </button>
-        <button class="run-verb" @click="fireVerb('push')" title="push the queue snapshot to the events sink">
+        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()" :title="verbTitle('push')">
           <i data-lucide="cloud-upload"></i> push
         </button>
         <span class="spacer"></span>
+        <!-- the reason, stated where a phone can read it: a `title` on a
+             disabled control is not a reachable affordance. -->
+        <span class="runs-lock-note" x-show="verbLocked()" x-text="writeLockReason()"></span>
         <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
+      </div>
+
+      <!-- a CLI refusal, surfaced as panel state (#331). The gate above is only
+           a hint; this is where the authority's answer lands, and it stays put
+           until the next verb click instead of flashing away in 2.6 s. -->
+      <div class="runs-verb-error" x-show="verbError">
+        <span x-text="verbError"></span>
+        <button data-act="verb-error-dismiss" @click="verbError = ''" title="dismiss">✕</button>
       </div>
 
       <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned

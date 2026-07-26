@@ -580,6 +580,15 @@ function shell() {
     writeLockReason() {
       return window.WBChanges.writeLockReason(this.runsByProject[this.openSlug]);
     },
+    // The run verbs reuse the Changes derivation LITERALLY (#331) — a second
+    // predicate is the drift #318 avoided, and the gate's whole contract is
+    // that it agrees with the controls beside it.
+    verbLocked() {
+      return this.writeLocked();
+    },
+    verbTitle(verb) {
+      return window.WBRun.verbLockTitle(verb, this.writeLockReason());
+    },
     rowActTitle(verb) {
       const locked = this.writeLockReason();
       if (locked) return locked;

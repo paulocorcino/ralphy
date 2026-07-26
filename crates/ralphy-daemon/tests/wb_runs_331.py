@@ -374,13 +374,132 @@ def main():
                 f"sw={phone['sw']} cw={phone['cw']} ch={phone['ch']} steps={phone['steps']}",
             )
             page.set_viewport_size({"width": 1400, "height": 900})
+            page.evaluate(f"() => {SH}.dismissFeed()")
+
+            # --- scenario 6: the verbs are gated while the lock is held -------
+            # The live snapshot document IS the lock derivation (`runs.list`,
+            # the same one the Changes panel's write controls use).
+            page.wait_for_function(f"() => {SH}.verbLocked() === true", timeout=15000)
+            verbs = page.evaluate(
+                "() => Array.from(document.querySelectorAll('.run-verb')).map(b => ({"
+                " label: b.textContent.trim(), disabled: b.disabled, title: b.title }))"
+            )
+            reason = page.evaluate(f"() => {SH}.writeLockReason()")
+            check(
+                "run / triage / push are all disabled while a run holds the lock",
+                len(verbs) == 3 and all(v["disabled"] is True for v in verbs),
+                f"got={[(v['label'], v['disabled']) for v in verbs]}",
+            )
+            check(
+                "every disabled verb states the reason in its title",
+                reason != "" and all(v["title"] == reason for v in verbs),
+                f"reason={reason!r} titles={[v['title'] for v in verbs]}",
+            )
+            page.wait_for_function(
+                "() => document.querySelector('.runs-lock-note')?.offsetParent !== null", timeout=10000
+            )
+            note = page.locator(".runs-lock-note").inner_text().strip()
+            check(
+                "the reason is also VISIBLE, not only in a disabled control's title",
+                note == reason,
+                f"note={note!r}",
+            )
+            # …and the gate must not have cost the operator the panel's reading.
+            live = page.evaluate(
+                "() => ({ steps: document.querySelectorAll('.plan-steps li').length,"
+                " trail: document.querySelectorAll('.trail-node').length })"
+            )
+            check(
+                "reading keeps working while locked: the plan and the trail still render",
+                live["steps"] == 3 and live["trail"] == 3,
+                f"steps={live['steps']} trail={live['trail']}",
+            )
+            write(
+                plan=plan_block(
+                    steps(
+                        ("first step body", "checked"),
+                        ("second step body", "checked"),
+                        ("third step body", "checked"),
+                    )
+                )
+            )
+            # No click, no reload: monitoring must advance under the lock.
+            page.wait_for_function(
+                "() => { const li = Array.from(document.querySelectorAll('.plan-steps li'));"
+                " return li.length === 3 && li.every(e => e.className.includes('st-checked')); }",
+                timeout=15000,
+            )
+            check("monitoring keeps advancing while locked, with no interaction", True, "3/3 st-checked")
+            page.screenshot(path=os.path.join(SHOT_DIR, "331-runs-chrome-2026-07-26.png"))
+
+            # --- scenario 7: the lock's release re-enables the verbs ----------
+            doc.unlink()
+            page.wait_for_function(
+                "() => document.querySelector('.run-verb')?.disabled === false", timeout=15000
+            )
+            released = page.evaluate(
+                "() => ({ disabled: Array.from(document.querySelectorAll('.run-verb')).map(b => b.disabled),"
+                " note: document.querySelector('.runs-lock-note')?.offsetParent !== null })"
+            )
+            check(
+                "the verbs re-enable when the lock is released, unaided",
+                released["disabled"] == [False, False, False] and released["note"] is False,
+                f"disabled={released['disabled']} noteVisible={released['note']}",
+            )
+
+            # --- scenario 8: the gate is a HINT; the CLI still refuses --------
+            # Dispatched on the SAME door a click uses, while UNLOCKED — nothing
+            # on this path consults the gate, which is what makes the CLI the
+            # authority. The fixture repo has no GitHub remote, so `ralphy
+            # triage` streams its complaint and exits 1.
+            page.evaluate(
+                "(slug) => document.dispatchEvent(new CustomEvent('workbench:action',"
+                " { detail: { action: 'command', verb: 'triage', project: slug } }))",
+                slug,
+            )
+            page.wait_for_function(
+                "() => document.querySelector('.runs-verb-error')?.offsetParent !== null", timeout=60000
+            )
+            surfaced = page.evaluate(
+                f"() => {{ const lines = {SH}.rawFeed.split(/\\r?\\n/).filter(l => l.trim() !== '');"
+                " return { err: document.querySelector('.runs-verb-error span').textContent.trim(),"
+                " last: (lines[lines.length - 1] || '').trim(),"
+                f" flash: {SH}.runsActionMsg }}; }}"
+            )
+            check(
+                "an unlocked click still reaches the CLI and its refusal is surfaced",
+                "refused" in surfaced["err"] and "exit 1" in surfaced["err"],
+                f"err={surfaced['err']!r}",
+            )
+            check(
+                "the panel line carries the CLI's own last output line",
+                surfaced["last"] != "" and surfaced["last"] in surfaced["err"],
+                f"last={surfaced['last']!r}",
+            )
+            # The 2.6 s `_flashAction` timer is the bar: a refusal that expires
+            # with it is the defect this replaces.
+            page.wait_for_timeout(3200)
+            outlived = page.evaluate(
+                "() => ({ err: document.querySelector('.runs-verb-error')?.offsetParent !== null,"
+                " flash: document.querySelector('.runs-action-status')?.offsetParent !== null })"
+            )
+            check(
+                "the refusal OUTLIVES the 2.6 s action flash",
+                outlived["err"] is True and outlived["flash"] is False,
+                f"errVisible={outlived['err']} flashVisible={outlived['flash']}",
+            )
+            page.click('[data-act="verb-error-dismiss"]:visible')
+            page.wait_for_function(
+                "() => document.querySelector('.runs-verb-error')?.offsetParent == null", timeout=10000
+            )
+            check("the operator can dismiss the refusal", True, "")
 
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 14
+    ok = all(results) and len(results) >= 23
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("RUNS CHROME")
