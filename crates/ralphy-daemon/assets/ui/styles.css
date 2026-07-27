@@ -1931,7 +1931,11 @@ body.runs-open .runs {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
-.dropdown-item {
+/* `.window-item` is the Go-to picker's row (issue #337): the same menu grammar
+   under a DIFFERENT class name, so every existing `.dropdown-item` query scoped
+   to the New-console menu stays inert. */
+.dropdown-item,
+.window-item {
   all: unset;
   display: flex;
   align-items: center;
@@ -1944,7 +1948,8 @@ body.runs-open .runs {
   font-size: 0.82rem;
   cursor: pointer;
 }
-.dropdown-item:not(:disabled):hover {
+.dropdown-item:not(:disabled):hover,
+.window-item:hover {
   background: var(--surface-hi);
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
@@ -1953,8 +1958,17 @@ body.runs-open .runs {
   cursor: not-allowed;
   opacity: 0.4;
 }
-.dropdown-item .bi {
+.dropdown-item .bi,
+.window-item .bi {
   color: var(--console-text);
+}
+/* a Go-to row for a restored console the daemon no longer runs — it is still
+   reachable, it just has no session behind it */
+.window-item .row-off {
+  margin-left: auto;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 /* how many live sessions this agent already has — the row reaches one instead
    of launching a duplicate (#304) */

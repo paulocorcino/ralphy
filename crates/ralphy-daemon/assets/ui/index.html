@@ -436,6 +436,26 @@
               </template>
             </div>
           </div>
+          <!-- Go to: the plane is bigger than the viewport, so a window can sit
+               entirely off-view. One click on a row centres it (issue #337,
+               ADR-0051 §4). The rows are `.window-item`, NOT `.dropdown-item`:
+               every existing query scoped to the New-console menu must stay
+               inert. -->
+          <div class="menu-wrap">
+            <button class="btn" @click.stop="toggleWindowMenu()" title="bring a console into view">
+              <i class="bi bi-crosshair"></i> Go to
+            </button>
+            <div class="dropdown window-menu" x-show="windowMenu" @click.outside="windowMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="windowList.length ? 'open consoles' : 'no consoles open'"></div>
+              <template x-for="w in windowList" :key="w.id">
+                <button class="window-item" @click="revealWindow(w.id)">
+                  <i class="bi bi-terminal"></i>
+                  <span x-text="w.agent + ' · ' + (w.repo || 'home')"></span>
+                  <span class="row-off" x-show="!w.running">not running</span>
+                </button>
+              </template>
+            </div>
+          </div>
           <!-- Arrange: auto-tiles all open console windows into a grid -->
           <button class="btn" @click="arrangeConsoles()" title="tile the open consoles">
             <i data-lucide="layout-grid"></i> Arrange

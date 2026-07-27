@@ -2126,6 +2126,10 @@ function shell() {
     agents: [],
     roster: [],
     agentMenu: false,
+    // The Go-to picker (issue #337): its rows are a SNAPSHOT taken when the menu
+    // opens, because the window set lives in the DOM (the stage), not here.
+    windowMenu: false,
+    windowList: [],
     consoleCount: 0,
     // The design-system confirm dialog (replaces window.confirm). `askConfirm`
     // opens it and returns a promise resolved by the operator's choice.
@@ -2932,6 +2936,18 @@ function shell() {
 
     arrangeConsoles() {
       WBConsole.arrange();
+    },
+
+    // Nothing is clamped into the viewport any more (#336), so a restored window
+    // can sit entirely off-view: this is the one action that reaches it (#337).
+    toggleWindowMenu() {
+      this.windowList = WBConsole.list();
+      this.windowMenu = !this.windowMenu;
+    },
+    revealWindow(id) {
+      if (this.active !== "consoles") this.activate("consoles");
+      WBConsole.reveal(id);
+      this.windowMenu = false;
     },
 
     // --- context menu -----------------------------------------------------
