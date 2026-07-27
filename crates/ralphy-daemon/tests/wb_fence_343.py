@@ -20,9 +20,12 @@ Scenario 2  clicking a row slides the viewport onto that fence: gamma is proven
 Scenario 3  a console opened while a fence is focused is BORN inside it, the
             list's count follows, and the record persists there across a reload
 Scenario 4  with no fence focused, a console lands on the plain cascade
-Scenario 5  the list is live without a reload: create, rename, a membership
-            change by dragging a window in, a membership change by dragging the
-            FENCE away, and a removal
+Scenario 5  the list is live without a reload: create, rename (the jump is what
+            puts gamma's input in reach at all), a membership change by dragging
+            a window IN, a fence MOVE whose row survives intact — #341's
+            anchoring carries a fence's members with it, so a moved fence keeps
+            its count by design — a membership change by dragging the window
+            OUT, and a removal
 Scenario 6  two browser contexts read the same fence names and counts while each
             keeps its own viewport position — this is where the evidence
             screenshot is taken
@@ -375,6 +378,97 @@ def press_floor(page, x, y):
     page.wait_for_timeout(300)
 
 
+def drag(page, start, dx, dy):
+    page.mouse.move(start["x"], start["y"])
+    page.mouse.down()
+    page.mouse.move(start["x"] + dx / 3, start["y"] + dy / 3, steps=5)
+    page.mouse.move(start["x"] + dx * 2 / 3, start["y"] + dy * 2 / 3, steps=5)
+    page.mouse.move(start["x"] + dx, start["y"] + dy, steps=5)
+    page.mouse.up()
+    page.wait_for_timeout(500)
+
+
+def client_centre(page, selector):
+    """The CLIENT centre of an element, measured NOW.
+
+    Re-measured before every gesture on purpose: a `.fence-grab` travels with
+    its fence, and #341 measured that it lands under whatever window happens to
+    be there — a cached handle box presses the window instead, and the gesture
+    silently never starts.
+    """
+    return page.evaluate(
+        "(sel) => { const el = document.querySelector(sel);"
+        " if (!el) return null;"
+        " const r = el.getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2,"
+        "   w: r.width, h: r.height }; }",
+        selector,
+    )
+
+
+def fence_rect(page, fence_id):
+    return page.evaluate(
+        "(id) => { const f = document.querySelector(`[data-fence-id='${id}']`);"
+        " if (!f) return null;"
+        " return { left: f.offsetLeft, top: f.offsetTop,"
+        "   width: f.offsetWidth, height: f.offsetHeight,"
+        "   head: f.querySelector('.fence-head').offsetHeight }; }",
+        fence_id,
+    )
+
+
+def drag_window_to(page, wid, cx, cy):
+    """Drag a window by its titlebar so its CENTRE lands on a stage point."""
+    here = page.evaluate(
+        "(id) => { const w = [...document.querySelectorAll('.session-window')]"
+        "   .find((x) => x._deskId === id);"
+        " return { x: w.offsetLeft + w.offsetWidth / 2, y: w.offsetTop + w.offsetHeight / 2 }; }",
+        wid,
+    )
+    bar = page.evaluate(
+        "(id) => { const w = [...document.querySelectorAll('.session-window')]"
+        "   .find((x) => x._deskId === id);"
+        " const r = w.querySelector('.session-titlebar').getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
+        wid,
+    )
+    drag(page, bar, cx - here["x"], cy - here["y"])
+
+
+def row_named(rows, name):
+    for r in rows:
+        if r["name"] == name:
+            return r
+    return None
+
+
+def free_point(page):
+    """A visible stage point held by NO fence, measured now.
+
+    Computed rather than hardcoded: scenario 5 moves a fence around, so a
+    literal "outside" point can silently end up inside one and make a
+    membership assertion fail against correct code.
+    """
+    rects = page.evaluate(
+        "() => [...document.querySelectorAll('.fence')].map((f) => ({"
+        "  left: f.offsetLeft, top: f.offsetTop,"
+        "  width: f.offsetWidth, height: f.offsetHeight }))"
+    )
+    view = page.evaluate(
+        "() => { const ws = document.getElementById('workspace');"
+        " return { w: ws.clientWidth, h: ws.clientHeight,"
+        "   sl: ws.scrollLeft, st: ws.scrollTop }; }"
+    )
+    for y in range(int(view["st"]) + 80, int(view["st"] + view["h"]) - 80, 40):
+        for x in range(int(view["sl"]) + 80, int(view["sl"] + view["w"]) - 80, 40):
+            if not any(
+                r["left"] <= x < r["left"] + r["width"] and r["top"] <= y < r["top"] + r["height"]
+                for r in rects
+            ):
+                return (x, y)
+    raise AssertionError("no free floor point in the viewport")
+
+
 def desk_record(wid):
     for w in json.loads(http("GET", "api/desk")[1]).get("windows", []):
         if w.get("id") == wid:
@@ -578,6 +672,102 @@ def main():
                 f"box={pbox}",
             )
 
+            # ===== scenario 5: the list is LIVE, all in one page, no reload ===
+            # AC6's five verbs — create, rename, move, a membership change, and
+            # a removal — each followed by a fresh open of the picker. NOTE the
+            # move leg: #341's anchoring carries a fence's members WITH it, so a
+            # moved fence keeps its count by design; what the list must show is
+            # that the row survives the move intact.
+            close_menus(page)
+            unscroll(page)
+            page.locator("button[title='draw a named fence on the plane']").click()
+            page.wait_for_timeout(600)
+            rows = open_fence_list(page)
+            new_fence = page.evaluate(
+                "() => { const ids = ['f-alpha','f-beta','f-gamma'];"
+                " return [...document.querySelectorAll('.fence')]"
+                "   .map((f) => f.dataset.fenceId).find((id) => !ids.includes(id)) || null; }"
+            )
+            check(
+                "creating a fence adds its row, without a reload",
+                len(rows) == 4 and new_fence is not None,
+                f"rows={[r['name'] for r in rows]} new={new_fence!r}",
+            )
+
+            # --- rename: gamma is off-view, so the jump is how its input is
+            #     reachable at all. The list is what put it in reach.
+            click_fence_row(page, "gamma")
+            page.locator("[data-fence-id='f-gamma'] .fence-name").fill("delta")
+            page.locator("[data-fence-id='f-gamma'] .fence-name").press("Enter")
+            page.wait_for_timeout(500)
+            rows = open_fence_list(page)
+            check(
+                "renaming a fence renames its row, without a reload",
+                row_named(rows, "delta") is not None and row_named(rows, "gamma") is None,
+                f"rows={[r['name'] for r in rows]}",
+            )
+
+            # --- a membership change by dragging a window IN
+            close_menus(page)
+            unscroll(page)
+            fr = fence_rect(page, new_fence)
+            target = (fr["left"] + fr["width"] / 2, fr["top"] + fr["head"] + fr["height"] / 2)
+            drag_window_to(page, plain, target[0], target[1])
+            rows = open_fence_list(page)
+            new_name = page.evaluate(
+                "(id) => document.querySelector(`[data-fence-id='${id}'] .fence-name`).value",
+                new_fence,
+            )
+            check(
+                "dragging a window into a fence moves its row to one console, without a reload",
+                row_named(rows, new_name)["count"] == "1 console"
+                and row_named(rows, new_name)["repos"] == "home",
+                f"row={row_named(rows, new_name)}",
+            )
+
+            # --- the MOVE leg: re-measure the handle AFTER the membership
+            #     change — it now sits under the window that just arrived.
+            close_menus(page)
+            before_rect = fence_rect(page, new_fence)
+            grab = client_centre(page, f"[data-fence-id='{new_fence}'] .fence-grab")
+            drag(page, grab, 0, 120)
+            after_rect = fence_rect(page, new_fence)
+            rows = open_fence_list(page)
+            check(
+                "a moved fence really moved…",
+                after_rect["top"] != before_rect["top"],
+                f"before={before_rect['top']} after={after_rect['top']}",
+            )
+            check(
+                "…and its row survives the move intact — #341's anchoring carries the member along",
+                row_named(rows, new_name)["count"] == "1 console",
+                f"row={row_named(rows, new_name)}",
+            )
+
+            # --- a membership change by dragging the window OUT
+            close_menus(page)
+            out = free_point(page)
+            drag_window_to(page, plain, out[0], out[1])
+            rows = open_fence_list(page)
+            check(
+                "dragging the window out drops the row back to zero, without a reload",
+                row_named(rows, new_name)["count"] == "0 consoles"
+                and row_named(rows, new_name)["repos"] == "",
+                f"row={row_named(rows, new_name)}",
+            )
+
+            # --- the removal
+            close_menus(page)
+            page.locator(f"[data-fence-id='{new_fence}'] .fence-drop").click()
+            page.wait_for_timeout(500)
+            rows = open_fence_list(page)
+            check(
+                "removing a fence removes its row, without a reload",
+                len(rows) == 3 and row_named(rows, new_name) is None,
+                f"rows={[r['name'] for r in rows]}",
+            )
+            close_menus(page)
+
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()
             browser.close()
@@ -586,7 +776,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 23
+    ok = all(results) and len(results) == 30
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")
