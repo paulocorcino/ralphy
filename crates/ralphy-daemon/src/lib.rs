@@ -330,9 +330,7 @@ pub fn router(
             })
             .put({
                 let path = desk_path.clone();
-                move |Json(records): Json<Vec<desk::DeskRecord>>| {
-                    desk_put_route(path.clone(), records)
-                }
+                move |Json(up): Json<desk::DeskUpload>| desk_put_route(path.clone(), up)
             }),
         )
         .route(
@@ -1686,22 +1684,31 @@ async fn usage_route(
     .into_response()
 }
 
-/// `GET /api/desk`: the saved desk records in layout order (ADR-0050). An
-/// absent or corrupt `desk.toml` answers `200 []` — a lost layout costs a
-/// cascaded stage, never an error the shell has to handle.
+/// `GET /api/desk`: the saved desk — windows and fences together, each in layout
+/// order (ADR-0050, ADR-0051 §10). An absent or corrupt `desk.toml` answers
+/// `200 {"windows":[],"fences":[]}` — a lost layout costs a cascaded stage,
+/// never an error the shell has to handle.
 async fn desk_get_route(path: PathBuf) -> Response {
-    Json(desk::load_from(&path).windows).into_response()
+    Json(desk::load_from(&path)).into_response()
 }
 
-/// `PUT /api/desk`: replace the desk wholesale, pruned to [`desk::DESK_MAX`]
-/// newest by `ts`, answering `200` with the pruned array — the client needs the
-/// daemon's post-prune truth in one round trip (last-write-wins, no ETag).
-/// A body that is not an array of records is rejected by the `Json` extractor as
-/// `422` and never reaches here, so `desk.toml` is untouched; a record whose rect
-/// is out of frame — non-finite, or an origin off the stage's pinned 0,0 — is
-/// rejected here as `400`, for the same reason.
-async fn desk_put_route(path: PathBuf, records: Vec<desk::DeskRecord>) -> Response {
-    if let Some(bad) = records.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
+/// `PUT /api/desk`: replace the desk wholesale, each record type pruned to its
+/// own cap ([`desk::DESK_MAX`], [`desk::FENCE_MAX`]) newest by `ts`, answering
+/// `200` with the pruned store — the client needs the daemon's post-prune truth
+/// in one round trip (last-write-wins, no ETag).
+///
+/// A body that is not a `{ windows, fences }` object — including the pre-#340
+/// bare array — is rejected by the `Json` extractor as `422` and never reaches
+/// here, so `desk.toml` is untouched; a rect that is out of frame — non-finite,
+/// or an origin off the stage's pinned 0,0 — is rejected here as `400`. Both
+/// rejections return BEFORE any write, so a refused upload leaves `desk.toml`
+/// byte-identical on every path.
+///
+/// Non-overlap between fences is deliberately NOT validated: refusing a whole
+/// desk upload would cost the operator their layout and the daemon has no repair
+/// path, so that invariant belongs to the client (ADR-0051 §6).
+async fn desk_put_route(path: PathBuf, up: desk::DeskUpload) -> Response {
+    if let Some(bad) = up.windows.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
         return (
             StatusCode::BAD_REQUEST,
             Json(
@@ -1710,12 +1717,21 @@ async fn desk_put_route(path: PathBuf, records: Vec<desk::DeskRecord>) -> Respon
         )
             .into_response();
     }
-    let pruned = desk::prune(records);
+    if let Some(bad) = up.fences.iter().find(|f| !desk::rect_is_sane(&f.rect)) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("fence {} has an out-of-frame rect", bad.id) }),
+            ),
+        )
+            .into_response();
+    }
     let store = desk::DeskStore {
-        windows: pruned.clone(),
+        windows: desk::prune(up.windows),
+        fences: desk::prune_fences(up.fences),
     };
     match desk::save_to(&store, &path) {
-        Ok(()) => Json(pruned).into_response(),
+        Ok(()) => Json(store).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": format!("{e:#}") })),
@@ -2273,18 +2289,38 @@ mod tests {
         body_text(res).await
     }
 
-    async fn desk_put(dir: &Path, records: &serde_json::Value) -> Response {
+    /// PUT a RAW body — the only way to exercise a shape the `DeskUpload`
+    /// extractor must refuse (a bare array, an out-of-range float literal).
+    async fn desk_put_raw(dir: &Path, body: String) -> Response {
         desk_router(dir)
             .oneshot(
                 Request::builder()
                     .method("PUT")
                     .uri("/api/desk")
                     .header("content-type", "application/json")
-                    .body(Body::from(records.to_string()))
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
             .unwrap()
+    }
+
+    async fn desk_put(dir: &Path, body: &serde_json::Value) -> Response {
+        desk_put_raw(dir, body.to_string()).await
+    }
+
+    /// The `{ windows, fences }` upload body (#340).
+    fn desk_body(windows: serde_json::Value, fences: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({ "windows": windows, "fences": fences })
+    }
+
+    fn fence_json(id: &str, name: &str, ts: i64) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "name": name,
+            "rect": { "left": 40.0, "top": 40.0, "width": 720.0, "height": 460.0 },
+            "ts": ts,
+        })
     }
 
     fn desk_json(id: &str, ts: i64, session_id: serde_json::Value, max: bool) -> serde_json::Value {
@@ -2303,20 +2339,35 @@ mod tests {
     #[tokio::test]
     async fn api_desk_empty_when_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(desk_get(dir.path()).await, "[]");
+        assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
         assert!(
             !dir.path().join("desk.toml").exists(),
             "a GET must not create the store"
         );
     }
 
+    /// The desk route's body is an OBJECT carrying both record types (#340), so
+    /// an empty desk is `{"windows":[],"fences":[]}` — not a bare `[]`.
+    #[tokio::test]
+    async fn api_desk_serves_windows_and_fences_together() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            desk_get(dir.path()).await,
+            r#"{"windows":[],"fences":[]}"#,
+            "the desk body carries both record types"
+        );
+    }
+
     #[tokio::test]
     async fn api_desk_put_then_get_round_trips() {
         let dir = tempfile::tempdir().unwrap();
-        let payload = serde_json::json!([
-            desk_json("w-a", 1, serde_json::json!(7), true),
-            desk_json("w-b", 2, serde_json::Value::Null, false),
-        ]);
+        let payload = desk_body(
+            serde_json::json!([
+                desk_json("w-a", 1, serde_json::json!(7), true),
+                desk_json("w-b", 2, serde_json::Value::Null, false),
+            ]),
+            serde_json::json!([]),
+        );
         let res = desk_put(dir.path(), &payload).await;
         assert_eq!(res.status(), StatusCode::OK);
 
@@ -2334,21 +2385,23 @@ mod tests {
     #[tokio::test]
     async fn api_desk_put_prunes_to_24_newest_by_ts() {
         let dir = tempfile::tempdir().unwrap();
-        let payload = serde_json::Value::Array(
-            (1..=30)
-                .map(|n| desk_json(&format!("w{n}"), n, serde_json::Value::Null, false))
-                .collect(),
+        let payload = desk_body(
+            serde_json::Value::Array(
+                (1..=30)
+                    .map(|n| desk_json(&format!("w{n}"), n, serde_json::Value::Null, false))
+                    .collect(),
+            ),
+            serde_json::json!([]),
         );
         let res = desk_put(dir.path(), &payload).await;
         assert_eq!(res.status(), StatusCode::OK);
-        let put_body: Vec<desk::DeskRecord> = serde_json::from_str(&body_text(res).await).unwrap();
-        let ids: Vec<String> = put_body.into_iter().map(|r| r.id).collect();
+        let put_body: desk::DeskStore = serde_json::from_str(&body_text(res).await).unwrap();
+        let ids: Vec<String> = put_body.windows.into_iter().map(|r| r.id).collect();
         let expected: Vec<String> = (7..=30).map(|n| format!("w{n}")).collect();
         assert_eq!(ids, expected, "the PUT answers with the pruned truth");
 
-        let get_body: Vec<desk::DeskRecord> =
-            serde_json::from_str(&desk_get(dir.path()).await).unwrap();
-        let ids: Vec<String> = get_body.into_iter().map(|r| r.id).collect();
+        let get_body: desk::DeskStore = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
+        let ids: Vec<String> = get_body.windows.into_iter().map(|r| r.id).collect();
         assert_eq!(ids, expected, "and the persisted desk holds the same 24");
     }
 
@@ -2357,7 +2410,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         desk_put(
             dir.path(),
-            &serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+            &desk_body(
+                serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+                serde_json::json!([]),
+            ),
         )
         .await;
         let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
@@ -2366,7 +2422,8 @@ mod tests {
         assert_eq!(
             res.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
-            "axum's Json extractor rejects a non-array body"
+            "the strict DeskUpload extractor rejects an unknown-field body — it \
+             must never read as an EMPTY desk that wipes the layout"
         );
         assert_eq!(
             std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
@@ -2380,14 +2437,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         desk_put(
             dir.path(),
-            &serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+            &desk_body(
+                serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+                serde_json::json!([]),
+            ),
         )
         .await;
         let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
 
         let mut bad = desk_json("w-neg", 2, serde_json::Value::Null, false);
         bad["rect"]["left"] = serde_json::json!(-1.0);
-        let res = desk_put(dir.path(), &serde_json::json!([bad])).await;
+        let res = desk_put(
+            dir.path(),
+            &desk_body(serde_json::json!([bad]), serde_json::json!([])),
+        )
+        .await;
         assert_eq!(
             res.status(),
             StatusCode::BAD_REQUEST,
@@ -2405,7 +2469,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         desk_put(
             dir.path(),
-            &serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+            &desk_body(
+                serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+                serde_json::json!([]),
+            ),
         )
         .await;
         let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
@@ -2416,17 +2483,7 @@ mod tests {
         let bad = desk_json("w-huge", 2, serde_json::Value::Null, false)
             .to_string()
             .replace("\"left\":10.0", "\"left\":1e400");
-        let res = desk_router(dir.path())
-            .oneshot(
-                Request::builder()
-                    .method("PUT")
-                    .uri("/api/desk")
-                    .header("content-type", "application/json")
-                    .body(Body::from(format!("[{bad}]")))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let res = desk_put_raw(dir.path(), format!(r#"{{"windows":[{bad}],"fences":[]}}"#)).await;
         assert_ne!(
             res.status(),
             StatusCode::OK,
@@ -2437,6 +2494,126 @@ mod tests {
             before,
             "a rejected rect never reaches the store"
         );
+    }
+
+    /// The pre-#340 wire shape must be refused WHOLESALE, not half-applied: a
+    /// stale client that still PUTs a bare array would otherwise be read as an
+    /// empty desk and wipe the operator's layout.
+    #[tokio::test]
+    async fn api_desk_put_rejects_the_pre_340_bare_array() {
+        let dir = tempfile::tempdir().unwrap();
+        desk_put(
+            dir.path(),
+            &desk_body(
+                serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+                serde_json::json!([fence_json("f-a", "backend", 1)]),
+            ),
+        )
+        .await;
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+
+        let stale = serde_json::json!([desk_json("w-b", 2, serde_json::Value::Null, false)]);
+        let res = desk_put_raw(dir.path(), stale.to_string()).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "the bare-array body is not a desk upload any more"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "a rejected upload never reaches the store"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
+        let dir = tempfile::tempdir().unwrap();
+        desk_put(
+            dir.path(),
+            &desk_body(
+                serde_json::json!([]),
+                serde_json::json!([fence_json("f-a", "backend", 1)]),
+            ),
+        )
+        .await;
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+
+        // LEG 1 — the wire. Measured: `serde_json` refuses an out-of-range float
+        // literal as a SYNTAX error ("number out of range"), which axum maps to
+        // 400 — so a non-finite rect dies in the extractor and never reaches the
+        // route's own guard. Same status, different body.
+        let bad = fence_json("w-huge", "planning", 2)
+            .to_string()
+            .replace("\"left\":40.0", "\"left\":1e999");
+        let res = desk_put_raw(dir.path(), format!(r#"{{"windows":[],"fences":[{bad}]}}"#)).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "an out-of-range literal dies in the extractor"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "a rejected fence never reaches the store"
+        );
+
+        // LEG 2 — the route's OWN guard, which the wire can no longer reach:
+        // called directly with an infinity the extractor would have refused, so
+        // the 400 and its wording are proved rather than assumed. A fresh
+        // response, not the one leg 1 asserted on.
+        let res = desk_put_route(
+            dir.path().join("desk.toml"),
+            desk::DeskUpload {
+                windows: vec![],
+                fences: vec![desk::DeskFence {
+                    id: "w-huge".into(),
+                    name: "planning".into(),
+                    rect: desk::DeskRect {
+                        left: f64::INFINITY,
+                        top: 40.0,
+                        width: 720.0,
+                        height: 460.0,
+                    },
+                    ts: 2,
+                }],
+            },
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = body_text(res).await;
+        assert!(
+            body.contains("fence w-huge has an out-of-frame rect"),
+            "the refusal names the fence: {body}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "the guard returns BEFORE any write"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_prunes_fences_to_the_12_newest() {
+        let dir = tempfile::tempdir().unwrap();
+        let payload = desk_body(
+            serde_json::json!([]),
+            serde_json::Value::Array(
+                (1..=13)
+                    .map(|n| fence_json(&format!("f{n}"), "region", n))
+                    .collect(),
+            ),
+        );
+        let res = desk_put(dir.path(), &payload).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let put_body: desk::DeskStore = serde_json::from_str(&body_text(res).await).unwrap();
+        let ids: Vec<String> = put_body.fences.into_iter().map(|f| f.id).collect();
+        let expected: Vec<String> = (2..=13).map(|n| format!("f{n}")).collect();
+        assert_eq!(ids, expected, "the PUT answers with the pruned truth");
+
+        let get_body: desk::DeskStore = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
+        let ids: Vec<String> = get_body.fences.into_iter().map(|f| f.id).collect();
+        assert_eq!(ids, expected, "and the persisted desk holds the same 12");
     }
 
     #[test]

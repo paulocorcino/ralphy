@@ -37,9 +37,10 @@ uploads.
 
 ### 2. Two routes, whole-array semantics
 
-- `GET /api/desk` → the records, in layout order.
-- `PUT /api/desk` → replaces them wholesale; the daemon prunes to the cap
-  (24 records, newest by `ts`) and persists.
+- `GET /api/desk` → the desk as `{ windows, fences }`, each in layout order.
+- `PUT /api/desk` → replaces them wholesale; the daemon prunes each record type
+  to its own cap (24 windows, 12 fences, newest by `ts`) and persists. The body
+  became an object in #340, when fences joined the store (ADR-0051 §10).
 
 Whole-array, not per-record: the shell already computes the full desk on every
 mutation (`loadDesk` → upsert → `saveDesk`), so a record-granular API would be a

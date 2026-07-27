@@ -524,6 +524,24 @@ _Avoid_: canvas (that is the whole tabbed region, one level up); zoom; clamping
 on the operator's behalf); infinite canvas (the stage is finite and measured,
 so the scrollbar means something).
 
+**Fence**:
+A named anchored rectangle on the **stage** — `id`, `name`, `rect`, `ts` — that
+gives a region of the plane a meaning ("backend", "planning"). It is drawn on a
+floor tier below every console window and is INERT to the pointer, so it can
+never swallow a window's drag, resize or focus click, nor the floor's pan.
+Free-form: never bound to a project, so one fence may hold consoles from several
+repos and one repo may spread over several fences. It is created by a deliberate
+act from the canvas toolbar — never auto-created — and its name is editable in
+place. A fence is part of the **desk layout**, so it is daemon state with a cap
+of its own and comes back on any browser. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§6, 10 (issue
+#340); membership-by-centre-point, non-overlap enforcement and the fence list
+are §§6–7 and are NOT yet built.
+
+_Avoid_: group, zone, region, container, swimlane (a fence is a rectangle on the
+plane, not a widget that owns children); project fence (a fence is never bound to
+a repo).
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs and which

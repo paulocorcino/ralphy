@@ -379,15 +379,17 @@ from a second machine restores the stage instead of cascading it.
 Two REST endpoints join `/api/*`, behind the same auth guard as the rest of the
 API (no new policy, no new exemption):
 
-- `GET /api/desk` → the desk records in layout order. A missing or corrupt
-  `desk.toml` answers `200 []`: an unreadable layout costs a cascaded stage, not
-  a daemon, so there is no error state for the shell to handle.
+- `GET /api/desk` → the desk as `{ windows, fences }`, each in layout order. A
+  missing or corrupt `desk.toml` answers `200 {"windows":[],"fences":[]}`: an
+  unreadable layout costs a cascaded stage, not a daemon, so there is no error
+  state for the shell to handle.
 - `PUT /api/desk` → replaces the desk wholesale and answers `200` with the
-  stored array. The daemon prunes to 24 records, newest by `ts`, so the cap is
-  enforced server-side rather than trusting the upload; the response is the
-  post-prune truth in one round trip (last write wins — no ETag, no merge).
-  A body that is not an array of desk records is rejected before the store is
-  touched.
+  stored object. The daemon prunes each record type to its own cap (24 windows,
+  12 fences, newest by `ts`), so the cap is enforced server-side rather than
+  trusting the upload; the response is the post-prune truth in one round trip
+  (last write wins — no ETag, no merge). A body that is not a
+  `{ windows, fences }` object — including the pre-#340 bare array — is rejected
+  before the store is touched.
 
 The desk is a *typed* store (`desk.toml`, one `[[windows]]` table per record),
 not an opaque blob, and lives beside `repos.toml` — same `$RALPHY_DAEMON_DIR`
