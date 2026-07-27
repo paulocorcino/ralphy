@@ -932,3 +932,63 @@ for (const row of SUMMARIES) {
     );
   });
 }
+
+// Where a console born into a focused fence lands. The fence has a NON-ZERO
+// origin as a built-in negative control: an implementation that cascades from
+// 0,0 and forgets `fence.left`/`fence.top` reds every row.
+const SPAWN_F = { left: 700, top: 300, width: 600, height: 460 };
+const HEAD = 28;
+
+const SPAWNS = [
+  {
+    name: "the first console takes the fence's full inner box",
+    fence: SPAWN_F,
+    index: 0,
+    want: { left: 712, top: 340, width: 560, height: 340 },
+  },
+  {
+    // NEGATIVE CONTROL for the room cap: a bare `k * step` answers
+    // `left: 772, top: 412` here — 60 and 72 px of cascade in a fence with only
+    // 16 and 68 px of slack, walking the window out of its own fence.
+    name: "a later slot cascades only as far as the fence has room",
+    fence: SPAWN_F,
+    index: 3,
+    want: { left: 728, top: 408, width: 560, height: 340 },
+  },
+  {
+    name: "the cascade wraps at eight, so slot 8 is slot 0 again",
+    fence: SPAWN_F,
+    index: 8,
+    want: { left: 712, top: 340, width: 560, height: 340 },
+  },
+  {
+    // A fence smaller than `.session-window`'s CSS floor (240x150): the box is
+    // BELOW it on both axes, which is exactly what the caller relaxes inline.
+    name: "a small fence yields a box below the CSS floor rather than one that escapes",
+    fence: { left: 0, top: 0, width: 200, height: 120 },
+    index: 7,
+    want: { left: 12, top: 40, width: 176, height: 68 },
+  },
+];
+
+for (const row of SPAWNS) {
+  test(`spawnRectIn: ${row.name}`, () => {
+    assert.deepEqual(load().spawnRectIn(row.fence, row.index, HEAD), row.want);
+  });
+}
+
+test("spawnRectIn: the box lies inside the fence at every cascade slot", () => {
+  const wb = load();
+  for (const row of SPAWNS) {
+    for (let i = 0; i < 8; i++) {
+      const b = wb.spawnRectIn(row.fence, i, HEAD);
+      // Asserted as a RELATION: the right COUNT of wrong boxes must still red.
+      const detail = `${row.name} slot ${i}: ${JSON.stringify(b)} escapes ${JSON.stringify(row.fence)}`;
+      assert.ok(b.left >= row.fence.left, detail);
+      assert.ok(b.top >= row.fence.top + HEAD, detail);
+      assert.ok(b.left + b.width <= row.fence.left + row.fence.width, detail);
+      assert.ok(b.top + b.height <= row.fence.top + row.fence.height, detail);
+      assert.ok(b.width > 0 && b.height > 0, detail);
+    }
+  }
+});

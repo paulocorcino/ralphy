@@ -1969,6 +1969,42 @@ window.WBConsole = (function () {
     };
   }
 
+  // Where a console born into a focused fence lands (issue #343), pure: the
+  // fence's rect, the cascade index, and the height of the fence's own head
+  // band in — one box out, cascading within the rect exactly as the free
+  // cascade does on the plane.
+  //
+  // The box may shrink BELOW `.session-window`'s CSS floor (240x150) for a
+  // small fence: #342 measured that the floor OUTRANKS an inline width, so the
+  // caller relaxes `minWidth`/`minHeight` for exactly those axes. Arithmetic
+  // that ignores the floor is only arithmetically correct.
+  //
+  // `roomX`/`roomY` cap the cascade offset instead of the slot index: a bare
+  // `k * step` walks the window straight out of a fence too small to hold eight
+  // steps, and containment is what makes this function worth having.
+  const SPAWN_PAD = 12;
+  const SPAWN_STEP = 24;
+
+  function spawnRectIn(fence, index, headH) {
+    const f = fence || {};
+    const fl = f.left || 0;
+    const ft = f.top || 0;
+    const fw = f.width || 0;
+    const fh = f.height || 0;
+    const head = headH || 0;
+    const width = Math.max(1, Math.min(560, fw - SPAWN_PAD * 2));
+    const height = Math.max(1, Math.min(340, fh - head - SPAWN_PAD * 2));
+    const k = (index || 0) % 8;
+    const roomX = Math.max(0, fw - SPAWN_PAD * 2 - width);
+    const roomY = Math.max(0, fh - head - SPAWN_PAD * 2 - height);
+    return {
+      left: fl + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomX),
+      top: ft + head + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomY),
+      width,
+      height,
+    };
+  }
+
   // The floating-window chrome, shared by a live console and a placeholder: the
   // rect (restored from a desk record, else cascaded), the titlebar with its
   // maximize/close controls, the body, and the eight resize handles. `desk` is a
@@ -1989,10 +2025,29 @@ window.WBConsole = (function () {
       win.style.height = rect.height + "px";
     } else {
       cascade = (cascade + 1) % 8;
-      win.style.left = 30 + cascade * 24 + "px";
-      win.style.top = 20 + cascade * 24 + "px";
-      win.style.width = "min(560px, 62%)";
-      win.style.height = "min(340px, 60%)";
+      // Born INTO the focused fence when there is one (issue #343): opening
+      // from the sidebar must not mean dragging the window into place
+      // afterwards. The rect is written at CONSTRUCTION, before the window is
+      // on screen, so `persistWin` never snapshots a box mid-transition (#342).
+      const host = focusedFence && fenceEl(focusedFence);
+      if (host) {
+        const headH = host.querySelector(".fence-head")?.offsetHeight || 28;
+        const box = spawnRectIn(restoreRect(host), cascade, headH);
+        win.style.left = box.left + "px";
+        win.style.top = box.top + "px";
+        win.style.width = box.width + "px";
+        win.style.height = box.height + "px";
+        // The CSS floor outranks the inline size (#342, measured: a 176x116
+        // rect rendered 240x150 and escaped its fence by 52 px), so relax it
+        // for exactly the axes below it — never for a box that already fits.
+        if (box.width < WIN_MIN_W) win.style.minWidth = box.width + "px";
+        if (box.height < WIN_MIN_H) win.style.minHeight = box.height + "px";
+      } else {
+        win.style.left = 30 + cascade * 24 + "px";
+        win.style.top = 20 + cascade * 24 + "px";
+        win.style.width = "min(560px, 62%)";
+        win.style.height = "min(340px, 60%)";
+      }
     }
 
     const titlebar = document.createElement("div");
@@ -2622,6 +2677,7 @@ window.WBConsole = (function () {
     fenceList,
     jumpToFence,
     focusedFence: focusedFenceId,
+    spawnRectIn,
     createFence,
     renameFence,
     removeFence,

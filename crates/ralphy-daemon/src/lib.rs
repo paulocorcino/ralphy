@@ -4823,6 +4823,85 @@ mod tests {
         }
     }
 
+    /// The fence list is the MAP (#343): the toolbar picker, the jump that
+    /// reuses #337's arithmetic, and the birth of a console inside the focused
+    /// fence. Same reason as the pins above — neither the node table nor the
+    /// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
+    /// pin below is an EXPRESSION, not a bare noun: #342 measured that a
+    /// function's own explanatory comment satisfies a noun pin, leaving it green
+    /// over deleted code.
+    #[test]
+    fn shell_lists_the_fences() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function rectHolds(",
+            "function fenceSummaries(",
+            "function fenceList(",
+            "function jumpToFence(",
+            "function spawnRectIn(",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #343 pin {pin}"
+            );
+        }
+        let body = |name: &str| -> String {
+            let after = js
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+        // The issue's own rule: the jump REUSES #337's bring-into-view, it does
+        // not re-derive the centring arithmetic. Both halves are load-bearing —
+        // the call site, and the fact that there is exactly one definition to
+        // call. A second copy would satisfy the first assertion alone.
+        assert!(
+            body("function jumpToFence(").contains("bringIntoView(restoreRect(el)"),
+            "jumpToFence must slide the viewport through bringIntoView (#337/#343)"
+        );
+        assert_eq!(
+            js.matches("function bringIntoView(").count(),
+            1,
+            "there may be exactly ONE bring-into-view implementation (#343)"
+        );
+        // The birth site goes through the pure box, so "a console opened while a
+        // fence is focused lands inside it" is arithmetic, not a hand-placed
+        // rect that drifts from the fence's own geometry.
+        assert!(
+            body("function buildChrome(").contains("spawnRectIn("),
+            "buildChrome must place a fence-born console through spawnRectIn (#343)"
+        );
+        // One fold feeds BOTH readouts: the fence's own chrome and the toolbar
+        // row can never disagree about a count.
+        assert!(
+            body("function refreshFenceChrome(").contains("fenceSummaries("),
+            "the fence chrome must read the same fold the list does (#343)"
+        );
+        let app = include_str!("../assets/ui/app.js");
+        for pin in ["jumpFence(", "fenceList()"] {
+            assert!(app.contains(pin), "app.js must keep the #343 pin {pin}");
+        }
+        let html = include_str!("../assets/ui/index.html");
+        for pin in ["jumpFence(", "fence-item"] {
+            assert!(html.contains(pin), "index.html must keep the #343 pin {pin}");
+        }
+        // The focused fence must be VISIBLE — an invisible focus makes "the next
+        // console is born over there" unexplainable to the operator.
+        let css = include_str!("../assets/ui/styles.css");
+        let rule = |head: &str| -> String {
+            let after = css
+                .split_once(head)
+                .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
+                .1;
+            after[..after.find('}').expect("the rule must close")].to_string()
+        };
+        assert!(
+            rule("\n.fence.is-focused {").contains("var(--accent)"),
+            "the focused fence must carry a visible ring (#343)"
+        );
+    }
+
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright
     /// runs in CI, so this is the only CI-visible gate that the deletion stays
     /// deleted — a re-added clamp would pass every unit test in the tree.
