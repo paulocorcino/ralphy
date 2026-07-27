@@ -5,5 +5,6 @@
 // (see https://nodejs.org/api/test.html#test-runner-execution-model).
 import "./wb-agents.test.mjs";
 import "./wb-changes.test.mjs";
+import "./wb-console.test.mjs";
 import "./wb-fail.test.mjs";
 import "./wb-runs.test.mjs";

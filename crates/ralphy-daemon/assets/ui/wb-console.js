@@ -386,6 +386,30 @@ window.WBConsole = (function () {
   const RESIZE_MIN = { width: 240, height: 150 }; // matches .session-window's CSS minimums
   const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
+  // ---- the stage extent --------------------------------------------------------
+  // How big the plane under the windows must be, as a pure function of the rects
+  // and the viewport: the bbox of the windows plus a margin of drag room past
+  // their own edges, unioned per axis with the viewport. The origin is pinned at
+  // 0,0 and the plane grows right and down only — a negative coordinate would
+  // mean re-anchoring the origin and rewriting every rect (issue #336).
+  // The viewport leg is what keeps an empty stage exactly viewport-sized, so a
+  // scrollbar only ever measures something real.
+  const STAGE_MARGIN = 200;
+
+  function stageExtent(rects, viewport, margin) {
+    const m = margin == null ? STAGE_MARGIN : margin;
+    let right = 0;
+    let bottom = 0;
+    for (const r of rects || []) {
+      right = Math.max(right, (r.left || 0) + (r.width || 0));
+      bottom = Math.max(bottom, (r.top || 0) + (r.height || 0));
+    }
+    return {
+      width: Math.max(viewport?.width || 0, right + m),
+      height: Math.max(viewport?.height || 0, bottom + m),
+    };
+  }
+
   function resizeRect(dir, rect, delta, min, bounds) {
     let { left, top, width, height } = rect;
     const right = rect.left + rect.width;
@@ -1175,6 +1199,7 @@ window.WBConsole = (function () {
     count,
     refitAll,
     resizeRect,
+    stageExtent,
     reconnectDecision,
     reconcileDesk,
     pruneDesk,
