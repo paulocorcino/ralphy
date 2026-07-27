@@ -346,7 +346,9 @@ def desk_records(page):
     """The saved desk, read from the DAEMON — issue #327 moved the store out of
     the browser. Settles past the shell's 250 ms upload debounce first."""
     page.wait_for_timeout(400)
-    return page.request.get(BASE + "api/desk").json()
+    # The desk body is `{ windows, fences }` since #340; this suite is about
+    # the window records only.
+    return page.request.get(BASE + "api/desk").json()["windows"]
 
 
 def rect_of(page, index):
@@ -692,7 +694,7 @@ def main():
                     "ts": int(time.time() * 1000),
                 }
             ]
-            page.request.put(BASE + "api/desk", data=seeded)
+            page.request.put(BASE + "api/desk", data={"windows": seeded, "fences": []})
 
             stop(proc)
             proc = launch(daemon_dir)

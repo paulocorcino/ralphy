@@ -256,7 +256,7 @@ def main():
         check(f"daemon listening on {PORT}", True)
 
         status, body = http("GET", "api/desk")
-        served = json.loads(body) if status == 200 else []
+        served = json.loads(body)["windows"] if status == 200 else []
         check(
             "the daemon serves the hand-written pre-#336 desk.toml",
             status == 200 and [r["rect"] for r in served] == [FIX_A, FIX_B],
@@ -483,7 +483,7 @@ def main():
             )
 
             page.wait_for_timeout(700)
-            persisted = json.loads(http("GET", "api/desk")[1])
+            persisted = json.loads(http("GET", "api/desk")[1])["windows"]
             by_id = {r["id"]: r["rect"] for r in persisted}
             check(
                 "the pinned origin is what the daemon persisted",
@@ -543,25 +543,28 @@ def main():
                 bad = http(
                     "PUT",
                     "api/desk",
-                    [
-                        {
-                            "id": "w-bad",
-                            "repo": slug,
-                            "agent": "console",
-                            "kind": "console",
-                            "rect": {"left": -1, "top": 0, "width": 600, "height": 380},
-                            "max": False,
-                            "sessionId": None,
-                            "ts": 1,
-                        }
-                    ],
+                    {
+                        "windows": [
+                            {
+                                "id": "w-bad",
+                                "repo": slug,
+                                "agent": "console",
+                                "kind": "console",
+                                "rect": {"left": -1, "top": 0, "width": 600, "height": 380},
+                                "max": False,
+                                "sessionId": None,
+                                "ts": 1,
+                            }
+                        ],
+                        "fences": [],
+                    },
                 )[0]
             except urllib.error.HTTPError as e:
                 bad = e.code
             check("PUT /api/desk refuses a negative origin", bad == 400, f"got={bad}")
             check(
                 "…without touching the desk it already holds",
-                [r["id"] for r in json.loads(http("GET", "api/desk")[1])]
+                [r["id"] for r in json.loads(http("GET", "api/desk")[1])["windows"]]
                 == [r["id"] for r in persisted],
                 "the refused upload must not replace the desk",
             )

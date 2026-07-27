@@ -3,7 +3,8 @@
 One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR`, so the
 operator's own desk and login policy are untouched.
 
-Scenario 1   a fresh daemon dir serves `GET /api/desk` → 200 `[]` and has written
+Scenario 1   a fresh daemon dir serves `GET /api/desk` → 200 with an empty
+             `{ windows, fences }` object and has written
              no `desk.toml`
 Scenario 2   two consoles (one dragged, one maximized) land in `desk.toml` as two
              `[[windows]]` tables
@@ -249,7 +250,11 @@ def main():
         # --- scenario 1: a fresh daemon dir has no desk at all ---------------
         status, body = http("GET", "api/desk")
         check("a fresh daemon serves GET /api/desk as 200", status == 200, f"got={status}")
-        check("…with an empty desk", body.strip() == "[]", f"got={body!r}")
+        check(
+            "…with an empty desk",
+            body.strip() == '{"windows":[],"fences":[]}',
+            f"got={body!r}",
+        )
         check(
             "…having written no desk.toml",
             not os.path.exists(desk_toml),
@@ -289,7 +294,7 @@ def main():
             # --- scenario 5a: no DESK in browser storage (#339) ----------------
             # The desk on the daemon side, read in the SAME breath, so "none of
             # these ids is in the browser" cannot pass by the desk being empty.
-            desk_now = json.loads(served)
+            desk_now = json.loads(served)["windows"]
             check(
                 "the daemon's desk is non-empty, so the absence below is not vacuous",
                 len(desk_now) == 2,
@@ -390,11 +395,11 @@ def main():
                 desk_record(live_ids[0], 100),
                 desk_record(live_ids[1], 101),
             ]
-            status, body = http("PUT", "api/desk", uploaded)
+            status, body = http("PUT", "api/desk", {"windows": uploaded, "fences": []})
             check("PUT /api/desk answers 200", status == 200, f"got={status}")
             import json as _json
 
-            pruned = _json.loads(body)
+            pruned = _json.loads(body)["windows"]
             check("…pruning 30 records to exactly 24", len(pruned) == 24, f"got={len(pruned)}")
             ids = [r["id"] for r in pruned]
             check(
@@ -407,7 +412,7 @@ def main():
                 live_ids[0] in ids and live_ids[1] in ids,
                 f"live={live_ids} kept={ids}",
             )
-            back = _json.loads(http("GET", "api/desk")[1])
+            back = _json.loads(http("GET", "api/desk")[1])["windows"]
             check(
                 "…and the persisted desk agrees",
                 [r["id"] for r in back] == ids,
@@ -417,7 +422,11 @@ def main():
 
             # --- scenario 4: a smaller viewport restores VERBATIM -------------
             # Restore the two-window desk saved at 1400x900 before shrinking.
-            http("PUT", "api/desk", [desk_record(live_ids[0], 200, 900, 500)])
+            http(
+                "PUT",
+                "api/desk",
+                {"windows": [desk_record(live_ids[0], 200, 900, 500)], "fences": []},
+            )
             ctx_c = browser.new_context(viewport={"width": 800, "height": 600})
             page_c = desk_page(ctx_c, viewport={"width": 800, "height": 600})
             page_c.wait_for_timeout(800)
@@ -460,7 +469,7 @@ def main():
             # flushing on the first drag destroys the operator's real layout, so
             # a page that could not READ the desk must never WRITE it.
             saved = [desk_record(f"s{n}", n, 40 + n, 40 + n) for n in range(1, 6)]
-            http("PUT", "api/desk", saved)
+            http("PUT", "api/desk", {"windows": saved, "fences": []})
             ctx_d = browser.new_context(viewport={"width": 1400, "height": 900})
             page_d = ctx_d.new_page()
             page_d.route(
@@ -478,7 +487,7 @@ def main():
             open_console(page_d, slug)
             drag_title(page_d, 0, -60, 30)
             page_d.wait_for_timeout(1500)
-            after = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])]
+            after = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])["windows"]]
             check(
                 "a page whose desk read was REFUSED does not overwrite the saved desk",
                 after == [r["id"] for r in saved],
@@ -490,7 +499,7 @@ def main():
             page_d.wait_for_timeout(800)
             drag_title(page_d, 0, 40, -20)
             page_d.wait_for_timeout(1200)
-            resumed = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])]
+            resumed = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])["windows"]]
             check(
                 "…and resumes writing once the desk is readable again",
                 all(r["id"] in resumed for r in saved) and len(resumed) > len(saved),
@@ -506,7 +515,11 @@ def main():
         check("the daemon starts with a corrupt desk.toml", wait_listening(BASE))
         check("…still answering /api/sessions", http("GET", "api/sessions")[0] == 200)
         status, body = http("GET", "api/desk")
-        check("…and serving an EMPTY desk", status == 200 and body.strip() == "[]", f"{status} {body!r}")
+        check(
+            "…and serving an EMPTY desk",
+            status == 200 and body.strip() == '{"windows":[],"fences":[]}',
+            f"{status} {body!r}",
+        )
     finally:
         stop(proc)
 

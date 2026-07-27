@@ -274,7 +274,11 @@ def poll_desk(want_id, predicate, timeout=8):
     while time.time() < deadline:
         try:
             rec = next(
-                (r for r in json.loads(http("GET", "api/desk")[1]) if r["id"] == want_id),
+                (
+                    r
+                    for r in json.loads(http("GET", "api/desk")[1])["windows"]
+                    if r["id"] == want_id
+                ),
                 None,
             )
         except Exception:

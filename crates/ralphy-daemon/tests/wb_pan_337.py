@@ -214,7 +214,7 @@ def poll(page, read, ok, timeout=6.0, step=100):
 
 
 def desk_rects():
-    return {r["id"]: r["rect"] for r in json.loads(http("GET", "api/desk")[1])}
+    return {r["id"]: r["rect"] for r in json.loads(http("GET", "api/desk")[1])["windows"]}
 
 
 def centre(page, index, sel=None):

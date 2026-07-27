@@ -339,7 +339,7 @@ def main():
             page = desk_page(ctx, {"width": 1400, "height": 900}, want=0)
             check(
                 "the desk really is empty, so the origin landing is about an empty plane",
-                json.loads(http("GET", "api/desk")[1]) == []
+                json.loads(http("GET", "api/desk")[1]) == {"windows": [], "fences": []}
                 and page.evaluate("() => document.querySelectorAll('.session-window').length") == 0,
             )
             box = view_box(page)
@@ -351,7 +351,7 @@ def main():
             ctx.close()
 
             # ===== scenario 2: nothing stored lands on the bounding box =========
-            status, _ = http("PUT", "api/desk", desk_records(slug))
+            status, _ = http("PUT", "api/desk", {"windows": desk_records(slug), "fences": []})
             check("the two far-off fixture windows reach the daemon's desk", status == 200, f"status={status}")
 
             ctx = fresh_context(browser, {"width": 1400, "height": 900})
@@ -566,7 +566,7 @@ def main():
             )
 
             # ===== scenario 6: no DESK in browser storage ======================
-            desk_now = json.loads(http("GET", "api/desk")[1])
+            desk_now = json.loads(http("GET", "api/desk")[1])["windows"]
             check(
                 "the daemon's desk is NON-empty, so the absence below is not vacuous",
                 len(desk_now) >= 2,
