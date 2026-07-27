@@ -383,7 +383,9 @@ window.WBConsole = (function () {
     return [...st.querySelectorAll(".session-window")].map((w) => ({
       id: w._deskId,
       agent: w._deskAgent,
-      repo: w._deskRepo,
+      // `"~"` is the desk's spelling of "no repo"; the picker says `home`, the
+      // same word the titlebar uses, rather than leaking the storage token.
+      repo: w._deskRepo === "~" ? null : w._deskRepo,
       kind: w._deskKind,
       running: !w.classList.contains("placeholder"),
     }));
@@ -405,6 +407,11 @@ window.WBConsole = (function () {
     // is `overflow:hidden`), so an offset write would clamp to 0 silently — and
     // a maximized console already fills the viewport anyway.
     if (ws.classList.contains("maxlock")) return it;
+    // A viewport that measures 0 is a tab still `display:none` — this repo has
+    // measured that trap (CONTEXT.md → Testing conventions). Centring against
+    // it would clamp to 0,0 and slide the plane somewhere the operator never
+    // asked for; focusing without scrolling is the honest degradation.
+    if (!ws.clientWidth || !ws.clientHeight) return it;
     const to = bringIntoView(
       restoreRect(it),
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -481,6 +488,15 @@ window.WBConsole = (function () {
         panRaf = requestAnimationFrame(tickPan);
       };
       const onMove = (ev) => {
+        // The mouseup is NOT guaranteed to arrive: a right-press opening the
+        // native context menu mid-drag, or an alt-tab with the button held,
+        // swallows it. Without this recovery the pan loop re-arms forever and
+        // no later gesture can remove this pair, because the next mousedown
+        // installs its OWN closures.
+        if (ev.buttons === 0) {
+          onUp();
+          return;
+        }
         last = { x: ev.clientX, y: ev.clientY };
         place(last);
         if (panRaf != null) return;
@@ -491,11 +507,16 @@ window.WBConsole = (function () {
         stopPan();
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        window.removeEventListener("blur", onUp);
         applyExtent();
         persistWin(win);
       };
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
+      // The other half of the lost-mouseup recovery: `blur` fires when a native
+      // menu or another window takes focus, which is the case where the pointer
+      // never comes back to deliver the `buttons === 0` move above.
+      window.addEventListener("blur", onUp);
       e.preventDefault();
     });
   }
@@ -541,13 +562,16 @@ window.WBConsole = (function () {
   // visibility predicate neither caller wants. Two callers: `reveal` below (the
   // Go-to picker, issue #337) and ADR-0051 §7's fence jump, where clicking a
   // name slides the viewport to that fence.
-  // The `Math.max(0, …)` ceiling is load-bearing: a viewport bigger than the
-  // extent would otherwise ask for a negative offset, which the DOM swallows.
+  // ONE clamp per axis, deliberately: the final `Math.max(0, …)` is what stops
+  // a viewport bigger than the extent from asking for a negative offset the DOM
+  // would silently swallow. Flooring the ceiling too would make that floor
+  // unfalsifiable — both spellings answer 0 for every input, so the table's
+  // negative control could never red either one.
   function bringIntoView(target, viewport, extent) {
     const vw = viewport?.width || 0;
     const vh = viewport?.height || 0;
-    const maxLeft = Math.max(0, (extent?.width || 0) - vw);
-    const maxTop = Math.max(0, (extent?.height || 0) - vh);
+    const maxLeft = (extent?.width || 0) - vw;
+    const maxTop = (extent?.height || 0) - vh;
     const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
     const top = (target?.top || 0) + (target?.height || 0) / 2 - vh / 2;
     return {
@@ -560,6 +584,9 @@ window.WBConsole = (function () {
   // viewport edge, and how wide the pressure band at each edge is.
   const PAN_BAND = 48;
   const PAN_STEP = 24;
+  // One "line" of wheel delta in pixels, for a browser that reports
+  // `deltaMode: DOM_DELTA_LINE` (Firefox) instead of pixels.
+  const WHEEL_LINE = 16;
 
   // The auto-pan rule, pure. `viewport` is a CLIENT rect; `pointer` is a client
   // point. Each edge contributes a pressure in `[0, band]` and the axis takes
@@ -1324,9 +1351,11 @@ window.WBConsole = (function () {
     if (e.button !== 0) return;
     const ws = workspace();
     const st = stage();
-    // The stage's only children are `.session-window`s, so element IDENTITY is
-    // the whole floor-vs-window hit test: a press anywhere inside a console —
-    // titlebar, body, resize handle — targets that window, never the stage.
+    // Element IDENTITY is the whole floor-vs-window hit test: a press anywhere
+    // inside a console — titlebar, body, resize handle — targets that window,
+    // never the stage. NOTE for ADR-0051 §6: a fence is also a stage child, so
+    // when fences land this must accept the fence's own floor too, or panning
+    // dies inside every fence.
     if (!ws || !st || e.target !== st) return;
     const startX = e.clientX;
     const startY = e.clientY;
@@ -1334,18 +1363,28 @@ window.WBConsole = (function () {
     const startTop = ws.scrollTop;
     st.classList.add("panning");
     const onMove = (ev) => {
+      // A swallowed mouseup (native context menu, alt-tab with the button
+      // held) would otherwise leave a sticky pan tracking a button-less
+      // pointer, with the `grabbing` cursor stuck on.
+      if (ev.buttons === 0) {
+        onUp();
+        return;
+      }
       ws.scrollLeft = startLeft - (ev.clientX - startX);
       ws.scrollTop = startTop - (ev.clientY - startY);
     };
-    // INVARIANT: every exit path drops BOTH listeners and the class. A mouseup
-    // anywhere on the document is the only end of a drag.
+    // INVARIANT: every exit path drops EVERY listener and the class — the
+    // mouseup, a move that reveals the button is already up, and the focus loss
+    // that means neither will arrive.
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
       st.classList.remove("panning");
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
     // No text selection starts, and the focused terminal keeps the keyboard.
     e.preventDefault();
   }
@@ -1364,7 +1403,17 @@ window.WBConsole = (function () {
     if (!(e.shiftKey && e.deltaY !== 0 && e.deltaX === 0)) return;
     const ws = workspace();
     if (!ws) return;
-    ws.scrollLeft += e.deltaY;
+    // `deltaY` is only pixels when `deltaMode` says so. Firefox reports LINE
+    // (±3 per notch) and does not convert shift-wheel itself, so taking the raw
+    // number would pan 3px a notch while `preventDefault` suppresses the
+    // platform's own scroll — strictly worse than the default it replaces.
+    const px =
+      e.deltaMode === 1
+        ? e.deltaY * WHEEL_LINE
+        : e.deltaMode === 2
+          ? e.deltaY * ws.clientHeight
+          : e.deltaY;
+    ws.scrollLeft += px;
     e.preventDefault();
   }
 

@@ -511,7 +511,10 @@ There is no zoom and no canvas library — the windows are xterm.js under the
 WebGL renderer, whose glyph atlas blurs under `transform: scale()`. The dotted
 floor belongs to the stage, so panning reads as movement rather than as content
 sliding over a background that sits still.
-The floor is the **pan** surface — dragging it moves the view and never a rect, dragging a window against the viewport edge auto-pans — and **bring into view** is the pure function (centre the target, clamp to the extent) behind the Go-to picker that reaches a window off-frame in one action (issue #337).
+The floor is the **pan** surface: dragging it moves the view and never a rect,
+and dragging a window against the viewport edge auto-pans.
+**bring into view** is the pure function — centre the target, clamp to the extent —
+behind the Go-to picker, which reaches an off-frame window in one action (#337).
 Decided in
 [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§1–4 (issue #336),
 superseding ADR-0050 §4.

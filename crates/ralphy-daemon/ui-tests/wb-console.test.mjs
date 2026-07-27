@@ -161,9 +161,11 @@ const BRING = [
     want: { left: 1000, top: 700 },
   },
   {
-    // NEGATIVE CONTROL: drop the `Math.max(0, …)` from the clamp ceiling and
-    // this answers {-200,-100}, which the DOM would silently swallow as 0,0 —
-    // the bug would be invisible in the browser and only ever show up here.
+    // NEGATIVE CONTROL: drop the final `Math.max(0, …)` and this answers
+    // {-200,-100}, which the DOM would silently swallow as 0,0 — the bug would
+    // be invisible in the browser and only ever show up here. It discriminates
+    // only because that floor is the axis's ONLY floor: flooring the ceiling
+    // too would make both spellings answer 0 and this row unfalsifiable.
     name: "a viewport LARGER than the extent yields the origin, never a negative offset",
     target: { left: 600, top: 400, width: 200, height: 100 },
     extent: { width: 800, height: 600 },
@@ -182,7 +184,8 @@ for (const row of BRING) {
 // How far the plane scrolls per animation frame while a window is dragged
 // against the viewport edge. `viewport` is a CLIENT rect with a NON-ZERO origin
 // on purpose: a handler that mistakes client coordinates for viewport-relative
-// ones reds every row here.
+// ones reds every EDGE row here — the centre row answers {0,0} under that
+// mutant too, so it is not the one doing the discriminating.
 const PAN_VIEW = { left: 100, top: 50, right: 1100, bottom: 850 };
 const BAND = 48;
 const STEP = 24;

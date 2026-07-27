@@ -4460,12 +4460,17 @@ mod tests {
             "function reveal(",
             "function onFloorDown(",
             "function onWheel(",
-            // the wheel handler is registered non-passive, or its
-            // `preventDefault` is a silent no-op and shift-wheel double-scrolls
-            "passive: false",
+            // The REGISTRATION, not the phrase: pinning a bare `passive: false`
+            // is satisfied by the comment that explains it, so the option could
+            // be deleted with this gate still green.
+            r#"addEventListener("wheel", onWheel, { passive: false })"#,
             // the auto-pan loop's teardown — an uncancelled rAF pans forever
             // after the button is released
             "cancelAnimationFrame",
+            // …and its two lost-mouseup recoveries, which are the only reason
+            // that teardown is reachable when the release never arrives
+            "ev.buttons === 0",
+            r#"window.addEventListener("blur", onUp)"#,
         ] {
             assert!(
                 js.contains(pin),
@@ -4479,13 +4484,34 @@ mod tests {
 
         let css = include_str!("../assets/ui/styles.css");
         for pin in [
-            // measured load-bearing: forced to `auto`, a wheel at the
-            // terminal's scroll limit chains out and pans the plane
-            "overscroll-behavior",
+            // The VALUE, not the property: `overscroll-behavior: auto` is the
+            // exact mutation `wb_pan_337.py` measures as chaining the wheel out
+            // of the terminal (plane 200 -> 0), and a property-name pin passes
+            // straight through it.
+            "overscroll-behavior: contain",
             "#stage.panning {",
-            "cursor: grab",
+            "cursor: grabbing",
         ] {
             assert!(css.contains(pin), "styles.css must keep the #337 pin {pin}");
+        }
+        // `cursor: grab` alone is satisfied by `.session-titlebar`, so scope the
+        // pin to the stage's OWN rule — the floor advertising itself as the pan
+        // surface is the affordance this issue added.
+        let stage_rule = css
+            .split_once("\n#stage {")
+            .expect("styles.css must keep the #stage rule")
+            .1;
+        assert!(
+            stage_rule[..stage_rule.find('}').expect("the #stage rule must close")]
+                .contains("cursor: grab"),
+            "the stage itself must advertise the grab cursor (#337)"
+        );
+
+        // The picker's wiring lives in app.js; without this the `@click`
+        // handlers in index.html can go dangling with every test still green.
+        let app = include_str!("../assets/ui/app.js");
+        for pin in ["toggleWindowMenu(", "revealWindow(", "windowList"] {
+            assert!(app.contains(pin), "app.js must keep the #337 pin {pin}");
         }
 
         let html = include_str!("../assets/ui/index.html");

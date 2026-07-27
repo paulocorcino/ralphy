@@ -2942,12 +2942,15 @@ function shell() {
     // can sit entirely off-view: this is the one action that reaches it (#337).
     toggleWindowMenu() {
       this.windowList = WBConsole.list();
+      this.agentMenu = false;
       this.windowMenu = !this.windowMenu;
     },
     revealWindow(id) {
       if (this.active !== "consoles") this.activate("consoles");
-      WBConsole.reveal(id);
       this.windowMenu = false;
+      // AFTER the tab is laid out: a `display:none` Consoles tab measures a 0
+      // viewport, and centring against zero is centring against nothing.
+      this.$nextTick(() => WBConsole.reveal(id));
     },
 
     // --- context menu -----------------------------------------------------

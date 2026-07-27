@@ -471,6 +471,24 @@ def main():
                 f"want={want_left} got={held['left']} (scrollLeft={held['scrollLeft']}"
                 f" pointerX={pointer_x} wsLeft={wsr['left']} offX={off_x})",
             )
+            # Leave the band BEFORE releasing, still holding the button: the
+            # loop stops, so the pre-mouseup read is stable. Reading it while
+            # the loop is live would race a frame boundary against two CDP
+            # round trips and red a conformant build.
+            page.mouse.move(wsr["left"] + wsr["width"] / 2, press["y"], steps=6)
+            page.wait_for_timeout(400)
+            parked = page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                " return { scrollLeft: ws.scrollLeft,"
+                "   left: document.querySelectorAll('.session-window')[0].offsetLeft }; }"
+            )
+            page.wait_for_timeout(300)
+            check(
+                "…and leaving the band ENDS the loop while the button is still held",
+                page.evaluate("() => document.getElementById('workspace').scrollLeft")
+                == parked["scrollLeft"],
+                f"scrollLeft={parked['scrollLeft']}",
+            )
             page.mouse.up()
             page.wait_for_timeout(400)
             dropped = page.evaluate(
@@ -478,8 +496,8 @@ def main():
             )
             check(
                 "…and releasing leaves it exactly where it was dropped",
-                dropped == held["left"],
-                f"pre-mouseup={held['left']} post-mouseup={dropped}",
+                dropped == parked["left"],
+                f"pre-mouseup={parked['left']} post-mouseup={dropped}",
             )
             settled_scroll = scroll(page)["left"]
             page.wait_for_timeout(500)
@@ -526,11 +544,14 @@ def main():
             side = scroll(page)
             # Whether the platform converts shift-wheel itself or the handler
             # does it, the OUTCOME is the same — which is what "consistent with
-            # the platform" has to mean. Without either, the plane scrolls DOWN.
+            # the platform" has to mean. Without either, the plane scrolls DOWN;
+            # with BOTH it travels 600, which is exactly the double-scroll the
+            # `deltaX === 0` guard exists to prevent, so the oracle is the exact
+            # delta and not `> 0`.
             check(
-                "shift + wheel reaches the horizontal axis",
-                side["left"] > 0,
-                f"scrollLeft={side['left']}",
+                "shift + wheel reaches the horizontal axis, exactly once",
+                side["left"] == 300,
+                f"scrollLeft={side['left']} (300 = one conversion, 600 = double-scrolled)",
             )
             check(
                 "…without also scrolling down",
@@ -692,15 +713,32 @@ def main():
             page.keyboard.type("after")
             page.wait_for_timeout(400)
             sent = "".join(page.evaluate("() => window.__sent"))
+            # `.find`, not `.index`: a lost post-pan keystroke must be ONE
+            # recorded failure, not an uncaught traceback that skips
+            # scenarios 7-8 and prints no summary at all.
             check(
                 "a keystroke after the pan reaches the SAME socket, in order",
-                0 <= sent.index("before") < sent.index("after"),
+                0 <= sent.find("before") < sent.find("after"),
                 f"sent={sent!r}",
             )
             check(
                 "…and that socket never silently reconnected under the wrapper",
                 after_pan["sameSocket"],
                 "a reconnect would have voided the spy and made the check vacuous",
+            )
+            # POSITIVE CONTROL for `fits == 0`: a spy that can never increment
+            # would prove "panning refits nothing" for a build that refits
+            # through some other door.
+            page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                " w.style.height = (w.offsetHeight + 60) + 'px'; }"
+            )
+            page.wait_for_timeout(700)
+            fits_now = page.evaluate("() => window.__fits")
+            check(
+                "…and the refit spy CAN increment — a real resize fires it",
+                fits_now > 0,
+                f"fit.fit() calls after a 60px resize = {fits_now}",
             )
             reset_scroll(page)
             restore_fixture(page)
@@ -729,7 +767,15 @@ def main():
                 "  .filter((e) => e.offsetParent !== null).length === 2",
                 timeout=8000,
             )
-            check("the Go-to picker lists both open consoles", True, "")
+            rows = page.evaluate(
+                "() => [...document.querySelectorAll('.window-menu .window-item')]"
+                "  .filter((e) => e.offsetParent !== null).map((e) => e.textContent.trim())"
+            )
+            check(
+                "the Go-to picker lists both open consoles, labelled",
+                len(rows) == 2 and all("console" in r for r in rows),
+                f"rows={rows}",
+            )
             page.locator(".window-menu .window-item:visible").nth(1).click()
             page.wait_for_timeout(500)
             revealed = page.evaluate(
@@ -737,6 +783,12 @@ def main():
                 " const st = document.getElementById('stage');"
                 " const w = document.querySelectorAll('.session-window')[1];"
                 " const got = { left: ws.scrollLeft, top: ws.scrollTop };"
+                # Measured BEFORE the echo write below, or this would assert on
+                # offsets the test itself just set instead of on what the one
+                # click produced.
+                " const r0 = w.getBoundingClientRect(); const b0 = ws.getBoundingClientRect();"
+                " const inside = r0.left >= b0.left && r0.right <= b0.right"
+                "   && r0.top >= b0.top && r0.bottom <= b0.bottom;"
                 " const want = window.WBConsole.bringIntoView("
                 "   { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth, height: w.offsetHeight },"
                 "   { width: ws.clientWidth, height: ws.clientHeight },"
@@ -746,10 +798,7 @@ def main():
                 # OFFSETS themselves and not two float spellings of them.
                 " ws.scrollLeft = want.left; ws.scrollTop = want.top;"
                 " const echo = { left: ws.scrollLeft, top: ws.scrollTop };"
-                " const r = w.getBoundingClientRect(); const b = ws.getBoundingClientRect();"
-                " return { got, want, echo,"
-                "   inside: r.left >= b.left && r.right <= b.right"
-                "     && r.top >= b.top && r.bottom <= b.bottom }; }"
+                " return { got, want, echo, inside }; }"
             )
             check(
                 "ONE click brings the far window fully inside the viewport",
@@ -806,7 +855,9 @@ def main():
             )
             check(
                 "the daemon's desk agrees with the rects on screen",
-                all(
+                len(screen) == 2
+                and len(desk) == 2
+                and all(
                     desk.get(k) == {m: float(v) for m, v in r.items()} for k, r in screen.items()
                 ),
                 f"desk={desk} screen={screen}",
@@ -822,7 +873,9 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 40
+    # The floor is the REAL count, not a loose lower bound: set six below it, six
+    # checks could stop running and the suite would still read green.
+    ok = all(results) and len(results) >= 48
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE PLANE IS NAVIGABLE")
