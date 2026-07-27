@@ -12,8 +12,9 @@ Scenario 2   `WBConsole.reconcileDesk` in isolation: a 12-row table over literal
 Scenario 3   `WBConsole.pruneDesk` caps the desk at 24, newest `ts` first
 Scenario 4   a live west/north-edge resize on a real console window: the opposite
              edge holds, the size changes, and the terminal reflows (`term.cols`)
-Scenario 5   live clamping (minimum + workspace) and a maximized window refusing
-             both a resize and a titlebar drag
+Scenario 5   live clamping (minimum + stage — the bound moved off the visible box
+             in #336) and a maximized window refusing both a resize and a
+             titlebar drag
 Scenario 6   the desk store's shape, a browser reload restoring both windows to
              their exact rects (one maximized), and a close forgetting its record
 Scenario 7   a DAEMON restart: the free console relaunches itself, the agent
@@ -469,18 +470,21 @@ def main():
                 " w.style.width = '400px'; w.style.height = '300px'; }"
             )
             page.wait_for_timeout(200)
+            # Since #336 the resize bound is the STAGE, not the visible box
+            # (ADR-0051 §5) — read it BEFORE the drag, because the mouseup
+            # recompute grows the stage by a margin past the new right edge.
+            stage_w = page.evaluate("() => document.getElementById('stage').offsetWidth")
             drag_handle(page, 0, "e", 3000, 0)
             r4 = rect_of(page, 0)
-            ws_w = page.evaluate("() => document.getElementById('workspace').clientWidth")
             check(
-                "dragging past the workspace clamps to its edge",
-                r4["left"] == 200 and r4["left"] + r4["width"] == ws_w,
-                f"got={r4} workspace={ws_w}",
+                "dragging past the stage clamps to its edge",
+                r4["left"] == 200 and r4["left"] + r4["width"] == stage_w,
+                f"got={r4} stage={stage_w}",
             )
             drag_handle(page, 0, "w", -3000, 0)
             r5 = rect_of(page, 0)
             check(
-                "…and a west overshoot stops at the workspace origin",
+                "…and a west overshoot stops at the stage origin",
                 r5["left"] == 0 and r5["left"] + r5["width"] == r4["left"] + r4["width"],
                 f"got={r5}",
             )

@@ -471,24 +471,28 @@ window.WBConsole = (function () {
         width: win.offsetWidth,
         height: win.offsetHeight,
       };
+      // The STAGE is the bound (ADR-0051 §5) — the pure `resizeRect` is
+      // untouched, only its argument changed. Captured ONCE, deliberately: a
+      // live re-read feeds back on itself, because the extent this gesture
+      // grows becomes the bound of its own next move and an overshoot inflates
+      // the window ~one margin per mousemove instead of stopping at the edge.
+      // Nothing else moves during a resize, so the capture cannot go stale.
+      const st = stage();
+      const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
       const startY = e.clientY;
       const onMove = (ev) => {
-        // The STAGE is the bound, read live so a grow makes room for the next
-        // move — the pure `resizeRect` is untouched, only its argument changed.
-        const st = stage();
         const out = resizeRect(
           dir,
           rect,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
           RESIZE_MIN,
-          { width: st.offsetWidth, height: st.offsetHeight },
+          bounds,
         );
         win.style.left = out.left + "px";
         win.style.top = out.top + "px";
         win.style.width = out.width + "px";
         win.style.height = out.height + "px";
-        applyExtent({ grow: true });
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);

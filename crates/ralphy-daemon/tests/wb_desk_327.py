@@ -9,9 +9,10 @@ Scenario 2   two consoles (one dragged, one maximized) land in `desk.toml` as tw
              `[[windows]]` tables
 Scenario 3   a SECOND browser context (fresh profile, empty storage) restores the
              same rects and the same maximized flags
-Scenario 4   a desk saved at 1400x900 restores fully on-screen at 800x600 — the
-             `clampAll` the issue predicted, which restoreDesk now CALLS (its
-             ResizeObserver has already fired by the time windows are restored)
+Scenario 4   a desk saved at 1400x900 restores VERBATIM at 800x600 — since #336
+             the stage is a plane and the viewport scrolls over it, so an
+             off-view window is reached by scrolling, never refitted (the
+             `clampAll` this scenario used to assert is deleted)
 Scenario 5   the shell touches no browser storage at all — `localStorage.length`
              is 0 after the session, and `wb-console.js` names it zero times
 Scenario 6   a CORRUPT `desk.toml` yields an empty desk, not a startup failure
@@ -342,28 +343,33 @@ def main():
             )
             ctx_b.close()
 
-            # --- scenario 4: a smaller viewport restores fully on-screen ------
+            # --- scenario 4: a smaller viewport restores VERBATIM -------------
             # Restore the two-window desk saved at 1400x900 before shrinking.
             http("PUT", "api/desk", [desk_record(live_ids[0], 200, 900, 500)])
             ctx_c = browser.new_context(viewport={"width": 800, "height": 600})
             page_c = desk_page(ctx_c, viewport={"width": 800, "height": 600})
             page_c.wait_for_timeout(800)
-            fits = page_c.evaluate(
+            small = page_c.evaluate(
                 "() => { const ws = document.getElementById('workspace');"
-                " return [...document.querySelectorAll('.session-window')].map((w) =>"
-                "   w.offsetLeft >= 0 && w.offsetTop >= 0 &&"
-                "   w.offsetLeft + w.offsetWidth <= ws.clientWidth &&"
-                "   w.offsetTop + w.offsetHeight <= ws.clientHeight); }"
+                " const w = document.querySelectorAll('.session-window')[0];"
+                " return w ? { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth,"
+                "   height: w.offsetHeight, clientWidth: ws.clientWidth,"
+                "   scrollWidth: ws.scrollWidth } : null; }"
             )
             check(
                 "a desk saved at 1400x900 restores a window at 800x600",
-                len(fits) >= 1,
-                f"windows={len(fits)}",
+                small is not None,
+                f"got={small}",
             )
             check(
-                "…fully on-screen — `clampAll` unchanged, now CALLED after a restore",
-                all(fits),
-                f"got={fits}",
+                "…at the rect it was saved with — nothing refits it (#336)",
+                small and small["left"] == 900 and small["width"] == 400,
+                f"want left=900 width=400 got={small}",
+            )
+            check(
+                "…because the viewport SCROLLS over the stage instead",
+                small and small["scrollWidth"] > small["clientWidth"] > 0,
+                f"scrollWidth={small and small['scrollWidth']} clientWidth={small and small['clientWidth']}",
             )
             ctx_c.close()
 
