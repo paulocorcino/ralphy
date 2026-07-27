@@ -180,6 +180,70 @@ for (const row of BRING) {
   });
 }
 
+// ---- viewLanding (issue #339) ------------------------------------------------
+// Where the viewport lands on load: the stored per-client offset when it still
+// SHOWS work, otherwise the bounding box of the restored windows. Both legs end
+// in the same clamp, so a stored offset from a bigger screen is pulled into the
+// current extent rather than silently swallowed by the DOM.
+const LAND_VIEW = { width: 1052, height: 854 };
+const LAND_EXT = { width: 3200, height: 2080 };
+const LAND_RECTS = [
+  { left: 1600, top: 900, width: 600, height: 380 },
+  { left: 2400, top: 1500, width: 600, height: 380 },
+];
+// The bbox landing these rects imply: bbox {1600,900,1400x980} centred in a
+// 1052x854 viewport → 1600 + 700 - 526 = 1774, 900 + 490 - 427 = 963.
+const BBOX_LANDING = { left: 1774, top: 963 };
+
+const LAND = [
+  {
+    name: "an empty stage with nothing stored lands on the origin",
+    stored: null,
+    rects: [],
+    want: { left: 0, top: 0 },
+  },
+  {
+    name: "nothing stored lands on the bounding box of the restored windows",
+    stored: null,
+    rects: LAND_RECTS,
+    want: BBOX_LANDING,
+  },
+  {
+    name: "a stored offset that still shows a window is honoured verbatim",
+    stored: { left: 1774, top: 963 },
+    rects: LAND_RECTS,
+    want: BBOX_LANDING,
+  },
+  {
+    // NEGATIVE CONTROL: 0,0 is a perfectly well-formed stored offset that shows
+    // NO window here. Invert the intersection test (or drop it and trust any
+    // stored pair) and this row answers {0,0} instead of the bbox landing.
+    name: "a stored offset showing no window at all falls back to the bounding box",
+    stored: { left: 0, top: 0 },
+    rects: LAND_RECTS,
+    want: BBOX_LANDING,
+  },
+  {
+    name: "a stored offset past the extent is clamped, not discarded",
+    stored: { left: 9999, top: 9999 },
+    rects: LAND_RECTS,
+    want: { left: 2148, top: 1226 },
+  },
+  {
+    name: "a corrupt stored offset is treated as absent",
+    stored: { left: "x", top: null },
+    rects: LAND_RECTS,
+    want: BBOX_LANDING,
+  },
+];
+
+for (const row of LAND) {
+  test(`viewLanding: ${row.name}`, () => {
+    const got = load().viewLanding(row.stored, row.rects, LAND_VIEW, LAND_EXT);
+    assert.deepEqual(got, row.want);
+  });
+}
+
 // ---- panNudge (issue #337) ---------------------------------------------------
 // How far the plane scrolls per animation frame while a window is dragged
 // against the viewport edge. `viewport` is a CLIENT rect with a NON-ZERO origin

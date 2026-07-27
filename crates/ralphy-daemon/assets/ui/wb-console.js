@@ -603,17 +603,68 @@ window.WBConsole = (function () {
   // would silently swallow. Flooring the ceiling too would make that floor
   // unfalsifiable — both spellings answer 0 for every input, so the table's
   // negative control could never red either one.
+  function clampOffset(offset, viewport, extent) {
+    const maxLeft = (extent?.width || 0) - (viewport?.width || 0);
+    const maxTop = (extent?.height || 0) - (viewport?.height || 0);
+    return {
+      left: Math.max(0, Math.min(offset?.left || 0, maxLeft)),
+      top: Math.max(0, Math.min(offset?.top || 0, maxTop)),
+    };
+  }
+
   function bringIntoView(target, viewport, extent) {
     const vw = viewport?.width || 0;
     const vh = viewport?.height || 0;
-    const maxLeft = (extent?.width || 0) - vw;
-    const maxTop = (extent?.height || 0) - vh;
     const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
     const top = (target?.top || 0) + (target?.height || 0) / 2 - vh / 2;
-    return {
-      left: Math.max(0, Math.min(left, maxLeft)),
-      top: Math.max(0, Math.min(top, maxTop)),
-    };
+    return clampOffset({ left, top }, viewport, extent);
+  }
+
+  // The bounding box of a set of stage-relative rects; all zeros for none, so an
+  // empty desk centres on the pinned origin rather than on nothing.
+  function bboxOf(rects) {
+    const list = rects || [];
+    if (!list.length) return { left: 0, top: 0, width: 0, height: 0 };
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const r of list) {
+      left = Math.min(left, r.left || 0);
+      top = Math.min(top, r.top || 0);
+      right = Math.max(right, (r.left || 0) + (r.width || 0));
+      bottom = Math.max(bottom, (r.top || 0) + (r.height || 0));
+    }
+    return { left, top, width: right - left, height: bottom - top };
+  }
+
+  // Where the viewport lands on load (issue #339), pure. The stored per-client
+  // offset wins — but only while it still SHOWS work: a stored pair is honoured
+  // verbatim (after the same clamp) when some window intersects the viewport
+  // placed there, and otherwise degrades to the bbox landing. That intersection
+  // test is the whole "restoring on a smaller screen lands on a view that shows
+  // work" criterion; without it a stored 0,0 from an empty session would strand
+  // the operator on a corner of an empty plane.
+  // The clamp comes BEFORE the test on purpose: an offset saved on a bigger
+  // screen is a legitimate view pulled into this extent, not a corrupt one.
+  function viewLanding(stored, rects, viewport, extent) {
+    const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const left = num(stored?.left);
+    const top = num(stored?.top);
+    if (left !== null && top !== null) {
+      const at = clampOffset({ left, top }, viewport, extent);
+      const vw = viewport?.width || 0;
+      const vh = viewport?.height || 0;
+      const shows = (rects || []).some(
+        (r) =>
+          (r.left || 0) < at.left + vw &&
+          (r.left || 0) + (r.width || 0) > at.left &&
+          (r.top || 0) < at.top + vh &&
+          (r.top || 0) + (r.height || 0) > at.top,
+      );
+      if (shows) return at;
+    }
+    return bringIntoView(bboxOf(rects), viewport, extent);
   }
 
   // How far the plane scrolls per frame while a window is dragged against the
@@ -1569,6 +1620,7 @@ window.WBConsole = (function () {
     resizeRect,
     stageExtent,
     bringIntoView,
+    viewLanding,
     panNudge,
     reconnectDecision,
     reconcileDesk,
