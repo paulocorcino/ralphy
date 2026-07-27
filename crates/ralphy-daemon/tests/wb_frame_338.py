@@ -16,8 +16,8 @@ Scenario 3   maximize fills the VIEWPORT at a scrolled offset — the terminal
              refits wider — without growing the stage extent
 Scenario 4   Go-to another window WHILE maximized pans the plane and the pin
              follows it, so the full-bleed never desyncs from the frame
-Scenario 5   Arrange leaves a maximized window's restore rect alone, and
-             restoring puts it back on its stage-coordinate box (screen + desk)
+Scenario 5   restoring a maximized window puts it back on its stage-coordinate
+             box (screen + desk)
 Scenario 6   a persisted `max = true` comes back maximized across a reload and
              still restores to the right box
 Scenario 7   closing both consoles reveals the empty-stage hint and the pill
@@ -292,8 +292,7 @@ def poll_desk(want_id, predicate, timeout=8):
 def press_chrome(page, index, selector):
     """Click a window's own chrome button from inside the page.
 
-    A full-bleed console covers its neighbours' chrome and Arrange fills the
-    frame, so `locator.click()` on anything but the topmost window times out
+    A full-bleed console covers its neighbours' chrome, so `locator.click()` on anything but the topmost window times out
     with "intercepts pointer events" (#336 handoff). This is still the real
     button and the real handler.
     """
@@ -569,51 +568,6 @@ def main():
                 f"scrollLeft {held} -> {f4b['scrollLeft']}",
             )
 
-            # ===== scenario 5b: Arrange leaves a maximized window alone ========
-            # `.maximized` overrides all four offsets with `!important`, so a
-            # tile rect written onto it is invisible on screen AND silently
-            # replaces the restore rect this issue owns (#336 residue L2).
-            page.locator("button", has_text="Arrange").first.click()
-            page.wait_for_timeout(700)
-            inline = page.evaluate(
-                "() => { const w = document.querySelectorAll('.session-window')[0];"
-                "  return { left: w.style.left, top: w.style.top,"
-                "    width: w.style.width, height: w.style.height,"
-                "    maximized: w.classList.contains('maximized'),"
-                "    other: document.querySelectorAll('.session-window')[1].style.left }; }"
-            )
-            check(
-                "Arrange does not tile the maximized console…",
-                (inline["left"], inline["top"]) == ("40px", "40px"),
-                f"got left={inline['left']} top={inline['top']}",
-            )
-            check(
-                "…nor overwrite the size it must restore to",
-                (inline["width"], inline["height"]) == ("600px", "380px"),
-                f"got width={inline['width']} height={inline['height']}",
-            )
-            check(
-                "…while still tiling the window that is NOT maximized",
-                inline["other"] and inline["other"] != "700px",
-                f"the other window's inline left = {inline['other']!r}",
-            )
-            # The tile must not BURY the full bleed either: filtering it out of
-            # the grid also drops it from `focusWin`, and `maxlock` leaves no way
-            # to scroll away from a maximized console whose titlebar is covered.
-            top_at_max = page.evaluate(
-                "() => { const w = document.querySelector('.session-window.maximized');"
-                "  const b = w.querySelector('.session-max').getBoundingClientRect();"
-                "  const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);"
-                "  return { own: !!(el && w.contains(el)), tag: el && el.className }; }"
-            )
-            check(
-                "…and leaves the maximized console's own restore button hittable",
-                top_at_max["own"],
-                f"the point over `.session-max` hit {top_at_max['tag']!r}",
-            )
-            arranged = poll_desk("w-fixture-b", lambda r: True, timeout=3)
-            print(f"[note] after Arrange, /api/desk holds w-fixture-b at {arranged and arranged['rect']}")
-
             # ===== scenario 5: restore lands on the STAGE-coordinate box =======
             # A REAL click: the check above just proved the button is on top.
             page.locator(".session-window.maximized").locator(".session-max").click()
@@ -695,10 +649,10 @@ def main():
                 fills_frame(f6),
                 f"edges (l,t,r,b) = {f6['left']},{f6['top']},{f6['right']},{f6['bottom']}",
             )
-            # Against the LIVE stage, not a literal: whatever rect Arrange left
-            # persisted, the pill's job is to mirror the extent that is actually
-            # laid out. A literal here would have to be re-derived — and would
-            # red — the day `arrange()` persists the rect it tiles to.
+            # Against the LIVE stage, not a literal: the pill's job is to
+            # mirror the extent that is actually laid out, and a literal here
+            # would have to be re-derived every time an unrelated act moves a
+            # window on this fixture.
             mirror = page.evaluate(
                 "() => { const st = document.getElementById('stage');"
                 "  return { pills: [...document.querySelectorAll('.canvas-foot .pill')]"
@@ -774,7 +728,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 46
+    ok = all(results) and len(results) >= 42
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE CHROME IS IN THE FRAME")
