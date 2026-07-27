@@ -275,18 +275,15 @@ window.WBConsole = (function () {
   //
   // On a scrollable stage the bleed must be pinned to what the operator is
   // looking at, not to the plane's origin: `--max-left`/`--max-top` carry the
-  // viewport's scroll offsets and `maxlock` freezes them, so the pin cannot
-  // desync without a scroll handler. The offsets are re-asserted after the class
-  // flip because `maxlock` (`overflow:hidden`) drops the scrollbars, which can
-  // clamp `scrollLeft`/`scrollTop` to 0 on the way.
+  // viewport's scroll offsets, and `syncMaxPin` re-derives them from the LIVE
+  // offsets on every path that can change them. The offsets are re-asserted
+  // after the class flip because `maxlock` (`overflow:hidden`) drops the
+  // scrollbars, which can clamp `scrollLeft`/`scrollTop` on the way.
   function toggleMax(win, btn) {
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
     const maxed = win.classList.toggle("maximized");
-    if (maxed) {
-      win.style.setProperty("--max-left", (offsets?.left || 0) + "px");
-      win.style.setProperty("--max-top", (offsets?.top || 0) + "px");
-    } else {
+    if (!maxed) {
       win.style.removeProperty("--max-left");
       win.style.removeProperty("--max-top");
     }
@@ -295,6 +292,10 @@ window.WBConsole = (function () {
       ws.scrollLeft = offsets.left;
       ws.scrollTop = offsets.top;
     }
+    // AFTER the restore, never from `offsets`: the pin must be derived from the
+    // offsets that actually SURVIVED the `maxlock` flip, not from the pair read
+    // before it.
+    syncMaxPin();
     btn.title = maxed ? "restore" : "maximize";
     btn.innerHTML = maxed
       ? '<i class="bi bi-fullscreen-exit"></i>'
@@ -327,6 +328,25 @@ window.WBConsole = (function () {
     const st = stage();
     if (!ws || !st) return;
     ws.classList.toggle("maxlock", !!st.querySelector(".session-window.maximized"));
+  }
+
+  // The maximize pin itself, DERIVED the same way. `--max-left`/`--max-top`
+  // place the full bleed over what the operator is looking at, so they are only
+  // honest while they equal the viewport's CURRENT offsets — a pin written once
+  // at maximize time silently desyncs the moment anything pans the plane.
+  // INVARIANT: every path that changes `#workspace`'s scroll offsets ends here.
+  // The viewport's own `scroll` event (`wireStage`) covers the gesture, the
+  // wheel, the scrollbar AND `reveal`'s programmatic write; `toggleMax` calls it
+  // after the class flip, and the un-maximize branch there still REMOVES both
+  // properties, which is why this only ever writes to `.maximized` windows.
+  function syncMaxPin() {
+    const ws = workspace();
+    const st = stage();
+    if (!ws || !st) return;
+    for (const win of st.querySelectorAll(".session-window.maximized")) {
+      win.style.setProperty("--max-left", ws.scrollLeft + "px");
+      win.style.setProperty("--max-top", ws.scrollTop + "px");
+    }
   }
 
   // The last extent published to the shell, so the dispatch below can be an
@@ -416,10 +436,13 @@ window.WBConsole = (function () {
     );
     if (!it) return null;
     focusWin(it);
-    // While anything is maximized the viewport is frozen (`#workspace.maxlock`
-    // is `overflow:hidden`), so an offset write would clamp to 0 silently — and
-    // a maximized console already fills the viewport anyway.
-    if (ws.classList.contains("maxlock")) return it;
+    // A maximized console already fills the frame, so there is nothing to
+    // centre. Only the TARGET is checked: Go-to is the one product path that
+    // pans the plane while something else is maximized, and `maxlock`
+    // (`overflow:hidden`) does NOT refuse a programmatic offset write — the
+    // resulting `scroll` re-derives the pin (`syncMaxPin`), so the full bleed
+    // follows the frame instead of desyncing from it (issue #338).
+    if (it.classList.contains("maximized")) return it;
     // A viewport that measures 0 is a tab still `display:none` — this repo has
     // measured that trap (CONTEXT.md → Testing conventions). Centring against
     // it would clamp to 0,0 and slide the plane somewhere the operator never
@@ -1438,6 +1461,10 @@ window.WBConsole = (function () {
     if (!ws || !st) return;
     st.addEventListener("mousedown", onFloorDown);
     ws.addEventListener("wheel", onWheel, { passive: false });
+    // The one registration that makes the maximize pin a derived fact: a
+    // gesture, the wheel, the scrollbar and `reveal`'s programmatic offset write
+    // all end in a `scroll` on the viewport itself.
+    ws.addEventListener("scroll", syncMaxPin);
   }
 
   // The gestures are wired in the static demo too, where `restoreDesk` returns

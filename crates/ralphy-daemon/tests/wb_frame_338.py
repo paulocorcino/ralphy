@@ -212,6 +212,57 @@ def chrome_placement(page):
     )
 
 
+def bare_floor(page):
+    """A viewport point whose hit test lands on the STAGE itself.
+
+    `onFloorDown` tests element IDENTITY (`e.target !== st` bails), so a press
+    that lands on a window — or on chrome that forgot `pointer-events:none` —
+    starts no pan at all and the whole scenario passes vacuously at scrollLeft 0.
+    """
+    return page.evaluate(
+        "() => { const ws = document.getElementById('workspace');"
+        "  const st = document.getElementById('stage');"
+        "  const r = ws.getBoundingClientRect();"
+        "  const x = r.left + r.width / 2, y = r.bottom - 12;"
+        "  const el = document.elementFromPoint(x, y);"
+        "  return { x, y, onStage: el === st, hit: el && (el.id || el.className) }; }"
+    )
+
+
+def pan_floor(page, dx, want):
+    """Pan the plane by a REAL floor drag, then wait for the offset to land."""
+    at = bare_floor(page)
+    check("the drag starts on the bare floor, not on a window or on chrome", at["onStage"], f"hit={at['hit']}")
+    page.mouse.move(at["x"], at["y"])
+    page.mouse.down()
+    for f in (0.34, 0.67, 1.0):
+        page.mouse.move(at["x"] - dx * f, at["y"], steps=4)
+    page.mouse.up()
+    page.wait_for_function(
+        "(n) => document.getElementById('workspace').scrollLeft === n",
+        arg=want,
+        timeout=8000,
+    )
+
+
+def frame_fill(page, index):
+    """How exactly window `index` covers the viewport, edge by edge."""
+    return page.evaluate(
+        "(i) => { const ws = document.getElementById('workspace');"
+        "  const w = document.querySelectorAll('.session-window')[i];"
+        "  const a = w.getBoundingClientRect(), b = ws.getBoundingClientRect();"
+        "  return { left: a.left - b.left, top: a.top - b.top,"
+        "    right: a.right - b.right, bottom: a.bottom - b.bottom,"
+        "    maximized: w.classList.contains('maximized'),"
+        "    scrollLeft: ws.scrollLeft, scrollTop: ws.scrollTop }; }",
+        index,
+    )
+
+
+def fills_frame(f):
+    return all(abs(f[edge]) <= 1 for edge in ("left", "top", "right", "bottom"))
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -296,6 +347,116 @@ def main():
                 "the empty-stage hint is hidden while consoles are open",
                 not pills["emptyShown"],
                 f"got={pills}",
+            )
+
+            # ===== scenario 2: the plane pans UNDER the chrome =================
+            before = page.evaluate(
+                "() => { const f = document.querySelector('.canvas-foot').getBoundingClientRect();"
+                "  const w = document.querySelectorAll('.session-window')[0].getBoundingClientRect();"
+                "  return { foot: { left: f.left, top: f.top }, win: { left: w.left } }; }"
+            )
+            pan_floor(page, 250, 250)
+            after = page.evaluate(
+                "() => { const f = document.querySelector('.canvas-foot').getBoundingClientRect();"
+                "  const w = document.querySelectorAll('.session-window')[0].getBoundingClientRect();"
+                "  return { foot: { left: f.left, top: f.top }, win: { left: w.left },"
+                "    pills: [...document.querySelectorAll('.canvas-foot .pill')].map((s) => s.textContent.trim()) }; }"
+            )
+            # The NEGATIVE control: without it every "unchanged" assertion below
+            # would also pass on a plane that never moved.
+            check(
+                "a 250px floor drag really pans the plane under window 0",
+                round(after["win"]["left"] - before["win"]["left"]) == -250,
+                f"window moved by {after['win']['left'] - before['win']['left']}",
+            )
+            check(
+                "…while the footer's client `left` does not move a pixel",
+                after["foot"]["left"] == before["foot"]["left"],
+                f"{before['foot']['left']} -> {after['foot']['left']}",
+            )
+            check(
+                "…nor its `top`",
+                after["foot"]["top"] == before["foot"]["top"],
+                f"{before['foot']['top']} -> {after['foot']['top']}",
+            )
+            check(
+                "…and the pan grew no extent, so the pills still read the same stage",
+                after["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
+                f"got={after['pills']}",
+            )
+
+            # ===== scenario 3: maximize fills the FRAME, not the plane =========
+            pre = page.evaluate(
+                "() => { const st = document.getElementById('stage');"
+                "  const w = document.querySelectorAll('.session-window')[0];"
+                "  return { cols: w._term.term.cols, rows: w._term.term.rows,"
+                "    stageW: st.offsetWidth, stageH: st.offsetHeight }; }"
+            )
+            check(
+                "the stage measures the fixture bbox + margin before the maximize",
+                (pre["stageW"], pre["stageH"]) == (STAGE_W, STAGE_H),
+                f"got={pre['stageW']}x{pre['stageH']}",
+            )
+            page.locator(".session-window").nth(0).locator(".session-max").click()
+            page.wait_for_timeout(700)
+            f3 = frame_fill(page, 0)
+            post = page.evaluate(
+                "() => { const st = document.getElementById('stage');"
+                "  const w = document.querySelectorAll('.session-window')[0];"
+                "  return { cols: w._term.term.cols, stageW: st.offsetWidth, stageH: st.offsetHeight,"
+                "    pills: [...document.querySelectorAll('.canvas-foot .pill')].map((s) => s.textContent.trim()) }; }"
+            )
+            check("the maximize is really on", f3["maximized"], f"got={f3}")
+            check(
+                "the maximized console fills the VIEWPORT it was scrolled to",
+                fills_frame(f3),
+                f"edges (l,t,r,b) = {f3['left']},{f3['top']},{f3['right']},{f3['bottom']}",
+            )
+            check(
+                "…without losing the scroll offsets the pin is derived from",
+                f3["scrollLeft"] == 250,
+                f"scrollLeft={f3['scrollLeft']}",
+            )
+            check(
+                "…and the terminal refits WIDER, so the full bleed is readable",
+                post["cols"] > pre["cols"],
+                f"cols {pre['cols']} -> {post['cols']}",
+            )
+            check(
+                "a maximized window does not grow the stage extent",
+                (post["stageW"], post["stageH"]) == (STAGE_W, STAGE_H),
+                f"{pre['stageW']}x{pre['stageH']} -> {post['stageW']}x{post['stageH']}",
+            )
+            check(
+                "…which the footer pill still reports, unobscured by the full bleed",
+                post["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
+                f"got={post['pills']}",
+            )
+
+            # ===== scenario 4: Go-to pans the plane WHILE maximized ============
+            # The only product path that moves the viewport under a full bleed.
+            # Before #338 `reveal` refused outright while `maxlock` was on, so the
+            # "restore after a pan while maximized" criterion was unreachable.
+            page.locator("button", has_text="Go to").first.click()
+            page.wait_for_timeout(300)
+            rows_seen = page.locator(".window-menu .window-item:visible").count()
+            check("the Go-to menu lists both windows", rows_seen == 2, f"got={rows_seen}")
+            page.locator(".window-menu .window-item:visible").nth(1).click()
+            page.wait_for_function(
+                "() => document.getElementById('workspace').scrollLeft !== 250",
+                timeout=8000,
+            )
+            page.wait_for_timeout(400)
+            f4 = frame_fill(page, 0)
+            check(
+                "Go-to really pans the plane while a console is maximized",
+                f4["scrollLeft"] != 250,
+                f"scrollLeft={f4['scrollLeft']} (was 250)",
+            )
+            check(
+                "…and the full bleed follows the frame instead of desyncing from it",
+                f4["maximized"] and fills_frame(f4),
+                f"edges (l,t,r,b) = {f4['left']},{f4['top']},{f4['right']},{f4['bottom']}",
             )
 
             ctx.close()
