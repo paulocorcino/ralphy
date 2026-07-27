@@ -649,7 +649,14 @@ async fn session_ws_upgrade(
         if query.watch == Some(1) {
             return match sessions.watch(id) {
                 Ok(att) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
-                Err(_) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
+                // `watch` never yields `Busy`; matching the variant keeps that a
+                // compile-time fact rather than a comment.
+                Err(session::AttachError::Unknown) => {
+                    (StatusCode::NOT_FOUND, "unknown session").into_response()
+                }
+                Err(session::AttachError::Busy) => {
+                    (StatusCode::CONFLICT, "session busy").into_response()
+                }
             };
         }
         return match sessions.attach(id, query.takeover == Some(1)) {
@@ -894,15 +901,21 @@ async fn session_ws(
     // from a flaky link and stole the session back. The early `return` in the
     // snapshot replay above announces nothing because the socket is already gone,
     // and `end == None` stays silent by design (see the declaration).
+    // Bounded: these are the only sends made AFTER the loop that would surface a
+    // wedged peer as an error, so an unbounded await here would defer
+    // `drop(attach)` — and the session's scrollback ring with it — indefinitely.
     if let Some(reason) = end {
-        send_command(
-            &mut socket,
-            0,
-            "session-end",
-            serde_json::json!({ "reason": reason.as_wire() }),
-        )
+        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+            send_command(
+                &mut socket,
+                0,
+                "session-end",
+                serde_json::json!({ "reason": reason.as_wire() }),
+            )
+            .await;
+            let _ = socket.send(Message::Close(None)).await;
+        })
         .await;
-        let _ = socket.send(Message::Close(None)).await;
     }
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.

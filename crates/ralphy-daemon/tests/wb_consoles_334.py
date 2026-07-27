@@ -23,6 +23,7 @@ Writes docs/screenshots/334-console-pairing-2026-07-27.png.
 Run: python crates/ralphy-daemon/tests/wb_consoles_334.py   (exit 0 = all pass)
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -244,6 +245,21 @@ DECISION_ROWS = [
         "failedReopens past the cap (11) gives up",
         row(opened=True, everOpened=True, code=1005, failedReopens=11),
         "give-up",
+    ),
+    # R5's `opened &&` guard: a clean 1000 on a socket that NEVER opened is the
+    # server refusing the handshake, not a deliberate end — dropping the guard
+    # would strand an F5 racing the old bridge's teardown.
+    (
+        "a clean 1000 that never opened is a refusal, so it retries",
+        row(code=1000, wasClean=True, opened=False, everOpened=False),
+        "reconnect",
+    ),
+    # R2 precedes the cap cut: a taken-over client parks however many failed
+    # re-opens preceded the announcement.
+    (
+        "taken-over parks even past the failed-reopen cap",
+        row(announced="taken-over", opened=True, everOpened=True, code=1005, failedReopens=11),
+        "park-as-watcher",
     ),
 ]
 
@@ -690,6 +706,56 @@ def main():
                 counters(page_b)["created"] == base_b["created"],
                 f"before={base_b} after={counters(page_b)}",
             )
+
+            # --- scenario 8: a watcher's close ends its WINDOW, not the session
+            # A watcher holds a session id it does not own. Closing its window
+            # must not POST /api/sessions/close, which tree-kills the child the
+            # other operator is driving. Runs on a FRESH session so the desk
+            # record it forgets is its own.
+            open_console(page_a, slug)
+            idx = page_a.locator(".session-window").count() - 1
+            type_line(page_a, idx, "second-session")
+            check(
+                "a fresh console for the watcher-close case",
+                wait_for_screen(page_a, idx, "GOT:second-session"),
+                flat(page_a, idx)[-120:],
+            )
+            live_id = page_a.evaluate(
+                "(i) => document.querySelectorAll('.session-window')[i]._term.sessionId", idx
+            )
+            check("…with a live session id", live_id is not None, f"got={live_id}")
+
+            ctx_c = new_context(browser)
+            page_c = desk_page(ctx_c, settle=9000)
+            parked_idx = [
+                i
+                for i in range(page_c.locator(".session-window").count())
+                if page_c.locator(".session-window").nth(i).locator(".session-parked").count()
+            ]
+            check(
+                "a third context parks on the busy session",
+                len(parked_idx) == 1,
+                f"parked windows={parked_idx}",
+            )
+            if parked_idx:
+                page_c.locator(".session-window").nth(parked_idx[0]).locator(
+                    ".session-close"
+                ).click()
+                page_c.wait_for_timeout(2500)
+
+            live_ids = [s["id"] for s in json.loads(http("GET", "api/sessions")[1])]
+            check(
+                "closing a WATCHER's window leaves the session running",
+                live_id in live_ids,
+                f"id={live_id} live={live_ids}",
+            )
+            type_line(page_a, idx, "still-driving")
+            check(
+                "…and the driver keeps driving it",
+                wait_for_screen(page_a, idx, "GOT:still-driving"),
+                flat(page_a, idx)[-120:],
+            )
+            ctx_c.close()
 
             ctx_b.close()
             ctx_a.close()

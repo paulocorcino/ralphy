@@ -240,6 +240,13 @@ async fn a_watcher_reads_but_never_writes() {
     let list: serde_json::Value = serde_json::from_str(&body).unwrap();
     let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
+    // An unknown id is refused even as a watcher — `watch` maps only `Unknown`.
+    let ghost = format!("ws://127.0.0.1:{port}/ws/session?id={}&watch=1", id + 9999);
+    match tokio_tungstenite::connect_async(&ghost).await {
+        Err(tungstenite::Error::Http(resp)) => assert_eq!(resp.status(), 404),
+        other => panic!("a watch on an unknown id must be 404, got {other:?}"),
+    }
+
     // The writer still holds the slot, so a plain `?id=` here would be a 409.
     let watch_url = format!("ws://127.0.0.1:{port}/ws/session?id={id}&watch=1");
     let (mut watcher, _) = tokio_tungstenite::connect_async(&watch_url)
@@ -280,6 +287,16 @@ async fn a_watcher_reads_but_never_writes() {
     writer.send(resize(40, 100)).await.unwrap();
     read_until(&mut writer, "SIZE 100x40", false).await;
 
+    // `watch=1` is dispatched BEFORE the attach branch, so a stray `takeover=1`
+    // riding along cannot evict the writer. Swapping that order reds this.
+    let sneaky = format!("ws://127.0.0.1:{port}/ws/session?id={id}&watch=1&takeover=1");
+    let (mut sneak, _) = tokio_tungstenite::connect_async(&sneaky)
+        .await
+        .expect("watch+takeover must still be a watch");
+    writer.send(terminal(b"still-mine\r")).await.unwrap();
+    read_until(&mut writer, "GOT:still-mine", false).await;
+    drop(sneak.close(None).await);
+
     // A takeover evicts the WRITER and leaves the watcher untouched: exactly one
     // writer, and watching is not a claim on the slot.
     let take = format!("ws://127.0.0.1:{port}/ws/session?id={id}&takeover=1");
@@ -289,6 +306,20 @@ async fn a_watcher_reads_but_never_writes() {
     let (ended, announced) = drain_capturing_announcement(&mut writer, 5).await;
     assert!(ended, "the evicted writer's stream must end");
     assert_eq!(announced.as_deref(), Some("taken-over"));
+
+    // The evicted incumbent's guard-drop must not clear the TAKER's slot: asked
+    // again AFTER the eviction has settled, a plain attach is still refused.
+    // (Before the takeover the same probe passes even with the `ptr_eq` guard
+    // removed, which is why it is asked here.)
+    let busy_again = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
+    match tokio_tungstenite::connect_async(&busy_again).await {
+        Err(tungstenite::Error::Http(resp)) => assert_eq!(
+            resp.status(),
+            409,
+            "the taker must still hold the slot after the incumbent's guard dropped"
+        ),
+        other => panic!("expected an HTTP 409, got {other:?}"),
+    }
 
     taker.send(terminal(b"after-takeover\r")).await.unwrap();
     read_until(&mut taker, "GOT:after-takeover", false).await;
@@ -306,5 +337,106 @@ async fn a_watcher_reads_but_never_writes() {
         watcher_told.as_deref(),
         Some("child-exited"),
         "a watcher is told the session ended, not left on a dead socket"
+    );
+}
+
+/// The SILENT half of the announcement invariant (issue #334): a bridge that
+/// falls out of its loop for any reason OTHER than a deliberate end must say
+/// nothing. A client that closed its own socket, or whose link dropped, would
+/// otherwise be told its session ended — and would park instead of recovering,
+/// which is the mirror image of the bug this issue fixes.
+///
+/// Read from a WATCHER, because the client whose socket went away cannot report
+/// what the daemon did or did not send it.
+#[tokio::test]
+async fn a_client_close_announces_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (port, _shutdown) = start_daemon(dir.path()).await;
+
+    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
+    let (mut writer, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("connecting the writer");
+    writer.send(terminal(b"first\r")).await.unwrap();
+    read_until(&mut writer, "GOT:first", true).await;
+
+    let (_, body) = http_request(port, "GET", "/api/sessions").await;
+    let list: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    let watch_url = format!("ws://127.0.0.1:{port}/ws/session?id={id}&watch=1");
+    let (mut watcher, _) = tokio_tungstenite::connect_async(&watch_url)
+        .await
+        .expect("connecting the watcher");
+    read_until(&mut watcher, "GOT:first", false).await;
+
+    // The WRITER goes away on its own. The session lives on (the tmux model), so
+    // nobody was evicted and there is nothing to announce.
+    writer.close(None).await.unwrap();
+    drop(writer);
+
+    // Drain the watcher for a bounded window: it must see no `session-end`. The
+    // stream must also stay OPEN — a watcher is not collateral of a detach.
+    let quiet = tokio::time::timeout(Duration::from_millis(1500), async {
+        while let Some(msg) = watcher.next().await {
+            match msg {
+                Ok(Message::Binary(bytes)) => {
+                    if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                        if cmd.verb == "session-end" {
+                            return Some(cmd);
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) | Err(_) => return None,
+                Ok(_) => continue,
+            }
+        }
+        None
+    })
+    .await;
+    assert!(
+        quiet.is_err(),
+        "a client-initiated close must announce NOTHING and end no other stream, got {quiet:?}"
+    );
+
+    // Still live: the slot was released, so a plain reattach succeeds and drives.
+    let back = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
+    let (mut again, _) = tokio_tungstenite::connect_async(&back)
+        .await
+        .expect("the session must have survived its writer's departure");
+    again.send(terminal(b"still-here\r")).await.unwrap();
+    read_until(&mut again, "GOT:still-here", false).await;
+
+    http_request(port, "POST", &format!("/api/sessions/close?id={id}")).await;
+}
+
+/// The third reason on the wire: a daemon going down tells every attachment so,
+/// and names itself rather than the child (`session_ws`'s `shutdown.changed()`
+/// arm, which no other test drives).
+#[tokio::test]
+async fn daemon_shutdown_is_announced_as_such() {
+    let dir = tempfile::tempdir().unwrap();
+    let (port, shutdown) = start_daemon(dir.path()).await;
+
+    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("connecting the writer");
+    ws.send(terminal(b"first\r")).await.unwrap();
+    read_until(&mut ws, "GOT:first", true).await;
+
+    shutdown
+        .send(true)
+        .expect("the shutdown watch must accept a flip");
+
+    let (ended, announced) = drain_capturing_announcement(&mut ws, 5).await;
+    assert!(
+        ended,
+        "a shutting-down daemon must end the bridge, not hang it"
+    );
+    assert_eq!(
+        announced.as_deref(),
+        Some("daemon-shutdown"),
+        "a daemon shutdown is its own reason — not the child exiting"
     );
 }

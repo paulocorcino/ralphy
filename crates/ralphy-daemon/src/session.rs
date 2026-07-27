@@ -581,12 +581,17 @@ impl SessionManager {
         id: SessionId,
         takeover: bool,
     ) -> Result<Attachment, AttachError> {
-        let sess = {
-            let map = self.sessions.lock().expect("sessions mutex");
-            map.get(&id).cloned().ok_or(AttachError::Unknown)?
-        };
         let token = Arc::new(EvictToken::new());
-        {
+        let sess = {
+            // REGISTRATION INVARIANT: the `sessions` lock is held ACROSS the slot
+            // claim, and every end (`close`, the pump's EOF) evicts while holding
+            // that same lock. Otherwise an end slipping between "this id is live"
+            // and "this token is registered" leaves a token nobody ever fires —
+            // and that bridge parks forever: `notified` never completes, and
+            // `rx.recv()` cannot return `Closed` because the `Attachment` itself
+            // keeps `tx` alive, so the browser shows a dead console as live.
+            let map = self.sessions.lock().expect("sessions mutex");
+            let sess = map.get(&id).cloned().ok_or(AttachError::Unknown)?;
             let mut slot = sess.attached.lock().expect("attached mutex");
             if let Some(existing) = slot.as_ref() {
                 if !takeover {
@@ -600,7 +605,9 @@ impl SessionManager {
                 existing.fire(EndReason::TakenOver);
             }
             *slot = Some(token.clone());
-        }
+            drop(slot);
+            sess
+        };
         let (snapshot, rx) = {
             let ring = sess.scrollback.lock().expect("scrollback mutex");
             let snapshot: Vec<u8> = ring.iter().copied().collect();
@@ -632,15 +639,17 @@ impl SessionManager {
     ///
     /// [`attach`]: SessionManager::attach
     pub fn watch(self: &Arc<Self>, id: SessionId) -> Result<Attachment, AttachError> {
-        let sess = {
-            let map = self.sessions.lock().expect("sessions mutex");
-            map.get(&id).cloned().ok_or(AttachError::Unknown)?
-        };
         let token = Arc::new(EvictToken::new());
-        sess.watchers
-            .lock()
-            .expect("watchers mutex")
-            .push(token.clone());
+        let sess = {
+            // Same REGISTRATION INVARIANT as `attach` — see its comment.
+            let map = self.sessions.lock().expect("sessions mutex");
+            let sess = map.get(&id).cloned().ok_or(AttachError::Unknown)?;
+            sess.watchers
+                .lock()
+                .expect("watchers mutex")
+                .push(token.clone());
+            sess
+        };
         let (snapshot, rx) = {
             let ring = sess.scrollback.lock().expect("scrollback mutex");
             let snapshot: Vec<u8> = ring.iter().copied().collect();
@@ -687,15 +696,19 @@ impl SessionManager {
     /// The reason is `ChildExited` rather than a fourth word: this path DOES kill
     /// the child, and the client's vocabulary is fixed at three (issue #334).
     pub fn close(&self, id: SessionId) -> bool {
-        let sess = self.sessions.lock().expect("sessions mutex").remove(&id);
-        match sess {
-            Some(sess) => {
-                evict_all(&sess, EndReason::ChildExited);
-                sess.session.lock().expect("session mutex").close();
-                true
-            }
-            None => false,
-        }
+        let sess = {
+            let mut map = self.sessions.lock().expect("sessions mutex");
+            let Some(sess) = map.remove(&id) else {
+                return false;
+            };
+            // Evicted UNDER the `sessions` lock — see `attach`'s REGISTRATION
+            // INVARIANT: an attachment registered after this point would never be
+            // told the session ended.
+            evict_all(&sess, EndReason::ChildExited);
+            sess
+        };
+        sess.session.lock().expect("session mutex").close();
+        true
     }
 }
 
@@ -745,14 +758,18 @@ fn start_pump(
         // Child EOF: a session ends besides `close` only when its child exits
         // (issue #166). Remove it from the list, then evict any attached client so
         // its bridge loop ends and the browser sees the session close.
-        if let Some(manager) = manager.upgrade() {
-            manager
-                .sessions
-                .lock()
-                .expect("sessions mutex")
-                .remove(&sess.info.id);
+        match manager.upgrade() {
+            // Removal and eviction under ONE `sessions` guard — see `attach`'s
+            // REGISTRATION INVARIANT.
+            Some(manager) => {
+                let mut map = manager.sessions.lock().expect("sessions mutex");
+                map.remove(&sess.info.id);
+                evict_all(&sess, EndReason::ChildExited);
+            }
+            // The manager is gone, so no new attachment can be registered; the
+            // ones already holding this session still have to be told.
+            None => evict_all(&sess, EndReason::ChildExited),
         }
-        evict_all(&sess, EndReason::ChildExited);
     });
 }
 
@@ -876,25 +893,35 @@ mod tests {
     /// the waiter's side.
     #[tokio::test]
     async fn evict_token_carries_its_reason_before_waking() {
-        let token = EvictToken::new();
+        let token = Arc::new(EvictToken::new());
         assert_eq!(token.reason(), None, "a fresh token names no reason");
-        // Registered BEFORE the fire, exactly as the bridge does.
-        let notified = token.notify.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
+
+        // Observed from a SECOND task, the way the bridge does: it reads the
+        // reason at the moment its wait resolves. Asserting after a synchronous
+        // `fire` returned would pass even with the order reversed, since both
+        // writes are complete by then.
+        let waiter = {
+            let token = token.clone();
+            tokio::spawn(async move {
+                token.notify.notified().await;
+                token.reason()
+            })
+        };
+        // Let the waiter park before firing; `notify_one` stores a permit either
+        // way, so this only makes the intended interleaving the common one.
+        tokio::task::yield_now().await;
 
         token.fire(EndReason::TakenOver);
 
+        let seen = tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+            .await
+            .expect("the pre-registered waiter must be woken")
+            .expect("the waiter task must not panic");
         assert_eq!(
-            token.reason(),
+            seen,
             Some(EndReason::TakenOver),
-            "the reason must be readable the instant the waiter wakes"
-        );
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(500), notified)
-                .await
-                .is_ok(),
-            "the pre-registered waiter must already be woken"
+            "a woken waiter must ALREADY see the reason — otherwise the bridge \
+             announces `child-exited` for a takeover (lib.rs's unwrap_or fallback)"
         );
         assert_eq!(EndReason::TakenOver.as_wire(), "taken-over");
         assert_eq!(EndReason::ChildExited.as_wire(), "child-exited");
@@ -936,7 +963,23 @@ mod tests {
             .expect("a BUSY session is still watchable — watch never refuses with Busy");
         assert!(!second.writer);
 
+        // A departing watcher deregisters EXACTLY its own token: drop the first
+        // and the second must still be told the session ended. Inverting the
+        // guard's `ptr_eq` (keep the departing one, drop everyone else) makes
+        // this reason `None`.
+        let survivor = second.evict.clone();
+        drop(watcher);
         manager.close(id);
+        assert_eq!(
+            survivor.reason(),
+            Some(EndReason::ChildExited),
+            "a watcher that outlives another must still receive the end signal"
+        );
+        assert_eq!(
+            taker.evict.reason(),
+            Some(EndReason::ChildExited),
+            "…and so must the writer"
+        );
     }
 
     #[test]

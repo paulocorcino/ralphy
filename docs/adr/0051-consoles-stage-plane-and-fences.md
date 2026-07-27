@@ -143,8 +143,17 @@ roughly 1.1 s per flip.
 
 So:
 
-- **A reconnect never carries `takeover`.** It reattaches as a reader, or not at
-  all.
+- **A reconnect never carries `takeover`.** It reattaches without claiming the
+  baton, or not at all — so whoever is driving keeps driving, and the daemon's
+  `409` makes theft impossible rather than merely unattempted.
+  *(Amended while implementing #334: this clause first read "it reattaches as a
+  reader". Reattaching read-only on the FIRST retry breaks the two cases the
+  acceptance criteria require — a flaky link recovering to a working keyboard,
+  and an F5 racing the old bridge's teardown — because the reconnecting client
+  is the rightful driver and the slot it wants is its own, moments-ago one. The
+  shipped rule keeps the property that matters, `takeover` never on an automatic
+  path: a client reconnects as a would-be writer a bounded number of times and
+  then settles for watching.)*
 - **A busy session is a visible state, not a prompt to steal**: the window shows
   that the session is driven elsewhere, with an explicit *take over* the operator
   clicks. Handing over the keyboard is a deliberate, visible act.

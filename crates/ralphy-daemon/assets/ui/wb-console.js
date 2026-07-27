@@ -740,10 +740,17 @@ window.WBConsole = (function () {
           retryTimer = null;
         }
         if (ws) {
-          // Detach before closing: the close event lands AFTER this function
-          // returns, by which time `switching` is false again and `ws` names the
-          // new socket — the flag alone only covers the synchronous window.
+          // Detach EVERY handler before closing: the events land AFTER this
+          // function returns, by which time `switching` is false again and `ws`
+          // names the new socket, so the flag alone only covers the synchronous
+          // window. `onmessage` matters as much as `onclose` — a `session-end`
+          // still queued on the outgoing socket would land after `connect`
+          // cleared `announced` and attach a stale reason to the NEW connection,
+          // turning its next flaky-link drop into a give-up.
           ws.onclose = null;
+          ws.onmessage = null;
+          ws.onopen = null;
+          ws.onerror = null;
           if (ws.readyState <= 1) ws.close();
         }
         watching = false;
@@ -879,6 +886,9 @@ window.WBConsole = (function () {
         win.insertBefore(strip, body);
       },
       onResume: () => win.querySelector(".session-parked")?.remove(),
+      // A session that ENDED is not driven anywhere, so the parked strip's "take
+      // over" button would only spin failed attaches at a dead id.
+      onEnded: () => win.querySelector(".session-parked")?.remove(),
     });
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
@@ -896,7 +906,11 @@ window.WBConsole = (function () {
       };
       // End the daemon-owned session first (existing close endpoint), then drop
       // the window — mirrors index.html's closeBtn.
-      if (id != null) {
+      // A WATCHER closes only its own window: it does not hold the baton, and
+      // `/api/sessions/close` tree-kills the child another operator is driving.
+      // Before #334 no window could exist for a session it did not own, so this
+      // guard arrived with the watcher role.
+      if (id != null && !t.watching) {
         fetch(`/api/sessions/close?id=${id}`, { method: "POST" }).then(finish, finish);
       } else {
         finish();
