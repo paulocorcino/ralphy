@@ -330,6 +330,15 @@ def main():
             # ===== scenario 1: the chrome belongs to the FRAME =================
             page = desk_page(ctx, {"width": 1400, "height": 900})
             settle(page)
+            # #339: the view now LANDS on the bounding box of the restored
+            # windows instead of at the plane's corner. Every offset below is
+            # measured RELATIVE to a known origin, so put the origin back — the
+            # landing has its own suite (`wb_view_339.py`).
+            page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                "  ws.scrollLeft = 0; ws.scrollTop = 0; }"
+            )
+            page.wait_for_timeout(600)
             check(
                 "the fixture desk restores verbatim",
                 rects(page) == [FIX_A, FIX_B],

@@ -316,6 +316,15 @@ def main():
             ctx = browser.new_context(viewport={"width": 1400, "height": 900})
             page = desk_page(ctx, {"width": 1400, "height": 900})
             settle(page)
+            # #339: the view now LANDS on the bounding box of the restored
+            # windows instead of at the plane's corner. This suite's subject is
+            # RELATIVE navigation from a known origin, so put the origin back —
+            # the landing has its own suite (`wb_view_339.py`).
+            page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                "  ws.scrollLeft = 0; ws.scrollTop = 0; }"
+            )
+            page.wait_for_timeout(600)
 
             # ===== scenario 1: the bare floor is the PAN surface ===============
             stage = page.evaluate(
