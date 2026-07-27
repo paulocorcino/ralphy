@@ -322,3 +322,87 @@ test("bringIntoView mutates neither argument", () => {
   load().bringIntoView(target, viewport, extent);
   assert.deepEqual([target, viewport, extent], before);
 });
+
+// ---- where a new fence lands (issue #340) -----------------------------------
+// A deterministic 2-column grid anchored at the viewport's CURRENT offset, sized
+// to the viewport and clamped to a floor.
+const FENCE_VIEW = { width: 1400, height: 900 };
+const ORIGIN = { left: 0, top: 0 };
+
+const FENCES = [
+  {
+    name: "the first fence lands one inset into the current view",
+    index: 0,
+    want: { left: 40, top: 40, width: 720, height: 460 },
+  },
+  {
+    name: "the second sits beside it, one gap across",
+    index: 1,
+    want: { left: 784, top: 40, width: 720, height: 460 },
+  },
+  {
+    name: "the third wraps to the next row",
+    index: 2,
+    want: { left: 40, top: 524, width: 720, height: 460 },
+  },
+  {
+    name: "the fourth completes the 2x2 block",
+    index: 3,
+    want: { left: 784, top: 524, width: 720, height: 460 },
+  },
+  {
+    // NEGATIVE CONTROL: a fence born at the pinned origin instead of in the
+    // current view reds this row — the operator would draw a fence they cannot
+    // see, several screens back up the plane.
+    name: "the anchor is the viewport's own offset, not the stage origin",
+    offset: { left: 1000, top: 600 },
+    index: 0,
+    want: { left: 1040, top: 640, width: 720, height: 460 },
+  },
+  {
+    name: "a viewport smaller than the default size shrinks the fence to fit",
+    viewport: { width: 600, height: 400 },
+    index: 1,
+    want: { left: 584, top: 40, width: 520, height: 320 },
+  },
+  {
+    // NEGATIVE CONTROL: without the `Math.max` floor this answers a 120-wide,
+    // 40-tall fence — smaller than the box its own name field needs.
+    name: "a tiny viewport still yields a usable fence, not a sliver",
+    viewport: { width: 200, height: 120 },
+    index: 0,
+    want: { left: 40, top: 40, width: 240, height: 150 },
+  },
+];
+
+for (const row of FENCES) {
+  test(`fenceSpawnRect: ${row.name}`, () => {
+    const got = load().fenceSpawnRect(
+      row.offset || ORIGIN,
+      row.viewport || FENCE_VIEW,
+      row.index,
+    );
+    assert.deepEqual(got, row.want);
+  });
+}
+
+// The RELATION, which survives a size or gap change the literals above do not.
+// ADR-0051 §6's non-overlap enforcement is the next slice's, so this slice must
+// not ship an overlap on the very first gesture.
+test("fenceSpawnRect: the first six spawn rects are pairwise disjoint", () => {
+  const wb = load();
+  const rects = [0, 1, 2, 3, 4, 5].map((i) => wb.fenceSpawnRect(ORIGIN, FENCE_VIEW, i));
+  const overlaps = (a, b) =>
+    a.left < b.left + b.width &&
+    a.left + a.width > b.left &&
+    a.top < b.top + b.height &&
+    a.top + a.height > b.top;
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      assert.ok(
+        !overlaps(rects[i], rects[j]),
+        `fences ${i} and ${j} overlap: ${JSON.stringify(rects[i])} vs ${JSON.stringify(rects[j])}`,
+      );
+    }
+  }
+});

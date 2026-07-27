@@ -4583,6 +4583,62 @@ mod tests {
         }
     }
 
+    /// The fence floor, pinned where CI can see it — neither the node table nor
+    /// the Playwright suite runs there, so this is the only gate that fails when
+    /// the shell half of #340 is deleted or renamed.
+    #[test]
+    fn shell_draws_fences_below_the_windows() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function fenceSpawnRect(",
+            "function renderFences(",
+            "function createFence(",
+            "function renameFence(",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #340 pin {pin}"
+            );
+        }
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            app.contains("newFence("),
+            "app.js must wire the toolbar act"
+        );
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains("newFence()"),
+            "index.html must carry the Fence button (#340)"
+        );
+
+        // Scoped to the `.fence` rule's OWN body: `pointer-events` and a small
+        // `z-index` both occur elsewhere in the sheet, so an unscoped substring
+        // would pass with the fence tier deleted.
+        let css = include_str!("../assets/ui/styles.css");
+        let rule = |head: &str| -> String {
+            let after = css
+                .split_once(head)
+                .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
+                .1;
+            after[..after.find('}').expect("the rule must close")].to_string()
+        };
+        let fence = rule("\n.fence {");
+        assert!(
+            fence.contains("pointer-events: none"),
+            "the fence floor is inert — it may never swallow a window gesture (#340)"
+        );
+        assert!(
+            fence.contains("z-index: 1"),
+            "a fence draws BELOW every console window (#340)"
+        );
+        // NEGATIVE CONTROL: "make the whole thing inert" would delete the rename
+        // affordance, and the two pins above would still be green.
+        assert!(
+            rule("\n.fence-name {").contains("pointer-events: auto"),
+            "the name field must stay clickable — a fence is renamed in place (#340)"
+        );
+    }
+
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright
     /// runs in CI, so this is the only CI-visible gate that the deletion stays
     /// deleted — a re-added clamp would pass every unit test in the tree.

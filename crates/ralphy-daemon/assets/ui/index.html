@@ -456,6 +456,12 @@
               </template>
             </div>
           </div>
+          <!-- Fence: a named region of the plane. A DELIBERATE act — nothing
+               auto-creates one, and it is never bound to a project (issue #340,
+               ADR-0051 §6). -->
+          <button class="btn" @click="newFence()" title="draw a named fence on the plane">
+            <i class="bi bi-bounding-box"></i> Fence
+          </button>
           <!-- Arrange: auto-tiles all open console windows into a grid -->
           <button class="btn" @click="arrangeConsoles()" title="tile the open consoles">
             <i data-lucide="layout-grid"></i> Arrange

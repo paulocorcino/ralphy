@@ -2034,6 +2034,60 @@ body.runs-open .runs {
   border-radius: 0 0 var(--radius) var(--radius);
 }
 
+/* --- fences: the floor tier below the windows (issue #340) ---------------- */
+/* `z-index: 1` sits under `Z_BASE` (60), the floor every console is raised
+   above, so a fence can never cover one. The box is INERT: a press over it
+   reaches the window above or, on bare fence floor, the stage below — which is
+   what keeps a window drag, a resize, a focus click AND the floor's own pan
+   working over a fence with no hit test to keep in step. Only the two controls
+   opt back in. */
+.fence {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border: 1px dashed var(--border-focus);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.022);
+}
+.fence-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.4rem;
+}
+.fence-name {
+  pointer-events: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  color: var(--text-muted);
+  font: inherit;
+}
+.fence-name:hover,
+.fence-name:focus {
+  border-color: var(--border-focus);
+  color: var(--text);
+  outline: none;
+}
+.fence-drop {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-drop:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+
 /* --- floating console windows (mirrors the daemon UI chrome) -------------- */
 .session-window {
   position: absolute;

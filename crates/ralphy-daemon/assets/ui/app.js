@@ -3016,6 +3016,15 @@ function shell() {
       WBConsole.arrange();
     },
 
+    // A fence is placed at the viewport's CURRENT offset, so the tab must be on
+    // screen to be measured. The button itself lives inside `.canvas-tools`
+    // (`x-show="active === 'consoles'"`), so the switch below is a guard for a
+    // programmatic caller, not a path the operator can take (issue #340).
+    newFence() {
+      if (this.active !== "consoles") this.activate("consoles");
+      WBConsole.createFence();
+    },
+
     // Nothing is clamped into the viewport any more (#336), so a restored window
     // can sit entirely off-view: this is the one action that reaches it (#337).
     toggleWindowMenu() {

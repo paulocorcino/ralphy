@@ -61,8 +61,18 @@ window.WBConsole = (function () {
   // Ids this page deleted; they must not come back on a later-arriving GET.
   const deskRemoved = new Set();
 
-  function ingestDesk(records) {
-    const fetched = Array.isArray(records) ? records : [];
+  // The desk's second record type (issue #340): named rectangles on the floor
+  // tier. Same store, same route, same upload permit as `desk` — a fence is
+  // daemon state, so it comes back on any browser.
+  let fences = [];
+  let fencesDirty = false;
+
+  function ingestDesk(payload) {
+    const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
+    // COARSE on purpose: nothing reconciles a fence against a live session, so
+    // there is no per-id merge to do — this page's fences win wholesale once it
+    // has touched them, and otherwise the daemon's are the truth.
+    if (!fencesDirty) fences = Array.isArray(payload?.fences) ? payload.fences : [];
     if (!deskDirty) {
       desk = fetched;
     } else {
@@ -122,6 +132,16 @@ window.WBConsole = (function () {
     deskDirty = true;
     scheduleDeskFlush();
   }
+  function saveFences(next) {
+    fences = next;
+    fencesDirty = true;
+    scheduleDeskFlush();
+  }
+  // The upload body. ONE spelling for both flush paths, so a record type can
+  // never be uploaded by one and dropped by the other.
+  function deskBody() {
+    return { windows: desk, fences };
+  }
   // The upload, debounced and fire-and-forget. INVARIANT: no drag, resize, close
   // or `persistWin` path may await or throw on this — a refused PUT costs a stale
   // position and the next mutation supersedes it (last write wins, no ETag).
@@ -145,7 +165,7 @@ window.WBConsole = (function () {
     // under the `Session` policy) — that is a wholesale replace of the
     // operator's real layout with whatever this page happens to hold.
     if (!deskLoaded) return;
-    const body = JSON.stringify(desk);
+    const body = JSON.stringify(deskBody());
     deskInFlight = deskInFlight
       .catch(() => {})
       .then(() =>
@@ -176,15 +196,21 @@ window.WBConsole = (function () {
       fetch("/api/desk", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(desk),
+        body: JSON.stringify(deskBody()),
         keepalive: true,
       }).catch(() => {});
     } catch {}
   });
-  function newDeskId() {
+  function newId(prefix) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
-    return "w-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    return prefix + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+  function newDeskId() {
+    return newId("w-");
+  }
+  function newFenceId() {
+    return newId("f-");
   }
   // A window's RESTORE box. While maximized the `.maximized` class pins all four
   // offsets via `!important` (left/top to 0, width/height to the full bleed), so
@@ -372,7 +398,8 @@ window.WBConsole = (function () {
     // Read the DOM, not `wins`: a window is on the stage from the moment
     // `buildChrome` appends it (before `spawnWindow` registers it) and gone the
     // moment it is removed, so this can never count a phantom or miss a new one.
-    const rects = [...st.querySelectorAll(".session-window")].map(restoreRect);
+    // Fences count too — ADR-0051 §2 sizes the plane to windows AND fences.
+    const rects = [...st.querySelectorAll(".session-window, .fence")].map(restoreRect);
     const ext = stageExtent(
       rects,
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -669,6 +696,132 @@ window.WBConsole = (function () {
       width: Math.max(viewport?.width || 0, right + m),
       height: Math.max(viewport?.height || 0, bottom + m),
     };
+  }
+
+  // ---- where a new fence lands (issue #340) ------------------------------------
+  // Pure. A deterministic 2-column grid anchored at the viewport's CURRENT
+  // offset, so a fence is born where the operator is looking rather than at the
+  // pinned origin. DISJOINT BY CONSTRUCTION for every index: ADR-0051 §6's
+  // non-overlap enforcement is the next slice's, and a spawn rule that stacked
+  // fences would ship the overlap before the invariant exists to fix it.
+  const FENCE_SIZE = { width: 720, height: 460 };
+  const FENCE_MIN = { width: 240, height: 150 };
+  const FENCE_INSET = 40;
+  const FENCE_GAP = 24;
+  const FENCE_COLS = 2;
+
+  function fenceSpawnRect(offset, viewport, index) {
+    const width = Math.max(
+      FENCE_MIN.width,
+      Math.min(FENCE_SIZE.width, (viewport?.width || 0) - 2 * FENCE_INSET),
+    );
+    const height = Math.max(
+      FENCE_MIN.height,
+      Math.min(FENCE_SIZE.height, (viewport?.height || 0) - 2 * FENCE_INSET),
+    );
+    const i = index || 0;
+    const col = i % FENCE_COLS;
+    const row = Math.floor(i / FENCE_COLS);
+    return {
+      left: Math.max(0, offset?.left || 0) + FENCE_INSET + col * (width + FENCE_GAP),
+      top: Math.max(0, offset?.top || 0) + FENCE_INSET + row * (height + FENCE_GAP),
+      width,
+      height,
+    };
+  }
+
+  // ---- the fence floor ---------------------------------------------------------
+  // A fence is a stage child on a tier BELOW every window (`z-index: 1` against
+  // `Z_BASE`), and `pointer-events: none` on the box makes "never intercepts a
+  // window drag, resize or focus click" true by construction — a press over a
+  // fence reaches the window above it, or the stage below it, so `onFloorDown`'s
+  // `e.target !== st` hit test keeps working unchanged and panning survives
+  // inside a fence. Only the name field and the drop button opt back in.
+  const FENCE_NAME_MAX = 60;
+
+  function buildFence(f) {
+    const el = document.createElement("div");
+    el.className = "fence";
+    el.dataset.fenceId = f.id;
+    const head = document.createElement("div");
+    head.className = "fence-head";
+    const name = document.createElement("input");
+    name.className = "fence-name";
+    name.setAttribute("aria-label", "fence name");
+    name.value = f.name || "";
+    // Always-live input, no click-to-swap editor: zero mode state, one code
+    // path. `change` commits (Enter blurs, which fires it).
+    name.addEventListener("change", () => renameFence(f.id, name.value));
+    name.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") name.blur();
+    });
+    const drop = document.createElement("button");
+    drop.className = "fence-drop";
+    drop.type = "button";
+    drop.title = "remove this fence";
+    drop.textContent = "×";
+    drop.addEventListener("click", () => removeFence(f.id));
+    head.append(name, drop);
+    el.append(head);
+    stage()?.append(el);
+    return el;
+  }
+
+  // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
+  // not written while the operator is typing in it — an in-flight GET would
+  // otherwise yank the caret back to a stale value mid-word.
+  function renderFences() {
+    const st = stage();
+    if (!st) return;
+    const seen = new Set();
+    for (const f of fences) {
+      seen.add(f.id);
+      const el =
+        st.querySelector(`.fence[data-fence-id="${f.id}"]`) || buildFence(f);
+      const r = f.rect || {};
+      el.style.left = (r.left || 0) + "px";
+      el.style.top = (r.top || 0) + "px";
+      el.style.width = (r.width || 0) + "px";
+      el.style.height = (r.height || 0) + "px";
+      const name = el.querySelector(".fence-name");
+      if (name && name !== document.activeElement) name.value = f.name || "";
+    }
+    for (const el of st.querySelectorAll(".fence")) {
+      if (!seen.has(el.dataset.fenceId)) el.remove();
+    }
+  }
+
+  function createFence() {
+    const ws = workspace();
+    const rect = fenceSpawnRect(
+      { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
+      { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
+      fences.length,
+    );
+    saveFences(
+      fences.concat([
+        { id: newFenceId(), name: `Fence ${fences.length + 1}`, rect, ts: Date.now() },
+      ]),
+    );
+    renderFences();
+    applyExtent();
+  }
+
+  function renameFence(id, name) {
+    saveFences(
+      fences.map((f) =>
+        f.id === id
+          ? { ...f, name: String(name == null ? "" : name).slice(0, FENCE_NAME_MAX), ts: Date.now() }
+          : f,
+      ),
+    );
+    renderFences();
+  }
+
+  function removeFence(id) {
+    saveFences(fences.filter((f) => f.id !== id));
+    renderFences();
+    applyExtent();
   }
 
   // ---- navigating the plane ----------------------------------------------------
@@ -1510,7 +1663,10 @@ window.WBConsole = (function () {
         // A desk saved on a larger screen keeps its rects verbatim (issue #336):
         // the STAGE grows to hold them and the viewport scrolls. Sizing it here
         // is what gives the restored windows their scroll room — inserting a
-        // window is not a resize, so nothing else would fire.
+        // window is not a resize, so nothing else would fire. The fences must be
+        // on the stage BEFORE that fold, or the plane will not have grown to
+        // hold one that sits past the last window.
+        renderFences();
         applyExtent();
         deskSettled = true;
         applyLanding();
@@ -1534,9 +1690,9 @@ window.WBConsole = (function () {
     const st = stage();
     // Element IDENTITY is the whole floor-vs-window hit test: a press anywhere
     // inside a console — titlebar, body, resize handle — targets that window,
-    // never the stage. NOTE for ADR-0051 §6: a fence is also a stage child, so
-    // when fences land this must accept the fence's own floor too, or panning
-    // dies inside every fence.
+    // never the stage. A fence is also a stage child, but it is
+    // `pointer-events: none`, so a press over one still targets the stage and
+    // panning survives inside a fence with no hit test here (issue #340).
     if (!ws || !st || e.target !== st) return;
     const startX = e.clientX;
     const startY = e.clientY;
@@ -1725,7 +1881,14 @@ window.WBConsole = (function () {
   // client half of that guard, called from `rehydrateAfterAuth` (issue #327).
   function afterLogin() {
     return reloadDesk().then(() => {
-      if (deskLoaded && wins.size === 0) restoreDesk();
+      if (deskLoaded && wins.size === 0) {
+        restoreDesk();
+        return;
+      }
+      // The desk landed but the windows are already up, so `restoreDesk` is not
+      // called and nothing else would put the just-loaded fences on the stage.
+      renderFences();
+      applyExtent();
     });
   }
 
@@ -1746,5 +1909,9 @@ window.WBConsole = (function () {
     list,
     reveal,
     afterLogin,
+    fenceSpawnRect,
+    createFence,
+    renameFence,
+    removeFence,
   };
 })();
