@@ -523,9 +523,10 @@ window.WBConsole = (function () {
 
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
-  // (a NEW free-console launch — home dir when `repo` absent), or {id[, takeover]}
-  // (a REATTACH to a daemon-owned session). Transplanted from index.html launch().
-  // Returns a handle so the window chrome can refit and close it.
+  // (a NEW free-console launch — home dir when `repo` absent), or
+  // {id[, takeover][, watch]} (a REATTACH to a daemon-owned session; `watch`
+  // reattaches read-only). Transplanted from index.html launch(). Returns a
+  // handle so the window chrome can refit, take the baton, and close it.
   function attachTerminal(body, opts) {
     const term = new Terminal({ convertEol: false });
     const fit = new FitAddon.FitAddon();
@@ -556,17 +557,24 @@ window.WBConsole = (function () {
     // Resilience on low-quality links. A dropped socket does NOT end the session:
     // the daemon keeps the child alive across a disconnect (see session_ws's
     // teardown invariant), so an unexpected close is recovered by reconnecting and
-    // reattaching to the SAME session by id (with takeover=1 to reclaim the writer
-    // slot the orphaned bridge still holds). The daemon replays scrollback on
+    // reattaching to the SAME session by id. The daemon replays scrollback on
     // reattach, so we reset the terminal on a reconnecting open to repaint cleanly
     // instead of appending a duplicate of the history. Backoff is exponential with
-    // jitter, capped; we give up only after a bounded run of failed re-opens (e.g.
-    // the daemon is actually down) or on a CLEAN server close (session genuinely
-    // ended: child exited, taken over, or daemon shutdown).
+    // jitter, capped.
+    //
+    // NO RECONNECT EVER CARRIES `takeover` (issue #334). Reclaiming the writer
+    // slot on a timer is how two open workbenches flapped: each side's reconnect
+    // evicted the other, ~1.1s per flip, indefinitely. The baton changes hands
+    // only when an operator clicks `takeOver()`. `reconnectDecision` above owns
+    // the choice; this function only carries it out.
     const RECONNECT_BASE = 1000;
     const RECONNECT_MAX = 15000;
     let ws = null;
     let opened = false; // has the CURRENT socket opened
+    let everOpened = false; // has ANY socket of this window opened
+    let watching = false; // parked: reattached read-only, not chasing the slot
+    let announced = null; // the daemon's reason, when it named one before closing
+    let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
     let retryDelay = 0;
     let retryTimer = null;
@@ -577,6 +585,7 @@ window.WBConsole = (function () {
       if (o.id != null) {
         url += "id=" + encodeURIComponent(o.id);
         if (o.takeover) url += "&takeover=1";
+        if (o.watch) url += "&watch=1";
       } else if (o.console) {
         url += "console=1";
         if (o.repo) url += "&repo=" + encodeURIComponent(o.repo);
@@ -595,6 +604,7 @@ window.WBConsole = (function () {
       // window is closed.
       ro.disconnect();
       term.write("\r\n[session closed]\r\n");
+      if (typeof opts.onEnded === "function") opts.onEnded();
     }
 
     function scheduleReconnect() {
@@ -605,16 +615,18 @@ window.WBConsole = (function () {
       const wait = retryDelay + Math.random() * 0.3 * retryDelay; // jitter
       retryTimer = setTimeout(() => {
         retryTimer = null;
-        connect({ id: currentSessionId, takeover: true });
+        connect({ id: currentSessionId, watch: watching });
       }, wait);
     }
 
     function connect(connOpts) {
       opened = false;
+      announced = null;
       ws = new WebSocket(buildUrl(connOpts));
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         opened = true;
+        everOpened = true;
         retryDelay = 0;
         failedReopens = 0;
         // A reconnect reattaches and the daemon replays the whole backlog; clear
@@ -636,54 +648,57 @@ window.WBConsole = (function () {
             if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
           }
           term.write(a.subarray(9));
+        } else if (a[0] === TAG_COMMAND) {
+          // The daemon's deliberate-end announcement, sent as DATA before the
+          // Close frame because the close metadata does not survive the trip
+          // (issue #334): the browser reports 1005/wasClean=false either way.
+          let c = null;
+          try {
+            c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+          } catch {}
+          if (c && c.verb === "session-end") {
+            announced = c.payload?.reason ?? "child-exited";
+          }
         }
       };
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
       ws.onclose = (event) => {
-        if (leaving) return;
-        // A reattach that closes WITHOUT ever opening is the server refusing a
-        // busy session (a single writer is attached). Offer an explicit takeover,
-        // once — this only applies to the initial, non-takeover attach.
-        if (
-          connOpts.id != null &&
-          !opened &&
-          !connOpts.takeover &&
-          typeof opts.onRefused === "function"
-        ) {
-          if (confirm("session busy — take over?")) {
-            leaving = true;
-            ro.disconnect();
-            term.dispose();
-            opts.onRefused();
-            return;
-          }
-          giveUp();
-          return;
-        }
-        // A CLEAN close is a deliberate server-side end (child exited, taken over,
-        // or daemon shutdown): the session is gone, do not reconnect.
-        if (event && event.wasClean) {
-          giveUp();
-          return;
-        }
-        // Can't resume a session we never learned the id of (a fresh launch that
-        // dropped before its first frame).
-        if (currentSessionId == null) {
-          giveUp();
-          return;
-        }
-        // Abnormal drop → treat as a flaky link and reconnect, but stop if we
-        // can't re-open after a bounded run of tries (the daemon is likely down).
+        if (leaving || switching) return;
         if (!opened) failedReopens += 1;
-        if (failedReopens > MAX_FAILED_REOPENS) {
-          giveUp();
-          return;
+        switch (
+          reconnectDecision({
+            code: event?.code,
+            wasClean: !!event?.wasClean,
+            opened,
+            everOpened,
+            announced,
+            idKnown: currentSessionId != null,
+            failedReopens,
+          })
+        ) {
+          case "give-up":
+            giveUp();
+            return;
+          case "park-as-watcher":
+            // Park ONCE, immediately: a client that stopped receiving output
+            // could not satisfy "both contexts see the session's output". A
+            // watch socket that itself drops falls back to the backoff, so a
+            // refused watch cannot busy-loop.
+            if (!watching) {
+              watching = true;
+              if (typeof opts.onPark === "function") opts.onPark(announced);
+              connect({ id: currentSessionId, watch: true });
+            } else {
+              scheduleReconnect();
+            }
+            return;
+          default:
+            if (retryDelay === 0) {
+              term.write("\r\n[connection lost — reconnecting…]\r\n");
+            }
+            scheduleReconnect();
         }
-        if (retryDelay === 0) {
-          term.write("\r\n[connection lost — reconnecting…]\r\n");
-        }
-        scheduleReconnect();
       };
     }
 
@@ -705,6 +720,34 @@ window.WBConsole = (function () {
       },
       get sessionId() {
         return currentSessionId;
+      },
+      get watching() {
+        return watching;
+      },
+      // The ONLY place in this file that sets `takeover` — operator-initiated,
+      // from the parked banner's button. `switching` makes the current socket's
+      // own onclose a no-op so the park logic does not race the new attach.
+      takeOver() {
+        if (currentSessionId == null) return;
+        switching = true;
+        if (retryTimer) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        if (ws) {
+          // Detach before closing: the close event lands AFTER this function
+          // returns, by which time `switching` is false again and `ws` names the
+          // new socket — the flag alone only covers the synchronous window.
+          ws.onclose = null;
+          if (ws.readyState <= 1) ws.close();
+        }
+        watching = false;
+        announced = null;
+        failedReopens = 0;
+        retryDelay = 0;
+        switching = false;
+        if (typeof opts.onResume === "function") opts.onResume();
+        connect({ id: currentSessionId, takeover: true });
       },
       dispose() {
         leaving = true;
@@ -809,16 +852,29 @@ window.WBConsole = (function () {
       // Once the daemon assigns/echoes this window's session id, record it on the
       // desk so the layout knows which live session this window is holding.
       onSession: () => persistWin(win),
-      // Busy-reattach → tear THIS window down and relaunch as a takeover, so no
-      // dead empty window lingers. The desk record travels with it.
-      onRefused: () => {
-        const carry = deskOf(win);
-        t.dispose();
-        win.remove();
-        wins.delete(win);
-        changed();
-        spawnWindow({ id: termOpts.id, takeover: true }, label, repo, carry);
+      // Parked: this window is watching a session another window drives. It KEEPS
+      // its window and its output — the strip is the visible state that replaced
+      // the old `confirm("session busy — take over?")` prompt, and its button is
+      // the only way `takeover` is ever sent (issue #334, ADR-0051 §9).
+      onPark: () => {
+        if (win.querySelector(".session-parked")) return;
+        const strip = document.createElement("div");
+        strip.className = "session-parked";
+        const text = document.createElement("span");
+        text.textContent = "driven in another window";
+        const btn = document.createElement("button");
+        btn.className = "session-reconnect";
+        btn.dataset.act = "take-over";
+        btn.textContent = "take over";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          t.takeOver();
+        });
+        strip.append(text, btn);
+        win.insertBefore(strip, body);
+        t.term.write("\r\n[watching — driven in another window]\r\n");
       },
+      onResume: () => win.querySelector(".session-parked")?.remove(),
     });
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
@@ -914,9 +970,10 @@ window.WBConsole = (function () {
 
   // Reach an ALREADY LIVE session by id: focus the window already holding it,
   // else attach a window to it. INVARIANT — no path here composes a
-  // `?repo=&agent=` launch: an unknown or busy id stays on the attach-refusal
-  // path (`onRefused` → takeover by the SAME id), so "reach" can never become a
-  // second session (issue #304).
+  // `?repo=&agent=` launch: an unknown or busy id stays on the attach path and,
+  // when the session is busy, parks as a watcher of the SAME id (issue #334
+  // retired the window-rebuilding takeover this comment used to name), so
+  // "reach" can never become a second session (issue #304).
   function reach({ id, agent, repo }) {
     for (const win of wins) {
       // `_term.sessionId` lands only on the first terminal frame, and the daemon

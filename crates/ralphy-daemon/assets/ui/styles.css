@@ -2095,6 +2095,22 @@ body.runs-open .runs {
 .session-offline p {
   margin: 0;
 }
+/* A parked console: this window watches a session another window drives (issue
+   #334). One line between the titlebar and the terminal — the session stays
+   visible and keeps streaming, so the strip must not take the body's height.
+   The button reuses `.session-reconnect`. */
+.session-parked {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
 .session-reconnect {
   padding: 0.32rem 0.8rem;
   color: var(--text);
