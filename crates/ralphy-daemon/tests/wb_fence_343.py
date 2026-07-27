@@ -289,7 +289,12 @@ def close_menus(page):
 
 def click_fence_row(page, name):
     """Click the row whose name matches — a REAL click, so the jump runs through
-    Alpine's own handler rather than through the module's exported function."""
+    Alpine's own handler rather than through the module's exported function.
+
+    Opens the picker itself: the rows are a SNAPSHOT taken when the menu opens,
+    so a click must always follow a fresh open, never a stale one.
+    """
+    open_fence_list(page)
     page.locator(".fence-item:visible", has=page.locator(f".row-name:text-is('{name}')")).click()
     page.wait_for_timeout(600)
 
@@ -318,6 +323,63 @@ def boxes(page):
 
 def by_id(rows):
     return {r["id"]: r for r in rows}
+
+
+def open_plain_console(page):
+    """Open a console through the REAL New-console control, and return its id.
+
+    A real click, not `WBConsole.open(...)`: the birth path is the thing under
+    test, and the sidebar route is how an operator reaches it.
+    """
+    before = page.locator(".session-window").count()
+    close_menus(page)
+    page.locator("button:has-text('New console')").click()
+    page.locator(".dropdown-item.is-console:visible").click()
+    page.wait_for_function(
+        f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=15000
+    )
+    page.locator(".session-window").nth(before).locator(".xterm").wait_for(timeout=25000)
+    page.wait_for_timeout(600)
+    return page.evaluate(
+        "(i) => document.querySelectorAll('.session-window')[i]._deskId", before
+    )
+
+
+def unscroll(page):
+    """Pin the plane at 0,0 so a stage rect and a client rect differ only by the
+    workspace's own origin."""
+    page.evaluate(
+        "() => { const ws = document.getElementById('workspace');"
+        " ws.scrollLeft = 0; ws.scrollTop = 0; }"
+    )
+    page.wait_for_timeout(200)
+
+
+def stage_origin(page):
+    return page.evaluate(
+        "() => { const r = document.getElementById('stage').getBoundingClientRect();"
+        " return { x: r.left, y: r.top }; }"
+    )
+
+
+def press_floor(page, x, y):
+    """Press the BARE floor at a stage-coordinate point.
+
+    `onFloorDown` hit-tests on element IDENTITY, so this only reaches the floor
+    when no window covers the point — the caller picks one that none does.
+    """
+    origin = stage_origin(page)
+    page.mouse.move(origin["x"] + x, origin["y"] + y)
+    page.mouse.down()
+    page.mouse.up()
+    page.wait_for_timeout(300)
+
+
+def desk_record(wid):
+    for w in json.loads(http("GET", "api/desk")[1]).get("windows", []):
+        if w.get("id") == wid:
+            return w
+    return None
 
 
 def inside(r, fence, slack=0.0):
@@ -432,6 +494,90 @@ def main():
                 "GET /api/desk differs" if http("GET", "api/desk")[1] != snapshot else "",
             )
 
+            # ===== scenario 3: a console is BORN inside the focused fence =====
+            click_fence_row(page, "beta")
+            born = open_plain_console(page)
+            box = by_id(boxes(page))[born]["box"]
+            check(
+                "a console opened while beta is focused is born INSIDE beta",
+                inside(box, FENCE_B),
+                f"box={box} fence={FENCE_B}",
+            )
+            check(
+                "…and below beta's head band, not over it",
+                box["top"] >= FENCE_B["top"],
+                f"box={box}",
+            )
+            rows = open_fence_list(page)
+            check(
+                "…and beta's row follows without a reload",
+                rows[1]["name"] == "beta" and rows[1]["count"] == "2 consoles",
+                f"got={rows[1]}",
+            )
+            close_menus(page)
+            quiet(desk_file)
+            rec = desk_record(born)
+            # The MEASURED box, never the inline style: `restoreRect` reads
+            # integer offsets, so a 0.5 px tolerance is exactly the wrong one
+            # (#342).
+            check(
+                "…the daemon stores the born rect, and it is inside beta too",
+                rec is not None and inside(rec["rect"], FENCE_B) and rec["rect"] == box,
+                f"served={rec and rec['rect']} measured={box}",
+            )
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.wait_for_timeout(1800)
+            settle_windows(page, 4)
+            reloaded = by_id(boxes(page)).get(born)
+            check(
+                "…and a RELOAD reproduces it box for box",
+                reloaded is not None and reloaded["box"] == box,
+                f"after reload={reloaded and reloaded['box']} before={box}",
+            )
+
+            # ===== scenario 4: with no fence focused, the plain cascade =======
+            click_fence_row(page, "alpha")
+            check(
+                "alpha is focused before the floor press — the clearing must have something to clear",
+                page.evaluate("() => window.WBConsole.focusedFence()") == "f-alpha",
+                "",
+            )
+            # Pin the plane at 0,0 first: a stage point is only pressable while
+            # it is ON SCREEN, and the jump above left the viewport elsewhere.
+            # (850, 600) is then visible AND held by no fence — alpha ends at
+            # x=640, beta at y=340, gamma starts at (2200, 900) — and no window
+            # covers it, so the press reaches the bare floor.
+            unscroll(page)
+            press_floor(page, 850, 600)
+            check(
+                "a floor press outside the focused fence clears the focus",
+                page.evaluate("() => window.WBConsole.focusedFence()") is None,
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
+            plain = open_plain_console(page)
+            pbox = by_id(boxes(page))[plain]["box"]
+            # Today's rule is the origin-relative 8-slot cascade: `left = 30 +
+            # k*24`, `top = 20 + k*24`, the SAME k on both axes. That last part
+            # is what discriminates: a fence-relative birth is `fenceLeft + 12 +
+            # …` / `fenceTop + head + 12 + …`, which lands on no common slot.
+            # Deliberately NOT "in no fence" — the plain cascade is anchored at
+            # the plane's origin and alpha sits over it in this fixture, so a
+            # containment oracle here would fail correct code.
+            slot_x = (pbox["left"] - 30) / 24
+            slot_y = (pbox["top"] - 20) / 24
+            check(
+                "…and the next console lands on the plain 8-slot cascade, exactly as it does today",
+                slot_x == slot_y and slot_x == int(slot_x) and 0 <= slot_x <= 7,
+                f"box={pbox} slot_x={slot_x} slot_y={slot_y}",
+            )
+            check(
+                "…and NOT on the box a birth into alpha would have produced",
+                (pbox["left"], pbox["top"]) != (FENCE_A["left"] + 12, FENCE_A["top"] + 12),
+                f"box={pbox}",
+            )
+
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()
             browser.close()
@@ -440,7 +586,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 14
+    ok = all(results) and len(results) == 23
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")
