@@ -904,6 +904,19 @@ window.WBConsole = (function () {
   // removed and the gesture is finalized EXACTLY ONCE, whether the drop is
   // accepted or refused. `done` is what makes a doubled exit — blur then
   // mouseup — a no-op instead of a second persist or a second revert.
+  // The refusal flash `createFence` schedules below. Owned at module scope so a
+  // gesture starting inside its 600 ms window can CANCEL it: otherwise the timer
+  // strips a `fence-invalid` the gesture put there, and with the cursor at rest
+  // no further move re-adds it — the fence would look valid while its drop is
+  // about to be reverted.
+  let fenceFlash = null;
+  function clearFenceFlash() {
+    if (fenceFlash == null) return;
+    clearTimeout(fenceFlash.timer);
+    fenceFlash.el.classList.remove("fence-invalid");
+    fenceFlash = null;
+  }
+
   function fenceEl(id) {
     const st = stage();
     if (!st) return null;
@@ -927,13 +940,24 @@ window.WBConsole = (function () {
         id: w._deskId,
         rect: restoreRect(w),
       }));
-      const ids = new Set(fenceMembership([{ id: f.id, rect: start }], all)[f.id] || []);
+      // The FULL fence list, not a one-element one: the fold's `break` is what
+      // decides an overlapping pair (reachable through a hand-edited
+      // `desk.toml`), and a singleton list bypasses it — the window would be
+      // reported under one fence and carried by the other.
+      const live = fences.map((x) => (x.id === f.id ? { id: x.id, rect: start } : x));
+      const ids = new Set(fenceMembership(live, all)[f.id] || []);
       const carried = all.filter((m) => ids.has(m.id));
       const startX = e.clientX;
       const startY = e.clientY;
       let delta = { dx: 0, dy: 0 };
       let fits = true;
       let done = false;
+      // A press with no movement is a CLICK, not a drop. Persisting it would
+      // upload the fence and every member it carries with a fresh `ts` — which
+      // reorders `pruneDesk`'s eviction and makes an unrelated record the
+      // victim at the cap, for a gesture that changed nothing.
+      let moved = false;
+      clearFenceFlash();
       const onMove = (ev) => {
         if (ev.buttons === 0) {
           onUp();
@@ -951,6 +975,7 @@ window.WBConsole = (function () {
         el.style.top = rect.top + "px";
         // A refused position previews the FENCE (that is the feedback) but never
         // the members: dragging over a neighbour must not shuffle its windows.
+        if (d.dx || d.dy) moved = true;
         if (fits) {
           delta = d;
           for (const m of carried) {
@@ -969,7 +994,7 @@ window.WBConsole = (function () {
         el.classList.remove("fence-invalid");
         // Refuse, do NOT snap: the fence and everything it carries go back to
         // where the gesture began and nothing is persisted.
-        if (!fits) {
+        if (!fits || !moved) {
           el.style.left = start.left + "px";
           el.style.top = start.top + "px";
           for (const m of carried) {
@@ -1021,6 +1046,8 @@ window.WBConsole = (function () {
       let out = start;
       let fits = true;
       let done = false;
+      let sized = false; // a click is not a resize — see `moved` in startFenceMove
+      clearFenceFlash();
       const onMove = (ev) => {
         if (ev.buttons === 0) {
           onUp();
@@ -1034,6 +1061,7 @@ window.WBConsole = (function () {
           bounds,
         );
         fits = fenceFits(fences, { id: f.id, rect: next });
+        if (next.width !== start.width || next.height !== start.height) sized = true;
         if (fits) out = next;
         el.classList.toggle("fence-invalid", !fits);
         el.style.left = next.left + "px";
@@ -1049,12 +1077,12 @@ window.WBConsole = (function () {
         document.removeEventListener("mouseup", onUp);
         window.removeEventListener("blur", onUp);
         el.classList.remove("fence-invalid");
-        const rect = fits ? out : start;
+        const rect = fits && sized ? out : start;
         el.style.left = rect.left + "px";
         el.style.top = rect.top + "px";
         el.style.width = rect.width + "px";
         el.style.height = rect.height + "px";
-        if (!fits) {
+        if (!fits || !sized) {
           applyExtent();
           return;
         }
@@ -1118,8 +1146,9 @@ window.WBConsole = (function () {
       const hit = fences.find((x) => rectsOverlap(spawn, x.rect || {}));
       const el = hit && fenceEl(hit.id);
       if (el) {
+        clearFenceFlash();
         el.classList.add("fence-invalid");
-        setTimeout(() => el.classList.remove("fence-invalid"), 600);
+        fenceFlash = { el, timer: setTimeout(clearFenceFlash, 600) };
       }
       return;
     }

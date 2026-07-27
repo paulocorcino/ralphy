@@ -263,24 +263,69 @@ def drag(page, start, dx, dy):
     page.wait_for_timeout(400)
 
 
-def stored(desk_file, timeout=8):
-    """The desk as the DAEMON holds it, once the 250 ms flush has landed."""
-    time.sleep(0.9)
+def quiet(desk_file, still=1.6, timeout=15):
+    """Block until `desk.toml` has not changed for `still` seconds.
+
+    A fixed sleep is the wrong synchroniser for "nothing was written": under
+    load the shell's 250 ms flush can land AFTER the sleep, and the assertion
+    then passes by reading before the wrong write. Waiting for the file to go
+    QUIET proves the window really is over.
+    """
     deadline = time.time() + timeout
     last = None
+    since = time.time()
+    while time.time() < deadline:
+        try:
+            now = (desk_file.stat().st_mtime_ns, desk_file.stat().st_size)
+        except OSError:
+            now = None
+        if now != last:
+            last = now
+            since = time.time()
+        elif time.time() - since >= still:
+            return
+        time.sleep(0.15)
+
+
+def stored(desk_file, want=None, timeout=12):
+    """The desk as the DAEMON holds it, once the flush has landed.
+
+    `want` is a predicate on the served desk: poll until it holds rather than
+    sleeping a guessed window. Without one, wait for the file to go quiet.
+    """
+    last = {"windows": [], "fences": []}
+    deadline = time.time() + timeout
+    if want is None:
+        quiet(desk_file)
     while time.time() < deadline:
         try:
             last = json.loads(http("GET", "api/desk")[1])
-            return last
         except Exception:
             time.sleep(0.3)
-    return last or {"windows": [], "fences": []}
+            continue
+        if want is None or want(last):
+            return last
+        time.sleep(0.3)
+    return last
 
 
 def fence_of(desk, fid):
     for f in desk.get("fences", []):
         if f["id"] == fid:
             return f
+    return None
+
+
+def window_block(text, wid="w-fixture-a"):
+    """The raw `[[windows]]` record for `wid`, verbatim out of desk.toml.
+
+    Located by ID, not by "everything before the first `[[fences]]`": on a
+    reorder that slice becomes the empty preamble and the grep below would go
+    vacuously green.
+    """
+    for block in text.split("[[windows]]"):
+        if f'id = "{wid}"' in block:
+            return block.split("[[")[0]
     return None
 
 
@@ -371,13 +416,14 @@ def main():
                 g["membership"] == {"f-alpha": [win_id], "f-beta": []},
                 f"got={g['membership']}",
             )
-            in_desk = stored(desk_file)
-            text = desk_file.read_text(encoding="utf-8")
-            window_block = text.split("[[fences]]")[0]
+            in_desk = stored(desk_file, lambda d: win_rect(d) and win_rect(d)["left"] == wrect["left"])
+            block = window_block(desk_file.read_text(encoding="utf-8"))
             check(
                 "…and NOTHING about the fence was written into the window record",
-                "fence" not in window_block.lower() and "fence" not in json.dumps(in_desk["windows"]).lower(),
-                f"window record={json.dumps(in_desk['windows'])[:220]}",
+                block is not None
+                and "fence" not in block.lower()
+                and "fence" not in json.dumps(in_desk["windows"]).lower(),
+                f"block={block!r} record={json.dumps(in_desk['windows'])[:200]}",
             )
 
             # ===== scenario 2: drag it back OUT ==============================
@@ -434,7 +480,7 @@ def main():
                 after["fences"][1]["rect"] == FENCE_B and after["fences"][1]["invalid"] is False,
                 f"got={after['fences'][1]}",
             )
-            time.sleep(1.2)
+            quiet(desk_file)
             after_block = fence_block(desk_file.read_text(encoding="utf-8"), "f-beta")
             check(
                 "…and its record in desk.toml is byte-identical — a refusal persists NOTHING",
@@ -493,6 +539,75 @@ def main():
                 "…while the fence it did NOT touch is unmoved",
                 fence_of(moved_desk, "f-beta")["rect"]["left"] == FENCE_B["left"],
                 f"got={fence_of(moved_desk, 'f-beta')['rect']}",
+            )
+
+            # ===== scenario 4b: the clamp at the plane's pinned origin =======
+            # `fenceMoveDelta` folds the MEMBER rects into the clamp, not just
+            # the fence's. Park the member so its left/top are SMALLER than the
+            # fence's: a clamp computed on the fence alone then parks it at a
+            # negative coordinate, off the plane whose origin is pinned (#336).
+            fa = geometry(page)["fences"][0]["rect"]
+            # The member's TOP must sit above the fence's, so the vertical clamp
+            # can only come from the member. Its LEFT stays to the right of the
+            # fence's, which keeps the window's box clear of the `.fence-grab`
+            # handle in the fence's NW corner — a covered handle is pressed as
+            # the WINDOW and the gesture never starts.
+            here = centre(geometry(page)["wins"][0]["rect"])
+            bar = client_point(page, ".session-window .session-titlebar")
+            drag(page, bar, fa["left"] + 240 - here[0], fa["top"] + 80 - here[1])
+            g = geometry(page)
+            wr_pre = g["wins"][0]["rect"]
+            check(
+                "the member is parked ABOVE the fence's own top edge",
+                g["membership"]["f-alpha"] == [win_id]
+                and wr_pre["top"] < fa["top"]
+                and wr_pre["left"] > fa["left"],
+                f"member={wr_pre} fence={fa}",
+            )
+            # NEGATIVE CONTROL for `fenceMoveDelta`'s member leg: clamping on the
+            # FENCE alone allows dy = -fence.top, which parks this member at a
+            # negative `top`. The clamp must answer to the member instead.
+            want_dx = -min(fa["left"], wr_pre["left"])
+            want_dy = -min(fa["top"], wr_pre["top"])
+            check(
+                "the fixture really is the clamp's negative control",
+                want_dy != -fa["top"] and wr_pre["top"] > 0,
+                f"fence.top={fa['top']} member.top={wr_pre['top']} dy={want_dy}",
+            )
+            grab_a = client_point(page, ".fence-grab", 0)
+            drag(page, grab_a, -400, -400)  # far more than the plane allows
+            g = geometry(page)
+            check(
+                "a move toward the origin is CLAMPED, not refused — the fence still moves",
+                g["fences"][0]["rect"]["left"] == fa["left"] + want_dx
+                and g["fences"][0]["rect"]["top"] == fa["top"] + want_dy,
+                f"fence={g['fences'][0]['rect']} want={(fa['left'] + want_dx, fa['top'] + want_dy)}",
+            )
+            clamped = stored(
+                desk_file,
+                lambda d: win_rect(d) and win_rect(d)["top"] == 0.0,
+            )
+            wr_clamp = win_rect(clamped)
+            check(
+                "…and the member lands EXACTLY on the origin, never past it",
+                wr_clamp["top"] == 0.0 and wr_clamp["left"] == wr_pre["left"] + want_dx,
+                f"got={wr_clamp} want top=0 left={wr_pre['left'] + want_dx}",
+            )
+            check(
+                "…with no coordinate anywhere on the plane gone negative",
+                min(
+                    wr_clamp["left"],
+                    wr_clamp["top"],
+                    fence_of(clamped, "f-alpha")["rect"]["left"],
+                    fence_of(clamped, "f-alpha")["rect"]["top"],
+                )
+                >= 0,
+                f"member={wr_clamp} fence={fence_of(clamped, 'f-alpha')['rect']}",
+            )
+            check(
+                "…and the member is still a member: the clamp moved BOTH by one delta",
+                geometry(page)["membership"]["f-alpha"] == [win_id],
+                f"got={geometry(page)['membership']}",
             )
 
             # ===== scenario 5: a resize resizes no member ====================
@@ -560,17 +675,114 @@ def main():
                 f"got={fence_of(after_size, 'f-alpha')['rect']}",
             )
 
+            # ===== scenario 5b: a resize INTO a neighbour is refused =========
+            # The refusal branch of `startFenceResize` — the shrink above never
+            # reaches it, so without this leg the `fenceFits` check could be
+            # deleted from the resize and every gate would stay green.
+            # Park the member well clear first: the fence just shrank, so its
+            # grip has moved INTO the window's box — and a covered grip is
+            # pressed as the window, silently skipping the whole gesture.
+            drag(page, client_point(page, ".session-window .session-titlebar"), 0, 400)
+            small = geometry(page)["fences"][0]["rect"]
+            grip = client_point(page, ".fence-grip", 0)
+            page.mouse.move(grip["x"], grip["y"])
+            page.mouse.down()
+            page.mouse.move(grip["x"] + 250, grip["y"], steps=5)
+            page.mouse.move(grip["x"] + 500, grip["y"], steps=5)
+            page.wait_for_timeout(200)
+            mid = geometry(page)
+            check(
+                "a fence GROWN into its neighbour shows the refusal mid-gesture",
+                mid["fences"][0]["invalid"] is True
+                and mid["fences"][0]["rect"]["width"] > small["width"],
+                f"alpha={mid['fences'][0]} beta={mid['fences'][1]['rect']}",
+            )
+            page.mouse.up()
+            page.wait_for_timeout(600)
+            back = geometry(page)["fences"][0]["rect"]
+            check(
+                "…and on release it reverts to the rect it started the resize at",
+                back == small,
+                f"before={small} after={back}",
+            )
+            quiet(desk_file)
+            check(
+                "…having persisted nothing: the store still holds the shrunken rect",
+                fence_of(json.loads(http("GET", "api/desk")[1]), "f-alpha")["rect"]["width"]
+                == small["width"],
+                f"got={fence_of(json.loads(http('GET', 'api/desk')[1]), 'f-alpha')['rect']}",
+            )
+
             page.screenshot(path=SHOT)
             check("the evidence screenshot is on disk", os.path.exists(SHOT), SHOT)
-
             ctx.close()
+            time.sleep(1.2)
+
+            # ===== scenario 6: CREATING into an overlap is refused too =======
+            # One fence blanketing the whole spawn grid, so every slot
+            # `nextFenceSlot` can offer is taken. Drop the guard from
+            # `createFence` and this fence count goes to 2 — the criterion says
+            # creating an overlap is refused, and nothing else exercises it.
+            http(
+                "PUT",
+                "api/desk",
+                {
+                    "windows": [],
+                    "fences": [
+                        {
+                            "id": "f-blanket",
+                            "name": "blanket",
+                            "rect": {"left": 0.0, "top": 0.0, "width": 4000.0, "height": 4000.0},
+                            "ts": 200,
+                        }
+                    ],
+                },
+            )
+            full_ctx = browser.new_context(viewport=dict(VIEW))
+            full = desk_page(full_ctx)
+            full.wait_for_function(
+                "() => document.querySelectorAll('.fence').length === 1", timeout=15000
+            )
+            unscroll(full)
+            full.get_by_title("draw a named fence on the plane").click()
+            full.wait_for_timeout(300)
+            flashed = full.evaluate(
+                "() => [...document.querySelectorAll('.fence')]"
+                "  .some((f) => f.classList.contains('fence-invalid'))"
+            )
+            drawn = full.evaluate("() => document.querySelectorAll('.fence').length")
+            check(
+                "a fence that could only be born overlapping is REFUSED, not nudged into a gap",
+                drawn == 1,
+                f"fence count={drawn}",
+            )
+            check(
+                "…with the offending fence flashed, so the refusal is visible",
+                flashed,
+                "no .fence carried fence-invalid after the refused create",
+            )
+            full.wait_for_timeout(900)
+            check(
+                "…and the flash clears itself, leaving no stuck red border",
+                not full.evaluate(
+                    "() => [...document.querySelectorAll('.fence')]"
+                    "  .some((f) => f.classList.contains('fence-invalid'))"
+                ),
+            )
+            quiet(desk_file)
+            check(
+                "…and nothing reached the store: still exactly one fence",
+                len(json.loads(http("GET", "api/desk")[1])["fences"]) == 1,
+                f"got={json.loads(http('GET', 'api/desk')[1])['fences']}",
+            )
+            full_ctx.close()
             browser.close()
     finally:
         stop(proc)
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) >= 24
+    ok = all(results) and len(results) == 42
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE IS A GROUP")

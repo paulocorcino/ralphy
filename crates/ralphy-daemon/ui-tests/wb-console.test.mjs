@@ -509,6 +509,31 @@ test("fenceMembership: a centre exactly on the shared edge belongs to the RIGHT 
   assert.equal(memberCount(m), 1);
 });
 
+// The same pair stacked VERTICALLY. Without this the whole table discriminates
+// on X alone, and an implementation half-open on X but CLOSED on Y
+// (`c.y <= top + height`) passes every row above while two fences drawn one
+// under the other both claim a centre on their shared horizontal edge.
+const TB = [
+  { id: "t", rect: { left: 0, top: 0, width: 100, height: 100 } },
+  { id: "u", rect: { left: 0, top: 100, width: 100, height: 100 } },
+];
+
+test("fenceMembership: a centre exactly on the shared HORIZONTAL edge belongs to the LOWER fence", () => {
+  const m = load().fenceMembership(TB, [
+    { id: "w1", rect: { left: 20, top: 80, width: 40, height: 40 } },
+  ]);
+  assert.deepEqual(m, { t: [], u: ["w1"] });
+  assert.equal(memberCount(m), 1);
+});
+
+test("fenceMembership: a window straddling the horizontal border belongs to the fence holding its centre", () => {
+  const m = load().fenceMembership(TB, [
+    { id: "w1", rect: { left: 20, top: 60, width: 40, height: 60 } },
+  ]);
+  assert.deepEqual(m, { t: ["w1"], u: [] });
+  assert.equal(memberCount(m), 1);
+});
+
 test("fenceMembership: a fence with no members maps to an empty list", () => {
   assert.deepEqual(load().fenceMembership(AB, []), { a: [], b: [] });
 });
@@ -545,6 +570,19 @@ const FITS = [
     // natural layout — fences drawn edge to edge — becomes unbuildable.
     name: "a candidate abutting exactly on the west edge fits",
     rect: { left: 0, top: 100, width: 100, height: 100 },
+    want: true,
+  },
+  {
+    // The Y twin of the control above: making `rectsOverlap` non-strict on the
+    // Y comparisons ALONE leaves the west row green, so without this the table
+    // never punishes vertically abutting fences becoming unbuildable.
+    name: "a candidate abutting exactly on the north edge fits",
+    rect: { left: 100, top: 0, width: 100, height: 100 },
+    want: true,
+  },
+  {
+    name: "a candidate abutting exactly on the south edge fits",
+    rect: { left: 100, top: 200, width: 100, height: 100 },
     want: true,
   },
   {
