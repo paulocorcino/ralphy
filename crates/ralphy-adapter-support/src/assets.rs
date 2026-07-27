@@ -2,7 +2,9 @@
 //! disk, clearing any prior copy first.
 
 use std::fs;
+use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 
@@ -39,14 +41,55 @@ pub fn materialize_assets(
         return Err(e).context("extracting the embedded asset tree");
     }
     if dest_dir.exists() {
-        fs::remove_dir_all(dest_dir).context("clearing the stale materialized asset directory")?;
+        retry_transient_fs(|| fs::remove_dir_all(dest_dir))
+            .context("clearing the stale materialized asset directory")?;
     }
-    fs::rename(&staging, dest_dir)
+    retry_transient_fs(|| fs::rename(&staging, dest_dir))
         .context("swapping the materialized asset directory into place")?;
     if let Some(dir) = gitignore_dir {
         fs::write(dir.join(".gitignore"), "*\n").context("writing .gitignore")?;
     }
     Ok(())
+}
+
+/// Retry `op` while it fails with a transient Windows sharing error.
+///
+/// On Windows, deleting a directory another process still holds a handle to
+/// (a just-exited agent child, an antivirus scan, a file watcher) does not
+/// fail: the directory goes delete-pending and its *name* is freed only when
+/// the last handle closes. `remove_dir_all` then reports success while the
+/// follow-up `rename` onto that name fails with `ERROR_ACCESS_DENIED`; a
+/// scanner holding a freshly extracted file open surfaces as
+/// `ERROR_SHARING_VIOLATION` the same way. Both clear as soon as the handle
+/// closes, so a short backoff loop (~1.5s total) absorbs the race. On
+/// non-Windows targets no error is treated as transient and `op` runs once.
+fn retry_transient_fs<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    const MAX_ATTEMPTS: u32 = 10;
+    let mut delay = Duration::from_millis(4);
+    let mut attempt = 1;
+    loop {
+        match op() {
+            Ok(v) => return Ok(v),
+            Err(e) if attempt < MAX_ATTEMPTS && is_transient_lock(&e) => {
+                std::thread::sleep(delay);
+                delay = (delay * 2).min(Duration::from_millis(500));
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// `ERROR_ACCESS_DENIED` (5) and `ERROR_SHARING_VIOLATION` (32) — the two
+/// shapes a still-open handle takes on Windows (see [`retry_transient_fs`]).
+#[cfg(windows)]
+fn is_transient_lock(e: &io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(5) | Some(32))
+}
+
+#[cfg(not(windows))]
+fn is_transient_lock(_e: &io::Error) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -98,5 +141,35 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn retry_transient_fs_does_not_retry_a_real_error() {
+        let mut calls = 0;
+        let err = retry_transient_fs(|| -> io::Result<()> {
+            calls += 1;
+            Err(io::Error::new(io::ErrorKind::NotFound, "missing"))
+        })
+        .expect_err("a non-transient error must surface");
+        assert_eq!(calls, 1, "a non-transient error must not be retried");
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn retry_transient_fs_outlasts_a_delete_pending_window() {
+        let mut calls = 0;
+        retry_transient_fs(|| {
+            calls += 1;
+            if calls < 3 {
+                // ERROR_ACCESS_DENIED, as raised while the old dir's name is
+                // still delete-pending.
+                Err(io::Error::from_raw_os_error(5))
+            } else {
+                Ok(())
+            }
+        })
+        .expect("must succeed once the transient error clears");
+        assert_eq!(calls, 3);
     }
 }
