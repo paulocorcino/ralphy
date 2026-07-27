@@ -3794,6 +3794,7 @@ mod tests {
             "/wb-mode.js",
             "/wb-runs.js",
             "/wb-settings.js",
+            "/wb-view.js",
             "/wb-viewer.js",
         ];
         for path in FILES {
