@@ -371,10 +371,14 @@ body.side-collapsed {
    tree. Only directories lose their icon — a file's glyph names its type, which
    the chevron cannot.
 
-   `visibility: hidden` rather than `display: none`, on purpose: the icon keeps
-   its box, so folder names sit on the SAME left edge as file names and only the
-   chevron sticks out. Removing the box outdents every folder name by an icon
-   width and the tree gains a second ragged edge.
+   `display: none`, so the icon's 20px box goes with it and the chevron sits
+   against the folder name. `visibility: hidden` was tried first — it keeps the
+   box, which aligns folder names to the same left edge as file names, but that
+   alignment is bought with a 20px hole between the chevron and the name it
+   labels, and the pair stops reading as one thing. Collapsing the box outdents
+   folder names by an icon width relative to file names; that ragged edge is not
+   a defect, it is exactly the file-tree convention VS Code and Cursor draw, and
+   the chevron column already makes the two rows legible as different kinds.
 
    This also retires a glyph that was wrong for two other reasons, neither worth
    fixing now that nothing is drawn — Wunderbaum's bootstrap map points
@@ -382,11 +386,16 @@ body.side-collapsed {
    daemon marks EVERY directory `lazy` to fetch children on expand, so the whole
    tree drew shortcuts; and the warm accent that was meant to tint them hung off
    a `.wb-folder` class this markup does not have (the row carries `wb-lazy`),
-   so it never applied. */
+   so it never applied.
+
+   Safe to drop the box only because the tree runs without Wunderbaum's `dnd`
+   extension: its drop-target indicator is an `::after` on `.wb-icon`, which a
+   removed box would take with it. Enabling drag-and-drop here means revisiting
+   this rule. */
 .wb-host.wunderbaum .wb-icon.bi-folder-symlink,
 .wb-host.wunderbaum .wb-icon.bi-folder2,
 .wb-host.wunderbaum .wb-icon.bi-folder2-open {
-  visibility: hidden;
+  display: none;
 }
 /* file-type glyphs whose brand colour is near-black inherit a light tone */
 .wb-host.wunderbaum .wb-icon.md-glyph {
