@@ -633,6 +633,11 @@ window.WBConsole = (function () {
         // what's on screen first so the replay repaints instead of duplicating.
         if (!firstConnect) term.reset();
         firstConnect = false;
+        // Written HERE, not in `onPark`: the park reattaches immediately and the
+        // reset above would wipe a line written before the socket opened.
+        if (watching) {
+          term.write("\r\n[watching — driven in another window]\r\n");
+        }
         fit.fit();
         ws.send(encodeResize(term.rows, term.cols));
       };
@@ -872,7 +877,6 @@ window.WBConsole = (function () {
         });
         strip.append(text, btn);
         win.insertBefore(strip, body);
-        t.term.write("\r\n[watching — driven in another window]\r\n");
       },
       onResume: () => win.querySelector(".session-parked")?.remove(),
     });
