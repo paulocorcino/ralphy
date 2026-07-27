@@ -114,7 +114,13 @@
         <template x-for="p in filteredProjects()" :key="p.slug">
           <li class="project" :class="{ open: openSlug === p.slug }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
-            <div class="project-head" @click="toggle(p.slug)">
+            <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
+                 branch chip moved to the Files bar below, which only the open
+                 project renders (#332). It sits on the row, never on
+                 `.project-slug` — that title is the canonical slug, the
+                 ADR-0008 D7 identity, and the child's own title still wins when
+                 the pointer is over the name, which is what you want there. -->
+            <div class="project-head" @click="toggle(p.slug)" :title="rowTitle(p)">
               <span class="chevron"><i data-lucide="chevron-right"></i></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -131,24 +137,6 @@
                 :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
               ></i>
               <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
-              <!-- current git branch → click to switch (opens the branch
-                   picker). @click.stop so it doesn't also toggle the accordion.
-                   impl: current branch + the pickable list come from the
-                   daemon's repo info; a switch/create emits an intent. -->
-              <!-- switching is gated on reachability, not on remote: a
-                   local-only repo is still a git checkout with branches, but an
-                   *unreachable* one can't be touched (no `git branch`/checkout),
-                   so the chip goes inert and informational. -->
-              <button
-                class="branch-chip"
-                :class="{ dirty: p.dirty, disabled: !canSwitchBranch(p) }"
-                @click.stop="canSwitchBranch(p) ? openBranchModal(p) : null"
-                :title="branchChipTitle(p)"
-              >
-                <i data-lucide="git-branch"></i>
-                <span class="branch-chip-name" x-text="p.branch"></span>
-                <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
-              </button>
               <!-- The change count survives the promotion to a rail view (#317):
                    it stays reachable here with no click and no navigation, which
                    is the exact property PRD #297 built the section for. Renders
@@ -167,9 +155,34 @@
                  right-click — and right-clicking empty space (the repo root) is
                  an invisible affordance. These two buttons target the selected
                  folder, the selected file's folder, or the repo root when
-                 nothing is selected; the title says which, live. -->
+                 nothing is selected; the title says which, live.
+
+                 It also carries the open project's branch (#332): the chip used
+                 to sit in the row above, capped at 48% of a 300px column, where
+                 it cost the project name half its width. Here it competes with
+                 nothing — the two create buttons stay pinned right by the
+                 spacer. -->
             <div class="side-head files-sec" x-show="openSlug === p.slug">
               <span>Files</span>
+              <!-- current git branch → click to switch (opens the branch
+                   picker). @click.stop is redundant here (no ancestor toggles)
+                   but kept: this bar may yet grow a click handler.
+                   impl: current branch + the pickable list come from the
+                   daemon's repo info; a switch/create emits an intent. -->
+              <!-- switching is gated on reachability, not on remote: a
+                   local-only repo is still a git checkout with branches, but an
+                   *unreachable* one can't be touched (no `git branch`/checkout),
+                   so the chip goes inert and informational. -->
+              <button
+                class="branch-chip"
+                :class="{ dirty: p.dirty, disabled: !canSwitchBranch(p) }"
+                @click.stop="canSwitchBranch(p) ? openBranchModal(p) : null"
+                :title="branchChipTitle(p)"
+              >
+                <i data-lucide="git-branch"></i>
+                <span class="branch-chip-name" x-text="p.branch"></span>
+                <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
+              </button>
               <span class="spacer"></span>
               <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">
                 <i class="bi bi-file-earmark-plus"></i>

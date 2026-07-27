@@ -3385,6 +3385,19 @@ body.locked .runs {
   border-color: transparent;
   color: var(--text-muted);
 }
+/* In the Files bar the chip is no longer competing with the project name for a
+   fixed 300px row (#332), so it drops the row's right-alignment and its 48% cap
+   and simply shrinks when it must. The two resets are not cosmetic: `.side-head`
+   uppercases and letter-spaces its label, and a branch name is case-sensitive —
+   `feat/UI` rendered as `FEAT/UI` names a ref that does not exist. */
+.files-sec .branch-chip {
+  margin-left: 0;
+  max-width: none;
+  min-width: 0;
+  flex: 0 1 auto;
+  text-transform: none;
+  letter-spacing: normal;
+}
 /* a small amber dot flags an uncommitted working tree */
 .branch-chip-dot {
   width: 6px;

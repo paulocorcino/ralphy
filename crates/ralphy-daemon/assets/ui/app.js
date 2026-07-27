@@ -432,6 +432,17 @@ function shell() {
       return p.state !== "offline";
     },
 
+    // What the COLLAPSED row can no longer show. The branch chip moved to the
+    // Files bar (#332), which only the OPEN project renders — and
+    // `filteredProjects()` matches on branch, so a row that answers a branch
+    // query while showing no branch is a lie. The slug keeps `.project-slug`'s
+    // own title to itself: it is the ADR-0008 D7 identity, and it is how the
+    // browser tests find a row.
+    rowTitle(p) {
+      if (!p.branch) return p.slug;
+      return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
+    },
+
     branchChipTitle(p) {
       if (!this.canSwitchBranch(p)) return "repo unreachable — branch switching unavailable";
       return (p.dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + p.branch;
