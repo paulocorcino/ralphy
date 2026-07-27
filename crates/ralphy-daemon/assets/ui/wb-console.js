@@ -160,6 +160,15 @@ window.WBConsole = (function () {
   // dropped — the window would come back "open" on the next load. `keepalive`
   // lets the request outlive the document.
   window.addEventListener("pagehide", () => {
+    // The per-client view first, and BEFORE the desk guard below: the store is
+    // synchronous `localStorage`, and `deskLoaded` has nothing to say about it —
+    // gating the offset on the desk's permit would drop the last pan of every
+    // pre-login or demo page.
+    if (offsetFlush) {
+      clearTimeout(offsetFlush);
+      offsetFlush = null;
+      flushOffset();
+    }
     if (!deskLoaded || !deskFlush) return;
     clearTimeout(deskFlush);
     deskFlush = null;
@@ -382,6 +391,56 @@ window.WBConsole = (function () {
         new CustomEvent("workbench:stage-extent", { detail: { width, height } }),
       );
     }
+  }
+
+  // ---- the per-client view (issue #339) ----------------------------------------
+  // Where this browser profile was looking. `landed` latches the FIRST paint's
+  // bbox landing so a later refit cannot re-centre a plane the operator has
+  // since panned — but a STORED offset is re-applied on every call, because
+  // `.consoles-tab` is `x-show` and `display:none` destroys `#workspace`'s
+  // scroll position: without that, one tab switch silently loses the pan.
+  // INVARIANT: this never runs before `applyExtent()` on any path — the clamp
+  // needs the extent the same frame's rects imply, or a restored offset would be
+  // clamped against a stage that has not grown yet.
+  let landed = false;
+  function applyLanding() {
+    const ws = workspace();
+    const st = stage();
+    if (!ws || !st) return;
+    // A hidden tab measures a 0×0 viewport, where every landing centres on
+    // nothing — and `saveOffset` would then persist that nothing.
+    if (!ws.clientWidth || !ws.clientHeight) return;
+    const stored = window.WBView?.read()?.off || null;
+    if (landed && !stored) return;
+    const at = viewLanding(
+      stored,
+      [...st.querySelectorAll(".session-window")].map(restoreRect),
+      { width: ws.clientWidth, height: ws.clientHeight },
+      { width: st.offsetWidth, height: st.offsetHeight },
+    );
+    ws.scrollLeft = at.left;
+    ws.scrollTop = at.top;
+    landed = true;
+  }
+
+  // The offset half of the store, debounced like the desk flush. SUPPRESSED
+  // until the landing has been applied: `applyExtent` and the `x-show` flip both
+  // fire `scroll` before the restore, so an unguarded listener would persist 0,0
+  // over the operator's stored pan on every boot.
+  let offsetFlush = null;
+  function flushOffset() {
+    const ws = workspace();
+    if (!ws) return;
+    window.WBView?.patch({ off: { left: ws.scrollLeft, top: ws.scrollTop } });
+  }
+  function saveOffset() {
+    const ws = workspace();
+    if (!landed || !ws || !ws.clientWidth) return;
+    clearTimeout(offsetFlush);
+    offsetFlush = setTimeout(() => {
+      offsetFlush = null;
+      flushOffset();
+    }, 250);
   }
 
   function focusWin(win) {
@@ -1425,6 +1484,7 @@ window.WBConsole = (function () {
         // is what gives the restored windows their scroll room — inserting a
         // window is not a resize, so nothing else would fire.
         applyExtent();
+        applyLanding();
       })
       .catch(() => {});
   }
@@ -1516,6 +1576,10 @@ window.WBConsole = (function () {
     // gesture, the wheel, the scrollbar and `reveal`'s programmatic offset write
     // all end in a `scroll` on the viewport itself.
     ws.addEventListener("scroll", syncMaxPin);
+    // A SECOND listener, deliberately: the maximize pin is derived state that
+    // must stay exact, the view offset is debounced storage — one handler doing
+    // both would have to pick one of those two rhythms.
+    ws.addEventListener("scroll", saveOffset);
   }
 
   // The gestures are wired in the static demo too, where `restoreDesk` returns
@@ -1547,6 +1611,9 @@ window.WBConsole = (function () {
         win._term?.fit.fit();
       } catch {}
     }
+    // LAST, after `applyExtent`: returning to this tab is the other moment the
+    // stored offset must be re-applied, because `x-show` threw it away.
+    applyLanding();
   }
 
   // Tile every open console into a grid that fills the VISIBLE region — the
