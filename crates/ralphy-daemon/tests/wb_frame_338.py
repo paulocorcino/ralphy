@@ -263,6 +263,42 @@ def fills_frame(f):
     return all(abs(f[edge]) <= 1 for edge in ("left", "top", "right", "bottom"))
 
 
+def poll_desk(want_id, predicate, timeout=8):
+    """Read `GET /api/desk` until the record satisfies `predicate`.
+
+    A desk write is debounced-then-HTTP, so a single fixed sleep before reading
+    is a coin flip (#337 handoff). Same assertion, bounded wait.
+    """
+    deadline = time.time() + timeout
+    rec = None
+    while time.time() < deadline:
+        try:
+            rec = next(
+                (r for r in json.loads(http("GET", "api/desk")[1]) if r["id"] == want_id),
+                None,
+            )
+        except Exception:
+            rec = None
+        if rec and predicate(rec):
+            return rec
+        time.sleep(0.3)
+    return rec
+
+
+def press_chrome(page, index, selector):
+    """Click a window's own chrome button from inside the page.
+
+    A full-bleed console covers its neighbours' chrome and Arrange fills the
+    frame, so `locator.click()` on anything but the topmost window times out
+    with "intercepts pointer events" (#336 handoff). This is still the real
+    button and the real handler.
+    """
+    page.evaluate(
+        "([i, sel]) => document.querySelectorAll('.session-window')[i].querySelector(sel).click()",
+        [index, selector],
+    )
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -457,6 +493,62 @@ def main():
                 "…and the full bleed follows the frame instead of desyncing from it",
                 f4["maximized"] and fills_frame(f4),
                 f"edges (l,t,r,b) = {f4['left']},{f4['top']},{f4['right']},{f4['bottom']}",
+            )
+
+            # ===== scenario 5b: Arrange leaves a maximized window alone ========
+            # `.maximized` overrides all four offsets with `!important`, so a
+            # tile rect written onto it is invisible on screen AND silently
+            # replaces the restore rect this issue owns (#336 residue L2).
+            page.locator("button", has_text="Arrange").first.click()
+            page.wait_for_timeout(700)
+            inline = page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                "  return { left: w.style.left, top: w.style.top,"
+                "    width: w.style.width, height: w.style.height,"
+                "    maximized: w.classList.contains('maximized'),"
+                "    other: document.querySelectorAll('.session-window')[1].style.left }; }"
+            )
+            check(
+                "Arrange does not tile the maximized console…",
+                (inline["left"], inline["top"]) == ("40px", "40px"),
+                f"got left={inline['left']} top={inline['top']}",
+            )
+            check(
+                "…nor overwrite the size it must restore to",
+                (inline["width"], inline["height"]) == ("600px", "380px"),
+                f"got width={inline['width']} height={inline['height']}",
+            )
+            check(
+                "…while still tiling the window that is NOT maximized",
+                inline["other"] and inline["other"] != "700px",
+                f"the other window's inline left = {inline['other']!r}",
+            )
+
+            # ===== scenario 5: restore lands on the STAGE-coordinate box =======
+            press_chrome(page, 0, ".session-max")
+            page.wait_for_timeout(600)
+            restored = page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                "  return { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth,"
+                "    height: w.offsetHeight, maximized: w.classList.contains('maximized'),"
+                "    lock: document.getElementById('workspace').classList.contains('maxlock') }; }"
+            )
+            check(
+                "restoring after a pan puts the window back on its pre-maximize rect",
+                restored == {
+                    "left": 40, "top": 40, "width": 600, "height": 380,
+                    "maximized": False, "lock": False,
+                },
+                f"got={restored}",
+            )
+            rec = poll_desk(
+                "w-fixture-a",
+                lambda r: r["rect"] == FIX_A and r["max"] is False,
+            )
+            check(
+                "…and the daemon's desk agrees with the screen",
+                bool(rec) and rec["rect"] == FIX_A and rec["max"] is False,
+                f"got={rec}",
             )
 
             ctx.close()

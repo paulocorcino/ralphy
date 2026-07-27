@@ -1500,7 +1500,12 @@ window.WBConsole = (function () {
   // transition.
   function arrange() {
     const ws = workspace();
-    const list = [...wins];
+    // A maximized console is NOT tiled. `.maximized` overrides all four offsets
+    // with `!important`, so a tile rect written onto it is invisible on screen
+    // while it silently REPLACES the pre-maximize rect the restore button and a
+    // reload read back (measured: 40,40,600,380 -> 460,78,509,790, persisted).
+    // Filtered before `n` so the grid stays hole-free (issue #338).
+    const list = [...wins].filter((w) => !w.classList.contains("maximized"));
     const n = list.length;
     if (!n) return;
     const originX = ws.scrollLeft;
