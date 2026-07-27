@@ -295,6 +295,18 @@ body.side-collapsed {
 }
 .project-slug {
   font-weight: 600;
+  /* The row's ONE elastic child (#332). Two of these four are load-bearing and
+     both read as redundant, so: `min-width: 0` because a flex item will not
+     shrink below its content without it — that, not the missing ellipsis, is
+     what wrapped a long name to a second line; and `flex: 1 1 auto` because the
+     branch chip's `margin-left: auto` used to be what pushed `.chg-badge` to the
+     right edge, and the chip has moved to the Files bar. Delete either and the
+     row deforms again. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .project-meta {
   margin-left: auto;
