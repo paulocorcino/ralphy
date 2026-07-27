@@ -462,6 +462,27 @@
           <button class="btn" @click="newFence()" title="draw a named fence on the plane">
             <i class="bi bi-bounding-box"></i> Fence
           </button>
+          <!-- Fences: the list IS the map (issue #343, ADR-0051 §7) — the slot
+               the retired global Arrange vacated. One click slides the viewport
+               to that fence and focuses it, so the next console is born inside
+               it. Rows are `.fence-item`, a third class beside `.window-item`,
+               so queries scoped to either existing menu stay inert. -->
+          <div class="menu-wrap">
+            <button class="btn" @click.stop="toggleFenceMenu()" title="jump to a fence">
+              <i class="bi bi-map"></i> Fences
+            </button>
+            <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></div>
+              <template x-for="f in fenceItems" :key="f.id">
+                <button class="fence-item" @click="jumpFence(f.id)">
+                  <i class="bi bi-bounding-box"></i>
+                  <span x-text="f.name"></span>
+                  <span class="row-repos" x-show="f.repos" x-text="f.repos"></span>
+                  <span class="row-count" x-text="f.count + ' console' + (f.count === 1 ? '' : 's')"></span>
+                </button>
+              </template>
+            </div>
+          </div>
         </div>
       </div>
 

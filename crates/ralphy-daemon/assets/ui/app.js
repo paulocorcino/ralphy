@@ -2147,6 +2147,11 @@ function shell() {
     // opens, because the window set lives in the DOM (the stage), not here.
     windowMenu: false,
     windowList: [],
+    // The fence picker (issue #343), a snapshot on the same terms — the fences
+    // live in the DOM too, and re-opening the menu is what "without a reload"
+    // means here.
+    fenceMenu: false,
+    fenceItems: [],
     consoleCount: 0,
     // The stage extent, mirrored for the frame's footer pill (issue #338). The
     // plane is invisible until it is measured, so the pill is what makes "the
@@ -3034,6 +3039,22 @@ function shell() {
       // AFTER the tab is laid out: a `display:none` Consoles tab measures a 0
       // viewport, and centring against zero is centring against nothing.
       this.$nextTick(() => WBConsole.reveal(id));
+    },
+
+    // The fence list is the map (issue #343): no zoom, no minimap — the names
+    // are the anchors. Snapshot on open, exactly like the Go-to picker above.
+    toggleFenceMenu() {
+      this.fenceItems = WBConsole.fenceList();
+      this.agentMenu = false;
+      this.windowMenu = false;
+      this.fenceMenu = !this.fenceMenu;
+    },
+    jumpFence(id) {
+      if (this.active !== "consoles") this.activate("consoles");
+      this.fenceMenu = false;
+      // Same reason as `revealWindow`: a `display:none` tab measures a 0
+      // viewport, and the jump would slide the plane to 0,0.
+      this.$nextTick(() => WBConsole.jumpToFence(id));
     },
 
     // --- context menu -----------------------------------------------------

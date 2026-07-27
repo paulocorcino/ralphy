@@ -1946,11 +1946,13 @@ body.runs-open .runs {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
-/* `.window-item` is the Go-to picker's row (issue #337): the same menu grammar
-   under a DIFFERENT class name, so every existing `.dropdown-item` query scoped
-   to the New-console menu stays inert. */
+/* `.window-item` is the Go-to picker's row (issue #337) and `.fence-item` the
+   fence picker's (issue #343): the same menu grammar under DIFFERENT class
+   names, so every existing `.dropdown-item` query scoped to the New-console
+   menu stays inert. */
 .dropdown-item,
-.window-item {
+.window-item,
+.fence-item {
   all: unset;
   display: flex;
   align-items: center;
@@ -1964,7 +1966,8 @@ body.runs-open .runs {
   cursor: pointer;
 }
 .dropdown-item:not(:disabled):hover,
-.window-item:hover {
+.window-item:hover,
+.fence-item:hover {
   background: var(--surface-hi);
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
@@ -1974,12 +1977,28 @@ body.runs-open .runs {
   opacity: 0.4;
 }
 .dropdown-item .bi,
-.window-item .bi {
+.window-item .bi,
+.fence-item .bi {
   color: var(--console-text);
 }
 /* a Go-to row for a restored console the daemon no longer runs — it is still
    reachable, it just has no session behind it */
 .window-item .row-off {
+  margin-left: auto;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* the fence's readout: the repos its members belong to beside the name, and the
+   console count pushed to the end — the `.window-item .row-off` treatment. The
+   `auto` margin is on the COUNT, not on the repos: `x-show` hides the repos
+   span outright, and an auto margin on a `display:none` box moves nothing. */
+.fence-item .row-repos {
+  font-size: 0.66rem;
+  color: var(--console-text);
+  white-space: nowrap;
+}
+.fence-item .row-count {
   margin-left: auto;
   font-size: 0.66rem;
   color: var(--text-muted);
@@ -2158,6 +2177,13 @@ body.runs-open .runs {
   border-style: solid;
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+/* the fence the next console will be born into (issue #343). A RING only: no
+   `pointer-events` change, so the floor tier stays inert and a press over a
+   focused fence still reaches the window above it or the stage below it. */
+.fence.is-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* --- floating console windows (mirrors the daemon UI chrome) -------------- */

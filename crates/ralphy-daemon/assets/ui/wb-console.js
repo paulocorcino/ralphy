@@ -1299,6 +1299,17 @@ window.WBConsole = (function () {
     }));
   }
 
+  // The fence list the toolbar picker shows (issue #343) — the same fold the
+  // fence chrome reads, so a row and the fence it names can never disagree. A
+  // SNAPSHOT taken when the menu opens, like `list()`: the fences live in the
+  // DOM, and a reactive mirror would have to ride `refreshFenceChrome`, which
+  // `persistWin` calls on every drop.
+  function fenceList() {
+    const st = stage();
+    if (!st) return [];
+    return fenceSummaries(readFenceRects(st), readWindowRects(st));
+  }
+
   // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
   // not written while the operator is typing in it — an in-flight GET would
   // otherwise yank the caret back to a stale value mid-word.
@@ -1328,6 +1339,13 @@ window.WBConsole = (function () {
     for (const [id, el] of nodes) {
       if (!seen.has(id)) el.remove();
     }
+    // A focused fence that is gone — removed here or by an arriving GET — must
+    // not leave a dangling id: the birth path resolves it, and a stale one would
+    // silently place the next console nowhere (issue #343).
+    if (focusedFence && !seen.has(focusedFence)) clearFenceFocus();
+    // The class rides the ELEMENT, and `buildFence` makes a fresh one for a
+    // fence that arrived after the focus was taken.
+    else if (focusedFence) focusFence(focusedFence);
     refreshFenceChrome();
   }
 
@@ -1412,6 +1430,58 @@ window.WBConsole = (function () {
     const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
     const top = (target?.top || 0) + (target?.height || 0) / 2 - vh / 2;
     return clampOffset({ left, top }, viewport, extent);
+  }
+
+  // ---- the fence list is the map (issue #343, ADR-0051 §7) ---------------------
+  // The focused fence is PER-CLIENT transient state: never written to the desk,
+  // never to `WBView`. The desk is shared last-write-wins (ADR-0051 §8), so a
+  // stored focus would move where the OTHER operator's next console is born.
+  let focusedFence = null;
+
+  function focusedFenceId() {
+    return focusedFence;
+  }
+
+  function focusFence(id) {
+    focusedFence = id;
+    const st = stage();
+    if (!st) return;
+    for (const el of st.querySelectorAll(".fence")) {
+      el.classList.toggle("is-focused", el.dataset.fenceId === id);
+    }
+  }
+
+  function clearFenceFocus() {
+    focusFence(null);
+  }
+
+  // One click on a fence's name slides the viewport to it — the map's anchor.
+  // Returns the fence element, or null when no fence carries that id.
+  function jumpToFence(id) {
+    const el = fenceEl(id);
+    if (!el) return null;
+    focusFence(id);
+    const ws = workspace();
+    const st = stage();
+    // A viewport that measures 0 is a tab still `display:none`; centring against
+    // it clamps to 0,0 and slides the plane somewhere nobody asked for. The
+    // focus above still holds, so the next console is born in the right place.
+    if (!ws || !st || !ws.clientWidth || !ws.clientHeight) return el;
+    const view = { width: ws.clientWidth, height: ws.clientHeight };
+    const ext = { width: st.offsetWidth, height: st.offsetHeight };
+    const to = bringIntoView(restoreRect(el), view, ext);
+    ws.scrollLeft = to.left;
+    ws.scrollTop = to.top;
+    // INVARIANT — this write is not optional (issue #337, `revealNow`): without
+    // it `refitAll`'s `applyLanding` re-applies the PRE-jump stored offset in
+    // the same frame chain and silently undoes the slide.
+    if (landed) {
+      pendingOffset = null;
+      clearTimeout(offsetFlush);
+      offsetFlush = null;
+      window.WBView?.patch({ off: { left: to.left, top: to.top } });
+    }
+    return el;
   }
 
   // The bounding box of a set of stage-relative rects; all zeros for none, so an
@@ -2255,6 +2325,16 @@ window.WBConsole = (function () {
     // `pointer-events: none`, so a press over one still targets the stage and
     // panning survives inside a fence with no hit test here (issue #340).
     if (!ws || !st || e.target !== st) return;
+    // A press on the bare floor OUTSIDE the focused fence leaves it (issue
+    // #343). A press on its own empty floor is not a request to leave, so the
+    // hit test is against that fence's rect, not against "any fence" — the same
+    // half-open `rectHolds` membership uses.
+    if (focusedFence) {
+      const el = fenceEl(focusedFence);
+      const box = st.getBoundingClientRect();
+      const point = { x: e.clientX - box.left, y: e.clientY - box.top };
+      if (!el || !rectHolds(restoreRect(el), point)) clearFenceFocus();
+    }
     const startX = e.clientX;
     const startY = e.clientY;
     const startLeft = ws.scrollLeft;
@@ -2539,6 +2619,9 @@ window.WBConsole = (function () {
     fenceMoveDelta,
     tileIntoRect,
     fenceRepos,
+    fenceList,
+    jumpToFence,
+    focusedFence: focusedFenceId,
     createFence,
     renameFence,
     removeFence,
