@@ -299,6 +299,15 @@ def press_chrome(page, index, selector):
     )
 
 
+def index_of(page, desk_id):
+    """Where `desk_id` sits in DOM order — a reload need not preserve it."""
+    return page.evaluate(
+        "(id) => [...document.querySelectorAll('.session-window')]"
+        ".findIndex((w) => w._deskId === id)",
+        desk_id,
+    )
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -551,12 +560,111 @@ def main():
                 f"got={rec}",
             )
 
+            # ===== scenario 6: a persisted maximize survives a reload ==========
+            # At `scrollLeft = 0`, or the viewport PIN (`--max-left`) becomes the
+            # window's `offsetLeft` and every cross-reload number shifts with it
+            # (#336 handoff, cost: one red in `wb_desk_303.py`).
+            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 0; }")
+            page.wait_for_timeout(300)
+            press_chrome(page, index_of(page, "w-fixture-a"), ".session-max")
+            page.wait_for_timeout(600)
+            desk_file = Path(daemon_dir, "desk.toml")
+            deadline = time.time() + 8
+            on_disk = ""
+            while time.time() < deadline:
+                on_disk = desk_file.read_text(encoding="utf-8")
+                if "max = true" in on_disk:
+                    break
+                time.sleep(0.3)
+            check(
+                "the maximized state reaches desk.toml on disk",
+                "max = true" in on_disk,
+                f"desk.toml={on_disk[:160]!r}",
+            )
+
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page.wait_for_timeout(1800)
+            settle(page, 2)
+            back = index_of(page, "w-fixture-a")
+            check("the reloaded desk still carries the fixture window", back >= 0, f"index={back}")
+            f6 = frame_fill(page, back)
+            check(
+                "a persisted maximized console comes back MAXIMIZED",
+                f6["maximized"],
+                f"got={f6}",
+            )
+            check(
+                "…filling the frame it was reloaded into",
+                fills_frame(f6),
+                f"edges (l,t,r,b) = {f6['left']},{f6['top']},{f6['right']},{f6['bottom']}",
+            )
+            check(
+                "…and the footer pills survive the reload with it",
+                page.evaluate(
+                    "() => [...document.querySelectorAll('.canvas-foot .pill')]"
+                    ".map((s) => s.textContent.trim())"
+                ) == ["2 consoles", f"stage {STAGE_W} × {STAGE_H}"],
+                "the frame chrome must be rebuilt by the shell, not by the restore path",
+            )
+            # The evidence PNG, taken at the asserting moment: a full-bleed
+            # terminal with the frame's pills still legible at the bottom-left.
+            page.screenshot(path=SHOT)
+
+            press_chrome(page, back, ".session-max")
+            page.wait_for_timeout(600)
+            after_reload = page.evaluate(
+                "(i) => { const w = document.querySelectorAll('.session-window')[i];"
+                "  return { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth,"
+                "    height: w.offsetHeight }; }",
+                back,
+            )
+            check(
+                "…and restoring it across the reload still lands on the right box",
+                after_reload == FIX_A,
+                f"want={FIX_A} got={after_reload}",
+            )
+
+            # ===== scenario 7: the empty-stage hint ============================
+            press_chrome(page, 0, ".session-close")
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window').length === 1",
+                timeout=10000,
+            )
+            press_chrome(page, 0, ".session-close")
+            page.wait_for_function(
+                "() => { const e = document.querySelector('.canvas-empty');"
+                "  return document.querySelectorAll('.session-window').length === 0"
+                "    && e && e.offsetParent !== null && e.clientWidth > 0; }",
+                timeout=10000,
+            )
+            empty = page.evaluate(
+                "() => { const e = document.querySelector('.canvas-empty');"
+                "  return { text: e.textContent.replace(/\\s+/g, ' ').trim(),"
+                "    shown: e.offsetParent !== null, cw: e.clientWidth,"
+                "    pills: [...document.querySelectorAll('.canvas-foot .pill')]"
+                "      .map((s) => s.textContent.trim()) }; }"
+            )
+            check(
+                "closing the last console reveals the empty-stage hint",
+                empty["shown"] and empty["cw"] > 0 and "No consoles open" in empty["text"],
+                f"got={empty['text']!r} shown={empty['shown']} cw={empty['cw']}",
+            )
+            check(
+                "…and the count pill falls to zero, singular-aware",
+                empty["pills"][:1] == ["0 consoles"],
+                f"got={empty['pills']}",
+            )
+
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 7
+    # The floor matches the real count: set loosely, a scenario that stopped
+    # running would leave the suite green.
+    ok = all(results) and len(results) >= 40
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE CHROME IS IN THE FRAME")
