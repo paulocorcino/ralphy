@@ -372,6 +372,32 @@ def type_line(page, i, text):
     )
 
 
+def got_lines(page, i=0):
+    """The child's `GOT:<line>` echoes, one per completed stdin line.
+
+    Matched as "a GOT line CONTAINING the token", never `GOT:<token>` exactly:
+    a reattach makes the client send a resize, and ConPTY repaints its
+    cooked-mode edit buffer with the PREVIOUS line still in it — so the next
+    typed line arrives at the child as `<previous><token>` and echoes
+    `GOT:line-oneprobe-line`. That is a Windows console-host artifact, not the
+    daemon's routing: the token reaching the child is what this oracle is for.
+    """
+    return [l for l in screen(page, i).split("\n") if l.startswith("GOT:")]
+
+
+def reached_child(page, i, token, timeout=15000):
+    deadline = time.time() + timeout / 1000
+    while time.time() < deadline:
+        if any(token in l for l in got_lines(page, i)):
+            return True
+        page.wait_for_timeout(250)
+    return False
+
+
+def never_reached_child(page, i, token):
+    return not any(token in l for l in got_lines(page, i))
+
+
 def flat(page, i=0):
     """The buffer with its line breaks removed. xterm hard-wraps at the terminal
     width, so a UI marker like `[connection lost — reconnecting…]` is split
@@ -437,7 +463,7 @@ def main():
             type_line(page_a, 0, "hello-334")
             check(
                 "ctx A's keystroke reaches the child",
-                wait_for_screen(page_a, 0, "GOT:hello-334"),
+                reached_child(page_a, 0, "hello-334"),
                 screen(page_a, 0)[-120:],
             )
             check(
@@ -462,7 +488,7 @@ def main():
             )
             check(
                 "…and sees the session's output without claiming it",
-                wait_for_screen(page_b, 0, "GOT:hello-334"),
+                reached_child(page_b, 0, "hello-334"),
                 screen(page_b, 0)[-120:],
             )
             check("…B's window is parked", parked(page_b) == 1)
@@ -520,11 +546,13 @@ def main():
             page_b.wait_for_timeout(1500)
             check(
                 "a watcher's keystroke never reaches the child (B)",
-                "GOT:watcher-must-not-type" not in flat(page_b, 0),
+                never_reached_child(page_b, 0, "watcher-must-not-type"),
+                f"got={got_lines(page_b, 0)}",
             )
             check(
                 "…nor shows up in the writer's terminal (A)",
-                "GOT:watcher-must-not-type" not in flat(page_a, 0),
+                never_reached_child(page_a, 0, "watcher-must-not-type"),
+                f"got={got_lines(page_a, 0)}",
             )
 
             # --- scenario 4: the baton moves on an EXPLICIT click ------------
@@ -569,12 +597,12 @@ def main():
             type_line(page_b, 0, "after-takeover")
             check(
                 "the taker drives the child",
-                wait_for_screen(page_b, 0, "GOT:after-takeover"),
+                reached_child(page_b, 0, "after-takeover"),
                 flat(page_b, 0)[-120:],
             )
             check(
                 "…and the parked watcher sees it too",
-                wait_for_screen(page_a, 0, "GOT:after-takeover"),
+                reached_child(page_a, 0, "after-takeover"),
                 flat(page_a, 0)[-120:],
             )
 
@@ -615,14 +643,17 @@ def main():
                 "[session closed]" not in flat(page_a, 0),
             )
             ctx_a.set_offline(False)
-            type_ok = False
-            deadline = time.time() + 20
-            while time.time() < deadline and not type_ok:
-                page_a.wait_for_timeout(1000)
-                if parked(page_a) == 0:
-                    type_line(page_a, 0, "after-drop")
-                    type_ok = wait_for_screen(page_a, 0, "GOT:after-drop", timeout=4000)
-            check("a recovered A drives the child again", type_ok, flat(page_a, 0)[-160:])
+            page_a.wait_for_function(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                " return w && w._term.ws && w._term.ws.readyState === 1; }",
+                timeout=20000,
+            )
+            type_line(page_a, 0, "after-drop")
+            check(
+                "a recovered A drives the child again",
+                reached_child(page_a, 0, "after-drop"),
+                f"got={got_lines(page_a, 0)}",
+            )
             check("…without parking", parked(page_a) == 0)
             check(
                 "…and without ever sending a second takeover",
@@ -636,7 +667,7 @@ def main():
             )
             check(
                 "…and B sees the recovered writer's output",
-                wait_for_screen(page_b, 0, "GOT:after-drop"),
+                reached_child(page_b, 0, "after-drop"),
                 flat(page_b, 0)[-120:],
             )
 
@@ -659,12 +690,12 @@ def main():
             type_line(page_a, 0, "after-reload")
             check(
                 "…and drives the child again",
-                wait_for_screen(page_a, 0, "GOT:after-reload"),
+                reached_child(page_a, 0, "after-reload"),
                 flat(page_a, 0)[-120:],
             )
             check(
                 "…while B, never evicted, sees the same line",
-                wait_for_screen(page_b, 0, "GOT:after-reload"),
+                reached_child(page_b, 0, "after-reload"),
                 flat(page_b, 0)[-120:],
             )
             check(
@@ -717,7 +748,7 @@ def main():
             type_line(page_a, idx, "second-session")
             check(
                 "a fresh console for the watcher-close case",
-                wait_for_screen(page_a, idx, "GOT:second-session"),
+                reached_child(page_a, idx, "second-session"),
                 flat(page_a, idx)[-120:],
             )
             live_id = page_a.evaluate(
@@ -752,7 +783,7 @@ def main():
             type_line(page_a, idx, "still-driving")
             check(
                 "…and the driver keeps driving it",
-                wait_for_screen(page_a, idx, "GOT:still-driving"),
+                reached_child(page_a, idx, "still-driving"),
                 flat(page_a, idx)[-120:],
             )
             ctx_c.close()
