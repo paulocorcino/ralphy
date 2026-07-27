@@ -4447,6 +4447,56 @@ mod tests {
         }
     }
 
+    /// The navigation layer over that plane (#337). Same reason as above: the
+    /// node table and the Playwright pass both run out of CI, so this is the
+    /// only gate that a gesture deleted here is a red test rather than a
+    /// silently unreachable window.
+    #[test]
+    fn shell_navigates_the_plane() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function bringIntoView(",
+            "function panNudge(",
+            "function reveal(",
+            "function onFloorDown(",
+            "function onWheel(",
+            // the wheel handler is registered non-passive, or its
+            // `preventDefault` is a silent no-op and shift-wheel double-scrolls
+            "passive: false",
+            // the auto-pan loop's teardown — an uncancelled rAF pans forever
+            // after the button is released
+            "cancelAnimationFrame",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #337 pin {pin}"
+            );
+        }
+        assert!(
+            !js.contains("scrollIntoView"),
+            "the centring is a tabled pure function, not the browser's heuristic (#337)"
+        );
+
+        let css = include_str!("../assets/ui/styles.css");
+        for pin in [
+            // measured load-bearing: forced to `auto`, a wheel at the
+            // terminal's scroll limit chains out and pans the plane
+            "overscroll-behavior",
+            "#stage.panning {",
+            "cursor: grab",
+        ] {
+            assert!(css.contains(pin), "styles.css must keep the #337 pin {pin}");
+        }
+
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [r#"class="dropdown window-menu""#, r#"class="window-item""#] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the #337 pin {pin}"
+            );
+        }
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.

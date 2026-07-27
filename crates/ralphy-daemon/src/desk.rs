@@ -338,8 +338,11 @@ mod tests {
     #[test]
     fn context_md_names_the_stage_and_the_viewport() {
         let context = include_str!("../../../CONTEXT.md");
-        for pin in ["**Stage / viewport**", "overflow:auto"] {
-            assert!(context.contains(pin), "CONTEXT.md must define {pin} (#336)");
+        for pin in ["**Stage / viewport**", "overflow:auto", "bring into view"] {
+            assert!(
+                context.contains(pin),
+                "CONTEXT.md must define {pin} (#336, #337)"
+            );
         }
         assert!(
             context.contains("The daemon's record of"),
