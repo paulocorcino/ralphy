@@ -382,6 +382,9 @@ def main():
             color_before = page_b.evaluate(
                 "() => getComputedStyle(document.querySelector('.session-parked')).color"
             )
+            hint_color_before = page_b.evaluate(
+                "() => getComputedStyle(document.querySelector('.session-parked-hint')).color"
+            )
             type_line(page_b, 0, "watcher-must-not-type")
             new_terms = sent_term_texts(page_b)[len(terms_before):]
             check(
@@ -407,6 +410,14 @@ def main():
                 "…and the strip's computed color visibly changes",
                 color_after != color_before,
                 f"before={color_before} after={color_after}",
+            )
+            hint_color_after = page_b.evaluate(
+                "() => getComputedStyle(document.querySelector('.session-parked-hint')).color"
+            )
+            check(
+                "…and the hint text's OWN computed color changes too (not just the strip's)",
+                hint_color_after != hint_color_before,
+                f"before={hint_color_before} after={hint_color_after}",
             )
 
             # Ordering barrier instead of a fixed sleep: a writer sentinel that

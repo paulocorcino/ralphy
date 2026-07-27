@@ -2121,6 +2121,13 @@ body.runs-open .runs {
   color: var(--danger);
   border-bottom-color: var(--danger);
 }
+/* The hint's OWN color declaration otherwise wins over the ancestor rule above
+   (an element's own property always beats an inherited one, regardless of the
+   ancestor selector's specificity) — without this the hint text stays muted
+   through the pulse. */
+.session-parked.is-nudged .session-parked-hint {
+  color: var(--danger);
+}
 .session-reconnect {
   padding: 0.32rem 0.8rem;
   color: var(--text);

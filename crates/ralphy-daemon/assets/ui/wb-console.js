@@ -949,6 +949,9 @@ window.WBConsole = (function () {
     closeBtn.onclick = () => {
       const id = t.sessionId;
       const finish = () => {
+        // A window closed mid-pulse must not leave `nudgeTimer` pending against
+        // DOM nodes this call is about to remove.
+        clearNudge();
         t.dispose();
         forgetRecord(win._deskId);
         win.remove();
