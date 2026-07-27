@@ -4839,6 +4839,8 @@ mod tests {
             "function fenceList(",
             "function jumpToFence(",
             "function spawnRectIn(",
+            "function focusFence(",
+            "function clearFenceFocus(",
         ] {
             assert!(
                 js.contains(pin),
@@ -4865,6 +4867,40 @@ mod tests {
             1,
             "there may be exactly ONE bring-into-view implementation (#343)"
         );
+        // The focus STATE MACHINE, not just its function names: measured, a
+        // `focusFence` gutted to an empty body leaves every other pin here, the
+        // whole node table and clippy green — while no ring renders and every
+        // console is born free, which is this issue's headline behaviour. The
+        // module variable and the class are what make focus real.
+        let focus = body("function focusFence(");
+        assert!(
+            focus.contains("focusedFence = id") && focus.contains("is-focused"),
+            "focusFence must set the module's focused id AND mark the element (#343)"
+        );
+        assert!(
+            body("function clearFenceFocus(").contains("focusFence(null)"),
+            "clearing focus must go through the same one setter (#343)"
+        );
+        assert!(
+            body("function jumpToFence(").contains("focusFence(id)"),
+            "the jump must FOCUS the fence it lands on — that is what the birth path reads (#343)"
+        );
+        assert!(
+            body("function onFloorDown(").contains("clearFenceFocus()"),
+            "a bare-floor press outside the focused fence must clear it (#343)"
+        );
+        // The containment predicate is REUSED, not re-spelled — the same rule
+        // the issue states for `bringIntoView`. Pinning only the definition
+        // lets an inlined comparison sit beside it as exported dead code.
+        for (owner, what) in [
+            ("function fenceMembership(", "membership"),
+            ("function onFloorDown(", "the floor's focus hit test"),
+        ] {
+            assert!(
+                body(owner).contains("rectHolds("),
+                "{what} must go through the one containment predicate (#343)"
+            );
+        }
         // The birth site goes through the pure box, so "a console opened while a
         // fence is focused lands inside it" is arithmetic, not a hand-placed
         // rect that drifts from the fence's own geometry.
@@ -4883,8 +4919,14 @@ mod tests {
             assert!(app.contains(pin), "app.js must keep the #343 pin {pin}");
         }
         let html = include_str!("../assets/ui/index.html");
-        for pin in ["jumpFence(", "fence-item"] {
-            assert!(html.contains(pin), "index.html must keep the #343 pin {pin}");
+        // `class="fence-item"`, not the bare noun: the markup's own comment
+        // names the class, so a rename on the real element would leave a bare
+        // `"fence-item"` pin green while every row loses its styling.
+        for pin in ["jumpFence(", r#"class="fence-item""#] {
+            assert!(
+                html.contains(pin),
+                "index.html must keep the #343 pin {pin}"
+            );
         }
         // The focused fence must be VISIBLE — an invisible focus makes "the next
         // console is born over there" unexplainable to the operator.

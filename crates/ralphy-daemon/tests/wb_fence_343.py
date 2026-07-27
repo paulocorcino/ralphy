@@ -505,8 +505,12 @@ def main():
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             ctx = browser.new_context(viewport=dict(VIEW))
             errors = []
+            # On the CONTEXT and BEFORE the first navigation: attaching to the
+            # page after `desk_page` returns misses the restore path — where
+            # `renderFences` and the birth-time geometry actually run — and
+            # misses context B entirely.
+            ctx.on("page", lambda pg: pg.on("pageerror", lambda e: errors.append(str(e))))
             page = desk_page(ctx)
-            page.on("pageerror", lambda e: errors.append(str(e)))
 
             # ===== scenario 1: the toolbar list IS the fence roster ===========
             rows = open_fence_list(page)
@@ -597,10 +601,11 @@ def main():
                 inside(box, FENCE_B),
                 f"box={box} fence={FENCE_B}",
             )
+            beta_head = fence_rect(page, "f-beta")["head"]
             check(
-                "…and below beta's head band, not over it",
-                box["top"] >= FENCE_B["top"],
-                f"box={box}",
+                "…and BELOW beta's head band, not over it",
+                box["top"] >= FENCE_B["top"] + beta_head,
+                f"box={box} head={beta_head}",
             )
             rows = open_fence_list(page)
             check(
@@ -644,9 +649,21 @@ def main():
             # x=640, beta at y=340, gamma starts at (2200, 900) — and no window
             # covers it, so the press reaches the bare floor.
             unscroll(page)
+            # FIRST the other half of the decision: a press on the focused
+            # fence's OWN empty floor is not a request to leave it. Without this
+            # leg, an implementation that clears on ANY bare-floor press passes
+            # the whole gate and `rectHolds`'s reuse here is decorative.
+            # (60, 420) is inside alpha (40..640 x 40..500) and below every
+            # member box (which end at y=284), so the press reaches the stage.
+            press_floor(page, 60, 420)
+            check(
+                "a floor press INSIDE the focused fence does not clear it",
+                page.evaluate("() => window.WBConsole.focusedFence()") == "f-alpha",
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
             press_floor(page, 850, 600)
             check(
-                "a floor press outside the focused fence clears the focus",
+                "…while a press outside it clears the focus",
                 page.evaluate("() => window.WBConsole.focusedFence()") is None,
                 f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
             )
@@ -666,11 +683,61 @@ def main():
                 slot_x == slot_y and slot_x == int(slot_x) and 0 <= slot_x <= 7,
                 f"box={pbox} slot_x={slot_x} slot_y={slot_y}",
             )
+            # The rival box, asked of the LIVE module rather than reconstructed
+            # here: a hand-written pair can be unreachable for any
+            # implementation, which makes the control vacuous.
+            rival = page.evaluate(
+                "([f, k, head]) => window.WBConsole.spawnRectIn(f, k, head)",
+                [FENCE_A, int(slot_x), fence_rect(page, "f-alpha")["head"]],
+            )
             check(
                 "…and NOT on the box a birth into alpha would have produced",
-                (pbox["left"], pbox["top"]) != (FENCE_A["left"] + 12, FENCE_A["top"] + 12),
-                f"box={pbox}",
+                (pbox["left"], pbox["top"]) != (rival["left"], rival["top"]),
+                f"box={pbox} rival={rival}",
             )
+
+            # ===== scenario 4b: a birth box BELOW the CSS window floor ========
+            # `.session-window` carries `min-width: 240px; min-height: 150px`,
+            # and CSS OUTRANKS an inline width — #342 measured a 176x116 rect
+            # rendering 240x150 and escaping its fence by 52 px. Every fence in
+            # this fixture is roomy enough that its birth box sits ABOVE the
+            # floor, which is exactly why no other scenario can see this.
+            close_menus(page)
+            unscroll(page)
+            small = {"left": 700, "top": 400, "width": 200, "height": 160}
+            page.evaluate(
+                "(r) => { const el = document.querySelector(\"[data-fence-id='f-gamma']\");"
+                " el.style.left = r.left + 'px'; el.style.top = r.top + 'px';"
+                " el.style.width = r.width + 'px'; el.style.height = r.height + 'px'; }",
+                small,
+            )
+            page.wait_for_timeout(300)
+            page.evaluate("() => window.WBConsole.jumpToFence('f-gamma')")
+            page.wait_for_timeout(400)
+            tiny = open_plain_console(page)
+            tbox = by_id(boxes(page))[tiny]["box"]
+            check(
+                "a console born into a fence smaller than the CSS floor still RENDERS inside it",
+                inside(tbox, small) and tbox["width"] < 240 and tbox["height"] < 150,
+                f"box={tbox} fence={small}",
+            )
+            quiet(desk_file)
+            trec = desk_record(tiny)
+            check(
+                "…and the daemon stores that same sub-floor rect",
+                trec is not None and trec["rect"] == tbox,
+                f"served={trec and trec['rect']} measured={tbox}",
+            )
+            # Put gamma back where the fixture had it. A style write is not a
+            # fence MOVE, so it carries nothing: the console born here stays put,
+            # in no fence, and is simply a sixth window from now on.
+            page.evaluate(
+                "(r) => { const el = document.querySelector(\"[data-fence-id='f-gamma']\");"
+                " el.style.left = r.left + 'px'; el.style.top = r.top + 'px';"
+                " el.style.width = r.width + 'px'; el.style.height = r.height + 'px'; }",
+                FENCE_G,
+            )
+            page.wait_for_timeout(300)
 
             # ===== scenario 5: the list is LIVE, all in one page, no reload ===
             # AC6's five verbs — create, rename, move, a membership change, and
@@ -756,7 +823,15 @@ def main():
                 f"row={row_named(rows, new_name)}",
             )
 
-            # --- the removal
+            # --- the removal, with the fence FOCUSED: `renderFences` must drop
+            #     the dangling id, or the birth path resolves a fence that is
+            #     gone and the next console lands nowhere.
+            click_fence_row(page, new_name)
+            check(
+                "the fence about to be removed is the focused one",
+                page.evaluate("() => window.WBConsole.focusedFence()") == new_fence,
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
             close_menus(page)
             page.locator(f"[data-fence-id='{new_fence}'] .fence-drop").click()
             page.wait_for_timeout(500)
@@ -765,6 +840,11 @@ def main():
                 "removing a fence removes its row, without a reload",
                 len(rows) == 3 and row_named(rows, new_name) is None,
                 f"rows={[r['name'] for r in rows]}",
+            )
+            check(
+                "…and removing the FOCUSED fence leaves no dangling focus behind",
+                page.evaluate("() => window.WBConsole.focusedFence()") is None,
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
             )
             close_menus(page)
 
@@ -779,7 +859,8 @@ def main():
             a_scroll = page.evaluate("() => document.getElementById('workspace').scrollLeft")
 
             ctx_b = browser.new_context(viewport=dict(VIEW))
-            page_b = desk_page(ctx_b, fences=3, windows=5)
+            ctx_b.on("page", lambda pg: pg.on("pageerror", lambda e: errors.append(str(e))))
+            page_b = desk_page(ctx_b, fences=3, windows=6)
             b_rows = open_fence_list(page_b)
             b_scroll = page_b.evaluate("() => document.getElementById('workspace').scrollLeft")
             check(
@@ -788,10 +869,13 @@ def main():
                 == [(r["name"], r["count"]) for r in b_rows],
                 f"A={[(r['name'], r['count']) for r in a_rows]} B={[(r['name'], r['count']) for r in b_rows]}",
             )
+            # Re-read A AFTER B is up: sampling A only before B exists proves
+            # that two numbers differ, not that A KEPT its view.
+            a_after = page.evaluate("() => document.getElementById('workspace').scrollLeft")
             check(
                 "…while each keeps its OWN viewport position",
-                a_scroll != b_scroll,
-                f"A.scrollLeft={a_scroll} B.scrollLeft={b_scroll}",
+                a_after == a_scroll and a_after != b_scroll,
+                f"A before B={a_scroll} A after B={a_after} B={b_scroll}",
             )
             ctx_b.close()
 
@@ -828,7 +912,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 34
+    ok = all(results) and len(results) == 39
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")

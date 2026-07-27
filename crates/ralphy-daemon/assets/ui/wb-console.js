@@ -1267,7 +1267,11 @@ window.WBConsole = (function () {
   // refresh there would both thrash and read a membership still in flight.
   function refreshFenceChrome() {
     const st = stage();
-    if (!st) return;
+    // A hidden tab measures 0 on everything under it, and this fold reads
+    // MEASURED rects — refreshing there would write `0 consoles` onto every
+    // fence and never correct itself. `refitAll` calls this again on the first
+    // frame that can measure.
+    if (!st || !st.offsetWidth || !st.offsetHeight) return;
     const els = new Map();
     for (const el of st.querySelectorAll(".fence")) els.set(el.dataset.fenceId, el);
     for (const s of fenceSummaries(readFenceRects(st), readWindowRects(st))) {
@@ -1472,6 +1476,10 @@ window.WBConsole = (function () {
     const to = bringIntoView(restoreRect(el), view, ext);
     ws.scrollLeft = to.left;
     ws.scrollTop = to.top;
+    // A reveal parked by `reveal()` on an unmeasurable viewport outranks the
+    // stored offset in the next `applyLanding` — it would slide the plane off
+    // the fence just jumped to. The jump is the newer request; drop it.
+    pendingReveal = null;
     // INVARIANT — this write is not optional (issue #337, `revealNow`): without
     // it `refitAll`'s `applyLanding` re-applies the PRE-jump stored offset in
     // the same frame chain and silently undoes the slide.
@@ -1969,6 +1977,18 @@ window.WBConsole = (function () {
     };
   }
 
+  // `.session-window`'s CSS floor (`styles.css`, pinned by
+  // `shell_arranges_into_the_fence`). It OUTRANKS an inline width, so a cell
+  // smaller than it renders WIDER than the tile and the member escapes the
+  // fence — containment is arithmetic in `tileIntoRect` but CSS in the box the
+  // tile lands in. Measured: a 200x180 fence with one member tiles a 176x116
+  // cell that renders 240x150, 52 px past the fence's right edge.
+  // Declared HERE, above `buildChrome`, and not beside `arrangeFence`: a `const`
+  // is in its temporal dead zone until the module reaches it, so a spawn on the
+  // boot stack would throw out of `buildChrome` and take the module down.
+  const WIN_MIN_W = 240;
+  const WIN_MIN_H = 150;
+
   // Where a console born into a focused fence lands (issue #343), pure: the
   // fence's rect, the cascade index, and the height of the fence's own head
   // band in — one box out, cascading within the rect exactly as the free
@@ -1997,12 +2017,16 @@ window.WBConsole = (function () {
     const k = (index || 0) % 8;
     const roomX = Math.max(0, fw - SPAWN_PAD * 2 - width);
     const roomY = Math.max(0, fh - head - SPAWN_PAD * 2 - height);
-    return {
-      left: fl + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomX),
-      top: ft + head + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomY),
-      width,
-      height,
-    };
+    // The outer `Math.min` is for the DEGENERATE fence: when the rect is
+    // narrower than the pad pair the width floors at 1 while the pad does not,
+    // so the pad alone would push the box past the fence's own far edge and the
+    // centre-based fold would report the newborn console in NO fence.
+    const offX = Math.min(SPAWN_PAD + Math.min(k * SPAWN_STEP, roomX), Math.max(0, fw - width));
+    const offY = Math.min(
+      head + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomY),
+      Math.max(0, fh - height),
+    );
+    return { left: fl + offX, top: ft + offY, width, height };
   }
 
   // The floating-window chrome, shared by a live console and a placeholder: the
@@ -2029,7 +2053,14 @@ window.WBConsole = (function () {
       // from the sidebar must not mean dragging the window into place
       // afterwards. The rect is written at CONSTRUCTION, before the window is
       // on screen, so `persistWin` never snapshots a box mid-transition (#342).
-      const host = focusedFence && fenceEl(focusedFence);
+      // MEASURABLE, not merely present: `openConsoleItem` calls `activate` and
+      // then `open` on the SAME synchronous stack, so a spawn can land while
+      // the Consoles tab is still `display:none`. `restoreRect` then reads all
+      // zeros and this branch would write a 1x1 window — invisible,
+      // un-grabbable, and persisted to the shared desk. Fall back to the free
+      // cascade instead; the focus survives for the next spawn.
+      const el = focusedFence && fenceEl(focusedFence);
+      const host = el && el.offsetWidth && el.offsetHeight ? el : null;
       if (host) {
         const headH = host.querySelector(".fence-head")?.offsetHeight || 28;
         const box = spawnRectIn(restoreRect(host), cascade, headH);
@@ -2513,6 +2544,13 @@ window.WBConsole = (function () {
         win._term?.fit.fit();
       } catch {}
     }
+    // The chrome is a fold of MEASURED rects, so a refresh that ran while this
+    // tab was hidden read all zeros and wrote `0 consoles` onto every fence.
+    // This is the first frame that can measure — re-derive it here, or the
+    // fence's own readout and the toolbar list (which is only ever read from
+    // the visible tab) disagree, which is the one thing the shared fold exists
+    // to prevent.
+    refreshFenceChrome();
     // LAST, after `applyExtent`: returning to this tab is the other moment the
     // stored offset must be re-applied, because `x-show` threw it away.
     applyLanding();
@@ -2530,15 +2568,6 @@ window.WBConsole = (function () {
   // arrange button would be usable exactly once and the fence unresizable. The
   // members are still strictly inside the fence rect.
   const FENCE_GRIP = 14;
-  // `.session-window`'s CSS floor (`styles.css`, pinned by
-  // `shell_arranges_into_the_fence`). It OUTRANKS an inline width, so a cell
-  // smaller than it renders WIDER than the tile and the member escapes the
-  // fence — containment is arithmetic in `tileIntoRect` but CSS in the box the
-  // tile lands in. Measured: a 200x180 fence with one member tiles a 176x116
-  // cell that renders 240x150, 52 px past the fence's right edge.
-  const WIN_MIN_W = 240;
-  const WIN_MIN_H = 150;
-
   function arrangeFence(id) {
     const st = stage();
     const el = fenceEl(id);

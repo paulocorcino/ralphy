@@ -410,7 +410,7 @@
                where a real session/PTY is launched (agent × repo), like the
                daemon's /ws/session. -->
           <div class="menu-wrap">
-            <button class="btn accent" @click.stop="windowMenu = false; agentMenu = !agentMenu">
+            <button class="btn accent" @click.stop="windowMenu = false; fenceMenu = false; agentMenu = !agentMenu">
               <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>

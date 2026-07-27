@@ -535,12 +535,26 @@ act from the canvas toolbar — never auto-created — and its name is editable 
 place. A fence is part of the **desk layout**, so it is daemon state with a cap
 of its own and comes back on any browser. Decided in
 [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§6, 10 (issue
-#340); membership-by-centre-point, non-overlap enforcement and the fence list
-are §§6–7 and are NOT yet built.
+#340); membership-by-centre-point and non-overlap enforcement are §6 (issue
+#341), tiling into a fence §7 (issue #342), and the fence list §7 (issue #343).
 
 _Avoid_: group, zone, region, container, swimlane (a fence is a rectangle on the
 plane, not a widget that owns children); project fence (a fence is never bound to
 a repo).
+
+**Focused fence**:
+The one **fence** a client is currently working in — the fence a NEW console is
+born inside, cascading within its rect instead of on the plane's own cascade. It
+is taken by clicking a row in the canvas toolbar's fence list (the same click
+that slides the viewport there), and released by a bare-floor press outside that
+fence's own rect, or by the fence disappearing. Deliberately PER-CLIENT transient
+state: never written to the **desk**, because the desk is shared last-write-wins
+and one operator's focus would decide where the other's next console appears.
+Decided in [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §7 (issue
+#343).
+
+_Avoid_: selected fence, active fence, current fence (focus here means "where the
+next console is born", not a selection the operator can act on).
 
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the

@@ -3031,6 +3031,7 @@ function shell() {
     toggleWindowMenu() {
       this.windowList = WBConsole.list();
       this.agentMenu = false;
+      this.fenceMenu = false;
       this.windowMenu = !this.windowMenu;
     },
     revealWindow(id) {
