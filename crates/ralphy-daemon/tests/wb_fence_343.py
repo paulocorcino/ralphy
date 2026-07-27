@@ -768,6 +768,58 @@ def main():
             )
             close_menus(page)
 
+            # ===== scenario 6: two contexts, one plane, two viewports ========
+            # B gets a FRESH `localStorage`, so it has its own stored view: the
+            # fences are shared desk state, the viewport position is not
+            # (ADR-0051 §8, #339). There is no live cross-tab desk push, so B is
+            # opened only after A's 250 ms flush has gone quiet.
+            click_fence_row(page, "delta")
+            quiet(desk_file)
+            a_rows = open_fence_list(page)
+            a_scroll = page.evaluate("() => document.getElementById('workspace').scrollLeft")
+
+            ctx_b = browser.new_context(viewport=dict(VIEW))
+            page_b = desk_page(ctx_b, fences=3, windows=5)
+            b_rows = open_fence_list(page_b)
+            b_scroll = page_b.evaluate("() => document.getElementById('workspace').scrollLeft")
+            check(
+                "a second context reads the SAME fence names and counts",
+                [(r["name"], r["count"]) for r in a_rows]
+                == [(r["name"], r["count"]) for r in b_rows],
+                f"A={[(r['name'], r['count']) for r in a_rows]} B={[(r['name'], r['count']) for r in b_rows]}",
+            )
+            check(
+                "…while each keeps its OWN viewport position",
+                a_scroll != b_scroll,
+                f"A.scrollLeft={a_scroll} B.scrollLeft={b_scroll}",
+            )
+            ctx_b.close()
+
+            # The evidence: context A, the fence list open over the fence it
+            # just jumped to and focused.
+            open_fence_list(page)
+            ring = page.evaluate(
+                "() => { const f = document.querySelector('.fence.is-focused');"
+                " if (!f) return null;"
+                " const s = getComputedStyle(f);"
+                " const accent = getComputedStyle(document.documentElement)"
+                "   .getPropertyValue('--accent').trim();"
+                " return { id: f.dataset.fenceId, width: s.outlineWidth,"
+                "   style: s.outlineStyle, colour: s.outlineColor, accent }; }"
+            )
+            # The ring is MEASURED, not eyeballed off the screenshot: a rule that
+            # never applied would still leave a plausible-looking image.
+            check(
+                "the fence in the shot carries a real accent ring, not just the class",
+                ring is not None
+                and ring["width"] == "2px"
+                and ring["style"] == "solid"
+                and ring["colour"] not in ("", "rgba(0, 0, 0, 0)"),
+                f"ring={ring}",
+            )
+            page.screenshot(path=SHOT)
+            check("the evidence screenshot is on disk", os.path.exists(SHOT), SHOT)
+
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()
             browser.close()
@@ -776,7 +828,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 30
+    ok = all(results) and len(results) == 34
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")

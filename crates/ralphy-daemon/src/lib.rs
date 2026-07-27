@@ -4896,9 +4896,17 @@ mod tests {
                 .1;
             after[..after.find('}').expect("the rule must close")].to_string()
         };
+        // A DEFINED token: an `outline` shorthand naming an undefined custom
+        // property is invalid as a whole, so the ring silently never renders —
+        // measured, with `--accent`, which this palette does not have.
+        let focused = rule("\n.fence.is-focused {");
         assert!(
-            rule("\n.fence.is-focused {").contains("var(--accent)"),
+            focused.contains("outline: 2px solid var(--console-text)"),
             "the focused fence must carry a visible ring (#343)"
+        );
+        assert!(
+            css.contains("--console-text:"),
+            "the focus ring's colour token must exist — an undefined one voids the whole shorthand (#343)"
         );
     }
 

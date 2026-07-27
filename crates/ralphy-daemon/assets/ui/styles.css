@@ -2181,8 +2181,12 @@ body.runs-open .runs {
 /* the fence the next console will be born into (issue #343). A RING only: no
    `pointer-events` change, so the floor tier stays inert and a press over a
    focused fence still reaches the window above it or the stage below it. */
+/* `--console-text` and not an `--accent`: this palette has no such token, and
+   an `outline` shorthand naming an UNDEFINED custom property is invalid as a
+   whole — the ring silently never renders (measured; `outline-style` came back
+   `none`). It is the same warm gold the console world already uses. */
 .fence.is-focused {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--console-text);
   outline-offset: -2px;
 }
 
