@@ -654,3 +654,176 @@ for (const row of MOVES) {
     assert.deepEqual(load().fenceMoveDelta(row.delta, row.fence, row.members), row.want);
   });
 }
+
+// ---- arrange moves into the fence (issue #342) --------------------------------
+// `tileIntoRect(rect, members)` is the old global Arrange generalised: target
+// rect plus member list in, one rect per member out, in order. The grid is
+// today's — `cols = ceil(sqrt(n))` — and aspect-independent on purpose: making
+// it follow the rect's aspect is a second change hiding inside a move.
+//
+// The base rect has a NON-ZERO origin as a built-in negative control: an
+// implementation that tiles from 0,0 and forgets `rect.left`/`rect.top` reds
+// every row below.
+const R = { left: 100, top: 200, width: 1000, height: 600 };
+const members = (n) => Array.from({ length: n }, (_, i) => ({ id: `m${i}` }));
+
+const TILES = [
+  { name: "no members tile to nothing", rect: R, n: 0, want: [] },
+  {
+    name: "one member takes the whole rect, inset by the pad",
+    rect: R,
+    n: 1,
+    want: [{ left: 112, top: 212, width: 976, height: 576 }],
+  },
+  {
+    name: "two members split the rect into one row of two",
+    rect: R,
+    n: 2,
+    want: [
+      { left: 112, top: 212, width: 483, height: 576 },
+      { left: 605, top: 212, width: 483, height: 576 },
+    ],
+  },
+  {
+    name: "three members take a 2x2 grid with the last row half empty",
+    rect: R,
+    n: 3,
+    want: [
+      { left: 112, top: 212, width: 483, height: 283 },
+      { left: 605, top: 212, width: 483, height: 283 },
+      { left: 112, top: 505, width: 483, height: 283 },
+    ],
+  },
+  {
+    name: "four members fill the same 2x2 grid",
+    rect: R,
+    n: 4,
+    want: [
+      { left: 112, top: 212, width: 483, height: 283 },
+      { left: 605, top: 212, width: 483, height: 283 },
+      { left: 112, top: 505, width: 483, height: 283 },
+      { left: 605, top: 505, width: 483, height: 283 },
+    ],
+  },
+  {
+    name: "nine members take a 3x3 grid whose far edge lands exactly on the pad",
+    rect: { left: 0, top: 0, width: 944, height: 584 },
+    n: 9,
+    want: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({
+      left: [12, 322, 632][i % 3],
+      top: [12, 202, 392][Math.floor(i / 3)],
+      width: 300,
+      height: 180,
+    })),
+  },
+  {
+    // Aspect pair, first half: a rect far taller than wide. Reds if the two
+    // axes are swapped — the twin below would then answer this row's numbers.
+    name: "a rect narrower than tall splits on X and keeps the full height",
+    rect: { left: 0, top: 0, width: 200, height: 800 },
+    n: 2,
+    want: [
+      { left: 12, top: 12, width: 83, height: 776 },
+      { left: 105, top: 12, width: 83, height: 776 },
+    ],
+  },
+  {
+    name: "a rect wider than tall splits on X the same way, with the full width to share",
+    rect: { left: 0, top: 0, width: 800, height: 200 },
+    n: 2,
+    want: [
+      { left: 12, top: 12, width: 383, height: 176 },
+      { left: 405, top: 12, width: 383, height: 176 },
+    ],
+  },
+  {
+    // NEGATIVE CONTROL for the pad/gap fallback: with the roomy geometry this
+    // rect yields a NEGATIVE cell height (and a 5px width), so an
+    // implementation without the fallback returns rects outside the rect.
+    name: "a rect too small on BOTH axes drops pad and gap on both",
+    rect: { left: 0, top: 0, width: 60, height: 30 },
+    n: 9,
+    want: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({
+      left: [0, 20, 40][i % 3],
+      top: [0, 10, 20][Math.floor(i / 3)],
+      width: 20,
+      height: 10,
+    })),
+  },
+  {
+    // NEGATIVE CONTROL for the fallback being PER AXIS: collapsing both axes
+    // together deforms X (which still fits comfortably) down to 250-wide
+    // columns starting at 0.
+    name: "a rect too small on ONE axis keeps the pad on the axis that still fits",
+    rect: { left: 0, top: 0, width: 1000, height: 30 },
+    n: 4,
+    want: [
+      { left: 12, top: 0, width: 483, height: 15 },
+      { left: 505, top: 0, width: 483, height: 15 },
+      { left: 12, top: 15, width: 483, height: 15 },
+      { left: 505, top: 15, width: 483, height: 15 },
+    ],
+  },
+];
+
+for (const row of TILES) {
+  test(`tileIntoRect: ${row.name}`, () => {
+    assert.deepEqual(load().tileIntoRect(row.rect, members(row.n)), row.want);
+  });
+}
+
+test("tileIntoRect: every tile of every row lies inside the target rect", () => {
+  const wb = load();
+  for (const row of TILES) {
+    const tiles = wb.tileIntoRect(row.rect, members(row.n));
+    assert.equal(tiles.length, row.n, `${row.name}: one rect per member`);
+    for (const t of tiles) {
+      // Asserted as a RELATION, not against the expected numbers above: an
+      // implementation returning the right COUNT of wrong rects must still red.
+      const detail = `${row.name}: ${JSON.stringify(t)} escapes ${JSON.stringify(row.rect)}`;
+      assert.ok(t.left >= row.rect.left, detail);
+      assert.ok(t.top >= row.rect.top, detail);
+      assert.ok(t.left + t.width <= row.rect.left + row.rect.width, detail);
+      assert.ok(t.top + t.height <= row.rect.top + row.rect.height, detail);
+      assert.ok(t.width > 0, detail);
+      assert.ok(t.height > 0, detail);
+    }
+  }
+});
+
+// The repos a fence's members belong to, for the fence's own chrome. Sorted
+// because DOM order is not stable, deduped because two consoles on one repo
+// read as one place.
+const REPOS = [
+  { name: "no members read as no repos", members: [], want: "" },
+  {
+    // NEGATIVE CONTROL for the dedupe: a plain join answers "alpha · alpha".
+    name: "two members on one repo read as that one repo",
+    members: [{ repo: "alpha" }, { repo: "alpha" }],
+    want: "alpha",
+  },
+  {
+    // NEGATIVE CONTROL for the sort: a DOM-ordered join answers "beta · alpha".
+    name: "two repos read alphabetically, whatever order the members arrive in",
+    members: [{ repo: "beta" }, { repo: "alpha" }],
+    want: "alpha · beta",
+  },
+  {
+    // NEGATIVE CONTROL: `"~"` is the desk's spelling of "no repo" — the storage
+    // token must not leak, the same rule `list()` applies.
+    name: "a member with no repo reads as home",
+    members: [{ repo: "~" }],
+    want: "home",
+  },
+  {
+    name: "home sorts among the named repos, deduped like any other",
+    members: [{ repo: "zeta" }, { repo: "~" }, { repo: "~" }],
+    want: "home · zeta",
+  },
+];
+
+for (const row of REPOS) {
+  test(`fenceRepos: ${row.name}`, () => {
+    assert.equal(load().fenceRepos(row.members), row.want);
+  });
+}

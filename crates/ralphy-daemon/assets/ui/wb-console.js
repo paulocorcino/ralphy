@@ -831,6 +831,54 @@ window.WBConsole = (function () {
     };
   }
 
+  // Tiling, as a pure fold (issue #342): target rect plus member list in, one
+  // rect per member out, in order. The grid is the global Arrange's — `cols =
+  // ceil(sqrt(n))` — kept aspect-independent so this stays a MOVE of the act,
+  // not a redesign of it.
+  //
+  // Pad and gap degrade PER AXIS: a rect too small for its member count yields
+  // a cell below `TILE_MIN` (a NEGATIVE height, for a short fence), and that
+  // axis falls back to a bare `extent / k`. Collapsing both axes together would
+  // deform an axis that still fits. Containment holds by construction in either
+  // branch — the far edge lands at exactly `pad + k*size + (k-1)*gap = extent -
+  // pad` — which is what makes "no member escapes the fence" a property of the
+  // function rather than of its caller.
+  const TILE_PAD = 12;
+  const TILE_GAP = 10;
+  const TILE_MIN = 24;
+
+  function tileIntoRect(rect, members) {
+    const n = (members || []).length;
+    if (!n) return [];
+    const cols = Math.ceil(Math.sqrt(n));
+    const rows = Math.ceil(n / cols);
+    const axis = (extent, k) => {
+      const size = (extent - TILE_PAD * 2 - TILE_GAP * (k - 1)) / k;
+      if (size >= TILE_MIN) return { pad: TILE_PAD, gap: TILE_GAP, size };
+      return { pad: 0, gap: 0, size: extent / k };
+    };
+    const x = axis(rect?.width || 0, cols);
+    const y = axis(rect?.height || 0, rows);
+    return (members || []).map((_, i) => ({
+      left: (rect?.left || 0) + x.pad + (i % cols) * (x.size + x.gap),
+      top: (rect?.top || 0) + y.pad + Math.floor(i / cols) * (y.size + y.gap),
+      width: x.size,
+      height: y.size,
+    }));
+  }
+
+  // The repos a fence's members belong to, for the fence's own chrome — what
+  // lets the operator read a fence without visiting it. Deduped, sorted (DOM
+  // order is not stable) and `"~"` rendered as `home`, the same rule `list()`
+  // applies so the desk's storage token never leaks to the screen.
+  function fenceRepos(members) {
+    const names = new Set((members || []).map((m) => (m?.repo === "~" ? "home" : m?.repo)));
+    names.delete(undefined);
+    names.delete(null);
+    names.delete("");
+    return [...names].sort().join(" · ");
+  }
+
   // Which grid slot a NEW fence takes, pure: the first one no existing fence
   // occupies. Indexing by `fences.length` instead would reuse a slot after a
   // removal — drop the middle of three and the next fence lands exactly on the
@@ -2277,6 +2325,8 @@ window.WBConsole = (function () {
     fenceMembership,
     fenceFits,
     fenceMoveDelta,
+    tileIntoRect,
+    fenceRepos,
     createFence,
     renameFence,
     removeFence,
