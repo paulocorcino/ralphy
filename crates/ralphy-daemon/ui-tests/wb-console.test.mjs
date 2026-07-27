@@ -861,3 +861,74 @@ for (const row of REPOS) {
     assert.equal(load().fenceRepos(row.members), row.want);
   });
 }
+
+// ---- the fence list is the map (issue #343) ---------------------------------
+// One fold feeds the fence's own chrome AND the toolbar list, so the two can
+// never disagree. One entry per fence, IN ORDER, whether or not it holds
+// anything.
+const SUM_A = { left: 0, top: 0, width: 200, height: 200 };
+const box = (x, y) => ({ left: x - 10, top: y - 10, width: 20, height: 20 });
+
+const SUMMARIES = [
+  {
+    name: "two members read their count and their repos, sorted and home-renamed",
+    fences: [{ id: "a", name: "alpha", rect: SUM_A }],
+    windows: [
+      { id: "w1", repo: "~", rect: box(50, 50) },
+      { id: "w2", repo: "a", rect: box(150, 150) },
+    ],
+    want: [{ id: "a", name: "alpha", count: 2, repos: "a · home" }],
+  },
+  {
+    // Dedup is a REPOS rule, not a count rule: two consoles on one repo read as
+    // one place but still as two consoles.
+    name: "two members on one repo keep a count of two",
+    fences: [{ id: "a", name: "alpha", rect: SUM_A }],
+    windows: [
+      { id: "w1", repo: "a", rect: box(50, 50) },
+      { id: "w2", repo: "a", rect: box(150, 150) },
+    ],
+    want: [{ id: "a", name: "alpha", count: 2, repos: "a" }],
+  },
+  {
+    name: "an empty fence is still listed, at zero",
+    fences: [{ id: "a", name: "alpha", rect: SUM_A }],
+    windows: [],
+    want: [{ id: "a", name: "alpha", count: 0, repos: "" }],
+  },
+  {
+    // NEGATIVE CONTROL: the centre sits exactly on `left + width`. A CLOSED
+    // containment counts it as a member and reds this row.
+    name: "a member whose centre is on the far edge belongs to no fence",
+    fences: [{ id: "a", name: "alpha", rect: SUM_A }],
+    windows: [{ id: "w1", repo: "a", rect: box(200, 100) }],
+    want: [{ id: "a", name: "alpha", count: 0, repos: "" }],
+  },
+  {
+    // NEGATIVE CONTROL for "exactly one fence": hand-overlapped rects (which a
+    // hand-edited desk.toml can carry) must not double-count the shared member.
+    name: "two overlapping fences split a shared member into the FIRST one only",
+    fences: [
+      { id: "a", name: "alpha", rect: SUM_A },
+      { id: "b", name: "beta", rect: { left: 100, top: 100, width: 200, height: 200 } },
+    ],
+    windows: [{ id: "w1", repo: "a", rect: box(150, 150) }],
+    want: [
+      { id: "a", name: "alpha", count: 1, repos: "a" },
+      { id: "b", name: "beta", count: 0, repos: "" },
+    ],
+  },
+];
+
+for (const row of SUMMARIES) {
+  test(`fenceSummaries: ${row.name}`, () => {
+    const got = load().fenceSummaries(row.fences, row.windows);
+    assert.deepEqual(got, row.want);
+    // Asserted as a RELATION on every row, not only the overlap one: no window
+    // may be counted twice, whatever the rects.
+    assert.ok(
+      got.reduce((n, s) => n + s.count, 0) <= row.windows.length,
+      "a window is a member of at most ONE fence",
+    );
+  });
+}

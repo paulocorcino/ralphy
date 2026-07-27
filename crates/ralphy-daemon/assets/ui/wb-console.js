@@ -957,6 +957,27 @@ window.WBConsole = (function () {
     return [...names].sort().join(" · ");
   }
 
+  // One fence readout, for BOTH the fence's own chrome and the toolbar list
+  // (issue #343): `[{id, name, rect}]` + `[{id, repo, rect}]` in, one entry per
+  // fence IN ORDER out. Folding membership and repos here — rather than at each
+  // caller — is what makes "the list and the fence can never disagree" a
+  // property of the code instead of a test that happens to pass.
+  function fenceSummaries(fences, windows) {
+    const list = fences || [];
+    const all = windows || [];
+    const byId = new Map(all.map((w) => [w?.id, w]));
+    const membership = fenceMembership(list, all);
+    return list.map((f) => {
+      const members = (membership[f.id] || []).map((wid) => byId.get(wid));
+      return {
+        id: f.id,
+        name: f.name || "",
+        count: members.length,
+        repos: fenceRepos(members),
+      };
+    });
+  }
+
   // Which grid slot a NEW fence takes, pure: the first one no existing fence
   // occupies. Indexing by `fences.length` instead would reuse a slot after a
   // removal — drop the middle of three and the next fence lands exactly on the
@@ -1248,26 +1269,34 @@ window.WBConsole = (function () {
     const st = stage();
     if (!st) return;
     const els = new Map();
-    const live = [];
-    for (const el of st.querySelectorAll(".fence")) {
-      els.set(el.dataset.fenceId, el);
-      live.push({ id: el.dataset.fenceId, rect: restoreRect(el) });
+    for (const el of st.querySelectorAll(".fence")) els.set(el.dataset.fenceId, el);
+    for (const s of fenceSummaries(readFenceRects(st), readWindowRects(st))) {
+      const el = els.get(s.id);
+      if (!el) continue;
+      const count = el.querySelector(".fence-count");
+      if (count) count.textContent = `${s.count} console${s.count === 1 ? "" : "s"}`;
+      const repos = el.querySelector(".fence-repos");
+      if (repos) repos.textContent = s.repos;
     }
-    const all = [...st.querySelectorAll(".session-window")].map((w) => ({
+  }
+
+  // The two DOM reads `refreshFenceChrome` and `fenceList` share: the stage is
+  // where a fence and a window ARE, and membership is derived from those live
+  // rects, never from `fences` or `wins`.
+  function readFenceRects(st) {
+    return [...st.querySelectorAll(".fence")].map((el) => ({
+      id: el.dataset.fenceId,
+      name: el.querySelector(".fence-name")?.value || "",
+      rect: restoreRect(el),
+    }));
+  }
+
+  function readWindowRects(st) {
+    return [...st.querySelectorAll(".session-window")].map((w) => ({
       id: w._deskId,
       repo: w._deskRepo,
       rect: restoreRect(w),
     }));
-    const byId = new Map(all.map((w) => [w.id, w]));
-    const membership = fenceMembership(live, all);
-    for (const [id, el] of els) {
-      const members = (membership[id] || []).map((wid) => byId.get(wid));
-      const n = members.length;
-      const count = el.querySelector(".fence-count");
-      if (count) count.textContent = `${n} console${n === 1 ? "" : "s"}`;
-      const repos = el.querySelector(".fence-repos");
-      if (repos) repos.textContent = fenceRepos(members);
-    }
   }
 
   // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
@@ -2505,6 +2534,7 @@ window.WBConsole = (function () {
     nextFenceSlot,
     rectHolds,
     fenceMembership,
+    fenceSummaries,
     fenceFits,
     fenceMoveDelta,
     tileIntoRect,
