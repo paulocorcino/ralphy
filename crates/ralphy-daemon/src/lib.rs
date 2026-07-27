@@ -4610,6 +4610,83 @@ mod tests {
         }
     }
 
+    /// The per-client view (#339) and — the part that can silently regress — the
+    /// ONE place allowed to name `localStorage`. ADR-0050 §3 dropped the browser
+    /// desk store; ADR-0051 §8 narrows that to "no *desk* in browser storage",
+    /// which is only honest while the view store stays a single module holding a
+    /// single key. Same bargain as the pins above: neither `node --test` nor
+    /// Playwright runs in CI, so this is the gate that notices the desk creeping
+    /// back into the browser.
+    #[test]
+    fn shell_stores_only_the_view_in_the_browser() {
+        // The two modules that own the state being persisted must reach it only
+        // through `WBView` — a direct write from either is how a second store
+        // starts.
+        for (name, src) in [
+            ("wb-console.js", include_str!("../assets/ui/wb-console.js")),
+            ("app.js", include_str!("../assets/ui/app.js")),
+        ] {
+            assert!(
+                !src.contains("localStorage"),
+                "{name} must not touch localStorage — wb-view.js owns the store (#339)"
+            );
+        }
+
+        let view = include_str!("../assets/ui/wb-view.js");
+        // NEGATIVE CONTROL: deleting the store wholesale would satisfy every
+        // "does not contain" assertion above. It must be red, not green.
+        assert!(
+            view.contains("localStorage"),
+            "wb-view.js IS the browser store — deleting it is not how #339 stays green"
+        );
+        assert!(
+            view.contains(r#"const KEY = "wb.view.v1""#),
+            "wb-view.js must keep the one view key (#339)"
+        );
+
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function viewLanding(",
+            "function applyLanding(",
+            // The REGISTRATION, not the function: without it the offset is never
+            // persisted and the landing has nothing to restore.
+            r#"ws.addEventListener("scroll", saveOffset)"#,
+        ] {
+            assert!(js.contains(pin), "wb-console.js must keep the #339 pin {pin}");
+        }
+
+        // Tree-wide, not just the two modules above: any non-vendor asset that
+        // starts naming `localStorage` is a second store by definition.
+        for path in embedded_ui_paths() {
+            if !path.ends_with(".js") || path.starts_with("vendor/") || path == "wb-view.js" {
+                continue;
+            }
+            let src = UI
+                .get_file(&path)
+                .and_then(|f| f.contents_utf8())
+                .unwrap_or_else(|| panic!("{path} must be embedded as UTF-8"));
+            assert!(
+                !src.contains("localStorage"),
+                "{path} must not touch localStorage — wb-view.js is the only store (#339)"
+            );
+        }
+
+        // The store must be defined BEFORE its readers run: `wb-console.js`
+        // reads `WBView` on its boot path, and a later tag would leave the
+        // landing reading `undefined` on the very first paint.
+        let html = include_str!("../assets/ui/index.html");
+        let view_tag = html
+            .find(r#"<script src="wb-view.js"></script>"#)
+            .expect("index.html must load wb-view.js (#339)");
+        let console_tag = html
+            .find(r#"<script src="wb-console.js"></script>"#)
+            .expect("index.html must load wb-console.js (#339)");
+        assert!(
+            view_tag < console_tag,
+            "wb-view.js must be script-tagged BEFORE wb-console.js (#339)"
+        );
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.

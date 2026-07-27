@@ -160,10 +160,10 @@ window.WBConsole = (function () {
   // dropped — the window would come back "open" on the next load. `keepalive`
   // lets the request outlive the document.
   window.addEventListener("pagehide", () => {
-    // The per-client view first, and BEFORE the desk guard below: the store is
-    // synchronous `localStorage`, and `deskLoaded` has nothing to say about it —
-    // gating the offset on the desk's permit would drop the last pan of every
-    // pre-login or demo page.
+    // The per-client view first, and BEFORE the desk guard below: `WBView`'s
+    // store is synchronous (no `keepalive` dance needed) and `deskLoaded` has
+    // nothing to say about it — gating the offset on the desk's upload permit
+    // would drop the last pan of every pre-login or demo page.
     if (offsetFlush) {
       clearTimeout(offsetFlush);
       offsetFlush = null;
