@@ -106,11 +106,16 @@ to peek at. The gate is the shell's own — a 6-digit code + optional password i
 wiring: `authed` becomes "holds a valid `ralphy_session` cookie"; the form POSTs
 `/api/login`.
 
-**One reflow gotcha (already paid for):** floating consoles are sized as a percentage
-of `#workspace`, so a panel toggle that resizes the canvas could clip them under
-`overflow:hidden`. `clampAll()` in [wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js) — a `ResizeObserver`
-on `#workspace` — resizes/repositions every window back inside the box, so consoles
-reflow for **both** the sidebar and the Runs panel.
+**The stage is a plane, and nothing reflows to fit it (#336):** `#workspace` is the
+**viewport**, an `overflow:auto` box over one sized child, `#stage`, which holds the
+windows. `stageExtent()` in [wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)
+sizes the stage to the bounding box of the window rects unioned with the viewport plus
+a margin, from an origin pinned at 0,0. A panel toggle or a browser resize therefore
+changes only the scroll offsets — no window is ever moved or resized on the operator's
+behalf. Maximize is the one thing pinned to the frame rather than the plane
+(`--max-left`/`--max-top` + `#workspace.maxlock`). See
+[ADR-0051](adr/0051-consoles-stage-plane-and-fences.md) §§1–5; the `clampAll`
+`ResizeObserver` this section used to describe is deleted.
 
 ### Tabbed canvas (Consoles tab + file tabs)
 The canvas is a **tabbed workspace**, not a single view. A tab strip (`.tabbar`)
@@ -361,7 +366,7 @@ they're the contract.
 | Security modal | `.security-modal` / `security` | access token · password · TOTP 2FA | `totp-enroll` · `totp-revoke` · `password-set` · `password-clear` · `token-remint` · `require-login {on}` · `require-login-blocked` |
 | TOTP QR | `wbQr(uri)` (wb-settings.js) | one-time `otpauth://` QR via vendored `qrcode` | — |
 | Login gate | `.login-gate` (`!authed` + `body.locked`) | fully opaque lock; chrome blanked, nothing rendered behind | `login` |
-| Console reflow | `clampAll` (ResizeObserver on `#workspace`) | keeps consoles inside the box on any panel resize | — |
+| Stage / viewport | `#stage` inside `#workspace` (`overflow:auto`); `stageExtent()` | the stage is a plane sized to bbox ∪ viewport + margin; a resize changes scroll offsets, never a rect (#336) | — |
 
 Auth posture note (faithful to current ralphy): token and TOTP are **mint-once**;
 "revoke" is a **file deletion**, not a rotate command — there is no rotate/disable verb
