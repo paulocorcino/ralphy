@@ -443,14 +443,14 @@
         </div>
       </div>
 
-      <div class="stage">
+      <div class="tabbody">
         <!-- Consoles tab: the floating-console workspace. Consoles live here as
              draggable windows over the dotted floor. -->
         <section class="consoles-tab" x-show="active === 'consoles'">
-          <!-- floating console windows are appended here by wb-console.js. impl:
-               each window's body is a faux terminal (local echo) as a seed —
-               swap for a real xterm.js attached to a session over a WebSocket. -->
-          <div id="workspace"></div>
+          <!-- `#workspace` is the VIEWPORT (overflow:auto) and `#stage` the plane
+               it scrolls over; wb-console.js appends the floating console windows
+               into the stage and sizes it from their bbox (issue #336). -->
+          <div id="workspace"><div id="stage"></div></div>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file

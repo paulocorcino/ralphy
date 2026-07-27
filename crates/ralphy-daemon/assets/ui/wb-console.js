@@ -1,9 +1,10 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — floating consoles (the Consoles tab)
 
-   The canvas is a workspace where consoles live as draggable, resizable windows
-   over the dotted floor. This module contributes the window chrome (workspace-
-   relative drag/clampAll/tiling); the terminal body is the REAL thing, a live
+   Consoles live as draggable, resizable windows on the STAGE — a plane over the
+   dotted floor that the VIEWPORT (`#workspace`, `overflow:auto`) scrolls over.
+   This module contributes the window chrome (stage-relative drag/resize/tiling
+   and the stage's own extent); the terminal body is the REAL thing, a live
    xterm.js attached to a PTY over the daemon's `/ws/session` WebSocket —
    transplanted verbatim from crates/ralphy-daemon/assets/ui/index.html
    (index.html contributes the truth, this module contributes the chrome).
@@ -13,7 +14,9 @@
    scrollback.
 --------------------------------------------------------------------------- */
 window.WBConsole = (function () {
+  // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
+  const stage = () => document.getElementById("stage");
   // Scheme-match the session socket to the page (see wb-daemon.js WS_ORIGIN):
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
@@ -266,11 +269,38 @@ window.WBConsole = (function () {
     return out;
   }
 
-  // Toggle a console between its floating rect and full-workspace bleed. The
+  // Toggle a console between its floating rect and a full-VIEWPORT bleed. The
   // pre-maximize rect stays in the inline styles (drag/resize are inert while
   // maximized), so restoring is just dropping the class.
+  //
+  // On a scrollable stage the bleed must be pinned to what the operator is
+  // looking at, not to the plane's origin: `--max-left`/`--max-top` carry the
+  // viewport's scroll offsets and `maxlock` freezes them, so the pin cannot
+  // desync without a scroll handler. The offsets are re-asserted after the class
+  // flip because `maxlock` (`overflow:hidden`) drops the scrollbars, which can
+  // clamp `scrollLeft`/`scrollTop` to 0 on the way.
   function toggleMax(win, btn) {
+    const ws = workspace();
+    const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
     const maxed = win.classList.toggle("maximized");
+    if (ws) {
+      if (maxed) {
+        win.style.setProperty("--max-left", offsets.left + "px");
+        win.style.setProperty("--max-top", offsets.top + "px");
+        ws.classList.add("maxlock");
+        ws.scrollLeft = offsets.left;
+        ws.scrollTop = offsets.top;
+      } else {
+        win.style.removeProperty("--max-left");
+        win.style.removeProperty("--max-top");
+        // Only the LAST window to leave maximized unlocks the scroll.
+        if (![...wins].some((w) => w.classList.contains("maximized"))) {
+          ws.classList.remove("maxlock");
+        }
+        ws.scrollLeft = offsets.left;
+        ws.scrollTop = offsets.top;
+      }
+    }
     btn.title = maxed ? "restore" : "maximize";
     btn.innerHTML = maxed
       ? '<i class="bi bi-fullscreen-exit"></i>'
@@ -279,45 +309,35 @@ window.WBConsole = (function () {
     try {
       win._term?.fit.fit();
     } catch {}
+    applyExtent();
     persistWin(win);
   }
 
-  // Keep every window fully inside the workspace box. When a chrome panel toggles
-  // (Projects hidden / Runs opened) the canvas — and thus the workspace — resizes;
-  // without this a window wider/further-right than the new box is silently clipped
-  // by the canvas `overflow:hidden`. Clamping resizes+repositions it to fit, so the
-  // console reflows for *both* panels instead of only sliding with the sidebar.
-  function clampAll() {
+  // Size the stage to hold every window. NOTHING here moves or resizes a window:
+  // the plane grows under them instead, and a viewport too small to show it all
+  // scrolls (issue #336 deleted the clamp-and-refit that used to deform the
+  // layout on every chrome-panel toggle). `grow` floors each axis at the current
+  // pixels — shrinking mid-drag would clamp `scrollLeft` under the operator's
+  // cursor and make the view jump; the exact recompute runs on mouseup.
+  // INVARIANT: every path that creates, moves, resizes, closes or restores a
+  // window ends here.
+  function applyExtent(opts) {
     const ws = workspace();
-    if (!ws) return;
-    const W = ws.clientWidth;
-    const H = ws.clientHeight;
-    if (!W || !H) return;
-    for (const win of wins) {
-      // A maximized window is pinned to the full workspace by CSS; leave its
-      // stored restore-rect untouched so it re-inflates correctly on restore.
-      if (win.classList.contains("maximized")) continue;
-      const w = Math.min(win.offsetWidth, W);
-      const h = Math.min(win.offsetHeight, H);
-      const left = Math.min(Math.max(0, win.offsetLeft), Math.max(0, W - w));
-      const top = Math.min(Math.max(0, win.offsetTop), Math.max(0, H - h));
-      win.style.width = w + "px";
-      win.style.height = h + "px";
-      win.style.left = left + "px";
-      win.style.top = top + "px";
-    }
-  }
-
-  // Reflow on every workspace resize (grid transition fires this continuously).
-  const _ro = new ResizeObserver(() => clampAll());
-  const observeWorkspace = () => {
-    const ws = workspace();
-    if (ws) _ro.observe(ws);
-  };
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", observeWorkspace);
-  } else {
-    observeWorkspace();
+    const st = stage();
+    if (!ws || !st) return;
+    // Read the DOM, not `wins`: a window is on the stage from the moment
+    // `buildChrome` appends it (before `spawnWindow` registers it) and gone the
+    // moment it is removed, so this can never count a phantom or miss a new one.
+    const rects = [...st.querySelectorAll(".session-window")].map(restoreRect);
+    const ext = stageExtent(
+      rects,
+      { width: ws.clientWidth, height: ws.clientHeight },
+      STAGE_MARGIN,
+    );
+    const width = opts?.grow ? Math.max(ext.width, st.offsetWidth) : ext.width;
+    const height = opts?.grow ? Math.max(ext.height, st.offsetHeight) : ext.height;
+    st.style.width = width + "px";
+    st.style.height = height + "px";
   }
 
   function focusWin(win) {
@@ -343,8 +363,10 @@ window.WBConsole = (function () {
     win.classList.add("focused");
   }
 
-  // Drag by the titlebar, clamped to the workspace box (control buttons still
-  // click). Coordinates are relative to the workspace (its offsetParent).
+  // Drag by the titlebar, clamped to the STAGE (control buttons still click).
+  // Coordinates are plane pixels: the stage's client rect already carries the
+  // viewport's scroll shift, so a drag reads the same at any scroll offset. The
+  // origin stays pinned at 0, so no drag can ever write a negative left/top.
   function makeDraggable(win, handle) {
     handle.addEventListener("mousedown", (e) => {
       if (e.target.closest("button")) return;
@@ -355,19 +377,24 @@ window.WBConsole = (function () {
       focusWin(win);
       // Maximized windows don't drag — the titlebar double-click still restores.
       if (win.classList.contains("maximized")) return;
-      const ws = workspace().getBoundingClientRect();
+      const origin = stage().getBoundingClientRect();
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
       const onMove = (ev) => {
-        const x = ev.clientX - ws.left - offX;
-        const y = ev.clientY - ws.top - offY;
-        win.style.left = Math.max(0, Math.min(x, ws.width - rect.width)) + "px";
-        win.style.top = Math.max(0, Math.min(y, ws.height - rect.height)) + "px";
+        // Read the stage LIVE: `applyExtent({grow:true})` below widens it as the
+        // window nears the far edge, so the next move has room to keep going.
+        const st = stage();
+        const x = ev.clientX - origin.left - offX;
+        const y = ev.clientY - origin.top - offY;
+        win.style.left = Math.max(0, Math.min(x, st.offsetWidth - rect.width)) + "px";
+        win.style.top = Math.max(0, Math.min(y, st.offsetHeight - rect.height)) + "px";
+        applyExtent({ grow: true });
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        applyExtent();
         persistWin(win);
       };
       document.addEventListener("mousemove", onMove);
@@ -379,8 +406,8 @@ window.WBConsole = (function () {
   // ---- resize geometry ---------------------------------------------------------
   // The eight directions differ only in which rectangle components move, so the
   // whole resize is one pure function: `dir` (`n`/`s`/`e`/`w` and the four
-  // corners), the workspace-relative start `rect`, the pointer `delta`, the
-  // minimum size and the workspace `bounds` yield a new rect. East/south move the
+  // corners), the stage-relative start `rect`, the pointer `delta`, the
+  // minimum size and the stage `bounds` yield a new rect. East/south move the
   // far edge; west/north move `left`/`top` and derive the size, so the OPPOSITE
   // edge stays put and the window does not slide under the cursor.
   const RESIZE_MIN = { width: 240, height: 150 }; // matches .session-window's CSS minimums
@@ -438,32 +465,35 @@ window.WBConsole = (function () {
       if (e.button !== 0) return; // primary button only — see makeDraggable
       focusWin(win);
       if (win.classList.contains("maximized")) return;
-      const ws = workspace();
       const rect = {
         left: win.offsetLeft,
         top: win.offsetTop,
         width: win.offsetWidth,
         height: win.offsetHeight,
       };
-      const bounds = { width: ws.clientWidth, height: ws.clientHeight };
       const startX = e.clientX;
       const startY = e.clientY;
       const onMove = (ev) => {
+        // The STAGE is the bound, read live so a grow makes room for the next
+        // move — the pure `resizeRect` is untouched, only its argument changed.
+        const st = stage();
         const out = resizeRect(
           dir,
           rect,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
           RESIZE_MIN,
-          bounds,
+          { width: st.offsetWidth, height: st.offsetHeight },
         );
         win.style.left = out.left + "px";
         win.style.top = out.top + "px";
         win.style.width = out.width + "px";
         win.style.height = out.height + "px";
+        applyExtent({ grow: true });
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        applyExtent();
         persistWin(win);
       };
       document.addEventListener("mousemove", onMove);
@@ -566,8 +596,10 @@ window.WBConsole = (function () {
     } catch {}
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
     fit.fit();
-    // Refit whenever THIS window's body changes size (drag-resize, clampAll, a
-    // panel toggle). Per-window, so one window's resize never disturbs another.
+    // Refit whenever THIS window's body changes size (a drag-resize, a maximize).
+    // Per-window, so one window's resize never disturbs another — this is the
+    // only ResizeObserver left in the file, and it resizes a TERMINAL, never a
+    // window rect (issue #336 deleted the one that did).
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -867,7 +899,8 @@ window.WBConsole = (function () {
       h.addEventListener("mousedown", startResize(win, dir));
       win.append(h);
     }
-    workspace().append(win);
+    stage().append(win);
+    applyExtent();
 
     win.addEventListener("mousedown", () => focusWin(win));
     makeDraggable(win, titlebar);
@@ -980,6 +1013,7 @@ window.WBConsole = (function () {
         forgetRecord(win._deskId);
         win.remove();
         wins.delete(win);
+        applyExtent();
         WB.emit("console-close", { repo: repo || null, agent: label });
         changed();
       };
@@ -1035,6 +1069,7 @@ window.WBConsole = (function () {
     const drop = () => {
       win.remove();
       wins.delete(win);
+      applyExtent();
       changed();
     };
     btn.addEventListener("click", (e) => {
@@ -1120,13 +1155,11 @@ window.WBConsole = (function () {
             });
           }
         }
-        // A desk saved on a larger screen arrives off-canvas here. `clampAll`
-        // handles that, but its ResizeObserver has ALREADY observed the
-        // workspace by now, and restoring windows into it is not a resize — so
-        // nothing would fire until the operator happened to resize something.
-        // Measured on a 1400x900 desk reopened at 800x600: left stayed 900 in a
-        // 452px workspace until an unrelated nudge (issue #327).
-        clampAll();
+        // A desk saved on a larger screen keeps its rects verbatim (issue #336):
+        // the STAGE grows to hold them and the viewport scrolls. Sizing it here
+        // is what gives the restored windows their scroll room — inserting a
+        // window is not a resize, so nothing else would fire.
+        applyExtent();
       })
       .catch(() => {});
   }
@@ -1139,10 +1172,10 @@ window.WBConsole = (function () {
   // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
   function refitAll() {
-    // A desk restored while this tab was hidden measured a 0×0 workspace, so
-    // `clampAll` bailed out of the restore call above — this is the first moment
-    // it can place those windows on screen (issue #327).
-    clampAll();
+    // A desk restored while this tab was hidden measured a 0×0 viewport, so the
+    // stage extent computed above was the bare bbox — this is the first moment
+    // the viewport leg of the union can be measured for real.
+    applyExtent();
     for (const win of wins) {
       try {
         win._term?.fit.fit();
@@ -1150,26 +1183,30 @@ window.WBConsole = (function () {
     }
   }
 
-  // Tile every open console into a grid that fills the workspace — the "heavy
-  // lifting" button. Windows animate to place via a CSS transition.
+  // Tile every open console into a grid that fills the VISIBLE region — the
+  // "heavy lifting" button. On a plane, "tile everything" only means anything
+  // within the frame the operator is looking at, so the grid is laid out at the
+  // viewport's current scroll offsets. Windows animate to place via a CSS
+  // transition.
   function arrange() {
     const ws = workspace();
-    const r = ws.getBoundingClientRect();
     const list = [...wins];
     const n = list.length;
     if (!n) return;
+    const originX = ws.scrollLeft;
+    const originY = ws.scrollTop;
     const cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
     const gap = 10;
     const pad = 12;
-    const cw = (r.width - pad * 2 - gap * (cols - 1)) / cols;
-    const ch = (r.height - pad * 2 - gap * (rows - 1)) / rows;
+    const cw = (ws.clientWidth - pad * 2 - gap * (cols - 1)) / cols;
+    const ch = (ws.clientHeight - pad * 2 - gap * (rows - 1)) / rows;
     list.forEach((win, i) => {
       const c = i % cols;
       const ro = Math.floor(i / cols);
       win.classList.add("tiling");
-      win.style.left = pad + c * (cw + gap) + "px";
-      win.style.top = pad + ro * (ch + gap) + "px";
+      win.style.left = originX + pad + c * (cw + gap) + "px";
+      win.style.top = originY + pad + ro * (ch + gap) + "px";
       win.style.width = cw + "px";
       win.style.height = ch + "px";
       focusWin(win);
@@ -1178,6 +1215,7 @@ window.WBConsole = (function () {
       persistWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
+    applyExtent();
   }
 
   function count() {

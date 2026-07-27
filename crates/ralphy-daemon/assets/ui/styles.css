@@ -1014,8 +1014,6 @@ body.runs-open .runs {
   grid-area: canvas;
   position: relative;
   background-color: var(--bg);
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
-  background-size: 22px 22px;
   overflow: hidden;
 }
 .btn {
@@ -1830,14 +1828,14 @@ body.runs-open .runs {
   color: var(--text);
 }
 
-/* the stage is the dotted floor shared by the Consoles workspace and viewers */
-.stage {
+/* the tab body: the frame the Consoles workspace and the viewers share. The
+   dotted floor is NOT here — it belongs to the stage, so panning reads as
+   movement instead of sliding over a background that sits still (issue #336). */
+.tabbody {
   position: relative;
   flex: 1;
   min-height: 0;
   background-color: var(--bg);
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
-  background-size: 22px 22px;
   overflow: hidden;
   isolation: isolate;
 }
@@ -1845,10 +1843,25 @@ body.runs-open .runs {
   position: absolute;
   inset: 0;
 }
+/* the VIEWPORT: a fixed box that scrolls over the stage. Nothing is ever moved
+   or resized to fit it — shrinking it only changes the scroll offsets. */
 #workspace {
   position: absolute;
   inset: 0;
-  overflow: hidden;
+  overflow: auto;
+}
+/* the STAGE: the plane the windows live on. Deliberately UNPOSITIONED, so the
+   windows' containing block stays `#workspace`'s padding box — `offsetLeft`,
+   `min(560px, 62%)` and `.maximized { width: 100% }` all keep their meaning with
+   zero JS, and an absolutely positioned descendant still scrolls with the
+   content. `min-*: 100%` is the viewport leg of the extent union expressed in
+   CSS, so a browser resize needs no handler at all. */
+#stage {
+  min-width: 100%;
+  min-height: 100%;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 #viewers {
   position: absolute;
@@ -1992,17 +2005,24 @@ body.runs-open .runs {
 .session-window.tiling {
   transition: left 0.24s ease, top 0.24s ease, width 0.24s ease, height 0.24s ease;
 }
-/* A maximized console fills the whole workspace. The window keeps its inline
-   left/top/width/height (the pre-maximize rect) so the restore button — and a
-   reload — snap it straight back to where it was; `!important` lets the class win
-   over those inline styles while maximized, and clampAll skips maximized windows
-   so a workspace resize can't peel it off the full-bleed. */
+/* A maximized console fills the VIEWPORT, not the stage — `width/height: 100%`
+   resolve against `#workspace`'s padding box (the windows' containing block),
+   and `--max-left`/`--max-top` carry the viewport's scroll offsets at maximize
+   time so the full-bleed lands over what the operator is looking at. The window
+   keeps its inline left/top/width/height (the pre-maximize rect) so the restore
+   button — and a reload — snap it straight back to where it was; `!important`
+   lets the class win over those inline styles while maximized. */
 .session-window.maximized {
-  left: 0 !important;
-  top: 0 !important;
+  left: var(--max-left, 0px) !important;
+  top: var(--max-top, 0px) !important;
   width: 100% !important;
   height: 100% !important;
   border-radius: 0;
+}
+/* While anything is maximized the viewport does not scroll, which is what makes
+   the pin above un-desyncable without a scroll handler. */
+#workspace.maxlock {
+  overflow: hidden;
 }
 .session-window.maximized .session-resize,
 .session-window.maximized .session-handle {

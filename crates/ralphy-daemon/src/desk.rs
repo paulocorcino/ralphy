@@ -14,9 +14,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// A window's restore box, in absolute workspace pixels. No proportional or
-/// per-resolution form: the shell's `clampAll` already refits a desk saved on a
-/// larger monitor (ADR-0050).
+/// A window's restore box, in absolute STAGE pixels. No proportional or
+/// per-resolution form: the stage is a plane whose origin is pinned at 0,0, so a
+/// desk saved on a larger monitor reopens verbatim and the viewport scrolls over
+/// it (ADR-0051 §4, superseding ADR-0050 §4's refit-on-restore).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeskRect {
@@ -99,13 +100,28 @@ pub fn load_from(path: &Path) -> DeskStore {
     }
 }
 
-/// Whether every rect component is finite. `serde_json` turns an overflowing
-/// literal into `f64::INFINITY` without erroring, TOML writes it as `inf`, and
-/// serializing it back to JSON yields `null` — which the shell would render as
-/// `"nullpx"`. Reject the upload instead of persisting a rect that cannot survive
-/// its own round trip.
+/// Whether a rect is one this daemon will persist: every component finite, and
+/// the origin on the stage.
+///
+/// Finite because `serde_json` turns an overflowing literal into
+/// `f64::INFINITY` without erroring, TOML writes it as `inf`, and serializing it
+/// back to JSON yields `null` — which the shell would render as `"nullpx"`.
+///
+/// Non-negative because the stage's origin is pinned at 0,0 and the plane grows
+/// right and down only (ADR-0051 §4): a negative `left`/`top` would mean
+/// re-anchoring the origin and rewriting every other rect. The shell's drag and
+/// resize both clamp at 0, so a negative origin can only arrive from a
+/// hand-rolled client.
+///
+/// WRITE PATH ONLY — [`load_from`] does not filter, because a desk written
+/// before this guard must still reopen byte-identical (issue #336).
 pub fn rect_is_sane(r: &DeskRect) -> bool {
-    r.left.is_finite() && r.top.is_finite() && r.width.is_finite() && r.height.is_finite()
+    r.left.is_finite()
+        && r.top.is_finite()
+        && r.width.is_finite()
+        && r.height.is_finite()
+        && r.left >= 0.0
+        && r.top >= 0.0
 }
 
 /// Write the desk to `path` owner-only, creating the parent directory.
@@ -278,6 +294,40 @@ mod tests {
         assert!(!rect_is_sane(&r.rect));
         r.rect.left = f64::NAN;
         assert!(!rect_is_sane(&r.rect));
+    }
+
+    #[test]
+    fn rect_is_sane_rejects_a_negative_origin() {
+        let mut r = record("w1", 1);
+        r.rect.left = -1.0;
+        assert!(!rect_is_sane(&r.rect), "a negative left is off the stage");
+        // The boundary itself is ON the stage — the origin is pinned AT 0,0, not
+        // past it, so a window flush against the corner must still persist.
+        r.rect.left = 0.0;
+        assert!(rect_is_sane(&r.rect), "left = 0 is the pinned origin");
+        r.rect.top = -1.0;
+        assert!(!rect_is_sane(&r.rect), "a negative top is off the stage");
+        r.rect.top = 0.0;
+        assert!(rect_is_sane(&r.rect));
+    }
+
+    #[test]
+    fn load_from_does_not_filter_a_legacy_negative_rect() {
+        // The guard is WRITE-path only: a desk written before it must reopen
+        // byte-identical, not be silently pruned to nothing (issue #336).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        let mut legacy = record("w-legacy", 1);
+        legacy.rect.left = -40.0;
+        std::fs::write(
+            &path,
+            toml::to_string_pretty(&DeskStore {
+                windows: vec![legacy.clone()],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(load_from(&path).windows, vec![legacy]);
     }
 
     #[test]

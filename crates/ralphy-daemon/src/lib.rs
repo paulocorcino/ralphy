@@ -1697,14 +1697,15 @@ async fn desk_get_route(path: PathBuf) -> Response {
 /// newest by `ts`, answering `200` with the pruned array — the client needs the
 /// daemon's post-prune truth in one round trip (last-write-wins, no ETag).
 /// A body that is not an array of records is rejected by the `Json` extractor as
-/// `422` and never reaches here, so `desk.toml` is untouched; a record carrying a
-/// non-finite rect is rejected here as `400`, for the same reason.
+/// `422` and never reaches here, so `desk.toml` is untouched; a record whose rect
+/// is out of frame — non-finite, or an origin off the stage's pinned 0,0 — is
+/// rejected here as `400`, for the same reason.
 async fn desk_put_route(path: PathBuf, records: Vec<desk::DeskRecord>) -> Response {
     if let Some(bad) = records.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
         return (
             StatusCode::BAD_REQUEST,
             Json(
-                serde_json::json!({ "error": format!("record {} has a non-finite rect", bad.id) }),
+                serde_json::json!({ "error": format!("record {} has an out-of-frame rect", bad.id) }),
             ),
         )
             .into_response();
@@ -2371,6 +2372,31 @@ mod tests {
             std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
             before,
             "a rejected upload never reaches the store"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_desk_put_rejects_a_negative_left_without_touching_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        desk_put(
+            dir.path(),
+            &serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
+        )
+        .await;
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+
+        let mut bad = desk_json("w-neg", 2, serde_json::Value::Null, false);
+        bad["rect"]["left"] = serde_json::json!(-1.0);
+        let res = desk_put(dir.path(), &serde_json::json!([bad])).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "the stage origin is pinned at 0,0 — a negative left is off the plane"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "a rejected rect never reaches the store"
         );
     }
 
