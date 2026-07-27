@@ -77,16 +77,21 @@ pub struct DeskStore {
     pub fences: Vec<DeskFence>,
 }
 
-/// The `PUT /api/desk` body. Strict where [`DeskStore`] is lenient — an
-/// unknown-field body must be a 422, never an empty desk that replaces the
-/// operator's layout. The FILE type stays lenient so a `desk.toml` written by a
-/// newer daemon degrades per-field instead of to nothing.
+/// The `PUT /api/desk` body. Strict where [`DeskStore`] is lenient — a body
+/// that is not this exact shape must be a refusal, never an empty desk that
+/// replaces the operator's layout. The FILE type stays lenient so a `desk.toml`
+/// written by a newer daemon degrades per-field instead of to nothing.
+///
+/// BOTH fields are REQUIRED, and that is the whole guard: serde deserializes a
+/// struct from a JSON SEQUENCE as well as from a map, so with
+/// `#[serde(default)]` on both the pre-#340 bare array `[]` — what a stale
+/// browser tab PUTs for a desk it thinks is empty — parses as a valid empty
+/// upload and wipes the operator's fences with a `200` (measured, #340).
+/// `deny_unknown_fields` does not cover that path.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeskUpload {
-    #[serde(default)]
     pub windows: Vec<DeskRecord>,
-    #[serde(default)]
     pub fences: Vec<DeskFence>,
 }
 

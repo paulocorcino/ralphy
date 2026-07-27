@@ -2524,6 +2524,22 @@ mod tests {
             before,
             "a rejected upload never reaches the store"
         );
+
+        // The EMPTY array is the dangerous one and a separate leg: it is what a
+        // stale tab PUTs for a desk it believes is empty, and serde's seq path
+        // parsed it as a valid empty upload until `DeskUpload` dropped its
+        // per-field defaults (#340). A 200 here silently deletes every fence.
+        let res = desk_put_raw(dir.path(), "[]".into()).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "an empty bare array must not read as an empty desk"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "the operator's fences survive a stale client's empty upload"
+        );
     }
 
     #[tokio::test]
