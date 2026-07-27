@@ -234,17 +234,62 @@ def fresh_context(browser, viewport):
     return ctx
 
 
+def activate_consoles(page, want=2):
+    """Return to the Consoles tab the way a CLICK does.
+
+    Writing `SH.active` by hand is not the same act: only `activate()` reaches
+    `refitAll()`, and `refitAll()` is the path that re-applies the stored offset
+    after `x-show`'s `display:none` threw the scroll position away.
+    """
+    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    if want:
+        settle(page, want)
+    else:
+        page.wait_for_timeout(1200)
+
+
 def desk_page(ctx, viewport, want=2):
     page = ctx.new_page()
     page.set_viewport_size(viewport)
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
-    if want:
-        settle(page, want)
-    else:
-        page.wait_for_timeout(1800)
+    activate_consoles(page, want)
     return page
+
+
+def open_file_tab(page, slug, path):
+    ftype = "markdown" if path.endswith(".md") else "code"
+    page.evaluate(
+        f"([slug, path, ftype]) => {SH}.openTab("
+        "{ project: slug, path: path, title: path, ftype: ftype })",
+        [slug, path, ftype],
+    )
+    page.wait_for_timeout(900)
+    return f"file:{slug}:{path}"
+
+
+def tab_state(page):
+    return page.evaluate(f"() => ({{ ids: {SH}.tabs.map((t) => t.id), active: {SH}.active }})")
+
+
+def stored_raw(page):
+    return page.evaluate(f"() => localStorage.getItem({VIEW_KEY!r})")
+
+
+def pan_to(page, left, top):
+    """Pan by writing the offsets, then wait for the debounced store to catch up."""
+    page.evaluate(
+        "([l, t]) => { const ws = document.getElementById('workspace');"
+        "  ws.scrollLeft = l; ws.scrollTop = t; }",
+        [left, top],
+    )
+    page.wait_for_function(
+        f"([l, t]) => {{ const raw = localStorage.getItem({VIEW_KEY!r}); if (!raw) return false;"
+        "  const off = (JSON.parse(raw) || {}).off;"
+        "  return !!off && off.left === l && off.top === t; }",
+        arg=[left, top],
+        timeout=8000,
+    )
 
 
 def main():
@@ -318,11 +363,214 @@ def main():
             )
             ctx.close()
 
+            # ===== scenario 3: pan + two file tabs survive a reload ============
+            # PAN_TO differs from the bbox landing (1774,983) on both axes AND
+            # still shows a window — the two things that make the assertion below
+            # discriminate between "restored" and "re-landed".
+            PAN_TO = (1500, 850)
+            ctx = fresh_context(browser, {"width": 1400, "height": 900})
+            page = desk_page(ctx, {"width": 1400, "height": 900})
+            pan_to(page, *PAN_TO)
+            before = view_box(page)
+            check(
+                "the pan is a REAL offset, not the landing it replaced",
+                (before["scrollLeft"], before["scrollTop"]) == PAN_TO
+                and (before["scrollLeft"], before["scrollTop"]) != (1774, 983),
+                f"got={before['scrollLeft']},{before['scrollTop']}",
+            )
+            readme_id = open_file_tab(page, slug, "README.md")
+            notes_id = open_file_tab(page, slug, "notes.md")
+            state = tab_state(page)
+            check(
+                "both file tabs are open with the second active before the reload",
+                state["ids"] == ["consoles", readme_id, notes_id] and state["active"] == notes_id,
+                f"got={state}",
+            )
+            page.wait_for_timeout(600)
+
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_function(
+                f"(want) => {SH}.tabs.length === want", arg=3, timeout=15000
+            )
+            page.wait_for_timeout(900)
+            state = tab_state(page)
+            check(
+                "the reload brings back the same three tabs, in order",
+                state["ids"] == ["consoles", readme_id, notes_id],
+                f"got={state['ids']}",
+            )
+            check(
+                "…with the same one active",
+                state["active"] == notes_id,
+                f"got={state['active']!r}",
+            )
+            # A restored tab that never fetched its bytes is an empty shell: the
+            # content check is what proves the tab is USABLE, not merely listed.
+            page.evaluate(f"([id]) => {SH}.activate(id)", [readme_id])
+            page.wait_for_function(
+                "(needle) => document.getElementById('viewers').innerText.includes(needle)",
+                arg=README_NEEDLE,
+                timeout=15000,
+            )
+            check(
+                "…and the restored tab shows the file's real bytes",
+                README_NEEDLE in page.evaluate("() => document.getElementById('viewers').innerText"),
+            )
+
+            activate_consoles(page)
+            after = view_box(page)
+            check(
+                "returning to Consoles lands back on the EXACT offset left before the reload",
+                (after["scrollLeft"], after["scrollTop"]) == PAN_TO,
+                f"want={PAN_TO} got={after['scrollLeft']},{after['scrollTop']}",
+            )
+            check(
+                "…with the desk's rects untouched by any of it",
+                rects(page) == [FIX_A, FIX_B],
+                f"got={rects(page)}",
+            )
+            raw_a = stored_raw(page)
+            # The DIRECT oracle for the store, not just for the screen: a flush
+            # that races the tab switch persists the `x-show` reset (`off:{0,0}`)
+            # while the screen still shows the pan, and every assertion above
+            # stays green while the NEXT reload silently re-lands on the bbox.
+            check(
+                "…and the STORE holds that offset too, not the `x-show` reset",
+                json.loads(raw_a).get("off") == {"left": PAN_TO[0], "top": PAN_TO[1]},
+                f"got={json.loads(raw_a).get('off')} want={{'left': {PAN_TO[0]}, 'top': {PAN_TO[1]}}}",
+            )
+
+            # ===== scenario 4: a second profile gets its OWN view ==============
+            ctx_b = fresh_context(browser, {"width": 1400, "height": 900})
+            page_b = desk_page(ctx_b, {"width": 1400, "height": 900})
+            check(
+                "the second profile inherited nothing from the first",
+                page_b.evaluate("() => window.__viewAtBoot") is None,
+                f"at_boot={page_b.evaluate('() => window.__viewAtBoot')!r}",
+            )
+            box_b = view_box(page_b)
+            check(
+                "…so it takes the bounding-box landing, NOT profile A's pan",
+                (box_b["scrollLeft"], box_b["scrollTop"]) != PAN_TO and box_b["scrollLeft"] > 0,
+                f"a={PAN_TO} b={box_b['scrollLeft']},{box_b['scrollTop']}",
+            )
+            check(
+                "…and profile B opened no file tabs of its own",
+                tab_state(page_b)["ids"] == ["consoles"],
+                f"got={tab_state(page_b)['ids']}",
+            )
+            page_b.evaluate("() => { const ws = document.getElementById('workspace');"
+                            " ws.scrollLeft = 40; ws.scrollTop = 30; }")
+            page_b.wait_for_timeout(700)
+            ctx_b.close()
+
+            check(
+                "profile A's stored view is byte-identical after B panned and closed",
+                stored_raw(page) == raw_a,
+                f"before={raw_a!r} after={stored_raw(page)!r}",
+            )
+
+            # ===== scenario 5: a smaller screen still shows work ===============
+            page.set_viewport_size({"width": 800, "height": 600})
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            activate_consoles(page)
+            small = view_box(page)
+            check(
+                "every rect is untouched by the smaller screen — nothing refits (#336)",
+                rects(page) == [FIX_A, FIX_B],
+                f"got={rects(page)}",
+            )
+            check(
+                "…and the LARGE-screen offset is what came back — clamped, not re-landed",
+                (small["scrollLeft"], small["scrollTop"]) == PAN_TO,
+                f"want={PAN_TO} got={small['scrollLeft']},{small['scrollTop']}"
+                f" client={small['clientWidth']}x{small['clientHeight']}",
+            )
+            check(
+                "…the restored offset is inside what this viewport can actually reach",
+                small["scrollLeft"] <= small["scrollWidth"] - small["clientWidth"]
+                and small["scrollTop"] <= small["scrollHeight"] - small["clientHeight"],
+                f"off={small['scrollLeft']},{small['scrollTop']}"
+                f" max={small['scrollWidth'] - small['clientWidth']},"
+                f"{small['scrollHeight'] - small['clientHeight']}",
+            )
+            check(
+                "…and it lands on a view that SHOWS work, not on empty plane",
+                shows(small, FIX_A) or shows(small, FIX_B),
+                f"view={small['scrollLeft']},{small['scrollTop']}"
+                f" +{small['clientWidth']}x{small['clientHeight']}",
+            )
+
+            # ===== scenario 6: no DESK in browser storage ======================
+            desk_now = json.loads(http("GET", "api/desk")[1])
+            check(
+                "the daemon's desk is NON-empty, so the absence below is not vacuous",
+                len(desk_now) >= 2,
+                f"records={len(desk_now)}",
+            )
+            keys = page.evaluate("() => Object.keys(localStorage)")
+            check(
+                "browser storage holds exactly the one permitted view key",
+                set(keys) == {VIEW_KEY},
+                f"got={keys}",
+            )
+            raw = stored_raw(page)
+            stored = json.loads(raw)
+            check(
+                "…whose shape carries only the view: v, off, tabs, active",
+                set(stored.keys()) <= {"v", "off", "tabs", "active"},
+                f"got={sorted(stored.keys())}",
+            )
+            leaked = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw]
+            check(
+                "…and none of the desk's vocabulary appears in the raw string",
+                leaked == [],
+                f"leaked={leaked} raw={raw!r}",
+            )
+            leaked_ids = [r["id"] for r in desk_now if r["id"] in raw]
+            check(
+                "…nor any id the daemon's desk is actually serving",
+                leaked_ids == [],
+                f"leaked={leaked_ids} ids={[r['id'] for r in desk_now]}",
+            )
+
+            # ===== scenario 7: a tab switch must not lose the pan ==============
+            page.set_viewport_size({"width": 1400, "height": 900})
+            activate_consoles(page)
+            SWITCH_TO = (1620, 920)
+            pan_to(page, *SWITCH_TO)
+            page.evaluate(f"([id]) => {SH}.activate(id)", [readme_id])
+            page.wait_for_timeout(900)
+            hidden = page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                "  return { shown: ws.offsetParent !== null, cw: ws.clientWidth }; }"
+            )
+            check(
+                "switching to a file tab really hides the viewport (`x-show`)",
+                not hidden["shown"] or hidden["cw"] == 0,
+                f"got={hidden}",
+            )
+            activate_consoles(page)
+            back = view_box(page)
+            check(
+                "…and switching back lands on the pan again, not on the origin",
+                (back["scrollLeft"], back["scrollTop"]) == SWITCH_TO,
+                f"want={SWITCH_TO} got={back['scrollLeft']},{back['scrollTop']}",
+            )
+
+            page.screenshot(path=SHOT)
+            check("the evidence screenshot is written", os.path.exists(SHOT), SHOT)
+
+            ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 8
+    # The floor matches the real count: set loosely, a scenario that stopped
+    # running would leave the suite green.
+    ok = all(results) and len(results) >= 30
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE VIEW IS PER CLIENT")

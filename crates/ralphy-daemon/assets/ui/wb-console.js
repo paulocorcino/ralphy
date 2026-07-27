@@ -430,7 +430,14 @@ window.WBConsole = (function () {
   let offsetFlush = null;
   function flushOffset() {
     const ws = workspace();
-    if (!ws) return;
+    // Guarded HERE, not only where the write is SCHEDULED: the debounce outlives
+    // its own guard. Switching to a file tab inside the 250 ms window hides
+    // `.consoles-tab` (`x-show`), and `display:none` resets the viewport's
+    // offsets to 0 — flushing that would persist the reset as the operator's
+    // chosen view, which is exactly what the landing then refuses to restore.
+    // Measured: a reload with a file tab active stored `off:{0,0}` over a real
+    // 1500,850 pan, ~470 ms after boot.
+    if (!landed || !ws || !ws.clientWidth || !ws.clientHeight) return;
     window.WBView?.patch({ off: { left: ws.scrollLeft, top: ws.scrollTop } });
   }
   function saveOffset() {
