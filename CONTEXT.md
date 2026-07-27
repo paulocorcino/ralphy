@@ -518,6 +518,20 @@ behind the Go-to picker, which reaches an off-frame window in one action (#337).
 Decided in
 [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§1–4 (issue #336),
 superseding ADR-0050 §4.
+
+**Per-client view**:
+What the operator was looking at, kept per **browser profile** rather than in the
+daemon: the **viewport** offset on the stage, plus the open file tabs and which
+one was active. One browser key, `wb.view.v1`, written by one module. It is NOT
+the **desk layout** — window (and later fence) rects stay daemon-owned, because a
+workbench session outlives the browser while a scroll offset does not, and a
+shared offset would mean one operator's panning dragged another's view. With
+nothing stored the view lands on the bounding box of the restored windows; a
+stored offset that would show no window at all degrades to that same landing, so
+a smaller screen still lands on work. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §8 (issue #339),
+narrowing ADR-0050 §3.
+_Avoid_: browser desk, geometry store, session state.
 _Avoid_: canvas (that is the whole tabbed region, one level up); zoom; clamping
 / refitting (deleted with `clampAll` — nothing repositions or resizes a window
 on the operator's behalf); infinite canvas (the stage is finite and measured,

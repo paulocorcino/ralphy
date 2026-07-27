@@ -56,6 +56,13 @@ eviction. Nothing is lost by this: `restoreDesk` already returns early when
 browser store was only accumulating records it would not read. A second store
 that is authoritative in no mode is not a fallback.
 
+> **Narrowed by [ADR-0051](0051-consoles-stage-plane-and-fences.md) §8 (issue
+> #339).** What is dropped is a second copy of the **desk**. The **per-client
+> view** — the viewport offset and the open file tabs — is different state with
+> a different lifetime and lives in the browser under one key, `wb.view.v1`:
+> shared, one operator's panning would drag another's view. The desk (windows,
+> and later fences) stays daemon-owned.
+
 ### 4. Restoration and the smaller screen are unchanged
 
 `reconcileDesk` keeps its shape — a pure fold of layout over the daemon's live
