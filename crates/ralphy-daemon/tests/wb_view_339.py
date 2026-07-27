@@ -621,6 +621,21 @@ def main():
                 (back["scrollLeft"], back["scrollTop"]) == SWITCH_TO,
                 f"want={SWITCH_TO} got={back['scrollLeft']},{back['scrollTop']}",
             )
+            # The plane the return lands ON must still be the desk's. `refitAll`
+            # runs from Alpine's `$nextTick`, which fires BEFORE `x-show` applies
+            # the flip: measured, it refit a still-hidden tab, read every window
+            # as 0×0 and collapsed the stage to the bare margin (3200×2080 ->
+            # 200×200) with nothing to recompute it after. The offsets above
+            # survive that (Chrome restores them itself), so only the extent
+            # catches it.
+            ext_back = stage_extent(page)
+            check(
+                "…on a stage that still holds the whole desk, not the bare margin",
+                ext_back["width"] >= FIX_B["left"] + FIX_B["width"]
+                and ext_back["height"] >= FIX_B["top"] + FIX_B["height"],
+                f"got={ext_back} desk_edge=({FIX_B['left'] + FIX_B['width']},"
+                f"{FIX_B['top'] + FIX_B['height']})",
+            )
 
             page.screenshot(path=SHOT)
             check("the evidence screenshot is written", os.path.exists(SHOT), SHOT)
@@ -632,7 +647,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 36
+    ok = all(results) and len(results) >= 37
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE VIEW IS PER CLIENT")

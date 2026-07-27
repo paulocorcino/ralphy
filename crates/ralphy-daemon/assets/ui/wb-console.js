@@ -1630,7 +1630,23 @@ window.WBConsole = (function () {
 
   // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
-  function refitAll() {
+  function refitAll(attempt) {
+    // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip: measured on
+    // the first call after switching back, `.consoles-tab` is still
+    // `display:none` and everything under it — the viewport AND every window —
+    // measures 0. Refitting THERE is worse than not refitting at all:
+    // `applyExtent` reads a 0×0 union and collapses the stage to the bare
+    // margin (measured 3200×2080 -> 200×200, never recomputed after), the
+    // footer pill publishes that as the extent, `fit.fit()` sizes every
+    // terminal to nothing, and `applyLanding` finds no viewport to clamp
+    // against. Wait for a frame that can measure; give up rather than refit
+    // blind if the tab never comes into view.
+    const ws0 = workspace();
+    if (ws0 && (!ws0.clientWidth || !ws0.clientHeight)) {
+      const n = attempt || 0;
+      if (n < 10) requestAnimationFrame(() => refitAll(n + 1));
+      return;
+    }
     // A desk restored while this tab was hidden measured a 0×0 viewport, so the
     // stage extent computed above was the bare bbox — this is the first moment
     // the viewport leg of the union can be measured for real.
