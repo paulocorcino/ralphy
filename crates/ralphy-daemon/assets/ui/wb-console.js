@@ -1228,10 +1228,80 @@ window.WBConsole = (function () {
       })
       .catch(() => {});
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", restoreDesk);
-  } else {
+  // ---- the plane's own gestures ------------------------------------------------
+  // Pan by dragging the BARE FLOOR. Deliberately calls neither `applyExtent` nor
+  // `persistWin` nor `focusWin`: "panning moves the view, not the rects" is true
+  // by construction here, not by a test that happens to pass.
+  function onFloorDown(e) {
+    // Primary button only — a right/middle press is followed by a `contextmenu`
+    // and no `mouseup`, which would strand `onMove` on the document.
+    if (e.button !== 0) return;
+    const ws = workspace();
+    const st = stage();
+    // The stage's only children are `.session-window`s, so element IDENTITY is
+    // the whole floor-vs-window hit test: a press anywhere inside a console —
+    // titlebar, body, resize handle — targets that window, never the stage.
+    if (!ws || !st || e.target !== st) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startLeft = ws.scrollLeft;
+    const startTop = ws.scrollTop;
+    st.classList.add("panning");
+    const onMove = (ev) => {
+      ws.scrollLeft = startLeft - (ev.clientX - startX);
+      ws.scrollTop = startTop - (ev.clientY - startY);
+    };
+    // INVARIANT: every exit path drops BOTH listeners and the class. A mouseup
+    // anywhere on the document is the only end of a drag.
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      st.classList.remove("panning");
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    // No text selection starts, and the focused terminal keeps the keyboard.
+    e.preventDefault();
+  }
+
+  // The wheel. The VERTICAL axis is native `overflow:auto` — no code. This adds
+  // only the horizontal reach, and only where the platform does not already
+  // provide it.
+  function onWheel(e) {
+    // The terminal owns its own wheel. The scrollback is reached by CSS
+    // (`overscroll-behavior: contain`), never by `preventDefault` — cancelling a
+    // wheel cancels the default scroll for the whole chain, the terminal's own
+    // included, which would fix the hijack by breaking the feature.
+    if (e.target?.closest?.(".session-window")) return;
+    // A platform that converts shift-wheel itself delivers `deltaX`; the guard
+    // makes this handler inert there instead of double-scrolling.
+    if (!(e.shiftKey && e.deltaY !== 0 && e.deltaX === 0)) return;
+    const ws = workspace();
+    if (!ws) return;
+    ws.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }
+
+  // `passive: false` or the `preventDefault` above is a no-op — Chrome treats a
+  // wheel listener on a scroll container as passive by default.
+  function wireStage() {
+    const ws = workspace();
+    const st = stage();
+    if (!ws || !st) return;
+    st.addEventListener("mousedown", onFloorDown);
+    ws.addEventListener("wheel", onWheel, { passive: false });
+  }
+
+  // The gestures are wired in the static demo too, where `restoreDesk` returns
+  // early: an empty plane still pans.
+  function boot() {
+    wireStage();
     restoreDesk();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
   }
 
   // Refit every open console. Called when the Consoles tab returns to view: a

@@ -1864,6 +1864,12 @@ body.runs-open .runs {
   background-color: var(--bg);
   background-image: radial-gradient(var(--border) 1px, transparent 1px);
   background-size: 22px 22px;
+  /* the floor is the PAN surface (issue #337): dragging it moves the view, so it
+     advertises itself as grabbable. */
+  cursor: grab;
+}
+#stage.panning {
+  cursor: grabbing;
 }
 /* The file-viewer panes share the tab body with the Consoles viewport and, being
    the LAST positioned sibling, hit-test above it across the whole box. That was
@@ -2011,6 +2017,18 @@ body.runs-open .runs {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   min-width: 240px;
   min-height: 150px;
+  /* the stage's grab cursor must not leak into a console — a window is not the
+     pan surface (issue #337). The per-direction `.session-handle` cursors below
+     are more specific and keep theirs. */
+  cursor: default;
+}
+/* The terminal owns its own wheel: at the scrollback's limit the gesture STOPS
+   there instead of chaining out and panning the plane underneath. Declared on
+   the window as well as the xterm viewport, so the body's 3px padding gutter
+   cannot become a chaining seam. */
+.session-window,
+.session-window .xterm-viewport {
+  overscroll-behavior: contain;
 }
 .session-window.focused {
   border-color: var(--border-focus);
@@ -2049,7 +2067,8 @@ body.runs-open .runs {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  cursor: move;
+  /* grab, not move: the same grammar as the floor — press and carry (issue #337) */
+  cursor: grab;
   user-select: none;
 }
 .session-title {
