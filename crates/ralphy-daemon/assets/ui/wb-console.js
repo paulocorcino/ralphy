@@ -763,6 +763,74 @@ window.WBConsole = (function () {
     );
   }
 
+  // ---- a fence is a group (issue #341) -----------------------------------------
+  // Membership is DERIVED, never stored: a window belongs to the fence that holds
+  // its CENTRE point, so nothing has to be kept in step and a record can never
+  // disagree with the geometry. Containment is HALF-OPEN (`left <= cx < left +
+  // width`) — fences may abut, and a closed test would put a centre sitting on a
+  // shared border inside both of them, breaking "exactly one fence".
+  function rectCentre(rect) {
+    return {
+      x: (rect?.left || 0) + (rect?.width || 0) / 2,
+      y: (rect?.top || 0) + (rect?.height || 0) / 2,
+    };
+  }
+
+  // `fences` is `[{ id, rect }]`, `windows` is `[{ id, rect }]`; the answer maps
+  // EVERY fence id (an empty one to `[]`) and omits a window in no fence. The
+  // `break` is the second half of "exactly one": half-open containment makes the
+  // fences disjoint as point sets, and this makes the fold's own answer so even
+  // if a stored rect pair ever overlaps.
+  function fenceMembership(fences, windows) {
+    const list = fences || [];
+    const out = {};
+    for (const f of list) out[f.id] = [];
+    for (const w of windows || []) {
+      const c = rectCentre(w?.rect);
+      for (const f of list) {
+        const r = f.rect || {};
+        const left = r.left || 0;
+        const top = r.top || 0;
+        if (
+          c.x >= left &&
+          c.x < left + (r.width || 0) &&
+          c.y >= top &&
+          c.y < top + (r.height || 0)
+        ) {
+          out[f.id].push(w.id);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  // May `candidate` (`{ id, rect }`) take the plane? Pure, and the SAME strict
+  // `rectsOverlap` the spawn rule uses, so abutting fences stay buildable and
+  // one predicate answers for create, move and resize alike. A candidate is
+  // never compared with itself — a move must not refuse its own start rect.
+  function fenceFits(fences, candidate) {
+    const rect = candidate?.rect || {};
+    return !(fences || []).some(
+      (f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
+    );
+  }
+
+  // The move delta a fence and the members it carries may actually take: the
+  // request, clamped so no left/top lands below 0. The plane's origin is pinned
+  // (issue #336) and grows right and down only, so a negative coordinate is not
+  // a position — it is a lost window. The MEMBERS are in the fold too: one can
+  // sit further left than the fence that carries it.
+  function fenceMoveDelta(delta, fenceRect, memberRects) {
+    const members = memberRects || [];
+    const minLeft = Math.min(fenceRect?.left || 0, ...members.map((r) => r?.left || 0));
+    const minTop = Math.min(fenceRect?.top || 0, ...members.map((r) => r?.top || 0));
+    return {
+      dx: Math.max(delta?.dx || 0, -minLeft),
+      dy: Math.max(delta?.dy || 0, -minTop),
+    };
+  }
+
   // Which grid slot a NEW fence takes, pure: the first one no existing fence
   // occupies. Indexing by `fences.length` instead would reuse a slot after a
   // removal — drop the middle of three and the next fence lands exactly on the
@@ -1976,6 +2044,9 @@ window.WBConsole = (function () {
     afterLogin,
     fenceSpawnRect,
     nextFenceSlot,
+    fenceMembership,
+    fenceFits,
+    fenceMoveDelta,
     createFence,
     renameFence,
     removeFence,

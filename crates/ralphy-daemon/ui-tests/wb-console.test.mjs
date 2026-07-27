@@ -460,3 +460,159 @@ test("nextFenceSlot: the slot it picks never overlaps an existing fence", () => 
     assert.ok(!overlaps(born, r), `slot ${slot} lands on ${JSON.stringify(r)}`);
   }
 });
+
+// ---- a fence is a group (issue #341) ----------------------------------------
+// Membership is DERIVED from the centre point, never stored: no window record
+// gains a `fenceId`, so a fence and a window can never disagree about it.
+// Containment is HALF-OPEN (`left <= cx < left + width`) because fences may
+// abut: a closed test would put a centre on a shared border in two fences.
+const AB = [
+  { id: "a", rect: { left: 0, top: 0, width: 100, height: 100 } },
+  { id: "b", rect: { left: 100, top: 0, width: 100, height: 100 } },
+];
+// Total member ids across every fence — the "exactly one fence" oracle.
+const memberCount = (m) => Object.values(m).reduce((n, ids) => n + ids.length, 0);
+
+test("fenceMembership: a window whose centre is inside a fence is its member", () => {
+  const m = load().fenceMembership(AB, [
+    { id: "w1", rect: { left: 10, top: 10, width: 40, height: 40 } },
+  ]);
+  assert.deepEqual(m, { a: ["w1"], b: [] });
+});
+
+test("fenceMembership: a window whose centre is outside every fence belongs nowhere", () => {
+  const m = load().fenceMembership(AB, [
+    { id: "w1", rect: { left: 400, top: 400, width: 40, height: 40 } },
+  ]);
+  assert.deepEqual(m, { a: [], b: [] });
+  assert.equal(memberCount(m), 0);
+});
+
+test("fenceMembership: a window straddling the border belongs to the fence holding its centre", () => {
+  // Spans 60..140 across the shared edge at 100; centre x = 90, inside A.
+  const m = load().fenceMembership(AB, [
+    { id: "w1", rect: { left: 60, top: 20, width: 60, height: 40 } },
+  ]);
+  assert.deepEqual(m, { a: ["w1"], b: [] });
+  assert.equal(memberCount(m), 1, "a straddling window belongs to exactly ONE fence");
+});
+
+test("fenceMembership: a centre exactly on the shared edge belongs to the RIGHT fence", () => {
+  // NEGATIVE CONTROL: a CLOSED containment test (`cx <= left + width`) hands
+  // this centre to A — the fence it is leaving — and a `break`-less fold lists
+  // it under both. Half-open on the far edge is what makes "exactly one" hold
+  // for abutting fences.
+  const m = load().fenceMembership(AB, [
+    { id: "w1", rect: { left: 80, top: 20, width: 40, height: 40 } },
+  ]);
+  assert.deepEqual(m, { a: [], b: ["w1"] });
+  assert.equal(memberCount(m), 1);
+});
+
+test("fenceMembership: a fence with no members maps to an empty list", () => {
+  assert.deepEqual(load().fenceMembership(AB, []), { a: [], b: [] });
+});
+
+test("fenceMembership: no fences at all is an empty map, whatever the windows", () => {
+  assert.deepEqual(
+    load().fenceMembership([], [{ id: "w1", rect: { left: 0, top: 0, width: 10, height: 10 } }]),
+    {},
+  );
+});
+
+// Whether a fence's candidate rect may take the plane: it must overlap no OTHER
+// fence. Abutting is allowed — one predicate for spawn and for enforcement.
+const FIT = { left: 100, top: 100, width: 100, height: 100 };
+const EXISTING = [{ id: "e", rect: FIT }];
+
+const FITS = [
+  { name: "an overlap from the north is refused", rect: { left: 100, top: 50, width: 100, height: 100 }, want: false },
+  { name: "an overlap from the south is refused", rect: { left: 100, top: 150, width: 100, height: 100 }, want: false },
+  { name: "an overlap from the east is refused", rect: { left: 150, top: 100, width: 100, height: 100 }, want: false },
+  { name: "an overlap from the west is refused", rect: { left: 50, top: 100, width: 100, height: 100 }, want: false },
+  {
+    name: "a candidate wholly CONTAINING an existing fence is refused",
+    rect: { left: 0, top: 0, width: 400, height: 400 },
+    want: false,
+  },
+  {
+    name: "a candidate wholly CONTAINED by an existing fence is refused",
+    rect: { left: 120, top: 120, width: 40, height: 40 },
+    want: false,
+  },
+  {
+    // NEGATIVE CONTROL: a non-strict overlap test (`<=`) reds this row, and the
+    // natural layout — fences drawn edge to edge — becomes unbuildable.
+    name: "a candidate abutting exactly on the west edge fits",
+    rect: { left: 0, top: 100, width: 100, height: 100 },
+    want: true,
+  },
+  {
+    name: "a candidate far away fits",
+    rect: { left: 900, top: 900, width: 100, height: 100 },
+    want: true,
+  },
+];
+
+for (const row of FITS) {
+  test(`fenceFits: ${row.name}`, () => {
+    assert.equal(load().fenceFits(EXISTING, { id: "c", rect: row.rect }), row.want);
+  });
+}
+
+test("fenceFits: a fence compared against ITSELF by id fits — a move must not refuse its own start", () => {
+  assert.equal(load().fenceFits(EXISTING, { id: "e", rect: FIT }), true);
+});
+
+test("fenceFits: an empty fence list fits anything", () => {
+  assert.equal(load().fenceFits([], { id: "c", rect: FIT }), true);
+});
+
+// The move delta, clamped so the plane's pinned origin holds: neither the fence
+// NOR any member it carries may land at a negative coordinate (issue #336 — the
+// stage grows right and down only).
+const MOVES = [
+  {
+    name: "a delta that keeps everything positive passes through unchanged",
+    delta: { dx: 120, dy: 80 },
+    fence: { left: 200, top: 200, width: 100, height: 100 },
+    members: [{ left: 220, top: 220, width: 40, height: 40 }],
+    want: { dx: 120, dy: 80 },
+  },
+  {
+    name: "a delta pushing the fence past the origin clamps to the fence's own left/top",
+    delta: { dx: -500, dy: -400 },
+    fence: { left: 200, top: 150, width: 100, height: 100 },
+    members: [],
+    want: { dx: -200, dy: -150 },
+  },
+  {
+    // NEGATIVE CONTROL: clamping on the FENCE alone answers -200/-150 here and
+    // parks the member at left = -20, off the plane's pinned origin.
+    name: "a member further left than the fence is what the clamp answers to",
+    delta: { dx: -500, dy: -400 },
+    fence: { left: 200, top: 150, width: 400, height: 400 },
+    members: [{ left: 180, top: 130, width: 40, height: 40 }],
+    want: { dx: -180, dy: -130 },
+  },
+  {
+    name: "no members at all clamps on the fence",
+    delta: { dx: -50, dy: -50 },
+    fence: { left: 20, top: 30, width: 100, height: 100 },
+    members: [],
+    want: { dx: -20, dy: -30 },
+  },
+  {
+    name: "a positive delta is never clamped, however far it travels",
+    delta: { dx: 9000, dy: 9000 },
+    fence: { left: 0, top: 0, width: 100, height: 100 },
+    members: [{ left: 0, top: 0, width: 10, height: 10 }],
+    want: { dx: 9000, dy: 9000 },
+  },
+];
+
+for (const row of MOVES) {
+  test(`fenceMoveDelta: ${row.name}`, () => {
+    assert.deepEqual(load().fenceMoveDelta(row.delta, row.fence, row.members), row.want);
+  });
+}
