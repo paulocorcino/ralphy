@@ -847,6 +847,21 @@ window.WBConsole = (function () {
     };
   }
 
+  // Does `rect` hold `point`? The half-open test above, extracted once (issue
+  // #343) so membership and the floor's focus-clearing hit test can never drift
+  // into two spellings of the same containment.
+  function rectHolds(rect, point) {
+    const r = rect || {};
+    const left = r.left || 0;
+    const top = r.top || 0;
+    return (
+      (point?.x || 0) >= left &&
+      (point?.x || 0) < left + (r.width || 0) &&
+      (point?.y || 0) >= top &&
+      (point?.y || 0) < top + (r.height || 0)
+    );
+  }
+
   // `fences` is `[{ id, rect }]`, `windows` is `[{ id, rect }]`; the answer maps
   // EVERY fence id (an empty one to `[]`) and omits a window in no fence. The
   // `break` is the second half of "exactly one": half-open containment makes the
@@ -859,15 +874,7 @@ window.WBConsole = (function () {
     for (const w of windows || []) {
       const c = rectCentre(w?.rect);
       for (const f of list) {
-        const r = f.rect || {};
-        const left = r.left || 0;
-        const top = r.top || 0;
-        if (
-          c.x >= left &&
-          c.x < left + (r.width || 0) &&
-          c.y >= top &&
-          c.y < top + (r.height || 0)
-        ) {
+        if (rectHolds(f.rect, c)) {
           out[f.id].push(w.id);
           break;
         }
@@ -2496,6 +2503,7 @@ window.WBConsole = (function () {
     afterLogin,
     fenceSpawnRect,
     nextFenceSlot,
+    rectHolds,
     fenceMembership,
     fenceFits,
     fenceMoveDelta,

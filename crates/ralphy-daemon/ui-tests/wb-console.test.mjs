@@ -470,6 +470,40 @@ const AB = [
   { id: "a", rect: { left: 0, top: 0, width: 100, height: 100 } },
   { id: "b", rect: { left: 100, top: 0, width: 100, height: 100 } },
 ];
+
+// The containment predicate itself (issue #343), extracted so membership and the
+// floor's focus hit test share one spelling. Both axes are pinned: for a 2-D
+// predicate, one axis is half the specification (#341's plan friction).
+const HOLDS = [
+  {
+    name: "a point at the near corner is IN (the near edge is closed)",
+    point: { x: 100, y: 200 },
+    want: true,
+  },
+  { name: "a point in the middle is IN", point: { x: 150, y: 250 }, want: true },
+  {
+    // NEGATIVE CONTROL for X: a closed `x <= left + width` reds here.
+    name: "a point on the far X edge is OUT",
+    point: { x: 200, y: 250 },
+    want: false,
+  },
+  {
+    // NEGATIVE CONTROL for Y — the twin that a copy-pasted X-only test misses.
+    name: "a point on the far Y edge is OUT",
+    point: { x: 150, y: 300 },
+    want: false,
+  },
+  { name: "a point left of the rect is OUT", point: { x: 99, y: 250 }, want: false },
+  { name: "a point above the rect is OUT", point: { x: 150, y: 199 }, want: false },
+];
+
+const HOLDS_RECT = { left: 100, top: 200, width: 100, height: 100 };
+
+for (const row of HOLDS) {
+  test(`rectHolds: ${row.name}`, () => {
+    assert.equal(load().rectHolds(HOLDS_RECT, row.point), row.want);
+  });
+}
 // Total member ids across every fence — the "exactly one fence" oracle.
 const memberCount = (m) => Object.values(m).reduce((n, ids) => n + ids.length, 0);
 
