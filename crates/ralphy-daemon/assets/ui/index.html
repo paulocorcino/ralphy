@@ -479,7 +479,10 @@
             No consoles open
             <small x-text="'New console · ' + shortcutLabel(1)"></small>
           </div>
-          <div class="canvas-foot">
+          <!-- `x-cloak`: the pills carry a border and a background but no markup
+               text, so without it two empty boxes flash on every load until
+               Alpine binds `consoleCount`/`stageW`. -->
+          <div class="canvas-foot" x-cloak>
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'stage ' + stageW + ' × ' + stageH"></span>
           </div>

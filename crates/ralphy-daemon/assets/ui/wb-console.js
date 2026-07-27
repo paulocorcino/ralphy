@@ -1485,6 +1485,11 @@ window.WBConsole = (function () {
     // A desk restored while this tab was hidden measured a 0×0 viewport, so the
     // stage extent computed above was the bare bbox — this is the first moment
     // the viewport leg of the union can be measured for real.
+    // The extent dispatch below is an EDGE, so a `workbench:stage-extent` that
+    // fired before Alpine mounted (or never fired at all, in the static demo)
+    // would leave the footer pill reading `stage 0 × 0` for good. Forcing the
+    // edge here re-publishes it every time the tab comes back into view.
+    lastExtent = { width: -1, height: -1 };
     applyExtent();
     for (const win of wins) {
       try {
@@ -1530,6 +1535,13 @@ window.WBConsole = (function () {
       persistWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
+    // A maximized console is not tiled, but it must not be BURIED by the tiles
+    // either: a tile fills the frame, and `maxlock` (`overflow:hidden`) leaves
+    // no way to scroll away from a full bleed whose titlebar is covered. Raising
+    // it last keeps its restore button reachable by a real mouse.
+    for (const win of wins) {
+      if (win.classList.contains("maximized")) focusWin(win);
+    }
     // AFTER the 0.24s tiling transition: reading `offsetLeft`/`offsetWidth` now
     // is what STARTS that transition, so an immediate fold would measure the
     // pre-Arrange rects and size the plane to a layout that no longer exists.

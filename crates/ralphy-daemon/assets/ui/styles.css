@@ -1063,9 +1063,12 @@ body.runs-open .runs {
   display: flex;
   gap: 0.5rem;
   color: var(--text-muted);
-  /* Between the two tiers it sits across: above the floating consoles (whose
-     focus counter is capped at Z_CEIL 120, wb-console.js) so a maximized
-     full-bleed cannot bury the pills, and below the runs panel (150, :458).
+  /* Above the floating consoles — their focus counter is capped at Z_CEIL 120
+     (wb-console.js) — so a full-bleed console cannot bury the pills. That is the
+     only comparison this number makes: `.tabbody`'s `isolation: isolate`
+     confines it to that subtree, and the runs panel is `position:fixed` OUTSIDE
+     it, so its 150 (`:458`) is in a different stacking context and raising this
+     number would buy nothing against it.
      Non-interactive, so a pill can never eat a click or a selection drag meant
      for the terminal underneath it. */
   z-index: 130;
@@ -2064,8 +2067,10 @@ body.runs-open .runs {
 }
 /* A maximized console fills the VIEWPORT, not the stage — `width/height: 100%`
    resolve against `#workspace`'s padding box (the windows' containing block),
-   and `--max-left`/`--max-top` carry the viewport's scroll offsets at maximize
-   time so the full-bleed lands over what the operator is looking at. The window
+   and `--max-left`/`--max-top` carry the viewport's CURRENT scroll offsets, so
+   the full-bleed lands over what the operator is looking at. Those two are
+   re-derived by `syncMaxPin` on every scroll (issue #338), never written once at
+   maximize time — Go-to pans the plane while a console is maximized. The window
    keeps its inline left/top/width/height (the pre-maximize rect) so the restore
    button — and a reload — snap it straight back to where it was; `!important`
    lets the class win over those inline styles while maximized. */
@@ -2076,8 +2081,12 @@ body.runs-open .runs {
   height: 100% !important;
   border-radius: 0;
 }
-/* While anything is maximized the viewport does not scroll, which is what makes
-   the pin above un-desyncable without a scroll handler. */
+/* While anything is maximized the viewport takes no scroll GESTURE — the plane
+   must not slide out from under a full bleed by a stray wheel. It does not make
+   the pin above un-desyncable: `overflow:hidden` still accepts a programmatic
+   `scrollLeft` write AND still fires `scroll` (measured, #338; CONTEXT.md →
+   Testing conventions), which is exactly how `reveal` pans under a full bleed
+   and how `syncMaxPin` hears about it. */
 #workspace.maxlock {
   overflow: hidden;
 }

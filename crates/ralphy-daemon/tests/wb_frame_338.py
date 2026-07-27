@@ -374,7 +374,7 @@ def main():
                 "() => { const f = document.querySelector('.canvas-foot');"
                 "  const e = document.querySelector('.canvas-empty');"
                 "  return { pills: [...f.querySelectorAll('.pill')].map((s) => s.textContent.trim()),"
-                "    footVisible: f.offsetParent !== null,"
+                "    footVisible: f.offsetParent !== null && f.clientWidth > 0,"
                 "    emptyShown: e.offsetParent !== null }; }"
             )
             check(
@@ -473,9 +473,37 @@ def main():
                 f"{pre['stageW']}x{pre['stageH']} -> {post['stageW']}x{post['stageH']}",
             )
             check(
-                "…which the footer pill still reports, unobscured by the full bleed",
+                "…which the footer pill still reports over the full bleed",
                 post["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
                 f"got={post['pills']}",
+            )
+
+            # The two properties the CSS half of this issue turns on. Text alone
+            # reads the same whether the pills paint above the bleed or under it,
+            # so assert the cascade AND the hit test.
+            stack = page.evaluate(
+                "() => { const f = document.querySelector('.canvas-foot');"
+                "  const pill = f.querySelector('.pill');"
+                "  const w = document.querySelector('.session-window.maximized');"
+                "  const r = pill.getBoundingClientRect();"
+                "  const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
+                "  return { footZ: getComputedStyle(f).zIndex,"
+                "    winZ: parseInt(w.style.zIndex, 10) || 0,"
+                "    events: getComputedStyle(f).pointerEvents,"
+                "    underIsChrome: !!(under && under.closest('.canvas-foot')),"
+                "    underInWindow: !!(under && under.closest('.session-window')) }; }"
+            )
+            check(
+                "the footer paints ABOVE the full bleed, by the cascade",
+                stack["footZ"] == "130" and stack["winZ"] < 130,
+                f"foot z={stack['footZ']} window z={stack['winZ']}",
+            )
+            check(
+                "…and is inert to the pointer, so a pill cannot eat a click",
+                stack["events"] == "none"
+                and not stack["underIsChrome"]
+                and stack["underInWindow"],
+                f"pointer-events={stack['events']} hit-through-to-window={stack['underInWindow']}",
             )
 
             # ===== scenario 4: Go-to pans the plane WHILE maximized ============
@@ -493,15 +521,39 @@ def main():
             )
             page.wait_for_timeout(400)
             f4 = frame_fill(page, 0)
+            pin = page.evaluate(
+                "() => { const w = document.querySelector('.session-window.maximized');"
+                "  return { left: w.style.getPropertyValue('--max-left'),"
+                "    top: w.style.getPropertyValue('--max-top') }; }"
+            )
+            # NOT the same statement as the wait above: the wait proves the plane
+            # moved, this proves the PIN was re-derived to the new offsets rather
+            # than the class merely surviving.
             check(
-                "Go-to really pans the plane while a console is maximized",
-                f4["scrollLeft"] != 250,
-                f"scrollLeft={f4['scrollLeft']} (was 250)",
+                "the viewport pin is re-derived to the offsets Go-to landed on",
+                pin["left"] == f"{f4['scrollLeft']}px" and pin["top"] == f"{f4['scrollTop']}px",
+                f"--max-left/top = {pin['left']}/{pin['top']} at scroll"
+                f" {f4['scrollLeft']}/{f4['scrollTop']}",
             )
             check(
                 "…and the full bleed follows the frame instead of desyncing from it",
                 f4["maximized"] and fills_frame(f4),
                 f"edges (l,t,r,b) = {f4['left']},{f4['top']},{f4['right']},{f4['bottom']}",
+            )
+
+            # The OTHER branch of the new `reveal()`: a Go-to whose target is
+            # itself maximized already fills the frame, so it must not slide the
+            # plane out from under the operator.
+            held = f4["scrollLeft"]
+            page.locator("button", has_text="Go to").first.click()
+            page.wait_for_timeout(300)
+            page.locator(".window-menu .window-item:visible").nth(0).click()
+            page.wait_for_timeout(600)
+            f4b = frame_fill(page, 0)
+            check(
+                "Go-to on the MAXIMIZED window itself leaves the plane where it is",
+                f4b["scrollLeft"] == held and fills_frame(f4b),
+                f"scrollLeft {held} -> {f4b['scrollLeft']}",
             )
 
             # ===== scenario 5b: Arrange leaves a maximized window alone ========
@@ -532,9 +584,26 @@ def main():
                 inline["other"] and inline["other"] != "700px",
                 f"the other window's inline left = {inline['other']!r}",
             )
+            # The tile must not BURY the full bleed either: filtering it out of
+            # the grid also drops it from `focusWin`, and `maxlock` leaves no way
+            # to scroll away from a maximized console whose titlebar is covered.
+            top_at_max = page.evaluate(
+                "() => { const w = document.querySelector('.session-window.maximized');"
+                "  const b = w.querySelector('.session-max').getBoundingClientRect();"
+                "  const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);"
+                "  return { own: !!(el && w.contains(el)), tag: el && el.className }; }"
+            )
+            check(
+                "…and leaves the maximized console's own restore button hittable",
+                top_at_max["own"],
+                f"the point over `.session-max` hit {top_at_max['tag']!r}",
+            )
+            arranged = poll_desk("w-fixture-b", lambda r: True, timeout=3)
+            print(f"[note] after Arrange, /api/desk holds w-fixture-b at {arranged and arranged['rect']}")
 
             # ===== scenario 5: restore lands on the STAGE-coordinate box =======
-            press_chrome(page, 0, ".session-max")
+            # A REAL click: the check above just proved the button is on top.
+            page.locator(".session-window.maximized").locator(".session-max").click()
             page.wait_for_timeout(600)
             restored = page.evaluate(
                 "() => { const w = document.querySelectorAll('.session-window')[0];"
@@ -568,16 +637,29 @@ def main():
             page.wait_for_timeout(300)
             press_chrome(page, index_of(page, "w-fixture-a"), ".session-max")
             page.wait_for_timeout(600)
+            # WHICH record carries it, over the API — a bare `"max = true" in
+            # <the whole file>` would be satisfied by any other window.
+            flagged = poll_desk("w-fixture-a", lambda r: r["max"] is True)
+            check(
+                "the maximized flag is on the fixture's own desk record",
+                bool(flagged) and flagged["max"] is True,
+                f"got={flagged}",
+            )
+            # …and that it reached DISK, not just the in-memory desk. The daemon
+            # rewrites this file, so a read can land mid-write on Windows.
             desk_file = Path(daemon_dir, "desk.toml")
             deadline = time.time() + 8
             on_disk = ""
             while time.time() < deadline:
-                on_disk = desk_file.read_text(encoding="utf-8")
+                try:
+                    on_disk = desk_file.read_text(encoding="utf-8")
+                except OSError:
+                    on_disk = ""
                 if "max = true" in on_disk:
                     break
                 time.sleep(0.3)
             check(
-                "the maximized state reaches desk.toml on disk",
+                "…and reaches desk.toml on disk, so a reload can read it back",
                 "max = true" in on_disk,
                 f"desk.toml={on_disk[:160]!r}",
             )
@@ -600,13 +682,20 @@ def main():
                 fills_frame(f6),
                 f"edges (l,t,r,b) = {f6['left']},{f6['top']},{f6['right']},{f6['bottom']}",
             )
+            # Against the LIVE stage, not a literal: whatever rect Arrange left
+            # persisted, the pill's job is to mirror the extent that is actually
+            # laid out. A literal here would have to be re-derived — and would
+            # red — the day `arrange()` persists the rect it tiles to.
+            mirror = page.evaluate(
+                "() => { const st = document.getElementById('stage');"
+                "  return { pills: [...document.querySelectorAll('.canvas-foot .pill')]"
+                "      .map((s) => s.textContent.trim()),"
+                "    w: st.offsetWidth, h: st.offsetHeight }; }"
+            )
             check(
-                "…and the footer pills survive the reload with it",
-                page.evaluate(
-                    "() => [...document.querySelectorAll('.canvas-foot .pill')]"
-                    ".map((s) => s.textContent.trim())"
-                ) == ["2 consoles", f"stage {STAGE_W} × {STAGE_H}"],
-                "the frame chrome must be rebuilt by the shell, not by the restore path",
+                "…and the footer pills survive the reload, still mirroring the live stage",
+                mirror["pills"] == ["2 consoles", f"stage {mirror['w']} × {mirror['h']}"],
+                f"got={mirror['pills']} against a {mirror['w']}x{mirror['h']} stage",
             )
             # The evidence PNG, taken at the asserting moment: a full-bleed
             # terminal with the frame's pills still legible at the bottom-left.
@@ -631,6 +720,14 @@ def main():
             page.wait_for_function(
                 "() => document.querySelectorAll('.session-window').length === 1",
                 timeout=10000,
+            )
+            page.wait_for_timeout(300)
+            check(
+                "the count pill takes the SINGULAR at one console",
+                page.evaluate(
+                    "() => document.querySelector('.canvas-foot .pill').textContent.trim()"
+                ) == "1 console",
+                "a plural-only pill would read `1 consoles`",
             )
             press_chrome(page, 0, ".session-close")
             page.wait_for_function(
@@ -664,7 +761,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 40
+    ok = all(results) and len(results) >= 46
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE CHROME IS IN THE FRAME")

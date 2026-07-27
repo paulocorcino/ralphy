@@ -4540,18 +4540,32 @@ mod tests {
         let tab = html
             .find(r#"class="consoles-tab""#)
             .expect("index.html must keep the consoles tab (#338)");
-        // `#viewers` is the first thing AFTER the section closes, so an offset
-        // between the two is inside the tab.
-        let after = html
-            .find(r#"id="viewers""#)
-            .expect("index.html must keep the viewers pane (#338)");
+        // The section's OWN close, not a later landmark: bounding by `#viewers`
+        // would still pass for chrome that escaped the tab entirely.
+        let close = tab
+            + html[tab..]
+                .find("</section>")
+                .expect("the consoles tab must close (#338)");
+        // The viewport as a CLOSED element: an offset past its `</div>` cannot be
+        // inside `#workspace` — and therefore cannot be inside `#stage` either.
+        // Chrome inside the scrolling box pans away just as surely as chrome on
+        // the plane, so "after the stage" alone would not be enough.
+        let viewport = r#"<div id="workspace"><div id="stage"></div></div>"#;
+        let ws = html
+            .find(viewport)
+            .expect("index.html must keep the closed viewport element (#338)")
+            + viewport.len();
+        assert!(
+            ws > tab,
+            "the viewport must live inside the consoles tab (#338)"
+        );
         for pin in [r#"class="canvas-foot""#, r#"class="canvas-empty""#] {
             let at = html
                 .find(pin)
                 .unwrap_or_else(|| panic!("index.html must carry the frame chrome {pin} (#338)"));
             assert!(
-                at > tab && at < after,
-                "{pin} must sit inside .consoles-tab, not on the plane (#338)"
+                at > ws && at < close,
+                "{pin} must be a SIBLING of the viewport inside .consoles-tab (#338)"
             );
         }
 
@@ -4566,8 +4580,15 @@ mod tests {
             // deletion of the maximize machinery would satisfy every "no longer
             // contains" pin below and must be red, not green.
             "function syncMaxLock(",
+            // The POSITIVE half of the `reveal()` change: the negative pin below
+            // is one spelling and a requote would slip past it, and scenario 4
+            // (the only behavioural gate) does not run in CI.
+            r#"if (it.classList.contains("maximized")) return it;"#,
         ] {
-            assert!(js.contains(pin), "wb-console.js must keep the #338 pin {pin}");
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #338 pin {pin}"
+            );
         }
         assert!(
             !js.contains(r#"if (ws.classList.contains("maxlock")) return it;"#),
