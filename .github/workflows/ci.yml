@@ -57,6 +57,12 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
 
+      # `cargo test` runs one test binary at a time, and this workspace has ~50;
+      # nextest schedules every test across one pool instead. It does not run
+      # doctests, hence the separate `--doc` step below.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Build
         run: cargo build --workspace --release
 
@@ -76,9 +82,14 @@ jobs:
             done ) &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
-          cargo test --workspace --release
+          cargo nextest run --workspace --release
 
       - name: Test
         if: runner.os == 'Windows'
         # PTY tests drive cmd.exe on Windows (portable-pty).
-        run: cargo test --workspace --release
+        run: cargo nextest run --workspace --release
+
+      # Nextest cannot run doctests. The workspace has none today, so this is a
+      # cheap backstop that keeps the gate honest the day someone adds one.
+      - name: Doctests
+        run: cargo test --workspace --release --doc

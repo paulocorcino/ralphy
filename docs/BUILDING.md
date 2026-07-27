@@ -35,8 +35,29 @@ repo needs at runtime:
 To run the test suite:
 
 ```bash
-cargo test
+cargo nextest run --workspace   # the gate CI runs
+cargo test --workspace          # same tests, ~50% slower
 ```
+
+[cargo-nextest](https://nexte.st/) (`cargo install cargo-nextest --locked`) is
+what CI runs and what you want locally. `cargo test` executes one test binary at
+a time; this workspace has ~50 of them, so the cores sit idle while the long
+ones — the queue-lifecycle tests, which shell out to `git` for every scenario —
+run alone. Nextest schedules every test across a single pool. Measured on a
+12-core Windows box: **190s → ~130s**.
+
+Nextest does not run doctests, so CI keeps a separate `cargo test --doc` step.
+
+Two notes for anyone chasing a slow suite, both measured on Windows:
+
+- The suite is bound by **process creation**, not by Rust. A bare `git --version`
+  spawn costs ~68ms here against ~15-25ms on a box whose antivirus is not
+  inspecting the build tree. Excluding the repo's `target/`, `~/.cargo`, and the
+  `rustc`/`cargo`/`git`/`link` executables from real-time scanning is the single
+  biggest lever, and it is the operator's call to make.
+- Dependencies build optimized in dev (`[profile.dev.package."*"]` in the root
+  `Cargo.toml`) because the daemon's PBKDF2 tests are otherwise the slowest in
+  the workspace. That override does not touch CI, which tests in `--release`.
 
 ## CI & releases
 
@@ -44,9 +65,10 @@ Two GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
 
 - **`ci.yml`** — runs on every push to `main` and every PR. A `lint` job checks
   formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
-  Linux, and a `test` matrix builds and runs the suite in release mode on **both
-  `windows-latest` and `ubuntu-latest`** (the PTY tests drive `cmd.exe` on Windows
-  and `sh` on Linux).
+  Linux, and a `test` matrix builds and runs the suite (via `cargo nextest run`,
+  plus a `cargo test --doc` step for the doctests nextest skips) in release mode
+  on **both `windows-latest` and `ubuntu-latest`** (the PTY tests drive `cmd.exe`
+  on Windows and `sh` on Linux).
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

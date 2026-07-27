@@ -40,7 +40,11 @@ buses. Don't add them.
 
 - **The green gate is CI's gate.** Before considering a change done:
   `cargo fmt --check`, `cargo clippy -- -D warnings` (warnings are errors), and
-  `cargo test`. All three must pass.
+  `cargo nextest run --workspace`. All three must pass. Nextest is what CI runs
+  (`cargo install cargo-nextest --locked`) and is ~50% faster than `cargo test`
+  here, which runs this workspace's ~50 test binaries one at a time; `cargo test`
+  still works and gates the same tests. See [docs/BUILDING.md](./docs/BUILDING.md)
+  if the suite feels slow — on Windows it is bound by process creation, not Rust.
 - **Cross-platform, always.** CI builds and tests on **both Windows and Linux**.
   No POSIX-only assumptions; no shell-script test children — subprocess/PTY
   behaviour is tested against a Rust helper bin (see CONTEXT.md → *Testing

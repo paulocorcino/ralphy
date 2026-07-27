@@ -66,3 +66,16 @@ ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# Build *dependencies* optimized even in dev/test, while the workspace crates
+# stay at opt-level 0 so our own edit-compile loop stays fast. Dependencies are
+# compiled once and cached, so this costs one rebuild and nothing after.
+#
+# The daemon's password path is PBKDF2-HMAC-SHA1 at 1.3M iterations
+# (`password.rs`), so its tests pay that cost for real and unoptimized crypto
+# makes them the slowest tests in the workspace. Measured on the full suite:
+# `password::tests::hash_round_trips_through_string` 32.2s -> 20.1s,
+# `auth::tests::session_login_requires_password_when_set` 32.9s -> 20.8s,
+# whole run 133.6s -> 123.5s.
+[profile.dev.package."*"]
+opt-level = 3
