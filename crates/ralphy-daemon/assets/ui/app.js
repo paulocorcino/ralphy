@@ -269,6 +269,14 @@ function shell() {
         // The sidebar refresh button is the Changes count's manual reload (#307).
         if (this.openSlug) this.loadChanges(this.openSlug);
         if (this.openSlug) this.loadSync(this.openSlug);
+        // The rows the `x-for` just built carry `data-lucide` placeholders (the
+        // chevron; the branch chip's glyph) and nothing else converts them: the
+        // one unconditional `createIcons` runs at `alpine:initialized`, which is
+        // BEFORE this fetch resolves. Without this line the project list paints
+        // iconless until the operator's first click happens to hit a handler
+        // that re-scans the document (#332). In `finally`, not the `r.ok` branch
+        // — the file:// demo keeps its seed rows and needs them drawn too.
+        this.$nextTick(() => window.lucide?.createIcons());
       }
     },
 
@@ -902,6 +910,11 @@ function shell() {
         // A transport failure is a read failure, not an idle project.
         this.runsByProject[slug] = [];
         this.runsError = String(err?.message || err || "could not reach the daemon");
+      } finally {
+        // Same defect as `loadRepos` (#332): the panel body is `x-if` on
+        // `projectRuns().length`, so its icons exist only once THIS read lands —
+        // and `toggleRuns()`'s `$nextTick` already fired, before the fetch.
+        this.$nextTick(() => window.lucide?.createIcons());
       }
     },
 
