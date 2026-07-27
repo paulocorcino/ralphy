@@ -4815,4 +4815,237 @@ mod tests {
             );
         }
     }
+
+    /// The body of one Alpine method in `app.js`, sliced from its opener to the
+    /// first four-space-indented `},` — the file's method terminator. Whole-file
+    /// `contains` is useless for these pins: `createIcons()` alone appears at
+    /// twenty-two sites, so a check that does not scope to the method it is
+    /// about passes no matter which one regressed.
+    fn js_method_body<'a>(js: &'a str, opener: &str) -> &'a str {
+        js.split_once(opener)
+            .unwrap_or_else(|| panic!("app.js must define `{opener}`"))
+            .1
+            .split_once("\n    },")
+            .unwrap_or_else(|| panic!("`{opener}` must close at method indent"))
+            .0
+    }
+
+    /// The body of one CSS rule, sliced from its selector to the closing brace.
+    fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
+        css.split_once(selector)
+            .unwrap_or_else(|| panic!("styles.css must define `{selector}`"))
+            .1
+            .split_once('}')
+            .unwrap_or_else(|| panic!("the `{selector}` block must close"))
+            .0
+    }
+
+    /// The one unconditional `createIcons()` runs at `alpine:initialized`, which
+    /// is BEFORE either of these reads resolves — so the rows and the panel body
+    /// each contain `data-lucide` placeholders that global scan already passed
+    /// over, and they stayed blank until an unrelated handler happened to
+    /// re-scan the document (#332).
+    #[test]
+    fn the_loaders_convert_the_icons_they_cause_to_exist() {
+        let js = include_str!("../assets/ui/app.js");
+        for opener in ["async loadRepos() {", "async hydrateRuns() {"] {
+            let body = js_method_body(js, opener);
+            assert!(
+                body.contains("createIcons()"),
+                "`{opener}` mutates state an x-for/x-if renders `data-lucide` \
+                 from, so it must convert them itself; found: {body:?}"
+            );
+        }
+    }
+
+    /// A repo with no `origin` is keyed `path-<hash>` (ADR-0008 D7). That stays
+    /// the identity; only the LABEL becomes the directory basename (#332).
+    #[test]
+    fn a_remoteless_project_is_labelled_by_its_directory() {
+        let js = include_str!("../assets/ui/app.js");
+        let load = js_method_body(js, "async loadRepos() {");
+        assert!(
+            load.contains("path: x.path"),
+            "`loadRepos` must keep `/api/repos`'s path — the label reads it; \
+             found: {load:?}"
+        );
+
+        let label = js_method_body(js, "repoLabel(p) {");
+        for (needle, why) in [
+            (
+                r#"startsWith("path-")"#,
+                "only a remoteless slug is relabelled",
+            ),
+            (
+                r#"includes("/")"#,
+                "a real GitHub repo named `owner/path-utils` must NOT be \
+                 relabelled off disk",
+            ),
+            (
+                r"split(/[\\/]/)",
+                "both separators — this ships on Windows and Linux",
+            ),
+            (
+                r"replace(/[\\/]+$/",
+                "trailing separators go first, or `C:\\src\\widget\\` basenames \
+                 to the empty string and the row loses its name",
+            ),
+        ] {
+            assert!(
+                label.contains(needle),
+                "`repoLabel` must contain {needle:?} — {why}; found: {label:?}"
+            );
+        }
+
+        let filter = js_method_body(js, "filteredProjects() {");
+        assert!(
+            filter.contains("repoLabel("),
+            "the filter must match the VISIBLE label: typing what the row prints \
+             and getting an empty list is the defect a directory label would \
+             otherwise introduce; found: {filter:?}"
+        );
+
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains(r#"x-text="repoLabel(p)""#),
+            "the row must render the label through `repoLabel`"
+        );
+        assert!(
+            html.contains(r#":title="p.slug""#),
+            "the label is a view concern; `.project-slug`'s own title must stay \
+             the canonical ADR-0008 D7 slug (the browser tests locate a row by it)"
+        );
+    }
+
+    /// A twenty-character label in a column fixed at 300px wrapped the row to
+    /// two lines (#332).
+    #[test]
+    fn the_project_name_truncates_instead_of_wrapping() {
+        let css = include_str!("../assets/ui/styles.css");
+        let body = css_rule_body(css, ".project-slug {");
+        for (decl, why) in [
+            (
+                "flex: 1 1 auto",
+                "the name is the row's ONE elastic child — it is what anchors \
+                 .chg-badge now the branch chip's `margin-left: auto` has gone",
+            ),
+            (
+                "min-width: 0",
+                "a flex item does not shrink below its content without it; that, \
+                 not the missing ellipsis, is what produced the wrap",
+            ),
+            ("overflow: hidden", "the clip the ellipsis needs"),
+            ("text-overflow: ellipsis", "the truncation marker"),
+            ("white-space: nowrap", "one line"),
+        ] {
+            assert!(
+                body.contains(decl),
+                ".project-slug must declare {decl} — {why}; found: {body:?}"
+            );
+        }
+    }
+
+    /// The chip MOVED out of the row and into the Files bar (#332). Neither
+    /// block nests a `<div>`, so slicing each to its first `</div>` is exact.
+    #[test]
+    fn the_branch_chip_lives_in_the_files_bar_not_the_project_row() {
+        let html = include_str!("../assets/ui/index.html");
+        let slice = |open: &str| -> String {
+            html.split_once(open)
+                .unwrap_or_else(|| panic!("index.html must carry `{open}`"))
+                .1
+                .split_once("</div>")
+                .unwrap_or_else(|| panic!("the `{open}` block must close"))
+                .0
+                .to_string()
+        };
+
+        let row = slice(r#"class="project-head""#);
+        // Proves the slice LANDED. Without it the negative below passes
+        // vacuously on any mis-sliced or empty string.
+        assert!(
+            row.contains("project-slug"),
+            "the .project-head slice must contain the project name; found: {row:?}"
+        );
+        assert!(
+            !row.contains("branch-chip"),
+            "the branch chip must not sit in the row — capped at 48% of a 300px \
+             column it cost the project name half its width; found: {row:?}"
+        );
+        assert!(
+            row.contains("rowTitle(p)"),
+            "a collapsed row shows no branch while `filteredProjects` still \
+             matches on branch, so it must name the branch in its title; \
+             found: {row:?}"
+        );
+
+        let files = slice(r#"class="side-head files-sec""#);
+        for needle in [
+            r#"class="branch-chip""#,
+            "openBranchModal(p)",
+            "createHere('file')",
+        ] {
+            assert!(
+                files.contains(needle),
+                "the Files bar must carry {needle:?} — the chip keeps its \
+                 switcher behaviour and the bar keeps its own actions; \
+                 found: {files:?}"
+            );
+        }
+        assert_eq!(
+            html.matches(r#"class="branch-chip""#).count(),
+            1,
+            "the chip was MOVED, not copied — two would let the row and the bar \
+             disagree about the branch"
+        );
+
+        // `.side-head` uppercases and letter-spaces its label; a branch name is
+        // case-sensitive, so `feat/UI` would render as a ref that does not exist.
+        let css = include_str!("../assets/ui/styles.css");
+        let chip = css_rule_body(css, ".files-sec .branch-chip {");
+        for decl in [
+            "text-transform: none",
+            "letter-spacing: normal",
+            "max-width: none",
+        ] {
+            assert!(
+                chip.contains(decl),
+                ".files-sec .branch-chip must declare {decl}; found: {chip:?}"
+            );
+        }
+
+        let js = include_str!("../assets/ui/app.js");
+        assert!(
+            js.contains("rowTitle(p) {"),
+            "app.js must define the row's composite title"
+        );
+    }
+
+    /// The sidebar's left edge was ragged (0.8rem for the headers, search box
+    /// and rows; 0.5rem for the Changes toolbar and compose box), so tightening
+    /// only the project row would have made it worse. One token, six rules
+    /// (#332). `.runs-head` keeps its own value: it is not this column.
+    #[test]
+    fn the_sidebar_column_keeps_one_gutter() {
+        let css = include_str!("../assets/ui/styles.css");
+        assert!(
+            css.contains("--side-gutter:"),
+            "the column's gutter must be a token, so it moves once"
+        );
+        for selector in [
+            ".side-head {",
+            ".side-search {",
+            ".project-head {",
+            ".chg-toolbar {",
+            ".side-empty {",
+            ".chg-compose {",
+        ] {
+            let body = css_rule_body(css, selector);
+            assert!(
+                body.contains("var(--side-gutter)"),
+                "`{selector}` shares the sidebar's left edge — a literal value \
+                 here re-rags the column; found: {body:?}"
+            );
+        }
+    }
 }
