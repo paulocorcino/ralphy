@@ -2525,21 +2525,26 @@ mod tests {
             "a rejected upload never reaches the store"
         );
 
-        // The EMPTY array is the dangerous one and a separate leg: it is what a
-        // stale tab PUTs for a desk it believes is empty, and serde's seq path
-        // parsed it as a valid empty upload until `DeskUpload` dropped its
-        // per-field defaults (#340). A 200 here silently deletes every fence.
-        let res = desk_put_raw(dir.path(), "[]".into()).await;
-        assert_eq!(
-            res.status(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "an empty bare array must not read as an empty desk"
-        );
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-            before,
-            "the operator's fences survive a stale client's empty upload"
-        );
+        // Every sequence shape that could satisfy the struct POSITIONALLY, each
+        // its own leg — these are the bodies that wipe the desk when they land,
+        // and each defeats a different half-fix. `[]` needs both fields
+        // defaulted; `[[],[]]` supplies both required fields as two elements and
+        // survived dropping the defaults; a map missing one key is the shape
+        // that goes green again if `#[serde(default)]` is ever restored to a
+        // single field. All three were measured green-then-red on this route.
+        for body in ["[]", "[[],[]]", r#"{"windows":[]}"#, r#"{"fences":[]}"#] {
+            let res = desk_put_raw(dir.path(), body.into()).await;
+            assert_eq!(
+                res.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "`{body}` must not read as a desk upload"
+            );
+            assert_eq!(
+                std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+                before,
+                "the operator's desk survives `{body}`"
+            );
+        }
     }
 
     #[tokio::test]
@@ -4607,15 +4612,24 @@ mod tests {
         let js = include_str!("../assets/ui/wb-console.js");
         for pin in [
             "function fenceSpawnRect(",
+            "function nextFenceSlot(",
             "function renderFences(",
             "function createFence(",
             "function renameFence(",
+            "function removeFence(",
         ] {
             assert!(
                 js.contains(pin),
                 "wb-console.js must keep the #340 pin {pin}"
             );
         }
+        // The plane is sized to windows AND fences (ADR-0051 §2). Reverting this
+        // ONE selector leaves every other test green while a fence past the last
+        // window becomes unreachable — the stage never grows to hold it.
+        assert!(
+            js.contains(r#"querySelectorAll(".session-window, .fence")"#),
+            "applyExtent must fold the fences into the stage extent (#340)"
+        );
         let app = include_str!("../assets/ui/app.js");
         assert!(
             app.contains("newFence("),
@@ -4643,8 +4657,11 @@ mod tests {
             fence.contains("pointer-events: none"),
             "the fence floor is inert — it may never swallow a window gesture (#340)"
         );
+        // The SEMICOLON is load-bearing: a bare `z-index: 1` substring is also
+        // satisfied by `10`, `100` and `1000` — a fence raised over `Z_BASE`
+        // (60), which is the exact defect this pin names.
         assert!(
-            fence.contains("z-index: 1"),
+            fence.contains("z-index: 1;"),
             "a fence draws BELOW every console window (#340)"
         );
         // NEGATIVE CONTROL: "make the whole thing inert" would delete the rename

@@ -2049,16 +2049,23 @@ body.runs-open .runs {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.022);
 }
+/* Shrink-wrapped, NOT the fence's full width: the head is the only part of a
+   fence that takes pointer events, so a band stretched edge to edge would
+   swallow the floor's own pan (`onFloorDown` bails unless the press targets the
+   stage) into a text selection along the top of every fence. */
 .fence-head {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.4rem;
+  width: max-content;
+  max-width: 100%;
 }
 .fence-name {
   pointer-events: auto;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  width: 11rem;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;

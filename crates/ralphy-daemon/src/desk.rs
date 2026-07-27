@@ -82,17 +82,52 @@ pub struct DeskStore {
 /// replaces the operator's layout. The FILE type stays lenient so a `desk.toml`
 /// written by a newer daemon degrades per-field instead of to nothing.
 ///
-/// BOTH fields are REQUIRED, and that is the whole guard: serde deserializes a
-/// struct from a JSON SEQUENCE as well as from a map, so with
-/// `#[serde(default)]` on both the pre-#340 bare array `[]` — what a stale
-/// browser tab PUTs for a desk it thinks is empty — parses as a valid empty
-/// upload and wipes the operator's fences with a `200` (measured, #340).
-/// `deny_unknown_fields` does not cover that path.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// MAP-ONLY, and that is the guard. `#[derive(Deserialize)]` calls
+/// `deserialize_struct`, which `serde_json` satisfies from a JSON SEQUENCE as
+/// well as from an object: the pre-#340 bare array a stale browser tab PUTs for
+/// a desk it thinks is empty then lands as a valid upload and wipes the
+/// operator's fences with a `200`. Measured (#340): with per-field
+/// `#[serde(default)]`, `[]` did it; with both fields required, `[[],[]]` still
+/// did — the two elements satisfy the two fields POSITIONALLY.
+/// `deny_unknown_fields` covers neither. Only calling `deserialize_map` does.
+#[derive(Debug)]
 pub struct DeskUpload {
     pub windows: Vec<DeskRecord>,
     pub fences: Vec<DeskFence>,
+}
+
+impl<'de> Deserialize<'de> for DeskUpload {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            windows: Vec<DeskRecord>,
+            fences: Vec<DeskFence>,
+        }
+
+        struct MapOnly;
+        impl<'de> serde::de::Visitor<'de> for MapOnly {
+            type Value = DeskUpload;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a desk upload object with `windows` and `fences`")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let fields =
+                    Fields::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(DeskUpload {
+                    windows: fields.windows,
+                    fences: fields.fences,
+                })
+            }
+        }
+
+        d.deserialize_map(MapOnly)
+    }
 }
 
 /// The daemon-side cap on desk records. Enforced here rather than trusting the
@@ -159,8 +194,9 @@ pub fn load_from(path: &Path) -> DeskStore {
 /// Finite because TOML writes an infinity as `inf` and serializing it back to
 /// JSON yields `null` — which the shell would render as `"nullpx"`. This is the
 /// BACKSTOP, not the only gate: measured on `serde_json` 1.x, an out-of-range
-/// float literal (`1e999`) dies in the `Json` extractor as `422` ("number out of
-/// range") and never reaches the route (#340).
+/// float literal (`1e999`) dies in the `Json` extractor as a SYNTAX error
+/// ("number out of range"), which axum answers `400`, and never reaches the
+/// route (#340) — same status as this guard's own refusal, different body.
 ///
 /// Non-negative because the stage's origin is pinned at 0,0 and the plane grows
 /// right and down only (ADR-0051 §4): a negative `left`/`top` would mean
@@ -512,6 +548,17 @@ height = 480.0
         for pin in ["**Fence**", "floor tier"] {
             assert!(context.contains(pin), "CONTEXT.md must define {pin} (#340)");
         }
+        // NEGATIVE CONTROL: the entry has to say a fence is DAEMON state and is
+        // never bound to a project — the two claims the whole slice rests on. An
+        // entry reduced to a bare heading would pass the pins above.
+        assert!(
+            context.contains("never bound to a project"),
+            "the **Fence** entry must keep a fence free-form (#340)"
+        );
+        assert!(
+            !context.contains("a fence belongs to a project"),
+            "a fence is never a project's (#340)"
+        );
     }
 
     #[test]

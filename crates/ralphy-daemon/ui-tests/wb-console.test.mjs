@@ -406,3 +406,57 @@ test("fenceSpawnRect: the first six spawn rects are pairwise disjoint", () => {
     }
   }
 });
+
+// Which slot a NEW fence takes. Indexing by `fences.length` reuses a slot after
+// a removal, which is how an overlap ships before ADR-0051 §6 exists to enforce
+// it away — every row below is that bug's oracle.
+const SLOTS = [
+  { name: "the first fence on an empty plane takes slot 0", rects: [], want: 0 },
+  {
+    name: "a second fence takes the next free slot",
+    rects: [{ left: 40, top: 40, width: 720, height: 460 }],
+    want: 1,
+  },
+  {
+    // NEGATIVE CONTROL: `fences.length` answers 2 here and lands the new fence
+    // exactly on the surviving slot-2 rect.
+    name: "after the middle of three is removed, the FREED slot is reused, not the survivor's",
+    rects: [
+      { left: 40, top: 40, width: 720, height: 460 },
+      { left: 40, top: 524, width: 720, height: 460 },
+    ],
+    want: 1,
+  },
+  {
+    name: "a plane whose first four slots are full spills into the fifth",
+    rects: [0, 1, 2, 3].map((i) => ({
+      left: 40 + (i % 2) * 744,
+      top: 40 + Math.floor(i / 2) * 484,
+      width: 720,
+      height: 460,
+    })),
+    want: 4,
+  },
+];
+
+for (const row of SLOTS) {
+  test(`nextFenceSlot: ${row.name}`, () => {
+    assert.equal(load().nextFenceSlot(row.rects, ORIGIN, FENCE_VIEW), row.want);
+  });
+}
+
+test("nextFenceSlot: the slot it picks never overlaps an existing fence", () => {
+  const wb = load();
+  // Three fences with a HOLE at slot 1 — the shape a removal leaves behind.
+  const rects = [0, 2, 3].map((i) => wb.fenceSpawnRect(ORIGIN, FENCE_VIEW, i));
+  const slot = wb.nextFenceSlot(rects, ORIGIN, FENCE_VIEW);
+  const born = wb.fenceSpawnRect(ORIGIN, FENCE_VIEW, slot);
+  const overlaps = (a, b) =>
+    a.left < b.left + b.width &&
+    a.left + a.width > b.left &&
+    a.top < b.top + b.height &&
+    a.top + a.height > b.top;
+  for (const r of rects) {
+    assert.ok(!overlaps(born, r), `slot ${slot} lands on ${JSON.stringify(r)}`);
+  }
+});

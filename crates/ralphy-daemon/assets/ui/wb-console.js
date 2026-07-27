@@ -64,15 +64,32 @@ window.WBConsole = (function () {
   // The desk's second record type (issue #340): named rectangles on the floor
   // tier. Same store, same route, same upload permit as `desk` — a fence is
   // daemon state, so it comes back on any browser.
+  const FENCE_MAX = 12;
   let fences = [];
   let fencesDirty = false;
+  // Fence ids this page deleted; same role as `deskRemoved`.
+  const fencesRemoved = new Set();
+
+  // The fence half of the fold, per id — NOT a wholesale replace. A page that
+  // draws a fence before its own GET lands (the boot race: `deskReady` is issued
+  // at module load and the toolbar is live before it resolves) would otherwise
+  // discard every persisted fence, and the very next flush would write that loss
+  // through. The `deskLoaded` permit does not cover this: it lifts on the line
+  // below, AFTER the discard already happened.
+  function ingestFences(fetched) {
+    if (!fencesDirty) {
+      fences = fetched;
+      return;
+    }
+    const mine = new Set(fences.map((f) => f.id));
+    fences = fetched
+      .filter((f) => !mine.has(f.id) && !fencesRemoved.has(f.id))
+      .concat(fences);
+  }
 
   function ingestDesk(payload) {
     const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
-    // COARSE on purpose: nothing reconciles a fence against a live session, so
-    // there is no per-id merge to do — this page's fences win wholesale once it
-    // has touched them, and otherwise the daemon's are the truth.
-    if (!fencesDirty) fences = Array.isArray(payload?.fences) ? payload.fences : [];
+    ingestFences(Array.isArray(payload?.fences) ? payload.fences : []);
     if (!deskDirty) {
       desk = fetched;
     } else {
@@ -132,8 +149,15 @@ window.WBConsole = (function () {
     deskDirty = true;
     scheduleDeskFlush();
   }
+  // Capped HERE as well as in the daemon: the flush discards the PUT response,
+  // so a client that ignored the cap would show 13 fences while the store held
+  // 12 — and the one the daemon dropped is the oldest by `ts`, not the one the
+  // operator just drew.
   function saveFences(next) {
-    fences = next;
+    const before = new Set(fences.map((f) => f.id));
+    fences = pruneDesk(next, FENCE_MAX);
+    const after = new Set(fences.map((f) => f.id));
+    for (const id of before) if (!after.has(id)) fencesRemoved.add(id);
     fencesDirty = true;
     scheduleDeskFlush();
   }
@@ -730,6 +754,29 @@ window.WBConsole = (function () {
     };
   }
 
+  function rectsOverlap(a, b) {
+    return (
+      (a?.left || 0) < (b?.left || 0) + (b?.width || 0) &&
+      (a?.left || 0) + (a?.width || 0) > (b?.left || 0) &&
+      (a?.top || 0) < (b?.top || 0) + (b?.height || 0) &&
+      (a?.top || 0) + (a?.height || 0) > (b?.top || 0)
+    );
+  }
+
+  // Which grid slot a NEW fence takes, pure: the first one no existing fence
+  // occupies. Indexing by `fences.length` instead would reuse a slot after a
+  // removal — drop the middle of three and the next fence lands exactly on the
+  // survivor, shipping the overlap ADR-0051 §6 does not yet enforce away.
+  // Bounded by the slots a free one can hide in; the fallback is the old rule.
+  function nextFenceSlot(rects, offset, viewport) {
+    const taken = rects || [];
+    for (let i = 0; i <= taken.length; i++) {
+      const candidate = fenceSpawnRect(offset, viewport, i);
+      if (!taken.some((t) => rectsOverlap(candidate, t))) return i;
+    }
+    return taken.length;
+  }
+
   // ---- the fence floor ---------------------------------------------------------
   // A fence is a stage child on a tier BELOW every window (`z-index: 1` against
   // `Z_BASE`), and `pointer-events: none` on the box makes "never intercepts a
@@ -773,11 +820,18 @@ window.WBConsole = (function () {
   function renderFences() {
     const st = stage();
     if (!st) return;
+    // Index the DOM by id rather than building an attribute SELECTOR from one:
+    // an id is daemon data (a hand-edited `desk.toml` can carry any string) and
+    // one quote in it throws a SyntaxError out of here — which is called from
+    // `restoreDesk` right before `applyExtent`, so the whole restore, the
+    // landing and the settle latch would all be skipped, swallowed by the outer
+    // `.catch`, on every load thereafter.
+    const nodes = new Map();
+    for (const el of st.querySelectorAll(".fence")) nodes.set(el.dataset.fenceId, el);
     const seen = new Set();
     for (const f of fences) {
       seen.add(f.id);
-      const el =
-        st.querySelector(`.fence[data-fence-id="${f.id}"]`) || buildFence(f);
+      const el = nodes.get(f.id) || buildFence(f);
       const r = f.rect || {};
       el.style.left = (r.left || 0) + "px";
       el.style.top = (r.top || 0) + "px";
@@ -786,21 +840,28 @@ window.WBConsole = (function () {
       const name = el.querySelector(".fence-name");
       if (name && name !== document.activeElement) name.value = f.name || "";
     }
-    for (const el of st.querySelectorAll(".fence")) {
-      if (!seen.has(el.dataset.fenceId)) el.remove();
+    for (const [id, el] of nodes) {
+      if (!seen.has(id)) el.remove();
     }
   }
 
   function createFence() {
     const ws = workspace();
-    const rect = fenceSpawnRect(
-      { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
-      { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
-      fences.length,
+    const offset = { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 };
+    const viewport = { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
+    const slot = nextFenceSlot(
+      fences.map((f) => f.rect),
+      offset,
+      viewport,
     );
     saveFences(
       fences.concat([
-        { id: newFenceId(), name: `Fence ${fences.length + 1}`, rect, ts: Date.now() },
+        {
+          id: newFenceId(),
+          name: `Fence ${slot + 1}`,
+          rect: fenceSpawnRect(offset, viewport, slot),
+          ts: Date.now(),
+        },
       ]),
     );
     renderFences();
@@ -1887,6 +1948,10 @@ window.WBConsole = (function () {
       }
       // The desk landed but the windows are already up, so `restoreDesk` is not
       // called and nothing else would put the just-loaded fences on the stage.
+      // Gated on the permit: with a REFUSED load `fences` is whatever this page
+      // drew, and rendering it here would strip nothing but prove nothing —
+      // worse, it presents a partial desk as the restored one.
+      if (!deskLoaded) return;
       renderFences();
       applyExtent();
     });
@@ -1910,6 +1975,7 @@ window.WBConsole = (function () {
     reveal,
     afterLogin,
     fenceSpawnRect,
+    nextFenceSlot,
     createFence,
     renameFence,
     removeFence,

@@ -17,6 +17,10 @@ Scenario 4   the fences reached the daemon's store as their own `[[fences]]`
              records, with the names and rects the screen shows
 Scenario 5   a FRESH browser profile re-measures both fences dict-equal — this
              is where the evidence screenshot is taken
+Scenario 5b  the `×` removes a fence from the screen AND from the store
+Scenario 5c  a fence seeded far out SIZES the plane with no window beside it
+Scenario 5d  a page whose desk GET was REFUSED neither overwrites the saved
+             fences nor discards them once the read succeeds again
 Scenario 6   the daemon enforces the fence cap (13 in → `f2..f13`) and refuses an
              off-plane origin without touching the store
 Scenario 7   a corrupt `desk.toml` degrades to an EMPTY stage, not a failure
@@ -295,7 +299,11 @@ def main():
             # ===== scenario 2: draw two fences and name them =================
             page = desk_page(ctx)
             settle_windows(page, 1)
-            check("the legacy window restored onto the stage", len(fence_dom(page)) == 0)
+            check(
+                "the pre-#340 desk restores its window and draws no fence",
+                page.evaluate("() => document.querySelectorAll('.session-window').length") == 1
+                and len(fence_dom(page)) == 0,
+            )
 
             page.get_by_title("draw a named fence on the plane").click()
             page.wait_for_timeout(300)
@@ -450,8 +458,40 @@ def main():
             page.evaluate("() => { document.getElementById('workspace').scrollLeft = 0; }")
             page.wait_for_timeout(400)
 
+            # The pan surface must survive right of the name field too: the head
+            # is the only part of a fence that takes pointer events, so a band
+            # stretched edge to edge would swallow the pan into a text selection.
+            head = page.evaluate(
+                "() => { const f = document.querySelectorAll('.fence')[1];"
+                " const h = f.querySelector('.fence-head');"
+                " return { headWidth: h.offsetWidth, fenceWidth: f.offsetWidth,"
+                "   right: h.getBoundingClientRect().right,"
+                "   top: h.getBoundingClientRect().top + h.offsetHeight / 2 }; }"
+            )
+            check(
+                "the fence head is shrink-wrapped, not the fence's full width",
+                head["headWidth"] < head["fenceWidth"] * 0.75,
+                f"head={head['headWidth']} fence={head['fenceWidth']}",
+            )
+            hit_beside = page.evaluate(
+                "(p) => { const el = document.elementFromPoint(p.x, p.y);"
+                "  return el && el.id; }",
+                {"x": head["right"] + 40, "y": head["top"]},
+            )
+            check(
+                "…so a press level with the name, just right of it, still reaches the stage",
+                hit_beside == "stage",
+                f"elementFromPoint gave id={hit_beside}",
+            )
+
             # ===== scenario 4: they reached the daemon's own store ===========
-            page.wait_for_timeout(800)
+            # Poll the store rather than sleeping past the 250 ms debounce: a
+            # flat wait is a coin flip under load.
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                if desk_file.exists() and desk_file.read_text(encoding="utf-8").count("[[fences]]") == 2:
+                    break
+                time.sleep(0.3)
             text = desk_file.read_text(encoding="utf-8")
             check(
                 "the desk store holds exactly two [[fences]] records",
@@ -517,11 +557,123 @@ def main():
             check("the evidence screenshot is on disk", os.path.exists(SHOT), SHOT)
             fresh_ctx.close()
 
+            # ===== scenario 5b: the × removes a fence, store included ========
+            # Park the window well clear first: a console is `z >= 60` and so
+            # covers a fence's controls wherever they meet, which is the tier
+            # working — but it makes the × unclickable by a REAL click, and this
+            # check is about the button, not the z-order (proved in scenario 3).
+            page.evaluate(
+                "() => { const w = document.querySelector('.session-window');"
+                "  w.style.left = '3000px'; w.style.top = '3000px'; }"
+            )
+            page.wait_for_timeout(200)
+            page.get_by_title("draw a named fence on the plane").click()
+            page.wait_for_function(
+                "() => document.querySelectorAll('.fence').length === 3", timeout=10000
+            )
+            page.wait_for_timeout(400)
+            page.locator(".fence .fence-drop").nth(2).click()
+            page.wait_for_function(
+                "() => document.querySelectorAll('.fence').length === 2", timeout=10000
+            )
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                if desk_file.read_text(encoding="utf-8").count("[[fences]]") == 2:
+                    break
+                time.sleep(0.3)
+            check(
+                "the × removes a fence from the screen AND from the daemon's store",
+                desk_file.read_text(encoding="utf-8").count("[[fences]]") == 2,
+                f"got={desk_file.read_text(encoding='utf-8').count('[[fences]]')}",
+            )
+            ctx.close()
+            time.sleep(1.0)
+
+            # ===== scenario 5c: a fence SIZES the plane =======================
+            # `applyExtent` folds `.fence` in alongside `.session-window`
+            # (ADR-0051 §2). Seeded far out with NO windows at all, the extent
+            # can only come from the fence: revert that one selector and the
+            # stage stays viewport-sized while the fence sits unreachable past
+            # its edge. STAGE_MARGIN is 200.
+            far = fence_json("f-far", "far away", 9)
+            far["rect"] = {"left": 4000.0, "top": 40.0, "width": 720.0, "height": 460.0}
+            http("PUT", "api/desk", {"windows": [], "fences": [far]})
+            far_ctx = browser.new_context(viewport=dict(VIEW))
+            far_page = desk_page(far_ctx)
+            far_page.wait_for_function(
+                "() => document.querySelectorAll('.fence').length === 1", timeout=15000
+            )
+            far_page.wait_for_timeout(600)
+            plane = far_page.evaluate(
+                "() => { const st = document.getElementById('stage');"
+                "  const f = document.querySelector('.fence');"
+                "  return { stage: st.offsetWidth, right: f.offsetLeft + f.offsetWidth,"
+                "    windows: document.querySelectorAll('.session-window').length }; }"
+            )
+            check(
+                "a restored fence with no window beside it still sizes the plane",
+                plane["windows"] == 0
+                and plane["right"] == 4720
+                and plane["stage"] >= plane["right"] + 200,
+                f"stage={plane['stage']} fence right={plane['right']} windows={plane['windows']}",
+            )
+            far_ctx.close()
+            time.sleep(1.0)
+
+            # ===== scenario 5d: a REFUSED desk read must not wipe the fences ==
+            # The window twin of this is `wb_desk_327.py` scenario 8. `PUT
+            # /api/desk` replaces the desk WHOLESALE and the pre-login `GET`
+            # answers 401, so a page that could not READ the fences must never
+            # WRITE over them — and must not discard them once the read succeeds
+            # either, which is the half a wholesale-replace ingest gets wrong.
+            seeded = [fence_json("f-keep-a", "kept a", 5), fence_json("f-keep-b", "kept b", 6)]
+            http("PUT", "api/desk", {"windows": [], "fences": seeded})
+            blind_ctx = browser.new_context(viewport=dict(VIEW))
+            blind = blind_ctx.new_page()
+            blind.route(
+                "**/api/desk",
+                lambda route: (
+                    route.fulfill(status=401, body="unauthorized")
+                    if route.request.method == "GET"
+                    else route.continue_()
+                ),
+            )
+            blind.goto(BASE)
+            blind.wait_for_selector("[x-data]", timeout=8000)
+            blind.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            blind.wait_for_timeout(1200)
+            blind.get_by_title("draw a named fence on the plane").click()
+            blind.wait_for_timeout(1500)
+            after_blind = [f["id"] for f in json.loads(http("GET", "api/desk")[1])["fences"]]
+            check(
+                "a page whose desk read was REFUSED does not overwrite the saved fences",
+                after_blind == [f["id"] for f in seeded],
+                f"want={[f['id'] for f in seeded]} got={after_blind}",
+            )
+            # And the guard lifts: once a read succeeds, the page's own fence
+            # joins the saved ones instead of REPLACING them.
+            blind.unroute("**/api/desk")
+            blind.evaluate("() => window.WBConsole.afterLogin()")
+            blind.wait_for_timeout(1000)
+            blind.get_by_title("draw a named fence on the plane").click()
+            blind.wait_for_timeout(1800)
+            resumed = [f["id"] for f in json.loads(http("GET", "api/desk")[1])["fences"]]
+            check(
+                "…and once it is readable again the saved fences SURVIVE the merge",
+                all(f["id"] in resumed for f in seeded),
+                f"want to keep={[f['id'] for f in seeded]} got={resumed}",
+            )
+            check(
+                "…with this page's own fences added, not swapped in",
+                len(resumed) > len(seeded),
+                f"got={resumed}",
+            )
+            blind_ctx.close()
+            time.sleep(1.0)
+
             # ===== scenario 6: the daemon's own guards ======================
             # Every page closed FIRST: a live shell debounces its own PUT and
             # would race the uploads below.
-            ctx.close()
-            time.sleep(1.0)
 
             many = {
                 "windows": [],
@@ -621,7 +773,10 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 28
+    # The floor is the REAL count, not a loose lower bound: scenario 3 is 10
+    # checks and scenario 5 is 5, so a floor set well under the total lets a
+    # whole scenario stop running while the suite still exits 0.
+    ok = all(results) and len(results) >= 46
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE IS DESK STATE")
