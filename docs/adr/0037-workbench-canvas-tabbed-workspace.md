@@ -5,6 +5,8 @@ flagged as a candidate ADR by the workbench build guide; extracted from
 `crates/ralphy-daemon/assets/ui/`).
 Amended by #305: the fixed tab is renamed Agents → Consoles (display name and
 identifier `consoles`); the decision itself is unchanged.
+Amended by #342: **Arrange** is retired from the strip's console controls in §2
+— tiling now lives in each fence's own chrome, per ADR-0051 §7.
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
