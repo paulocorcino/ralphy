@@ -471,6 +471,18 @@
                it scrolls over; wb-console.js appends the floating console windows
                into the stage and sizes it from their bbox (issue #336). -->
           <div id="workspace"><div id="stage"></div></div>
+          <!-- FRAME chrome (issue #338, ADR-0051 §5): siblings of `#workspace`,
+               never children of `#stage`. Inside the plane they would pan away
+               with the content; here they resolve against `.consoles-tab` and
+               stay put while the operator scrolls. -->
+          <div class="canvas-empty" x-show="consoleCount === 0" x-cloak>
+            No consoles open
+            <small x-text="'New console · ' + shortcutLabel(1)"></small>
+          </div>
+          <div class="canvas-foot">
+            <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
+            <span class="pill" x-text="'stage ' + stageW + ' × ' + stageH"></span>
+          </div>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file

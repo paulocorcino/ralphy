@@ -2131,6 +2131,11 @@ function shell() {
     windowMenu: false,
     windowList: [],
     consoleCount: 0,
+    // The stage extent, mirrored for the frame's footer pill (issue #338). The
+    // plane is invisible until it is measured, so the pill is what makes "the
+    // stage grew" legible without a devtools inspection.
+    stageW: 0,
+    stageH: 0,
     // The design-system confirm dialog (replaces window.confirm). `askConfirm`
     // opens it and returns a promise resolved by the operator's choice.
     confirmModal: {
@@ -3157,6 +3162,16 @@ function getShell() {
 document.addEventListener("workbench:consoles-changed", (e) => {
   const c = getShell();
   if (c) c.consoleCount = e.detail.count;
+});
+
+// …and of the stage extent, for the frame's second footer pill (issue #338).
+// `wb-console.js` only emits this when a number actually changed — a drag folds
+// the extent per mousemove.
+document.addEventListener("workbench:stage-extent", (e) => {
+  const c = getShell();
+  if (!c) return;
+  c.stageW = e.detail.width;
+  c.stageH = e.detail.height;
 });
 
 // A viewer asked to detach → open the popup and close the tab.

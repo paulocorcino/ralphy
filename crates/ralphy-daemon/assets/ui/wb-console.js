@@ -329,6 +329,10 @@ window.WBConsole = (function () {
     ws.classList.toggle("maxlock", !!st.querySelector(".session-window.maximized"));
   }
 
+  // The last extent published to the shell, so the dispatch below can be an
+  // edge and not a level.
+  let lastExtent = { width: 0, height: 0 };
+
   function applyExtent(opts) {
     const ws = workspace();
     const st = stage();
@@ -349,6 +353,15 @@ window.WBConsole = (function () {
     const height = opts?.grow ? Math.max(ext.height, st.offsetHeight) : ext.height;
     st.style.width = width + "px";
     st.style.height = height + "px";
+    // Publish the extent to the frame's footer pill (issue #338). ONLY on a real
+    // change: a drag folds the extent on every mousemove, and an unconditional
+    // dispatch would re-render Alpine per frame for an unchanged pair.
+    if (width !== lastExtent.width || height !== lastExtent.height) {
+      lastExtent = { width, height };
+      document.dispatchEvent(
+        new CustomEvent("workbench:stage-extent", { detail: { width, height } }),
+      );
+    }
   }
 
   function focusWin(win) {

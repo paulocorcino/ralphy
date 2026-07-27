@@ -1037,6 +1037,11 @@ body.runs-open .runs {
   background: var(--console-bg);
   border-color: var(--console-border);
 }
+/* FRAME chrome (issue #338): both of these are siblings of `#workspace` inside
+   `.consoles-tab`, so `position:absolute` resolves against the FRAME
+   (`.consoles-tab { position:absolute; inset:0 }`, below) and not against the
+   plane the viewport scrolls over — panning moves the windows, never the pills
+   or the hint. */
 .canvas-empty {
   position: absolute;
   inset: 0;
@@ -1058,6 +1063,13 @@ body.runs-open .runs {
   display: flex;
   gap: 0.5rem;
   color: var(--text-muted);
+  /* Between the two tiers it sits across: above the floating consoles (whose
+     focus counter is capped at Z_CEIL 120, wb-console.js) so a maximized
+     full-bleed cannot bury the pills, and below the runs panel (150, :458).
+     Non-interactive, so a pill can never eat a click or a selection drag meant
+     for the terminal underneath it. */
+  z-index: 130;
+  pointer-events: none;
 }
 .pill {
   border: 1px solid var(--border);

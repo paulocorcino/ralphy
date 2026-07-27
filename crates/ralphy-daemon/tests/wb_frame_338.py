@@ -272,6 +272,32 @@ def main():
                 f"got={place['empty']}",
             )
 
+            # The pills are the plane made legible: both read live shell state, so
+            # a literal here is an oracle over `consoleCount` AND `stageExtent`.
+            pills = page.evaluate(
+                "() => { const f = document.querySelector('.canvas-foot');"
+                "  const e = document.querySelector('.canvas-empty');"
+                "  return { pills: [...f.querySelectorAll('.pill')].map((s) => s.textContent.trim()),"
+                "    footVisible: f.offsetParent !== null,"
+                "    emptyShown: e.offsetParent !== null }; }"
+            )
+            check(
+                "the first pill counts the open consoles",
+                pills["pills"][:1] == ["2 consoles"],
+                f"got={pills['pills']}",
+            )
+            check(
+                f"…and the second reads the stage extent ({STAGE_W} × {STAGE_H})",
+                pills["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
+                f"got={pills['pills']}",
+            )
+            check("…on a foot that is really on screen", pills["footVisible"], f"got={pills}")
+            check(
+                "the empty-stage hint is hidden while consoles are open",
+                not pills["emptyShown"],
+                f"got={pills}",
+            )
+
             ctx.close()
             browser.close()
     finally:
