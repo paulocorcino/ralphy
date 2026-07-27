@@ -4523,6 +4523,71 @@ mod tests {
         }
     }
 
+    /// The FRAME chrome over that plane (#338): the footer pills and the
+    /// empty-stage hint belong to `.consoles-tab`, never to `#stage`, and the
+    /// maximize pin is a DERIVED fact. Same bargain as the two above — neither
+    /// `node --test` nor Playwright runs in CI, so this is the only gate that
+    /// notices the chrome sliding back onto the plane.
+    #[test]
+    fn shell_pins_the_frame_chrome() {
+        let html = include_str!("../assets/ui/index.html");
+        // The stage element is EMPTY in the markup, so the chrome physically
+        // cannot be a child of it — a stronger pin than "is not inside" prose.
+        assert!(
+            html.contains(r#"<div id="stage"></div>"#),
+            "the stage must stay an empty element the shell fills (#338)"
+        );
+        let tab = html
+            .find(r#"class="consoles-tab""#)
+            .expect("index.html must keep the consoles tab (#338)");
+        // `#viewers` is the first thing AFTER the section closes, so an offset
+        // between the two is inside the tab.
+        let after = html
+            .find(r#"id="viewers""#)
+            .expect("index.html must keep the viewers pane (#338)");
+        for pin in [r#"class="canvas-foot""#, r#"class="canvas-empty""#] {
+            let at = html
+                .find(pin)
+                .unwrap_or_else(|| panic!("index.html must carry the frame chrome {pin} (#338)"));
+            assert!(
+                at > tab && at < after,
+                "{pin} must sit inside .consoles-tab, not on the plane (#338)"
+            );
+        }
+
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function syncMaxPin(",
+            // The REGISTRATION, not the function: without it the pin is only
+            // re-derived on a maximize and a programmatic pan desyncs it.
+            r#"ws.addEventListener("scroll", syncMaxPin)"#,
+            "workbench:stage-extent",
+            // The NEGATIVE control: the scroll freeze must SURVIVE. A blanket
+            // deletion of the maximize machinery would satisfy every "no longer
+            // contains" pin below and must be red, not green.
+            "function syncMaxLock(",
+        ] {
+            assert!(js.contains(pin), "wb-console.js must keep the #338 pin {pin}");
+        }
+        assert!(
+            !js.contains(r#"if (ws.classList.contains("maxlock")) return it;"#),
+            "reveal() must pan the plane while maximized — Go-to is the path (#338)"
+        );
+
+        let css = include_str!("../assets/ui/styles.css");
+        let foot = css
+            .split_once("\n.canvas-foot {")
+            .expect("styles.css must keep the .canvas-foot rule (#338)")
+            .1;
+        let foot = &foot[..foot.find('}').expect("the .canvas-foot rule must close")];
+        for pin in ["pointer-events: none", "z-index: 130"] {
+            assert!(
+                foot.contains(pin),
+                "the .canvas-foot rule must keep {pin} — above the consoles, inert to the pointer (#338)"
+            );
+        }
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.
