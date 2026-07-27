@@ -2094,6 +2094,38 @@ body.runs-open .runs {
   border-color: var(--border-focus);
   color: var(--text);
 }
+/* The two gesture handles (issue #341). Both opt back INTO pointer events, and
+   both are small on purpose: the box and the head stay inert, so the floor's own
+   pan still works everywhere else over a fence. */
+.fence-grab {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  cursor: move;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.15rem;
+  user-select: none;
+}
+.fence-grab:hover {
+  color: var(--text);
+}
+.fence-grip {
+  pointer-events: auto;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: se-resize;
+}
+/* Refused: the fence overlaps another one and this drop will be reverted. A
+   solid `--danger` border against the resting dashed one, so the feedback reads
+   at a glance mid-gesture. */
+.fence-invalid {
+  border-style: solid;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
 
 /* --- floating console windows (mirrors the daemon UI chrome) -------------- */
 .session-window {

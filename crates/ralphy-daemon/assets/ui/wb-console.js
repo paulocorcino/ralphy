@@ -860,6 +860,14 @@ window.WBConsole = (function () {
     el.dataset.fenceId = f.id;
     const head = document.createElement("div");
     head.className = "fence-head";
+    // Two SMALL opt-in handles rather than an interactive head or box: the head
+    // is the only pointer-taking band, and a full-width one would swallow the
+    // floor's own pan (`onFloorDown` bails unless the press targets the stage).
+    const grab = document.createElement("span");
+    grab.className = "fence-grab";
+    grab.title = "move this fence";
+    grab.textContent = "⠿";
+    grab.addEventListener("mousedown", startFenceMove(el, f));
     const name = document.createElement("input");
     name.className = "fence-name";
     name.setAttribute("aria-label", "fence name");
@@ -876,10 +884,190 @@ window.WBConsole = (function () {
     drop.title = "remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", () => removeFence(f.id));
-    head.append(name, drop);
-    el.append(head);
+    head.append(grab, name, drop);
+    const grip = document.createElement("div");
+    grip.className = "fence-grip";
+    grip.title = "resize this fence";
+    grip.addEventListener("mousedown", startFenceResize(el, f));
+    el.append(head, grip);
     stage()?.append(el);
     return el;
+  }
+
+  // ---- the fence gestures (issue #341) -----------------------------------------
+  // Both gestures read the fence's rect from the DOM, never from the captured
+  // `f`: `buildFence` runs once and `f.rect` goes stale the first time the fence
+  // moves. Only `f.id` is taken from the closure.
+  //
+  // INVARIANT, honoured on EVERY exit path (mouseup, the `ev.buttons === 0`
+  // lost-mouseup recovery, and `window` blur): the document listeners are
+  // removed and the gesture is finalized EXACTLY ONCE, whether the drop is
+  // accepted or refused. `done` is what makes a doubled exit — blur then
+  // mouseup — a no-op instead of a second persist or a second revert.
+  function fenceEl(id) {
+    const st = stage();
+    if (!st) return null;
+    for (const el of st.querySelectorAll(".fence")) {
+      if (el.dataset.fenceId === id) return el;
+    }
+    return null;
+  }
+
+  function startFenceMove(el, f) {
+    return (e) => {
+      if (e.button !== 0) return; // primary button only — see makeDraggable
+      const st = stage();
+      if (!st) return;
+      const start = restoreRect(el);
+      // Membership is computed ONCE, at mousedown, and frozen for the gesture:
+      // recomputing per move makes windows join and leave under the cursor as
+      // the fence sweeps the plane, and the drop would carry a set nobody chose.
+      const all = [...st.querySelectorAll(".session-window")].map((w) => ({
+        el: w,
+        id: w._deskId,
+        rect: restoreRect(w),
+      }));
+      const ids = new Set(fenceMembership([{ id: f.id, rect: start }], all)[f.id] || []);
+      const carried = all.filter((m) => ids.has(m.id));
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let delta = { dx: 0, dy: 0 };
+      let fits = true;
+      let done = false;
+      const onMove = (ev) => {
+        if (ev.buttons === 0) {
+          onUp();
+          return;
+        }
+        const d = fenceMoveDelta(
+          { dx: ev.clientX - startX, dy: ev.clientY - startY },
+          start,
+          carried.map((m) => m.rect),
+        );
+        const rect = { ...start, left: start.left + d.dx, top: start.top + d.dy };
+        fits = fenceFits(fences, { id: f.id, rect });
+        el.classList.toggle("fence-invalid", !fits);
+        el.style.left = rect.left + "px";
+        el.style.top = rect.top + "px";
+        // A refused position previews the FENCE (that is the feedback) but never
+        // the members: dragging over a neighbour must not shuffle its windows.
+        if (fits) {
+          delta = d;
+          for (const m of carried) {
+            m.el.style.left = m.rect.left + d.dx + "px";
+            m.el.style.top = m.rect.top + d.dy + "px";
+          }
+        }
+        applyExtent({ grow: true });
+      };
+      const onUp = () => {
+        if (done) return;
+        done = true;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        window.removeEventListener("blur", onUp);
+        el.classList.remove("fence-invalid");
+        // Refuse, do NOT snap: the fence and everything it carries go back to
+        // where the gesture began and nothing is persisted.
+        if (!fits) {
+          el.style.left = start.left + "px";
+          el.style.top = start.top + "px";
+          for (const m of carried) {
+            m.el.style.left = m.rect.left + "px";
+            m.el.style.top = m.rect.top + "px";
+          }
+          applyExtent();
+          return;
+        }
+        saveFences(
+          fences.map((x) =>
+            x.id === f.id
+              ? {
+                  ...x,
+                  rect: { ...start, left: start.left + delta.dx, top: start.top + delta.dy },
+                  ts: Date.now(),
+                }
+              : x,
+          ),
+        );
+        renderFences();
+        // Each member persists EXACTLY ONCE, here — a `persistWin` per mousemove
+        // would upload N records per frame for a gesture with one outcome.
+        for (const m of carried) persistWin(m.el);
+        applyExtent();
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      window.addEventListener("blur", onUp);
+      e.preventDefault();
+      e.stopPropagation();
+    };
+  }
+
+  // Resize moves the FENCE only — never a member. A window whose centre falls
+  // outside the new rect simply stops being reported by `fenceMembership`, which
+  // is the whole point of deriving membership instead of storing it.
+  function startFenceResize(el, f) {
+    return (e) => {
+      if (e.button !== 0) return;
+      const st = stage();
+      if (!st) return;
+      const start = restoreRect(el);
+      // Captured ONCE, for `startResize`'s reason (line ~1027): a live re-read
+      // feeds the extent this gesture grows back in as its own bound.
+      const bounds = { width: st.offsetWidth, height: st.offsetHeight };
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let out = start;
+      let fits = true;
+      let done = false;
+      const onMove = (ev) => {
+        if (ev.buttons === 0) {
+          onUp();
+          return;
+        }
+        const next = resizeRect(
+          "se",
+          start,
+          { dx: ev.clientX - startX, dy: ev.clientY - startY },
+          FENCE_MIN,
+          bounds,
+        );
+        fits = fenceFits(fences, { id: f.id, rect: next });
+        if (fits) out = next;
+        el.classList.toggle("fence-invalid", !fits);
+        el.style.left = next.left + "px";
+        el.style.top = next.top + "px";
+        el.style.width = next.width + "px";
+        el.style.height = next.height + "px";
+        applyExtent({ grow: true });
+      };
+      const onUp = () => {
+        if (done) return;
+        done = true;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        window.removeEventListener("blur", onUp);
+        el.classList.remove("fence-invalid");
+        const rect = fits ? out : start;
+        el.style.left = rect.left + "px";
+        el.style.top = rect.top + "px";
+        el.style.width = rect.width + "px";
+        el.style.height = rect.height + "px";
+        if (!fits) {
+          applyExtent();
+          return;
+        }
+        saveFences(fences.map((x) => (x.id === f.id ? { ...x, rect, ts: Date.now() } : x)));
+        renderFences();
+        applyExtent();
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      window.addEventListener("blur", onUp);
+      e.preventDefault();
+      e.stopPropagation();
+    };
   }
 
   // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
@@ -922,12 +1110,25 @@ window.WBConsole = (function () {
       offset,
       viewport,
     );
+    const spawn = fenceSpawnRect(offset, viewport, slot);
+    // `nextFenceSlot` runs out of free slots eventually (and a moved fence can
+    // sit anywhere, not on the grid). REFUSE then — do not nudge the new fence
+    // into whatever gap is left, which is a position the operator never chose.
+    if (!fenceFits(fences, { id: null, rect: spawn })) {
+      const hit = fences.find((x) => rectsOverlap(spawn, x.rect || {}));
+      const el = hit && fenceEl(hit.id);
+      if (el) {
+        el.classList.add("fence-invalid");
+        setTimeout(() => el.classList.remove("fence-invalid"), 600);
+      }
+      return;
+    }
     saveFences(
       fences.concat([
         {
           id: newFenceId(),
           name: `Fence ${slot + 1}`,
-          rect: fenceSpawnRect(offset, viewport, slot),
+          rect: spawn,
           ts: Date.now(),
         },
       ]),

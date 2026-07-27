@@ -4672,6 +4672,63 @@ mod tests {
         );
     }
 
+    /// A fence is a GROUP (#341): derived membership, non-overlap, and the two
+    /// gestures that carry it. Same reason as the pin above — neither the node
+    /// table nor the Playwright suite runs in CI, so this is the only gate that
+    /// fails when this slice is deleted or renamed.
+    #[test]
+    fn shell_fences_are_a_group() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function fenceMembership(",
+            "function fenceFits(",
+            "function fenceMoveDelta(",
+            "function startFenceMove(",
+            "function startFenceResize(",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #341 pin {pin}"
+            );
+        }
+        // Membership is DERIVED, never stored: the only fence id in the shell is
+        // the fence element's OWN `data-fence-id`. A desk record that carried one
+        // is exactly the state that can disagree with the geometry.
+        let persist = js
+            .split_once("function persistWin(")
+            .expect("wb-console.js must keep persistWin")
+            .1;
+        assert!(
+            !persist[..persist.find("\n  }").expect("persistWin must close")].contains("fence"),
+            "no window record may carry a stored fence id (#341)"
+        );
+        let css = include_str!("../assets/ui/styles.css");
+        let rule = |head: &str| -> String {
+            let after = css
+                .split_once(head)
+                .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
+                .1;
+            after[..after.find('}').expect("the rule must close")].to_string()
+        };
+        // Both handles opt back IN, against a `.fence`/`.fence-head` that stay
+        // inert — that pair is the whole hit-test contract of this slice.
+        for head in ["\n.fence-grab {", "\n.fence-grip {"] {
+            assert!(
+                rule(head).contains("pointer-events: auto"),
+                "{head} must take pointer events — it is a gesture handle (#341)"
+            );
+        }
+        assert!(
+            rule("\n.fence-head {").contains("width: max-content"),
+            "the head stays shrink-wrapped — a full-width band swallows the floor pan (#340/#341)"
+        );
+        // The refusal must be VISIBLE: a silent revert reads as a dropped drag.
+        assert!(
+            rule("\n.fence-invalid {").contains("var(--danger)"),
+            "a refused fence drop must show feedback, not just revert (#341)"
+        );
+    }
+
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright
     /// runs in CI, so this is the only CI-visible gate that the deletion stays
     /// deleted — a re-added clamp would pass every unit test in the tree.
