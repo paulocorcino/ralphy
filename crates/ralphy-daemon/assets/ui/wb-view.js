@@ -25,7 +25,20 @@ window.WBView = (function () {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-      return parsed;
+      // A record from a future (or corrupt) version is not ours to interpret.
+      if (parsed.v !== 1) return null;
+      // NORMALISED, not merely returned: both callers run before anything is on
+      // screen, and `for (const t of stored.tabs)` on a `tabs` that is a number
+      // throws straight into the boot path — the failure mode this whole
+      // try/catch exists to prevent, one level down.
+      return {
+        ...parsed,
+        tabs: Array.isArray(parsed.tabs) ? parsed.tabs : [],
+        off:
+          parsed.off && typeof parsed.off === "object" && !Array.isArray(parsed.off)
+            ? parsed.off
+            : null,
+      };
     } catch {
       return null;
     }

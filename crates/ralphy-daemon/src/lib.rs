@@ -4652,13 +4652,19 @@ mod tests {
             // persisted and the landing has nothing to restore.
             r#"ws.addEventListener("scroll", saveOffset)"#,
         ] {
-            assert!(js.contains(pin), "wb-console.js must keep the #339 pin {pin}");
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #339 pin {pin}"
+            );
         }
 
         // Tree-wide, not just the two modules above: any non-vendor asset that
-        // starts naming `localStorage` is a second store by definition.
+        // starts naming `localStorage` is a second store by definition. `.html`
+        // is swept too — both shells carry inline `<script>` blocks, so a store
+        // could grow there without touching a single `.js`.
         for path in embedded_ui_paths() {
-            if !path.ends_with(".js") || path.starts_with("vendor/") || path == "wb-view.js" {
+            let scanned = path.ends_with(".js") || path.ends_with(".html");
+            if !scanned || path.starts_with("vendor/") || path == "wb-view.js" {
                 continue;
             }
             let src = UI

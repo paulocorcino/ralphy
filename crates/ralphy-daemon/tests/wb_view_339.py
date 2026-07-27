@@ -200,6 +200,31 @@ def view_box(page):
     )
 
 
+def stage_extent(page):
+    return page.evaluate(
+        "() => { const st = document.getElementById('stage');"
+        "  return { width: st.offsetWidth, height: st.offsetHeight }; }"
+    )
+
+
+def bbox_landing(box, ext, rects_):
+    """The landing `viewLanding` owes for these rects — centre the bbox, clamp.
+
+    Derived from the LIVE viewport and extent rather than hard-coded, so this is
+    an oracle over the rule and not a transcription of one observed run.
+    """
+    left = min(r["left"] for r in rects_)
+    top = min(r["top"] for r in rects_)
+    right = max(r["left"] + r["width"] for r in rects_)
+    bottom = max(r["top"] + r["height"] for r in rects_)
+    want_l = left + (right - left) / 2 - box["clientWidth"] / 2
+    want_t = top + (bottom - top) / 2 - box["clientHeight"] / 2
+    return (
+        max(0, min(want_l, ext["width"] - box["clientWidth"])),
+        max(0, min(want_t, ext["height"] - box["clientHeight"])),
+    )
+
+
 def shows(box, rect):
     """Does `rect` (stage coordinates) intersect the viewport placed at `box`?"""
     return (
@@ -361,6 +386,16 @@ def main():
                 shows(box, FIX_A) and shows(box, FIX_B),
                 f"a={shows(box, FIX_A)} b={shows(box, FIX_B)}",
             )
+            # The EXACT pair the rule owes, derived from the live viewport and
+            # extent. Without this, a landing centred on ONE rect satisfies every
+            # assertion above — FIX_B is visible from FIX_A's centring and vice
+            # versa, so a `bboxOf` returning its first rect would pass the lot.
+            want = bbox_landing(box, stage_extent(page), [FIX_A, FIX_B])
+            check(
+                "…on the UNION's centre exactly, not on either window's own",
+                (box["scrollLeft"], box["scrollTop"]) == want,
+                f"want={want} got={box['scrollLeft']},{box['scrollTop']}",
+            )
             ctx.close()
 
             # ===== scenario 3: pan + two file tabs survive a reload ============
@@ -370,13 +405,13 @@ def main():
             PAN_TO = (1500, 850)
             ctx = fresh_context(browser, {"width": 1400, "height": 900})
             page = desk_page(ctx, {"width": 1400, "height": 900})
+            landing_here = bbox_landing(view_box(page), stage_extent(page), [FIX_A, FIX_B])
             pan_to(page, *PAN_TO)
             before = view_box(page)
             check(
-                "the pan is a REAL offset, not the landing it replaced",
-                (before["scrollLeft"], before["scrollTop"]) == PAN_TO
-                and (before["scrollLeft"], before["scrollTop"]) != (1774, 983),
-                f"got={before['scrollLeft']},{before['scrollTop']}",
+                "the pan is a REAL offset, and one the bbox landing would NOT produce",
+                (before["scrollLeft"], before["scrollTop"]) == PAN_TO and PAN_TO != landing_here,
+                f"got={before['scrollLeft']},{before['scrollTop']} landing={landing_here}",
             )
             readme_id = open_file_tab(page, slug, "README.md")
             notes_id = open_file_tab(page, slug, "notes.md")
@@ -503,6 +538,33 @@ def main():
                 f" +{small['clientWidth']}x{small['clientHeight']}",
             )
 
+            # ----- scenario 5b: a stored offset that shows NOTHING degrades ----
+            # The falsifying half of the smaller-screen criterion, in a browser
+            # rather than only in the node table: 0,0 is a well-formed stored
+            # offset under which no window is on screen. Drop the intersection
+            # test and the page boots pinned at the corner of an empty plane.
+            page.evaluate(
+                f"() => {{ const r = JSON.parse(localStorage.getItem({VIEW_KEY!r}));"
+                f"  r.off = {{ left: 0, top: 0 }};"
+                f"  localStorage.setItem({VIEW_KEY!r}, JSON.stringify(r)); }}"
+            )
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            activate_consoles(page)
+            degraded = view_box(page)
+            want = bbox_landing(degraded, stage_extent(page), [FIX_A, FIX_B])
+            check(
+                "a stored offset showing no window falls back to the bbox landing",
+                (degraded["scrollLeft"], degraded["scrollTop"]) == want,
+                f"want={want} got={degraded['scrollLeft']},{degraded['scrollTop']}",
+            )
+            check(
+                "…which is to say it still shows work, from a stored 0,0",
+                shows(degraded, FIX_A) or shows(degraded, FIX_B),
+                f"view={degraded['scrollLeft']},{degraded['scrollTop']}"
+                f" +{degraded['clientWidth']}x{degraded['clientHeight']}",
+            )
+
             # ===== scenario 6: no DESK in browser storage ======================
             desk_now = json.loads(http("GET", "api/desk")[1])
             check(
@@ -570,7 +632,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 30
+    ok = all(results) and len(results) >= 36
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE VIEW IS PER CLIENT")

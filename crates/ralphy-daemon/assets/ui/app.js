@@ -213,9 +213,15 @@ function shell() {
           if (s.authed) this.restoreView();
         }
       } catch {
-        // The `file://` demo (and an unreachable daemon): `authed` keeps its
-        // `true` seed, so the tabs come back the same way they would with one.
-        this.restoreView();
+        // ONLY the `file://` demo, never a daemon that merely threw. In daemon
+        // mode a thrown `/api/session` means unreachable or restarting — but
+        // `authed` still holds its `true` seed, so restoring here would open N
+        // `file.read` sockets against that same dead daemon, and `fetchContent`
+        // closes a tab whose read fails. Since `closeTab` persists, one
+        // transient failure would permanently erase the operator's tab set.
+        // `submitLogin` draws the same demo-only line for the same reason.
+        // Leaving `_viewRestored` false lets `rehydrateAfterAuth` still restore.
+        if (window.WBMode.isDemo()) this.restoreView();
       }
     },
 
@@ -2898,7 +2904,13 @@ function shell() {
     // stored: a `diff:` tab's two sides are derived from LIVE git state
     // (`WBChanges.diffTarget`), so restoring one would resurrect a review of a
     // diff that may no longer exist.
+    // Set while `restoreView` is opening the stored tabs. `fetchContent` closes
+    // a tab whose read fails, and a daemon restart during the restore burst
+    // would otherwise have those closes REWRITE the store — deleting the very
+    // tabs being restored, with no operator action and no way back.
+    _restoring: false,
     persistView() {
+      if (this._restoring) return;
       const files = this.tabs
         .filter((t) => t.id.startsWith("file:"))
         .map((t) => ({ project: t.project, path: t.path, title: t.title, kind: t.kind }));
@@ -2921,12 +2933,22 @@ function shell() {
       this._viewRestored = true;
       const stored = window.WBView?.read();
       if (!stored) return;
-      for (const t of stored.tabs || []) {
-        if (!t || !t.project || !t.path) continue;
-        this.openTab({ project: t.project, path: t.path, title: t.title || t.path, ftype: t.kind });
+      this._restoring = true;
+      try {
+        for (const t of stored.tabs || []) {
+          if (!t || !t.project || !t.path) continue;
+          this.openTab({ project: t.project, path: t.path, title: t.title || t.path, ftype: t.kind });
+        }
+        const want = stored.active;
+        this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
+      } finally {
+        // The reads themselves are async: hold the suppressor past the microtask
+        // queue so a refusal that lands in the same turn cannot rewrite the
+        // store either. A LATER close (an operator gesture) persists normally.
+        setTimeout(() => {
+          this._restoring = false;
+        }, 3000);
       }
-      const want = stored.active;
-      this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
     },
 
     // --- consoles (the Consoles tab) ----------------------------------------

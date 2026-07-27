@@ -209,10 +209,13 @@ const LAND = [
     want: BBOX_LANDING,
   },
   {
+    // DELIBERATELY not the bbox landing: a `viewLanding` that ignored `stored`
+    // entirely would pass this row if the two coincided, which is the one
+    // mutant the honour path exists to catch.
     name: "a stored offset that still shows a window is honoured verbatim",
-    stored: { left: 1774, top: 963 },
+    stored: { left: 1500, top: 850 },
     rects: LAND_RECTS,
-    want: BBOX_LANDING,
+    want: { left: 1500, top: 850 },
   },
   {
     // NEGATIVE CONTROL: 0,0 is a perfectly well-formed stored offset that shows

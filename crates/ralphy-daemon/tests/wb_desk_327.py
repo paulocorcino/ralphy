@@ -301,6 +301,12 @@ def main():
                 set(keys) <= {VIEW_KEY},
                 f"got={keys}",
             )
+            # `<=`, not `==`: this suite never makes a gesture that WRITES the
+            # view (it drives `SH.active` directly, so `persistView` never runs,
+            # and a 0,0 landing fires no scroll), and an empty store is the
+            # strongest possible pass for "no desk in browser storage". The
+            # non-vacuous shape assertions — where the key is really written —
+            # live in `wb_view_339.py` scenario 6, which uses `==`.
             raw = page.evaluate(f"() => localStorage.getItem({VIEW_KEY!r})") or "{}"
             check(
                 "…whose record carries only the view: v, off, tabs, active",
@@ -357,6 +363,21 @@ def main():
                 "…still holding no browser-side desk key (#339)",
                 set(page_b.evaluate("() => Object.keys(localStorage)")) <= {VIEW_KEY},
                 f"got={page_b.evaluate('() => Object.keys(localStorage)')}",
+            )
+            # The CONTENT too, not only the key name — this is the scenario about
+            # a second browser, so it is where a per-profile desk leak would show.
+            raw_b = page_b.evaluate(f"() => localStorage.getItem({VIEW_KEY!r})") or "{}"
+            leaked_b = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw_b]
+            check(
+                "…and profile B's own record carries none of the desk's vocabulary",
+                leaked_b == [] and set(json.loads(raw_b).keys()) <= {"v", "off", "tabs", "active"},
+                f"leaked={leaked_b} raw={raw_b!r}",
+            )
+            leaked_b_ids = [r["id"] for r in desk_now if r["id"] in raw_b]
+            check(
+                "…nor any id the daemon's desk is serving",
+                leaked_b_ids == [],
+                f"leaked={leaked_b_ids}",
             )
 
             # --- scenario 7: the cap, with the live windows pinned ------------
@@ -489,7 +510,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 34
+    ok = all(results) and len(results) >= 36
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("DESK IS DAEMON STATE")

@@ -403,6 +403,11 @@ window.WBConsole = (function () {
   // needs the extent the same frame's rects imply, or a restored offset would be
   // clamped against a stage that has not grown yet.
   let landed = false;
+  // Whether `restoreDesk` has finished — on ANY of its three exits, including
+  // the demo early return and a failed fetch. It is what lets the latch below
+  // distinguish "the stage is empty because nothing was restored YET" from "the
+  // stage is empty because there is nothing to restore".
+  let deskSettled = false;
   function applyLanding() {
     const ws = workspace();
     const st = stage();
@@ -412,15 +417,22 @@ window.WBConsole = (function () {
     if (!ws.clientWidth || !ws.clientHeight) return;
     const stored = window.WBView?.read()?.off || null;
     if (landed && !stored) return;
+    const rects = [...st.querySelectorAll(".session-window")].map(restoreRect);
     const at = viewLanding(
       stored,
-      [...st.querySelectorAll(".session-window")].map(restoreRect),
+      rects,
       { width: ws.clientWidth, height: ws.clientHeight },
       { width: st.offsetWidth, height: st.offsetHeight },
     );
     ws.scrollLeft = at.left;
     ws.scrollTop = at.top;
-    landed = true;
+    // Latch only once the stage HOLDS something (or is known to be final):
+    // `restoreView` reaches `refitAll` — and so this — after ONE round trip,
+    // while `restoreDesk` needs two plus the window spawn. Latching on that
+    // still-empty frame would make the later, real landing return early at the
+    // guard above, and the operator would boot pinned at 0,0 with every
+    // restored console off-frame.
+    if (rects.length || deskSettled) landed = true;
   }
 
   // The offset half of the store, debounced like the desk flush. SUPPRESSED
@@ -428,21 +440,23 @@ window.WBConsole = (function () {
   // fire `scroll` before the restore, so an unguarded listener would persist 0,0
   // over the operator's stored pan on every boot.
   let offsetFlush = null;
+  let pendingOffset = null;
   function flushOffset() {
-    const ws = workspace();
-    // Guarded HERE, not only where the write is SCHEDULED: the debounce outlives
-    // its own guard. Switching to a file tab inside the 250 ms window hides
-    // `.consoles-tab` (`x-show`), and `display:none` resets the viewport's
-    // offsets to 0 — flushing that would persist the reset as the operator's
-    // chosen view, which is exactly what the landing then refuses to restore.
-    // Measured: a reload with a file tab active stored `off:{0,0}` over a real
-    // 1500,850 pan, ~470 ms after boot.
-    if (!landed || !ws || !ws.clientWidth || !ws.clientHeight) return;
-    window.WBView?.patch({ off: { left: ws.scrollLeft, top: ws.scrollTop } });
+    // Writes the offset CAPTURED at schedule time, never a fresh read. The
+    // debounce outlives its own guard: switching to a file tab inside the
+    // 250 ms window hides `.consoles-tab` (`x-show`), and `display:none` resets
+    // the viewport's offsets to 0 — a flush that re-measured would persist that
+    // reset as the operator's chosen view (measured: `off:{0,0}` stored over a
+    // real 1500,850 pan, ~470 ms after boot), and one that merely bailed would
+    // silently drop the operator's last pan instead.
+    if (!pendingOffset) return;
+    window.WBView?.patch({ off: pendingOffset });
+    pendingOffset = null;
   }
   function saveOffset() {
     const ws = workspace();
-    if (!landed || !ws || !ws.clientWidth) return;
+    if (!landed || !ws || !ws.clientWidth || !ws.clientHeight) return;
+    pendingOffset = { left: ws.scrollLeft, top: ws.scrollTop };
     clearTimeout(offsetFlush);
     offsetFlush = setTimeout(() => {
       offsetFlush = null;
@@ -1457,7 +1471,14 @@ window.WBConsole = (function () {
   // desk untouched — the static demo (and a daemon that is merely unreachable)
   // must not relaunch anything or show phantom placeholders.
   function restoreDesk() {
-    if (!window.WBMode?.isDaemon()) return;
+    // The static demo restores nothing, but its plane is still pannable — so it
+    // must still LAND, or the latch never arms and the offset is never stored
+    // for the life of the page.
+    if (!window.WBMode?.isDaemon()) {
+      deskSettled = true;
+      applyLanding();
+      return;
+    }
     Promise.all([
       deskReady,
       fetch("/api/sessions").then((r) =>
@@ -1491,9 +1512,15 @@ window.WBConsole = (function () {
         // is what gives the restored windows their scroll room — inserting a
         // window is not a resize, so nothing else would fire.
         applyExtent();
+        deskSettled = true;
         applyLanding();
       })
-      .catch(() => {});
+      .catch(() => {
+        // A refused/unreachable desk restores nothing, but the operator can
+        // still open consoles by hand — same reasoning as the demo above.
+        deskSettled = true;
+        applyLanding();
+      });
   }
   // ---- the plane's own gestures ------------------------------------------------
   // Pan by dragging the BARE FLOOR. Deliberately calls neither `applyExtent` nor

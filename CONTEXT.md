@@ -519,6 +519,11 @@ Decided in
 [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§1–4 (issue #336),
 superseding ADR-0050 §4.
 
+_Avoid_: canvas (that is the whole tabbed region, one level up); zoom; clamping
+/ refitting (deleted with `clampAll` — nothing repositions or resizes a window
+on the operator's behalf); infinite canvas (the stage is finite and measured,
+so the scrollbar means something).
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs and which
@@ -532,10 +537,6 @@ a smaller screen still lands on work. Decided in
 [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §8 (issue #339),
 narrowing ADR-0050 §3.
 _Avoid_: browser desk, geometry store, session state.
-_Avoid_: canvas (that is the whole tabbed region, one level up); zoom; clamping
-/ refitting (deleted with `clampAll` — nothing repositions or resizes a window
-on the operator's behalf); infinite canvas (the stage is finite and measured,
-so the scrollbar means something).
 
 **Desk layout**:
 The daemon's record of *what* was open on the **Consoles tab** — one entry per
