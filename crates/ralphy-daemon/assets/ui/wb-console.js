@@ -572,7 +572,12 @@ window.WBConsole = (function () {
     let ws = null;
     let opened = false; // has the CURRENT socket opened
     let everOpened = false; // has ANY socket of this window opened
-    let watching = false; // parked: reattached read-only, not chasing the slot
+    // True on EVERY path into the watcher role: the park at `case
+    // "park-as-watcher"` below, or a caller that attaches read-only from the
+    // start via the documented `{id, watch}` opts shape. The `term.onData`
+    // gate below reads this flag, so a future watch-from-start caller cannot
+    // bypass it by skipping the park transition.
+    let watching = !!opts.watch;
     let announced = null; // the daemon's reason, when it named one before closing
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
@@ -708,6 +713,13 @@ window.WBConsole = (function () {
     }
 
     term.onData((d) => {
+      // The daemon-side drop in `Attachment::write` (session.rs:822) stays as
+      // defence in depth — this gate exists so the operator SEES the refusal
+      // instead of it being silently swallowed server-side (issue #335).
+      if (watching) {
+        if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
+        return;
+      }
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
     });
     term.onResize(({ rows, cols }) => {
@@ -859,6 +871,22 @@ window.WBConsole = (function () {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, closeBtn } = buildChrome(label, repo, desk, kind);
 
+    // Debounced nudge feedback for a keystroke typed into a parked window
+    // (issue #335): repeated typing EXTENDS the pulse rather than stacking
+    // timers, so `clearTimeout` always runs before a new one is scheduled.
+    let nudgeTimer = null;
+    function clearNudge() {
+      if (nudgeTimer) {
+        clearTimeout(nudgeTimer);
+        nudgeTimer = null;
+      }
+      const strip = win.querySelector(".session-parked");
+      if (!strip) return;
+      strip.classList.remove("is-nudged");
+      const hintEl = strip.querySelector(".session-parked-hint");
+      if (hintEl) hintEl.textContent = "";
+    }
+
     const t = attachTerminal(body, {
       ...termOpts,
       // Once the daemon assigns/echoes this window's session id, record it on the
@@ -873,7 +901,9 @@ window.WBConsole = (function () {
         const strip = document.createElement("div");
         strip.className = "session-parked";
         const text = document.createElement("span");
-        text.textContent = "driven in another window";
+        text.textContent = `watching ${label} · ${repo || "home"} — driven in another window`;
+        const hint = document.createElement("span");
+        hint.className = "session-parked-hint";
         const btn = document.createElement("button");
         btn.className = "session-reconnect";
         btn.dataset.act = "take-over";
@@ -882,13 +912,35 @@ window.WBConsole = (function () {
           e.stopPropagation();
           t.takeOver();
         });
-        strip.append(text, btn);
+        strip.append(text, hint, btn);
         win.insertBefore(strip, body);
       },
-      onResume: () => win.querySelector(".session-parked")?.remove(),
+      // A watcher's keystroke never reaches the child (gated in `attachTerminal`);
+      // this pulses the strip so the refusal is SEEN instead of silently swallowed
+      // (issue #335, AC4).
+      onWatchedInput: () => {
+        const strip = win.querySelector(".session-parked");
+        if (!strip) return;
+        clearTimeout(nudgeTimer);
+        strip.classList.add("is-nudged");
+        const hintEl = strip.querySelector(".session-parked-hint");
+        if (hintEl) hintEl.textContent = "input is read-only — take over to type";
+        nudgeTimer = setTimeout(() => {
+          nudgeTimer = null;
+          strip.classList.remove("is-nudged");
+          if (hintEl) hintEl.textContent = "";
+        }, 2000);
+      },
+      onResume: () => {
+        clearNudge();
+        win.querySelector(".session-parked")?.remove();
+      },
       // A session that ENDED is not driven anywhere, so the parked strip's "take
       // over" button would only spin failed attaches at a dead id.
-      onEnded: () => win.querySelector(".session-parked")?.remove(),
+      onEnded: () => {
+        clearNudge();
+        win.querySelector(".session-parked")?.remove();
+      },
     });
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.

@@ -2111,6 +2111,16 @@ body.runs-open .runs {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
+.session-parked-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+/* A static rule, not a keyframe: the pulse a watcher sees when its keystroke is
+   refused (issue #335) — deterministic under a computed-style read. */
+.session-parked.is-nudged {
+  color: var(--danger);
+  border-bottom-color: var(--danger);
+}
 .session-reconnect {
   padding: 0.32rem 0.8rem;
   color: var(--text);
