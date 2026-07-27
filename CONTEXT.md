@@ -468,9 +468,18 @@ the session and its scrollback survive a dropped connection and the browser
 **reattaches** (tmux model). The curated launcher (repo × agent) is the
 product; a **free console** is a separate, explicit session kind. Distinct
 from **Supervised session** (watching a *run's* agent): here the human
-drives; no run is involved.
+drives; no run is involved. A session has exactly one **writer slot** — the
+driver's baton, held by one client at a time and handed over only by an
+explicit operator takeover, never by a reconnect — and any number of
+**watchers**: clients that did not claim the slot, read the same replay and
+broadcast, and whose keystrokes and resizes the daemon drops. When a client
+loses its attachment deliberately the daemon sends an **eviction
+announcement** — the reason (taken over / child exited / daemon shutting down)
+in a data frame BEFORE the close, because the close metadata does not survive
+the trip (issue #334, [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §9).
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
-the session), remote session (too generic).
+the session), remote session (too generic), spectator mode (not a feature — a
+watcher is simply a client that did not claim the writer slot).
 
 **Canvas / Consoles tab**:
 The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
@@ -495,8 +504,7 @@ again, so the layout is reconciled against the live session list on load.
 Restoration is asymmetric on purpose: a **free console** relaunches by itself
 (a shell is free and idempotent), while an agent console returns as a
 **placeholder** the operator reconnects with one click — loading a page must
-never spawn vendor CLIs and spend quota nobody authorised. Client-side and
-per-browser-profile; there is no machine-wide store.
+never spawn vendor CLIs and spend quota nobody authorised.
 _Avoid_: workspace (the DOM element the windows live in), geometry store (the
 retired session-keyed key it replaces).
 
