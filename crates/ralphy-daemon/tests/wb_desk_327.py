@@ -13,8 +13,14 @@ Scenario 4   a desk saved at 1400x900 restores VERBATIM at 800x600 — since #33
              the stage is a plane and the viewport scrolls over it, so an
              off-view window is reached by scrolling, never refitted (the
              `clampAll` this scenario used to assert is deleted)
-Scenario 5   the shell touches no browser storage at all — `localStorage.length`
-             is 0 after the session, and `wb-console.js` names it zero times
+Scenario 5   no DESK in browser storage — the only permitted key is the per-client
+             view `wb.view.v1` (viewport offset + open file tabs), which ADR-0051
+             §8 narrows ADR-0050 §3 to allow: that rejection was of a second copy
+             of the DESK, authoritative in no mode. The stored record's shape, the
+             absence of every desk word, and the absence of every id the daemon is
+             actually serving are all asserted; `wb-console.js` still names the
+             browser store zero times, which now means "the desk module never
+             touches it" (issue #339)
 Scenario 6   a CORRUPT `desk.toml` yields an empty desk, not a startup failure
 Scenario 7   30 uploaded records come back as exactly 24, newest by `ts`, with the
              live windows still present
@@ -26,6 +32,7 @@ Writes docs/screenshots/327-desk-daemon-2026-07-26.png.
 Run: python crates/ralphy-daemon/tests/wb_desk_327.py   (exit 0 = all pass)
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -45,6 +52,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
 CONSOLE_JS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-console.js")
+# The ONE browser key ADR-0051 §8 permits (issue #339) — the per-client view, not
+# a second copy of the desk. Scenario 5 is the assertion of exactly that line.
+VIEW_KEY = "wb.view.v1"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 results = []
@@ -183,8 +193,15 @@ def drag_title(page, index, dx, dy):
     page.wait_for_timeout(400)
 
 
-def desk_page(ctx, viewport=None):
-    """A page on the Consoles tab, with the desk already restored."""
+def desk_page(ctx, viewport=None, at_origin=False):
+    """A page on the Consoles tab, with the desk already restored.
+
+    `at_origin` puts the viewport back on the plane's corner after the landing
+    (issue #339): this suite's subject is the RECTS, and since #336 a maximized
+    window's `offsetLeft` is the viewport pin (`--max-left`), so a page that
+    lands on the bbox of a far-off desk reports the pin, not the stored rect.
+    Zeroing here restores this suite's own origin — it does not weaken anything.
+    """
     page = ctx.new_page()
     if viewport:
         page.set_viewport_size(viewport)
@@ -192,6 +209,12 @@ def desk_page(ctx, viewport=None):
     page.wait_for_selector("[x-data]", timeout=8000)
     page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
     page.wait_for_timeout(1800)
+    if at_origin:
+        page.evaluate(
+            "() => { const ws = document.getElementById('workspace');"
+            "  ws.scrollLeft = 0; ws.scrollTop = 0; }"
+        )
+        page.wait_for_timeout(600)
     return page
 
 
@@ -263,16 +286,42 @@ def main():
                 f"got={served[:200]}",
             )
 
-            # --- scenario 5a: the shell touched no browser storage ------------
-            store_len = page.evaluate("() => localStorage.length")
+            # --- scenario 5a: no DESK in browser storage (#339) ----------------
+            # The desk on the daemon side, read in the SAME breath, so "none of
+            # these ids is in the browser" cannot pass by the desk being empty.
+            desk_now = json.loads(served)
             check(
-                "the shell leaves localStorage completely empty",
-                store_len == 0,
-                f"got={store_len}",
+                "the daemon's desk is non-empty, so the absence below is not vacuous",
+                len(desk_now) == 2,
+                f"records={len(desk_now)}",
+            )
+            keys = page.evaluate("() => Object.keys(localStorage)")
+            check(
+                "browser storage holds nothing but the permitted per-client view key",
+                set(keys) <= {VIEW_KEY},
+                f"got={keys}",
+            )
+            raw = page.evaluate(f"() => localStorage.getItem({VIEW_KEY!r})") or "{}"
+            check(
+                "…whose record carries only the view: v, off, tabs, active",
+                set(json.loads(raw).keys()) <= {"v", "off", "tabs", "active"},
+                f"got={sorted(json.loads(raw).keys())}",
+            )
+            leaked = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw]
+            check(
+                "…and none of the desk's vocabulary reaches the browser",
+                leaked == [],
+                f"leaked={leaked} raw={raw!r}",
+            )
+            leaked_ids = [r["id"] for r in desk_now if r["id"] in raw]
+            check(
+                "…nor any id the daemon's desk is serving right now",
+                leaked_ids == [],
+                f"leaked={leaked_ids} ids={[r['id'] for r in desk_now]}",
             )
             js_hits = Path(CONSOLE_JS).read_text(encoding="utf-8").count("localStorage")
             check(
-                "…because wb-console.js names localStorage zero times",
+                "…and the desk module itself never touches the browser store",
                 js_hits == 0,
                 f"got={js_hits}",
             )
@@ -282,10 +331,11 @@ def main():
 
             # --- scenario 3: a SECOND browser profile restores the desk -------
             ctx_b = browser.new_context(viewport={"width": 1400, "height": 900})
-            page_b = desk_page(ctx_b)
+            page_b = desk_page(ctx_b, at_origin=True)
             check(
-                "a fresh browser profile starts with empty storage",
-                page_b.evaluate("() => localStorage.length") == 0,
+                "a fresh browser profile starts with no desk key of its own (#339)",
+                set(page_b.evaluate("() => Object.keys(localStorage)")) <= {VIEW_KEY},
+                f"got={page_b.evaluate('() => Object.keys(localStorage)')}",
             )
             check(
                 "a second browser restores both windows",
@@ -304,8 +354,9 @@ def main():
                 f"got={maxima(page_b)}",
             )
             check(
-                "…still holding no browser-side desk key",
-                page_b.evaluate("() => localStorage.length") == 0,
+                "…still holding no browser-side desk key (#339)",
+                set(page_b.evaluate("() => Object.keys(localStorage)")) <= {VIEW_KEY},
+                f"got={page_b.evaluate('() => Object.keys(localStorage)')}",
             )
 
             # --- scenario 7: the cap, with the live windows pinned ------------
@@ -438,7 +489,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 22
+    ok = all(results) and len(results) >= 34
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("DESK IS DAEMON STATE")
