@@ -450,6 +450,28 @@ window.WBConsole = (function () {
     };
   }
 
+  // ---- navigating the plane ----------------------------------------------------
+  // The scroll offsets that bring `target` (a STAGE-relative rect) into the
+  // viewport, as a pure function: centre it, then clamp to `[0, extent -
+  // viewport]`. It ALWAYS centres — a scroll-into-view-if-needed would need a
+  // visibility predicate neither caller wants. Two callers: `reveal` below (the
+  // Go-to picker, issue #337) and ADR-0051 §7's fence jump, where clicking a
+  // name slides the viewport to that fence.
+  // The `Math.max(0, …)` ceiling is load-bearing: a viewport bigger than the
+  // extent would otherwise ask for a negative offset, which the DOM swallows.
+  function bringIntoView(target, viewport, extent) {
+    const vw = viewport?.width || 0;
+    const vh = viewport?.height || 0;
+    const maxLeft = Math.max(0, (extent?.width || 0) - vw);
+    const maxTop = Math.max(0, (extent?.height || 0) - vh);
+    const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
+    const top = (target?.top || 0) + (target?.height || 0) / 2 - vh / 2;
+    return {
+      left: Math.max(0, Math.min(left, maxLeft)),
+      top: Math.max(0, Math.min(top, maxTop)),
+    };
+  }
+
   function resizeRect(dir, rect, delta, min, bounds) {
     let { left, top, width, height } = rect;
     const right = rect.left + rect.width;
@@ -1258,6 +1280,7 @@ window.WBConsole = (function () {
     refitAll,
     resizeRect,
     stageExtent,
+    bringIntoView,
     reconnectDecision,
     reconcileDesk,
     pruneDesk,

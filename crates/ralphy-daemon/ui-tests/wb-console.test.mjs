@@ -109,3 +109,80 @@ test("stageExtent mutates neither argument", () => {
   assert.deepEqual(rects, rectsBefore);
   assert.deepEqual(viewport, viewportBefore);
 });
+
+// ---- bringIntoView (issue #337) ---------------------------------------------
+// The scroll offsets that CENTRE a target rect in the viewport, clamped to the
+// extent. Always centres — it is not a scroll-into-view-if-needed (ADR-0051 §7's
+// fence jump wants the same slide for a partially visible target).
+const VIEW = { width: 1000, height: 700 };
+const EXT = { width: 2000, height: 1500 };
+
+const BRING = [
+  {
+    name: "a target already in view is still CENTRED",
+    target: { left: 600, top: 400, width: 200, height: 100 },
+    want: { left: 200, top: 100 },
+  },
+  {
+    name: "off the right edge",
+    target: { left: 1200, top: 400, width: 200, height: 100 },
+    want: { left: 800, top: 100 },
+  },
+  {
+    name: "off the left edge clamps at the pinned origin",
+    target: { left: 0, top: 400, width: 200, height: 100 },
+    want: { left: 0, top: 100 },
+  },
+  {
+    name: "off the bottom edge",
+    target: { left: 600, top: 900, width: 200, height: 100 },
+    want: { left: 200, top: 600 },
+  },
+  {
+    name: "off the top edge clamps at the pinned origin",
+    target: { left: 600, top: 0, width: 200, height: 100 },
+    want: { left: 200, top: 0 },
+  },
+  {
+    name: "a target LARGER than the viewport centres on its own middle",
+    target: { left: 200, top: 100, width: 1600, height: 1200 },
+    want: { left: 500, top: 350 },
+  },
+  {
+    name: "a target at the far corner never scrolls past `extent - viewport`",
+    target: { left: 1800, top: 1350, width: 200, height: 150 },
+    want: { left: 1000, top: 800 },
+  },
+  {
+    // The ceiling itself, un-clamped: distinguishes "clamped at the boundary"
+    // from "the arithmetic happened to land there".
+    name: "a target whose centring lands EXACTLY on the ceiling is not clamped away",
+    target: { left: 1400, top: 1000, width: 200, height: 100 },
+    want: { left: 1000, top: 700 },
+  },
+  {
+    // NEGATIVE CONTROL: drop the `Math.max(0, …)` from the clamp ceiling and
+    // this answers {-200,-100}, which the DOM would silently swallow as 0,0 —
+    // the bug would be invisible in the browser and only ever show up here.
+    name: "a viewport LARGER than the extent yields the origin, never a negative offset",
+    target: { left: 600, top: 400, width: 200, height: 100 },
+    extent: { width: 800, height: 600 },
+    want: { left: 0, top: 0 },
+  },
+];
+
+for (const row of BRING) {
+  test(`bringIntoView: ${row.name}`, () => {
+    const got = load().bringIntoView(row.target, VIEW, row.extent || EXT);
+    assert.deepEqual(got, row.want);
+  });
+}
+
+test("bringIntoView mutates neither argument", () => {
+  const target = { left: 1200, top: 400, width: 200, height: 100 };
+  const viewport = { width: 1000, height: 700 };
+  const extent = { width: 2000, height: 1500 };
+  const before = structuredClone([target, viewport, extent]);
+  load().bringIntoView(target, viewport, extent);
+  assert.deepEqual([target, viewport, extent], before);
+});
