@@ -649,6 +649,17 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `wait_for_function` on `offsetParent !== null && clientWidth > 0`, and repeat
   the `clientWidth > 0` guard inside the assertion itself — the wait proves
   when, the guard proves what.
+- **A terminal's scroll position is `term.buffer.active.viewportY`, never
+  `.xterm-viewport.scrollTop`.** The vendored xterm renders through a
+  monaco-style `.xterm-scrollable-element` that scrolls by transform, so the
+  viewport element never scrolls natively: measured in #337 with 400 lines
+  written, `buffer.active.baseY == 389` while
+  `scrollHeight === clientHeight === 342` and `scrollTop` stays `0`. A
+  `scrollHeight > clientHeight` precondition can therefore never become true
+  (it times out), and — worse — a `scrollTop` oracle reads `0` in BOTH
+  directions, so a wheel test asserting "the terminal scrolled" and "the
+  terminal did not scroll" passes vacuously either way. Gate the precondition
+  on `baseY`, assert on `viewportY`.
 - **A Python smoke script reading a Rust child's stdout on Windows must decode
   it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
   Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not
