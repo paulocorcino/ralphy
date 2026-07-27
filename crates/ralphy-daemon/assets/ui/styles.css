@@ -41,6 +41,13 @@
   --radius: 4px;
   --rail-w: 48px;
   --side-w: 300px;
+  /* One left edge for the whole sidebar column (#332): the section headers, the
+     search box, the project rows, the Changes toolbar and the compose box all
+     read it, so tightening the column is one edit and it can never go ragged.
+     0.55rem splits the 0.8/0.5 disagreement this replaces and still returns 8px
+     per row — and the rows are the widest thing in a track fixed at 300px, so
+     every pixel of chrome is a pixel the project name does not get. */
+  --side-gutter: 0.55rem;
   --runs-w: 400px;
   --topbar-h: 46px;
 }
@@ -206,7 +213,7 @@ body.side-collapsed {
   justify-content: space-between;
   /* match the 40px tab bar / runs header so all three bottom borders line up */
   min-height: 40px;
-  padding: 0 0.8rem;
+  padding: 0 var(--side-gutter);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -214,7 +221,7 @@ body.side-collapsed {
   border-bottom: 1px solid var(--border);
 }
 .side-search {
-  margin: 0.6rem 0.8rem;
+  margin: 0.6rem var(--side-gutter);
   position: relative;
 }
 .side-search [data-lucide] {
@@ -273,8 +280,12 @@ body.side-collapsed {
 .project-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.8rem;
+  /* five children now the chip has gone (chevron · dot · provenance · name ·
+     badge); 0.4rem across four gaps returns another 6px to the name (#332) */
+  gap: 0.4rem;
+  /* vertical is deliberately NOT tokenized — the search box's 0.6rem and the
+     compose box's 0.5rem answer a different question than the row's density */
+  padding: 0.35rem var(--side-gutter);
   cursor: pointer;
   user-select: none;
 }
@@ -1302,7 +1313,7 @@ body.runs-open .runs {
   align-items: center;
   gap: 0.35rem;
   min-height: 28px;
-  padding: 0 0.5rem;
+  padding: 0 var(--side-gutter);
   border-bottom: 1px solid var(--border);
 }
 .chg-toolbar .head-act:disabled {
@@ -1316,7 +1327,7 @@ body.runs-open .runs {
   color: var(--text-muted);
 }
 .side-empty {
-  padding: 0.8rem;
+  padding: 0.8rem var(--side-gutter);
   color: var(--text-muted);
   font-size: 0.78rem;
 }
@@ -1324,7 +1335,7 @@ body.runs-open .runs {
    list's `1 1 auto` keeps it pinned to the sidebar's bottom edge. */
 .chg-compose {
   flex: 0 0 auto;
-  padding: 0.5rem;
+  padding: 0.5rem var(--side-gutter);
   border-top: 1px solid var(--border);
 }
 .chg-msg {
