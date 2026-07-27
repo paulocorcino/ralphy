@@ -475,6 +475,52 @@ window.WBConsole = (function () {
     return out;
   }
 
+  // How many consecutive failed re-opens before a socket is given up on (the
+  // daemon is likely down), and how many a never-opened would-be writer spends
+  // before it settles for watching. Module scope so `reconnectDecision` — the
+  // pure rule below — can be tabled without an `attachTerminal` instance.
+  const MAX_FAILED_REOPENS = 10;
+  const WATCH_AFTER = 3;
+
+  // The reconnect rule, pulled out of `ws.onclose` so it can be tabled (issue
+  // #334). Pure: no DOM, no socket, no timers. Returns exactly one of
+  // "reconnect" / "park-as-watcher" / "give-up".
+  //
+  // `announced` is the daemon's eviction reason when one arrived in a data frame
+  // BEFORE the close ("taken-over" / "child-exited" / "daemon-shutdown"), else
+  // null. It is the only trustworthy signal of a deliberate end: the close
+  // metadata is lost on this path (the browser reports 1005/wasClean=false even
+  // for a served Close frame), which is why an unannounced dirty close is read
+  // as a flaky link and retried.
+  function reconnectDecision({
+    code,
+    wasClean,
+    opened,
+    everOpened,
+    announced,
+    idKnown,
+    failedReopens,
+  }) {
+    // R1: nothing to reattach TO — a fresh launch that dropped before its first
+    // frame has no id, and reconnecting would spawn a SECOND session.
+    if (!idKnown) return "give-up";
+    // R2/R3: the daemon said why. Taken over → the session lives on elsewhere,
+    // so park and watch it; any other reason → it is gone.
+    if (announced === "taken-over") return "park-as-watcher";
+    if (announced != null) return "give-up";
+    if (failedReopens > MAX_FAILED_REOPENS) return "give-up";
+    // R5: a clean/normal close of a socket that DID open is a deliberate server
+    // end even without an announcement (an older daemon, a proxy closing).
+    if (opened && (wasClean || code === 1000 || code === 1001)) return "give-up";
+    // R6: this window has held the session before, so a drop is a flaky link —
+    // keep the existing backoff rather than degrading into a watcher.
+    if (everOpened) return "reconnect";
+    // R7/R8: never opened. Retry as a would-be writer a bounded number of times
+    // (an F5 racing the old bridge's teardown), then settle for watching.
+    if (failedReopens < WATCH_AFTER) return "reconnect";
+    return "park-as-watcher";
+  }
+
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
   // (a NEW free-console launch — home dir when `repo` absent), or {id[, takeover]}
@@ -519,7 +565,6 @@ window.WBConsole = (function () {
     // ended: child exited, taken over, or daemon shutdown).
     const RECONNECT_BASE = 1000;
     const RECONNECT_MAX = 15000;
-    const MAX_FAILED_REOPENS = 10;
     let ws = null;
     let opened = false; // has the CURRENT socket opened
     let firstConnect = true;
@@ -1000,6 +1045,7 @@ window.WBConsole = (function () {
     count,
     refitAll,
     resizeRect,
+    reconnectDecision,
     reconcileDesk,
     pruneDesk,
     reach,
