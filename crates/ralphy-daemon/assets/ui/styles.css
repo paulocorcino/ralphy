@@ -2118,6 +2118,39 @@ body.runs-open .runs {
   height: 14px;
   cursor: se-resize;
 }
+/* The fence's own chrome (issue #342): what it holds and how many, plus the
+   arrange button that replaced the global one. Only the button opts back into
+   pointer events — the two readouts stay inert like the rest of the head. */
+.fence-count {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.fence-repos {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fence-arrange {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-arrange:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
 /* Refused: the fence overlaps another one and this drop will be reverted. A
    solid `--danger` border against the resting dashed one, so the feedback reads
    at a glance mid-gesture. */

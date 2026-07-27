@@ -282,10 +282,14 @@ window.WBConsole = (function () {
     if (i >= 0) records[i] = rec;
     else records.push(rec);
     saveDesk(records);
+    // A window that moved may have joined or left a fence — membership is
+    // derived, so the readouts only change when something re-derives them.
+    refreshFenceChrome();
   }
   function forgetRecord(deskId) {
     if (!deskId) return;
     saveDesk(loadDesk().filter((r) => r.id !== deskId));
+    refreshFenceChrome();
   }
 
   // The restore decision, as a pure fold of the saved layout over the live
@@ -926,13 +930,26 @@ window.WBConsole = (function () {
     name.addEventListener("keydown", (e) => {
       if (e.key === "Enter") name.blur();
     });
+    // Name · count · repos · arrange (issue #342): the fence is where tiling
+    // means something, and the two readouts are what let the operator read a
+    // fence without visiting it. Both are filled by `refreshFenceChrome`.
+    const count = document.createElement("span");
+    count.className = "fence-count";
+    const repos = document.createElement("span");
+    repos.className = "fence-repos";
+    const tile = document.createElement("button");
+    tile.className = "fence-arrange";
+    tile.type = "button";
+    tile.title = "tile this fence's consoles";
+    tile.textContent = "⊞";
+    tile.addEventListener("click", () => arrangeFence(f.id));
     const drop = document.createElement("button");
     drop.className = "fence-drop";
     drop.type = "button";
     drop.title = "remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", () => removeFence(f.id));
-    head.append(grab, name, drop);
+    head.append(grab, name, count, repos, tile, drop);
     const grip = document.createElement("div");
     grip.className = "fence-grip";
     grip.title = "resize this fence";
@@ -1146,6 +1163,39 @@ window.WBConsole = (function () {
     };
   }
 
+  // Re-derive every fence's count/repos readout from the stage (issue #342).
+  // Membership is never stored, so the chrome is a fold of the LIVE rects —
+  // called from `renderFences`, `persistWin` and `forgetRecord`, the three
+  // points every layout mutation already passes through. NOT from
+  // `applyExtent`: that fires per mousemove during a drag, and `offsetLeft` on
+  // a `.tiling` window returns the INTERPOLATED value mid-transition, so a
+  // refresh there would both thrash and read a membership still in flight.
+  function refreshFenceChrome() {
+    const st = stage();
+    if (!st) return;
+    const els = new Map();
+    const live = [];
+    for (const el of st.querySelectorAll(".fence")) {
+      els.set(el.dataset.fenceId, el);
+      live.push({ id: el.dataset.fenceId, rect: restoreRect(el) });
+    }
+    const all = [...st.querySelectorAll(".session-window")].map((w) => ({
+      id: w._deskId,
+      repo: w._deskRepo,
+      rect: restoreRect(w),
+    }));
+    const byId = new Map(all.map((w) => [w.id, w]));
+    const membership = fenceMembership(live, all);
+    for (const [id, el] of els) {
+      const members = (membership[id] || []).map((wid) => byId.get(wid));
+      const n = members.length;
+      const count = el.querySelector(".fence-count");
+      if (count) count.textContent = `${n} console${n === 1 ? "" : "s"}`;
+      const repos = el.querySelector(".fence-repos");
+      if (repos) repos.textContent = fenceRepos(members);
+    }
+  }
+
   // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
   // not written while the operator is typing in it — an in-flight GET would
   // otherwise yank the caret back to a stale value mid-word.
@@ -1175,6 +1225,7 @@ window.WBConsole = (function () {
     for (const [id, el] of nodes) {
       if (!seen.has(id)) el.remove();
     }
+    refreshFenceChrome();
   }
 
   function createFence() {
@@ -2229,54 +2280,86 @@ window.WBConsole = (function () {
     applyLanding();
   }
 
-  // Tile every open console into a grid that fills the VISIBLE region — the
-  // "heavy lifting" button. On a plane, "tile everything" only means anything
-  // within the frame the operator is looking at, so the grid is laid out at the
-  // viewport's current scroll offsets. Windows animate to place via a CSS
-  // transition.
-  function arrange() {
-    const ws = workspace();
+  // Tile ONE fence's members into its own rect (issue #342). On a plane a
+  // global "tile everything" has no target — the stage is larger than the view
+  // — so the act moved into the fence, which is exactly the region that names
+  // the windows it should rearrange. Windows animate to place via the same CSS
+  // transition the global Arrange used.
+  //
+  // The grid is inset by the fence's OWN chrome: the head band at the top and
+  // the SE `.fence-grip` at the bottom sit at `z-index: 1`, BELOW every window,
+  // so a member parked on either makes the fence's controls unhittable — the
+  // arrange button would be usable exactly once and the fence unresizable. The
+  // members are still strictly inside the fence rect.
+  const FENCE_GRIP = 14;
+
+  function arrangeFence(id) {
+    const st = stage();
+    const el = fenceEl(id);
+    if (!st || !el) return;
+    const rect = restoreRect(el);
+    const all = [...st.querySelectorAll(".session-window")].map((w) => ({
+      el: w,
+      id: w._deskId,
+      rect: restoreRect(w),
+    }));
+    // The FULL fence list with this fence's LIVE rect substituted: the fold's
+    // `break` is what decides an overlapping pair, and a singleton list bypasses
+    // it — a window would be tiled here and reported under the other fence.
+    const live = fences.map((x) => (x.id === id ? { id: x.id, rect } : x));
+    const ids = new Set(fenceMembership(live, all)[id] || []);
     // A maximized console is NOT tiled. `.maximized` overrides all four offsets
     // with `!important`, so a tile rect written onto it is invisible on screen
     // while it silently REPLACES the pre-maximize rect the restore button and a
-    // reload read back (measured: 40,40,600,380 -> 460,78,509,790, persisted).
-    // Filtered before `n` so the grid stays hole-free (issue #338).
-    const list = [...wins].filter((w) => !w.classList.contains("maximized"));
-    const n = list.length;
-    if (!n) return;
-    const originX = ws.scrollLeft;
-    const originY = ws.scrollTop;
-    const cols = Math.ceil(Math.sqrt(n));
-    const rows = Math.ceil(n / cols);
-    const gap = 10;
-    const pad = 12;
-    const cw = (ws.clientWidth - pad * 2 - gap * (cols - 1)) / cols;
-    const ch = (ws.clientHeight - pad * 2 - gap * (rows - 1)) / rows;
-    list.forEach((win, i) => {
-      const c = i % cols;
-      const ro = Math.floor(i / cols);
+    // reload read back. Filtered before the grid so it stays hole-free (#338).
+    const members = all
+      .filter((m) => ids.has(m.id) && !m.el.classList.contains("maximized"))
+      .map((m) => m.el);
+    // An empty fence is a NO-OP, not an error.
+    if (!members.length) return;
+    const headH = el.querySelector(".fence-head")?.offsetHeight || 28;
+    const tiles = tileIntoRect(
+      {
+        left: rect.left,
+        top: rect.top + headH,
+        width: rect.width,
+        height: Math.max(0, rect.height - headH - FENCE_GRIP),
+      },
+      members,
+    );
+    members.forEach((win, i) => {
+      const t = tiles[i];
       win.classList.add("tiling");
-      win.style.left = originX + pad + c * (cw + gap) + "px";
-      win.style.top = originY + pad + ro * (ch + gap) + "px";
-      win.style.width = cw + "px";
-      win.style.height = ch + "px";
+      win.style.left = t.left + "px";
+      win.style.top = t.top + "px";
+      win.style.width = t.width + "px";
+      win.style.height = t.height + "px";
       focusWin(win);
       // Tiling is a layout act like any drag: record it, or a reload would replay
-      // the pre-Arrange rects and the desk would silently disagree with the screen.
+      // the pre-arrange rects and the desk would silently disagree with the screen.
       persistWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
     // A maximized console is not tiled, but it must not be BURIED by the tiles
-    // either: a tile fills the frame, and `maxlock` (`overflow:hidden`) leaves
-    // no way to scroll away from a full bleed whose titlebar is covered. Raising
-    // it last keeps its restore button reachable by a real mouse.
+    // either: `maxlock` (`overflow:hidden`) leaves no way to scroll away from a
+    // full bleed whose titlebar is covered. Raising it last keeps its restore
+    // button reachable by a real mouse.
     for (const win of wins) {
       if (win.classList.contains("maximized")) focusWin(win);
     }
-    // AFTER the 0.24s tiling transition: reading `offsetLeft`/`offsetWidth` now
-    // is what STARTS that transition, so an immediate fold would measure the
-    // pre-Arrange rects and size the plane to a layout that no longer exists.
-    setTimeout(applyExtent, 300);
+    // AFTER the 0.24s tiling transition: writing the rects above is what STARTS
+    // it, so an immediate fold would measure the pre-arrange boxes — the plane
+    // would be sized to a layout that no longer exists and the terminals refit
+    // to the box they are still leaving.
+    setTimeout(() => {
+      for (const win of members) {
+        try {
+          win._term?.fit.fit();
+        } catch {}
+      }
+      refreshFenceChrome();
+      applyExtent();
+    }, 300);
   }
 
   function count() {
@@ -2305,7 +2388,7 @@ window.WBConsole = (function () {
 
   return {
     open,
-    arrange,
+    arrangeFence,
     count,
     refitAll,
     resizeRect,

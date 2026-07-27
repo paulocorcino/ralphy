@@ -3012,10 +3012,6 @@ function shell() {
       );
     },
 
-    arrangeConsoles() {
-      WBConsole.arrange();
-    },
-
     // A fence is placed at the viewport's CURRENT offset, so the tab must be on
     // screen to be measured. The button itself lives inside `.canvas-tools`
     // (`x-show="active === 'consoles'"`), so the switch below is a guard for a

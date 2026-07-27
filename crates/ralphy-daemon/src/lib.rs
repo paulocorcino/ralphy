@@ -4694,12 +4694,19 @@ mod tests {
         // Membership is DERIVED, never stored: the only fence id in the shell is
         // the fence element's OWN `data-fence-id`. A desk record that carried one
         // is exactly the state that can disagree with the geometry.
+        // Scoped to the RECORD literal, not to `persistWin`'s whole body: the
+        // body legitimately re-derives the fence chrome after a move (#342), and
+        // what this pin protects is the shape of what is STORED.
         let persist = js
             .split_once("function persistWin(")
             .expect("wb-console.js must keep persistWin")
             .1;
+        let rec = persist
+            .split_once("const rec = {")
+            .expect("persistWin must build the desk record")
+            .1;
         assert!(
-            !persist[..persist.find("\n  }").expect("persistWin must close")].contains("fence"),
+            !rec[..rec.find("\n    };").expect("the record must close")].contains("fence"),
             "no window record may carry a stored fence id (#341)"
         );
         let css = include_str!("../assets/ui/styles.css");
@@ -4726,6 +4733,74 @@ mod tests {
         assert!(
             rule("\n.fence-invalid {").contains("var(--danger)"),
             "a refused fence drop must show feedback, not just revert (#341)"
+        );
+    }
+
+    /// Arrange moved INTO the fence (#342): the global control is retired and
+    /// tiling is a per-fence act over a pure fold. Same reason as the pins
+    /// above — this is the only gate that runs in CI, so a revert of either
+    /// half (the retirement or the fence chrome) fails HERE or nowhere.
+    #[test]
+    fn shell_arranges_into_the_fence() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function tileIntoRect(",
+            "function arrangeFence(",
+            "function fenceRepos(",
+            "function refreshFenceChrome(",
+            "fence-arrange",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #342 pin {pin}"
+            );
+        }
+        // The global act is GONE, not wrapped: a surviving entry point is a
+        // second meaning of "arrange" (ADR-0051 §7). Safe against the pin above
+        // — `"function arrangeFence("` does not contain `"function arrange("`.
+        assert!(
+            !js.contains("function arrange("),
+            "the global arrange must be retired, not kept as a wrapper (#342)"
+        );
+        // The #338 rule — a maximized console is never tiled — has no other home
+        // now that the global arrange is gone. `.maximized` overrides all four
+        // offsets with `!important`, so a tile rect written onto one is
+        // invisible while it silently replaces the rect the restore reads back.
+        let fence_arrange = js
+            .split_once("function arrangeFence(")
+            .expect("wb-console.js must keep arrangeFence")
+            .1;
+        assert!(
+            fence_arrange[..fence_arrange
+                .find("\n  }")
+                .expect("arrangeFence must close")]
+                .contains("maximized"),
+            "arrangeFence must exclude a maximized member from the grid (#338/#342)"
+        );
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            !app.contains("arrangeConsoles"),
+            "the shell's global arrange action must be gone (#342)"
+        );
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            !html.contains("Arrange"),
+            "the canvas toolbar must carry no Arrange control (#342)"
+        );
+        // The fence's arrange button opts back INTO pointer events, against a
+        // `.fence`/`.fence-head` that stay inert — without this the control is
+        // drawn and unclickable, and every other pin here stays green.
+        let css = include_str!("../assets/ui/styles.css");
+        let rule = |head: &str| -> String {
+            let after = css
+                .split_once(head)
+                .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
+                .1;
+            after[..after.find('}').expect("the rule must close")].to_string()
+        };
+        assert!(
+            rule("\n.fence-arrange {").contains("pointer-events: auto"),
+            "the fence's arrange button must take pointer events (#342)"
         );
     }
 
