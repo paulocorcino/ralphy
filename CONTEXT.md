@@ -472,11 +472,14 @@ drives; no run is involved. A session has exactly one **writer slot** — the
 driver's baton, held by one client at a time and handed over only by an
 explicit operator takeover, never by a reconnect — and any number of
 **watchers**: clients that did not claim the slot, read the same replay and
-broadcast, and whose keystrokes and resizes the daemon drops. When a client
-loses its attachment deliberately the daemon sends an **eviction
-announcement** — the reason (taken over / child exited / daemon shutting down)
-in a data frame BEFORE the close, because the close metadata does not survive
-the trip (issue #334, [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §9).
+broadcast, and whose keystrokes and resizes the daemon drops. A watcher's
+keystrokes are refused BY THE CLIENT too — the browser gates its own input and
+names what it is watching in the window, a visible state rather than a
+`confirm()` prompt (issue #335) — with the daemon's drop kept as defence in
+depth. When a client loses its attachment deliberately the daemon sends an
+**eviction announcement** — the reason (taken over / child exited / daemon
+shutting down) in a data frame BEFORE the close, because the close metadata
+does not survive the trip (issue #334, [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §9).
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
 the session), remote session (too generic), spectator mode (not a feature — a
 watcher is simply a client that did not claim the writer slot).
