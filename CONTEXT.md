@@ -498,18 +498,39 @@ _Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
 (the tab holds consoles, not agents; renamed in #305); panel, accordion (the
 Changes section a sidebar view replaced in #317).
 
+**Stage / viewport**:
+The two halves of the **Consoles tab**'s floor. The **stage** is the plane the
+console windows live on: its origin is pinned at `0,0` and it grows right and
+down only, sized to the bounding box of the window rects unioned with the
+viewport plus a margin of drag room (`stageExtent`, one pure function). The
+**viewport** is the fixed box the operator looks through — `#workspace`, an
+`overflow:auto` scroll container over the stage. NOTHING is ever moved or
+resized to fit it: shrinking the browser changes scroll offsets, never a rect,
+and a window past the current edge grows the stage instead of being clipped.
+There is no zoom and no canvas library — the windows are xterm.js under the
+WebGL renderer, whose glyph atlas blurs under `transform: scale()`. The dotted
+floor belongs to the stage, so panning reads as movement rather than as content
+sliding over a background that sits still. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§1–4 (issue #336),
+superseding ADR-0050 §4.
+_Avoid_: canvas (that is the whole tabbed region, one level up); zoom; clamping
+/ refitting (deleted with `clampAll` — nothing repositions or resizes a window
+on the operator's behalf); infinite canvas (the stage is finite and measured,
+so the scrollbar means something).
+
 **Desk layout**:
-The browser's record of *what* was open on the **Consoles tab** — one entry per
+The daemon's record of *what* was open on the **Consoles tab** — one entry per
 console window: a stable client-side window id, its repo, agent, **workbench
-session** kind, rectangle and maximized flag. The daemon's session id is a
-volatile **attribute**, not the key: a restarted daemon issues ids from 1
+session** kind, rectangle (in **stage** pixels) and maximized flag. The daemon's
+session id is a volatile **attribute**, not the key: a restarted daemon issues ids from 1
 again, so the layout is reconciled against the live session list on load.
 Restoration is asymmetric on purpose: a **free console** relaunches by itself
 (a shell is free and idempotent), while an agent console returns as a
 **placeholder** the operator reconnects with one click — loading a page must
 never spawn vendor CLIs and spend quota nobody authorised.
-_Avoid_: workspace (the DOM element the windows live in), geometry store (the
-retired session-keyed key it replaces).
+_Avoid_: workspace (the DOM element — that is the **viewport**, and the windows
+live on the **stage** inside it), geometry store (the retired session-keyed key
+it replaces), browser state (the desk moved into the daemon in ADR-0050).
 
 **Adapter roster**:
 The daemon's own enumeration of the **adapters** it can launch, served read-only

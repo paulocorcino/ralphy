@@ -330,6 +330,27 @@ mod tests {
         assert_eq!(load_from(&path).windows, vec![legacy]);
     }
 
+    /// The ubiquitous language is a deliverable of this issue, not a courtesy —
+    /// and `Desk layout` carried a claim ADR-0050 had already superseded. Pinned
+    /// here so a doc edit that drops either is a red test, not a silent drift.
+    /// Every needle sits on ONE source line of CONTEXT.md: a pin spanning a hard
+    /// wrap is a false red.
+    #[test]
+    fn context_md_names_the_stage_and_the_viewport() {
+        let context = include_str!("../../../CONTEXT.md");
+        for pin in ["**Stage / viewport**", "overflow:auto"] {
+            assert!(context.contains(pin), "CONTEXT.md must define {pin} (#336)");
+        }
+        assert!(
+            context.contains("The daemon's record of"),
+            "the desk lives in the daemon (ADR-0050), not the browser (#336)"
+        );
+        assert!(
+            !context.contains("The browser's record of"),
+            "the pre-ADR-0050 `Desk layout` wording must be corrected (#336)"
+        );
+    }
+
     #[test]
     fn prune_leaves_an_under_cap_desk_untouched() {
         let records: Vec<DeskRecord> = (1..=5).map(|n| record(&format!("w{n}"), n)).collect();

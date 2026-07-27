@@ -68,6 +68,11 @@ monitor and restored on a smaller one needs no special handling, because
 already runs from a `ResizeObserver` on it. Out-of-bounds windows are pulled in
 by machinery that exists.
 
+> **Superseded by [ADR-0051](0051-consoles-stage-plane-and-fences.md) §4 (issue
+> #336).** `clampAll` and its `ResizeObserver` are deleted: the rect stays
+> absolute pixels, but its frame is the **stage**, a plane the viewport scrolls
+> over. An out-of-bounds window is reached by scrolling, never pulled in.
+
 ## Rejected alternatives
 
 - **Keep the desk in `localStorage` and sync it.** Rejected: two stores and a
@@ -81,7 +86,9 @@ by machinery that exists.
   identity to key it by.
 - **A proportional rect (fractions of the workspace) or a desk keyed by
   viewport size.** Rejected: `clampAll` already solves the smaller-screen case,
-  so both are new mechanism for a handled problem.
+  so both are new mechanism for a handled problem. (The rejection stands under
+  [ADR-0051](0051-consoles-stage-plane-and-fences.md) §4, which superseded the
+  reason: the smaller-screen case is now solved by SCROLLING, not by clamping.)
 - **Per-record `POST`/`DELETE` routes.** Rejected: the shell has no per-record
   path to drive them; it already holds the whole desk in hand at every write.
 

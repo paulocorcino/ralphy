@@ -4405,6 +4405,48 @@ mod tests {
         }
     }
 
+    /// The stage/viewport shell (#336). Neither `node --test` nor Playwright
+    /// runs in CI, so this is the only CI-visible gate that the deletion stays
+    /// deleted — a re-added clamp would pass every unit test in the tree.
+    #[test]
+    fn shell_has_no_clamp_and_carries_the_stage() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        assert!(
+            !js.contains("clampAll"),
+            "the clamp-and-refit is deleted, not renamed (#336)"
+        );
+        assert!(
+            !js.contains("observeWorkspace"),
+            "nothing observes the viewport to reposition a window (#336)"
+        );
+        // The NEGATIVE control for the two pins above: the per-window fit
+        // observer must SURVIVE. It resizes a terminal, never a window rect, so
+        // a blanket "no ResizeObserver" edit would be the wrong fix.
+        assert!(
+            js.contains("new ResizeObserver"),
+            "the per-window terminal fit observer must survive the deletion (#336)"
+        );
+        assert!(
+            js.contains("function stageExtent("),
+            "the stage extent is a pure function in the shell (#336)"
+        );
+
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains(r#"id="stage""#),
+            "index.html must carry the stage plane (#336)"
+        );
+        assert!(
+            !html.contains(r#"class="stage""#),
+            "the old tab-body class is renamed .tabbody — one meaning per name (#336)"
+        );
+
+        let css = include_str!("../assets/ui/styles.css");
+        for pin in ["#stage {", "#workspace.maxlock {", ".tabbody {"] {
+            assert!(css.contains(pin), "styles.css must keep the #336 pin {pin}");
+        }
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.
