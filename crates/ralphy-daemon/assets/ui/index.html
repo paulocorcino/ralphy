@@ -476,7 +476,7 @@
               <template x-for="f in fenceItems" :key="f.id">
                 <button class="fence-item" @click="jumpFence(f.id)">
                   <i class="bi bi-bounding-box"></i>
-                  <span x-text="f.name"></span>
+                  <span class="row-name" x-text="f.name"></span>
                   <span class="row-repos" x-show="f.repos" x-text="f.repos"></span>
                   <span class="row-count" x-text="f.count + ' console' + (f.count === 1 ? '' : 's')"></span>
                 </button>
