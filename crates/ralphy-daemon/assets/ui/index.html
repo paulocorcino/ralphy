@@ -110,7 +110,18 @@
         />
       </div>
 
-      <ul class="projects" :class="{ 'has-open': openSlug }">
+      <!-- Every row this `x-for` builds carries `data-lucide` placeholders, and
+           the one unconditional `createIcons` runs at `alpine:initialized` —
+           before the `/api/repos` fetch resolves. Converting them from the
+           loader covers the arrival but not the REBUILD: typing in the search
+           box tears the list down and blanks every icon again. `x-effect` binds
+           the conversion to the list's own contents instead of to one of the
+           routes that change them, so both are covered by one line (#332). -->
+      <ul
+        class="projects"
+        :class="{ 'has-open': openSlug }"
+        x-effect="filteredProjects().length; $nextTick(() => window.lucide?.createIcons())"
+      >
         <template x-for="p in filteredProjects()" :key="p.slug">
           <li class="project" :class="{ open: openSlug === p.slug }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->

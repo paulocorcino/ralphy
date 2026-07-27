@@ -274,14 +274,11 @@ function shell() {
         // The sidebar refresh button is the Changes count's manual reload (#307).
         if (this.openSlug) this.loadChanges(this.openSlug);
         if (this.openSlug) this.loadSync(this.openSlug);
-        // The rows the `x-for` just built carry `data-lucide` placeholders (the
-        // chevron; the branch chip's glyph) and nothing else converts them: the
-        // one unconditional `createIcons` runs at `alpine:initialized`, which is
-        // BEFORE this fetch resolves. Without this line the project list paints
-        // iconless until the operator's first click happens to hit a handler
-        // that re-scans the document (#332). In `finally`, not the `r.ok` branch
-        // — the file:// demo keeps its seed rows and needs them drawn too.
-        this.$nextTick(() => window.lucide?.createIcons());
+        // NOTE: this loader does NOT convert the rows' lucide icons. That is the
+        // `x-effect` on `ul.projects` (#332), bound to the list's contents
+        // rather than to one of the routes that change them — a fix here would
+        // have covered the arrival and still left the list blank after one
+        // keystroke in the search box.
       }
     },
 

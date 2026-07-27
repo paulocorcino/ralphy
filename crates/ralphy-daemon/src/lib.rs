@@ -4845,17 +4845,37 @@ mod tests {
     /// each contain `data-lucide` placeholders that global scan already passed
     /// over, and they stayed blank until an unrelated handler happened to
     /// re-scan the document (#332).
+    ///
+    /// The project list is bound at the LIST, not at its loader: filtering
+    /// rebuilds the `x-for` and blanks every icon again, which a loader-side fix
+    /// does not reach. The Runs panel has no such second route, so it converts
+    /// from its own read.
     #[test]
-    fn the_loaders_convert_the_icons_they_cause_to_exist() {
+    fn the_icons_are_converted_wherever_the_rows_are_built() {
+        let html = include_str!("../assets/ui/index.html");
+        let list = html
+            .split_once("class=\"projects\"")
+            .expect("index.html must carry the projects list")
+            .1
+            // To the first child, NOT to the first `>`: the effect contains an
+            // arrow function, whose `=>` would cut the slice in half.
+            .split_once("<template")
+            .expect("the projects list must hold a row template")
+            .0;
+        assert!(
+            list.contains("x-effect") && list.contains("createIcons()"),
+            "`ul.projects` must convert its icons from an effect over its own \
+             contents — a loader-side fix leaves the list blank after one \
+             keystroke in the search box; found: {list:?}"
+        );
+
         let js = include_str!("../assets/ui/app.js");
-        for opener in ["async loadRepos() {", "async hydrateRuns() {"] {
-            let body = js_method_body(js, opener);
-            assert!(
-                body.contains("createIcons()"),
-                "`{opener}` mutates state an x-for/x-if renders `data-lucide` \
-                 from, so it must convert them itself; found: {body:?}"
-            );
-        }
+        let runs = js_method_body(js, "async hydrateRuns() {");
+        assert!(
+            runs.contains("createIcons()"),
+            "`hydrateRuns` renders the panel body behind an x-if on the data it \
+             fetches, so it must convert them itself; found: {runs:?}"
+        );
     }
 
     /// A repo with no `origin` is keyed `path-<hash>` (ADR-0008 D7). That stays
