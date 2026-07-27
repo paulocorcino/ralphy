@@ -360,11 +360,12 @@ def screen(page, i=0):
 
 
 def type_line(page, i, text):
-    """Feed one line through xterm's own data path. `paste` rather than
-    `keyboard.type` + Enter: measured, a reattached window echoed the typed
-    characters but the trailing Enter never completed a line at the child, so
-    `GOT:<line>` never came back. `paste` emits the whole line as ONE onData
-    event over the same socket, which is the routing this pass is about."""
+    """Feed one line through xterm's own data path, as ONE onData event.
+
+    `paste` rather than `keyboard.type` + Enter only for atomicity — the click
+    still puts the window in focus, and `keyboard.type` was measured to work
+    equally well. What made the reattach cases look broken was the ORACLE, not
+    the input: see `got_lines`."""
     page.locator(".session-window").nth(i).locator(".xterm").click()
     page.evaluate(
         "([i, t]) => document.querySelectorAll('.session-window')[i]._term.term.paste(t + '\\r')",
