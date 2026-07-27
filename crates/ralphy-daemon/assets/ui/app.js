@@ -239,6 +239,11 @@ function shell() {
           const repos = await r.json();
           this.projects = repos.map((x) => ({
             slug: x.slug,
+            // The absolute on-disk path, served since #204 and dropped here
+            // until now. `repoLabel` needs it for a remoteless repo, whose slug
+            // is a hash; the SLUG stays the identity (ADR-0008 D7) and the path
+            // is only ever read for display (#332).
+            path: x.path || "",
             branch: x.branch || "",
             branches: x.branch ? [x.branch] : [],
             // Real working-tree + remote from `/api/repos` (#204). `remote` keeps
@@ -340,8 +345,17 @@ function shell() {
     filteredProjects() {
       const q = this.projectQuery.trim().toLowerCase();
       if (!q) return this.projects;
+      // The label is matched too (#332). This filter may match what the row does
+      // NOT print — it already matches the owner half of a slug — but it must
+      // never fail to match what the row DOES print: typing the visible
+      // `MY-LOCAL-REPO` and getting an empty list is the defect a directory
+      // label would otherwise introduce. The raw `path` is deliberately not
+      // matched: an invisible absolute path is the opposite lie.
       return this.projects.filter(
-        (p) => p.slug.toLowerCase().includes(q) || p.branch.toLowerCase().includes(q)
+        (p) =>
+          p.slug.toLowerCase().includes(q) ||
+          p.branch.toLowerCase().includes(q) ||
+          this.repoLabel(p).toLowerCase().includes(q)
       );
     },
 
@@ -350,6 +364,21 @@ function shell() {
     // owner here declutters the accordion. Falls back to the whole slug if it
     // has no `/` (e.g. the remoteless `path-<hash>` fallback).
     repoLabel(p) {
+      // A remoteless repo has no name in its slug: ADR-0008 D7 keys it
+      // `path-<hash>`, which reads as twenty useless characters in a fixed 300px
+      // column. The directory basename is what the operator calls it. The `/`
+      // test is not optional — `slug_from_url` always yields `owner/repo`, so a
+      // real GitHub repo named `owner/path-utils` is NOT this case and must
+      // never be re-labelled off disk (#332).
+      if (!p.slug.includes("/") && p.slug.startsWith("path-")) {
+        // Windows and POSIX in one pass. Trailing separators go FIRST, or
+        // `C:\src\widget\` basenames to the empty string.
+        const base = String(p.path || "")
+          .replace(/[\\/]+$/, "")
+          .split(/[\\/]/)
+          .pop();
+        if (base) return base.toUpperCase();
+      }
       return (p.slug.split("/").pop() || p.slug).toUpperCase();
     },
 
