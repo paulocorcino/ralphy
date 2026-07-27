@@ -13,25 +13,17 @@ const SRC = readFileSync(
 );
 
 function load() {
-  // The four globals the module touches at LOAD time: `window.addEventListener`
+  // The three globals the module touches at LOAD time: `window.addEventListener`
   // (the pagehide flush), `document.readyState`/`addEventListener` (the boot
   // hooks — "loading" parks them on a no-op listener instead of running them
-  // against a DOM that does not exist), `location.protocol`/`host` (WS_ORIGIN),
-  // and `ResizeObserver`, still constructed at module scope until clampAll goes.
+  // against a DOM that does not exist) and `location.protocol`/`host`
+  // (WS_ORIGIN). No `ResizeObserver` is injected ON PURPOSE: the surviving one
+  // lives inside `attachTerminal`, which this harness never reaches, so a
+  // module-scope observer re-added alongside a clamp fails LOUDLY here.
   const window = { addEventListener() {} };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  class ResizeObserver {
-    observe() {}
-    disconnect() {}
-  }
-  new Function(
-    "window",
-    "document",
-    "location",
-    "ResizeObserver",
-    SRC,
-  )(window, document, location, ResizeObserver);
+  new Function("window", "document", "location", SRC)(window, document, location);
   return window.WBConsole;
 }
 

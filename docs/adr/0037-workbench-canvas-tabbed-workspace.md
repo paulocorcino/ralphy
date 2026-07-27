@@ -51,7 +51,10 @@ tab never touches the Consoles tab or its consoles.
 - **A separate window/panel for file viewing** (outside the canvas). Rejected:
   it fragments focus and duplicates the tab machinery; one strip owning both
   agents and files is simpler and keeps the floating-console reflow math
-  (`clampAll` on `#workspace`) in one place.
+  (`clampAll` on `#workspace`) in one place. (The rejection stands; its reason
+  is superseded by [ADR-0051](0051-consoles-stage-plane-and-fences.md) §4 —
+  `clampAll` is deleted, and the geometry that replaced it is the stage extent,
+  still in one place.)
 
 ## Consequences
 

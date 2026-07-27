@@ -15,7 +15,17 @@ Scenario 2   shrunk to 800x600 NOTHING moves — the same four rects, the same
 Scenario 3   back at 1400x900 the rects are byte-identical to scenario 1 — the
              measurement in the issue ("does not return") is now the assertion
 Scenario 4   a drag up-left stops at the pinned 0,0 origin; a drag right GROWS
-             the stage past its old edge instead of clipping the window
+             the stage past its old edge instead of clipping the window — and
+             dragging back SHRINKS it, so the `grow` floor is not a ratchet
+Scenario 5   `PUT /api/desk` refuses a negative origin without touching the store
+Scenario 6   Arrange tiles into the SCROLLED frame, not the plane's origin
+Scenario 7   a point on the bare floor hit-tests inside the viewport and a real
+             wheel over it pans the plane (`#viewers` is the last positioned
+             sibling and would otherwise swallow every pan gesture)
+Scenario 8   maximize pins to the viewport at the current scroll offsets; the
+             scroll freeze is DERIVED from what is on screen, so restoring one of
+             two maximized consoles keeps it and CLOSING the last one — which
+             never runs `toggleMax` — lifts it
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -427,7 +437,8 @@ def main():
             )
             check(
                 "…leaving no window with a negative origin",
-                all(r["left"] >= 0 and r["top"] >= 0 for r in after_up_left),
+                len(after_up_left) == 2
+                and all(r["left"] >= 0 and r["top"] >= 0 for r in after_up_left),
                 f"got={after_up_left}",
             )
             stage_before = geom(page)["stageWidth"]
@@ -465,6 +476,11 @@ def main():
                 grown["scrollWidth"] == grown["stageWidth"],
                 f"scrollWidth={grown['scrollWidth']} stage={grown['stageWidth']}",
             )
+            check(
+                "…landing exactly where the cursor left it, not at a clamp",
+                moved["left"] == 960,
+                f"700 + 260 should be 960; got={moved['left']}",
+            )
 
             page.wait_for_timeout(700)
             persisted = json.loads(http("GET", "api/desk")[1])
@@ -476,69 +492,50 @@ def main():
             )
             check(
                 "…and so is the rect that went past the old edge",
-                (by_id.get("w-fixture-b") or {}).get("left") == moved["left"],
+                (by_id.get("w-fixture-b") or {}).get("left") == 960.0,
                 f"got={by_id.get('w-fixture-b')} window left={moved['left']}",
             )
 
-            # ===== scenario 5: maximize pins to the VIEWPORT, not the plane ===
-            # `width/height: 100%` resolve against `#workspace`, but the window
-            # scrolls with the stage — so without the `--max-left`/`--max-top`
-            # pin a maximized console would sit at the plane's origin, off-view.
-            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 300; }")
+            # The extent must come back DOWN too, or `applyExtent`'s `grow` floor
+            # is a ratchet: a build with `{grow:true}` everywhere — or with the
+            # mouseup recompute at `startResize`/`makeDraggable` deleted — passes
+            # every growth assertion above and never shrinks.
+            drag_title(page, 1, -260, 0)
+            shrunk = geom(page)
+            check(
+                "the stage SHRINKS again when the window comes back",
+                shrunk["stageWidth"] == stage_before
+                and rects(page)[1]["left"] == 700,
+                f"{grown['stageWidth']} -> {shrunk['stageWidth']} (want {stage_before});"
+                f" window at {rects(page)[1]['left']}",
+            )
+
+            # ===== scenario 6: Arrange tiles the VISIBLE region ================
+            # The rewrite's whole point is the scroll origin: at scrollLeft 700 a
+            # build still tiling from the plane's 0,0 puts every window off-view.
+            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 700; }")
             page.wait_for_timeout(200)
-            page.locator(".session-window").nth(0).locator(".session-max").click()
-            page.wait_for_timeout(600)
-            maxed = page.evaluate(
+            page.evaluate("() => window.WBConsole.arrange()")
+            page.wait_for_timeout(900)
+            tiled = page.evaluate(
                 "() => { const ws = document.getElementById('workspace');"
-                " const w = document.querySelectorAll('.session-window')[0];"
-                " const a = w.getBoundingClientRect(); const b = ws.getBoundingClientRect();"
-                " return { dx: Math.round(a.left - b.left), dy: Math.round(a.top - b.top),"
-                "   width: Math.round(a.width), vw: Math.round(b.width),"
-                "   lock: ws.classList.contains('maxlock'),"
-                "   overflowX: getComputedStyle(ws).overflowX,"
-                "   inlineLeft: w.style.left, inlineTop: w.style.top,"
-                "   inlineWidth: w.style.width }; }"
+                " return { scrollLeft: ws.scrollLeft, clientWidth: ws.clientWidth,"
+                "   lefts: [...document.querySelectorAll('.session-window')].map((w) => w.offsetLeft) }; }"
             )
             check(
-                "a maximized console is pinned to the scrolled VIEWPORT, not the plane origin",
-                maxed["dx"] == 0 and maxed["dy"] == 0,
-                f"offset from the viewport corner = {maxed['dx']},{maxed['dy']}",
+                "Arrange tiles into the scrolled frame, not the plane origin",
+                tiled["lefts"] and all(x >= tiled["scrollLeft"] for x in tiled["lefts"]),
+                f"scrollLeft={tiled['scrollLeft']} lefts={tiled['lefts']}",
             )
             check(
-                "…filling it exactly",
-                maxed["width"] == maxed["vw"],
-                f"window {maxed['width']} vs viewport {maxed['vw']}",
-            )
-            check(
-                "…with the viewport's scroll locked so the pin cannot desync",
-                maxed["lock"] and maxed["overflowX"] == "hidden",
-                f"maxlock={maxed['lock']} overflowX={maxed['overflowX']}",
-            )
-            check(
-                "…while the inline styles still hold the PRE-maximize rect",
-                (maxed["inlineLeft"], maxed["inlineTop"], maxed["inlineWidth"])
-                == ("0px", "0px", "600px"),
-                f"got={maxed['inlineLeft']},{maxed['inlineTop']},{maxed['inlineWidth']}",
-            )
-            page.locator(".session-window").nth(0).locator(".session-max").click()
-            page.wait_for_timeout(600)
-            restored = rects(page)[0]
-            check(
-                "restoring puts the console back on its own box",
-                restored == {"left": 0, "top": 0, "width": 600, "height": 380},
-                f"got={restored}",
-            )
-            check(
-                "…and gives the viewport its scrollbars back",
-                page.evaluate(
-                    "() => { const ws = document.getElementById('workspace');"
-                    " return !ws.classList.contains('maxlock')"
-                    "   && getComputedStyle(ws).overflowX === 'auto'; }"
+                "…and no further than the frame's far edge",
+                all(
+                    x <= tiled["scrollLeft"] + tiled["clientWidth"] for x in tiled["lefts"]
                 ),
-                "maxlock must lift with the last maximized window",
+                f"scrollLeft={tiled['scrollLeft']} clientWidth={tiled['clientWidth']} lefts={tiled['lefts']}",
             )
             page.evaluate("() => { document.getElementById('workspace').scrollLeft = 0; }")
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(300)
 
             # A negative rect can only arrive from a hand-rolled client; the
             # daemon refuses it rather than persisting an off-plane origin.
@@ -569,12 +566,171 @@ def main():
                 "the refused upload must not replace the desk",
             )
 
+            # ===== scenario 7: the bare floor takes no pointer events ==========
+            # `#viewers` is the LAST positioned sibling in `.tabbody`, so an
+            # untamed one hit-tests above the whole viewport — and the wheel and
+            # the scrollbar are the ONLY way to pan a plane.
+            over = page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                " const r = ws.getBoundingClientRect();"
+                " const el = document.elementFromPoint(r.left + 8, r.bottom - 8);"
+                " return { id: el && el.id, tag: el && el.tagName,"
+                "   inViewport: !!(el && ws.contains(el)) }; }"
+            )
+            check(
+                "a point on the bare floor hit-tests INSIDE the viewport",
+                over["inViewport"],
+                f"elementFromPoint gave <{over['tag']} id={over['id']}> — the wheel cannot reach the plane",
+            )
+            wheeled = page.evaluate(
+                "() => { document.getElementById('workspace').scrollLeft = 0; }"
+            )
+            box = page.evaluate(
+                "() => { const r = document.getElementById('workspace').getBoundingClientRect();"
+                " return { x: r.left + 8, y: r.bottom - 8 }; }"
+            )
+            page.mouse.move(box["x"], box["y"])
+            page.mouse.wheel(400, 0)
+            page.wait_for_timeout(400)
+            wheeled = page.evaluate(
+                "() => document.getElementById('workspace').scrollLeft"
+            )
+            check(
+                "…and a real wheel over it pans the plane",
+                wheeled > 0,
+                f"scrollLeft after a 400px wheel = {wheeled}",
+            )
+            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 0; }")
+
+            # ===== scenario 8: maximize pins to the VIEWPORT; the freeze is
+            # DERIVED, not held ================================================
+            # `width/height: 100%` resolve against `#workspace`, but the window
+            # scrolls with the stage — so without the `--max-left`/`--max-top`
+            # pin a maximized console would sit at the plane's origin, off-view.
+            # And `maxlock` must follow what is ON SCREEN: closing a maximized
+            # console never passes through `toggleMax`, and a hand-held lock
+            # then strands `overflow:hidden` and the plane can never be panned
+            # again — the unreachable-window state ADR-0051 §4 exists to kill.
+            page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window');"
+                " w[0].style.left = '40px'; w[0].style.top = '40px';"
+                " w[0].style.width = '600px'; w[0].style.height = '380px';"
+                " w[1].style.left = '700px'; w[1].style.top = '300px';"
+                " w[1].style.width = '600px'; w[1].style.height = '380px';"
+                " window.WBConsole.refitAll();"
+                " document.getElementById('workspace').scrollLeft = 300; }"
+            )
+            page.wait_for_timeout(400)
+            page.locator(".session-window").nth(0).locator(".session-max").click()
+            page.wait_for_timeout(600)
+            maxed = page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                " const w = document.querySelectorAll('.session-window')[0];"
+                " const a = w.getBoundingClientRect(); const b = ws.getBoundingClientRect();"
+                " return { dx: Math.round(a.left - b.left), dy: Math.round(a.top - b.top),"
+                "   width: Math.round(a.width), vw: Math.round(b.width),"
+                "   lock: ws.classList.contains('maxlock'),"
+                "   overflowX: getComputedStyle(ws).overflowX,"
+                "   inlineLeft: w.style.left, inlineTop: w.style.top,"
+                "   inlineWidth: w.style.width }; }"
+            )
+            check(
+                "a maximized console is pinned to the scrolled VIEWPORT, not the plane origin",
+                maxed["dx"] == 0 and maxed["dy"] == 0,
+                f"offset from the viewport corner = {maxed['dx']},{maxed['dy']}",
+            )
+            check(
+                "…filling it exactly",
+                maxed["width"] == maxed["vw"],
+                f"window {maxed['width']} vs viewport {maxed['vw']}",
+            )
+            check(
+                "…with the viewport's scroll locked so the pin cannot desync",
+                maxed["lock"] and maxed["overflowX"] == "hidden",
+                f"maxlock={maxed['lock']} overflowX={maxed['overflowX']}",
+            )
+            # The window under test is at 40,40 — NOT at the plane origin, so a
+            # regression that snapped the restore rect to 0,0 would show here.
+            check(
+                "…while the inline styles still hold the PRE-maximize rect",
+                (maxed["inlineLeft"], maxed["inlineTop"], maxed["inlineWidth"])
+                == ("40px", "40px", "600px"),
+                f"got={maxed['inlineLeft']},{maxed['inlineTop']},{maxed['inlineWidth']}",
+            )
+
+            # Maximize the SECOND one too, then restore it. The freeze must
+            # SURVIVE, or the remaining full-bleed silently desyncs from the
+            # scroll offset it is pinned to. Driven from JS on purpose: a
+            # full-bleed console covers its neighbour's chrome, so only the
+            # topmost window's buttons are hittable — the real click above
+            # already proved the button works.
+            press_max = (
+                "(i) => document.querySelectorAll('.session-window')[i]"
+                ".querySelector('.session-max').click()"
+            )
+            page.evaluate(press_max, 1)
+            page.wait_for_timeout(500)
+            both = page.evaluate(
+                "() => document.querySelectorAll('.session-window.maximized').length"
+            )
+            check("both consoles can be maximized at once", both == 2, f"got={both}")
+            page.evaluate(press_max, 1)
+            page.wait_for_timeout(500)
+            still = page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                " return { lock: ws.classList.contains('maxlock'),"
+                "   maxed: document.querySelectorAll('.session-window.maximized').length,"
+                "   restored: (() => { const w = document.querySelectorAll('.session-window')[1];"
+                "     return { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth,"
+                "       height: w.offsetHeight }; })() }; }"
+            )
+            check(
+                "restoring ONE of two maximized consoles keeps the scroll frozen",
+                still["lock"] and still["maxed"] == 1,
+                f"maxlock={still['lock']} maximized={still['maxed']}",
+            )
+            check(
+                "…and puts that one back on its own box",
+                still["restored"] == {"left": 700, "top": 300, "width": 600, "height": 380},
+                f"got={still['restored']}",
+            )
+
+            # CLOSING the last maximized console never runs `toggleMax`. This is
+            # a REAL click: window 0 is the maximized full-bleed and therefore the
+            # one whose close button is on top.
+            page.locator(".session-window").nth(0).locator(".session-close").click()
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window').length === 1",
+                timeout=10000,
+            )
+            page.wait_for_timeout(500)
+            after_close = page.evaluate(
+                "() => { const ws = document.getElementById('workspace');"
+                " ws.scrollLeft = 0; ws.scrollLeft = 250;"
+                " return { lock: ws.classList.contains('maxlock'),"
+                "   overflowX: getComputedStyle(ws).overflowX,"
+                "   maxed: document.querySelectorAll('.session-window.maximized').length,"
+                "   scrolled: ws.scrollLeft }; }"
+            )
+            check(
+                "CLOSING the last maximized console lifts the scroll freeze",
+                not after_close["lock"] and after_close["maxed"] == 0,
+                f"maxlock={after_close['lock']} maximized={after_close['maxed']}",
+            )
+            check(
+                "…so the plane can still be panned afterwards",
+                after_close["overflowX"] == "auto" and after_close["scrolled"] == 250,
+                f"overflowX={after_close['overflowX']} scrollLeft={after_close['scrolled']}",
+            )
+
             ctx.close()
             browser.close()
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) >= 30
+    # The floor matches the real count: set loosely, a scenario that stopped
+    # running would leave the suite green.
+    ok = all(results) and len(results) >= 52
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE STAGE IS A PLANE")

@@ -462,24 +462,38 @@ def main():
                 r3["width"] == 240 and r3["height"] == 150,
                 f"got={r3}",
             )
-            # Park it mid-workspace first, so the east drag below really has room
-            # to overshoot (a window already pinned at 0 would pass by accident).
+            # Park it so its right edge sits just inside the visible box: the
+            # stage's own margin then puts the STAGE strictly past the viewport,
+            # while the east handle stays clickable. Parked anywhere the two
+            # measure equal, this assertion passes byte-identically against a
+            # build still bounded by `#workspace.clientWidth` (#336).
             page.evaluate(
-                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                "() => { const ws = document.getElementById('workspace');"
+                " const w = document.querySelectorAll('.session-window')[0];"
                 " w.style.left = '200px'; w.style.top = '60px';"
-                " w.style.width = '400px'; w.style.height = '300px'; }"
+                " w.style.width = (ws.clientWidth - 250) + 'px'; w.style.height = '300px';"
+                " window.WBConsole.refitAll(); }"
             )
-            page.wait_for_timeout(200)
+            page.wait_for_timeout(300)
             # Since #336 the resize bound is the STAGE, not the visible box
             # (ADR-0051 §5) — read it BEFORE the drag, because the mouseup
             # recompute grows the stage by a margin past the new right edge.
-            stage_w = page.evaluate("() => document.getElementById('stage').offsetWidth")
+            box = page.evaluate(
+                "() => ({ stage: document.getElementById('stage').offsetWidth,"
+                "   view: document.getElementById('workspace').clientWidth })"
+            )
+            stage_w = box["stage"]
+            check(
+                "the stage is strictly wider than the visible box",
+                stage_w > box["view"] > 0,
+                f"stage={stage_w} viewport={box['view']}",
+            )
             drag_handle(page, 0, "e", 3000, 0)
             r4 = rect_of(page, 0)
             check(
-                "dragging past the stage clamps to its edge",
+                "dragging past the stage clamps to its edge, not the viewport's",
                 r4["left"] == 200 and r4["left"] + r4["width"] == stage_w,
-                f"got={r4} stage={stage_w}",
+                f"got={r4} stage={stage_w} viewport={box['view']}",
             )
             drag_handle(page, 0, "w", -3000, 0)
             r5 = rect_of(page, 0)
@@ -488,6 +502,20 @@ def main():
                 r5["left"] == 0 and r5["left"] + r5["width"] == r4["left"] + r4["width"],
                 f"got={r5}",
             )
+
+            # Shrink it back inside the visible box before the maximize checks:
+            # a window wider than the viewport makes Playwright scroll the plane
+            # to reach its buttons, and since #336 a maximize pins the full-bleed
+            # to WHATEVER scroll offset it happened at (`--max-left`) — which the
+            # reload comparison in scenario 6 reads as a moved window.
+            page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                " w.style.left = '200px'; w.style.top = '60px';"
+                " w.style.width = '400px'; w.style.height = '300px';"
+                " window.WBConsole.refitAll();"
+                " document.getElementById('workspace').scrollLeft = 0; }"
+            )
+            page.wait_for_timeout(300)
 
             page.locator(".session-window").nth(0).locator(".session-max").click()
             page.wait_for_timeout(400)

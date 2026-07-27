@@ -283,23 +283,17 @@ window.WBConsole = (function () {
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
     const maxed = win.classList.toggle("maximized");
-    if (ws) {
-      if (maxed) {
-        win.style.setProperty("--max-left", offsets.left + "px");
-        win.style.setProperty("--max-top", offsets.top + "px");
-        ws.classList.add("maxlock");
-        ws.scrollLeft = offsets.left;
-        ws.scrollTop = offsets.top;
-      } else {
-        win.style.removeProperty("--max-left");
-        win.style.removeProperty("--max-top");
-        // Only the LAST window to leave maximized unlocks the scroll.
-        if (![...wins].some((w) => w.classList.contains("maximized"))) {
-          ws.classList.remove("maxlock");
-        }
-        ws.scrollLeft = offsets.left;
-        ws.scrollTop = offsets.top;
-      }
+    if (maxed) {
+      win.style.setProperty("--max-left", (offsets?.left || 0) + "px");
+      win.style.setProperty("--max-top", (offsets?.top || 0) + "px");
+    } else {
+      win.style.removeProperty("--max-left");
+      win.style.removeProperty("--max-top");
+    }
+    syncMaxLock();
+    if (ws && offsets) {
+      ws.scrollLeft = offsets.left;
+      ws.scrollTop = offsets.top;
     }
     btn.title = maxed ? "restore" : "maximize";
     btn.innerHTML = maxed
@@ -321,10 +315,27 @@ window.WBConsole = (function () {
   // cursor and make the view jump; the exact recompute runs on mouseup.
   // INVARIANT: every path that creates, moves, resizes, closes or restores a
   // window ends here.
+  // The scroll freeze that keeps a maximized window's viewport pin honest.
+  // DERIVED from the DOM at every layout mutation, never toggled by hand:
+  // closing a maximized console removes the window without ever passing through
+  // `toggleMax`, and a hand-held lock then stranded `overflow:hidden` on the
+  // viewport for the rest of the page's life — the plane could not be scrolled
+  // again, which is exactly the unreachable-window state ADR-0051 §4 exists to
+  // eliminate.
+  function syncMaxLock() {
+    const ws = workspace();
+    const st = stage();
+    if (!ws || !st) return;
+    ws.classList.toggle("maxlock", !!st.querySelector(".session-window.maximized"));
+  }
+
   function applyExtent(opts) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
+    // Every create/move/resize/close/restore path reaches here, so this is the
+    // one place the freeze can be kept in step with what is actually on screen.
+    syncMaxLock();
     // Read the DOM, not `wins`: a window is on the stage from the moment
     // `buildChrome` appends it (before `spawnWindow` registers it) and gone the
     // moment it is removed, so this can never count a phantom or miss a new one.
@@ -377,14 +388,16 @@ window.WBConsole = (function () {
       focusWin(win);
       // Maximized windows don't drag — the titlebar double-click still restores.
       if (win.classList.contains("maximized")) return;
-      const origin = stage().getBoundingClientRect();
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
       const onMove = (ev) => {
-        // Read the stage LIVE: `applyExtent({grow:true})` below widens it as the
-        // window nears the far edge, so the next move has room to keep going.
+        // Read the stage LIVE, both for its size — `applyExtent({grow:true})`
+        // below widens it as the window nears the far edge — and for its ORIGIN:
+        // the viewport scrolls, and a wheel mid-drag would otherwise shift the
+        // plane under a cached rect and drop the window off the cursor.
         const st = stage();
+        const origin = st.getBoundingClientRect();
         const x = ev.clientX - origin.left - offX;
         const y = ev.clientY - origin.top - offY;
         win.style.left = Math.max(0, Math.min(x, st.offsetWidth - rect.width)) + "px";
@@ -1219,7 +1232,10 @@ window.WBConsole = (function () {
       persistWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
-    applyExtent();
+    // AFTER the 0.24s tiling transition: reading `offsetLeft`/`offsetWidth` now
+    // is what STARTS that transition, so an immediate fold would measure the
+    // pre-Arrange rects and size the plane to a layout that no longer exists.
+    setTimeout(applyExtent, 300);
   }
 
   function count() {

@@ -351,25 +351,33 @@ def main():
             page_c.wait_for_timeout(800)
             small = page_c.evaluate(
                 "() => { const ws = document.getElementById('workspace');"
-                " const w = document.querySelectorAll('.session-window')[0];"
-                " return w ? { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth,"
-                "   height: w.offsetHeight, clientWidth: ws.clientWidth,"
-                "   scrollWidth: ws.scrollWidth } : null; }"
+                " return { rects: [...document.querySelectorAll('.session-window')].map((w) =>"
+                "     ({ left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth,"
+                "        height: w.offsetHeight })),"
+                "   clientWidth: ws.clientWidth, clientHeight: ws.clientHeight,"
+                "   scrollWidth: ws.scrollWidth, scrollHeight: ws.scrollHeight }; }"
             )
             check(
                 "a desk saved at 1400x900 restores a window at 800x600",
-                small is not None,
-                f"got={small}",
+                len(small["rects"]) >= 1,
+                f"windows={len(small['rects'])}",
             )
+            # The FULL rect, not just the X axis: a build that refitted only the
+            # Y axis (or only the width) would slip past a partial assertion. The
+            # other windows on screen are ADOPTED live sessions with cascaded
+            # rects — this criterion is about the one the desk RECORD placed.
+            saved_rect = {"left": 900, "top": 500, "width": 400, "height": 300}
             check(
-                "…at the rect it was saved with — nothing refits it (#336)",
-                small and small["left"] == 900 and small["width"] == 400,
-                f"want left=900 width=400 got={small}",
+                "…at the rect it was saved with, every component — nothing refits it (#336)",
+                saved_rect in small["rects"],
+                f"want={saved_rect} among={small['rects']}",
             )
             check(
                 "…because the viewport SCROLLS over the stage instead",
-                small and small["scrollWidth"] > small["clientWidth"] > 0,
-                f"scrollWidth={small and small['scrollWidth']} clientWidth={small and small['clientWidth']}",
+                small["scrollWidth"] > small["clientWidth"] > 0
+                and small["scrollHeight"] > small["clientHeight"] > 0,
+                f"scroll={small['scrollWidth']}x{small['scrollHeight']}"
+                f" client={small['clientWidth']}x{small['clientHeight']}",
             )
             ctx_c.close()
 

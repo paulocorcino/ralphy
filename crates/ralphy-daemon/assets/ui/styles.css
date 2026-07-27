@@ -1854,8 +1854,10 @@ body.runs-open .runs {
    windows' containing block stays `#workspace`'s padding box — `offsetLeft`,
    `min(560px, 62%)` and `.maximized { width: 100% }` all keep their meaning with
    zero JS, and an absolutely positioned descendant still scrolls with the
-   content. `min-*: 100%` is the viewport leg of the extent union expressed in
-   CSS, so a browser resize needs no handler at all. */
+   content. `min-*: 100%` covers the GROWTH half of the extent union without JS,
+   so a browser that gets bigger needs no handler; a browser that gets SMALLER
+   leaves the inline px stale-large (extra empty scroll room) until the next
+   layout mutation recomputes it — harmless, and it never moves a window. */
 #stage {
   min-width: 100%;
   min-height: 100%;
@@ -1863,9 +1865,20 @@ body.runs-open .runs {
   background-image: radial-gradient(var(--border) 1px, transparent 1px);
   background-size: 22px 22px;
 }
+/* The file-viewer panes share the tab body with the Consoles viewport and, being
+   the LAST positioned sibling, hit-test above it across the whole box. That was
+   inert while `#workspace` was `overflow:hidden`; now that the viewport scrolls,
+   an empty `#viewers` would swallow every wheel and scrollbar gesture over the
+   bare floor (issue #336). It is transparent to the pointer; each pane inside
+   takes its own events back. NO background here: `#viewers` paints above
+   `#workspace`, so a floor on it would tile dots over the live consoles. */
 #viewers {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+#viewers > * {
+  pointer-events: auto;
 }
 .canvas-tools {
   display: flex;
