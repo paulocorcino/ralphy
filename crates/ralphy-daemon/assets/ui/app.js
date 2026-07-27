@@ -207,8 +207,16 @@ function shell() {
           this.authed = s.authed;
           this.login.passwordRequired = s.password;
           this.security.policy = s.policy;
+          // Gated on `authed`: a pre-login restore would have every tab refused
+          // and closed, persisting the loss (issue #339). `rehydrateAfterAuth`
+          // is the other end of this guard.
+          if (s.authed) this.restoreView();
         }
-      } catch {}
+      } catch {
+        // The `file://` demo (and an unreachable daemon): `authed` keeps its
+        // `true` seed, so the tabs come back the same way they would with one.
+        this.restoreView();
+      }
     },
 
     // Hydrate the accordion from the daemon's real repo registry. A thrown
@@ -2069,6 +2077,9 @@ function shell() {
       // `/api/desk` is gated too: the pre-login fetch was refused, so the desk
       // is unread AND unwritable until it is re-read here (issue #327).
       window.WBConsole?.afterLogin();
+      // Only now is `file.read` allowed: restoring the tabs before login would
+      // have each one refused and immediately closed (issue #339).
+      this.restoreView();
     },
 
     async submitLogin() {
@@ -2718,6 +2729,7 @@ function shell() {
             : "bi bi-file-earmark-code";
       this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true });
       this.active = id;
+      this.persistView();
       this.$nextTick(() => {
         // A re-attach passes its (possibly edited) bytes in; a fresh open fetches
         // the real file via the daemon (`file.read`), falling back to the seed.
@@ -2863,6 +2875,7 @@ function shell() {
         // (its tab was display:none); refit now that the Consoles tab is visible.
         if (id === "consoles") window.WBConsole?.refitAll?.();
       });
+      this.persistView();
     },
 
     closeTab(id) {
@@ -2876,6 +2889,44 @@ function shell() {
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
         this.activate(next.id);
       }
+      this.persistView();
+    },
+
+    // --- the per-client view: the open file tabs (issue #339) ----------------
+    // The tabs half of `wb.view.v1`; `wb-console.js` owns the offset half and
+    // `patch` merges, so neither clobbers the other. Only `file:` tabs are
+    // stored: a `diff:` tab's two sides are derived from LIVE git state
+    // (`WBChanges.diffTarget`), so restoring one would resurrect a review of a
+    // diff that may no longer exist.
+    persistView() {
+      const files = this.tabs
+        .filter((t) => t.id.startsWith("file:"))
+        .map((t) => ({ project: t.project, path: t.path, title: t.title, kind: t.kind }));
+      // A stored `active` naming a tab this store does not carry (a diff tab, or
+      // one that just closed) would restore to a tab that never opens, leaving
+      // the canvas blank — degrade to Consoles instead.
+      const alive =
+        this.active === "consoles" ||
+        files.some((f) => `file:${f.project}:${f.path}` === this.active);
+      window.WBView?.patch({ tabs: files, active: alive ? this.active : "consoles" });
+    },
+
+    _viewRestored: false,
+    // Latched, and AUTH-GATED by its callers: under `require-login` a pre-login
+    // `file.read` is refused and `fetchContent` closes the tab — and that close
+    // persists the loss, so a restore attempted too early destroys the very
+    // state it is restoring. Same trap `deskLoaded` guards for the desk.
+    restoreView() {
+      if (this._viewRestored) return;
+      this._viewRestored = true;
+      const stored = window.WBView?.read();
+      if (!stored) return;
+      for (const t of stored.tabs || []) {
+        if (!t || !t.project || !t.path) continue;
+        this.openTab({ project: t.project, path: t.path, title: t.title || t.path, ftype: t.kind });
+      }
+      const want = stored.active;
+      this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
     },
 
     // --- consoles (the Consoles tab) ----------------------------------------
