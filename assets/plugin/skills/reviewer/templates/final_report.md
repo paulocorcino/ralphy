@@ -36,7 +36,8 @@ narrowed-by-user-request: true   # only when the user explicitly requested narro
 
 Notes accepts only: scope limits, skipped checks, adjudication caveats, evidence caveats. Praise, "strong positives", strengths, and positive summaries are forbidden.
 
-invoked: verifier (N), defect-hunter (N), test-auditor (N), scout (N)
+lanes: defect-hunter=<delegated|in-context|skipped>, test-auditor=<...>, verifier=<...>
+invoked: verifier (N), defect-hunter (N), test-auditor (N), scout (N)   # delegation cost; `invoked: none` when the host does not fan out
 
 audit_output: |
   <literal output of audit.py>
