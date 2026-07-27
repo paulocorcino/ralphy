@@ -472,6 +472,32 @@ window.WBConsole = (function () {
     };
   }
 
+  // How far the plane scrolls per frame while a window is dragged against the
+  // viewport edge, and how wide the pressure band at each edge is.
+  const PAN_BAND = 48;
+  const PAN_STEP = 24;
+
+  // The auto-pan rule, pure. `viewport` is a CLIENT rect; `pointer` is a client
+  // point. Each edge contributes a pressure in `[0, band]` and the axis takes
+  // their DIFFERENCE — deliberately, so a viewport narrower than two bands
+  // cancels instead of oscillating between its own two edges.
+  function panNudge(pointer, viewport, band, step) {
+    const b = band == null ? PAN_BAND : band;
+    const s = step == null ? PAN_STEP : step;
+    const press = (v) => Math.max(0, Math.min(v, b));
+    const axis = (near, far) => Math.round((s * (far - near)) / b);
+    return {
+      dx: axis(
+        press(b - ((pointer?.x || 0) - (viewport?.left || 0))),
+        press(b - ((viewport?.right || 0) - (pointer?.x || 0))),
+      ),
+      dy: axis(
+        press(b - ((pointer?.y || 0) - (viewport?.top || 0))),
+        press(b - ((viewport?.bottom || 0) - (pointer?.y || 0))),
+      ),
+    };
+  }
+
   function resizeRect(dir, rect, delta, min, bounds) {
     let { left, top, width, height } = rect;
     const right = rect.left + rect.width;
@@ -1281,6 +1307,7 @@ window.WBConsole = (function () {
     resizeRect,
     stageExtent,
     bringIntoView,
+    panNudge,
     reconnectDecision,
     reconcileDesk,
     pruneDesk,
