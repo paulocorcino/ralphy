@@ -374,6 +374,47 @@ window.WBConsole = (function () {
     win.classList.add("focused");
   }
 
+  // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
+  // the stage is where a window IS, and this is a snapshot taken when the menu
+  // opens rather than reactive state to keep in step.
+  function list() {
+    const st = stage();
+    if (!st) return [];
+    return [...st.querySelectorAll(".session-window")].map((w) => ({
+      id: w._deskId,
+      agent: w._deskAgent,
+      repo: w._deskRepo,
+      kind: w._deskKind,
+      running: !w.classList.contains("placeholder"),
+    }));
+  }
+
+  // The "one action" that reaches a window far from the current view (ADR-0051
+  // §4): focus it and slide the viewport so it is centred. Returns the element,
+  // or null when no window carries that desk id.
+  function reveal(deskId) {
+    const ws = workspace();
+    const st = stage();
+    if (!ws || !st) return null;
+    const it = [...st.querySelectorAll(".session-window")].find(
+      (w) => w._deskId === deskId,
+    );
+    if (!it) return null;
+    focusWin(it);
+    // While anything is maximized the viewport is frozen (`#workspace.maxlock`
+    // is `overflow:hidden`), so an offset write would clamp to 0 silently — and
+    // a maximized console already fills the viewport anyway.
+    if (ws.classList.contains("maxlock")) return it;
+    const to = bringIntoView(
+      restoreRect(it),
+      { width: ws.clientWidth, height: ws.clientHeight },
+      { width: st.offsetWidth, height: st.offsetHeight },
+    );
+    ws.scrollLeft = to.left;
+    ws.scrollTop = to.top;
+    return it;
+  }
+
   // Drag by the titlebar, clamped to the STAGE (control buttons still click).
   // Coordinates are plane pixels: the stage's client rect already carries the
   // viewport's scroll shift, so a drag reads the same at any scroll offset. The
@@ -391,20 +432,63 @@ window.WBConsole = (function () {
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
-      const onMove = (ev) => {
-        // Read the stage LIVE, both for its size — `applyExtent({grow:true})`
-        // below widens it as the window nears the far edge — and for its ORIGIN:
-        // the viewport scrolls, and a wheel mid-drag would otherwise shift the
-        // plane under a cached rect and drop the window off the cursor.
+      // Put the window under `pointer` (a CLIENT point). Read the stage LIVE,
+      // both for its size — `applyExtent({grow:true})` widens it as the window
+      // nears the far edge — and for its ORIGIN: the viewport scrolls, and a
+      // wheel or an auto-pan mid-drag would otherwise shift the plane under a
+      // cached rect and drop the window off the cursor.
+      const place = (pointer) => {
         const st = stage();
         const origin = st.getBoundingClientRect();
-        const x = ev.clientX - origin.left - offX;
-        const y = ev.clientY - origin.top - offY;
+        const x = pointer.x - origin.left - offX;
+        const y = pointer.y - origin.top - offY;
         win.style.left = Math.max(0, Math.min(x, st.offsetWidth - rect.width)) + "px";
         win.style.top = Math.max(0, Math.min(y, st.offsetHeight - rect.height)) + "px";
         applyExtent({ grow: true });
       };
+      // Auto-pan: holding the window against the viewport edge scrolls the plane
+      // under it, so moving a console somewhere off-screen is one gesture. The
+      // `place(last)` inside the tick is what keeps the DROP position correct in
+      // stage coordinates — the window keeps following the cursor while the
+      // plane slides beneath it.
+      let panRaf = null;
+      let last = null;
+      // INVARIANT: an uncancelled loop pans the plane forever after the button
+      // is released, so this runs as the FIRST statement of `onUp`.
+      const stopPan = () => {
+        if (panRaf != null) cancelAnimationFrame(panRaf);
+        panRaf = null;
+      };
+      const nudge = () => {
+        const ws = workspace();
+        if (!ws || !last) return { dx: 0, dy: 0 };
+        return panNudge(last, ws.getBoundingClientRect(), PAN_BAND, PAN_STEP);
+      };
+      const tickPan = () => {
+        panRaf = null;
+        // A window closed mid-drag: nothing left to carry, and `place` would
+        // write styles onto a detached node forever.
+        if (!win.isConnected) {
+          stopPan();
+          return;
+        }
+        const { dx, dy } = nudge();
+        if (!dx && !dy) return; // leaving the band ENDS the loop
+        const ws = workspace();
+        ws.scrollLeft += dx;
+        ws.scrollTop += dy;
+        place(last);
+        panRaf = requestAnimationFrame(tickPan);
+      };
+      const onMove = (ev) => {
+        last = { x: ev.clientX, y: ev.clientY };
+        place(last);
+        if (panRaf != null) return;
+        const { dx, dy } = nudge();
+        if (dx || dy) panRaf = requestAnimationFrame(tickPan);
+      };
       const onUp = () => {
+        stopPan();
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         applyExtent();
@@ -1179,7 +1263,9 @@ window.WBConsole = (function () {
       // recorded at spawn time, without which `reach` would miss its own window
       // and ask the operator to take over the console they are looking at.
       if (win._term?.sessionId === id || win._wantsSession === id) {
-        focusWin(win);
+        // Reveal, not merely focus: reaching a live session the operator cannot
+        // see was the same defect the Go-to picker exists to fix.
+        reveal(win._deskId) || focusWin(win);
         return win;
       }
     }
@@ -1382,6 +1468,8 @@ window.WBConsole = (function () {
     reconcileDesk,
     pruneDesk,
     reach,
+    list,
+    reveal,
     afterLogin,
   };
 })();
