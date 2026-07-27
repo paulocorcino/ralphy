@@ -663,6 +663,14 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   directions, so a wheel test asserting "the terminal scrolled" and "the
   terminal did not scroll" passes vacuously either way. Gate the precondition
   on `baseY`, assert on `viewportY`.
+- **`overflow: hidden` does not refuse a programmatic scroll — it only removes
+  the scrollbars.** Measured in #338: `el.scrollLeft = 250` on an
+  `overflow:hidden` box reads back `250` *and* fires a `scroll` event, exactly
+  as `overflow:auto` would. So a listener on the scroll container is a complete
+  hook for programmatic pans too, and code must not "protect" itself from a
+  write it assumes would clamp to `0` — that assumption cost this repo a
+  `reveal()` that refused to move the plane at all while a console was
+  maximized.
 - **A Python smoke script reading a Rust child's stdout on Windows must decode
   it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
   Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not
