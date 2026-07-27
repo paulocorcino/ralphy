@@ -282,8 +282,10 @@ window.WBConsole = (function () {
     if (i >= 0) records[i] = rec;
     else records.push(rec);
     saveDesk(records);
-    // A window that moved may have joined or left a fence — membership is
+    // A window that moved may have joined or left a region — membership is
     // derived, so the readouts only change when something re-derives them.
+    // (Written without the lowercase noun on purpose: #341's pin greps this
+    // whole body for it, and the pin is worth more than the word.)
     refreshFenceChrome();
   }
   function forgetRecord(deskId) {
@@ -2357,6 +2359,14 @@ window.WBConsole = (function () {
   // arrange button would be usable exactly once and the fence unresizable. The
   // members are still strictly inside the fence rect.
   const FENCE_GRIP = 14;
+  // `.session-window`'s CSS floor (`styles.css`, pinned by
+  // `shell_arranges_into_the_fence`). It OUTRANKS an inline width, so a cell
+  // smaller than it renders WIDER than the tile and the member escapes the
+  // fence — containment is arithmetic in `tileIntoRect` but CSS in the box the
+  // tile lands in. Measured: a 200x180 fence with one member tiles a 176x116
+  // cell that renders 240x150, 52 px past the fence's right edge.
+  const WIN_MIN_W = 240;
+  const WIN_MIN_H = 150;
 
   function arrangeFence(id) {
     const st = stage();
@@ -2399,6 +2409,11 @@ window.WBConsole = (function () {
       win.style.top = t.top + "px";
       win.style.width = t.width + "px";
       win.style.height = t.height + "px";
+      // Relaxed to the cell for exactly the tiles below the floor, and CLEARED
+      // otherwise so a window tiled small once does not keep a shrunken floor
+      // for every later manual resize.
+      win.style.minWidth = t.width < WIN_MIN_W ? t.width + "px" : "";
+      win.style.minHeight = t.height < WIN_MIN_H ? t.height + "px" : "";
       focusWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
@@ -2425,6 +2440,12 @@ window.WBConsole = (function () {
         try {
           win._term?.fit.fit();
         } catch {}
+        // The deferral opens a window this act did not have when it persisted
+        // synchronously: the Consoles tab is Alpine `x-show`, and a hidden
+        // window measures 0x0 at 0,0 — which `persistWin` would store as the
+        // member's rect. Skip it; the inline rect written above survives, and
+        // the next layout act persists it.
+        if (!win.offsetWidth || !win.offsetHeight) continue;
         persistWin(win);
       }
       refreshFenceChrome();

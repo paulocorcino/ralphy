@@ -4694,19 +4694,12 @@ mod tests {
         // Membership is DERIVED, never stored: the only fence id in the shell is
         // the fence element's OWN `data-fence-id`. A desk record that carried one
         // is exactly the state that can disagree with the geometry.
-        // Scoped to the RECORD literal, not to `persistWin`'s whole body: the
-        // body legitimately re-derives the fence chrome after a move (#342), and
-        // what this pin protects is the shape of what is STORED.
         let persist = js
             .split_once("function persistWin(")
             .expect("wb-console.js must keep persistWin")
             .1;
-        let rec = persist
-            .split_once("const rec = {")
-            .expect("persistWin must build the desk record")
-            .1;
         assert!(
-            !rec[..rec.find("\n    };").expect("the record must close")].contains("fence"),
+            !persist[..persist.find("\n  }").expect("persistWin must close")].contains("fence"),
             "no window record may carry a stored fence id (#341)"
         );
         let css = include_str!("../assets/ui/styles.css");
@@ -4770,12 +4763,22 @@ mod tests {
             .split_once("function arrangeFence(")
             .expect("wb-console.js must keep arrangeFence")
             .1;
+        // The EXPRESSION, not the bare word: `"maximized"` alone is satisfied by
+        // the comment that explains the rule, so deleting the filter leaves this
+        // green — measured. A pin a comment can satisfy is not a pin.
         assert!(
             fence_arrange[..fence_arrange
                 .find("\n  }")
                 .expect("arrangeFence must close")]
-                .contains("maximized"),
+                .contains(r#"!m.el.classList.contains("maximized")"#),
             "arrangeFence must exclude a maximized member from the grid (#338/#342)"
+        );
+        assert!(
+            fence_arrange[..fence_arrange
+                .find("\n  }")
+                .expect("arrangeFence must close")]
+                .contains("minWidth"),
+            "arrangeFence must relax the CSS floor for a tile below it (#342)"
         );
         let app = include_str!("../assets/ui/app.js");
         assert!(
@@ -4802,6 +4805,22 @@ mod tests {
             rule("\n.fence-arrange {").contains("pointer-events: auto"),
             "the fence's arrange button must take pointer events (#342)"
         );
+        // The window floor lives in TWO files — the CSS declaration and the
+        // constants `arrangeFence` relaxes it against. Nothing else notices when
+        // they diverge: the tiles would silently render past the fence again.
+        for (konst, decl) in [
+            ("WIN_MIN_W = 240", "min-width: 240px"),
+            ("WIN_MIN_H = 150", "min-height: 150px"),
+        ] {
+            assert!(
+                js.contains(konst),
+                "wb-console.js must mirror the window floor as {konst} (#342)"
+            );
+            assert!(
+                rule("\n.session-window {").contains(decl),
+                "styles.css's window floor must still be `{decl}` — wb-console.js mirrors it (#342)"
+            );
+        }
     }
 
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright

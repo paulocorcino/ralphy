@@ -27,9 +27,14 @@ Scenario 6  the tiled rects PERSIST: the daemon serves them and a reload
             reproduces the tiled layout box for box
 Scenario 5  arranging an EMPTY fence is a no-op: no rect moves, nothing is
             written, and no page error is raised
+Scenario 3b the grid is in STAGE coordinates: the same rects come back at a
+            non-zero scroll (re-homed from `wb_stage_336.py` scenario 6)
 Scenario 8  a MAXIMIZED member is left alone (#338's rule, re-homed here) while
             the rest re-tile into the smaller grid — this is where the evidence
             screenshot is taken
+Scenario 9  a cell BELOW `.session-window`'s CSS floor still renders inside the
+            fence: CSS outranks an inline width, and every other fixture here
+            sits above the floor
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -490,10 +495,19 @@ def main():
                 ),
                 f"before={[start[i]['box'] for i in member_ids]} after={[tiled[i]['box'] for i in member_ids]}",
             )
+            overlaps = [
+                (a, b)
+                for x, a in enumerate(member_ids)
+                for b in member_ids[x + 1 :]
+                if tiled[a]["inline"]["left"] < tiled[b]["inline"]["left"] + tiled[b]["inline"]["width"]
+                and tiled[a]["inline"]["left"] + tiled[a]["inline"]["width"] > tiled[b]["inline"]["left"]
+                and tiled[a]["inline"]["top"] < tiled[b]["inline"]["top"] + tiled[b]["inline"]["height"]
+                and tiled[a]["inline"]["top"] + tiled[a]["inline"]["height"] > tiled[b]["inline"]["top"]
+            ]
             check(
-                "…and no two members overlap: exactly its members, tiled",
-                len({(tiled[i]["inline"]["left"], tiled[i]["inline"]["top"]) for i in member_ids}) == 3,
-                f"origins={[(tiled[i]['inline']['left'], tiled[i]['inline']['top']) for i in member_ids]}",
+                "…and no two members OVERLAP — a grid, not three rects that merely differ",
+                overlaps == [],
+                f"overlapping pairs={overlaps} rects={[tiled[i]['inline'] for i in member_ids]}",
             )
             check(
                 "the window OUTSIDE the fence is byte-identical — arrange tiles members, not the plane",
@@ -609,9 +623,28 @@ def main():
                 f"got={fence_chrome(page)['f-alpha']}",
             )
 
+            # ===== scenario 3b: the grid is in STAGE coordinates ==============
+            # Re-homed from `wb_stage_336.py` scenario 6, whose premise (tiling
+            # follows the viewport's scroll offset) this issue retires: tiling is
+            # now fence-scoped, so the SAME rects must come back at any scroll.
+            # Without this every arrange in this file runs at scroll 0, and an
+            # `arrangeFence` reading client coordinates passes the whole suite.
+            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 200; }")
+            page.wait_for_timeout(200)
+            page.locator(".fence[data-fence-id='f-alpha'] .fence-arrange").click()
+            page.wait_for_timeout(900)
+            scrolled = by_id(boxes(page))
+            check(
+                "arranging at scrollLeft 200 lands on the SAME stage rects — the fence is the target, not the frame",
+                all(scrolled[i]["inline"] == tiled[i]["inline"] for i in member_ids),
+                f"unscrolled={[tiled[i]['inline'] for i in member_ids]}"
+                f" scrolled={[scrolled[i]['inline'] for i in member_ids]}",
+            )
+            unscroll(page)
+
             # ===== scenario 5: an empty fence is a no-op ======================
             before_empty = by_id(boxes(page))
-            errors.clear()
+            errors_before_empty = len(errors)
             page.locator(".fence[data-fence-id='f-beta'] .fence-arrange").click()
             page.wait_for_timeout(900)
             quiet(desk_file)
@@ -624,8 +657,8 @@ def main():
             )
             check(
                 "…and raises no error — a no-op, not a failure",
-                errors == [],
-                f"pageerrors={errors}",
+                len(errors) == errors_before_empty,
+                f"pageerrors={errors[errors_before_empty:]}",
             )
 
             # ===== scenario 8: a maximized member is left alone (#338) ========
@@ -685,6 +718,41 @@ def main():
 
             page.screenshot(path=SHOT)
             check("the evidence screenshot is on disk", os.path.exists(SHOT), SHOT)
+
+            # ===== scenario 9: a cell BELOW the CSS window floor =============
+            # `.session-window` carries `min-width: 240px; min-height: 150px`,
+            # and CSS outranks the inline width a tile writes — so a fence small
+            # enough to tile a 176x116 cell renders it 240x150 and the member
+            # escapes by 52 px. Every other scenario here uses a fixture whose
+            # cells sit ABOVE the floor, which is exactly why none of them can
+            # see this. Shrunk to 200x180, only the first member's centre stays
+            # inside, so this is the one-member grid: cell = the whole inset.
+            small = {"left": 40, "top": 40, "width": 200, "height": 180}
+            page.evaluate(
+                "(r) => { const el = document.querySelector(\"[data-fence-id='f-alpha']\");"
+                " el.style.width = r.width + 'px'; el.style.height = r.height + 'px'; }",
+                small,
+            )
+            page.wait_for_timeout(200)
+            page.locator(".fence[data-fence-id='f-alpha'] .fence-arrange").click()
+            page.wait_for_timeout(900)
+            tight = by_id(boxes(page))
+            inside_small = [i for i in member_ids if inside_fence(tight[i]["box"], small, slack=1.0)]
+            check(
+                "a tile smaller than the CSS window floor still renders INSIDE the fence",
+                all(
+                    tight[i]["box"]["width"] < 240 and tight[i]["box"]["height"] < 150
+                    for i in inside_small
+                )
+                and inside_small,
+                f"tiled boxes={[tight[i]['box'] for i in member_ids]} fence={small}",
+            )
+            check(
+                "…and the member that no longer belongs to the shrunken fence was not tiled into it",
+                len(inside_small) == 1,
+                f"inside={inside_small} boxes={[tight[i]['box'] for i in member_ids]}",
+            )
+
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()
             browser.close()
@@ -693,7 +761,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 32
+    ok = all(results) and len(results) == 35
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ARRANGE MOVES INTO THE FENCE")
