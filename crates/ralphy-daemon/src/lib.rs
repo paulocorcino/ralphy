@@ -592,15 +592,16 @@ async fn ws_presence_loop(
 
 /// Query for `/ws/session`. A NEW agent launch carries `repo` + `agent`; a NEW
 /// free-console launch (issue #167) carries `console=1` and an optional `repo`
-/// (home dir when absent); a REATTACH carries `id` (and optional `takeover=1`).
-/// All optional so one struct serves every shape; the handler dispatches on
-/// `id` first, then `console`.
+/// (home dir when absent); a REATTACH carries `id` (and optional `takeover=1`,
+/// or `watch=1` for a read-only attach, issue #334). All optional so one struct
+/// serves every shape; the handler dispatches on `id` first, then `console`.
 #[derive(serde::Deserialize)]
 struct SessionQuery {
     repo: Option<String>,
     agent: Option<String>,
     id: Option<u64>,
     takeover: Option<u32>,
+    watch: Option<u32>,
     console: Option<u32>,
 }
 
@@ -618,12 +619,16 @@ struct UsageQuery {
     since: Option<String>,
 }
 
-/// `GET /ws/session`: three shapes over one route.
+/// `GET /ws/session`: four shapes over one route.
 ///
 /// - `?id=<id>[&takeover=1]` — REATTACH to a daemon-owned session. `attach`
 ///   returns `404` for an unknown id and `409` for a busy one (a single writer is
 ///   attached and `takeover` was not set) — both BEFORE the upgrade, so a refusal
 ///   is an HTTP status the browser can read, not a silently-dropped socket.
+/// - `?id=<id>&watch=1` — REATTACH read-only (issue #334): the same replay and
+///   live stream, but the writer slot is never claimed, so a busy session is
+///   reachable (never `409`) and nobody is evicted. Only `404` refuses it. This
+///   is what lets a second workbench see a session instead of stealing it.
 /// - `?repo=<slug>&agent=<claude|codex|opencode>` — NEW agent launch. Rejects
 ///   (`400`) an unknown agent, an unreadable registry, or an unregistered slug
 ///   before upgrading; a spawn failure is `500`.
@@ -639,6 +644,14 @@ async fn session_ws_upgrade(
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
     if let Some(id) = query.id {
+        // A watcher never touches the writer slot, so it is dispatched BEFORE the
+        // attach branch and can never produce a `409`.
+        if query.watch == Some(1) {
+            return match sessions.watch(id) {
+                Ok(att) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+                Err(_) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
+            };
+        }
         return match sessions.attach(id, query.takeover == Some(1)) {
             Ok(att) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
             Err(session::AttachError::Unknown) => {
@@ -779,7 +792,7 @@ async fn session_ws(
     // slot AND hangs the bridge forever (the `Attachment` keeps `tx` alive, so
     // `rx.recv()` never returns `Closed`).
     let evict = attach.evict.clone();
-    let notified = evict.notified();
+    let notified = evict.notify.notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
 
@@ -809,16 +822,20 @@ async fn session_ws(
     ping.tick().await; // consume the immediate first tick — no ping on connect
 
     // A DELIBERATE end (daemon shutdown, takeover/child-exit eviction, or the
-    // broadcast sender closing) gets an explicit Close frame after the loop so the
-    // client sees a CLEAN close and does NOT reconnect. A network drop, by
-    // contrast, tears the loop down without this flag → the client sees an abnormal
-    // close (code 1006) and reconnects. This is what lets the console recover from
-    // a flaky link without hammering reconnects at a session that genuinely ended.
-    let mut clean = false;
+    // broadcast sender closing) is ANNOUNCED after the loop — a data frame naming
+    // the reason, then the Close frame. `None` means the loop fell out some other
+    // way (client close, network drop, write failure) and the bridge stays SILENT:
+    // announcing there would tell a client its session ended when it did not, and
+    // the client would park instead of recovering the flaky link (issue #334).
+    let mut end: Option<session::EndReason> = None;
     loop {
         tokio::select! {
-            _ = shutdown.changed() => { clean = true; break; }
-            _ = &mut notified => { clean = true; break; } // taken over, or the child exited
+            _ = shutdown.changed() => { end = Some(session::EndReason::DaemonShutdown); break; }
+            // Taken over, closed, or the child exited — the token carries which.
+            _ = &mut notified => {
+                end = Some(evict.reason().unwrap_or(session::EndReason::ChildExited));
+                break;
+            }
             _ = ping.tick() => {
                 if socket.send(Message::Ping(Default::default())).await.is_err() {
                     break;
@@ -838,7 +855,10 @@ async fn session_ws(
                 // A burst outran this slow attach; scrollback already replayed and
                 // xterm.js tolerates a gap, so keep streaming.
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => { clean = true; break; }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    end = Some(session::EndReason::ChildExited);
+                    break;
+                }
             },
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
@@ -866,9 +886,22 @@ async fn session_ws(
             },
         }
     }
-    // Signal a deliberate end so the client stops instead of reconnecting; on a
-    // network drop the socket is already gone and this send is a harmless no-op.
-    if clean {
+    // ANNOUNCEMENT-BEFORE-CLOSE INVARIANT (issue #334), to hold on every return
+    // path: a deliberate end is named in a DATA frame first, and only then does
+    // the Close frame follow and the attachment drop. Meaning placed in the close
+    // metadata is meaning lost — the browser reports `1005 / wasClean=false` for
+    // this very `Close(None)`, which is why the client could not tell an eviction
+    // from a flaky link and stole the session back. The early `return` in the
+    // snapshot replay above announces nothing because the socket is already gone,
+    // and `end == None` stays silent by design (see the declaration).
+    if let Some(reason) = end {
+        send_command(
+            &mut socket,
+            0,
+            "session-end",
+            serde_json::json!({ "reason": reason.as_wire() }),
+        )
+        .await;
         let _ = socket.send(Message::Close(None)).await;
     }
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the

@@ -411,16 +411,77 @@ pub struct SessionInfo {
     pub started_at: u64,
 }
 
+/// Why an attachment ended, as the bridge announces it to the client BEFORE the
+/// socket closes (issue #334). The close metadata cannot carry this: a browser
+/// reports `1005 / wasClean=false` even for a Close frame the daemon did send,
+/// so meaning placed there is meaning lost — the reason travels in a data frame
+/// instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndReason {
+    /// Another client claimed the writer slot; the session lives on elsewhere.
+    TakenOver,
+    /// The child exited, or the session was closed (which tree-kills it).
+    ChildExited,
+    /// The daemon itself is going down.
+    DaemonShutdown,
+}
+
+impl EndReason {
+    /// The wire word the client switches on. Fixed vocabulary — three reasons,
+    /// no more (issue #334).
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            EndReason::TakenOver => "taken-over",
+            EndReason::ChildExited => "child-exited",
+            EndReason::DaemonShutdown => "daemon-shutdown",
+        }
+    }
+}
+
+/// The eviction signal one bridge waits on, carrying WHY it fired. The token is
+/// the only object spanning the firing side (a takeover, a close, the pump's
+/// EOF) and the waiting side (the bridge loop), so the reason has to live here
+/// for the bridge to be able to announce it.
+pub struct EvictToken {
+    pub notify: Notify,
+    reason: Mutex<Option<EndReason>>,
+}
+
+impl EvictToken {
+    fn new() -> Self {
+        Self {
+            notify: Notify::new(),
+            reason: Mutex::new(None),
+        }
+    }
+
+    /// Record the reason, THEN wake. The order is load-bearing: `notify_one`
+    /// stores a permit when the waiter is momentarily not parked, so the wake can
+    /// be observed at any later poll — and every such poll must already see the
+    /// reason, or the bridge would announce a deliberate end it cannot name.
+    fn fire(&self, reason: EndReason) {
+        *self.reason.lock().expect("evict reason mutex") = Some(reason);
+        self.notify.notify_one();
+    }
+
+    /// Why this attachment was evicted, or `None` if it was not.
+    pub fn reason(&self) -> Option<EndReason> {
+        *self.reason.lock().expect("evict reason mutex")
+    }
+}
+
 /// A session the daemon owns (the tmux model): the PTY child plus the machinery
 /// that lets a client detach and reattach. `scrollback` is the replay ring; `tx`
-/// fans live output out to the current attachment; `attached` holds the current
-/// single writer's eviction token (`None` when detached).
+/// fans live output out to every attachment; `attached` holds the current single
+/// WRITER's eviction token (`None` when detached), `watchers` the tokens of the
+/// read-only clients — any number of them, none holding the writer slot.
 struct ManagedSession {
     info: SessionInfo,
     session: Mutex<Session>,
     scrollback: Mutex<VecDeque<u8>>,
     tx: broadcast::Sender<Vec<u8>>,
-    attached: Mutex<Option<Arc<Notify>>>,
+    attached: Mutex<Option<Arc<EvictToken>>>,
+    watchers: Mutex<Vec<Arc<EvictToken>>>,
 }
 
 impl ManagedSession {
@@ -494,6 +555,7 @@ impl SessionManager {
             scrollback: Mutex::new(VecDeque::new()),
             tx,
             attached: Mutex::new(None),
+            watchers: Mutex::new(Vec::new()),
         });
         self.sessions
             .lock()
@@ -523,7 +585,7 @@ impl SessionManager {
             let map = self.sessions.lock().expect("sessions mutex");
             map.get(&id).cloned().ok_or(AttachError::Unknown)?
         };
-        let token = Arc::new(Notify::new());
+        let token = Arc::new(EvictToken::new());
         {
             let mut slot = sess.attached.lock().expect("attached mutex");
             if let Some(existing) = slot.as_ref() {
@@ -535,7 +597,7 @@ impl SessionManager {
                 // `notify_waiters`) because each token has exactly ONE waiter and
                 // `notify_one` STORES a permit if the incumbent is momentarily not
                 // parked (mid-iteration), so the eviction can never be lost.
-                existing.notify_one();
+                existing.fire(EndReason::TakenOver);
             }
             *slot = Some(token.clone());
         }
@@ -549,9 +611,51 @@ impl SessionManager {
             snapshot,
             rx,
             evict: token.clone(),
+            writer: true,
             _guard: AttachGuard {
                 sess: sess.clone(),
                 token,
+                writer: true,
+            },
+            sess,
+        })
+    }
+
+    /// Attach to an existing session as a READ-ONLY watcher (issue #334): the
+    /// same replay and the same live stream, but the writer slot is untouched, so
+    /// this NEVER refuses with `Busy` and never evicts anyone. A client is a
+    /// watcher by construction — it asked to be one; there is no spectator mode
+    /// and no second route.
+    ///
+    /// EXACTLY-ONCE REPLAY INVARIANT: snapshot+`subscribe()` under the scrollback
+    /// lock, exactly as [`attach`] does — the invariant holds for a watcher too.
+    ///
+    /// [`attach`]: SessionManager::attach
+    pub fn watch(self: &Arc<Self>, id: SessionId) -> Result<Attachment, AttachError> {
+        let sess = {
+            let map = self.sessions.lock().expect("sessions mutex");
+            map.get(&id).cloned().ok_or(AttachError::Unknown)?
+        };
+        let token = Arc::new(EvictToken::new());
+        sess.watchers
+            .lock()
+            .expect("watchers mutex")
+            .push(token.clone());
+        let (snapshot, rx) = {
+            let ring = sess.scrollback.lock().expect("scrollback mutex");
+            let snapshot: Vec<u8> = ring.iter().copied().collect();
+            let rx = sess.tx.subscribe();
+            (snapshot, rx)
+        };
+        Ok(Attachment {
+            snapshot,
+            rx,
+            evict: token.clone(),
+            writer: false,
+            _guard: AttachGuard {
+                sess: sess.clone(),
+                token,
+                writer: false,
             },
             sess,
         })
@@ -576,16 +680,17 @@ impl SessionManager {
             .map(|s| s.info.clone())
     }
 
-    /// Close a session: remove it from the map, evict any attached client, and
-    /// tree-kill the child (the pump then reaches EOF and self-removes, a no-op).
-    /// Returns whether the id existed. Idempotent.
+    /// Close a session: remove it from the map, evict every attached client
+    /// (writer AND watchers), and tree-kill the child (the pump then reaches EOF
+    /// and self-removes, a no-op). Returns whether the id existed. Idempotent.
+    ///
+    /// The reason is `ChildExited` rather than a fourth word: this path DOES kill
+    /// the child, and the client's vocabulary is fixed at three (issue #334).
     pub fn close(&self, id: SessionId) -> bool {
         let sess = self.sessions.lock().expect("sessions mutex").remove(&id);
         match sess {
             Some(sess) => {
-                if let Some(tok) = sess.attached.lock().expect("attached mutex").as_ref() {
-                    tok.notify_one();
-                }
+                evict_all(&sess, EndReason::ChildExited);
                 sess.session.lock().expect("session mutex").close();
                 true
             }
@@ -647,10 +752,20 @@ fn start_pump(
                 .expect("sessions mutex")
                 .remove(&sess.info.id);
         }
-        if let Some(tok) = sess.attached.lock().expect("attached mutex").as_ref() {
-            tok.notify_one();
-        }
+        evict_all(&sess, EndReason::ChildExited);
     });
+}
+
+/// Fire every token attached to this session — the single writer and each
+/// watcher — with the same reason. Both lists, because a watcher that is never
+/// told the session ended would sit on a dead socket forever.
+fn evict_all(sess: &ManagedSession, reason: EndReason) {
+    if let Some(tok) = sess.attached.lock().expect("attached mutex").as_ref() {
+        tok.fire(reason);
+    }
+    for watcher in sess.watchers.lock().expect("watchers mutex").iter() {
+        watcher.fire(reason);
+    }
 }
 
 /// Why an [`attach`] failed. `Unknown` → the id names no live session (`404`);
@@ -664,13 +779,16 @@ pub enum AttachError {
 }
 
 /// A live attachment to a session: the replay `snapshot` to send first, a `rx`
-/// for the live stream, and an `evict` token the bridge waits on to learn it was
-/// taken over (or that the child exited). Dropping it releases the single-writer
-/// slot WITHOUT closing the session (the tmux detach).
+/// for the live stream, and an `evict` token the bridge waits on to learn WHY it
+/// ended (taken over, child exited, daemon shutting down). `writer` is the role:
+/// `true` for the single writer, `false` for a watcher. Dropping it releases the
+/// writer slot (or deregisters the watcher) WITHOUT closing the session (the tmux
+/// detach).
 pub struct Attachment {
     pub snapshot: Vec<u8>,
     pub rx: broadcast::Receiver<Vec<u8>>,
-    pub evict: Arc<Notify>,
+    pub evict: Arc<EvictToken>,
+    pub writer: bool,
     _guard: AttachGuard,
     sess: Arc<ManagedSession>,
 }
@@ -678,32 +796,57 @@ pub struct Attachment {
 impl Attachment {
     /// Feed a client keystroke to the child. The single-writer policy makes this
     /// race-free with any other browser.
+    ///
+    /// A WATCHER's input is dropped here and reports `Ok(())` — a deliberate
+    /// policy no-op, not a swallowed error: nothing failed, the client simply
+    /// does not hold the baton, and returning `Err` would tear its bridge down
+    /// for typing into a window it is allowed to keep watching.
     pub fn write(&self, bytes: &[u8]) -> Result<()> {
+        if !self.writer {
+            return Ok(());
+        }
         self.sess.write(bytes)
     }
 
-    /// Propagate a client resize to the PTY so the child's TUI reflows.
+    /// Propagate a client resize to the PTY so the child's TUI reflows. A
+    /// watcher's resize is dropped for the same reason as its keystrokes (see
+    /// [`write`]) — one PTY has one geometry, and it belongs to the writer.
+    ///
+    /// [`write`]: Attachment::write
     pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
+        if !self.writer {
+            return Ok(());
+        }
         self.sess.resize(rows, cols)
     }
 }
 
-/// Clears the session's single-writer slot on drop — but ONLY when the slot still
-/// holds THIS attachment's token. An evicted incumbent's guard-drop therefore does
-/// not clobber the taker's slot (`ptr_eq` mismatch), which is what makes takeover
-/// race-free.
+/// Deregisters this attachment on drop. A WRITER clears the single-writer slot —
+/// but ONLY when the slot still holds THIS attachment's token, so an evicted
+/// incumbent's guard-drop does not clobber the taker's slot (`ptr_eq` mismatch),
+/// which is what makes takeover race-free. A WATCHER removes exactly its own
+/// token from the watcher list, by the same identity test.
 struct AttachGuard {
     sess: Arc<ManagedSession>,
-    token: Arc<Notify>,
+    token: Arc<EvictToken>,
+    writer: bool,
 }
 
 impl Drop for AttachGuard {
     fn drop(&mut self) {
-        let mut slot = self.sess.attached.lock().expect("attached mutex");
-        if let Some(existing) = slot.as_ref() {
-            if Arc::ptr_eq(existing, &self.token) {
-                *slot = None;
+        if self.writer {
+            let mut slot = self.sess.attached.lock().expect("attached mutex");
+            if let Some(existing) = slot.as_ref() {
+                if Arc::ptr_eq(existing, &self.token) {
+                    *slot = None;
+                }
             }
+        } else {
+            self.sess
+                .watchers
+                .lock()
+                .expect("watchers mutex")
+                .retain(|w| !Arc::ptr_eq(w, &self.token));
         }
     }
 }
@@ -725,6 +868,75 @@ mod tests {
             b"456789AB".to_vec(),
             "the FRONT is dropped and the tail retained"
         );
+    }
+
+    /// The bridge learns it was evicted by waking, and announces WHY by reading
+    /// the token — so a wake that arrives before the reason does would announce
+    /// nothing. `fire` records first and wakes second; this pins that order from
+    /// the waiter's side.
+    #[tokio::test]
+    async fn evict_token_carries_its_reason_before_waking() {
+        let token = EvictToken::new();
+        assert_eq!(token.reason(), None, "a fresh token names no reason");
+        // Registered BEFORE the fire, exactly as the bridge does.
+        let notified = token.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+
+        token.fire(EndReason::TakenOver);
+
+        assert_eq!(
+            token.reason(),
+            Some(EndReason::TakenOver),
+            "the reason must be readable the instant the waiter wakes"
+        );
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(500), notified)
+                .await
+                .is_ok(),
+            "the pre-registered waiter must already be woken"
+        );
+        assert_eq!(EndReason::TakenOver.as_wire(), "taken-over");
+        assert_eq!(EndReason::ChildExited.as_wire(), "child-exited");
+        assert_eq!(EndReason::DaemonShutdown.as_wire(), "daemon-shutdown");
+    }
+
+    /// The writer slot and the watcher list are separate registers: a watcher may
+    /// never make the slot LOOK occupied (which would refuse an honest attach with
+    /// `409`), and it must be reachable while the slot IS held (which is the whole
+    /// point — a second workbench sees the session instead of stealing it).
+    ///
+    /// Spawns the platform shell rather than the helper child bin: `CARGO_BIN_EXE_*`
+    /// is visible only to integration tests (CONTEXT.md → Testing conventions), and
+    /// nothing here talks to the child — the session only has to be LIVE.
+    #[tokio::test]
+    async fn a_watcher_does_not_occupy_the_writer_slot() {
+        let manager = Arc::new(SessionManager::new());
+        let spec = console_spec(std::env::temp_dir(), 24, 80);
+        let (id, writer) = manager
+            .spawn_attached(
+                "~".to_string(),
+                "console".to_string(),
+                "console".to_string(),
+                spec,
+            )
+            .expect("the platform shell must spawn — the free console depends on it");
+        drop(writer); // the slot is free; only the watcher list is about to fill
+
+        let watcher = manager
+            .watch(id)
+            .expect("a live session is always watchable");
+        assert!(!watcher.writer, "watch() yields a reader, never the baton");
+        let taker = manager
+            .attach(id, false)
+            .expect("a registered watcher must not make the writer slot look busy");
+        assert!(taker.writer, "a plain attach takes the baton");
+        let second = manager
+            .watch(id)
+            .expect("a BUSY session is still watchable — watch never refuses with Busy");
+        assert!(!second.writer);
+
+        manager.close(id);
     }
 
     #[test]
