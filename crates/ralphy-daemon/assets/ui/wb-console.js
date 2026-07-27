@@ -458,6 +458,15 @@ window.WBConsole = (function () {
   // needs the extent the same frame's rects imply, or a restored offset would be
   // clamped against a stage that has not grown yet.
   let landed = false;
+  // A reveal that arrived while `.consoles-tab` was still `display:none`. The
+  // viewport measures 0 there, so `reveal` cannot centre against it and parks
+  // the desk id here instead; the first `applyLanding` that CAN measure honours
+  // it AHEAD of the stored offset. Both halves matter: without the park the
+  // reveal is dropped (measured — `openConsoleItem` calls `reach` on the same
+  // synchronous stack as `activate`, and Alpine's `x-show` flip is a microtask
+  // later), and without the precedence the landing re-applies the stored view
+  // and slides the plane straight back off the window that was asked for.
+  let pendingReveal = null;
   // Whether `restoreDesk` has finished — on ANY of its three exits, including
   // the demo early return and a failed fetch. It is what lets the latch below
   // distinguish "the stage is empty because nothing was restored YET" from "the
@@ -470,9 +479,19 @@ window.WBConsole = (function () {
     // A hidden tab measures a 0×0 viewport, where every landing centres on
     // nothing — and `saveOffset` would then persist that nothing.
     if (!ws.clientWidth || !ws.clientHeight) return;
+    const rects = [...st.querySelectorAll(".session-window")].map(restoreRect);
+    // A parked reveal outranks the stored offset: this is the frame it was
+    // waiting for, and the operator's last act was asking for that window.
+    if (pendingReveal != null) {
+      const wanted = pendingReveal;
+      pendingReveal = null;
+      // Latch FIRST: `revealNow` stores the offset it scrolls to, and that
+      // store is suppressed until the landing has happened.
+      if (rects.length || deskSettled) landed = true;
+      if (revealNow(wanted)) return;
+    }
     const stored = window.WBView?.read()?.off || null;
     if (landed && !stored) return;
-    const rects = [...st.querySelectorAll(".session-window")].map(restoreRect);
     const at = viewLanding(
       stored,
       rects,
@@ -564,11 +583,33 @@ window.WBConsole = (function () {
   // or null when no window carries that desk id.
   function reveal(deskId) {
     const ws = workspace();
+    const it = findWindow(deskId);
+    if (!it) return null;
+    if (ws && ws.clientWidth && ws.clientHeight) return revealNow(deskId);
+    // A viewport that measures 0 is a tab still `display:none` — this repo has
+    // measured that trap (CONTEXT.md → Testing conventions). Centring against
+    // it would clamp to 0,0 and slide the plane somewhere the operator never
+    // asked for. Focus now, and park the centring for the frame that can
+    // measure it (see `pendingReveal`) rather than dropping it.
+    focusWin(it);
+    pendingReveal = deskId;
+    return it;
+  }
+
+  function findWindow(deskId) {
+    const st = stage();
+    if (!st) return null;
+    return (
+      [...st.querySelectorAll(".session-window")].find((w) => w._deskId === deskId) || null
+    );
+  }
+
+  // The centring half, on a viewport that is known to measure.
+  function revealNow(deskId) {
+    const ws = workspace();
     const st = stage();
     if (!ws || !st) return null;
-    const it = [...st.querySelectorAll(".session-window")].find(
-      (w) => w._deskId === deskId,
-    );
+    const it = findWindow(deskId);
     if (!it) return null;
     focusWin(it);
     // A maximized console already fills the frame, so there is nothing to
@@ -578,11 +619,6 @@ window.WBConsole = (function () {
     // resulting `scroll` re-derives the pin (`syncMaxPin`), so the full bleed
     // follows the frame instead of desyncing from it (issue #338).
     if (it.classList.contains("maximized")) return it;
-    // A viewport that measures 0 is a tab still `display:none` — this repo has
-    // measured that trap (CONTEXT.md → Testing conventions). Centring against
-    // it would clamp to 0,0 and slide the plane somewhere the operator never
-    // asked for; focusing without scrolling is the honest degradation.
-    if (!ws.clientWidth || !ws.clientHeight) return it;
     const to = bringIntoView(
       restoreRect(it),
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -590,6 +626,18 @@ window.WBConsole = (function () {
     );
     ws.scrollLeft = to.left;
     ws.scrollTop = to.top;
+    // The reveal IS the operator's new view, stored NOW rather than by the
+    // debounced `scroll` flush: `refitAll` runs its own `applyLanding` in the
+    // same frame chain, and that call re-applies the STORED offset — which, for
+    // the 250 ms until the flush, is still the pre-reveal one. Writing it here
+    // is what stops the landing from undoing the centring. A pending flush is
+    // dropped with it: it carries the offset captured before this scroll.
+    if (landed) {
+      pendingOffset = null;
+      clearTimeout(offsetFlush);
+      offsetFlush = null;
+      window.WBView?.patch({ off: { left: to.left, top: to.top } });
+    }
     return it;
   }
 
@@ -674,10 +722,20 @@ window.WBConsole = (function () {
         const { dx, dy } = nudge();
         if (dx || dy) panRaf = requestAnimationFrame(tickPan);
       };
+      // Escape ends the drag where the window currently sits — it does not
+      // revert it. There is no "cancel" in this gesture's vocabulary: the
+      // window has been following the cursor and its rect is already the
+      // operator's; what Escape buys is a keyboard exit from a loop whose
+      // mouseup may never arrive.
+      const onKey = (ev) => {
+        if (ev.key === "Escape") onUp();
+      };
       const onUp = () => {
         stopPan();
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("contextmenu", onUp);
+        document.removeEventListener("keydown", onKey);
         window.removeEventListener("blur", onUp);
         applyExtent();
         persistWin(win);
@@ -688,6 +746,13 @@ window.WBConsole = (function () {
       // menu or another window takes focus, which is the case where the pointer
       // never comes back to deliver the `buttons === 0` move above.
       window.addEventListener("blur", onUp);
+      // …and `contextmenu` covers the case that recovery ASSUMES: a native menu
+      // opened mid-drag. Whether the browser also blurs the window there is not
+      // something this code should have to be right about — a menu over the
+      // page is the end of the gesture either way, and a double `onUp` is
+      // idempotent (`stopPan` is null-safe and the removals are no-ops).
+      document.addEventListener("contextmenu", onUp);
+      document.addEventListener("keydown", onKey);
       e.preventDefault();
     });
   }
@@ -2335,9 +2400,6 @@ window.WBConsole = (function () {
       win.style.width = t.width + "px";
       win.style.height = t.height + "px";
       focusWin(win);
-      // Tiling is a layout act like any drag: record it, or a reload would replay
-      // the pre-arrange rects and the desk would silently disagree with the screen.
-      persistWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
     // A maximized console is not tiled, but it must not be BURIED by the tiles
@@ -2351,11 +2413,19 @@ window.WBConsole = (function () {
     // it, so an immediate fold would measure the pre-arrange boxes — the plane
     // would be sized to a layout that no longer exists and the terminals refit
     // to the box they are still leaving.
+    //
+    // The PERSIST is in here for the same reason, and it is not cosmetic:
+    // `persistWin` snapshots `offsetLeft`/`offsetWidth`, which at the moment the
+    // tile rects are written still read the PRE-arrange box (measured: the desk
+    // kept 60,100,260,160 for a member tiled to 52,77,283,193.5, and a reload
+    // replayed the old layout). Tiling is a layout act like any drag — it must
+    // record where the member LANDED.
     setTimeout(() => {
       for (const win of members) {
         try {
           win._term?.fit.fit();
         } catch {}
+        persistWin(win);
       }
       refreshFenceChrome();
       applyExtent();
