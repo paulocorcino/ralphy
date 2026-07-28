@@ -62,6 +62,17 @@ test("the registry round-trips through the tab's session storage", () => {
   });
 });
 
+// The key's PRESENCE is the fact "this tab holds a detach", which a boot-time
+// write would forge for every tab that ever loaded the shell.
+test("opening a link writes nothing — a tab that detached nothing leaves no record", () => {
+  const store = fakeStorage();
+  withGlobals({ sessionStorage: store }, () => {
+    const link = load().link();
+    assert.equal(store.getItem("wb.detach.v1"), null);
+    assert.ok(link.tab, "the identity is still minted, in memory");
+  });
+});
+
 test("the registry is stored under wb.detach.v1 as a versioned record", () => {
   const store = fakeStorage();
   withGlobals({ sessionStorage: store }, () => {

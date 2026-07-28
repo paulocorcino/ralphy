@@ -75,10 +75,11 @@ window.WBDetachLink = (function () {
 
   function link() {
     const rec = readRecord();
-    // The id is generated ONCE per tab and stored beside the registry, so it
-    // survives the reload the registry survives and dies with it.
+    // The id is minted ONCE per tab and persisted BESIDE the registry, by
+    // `writeRegistry` — never at load. A tab that detaches nothing must leave
+    // the store untouched: the key's very presence is the fact "this tab has a
+    // detach", and a boot-time write would make every tab claim one.
     const tab = rec?.tab || newTabId();
-    if (!rec || rec.tab !== tab) writeRecord({ v: 1, tab, fences: rec?.fences || [] });
 
     // `undefined` = not yet asked, `null` = asked and unavailable. Created on
     // first use so the module load stays free of browser facilities.
