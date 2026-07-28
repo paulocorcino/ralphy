@@ -309,12 +309,18 @@ pub fn router(
     // the `sessions`/`watchers` managers follow: derived here, never a `router`
     // parameter, so the public signature and its call sites hold.
     let desk_path = registry_path.with_file_name("desk.toml");
+    // The peer store (ADR-0052 §3) is a sibling directory of `repos.toml`, derived
+    // the same way `desk_path` is — inside `router`, never a parameter, so the
+    // public signature and its call sites hold.
+    let peers_dir = registry_path.with_file_name("peers");
+    let nudge_peers_dir = peers_dir.clone();
     // This daemon's own environment label, resolved once: the handshake serves it
     // so a peer's diagnosis can name WHICH machine answered.
     let peer_environment = peer::detect_environment();
     // Captured BEFORE `identity` is moved into the `/api/identity` closure, the
     // same pattern as `command_daemon_id`.
     let hello_identity = identity.clone();
+    let fleet_identity = identity.clone();
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
@@ -372,6 +378,23 @@ pub fn router(
             get({
                 let p = registry_path.clone();
                 move || repos_route(p)
+            }),
+        )
+        .route(
+            "/api/fleet",
+            get({
+                let registry = registry_path.clone();
+                let peers = peers_dir.clone();
+                let id = fleet_identity.clone();
+                let env = peer_environment.clone();
+                move || fleet_route(registry.clone(), peers.clone(), id.clone(), env.clone())
+            }),
+        )
+        .route(
+            "/api/fleet/nudge",
+            post({
+                let peers = nudge_peers_dir.clone();
+                move |q: Query<NudgeQuery>| fleet_nudge_route(peers.clone(), q.0.daemon_id)
             }),
         )
         .route(
@@ -1875,6 +1898,183 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
     }
 }
 
+/// One peer as the workbench sees it: who it is, where it runs, and what this
+/// daemon just observed about it. `state` is the grouping key; `diagnosis` is
+/// the sentence shown when that state is not `reachable`.
+#[derive(serde::Serialize)]
+struct PeerView {
+    daemon_id: String,
+    name: String,
+    avatar: String,
+    environment: String,
+    state: String,
+    diagnosis: String,
+    /// Whether this peer advertised how to wake it (a WSL unit).
+    nudgeable: bool,
+}
+
+/// `GET /api/fleet`: the federated repo view (ADR-0052 §5) — every peer this
+/// daemon can see plus every repo the fleet knows, as
+/// `{ peers: [...], repos: [...] }`.
+///
+/// Reads the peer store FRESH and probes every peer on EVERY request, holding no
+/// background state: same contract as `/api/repos`. A cached liveness table would
+/// contradict "a descriptor is a claim, not a fact" — the answer is what is true
+/// now, not what was true when a poller last ran.
+///
+/// `/api/repos` is deliberately untouched: this route is additive, so nothing
+/// pinned to the local list changes shape.
+async fn fleet_route(
+    registry_path: PathBuf,
+    peers_dir: PathBuf,
+    identity: Option<identity::Identity>,
+    environment: String,
+) -> Response {
+    let (descriptors, rejects) = {
+        let dir = peers_dir.clone();
+        tokio::task::spawn_blocking(move || peer::read_store(&dir))
+            .await
+            .unwrap_or_default()
+    };
+
+    // Probe every peer CONCURRENTLY: with a 2 s per-peer timeout, dialling them
+    // one after another would make the page cost the sum of the down ones.
+    let mut set = tokio::task::JoinSet::new();
+    for (index, d) in descriptors.iter().cloned().enumerate() {
+        set.spawn(async move {
+            let status = peer::client::probe(&d).await;
+            // Only a reachable peer is asked for its repos; an unreachable one
+            // contributes no rows but is still listed (marked, never removed).
+            let store = match status {
+                peer::client::PeerStatus::Reachable => peer::client::get(&d, "/api/repos")
+                    .await
+                    .ok()
+                    .filter(|(code, _)| *code == 200)
+                    .and_then(|(_, body)| fleet::store_from_repos_json(&body)),
+                _ => None,
+            };
+            (index, status, store)
+        });
+    }
+    let mut probed: Vec<Option<(peer::client::PeerStatus, Option<registry::RegistryStore>)>> =
+        (0..descriptors.len()).map(|_| None).collect();
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok((index, status, store)) => probed[index] = Some((status, store)),
+            Err(e) => tracing::warn!(error = %e, "a peer probe task failed"),
+        }
+    }
+
+    let mut peer_views: Vec<PeerView> = Vec::with_capacity(descriptors.len() + rejects.len());
+    let mut aggregate_input: Vec<(
+        &peer::PeerDescriptor,
+        &peer::client::PeerStatus,
+        Option<&registry::RegistryStore>,
+    )> = Vec::with_capacity(descriptors.len());
+    // A probe whose task itself failed is reported as unreachable rather than
+    // dropped — the operator must see the peer, not a silently shorter list.
+    let fallback = peer::client::PeerStatus::Unreachable {
+        why: "the probe did not complete".to_string(),
+    };
+    for (d, slot) in descriptors.iter().zip(probed.iter()) {
+        let (status, store) = match slot {
+            Some((status, store)) => (status, store.as_ref()),
+            None => (&fallback, None),
+        };
+        peer_views.push(PeerView {
+            daemon_id: d.daemon_id.clone(),
+            name: d.name.clone(),
+            avatar: d.avatar.clone(),
+            environment: d.environment.clone(),
+            state: status.state().to_string(),
+            diagnosis: status.diagnosis(&d.environment),
+            nudgeable: d.nudge.is_some(),
+        });
+        aggregate_input.push((d, status, store));
+    }
+    // A rejected record is DEGRADED, never dropped: the operator has a file on
+    // disk that is not doing what they think it is, and only this list says so.
+    for reject in &rejects {
+        peer_views.push(PeerView {
+            daemon_id: String::new(),
+            name: reject.file().to_string(),
+            avatar: "❔".to_string(),
+            environment: "unknown".to_string(),
+            state: "malformed".to_string(),
+            diagnosis: reject.why(),
+            nudgeable: false,
+        });
+    }
+
+    let local_store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry; federating an empty local list");
+            registry::RegistryStore::default()
+        }
+    };
+    let local_id = identity
+        .as_ref()
+        .map(|i| i.id.to_string())
+        .unwrap_or_default();
+    let local_name = identity
+        .as_ref()
+        .map(|i| i.name.clone())
+        .unwrap_or_default();
+    let repos = fleet::aggregate(
+        (&local_id, &local_name, &environment, &local_store),
+        &aggregate_input,
+    );
+    Json(serde_json::json!({ "peers": peer_views, "repos": repos })).into_response()
+}
+
+/// The `daemon_id` a nudge is aimed at.
+#[derive(serde::Deserialize)]
+struct NudgeQuery {
+    daemon_id: String,
+}
+
+/// `POST /api/fleet/nudge?daemon_id=<id>`: ask the OS to start a peer that is not
+/// answering (ADR-0052 §4). Fire-and-forget — the daemon spawns and never
+/// parents, holds, or signals what it started.
+async fn fleet_nudge_route(peers_dir: PathBuf, daemon_id: String) -> Response {
+    let (descriptors, _rejects) = {
+        let dir = peers_dir.clone();
+        tokio::task::spawn_blocking(move || peer::read_store(&dir))
+            .await
+            .unwrap_or_default()
+    };
+    let Some(d) = descriptors.into_iter().find(|d| d.daemon_id == daemon_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("no peer announced as {daemon_id}") })),
+        )
+            .into_response();
+    };
+    let Some(spec) = d.nudge.as_ref() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!(
+                    "peer {} announced no way to wake it — a WSL peer needs `loginctl enable-linger` \
+                     and a `ralphy-daemon.service` user unit before it can be nudged",
+                    d.environment
+                )
+            })),
+        )
+            .into_response();
+    };
+    let argv = peer::nudge::nudge_argv(spec);
+    match peer::nudge::spawn_detached(&argv) {
+        Ok(()) => Json(serde_json::json!({ "nudged": true })).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": format!("{e:#}") })),
+        )
+            .into_response(),
+    }
+}
+
 /// `GET /api/peer/hello`: the local fleet's version handshake (ADR-0052 §3) —
 /// who this daemon is, which environment it runs in, and which peer protocol it
 /// speaks. Cheap and side-effect-free, and deliberately NOT folded into
@@ -3100,6 +3300,167 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Seed a scratch store with `repos.toml` plus a `peers/` descriptor pointing
+    /// at a closed loopback port, and return the registry path `router` takes.
+    fn seed_fleet_store(dir: &Path, peer_port: u16) -> PathBuf {
+        let registry_path = dir.join("repos.toml");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/local", &dir.to_string_lossy());
+        registry::save_to(&store, &registry_path).unwrap();
+        peer::write_descriptor(
+            dir,
+            &peer::PeerDescriptor {
+                daemon_id: "01PEERFAKE".into(),
+                name: "wsl-box".into(),
+                avatar: "🐺".into(),
+                address: "127.0.0.1".into(),
+                port: peer_port,
+                environment: "WSL: Ubuntu-22.04".into(),
+                token: "tok".into(),
+                protocol_version: peer::PEER_PROTOCOL_VERSION,
+                nudge: Some(peer::NudgeSpec {
+                    distro: "Ubuntu-22.04".into(),
+                    unit: "ralphy-daemon.service".into(),
+                }),
+            },
+        )
+        .unwrap();
+        registry_path
+    }
+
+    fn fleet_router(registry_path: PathBuf) -> Router {
+        router(
+            Some(identity::Identity {
+                id: ulid::Ulid::nil(),
+                name: "anvil".into(),
+                avatar: "🐙".into(),
+            }),
+            registry_path,
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+    }
+
+    #[tokio::test]
+    async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
+        let dir = tempfile::tempdir().unwrap();
+        // A port nothing listens on: bound to learn a free one, then dropped.
+        let closed = {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let registry_path = seed_fleet_store(dir.path(), closed);
+        // A file that is not a descriptor at all — it must degrade to one entry,
+        // never fail the route.
+        std::fs::write(
+            dir.path().join("peers").join("junk.toml"),
+            "not toml at all",
+        )
+        .unwrap();
+
+        let resp = fleet_router(registry_path)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/fleet")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        let peers = body["peers"].as_array().unwrap();
+        assert_eq!(peers.len(), 2, "the peer AND the bad record: {peers:?}");
+        let live = peers
+            .iter()
+            .find(|p| p["daemon_id"] == "01PEERFAKE")
+            .expect("the announced peer must be listed");
+        assert_eq!(live["state"], "unreachable", "got: {live}");
+        assert_eq!(live["environment"], "WSL: Ubuntu-22.04");
+        assert!(
+            live["diagnosis"]
+                .as_str()
+                .unwrap()
+                .contains("WSL: Ubuntu-22.04"),
+            "the diagnosis must name the environment; got: {live}"
+        );
+        assert!(live["nudgeable"].as_bool().unwrap());
+        let bad = peers
+            .iter()
+            .find(|p| p["state"] == "malformed")
+            .expect("a fold rejection is degraded, never dropped");
+        assert_eq!(bad["name"], "junk.toml");
+
+        // Federation must never blank the local sidebar.
+        let repos = body["repos"].as_array().unwrap();
+        assert_eq!(repos.len(), 1, "the local row survives: {repos:?}");
+        assert_eq!(repos[0]["key"], "00000000000000000000000000/owner/local");
+        assert_eq!(repos[0]["peer_state"], "local");
+        assert_eq!(repos[0]["local"], true);
+    }
+
+    #[tokio::test]
+    async fn api_fleet_nudge_404s_an_unknown_daemon() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry_path = seed_fleet_store(dir.path(), 7257);
+        let resp = fleet_router(registry_path)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/fleet/nudge?daemon_id=01NOSUCHPEER")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn api_fleet_nudge_refuses_a_peer_that_announced_no_way_to_wake_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry_path = seed_fleet_store(dir.path(), 7257);
+        // Re-announce the same peer WITHOUT a nudge spec.
+        peer::write_descriptor(
+            dir.path(),
+            &peer::PeerDescriptor {
+                daemon_id: "01PEERFAKE".into(),
+                name: "wsl-box".into(),
+                avatar: "🐺".into(),
+                address: "127.0.0.1".into(),
+                port: 7257,
+                environment: "WSL: Ubuntu-22.04".into(),
+                token: "tok".into(),
+                protocol_version: peer::PEER_PROTOCOL_VERSION,
+                nudge: None,
+            },
+        )
+        .unwrap();
+
+        let resp = fleet_router(registry_path)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/fleet/nudge?daemon_id=01PEERFAKE")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("loginctl enable-linger"),
+            "the refusal must name the prerequisite no nudge can substitute for; got: {body}"
+        );
     }
 
     #[tokio::test]
