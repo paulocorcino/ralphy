@@ -1167,3 +1167,102 @@ test("fenceCycle mutates neither the list nor its rects", () => {
   load().fenceCycle(fences, "a", 1);
   assert.deepEqual(fences, before);
 });
+
+// ---- detachFold: the detach registry's transitions ---------------------------
+// The fold is the whole decision surface for detaching a fence into its own
+// window — every case below is a RELATION (what the registry becomes, which
+// effect comes back), never a count of popups, because the caller is what turns
+// an effect into a `window.open`.
+
+test("detachFold: the cap is four — the fifth detach is refused, not opened", () => {
+  const WB = load();
+  assert.equal(WB.DETACH_MAX, 4);
+  let reg = [];
+  const opened = [];
+  for (const id of ["f-a", "f-b", "f-c", "f-d"]) {
+    const out = WB.detachFold(reg, { type: "detach", fenceId: id });
+    opened.push(...out.effects.filter((e) => e.type === "open").map((e) => e.fenceId));
+    reg = out.registry;
+  }
+  assert.deepStrictEqual(opened, ["f-a", "f-b", "f-c", "f-d"]);
+  assert.equal(reg.length, 4);
+
+  // THE NEGATIVE CONTROL. With the cap check deleted this line goes green with
+  // an `open` and a 5-long registry, so both halves are asserted: the effect is
+  // the literal `refuse`, AND the registry came back untouched.
+  const fifth = WB.detachFold(reg, { type: "detach", fenceId: "f-e" });
+  assert.deepStrictEqual(fifth.effects, [{ type: "refuse", fenceId: "f-e", reason: "cap" }]);
+  assert.equal(fifth.registry.length, 4);
+  assert.deepStrictEqual(fifth.registry, reg);
+});
+
+test("detachFold: one popup per fence — detaching a detached fence focuses it", () => {
+  const WB = load();
+  const first = WB.detachFold([], { type: "detach", fenceId: "f-a" });
+  assert.deepStrictEqual(first.effects, [{ type: "open", fenceId: "f-a" }]);
+  assert.equal(first.registry.length, 1);
+
+  const again = WB.detachFold(first.registry, { type: "detach", fenceId: "f-a" });
+  assert.equal(again.registry.length, 1, "no second entry for the same fence");
+  assert.equal(again.effects.length, 1);
+  assert.equal(again.effects[0].type, "focus");
+  assert.equal(again.effects[0].fenceId, "f-a");
+});
+
+test("detachFold: re-attach empties the registry, and a SECOND one is a no-op", () => {
+  const WB = load();
+  const held = WB.detachFold([], { type: "detach", fenceId: "f-a" }).registry;
+
+  const home = WB.detachFold(held, { type: "reattach", fenceId: "f-a" });
+  assert.deepStrictEqual(home.effects, [{ type: "close", fenceId: "f-a" }]);
+  assert.deepStrictEqual(home.registry, []);
+
+  // Both the popup's `beforeunload` AND the opener's `closed` poll report the
+  // re-attach: the doubled signal must not spawn the consoles twice.
+  const twice = WB.detachFold(home.registry, { type: "reattach", fenceId: "f-a" });
+  assert.deepStrictEqual(twice.effects, []);
+  assert.deepStrictEqual(twice.registry, []);
+});
+
+test("detachFold: re-attaching a fence that was never detached changes nothing", () => {
+  const WB = load();
+  const out = WB.detachFold(["f-a"], { type: "reattach", fenceId: "f-zzz" });
+  assert.deepStrictEqual(out.effects, []);
+  assert.deepStrictEqual(out.registry, ["f-a"]);
+});
+
+test("detachFold: focus reaches a detached fence only", () => {
+  const WB = load();
+  const member = WB.detachFold(["f-a"], { type: "focus", fenceId: "f-a" });
+  assert.deepStrictEqual(member.effects, [{ type: "focus", fenceId: "f-a" }]);
+  assert.deepStrictEqual(member.registry, ["f-a"]);
+
+  const stranger = WB.detachFold(["f-a"], { type: "focus", fenceId: "f-b" });
+  assert.deepStrictEqual(stranger.effects, [], "nothing to focus for an attached fence");
+  assert.deepStrictEqual(stranger.registry, ["f-a"]);
+});
+
+test("detachFold: the input registry is never mutated, whatever the event", () => {
+  const WB = load();
+  for (const event of [
+    { type: "detach", fenceId: "f-new" },
+    { type: "detach", fenceId: "f-a" },
+    { type: "reattach", fenceId: "f-a" },
+    { type: "reattach", fenceId: "f-nope" },
+    { type: "focus", fenceId: "f-a" },
+    { type: "wat", fenceId: "f-a" },
+  ]) {
+    const reg = ["f-a", "f-b"];
+    const before = [...reg];
+    const out = WB.detachFold(reg, event);
+    assert.deepStrictEqual(reg, before, `mutated on ${event.type}`);
+    assert.notEqual(out.registry, reg, "a NEW array comes back, never the input");
+  }
+});
+
+test("detachFold: an unknown event is inert, so a stray message cannot detach", () => {
+  const WB = load();
+  const out = WB.detachFold(["f-a"], { type: "heartbeat", fenceId: "f-a" });
+  assert.deepStrictEqual(out.effects, []);
+  assert.deepStrictEqual(out.registry, ["f-a"]);
+});

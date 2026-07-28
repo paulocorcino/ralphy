@@ -1386,6 +1386,46 @@ window.WBConsole = (function () {
     return order[(at + d + order.length) % order.length].id;
   }
 
+  // How many fences may be detached into their own window at once. A popup per
+  // fence is a real OS window with its own sockets and its own xterm renderers;
+  // the cap is what keeps a stuck key from opening forty of them.
+  const DETACH_MAX = 4;
+
+  // The detach registry's fold: (registry, event) -> { registry, effects }. Pure
+  // — no DOM, no storage, no `window` — so every transition is decided here and
+  // merely CARRIED OUT by the caller. `registry` is an array of fence ids and is
+  // never mutated: a new array comes back, which is what lets the caller commit
+  // the transition only once its effects have actually run (a popup the browser
+  // blocked must leave the registry exactly as it was).
+  //
+  // Three events, deliberately: detach, reattach, focus. The heartbeat and
+  // peer-lost events PRD #344 also names belong to the reload-survival slice,
+  // and a new event is a new case here, not a reshape.
+  function detachFold(registry, event) {
+    const reg = Array.isArray(registry) ? registry : [];
+    const id = event?.fenceId;
+    const held = reg.includes(id);
+    switch (event?.type) {
+      case "detach":
+        // Already detached: one popup per fence, so this is a request to SEE
+        // the window that already exists, not to open a second one.
+        if (held) return { registry: reg.slice(), effects: [{ type: "focus", fenceId: id }] };
+        if (reg.length >= DETACH_MAX)
+          return { registry: reg.slice(), effects: [{ type: "refuse", fenceId: id, reason: "cap" }] };
+        return { registry: reg.concat([id]), effects: [{ type: "open", fenceId: id }] };
+      case "reattach":
+        // Idempotent on purpose: BOTH the popup's `beforeunload` and the
+        // opener's `closed` poll report a re-attach, so the second one must be
+        // a no-op rather than a second spawn of the same consoles.
+        if (!held) return { registry: reg.slice(), effects: [] };
+        return { registry: reg.filter((f) => f !== id), effects: [{ type: "close", fenceId: id }] };
+      case "focus":
+        return { registry: reg.slice(), effects: held ? [{ type: "focus", fenceId: id }] : [] };
+      default:
+        return { registry: reg.slice(), effects: [] };
+    }
+  }
+
   // The verb the shortcut calls: walk one step and jump. Returns the id landed
   // on, or null when the plane carries no fence — the shell needs that to leave
   // the key unswallowed.
@@ -2877,6 +2917,8 @@ window.WBConsole = (function () {
     fenceRepos,
     fenceList,
     fenceCycle,
+    detachFold,
+    DETACH_MAX,
     stepFence,
     jumpToFence,
     focusedFence: focusedFenceId,
