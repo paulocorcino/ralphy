@@ -87,10 +87,16 @@ FENCE_G = {"left": 800, "top": 400, "width": 320, "height": 260}
 FENCE_D = {"left": 40, "top": 760, "width": 320, "height": 200}
 FENCE_E = {"left": 420, "top": 760, "width": 320, "height": 200}
 
-# Two members in alpha. Both start below the head band (top >= 100) and stop
+# Three members in alpha. All start below the head band (top >= 100) and stop
 # well short of the SE grip at (626..640, 486..500).
+#
+# MEM_3 is an `agent` record, which restores as a PLACEHOLDER — chrome, no PTY,
+# and a `.session-reconnect` button. It is what makes scenario 5 discriminating:
+# with two live consoles alone, NOTHING in the popup ever renders that button, so
+# deleting `canLaunch: false` (the one real guard) left the assertion green.
 MEM_1 = {"left": 60, "top": 100, "width": 260, "height": 160}
 MEM_2 = {"left": 340, "top": 100, "width": 260, "height": 160}
+MEM_3 = {"left": 60, "top": 280, "width": 260, "height": 160}
 
 results = []
 
@@ -176,6 +182,20 @@ def window_toml(wid, repo, rect, ts):
     )
 
 
+def placeholder_toml(wid, repo, rect, ts):
+    """An `agent` record with no live session — restores as a PLACEHOLDER."""
+    return (
+        "[[windows]]\n"
+        f'id = "{wid}"\n'
+        f'repo = "{repo}"\n'
+        'agent = "claude"\n'
+        'kind = "agent"\n'
+        "max = false\n"
+        f"ts = {ts}\n"
+        f"{rect_toml(rect)}\n\n"
+    )
+
+
 def fence_toml(fid, name, rect, ts):
     return "[[fences]]\n" f'id = "{fid}"\n' f'name = "{name}"\n' f"ts = {ts}\n" f"{rect_toml(rect)}\n\n"
 
@@ -184,6 +204,7 @@ def write_fixture_desk(daemon_dir, slug):
     Path(daemon_dir, "desk.toml").write_text(
         window_toml("w-m1", slug, MEM_1, 100)
         + window_toml("w-m2", slug, MEM_2, 101)
+        + placeholder_toml("w-m3", slug, MEM_3, 102)
         + fence_toml("f-alpha", "alpha", FENCE_A, 110)
         + fence_toml("f-beta", "beta", FENCE_B, 111)
         + fence_toml("f-gamma", "gamma", FENCE_G, 112)
@@ -261,7 +282,7 @@ def settle_windows(page, want, timeout=30000):
     page.wait_for_timeout(500)
 
 
-def desk_page(ctx, fences=5, windows=2):
+def desk_page(ctx, fences=5, windows=3):
     page = ctx.new_page()
     page.set_viewport_size(dict(VIEW))
     page.goto(BASE)
@@ -562,6 +583,13 @@ def main():
             # ---- scenario 2: the detach round trip ---------------------------
             before_boxes = by_id(boxes(page))
             before_fence = fence_box(page, "f-alpha")
+            # The control for scenario 5: on the SHELL this placeholder does
+            # carry `.session-reconnect`. Sampled here, because once the fence is
+            # detached the shell holds no member at all and a 0 there would be
+            # trivially true.
+            shell_reconnect_before = page.evaluate(
+                "() => document.querySelectorAll('.session-reconnect').length"
+            )
             before_list = open_fence_list(page)
             close_menus(page)
             quiet(desk_file)
@@ -569,7 +597,7 @@ def main():
             page_bg = page.evaluate("() => getComputedStyle(document.body).backgroundColor")
 
             popup = detach(page, "f-alpha")
-            popup_windows(popup, 2)
+            popup_windows(popup, 3)
 
             check(
                 "the popup carries the fence's name in its title",
@@ -586,10 +614,24 @@ def main():
                 "() => [...document.querySelectorAll('.session-window')]"
                 "  .filter((w) => w.querySelector('.xterm-screen')).length"
             )
+            placed = popup.evaluate(
+                "() => { const ws = [...document.querySelectorAll('.session-window')];"
+                " const vw = document.documentElement.clientWidth,"
+                "   vh = document.documentElement.clientHeight;"
+                " return { onscreen: ws.filter((w) => w.offsetLeft >= 0 && w.offsetTop >= 0"
+                "     && w.offsetLeft < vw && w.offsetTop < vh).length,"
+                "   distinct: new Set(ws.map((w) => w.offsetLeft + ',' + w.offsetTop)).size }; }"
+            )
+            check(
+                "mountDetached translates every member INTO the popup's own viewport,"
+                " without collapsing them onto one point",
+                placed == {"onscreen": 3, "distinct": 3},
+                f"got={placed}",
+            )
             check(
                 "…holding this fence's consoles, LIVE",
                 live == 2,
-                f"windows-with-a-terminal={live}",
+                f"windows-with-a-terminal={live} (of 3 members; w-m3 is a placeholder)",
             )
             after_fence = fence_box(page, "f-alpha")
             check(
@@ -618,6 +660,10 @@ def main():
             # ---- scenario 4 (measured here, asserted below): popup-local drag -
             # Driven BEFORE the close, on the same popup: the discard is only
             # meaningful against a layout the popup actually changed.
+            was = popup.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                " return { left: w.offsetLeft, top: w.offsetTop, width: w.offsetWidth }; }"
+            )
             moved = popup.evaluate(
                 "() => { const w = document.querySelectorAll('.session-window')[0];"
                 " w.style.left = (w.offsetLeft + 120) + 'px';"
@@ -639,15 +685,17 @@ def main():
             popup.wait_for_timeout(600)
             check(
                 "a console can be moved and resized inside the popup",
-                moved["left"] > 0 and moved["width"] > 0,
-                f"moved={moved}",
+                (moved["left"] - was["left"], moved["top"] - was["top"], moved["width"] - was["width"])
+                == (120, 80, 60),
+                f"was={was} moved={moved}",
             )
             quiet(desk_file)
             desk_after_popup = desk_file.read_bytes()
             check(
                 "NOT ONE PUT /api/desk is issued from the popup context",
-                all(w is not popup for w in puts),
-                f"puts-from-popup={sum(1 for w in puts if w is popup)} total={len(puts)}",
+                all(w is not popup for w in puts) and None not in puts,
+                f"puts-from-popup={sum(1 for w in puts if w is popup)}"
+                f" unattributable={puts.count(None)} total={len(puts)}",
             )
             check(
                 "…and desk.toml is byte-identical across the detach and the popup's own layout",
@@ -656,6 +704,14 @@ def main():
             )
 
             # ---- scenario 5: the popup offers no way to open a console -------
+            # DISCRIMINATING because of MEM_3: the popup renders a PLACEHOLDER,
+            # which is the one window that carries `.session-reconnect` — the
+            # single control `canLaunch: false` actually gates. The shell's own
+            # placeholder is asserted to still HAVE the button, so this measures
+            # the guard rather than the absence of the markup.
+            popup_placeholders = popup.evaluate(
+                "() => document.querySelectorAll('.session-window.placeholder').length"
+            )
             launchers = popup.evaluate(
                 "() => ({"
                 "  reconnect: document.querySelectorAll('.session-reconnect').length,"
@@ -663,6 +719,17 @@ def main():
                 "  agents: document.querySelectorAll('.agent-item').length,"
                 "  byText: [...document.querySelectorAll('button')]"
                 "    .filter((b) => /new console/i.test(b.textContent)).length })"
+            )
+            check(
+                "the popup really renders the placeholder that carries the relaunch button",
+                popup_placeholders == 1,
+                f"placeholders-in-popup={popup_placeholders}",
+            )
+            check(
+                "…and the SHELL renders that same placeholder WITH its relaunch button"
+                " — the negative control, sampled before the detach",
+                shell_reconnect_before == 1,
+                f"shell-reconnect-before-detach={shell_reconnect_before}",
             )
             check(
                 "the popup exposes no way to open a new console",
@@ -687,11 +754,11 @@ def main():
 
             # ---- scenario 2 (cont.): closing the popup brings them home ------
             popup.close()
-            settle_windows(page, 2)
+            settle_windows(page, 3)
             page.wait_for_timeout(600)
             check(
                 "closing the popup re-attaches automatically",
-                members_of(page, "f-alpha") == 2,
+                members_of(page, "f-alpha") == 3,
                 f"members={members_of(page, 'f-alpha')}",
             )
             check(
@@ -707,20 +774,48 @@ def main():
                 all(same.values()),
                 f"before={before_boxes} after={back}",
             )
+            # GEOMETRY IS NOT LIVENESS. `settle_windows` is satisfied by a
+            # placeholder or a permanently parked window, so without these three
+            # a `reattachFence` that lost `m.session` and respawned placeholders,
+            # or one whose consoles never re-acquire the writer slot, passes the
+            # whole round trip. "…and comes home" is about terminals, not rects.
+            home = page.evaluate(
+                "() => ({"
+                "  terms: [...document.querySelectorAll('.session-window')]"
+                "    .filter((w) => w.querySelector('.xterm-screen')).length,"
+                "  placeholders: document.querySelectorAll('.session-window.placeholder').length,"
+                "  parked: [...document.querySelectorAll('.session-parked')]"
+                "    .filter((e) => e.offsetParent !== null && e.clientWidth > 0).length })"
+            )
+            check(
+                "the consoles come home ALIVE — two live terminals, one placeholder, none parked",
+                home == {"terms": 2, "placeholders": 1, "parked": 0},
+                f"got={home}",
+            )
+            # By IDENTITY, not by index: the placeholder carries no `.xterm`, and
+            # the spawn order is the membership fold's, not the fixture's.
+            live_i = page.evaluate(
+                "() => [...document.querySelectorAll('.session-window')]"
+                "  .findIndex((w) => w.querySelector('.xterm-screen'))"
+            )
+            type_line(page, live_i, "probe-home-346")
+            check(
+                "…and a returned console still reaches its child",
+                live_i >= 0 and reached_child(page, live_i, "probe-home-346"),
+                f"i={live_i} buffer={screen(page, max(live_i, 0))[-160:]!r}",
+            )
 
             # ---- scenario 3b: the glyph with no popup left is a safe no-op ----
             # `reattachFence` is the ONE function both the glyph and the
             # opener's closed-poll call, and the fold makes the second call
             # inert — this is that idempotence, observed in the browser.
-            gone = page.evaluate(
-                "() => { const g = document.querySelector(\"[data-fence-id='f-alpha'] .fence-detached\");"
-                " g.click(); return true; }"
-            )
+            click_sel(page, "[data-fence-id='f-alpha'] .fence-detached")
             page.wait_for_timeout(500)
+            after_noop = by_id(boxes(page))
             check(
                 "a glyph click with no popup left leaves the consoles exactly where they are",
-                gone and members_of(page, "f-alpha") == 2 and by_id(boxes(page)) == back,
-                f"members={members_of(page, 'f-alpha')}",
+                members_of(page, "f-alpha") == 3 and after_noop == back,
+                f"members={members_of(page, 'f-alpha')} boxes-changed={after_noop != back}",
             )
 
             # The rects survived the whole round trip. NOT a byte comparison:
@@ -753,6 +848,35 @@ def main():
             )
             orphan.close()
 
+            # ---- scenario 6b: the opener's guards reject a message it did not earn -
+            # A synthetic `message` event, because a separate TAB shares no handle
+            # with the shell and so cannot reach this listener at all. Both legs
+            # carry the re-attach verb for a fence that IS detached, so a guard
+            # that let them through would visibly bring the consoles home.
+            popup2 = detach(page, "f-alpha")
+            popup_windows(popup2, 3)
+            page.evaluate(
+                "() => { window.dispatchEvent(new MessageEvent('message', {"
+                "  origin: location.origin, source: null,"
+                "  data: { type: 'wb-fence-reattach', fenceId: 'f-alpha' } })); }"
+            )
+            page.evaluate(
+                "() => { window.dispatchEvent(new MessageEvent('message', {"
+                "  origin: 'https://evil.example', source: window,"
+                "  data: { type: 'wb-fence-reattach', fenceId: 'f-alpha' } })); }"
+            )
+            page.wait_for_timeout(800)
+            check(
+                "a message from an unknown source, or a foreign origin, drives no re-attach",
+                (not popup2.is_closed())
+                and members_of(page, "f-alpha") == 0
+                and glyph_visible(page, "f-alpha"),
+                f"popup-closed={popup2.is_closed()} members={members_of(page, 'f-alpha')}",
+            )
+            popup2.close()
+            settle_windows(page, 3)
+            page.wait_for_timeout(600)
+
             # ---- scenario 7: at most four popups ------------------------------
             capped = [detach(page, fid) for fid in ("f-beta", "f-gamma", "f-delta", "f-epsilon")]
             page.wait_for_timeout(600)
@@ -777,7 +901,7 @@ def main():
             )
             check(
                 "…and NOTHING of the refused fence is torn down",
-                members_of(page, "f-alpha") == 2 and not glyph_visible(page, "f-alpha"),
+                members_of(page, "f-alpha") == 3 and not glyph_visible(page, "f-alpha"),
                 f"members={members_of(page, 'f-alpha')} glyph={glyph_visible(page, 'f-alpha')}",
             )
             for q in capped:
@@ -807,7 +931,7 @@ def main():
 
             # ---- scenario 9: the detached console is DRIVEABLE ----------------
             popup = detach(page, "f-alpha")
-            popup_windows(popup, 2)
+            popup_windows(popup, 3)
             type_line(popup, 0, "probe-346")
             check(
                 "a session the origin tab was driving is driveable in the popup",
@@ -819,7 +943,7 @@ def main():
             # A second browser context takes the writer slot; the popup must then
             # show the existing explicit take-over rather than stealing it back.
             ctx_b = browser.new_context(viewport=dict(VIEW))
-            page_b = desk_page(ctx_b, windows=2)
+            page_b = desk_page(ctx_b, windows=3)
             page_b.wait_for_timeout(1500)
             if page_b.locator('[data-act="take-over"]').count():
                 page_b.locator('[data-act="take-over"]').first.click()
@@ -860,7 +984,7 @@ def main():
             )
             check(
                 "a second browser context renders the fence WITH its consoles inside it",
-                inside_b == 2 and glyphs_b == 0,
+                inside_b == 3 and glyphs_b == 0,
                 f"inside={inside_b} visible-glyphs={glyphs_b}",
             )
             page_b.screenshot(path=SHOT, full_page=False)
@@ -956,7 +1080,7 @@ def main():
 
             # ---- and the returned consoles are UNTILED --------------------------
             popup.close()
-            settle_windows(page, 3)
+            settle_windows(page, 4)
             page.wait_for_timeout(800)
             returned = by_id(boxes(page))
             check(
@@ -974,7 +1098,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 43
+    ok = all(results) and len(results) == 49
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE DETACHES INTO ITS OWN WINDOW, AND COMES HOME")

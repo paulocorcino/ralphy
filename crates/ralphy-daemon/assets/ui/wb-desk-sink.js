@@ -14,7 +14,10 @@
    the sink is what makes the popup INCAPABLE of writing, rather than merely
    guarded at each call site by a `detached` test that a later edit can forget.
 
-   The GET stays in `wb-console.js` — the popup never reaches `reloadDesk`.
+   Only the WRITE is injected. The GET stays in `wb-console.js` and DOES run in
+   the popup (`reloadDesk` is called at module load in every document), so the
+   suppression rests entirely on the sink here — not on an unlifted `deskLoaded`
+   permit. Reading is harmless; replacing the desk from a partial view is not.
 --------------------------------------------------------------------------- */
 window.WBDeskSink = (function () {
   // The daemon-backed write. Both entry points take an already-serialised body,

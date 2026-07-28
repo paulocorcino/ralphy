@@ -150,7 +150,13 @@ window.WBConsole = (function () {
     return records.filter((r) => keep.has(r));
   }
   function saveDesk(records) {
+    // A DETACHED member is not in `wins` — it lives in a popup — and its `ts` is
+    // stale, so at `DESK_MAX` it would sort first for eviction and be stranded,
+    // unrestorable, the moment it came home. Pin it like any window on screen.
     const live = new Set([...wins].map((w) => w._deskId));
+    for (const entry of fencePopups.values()) {
+      for (const m of entry.members) live.add(m.id);
+    }
     const before = new Set(desk.map((r) => r.id));
     desk = pruneDesk(records, DESK_MAX, live);
     const after = new Set(desk.map((r) => r.id));
@@ -210,6 +216,16 @@ window.WBConsole = (function () {
       clearTimeout(offsetFlush);
       offsetFlush = null;
       flushOffset();
+    }
+    // A detached popup outlives its opener otherwise, holding writer slots for
+    // consoles a fresh tab renders inside the fence — two windows driving one
+    // session, with nothing left to bring them home. The durable rule (the
+    // heartbeat, ADR-0051 §8) belongs to the reload-survival slice; closing
+    // them here costs one line and covers the common case.
+    for (const entry of fencePopups.values()) {
+      try {
+        if (entry.handle && !entry.handle.closed) entry.handle.close();
+      } catch {}
     }
     if (!deskLoaded || !deskFlush) return;
     clearTimeout(deskFlush);
@@ -1513,6 +1529,7 @@ window.WBConsole = (function () {
 
   function stopPoll(entry) {
     if (entry?.poll) clearInterval(entry.poll);
+    if (entry?.rescue) clearTimeout(entry.rescue);
   }
 
   function detachFence(id) {
@@ -1545,8 +1562,30 @@ window.WBConsole = (function () {
     }
 
     detached = out.registry;
-    const entry = { handle, members, fence: fence || { id, name: "", rect: null }, poll: null };
+    const entry = {
+      handle,
+      members,
+      fence: fence || { id, name: "", rect: null },
+      poll: null,
+      greeted: false,
+      rescue: null,
+    };
     fencePopups.set(id, entry);
+    // Armed BEFORE the teardown and the chrome updates: a throw in any of them
+    // would otherwise leave the entry registered with no watcher, and a
+    // force-closed popup fires no `beforeunload` — the consoles would be
+    // stranded with nothing to notice. The fold is idempotent on a re-attach,
+    // so the doubled signal costs nothing.
+    entry.poll = setInterval(() => {
+      if (entry.handle.closed) reattachFence(id);
+    }, 500);
+    // A handle to a page that never completes the handshake (a load failure, a
+    // navigation, an auth interstitial) is NOT closed, so the poll never fires
+    // and `glyphClick` would focus a broken window forever. Bring the consoles
+    // home instead — the members are already torn down by then.
+    entry.rescue = setTimeout(() => {
+      if (!entry.greeted && fencePopups.get(id) === entry) reattachFence(id);
+    }, 5000);
     for (const m of members) {
       const win = [...wins].find((w) => w._deskId === m.id);
       if (win) tearDownMember(win);
@@ -1555,12 +1594,6 @@ window.WBConsole = (function () {
     applyExtent();
     refreshFenceChrome();
     WB.emit("fence-detach", { fence: id });
-    // A force-closed popup fires no `beforeunload`, so the unload message alone
-    // would strand the consoles. The fold is idempotent on a re-attach, so the
-    // doubled signal costs nothing.
-    entry.poll = setInterval(() => {
-      if (entry.handle.closed) reattachFence(id);
-    }, 500);
   }
 
   function reattachFence(id) {
@@ -1644,14 +1677,26 @@ window.WBConsole = (function () {
     if (!m) return;
     if (m.type === "wb-fence-ready") {
       const entry = fencePopups.get(owner);
+      entry.greeted = true;
+      if (entry.rescue) {
+        clearTimeout(entry.rescue);
+        entry.rescue = null;
+      }
+      // Demo-aware, mirroring the popup's own `PEER`: under `file://` the
+      // popup's origin is OPAQUE, so an unconditional `location.origin` is
+      // silently dropped (Chrome) or throws out of this listener (Firefox) and
+      // the handover never lands.
       e.source.postMessage(
         { type: "wb-fence-open", fence: entry.fence, members: entry.members },
-        location.origin,
+        window.WBMode?.isDemo() ? "*" : location.origin,
       );
     } else if (m.type === "wb-emit") {
       WB.emit(m.action, m.detail);
     } else if (m.type === "wb-fence-reattach") {
-      reattachFence(m.fenceId ?? owner);
+      // `owner`, never the message's own field: the source lookup above already
+      // PROVED which fence this window holds, and trusting the payload would
+      // let a popup for fence A re-attach fence B.
+      reattachFence(owner);
     }
   });
 
@@ -1754,6 +1799,15 @@ window.WBConsole = (function () {
   }
 
   function removeFence(id) {
+    // Removing a DETACHED fence would destroy the glyph that is the only way to
+    // bring its consoles home or raise a buried popup (ADR-0051 §7a), while the
+    // registry kept consuming a `DETACH_MAX` slot — recoverable only by hunting
+    // the OS window down. Refuse and say so, exactly as `arrangeFence` bails.
+    if (detached.includes(id)) {
+      fenceNotice(id, "bring this fence's consoles home first");
+      WB.emit("fence-remove-refused", { fence: id, reason: "detached" });
+      return;
+    }
     saveFences(fences.filter((f) => f.id !== id));
     renderFences();
     applyExtent();
@@ -3106,7 +3160,11 @@ window.WBConsole = (function () {
   // client half of that guard, called from `rehydrateAfterAuth` (issue #327).
   function afterLogin() {
     return reloadDesk().then(() => {
-      if (deskLoaded && wins.size === 0) {
+      // `fencePopups.size` counts as "the windows are already up": detaching
+      // every fence drives `wins.size` to 0 while the records deliberately
+      // survive, and a `restoreDesk` here would respawn those members onto the
+      // plane against the very session ids the popups are driving.
+      if (deskLoaded && wins.size === 0 && fencePopups.size === 0) {
         restoreDesk();
         return;
       }

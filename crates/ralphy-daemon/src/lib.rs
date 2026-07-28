@@ -5070,6 +5070,19 @@ mod tests {
             body("function arrangeFence(").contains("if (detached.includes(id)) return;"),
             "arrangeFence must bail on a detached fence (#346, §7a)"
         );
+        // Removing a detached fence would destroy the glyph that is the only way
+        // home and keep its DETACH_MAX slot consumed — refuse it, do not silently
+        // strand the popup.
+        assert!(
+            body("function removeFence(").contains("detached.includes(id)"),
+            "removeFence must refuse a detached fence (#346, §7a)"
+        );
+        // The re-attach message must trust the SOURCE lookup, not the payload:
+        // `m.fenceId` would let a popup for fence A re-attach fence B.
+        assert!(
+            !js.contains("reattachFence(m.fenceId"),
+            "the re-attach message must use the proven owner, never its payload (#346)"
+        );
         // The cap is the fold's, not a caller's: a second copy of the rule would
         // satisfy a bare-noun pin while the fold's own check was deleted.
         assert!(
@@ -5131,10 +5144,25 @@ mod tests {
             "the popup must expose no way to open a new console (#346)"
         );
         // The handshake's confidentiality control: a concrete targetOrigin, so a
-        // page on any other origin never receives this fence's members.
+        // page on any other origin never receives this fence's members. Pinned as
+        // the ASSIGNMENT, not the bare noun — `window.location.origin` also
+        // appears in the inbound guard below it, so rewriting `PEER` to an
+        // unconditional `"*"` would leave a noun pin green (the file already
+        // contains a literal `"*"` for the demo leg).
         assert!(
-            html.contains("window.location.origin"),
-            "the popup must post to a concrete origin, never \"*\" (#346)"
+            html.contains(": window.location.origin;"),
+            "the popup's PEER must resolve to a concrete origin (#346)"
+        );
+        assert!(
+            !html.contains(r#"postMessage({ type: "wb-fence-ready" }, "*")"#),
+            "the popup must never broadcast its handshake to \"*\" (#346)"
+        );
+        // The opener's reply is demo-aware for the same reason the popup's PEER
+        // is: under `file://` an unconditional `location.origin` is dropped.
+        assert!(
+            body("window.addEventListener(\"message\"")
+                .contains("isDemo() ? \"*\" : location.origin"),
+            "the opener's handover must mirror the popup's demo-aware origin (#346)"
         );
         // The tree-wide sweep in `shell_stores_only_the_view_in_the_browser`
         // scans .html too; keep this document out of the browser's stores.
@@ -5157,6 +5185,23 @@ mod tests {
             assert!(
                 rule(head).contains("pointer-events: auto"),
                 "{head} must take pointer events, or the control is inert (#346)"
+            );
+        }
+        // SCRIPT ORDER, the same hazard #339 pinned for wb-view.js. `wb-console.js`
+        // hard-dereferences `window.WBDeskSink.daemon()` at module load, so a
+        // reordered or dropped tag throws out of the whole IIFE and the Consoles
+        // tab dies — while every source-text pin above stays green.
+        let shell = include_str!("../assets/ui/index.html");
+        for (doc, name) in [(shell, "index.html"), (html, "detached-fence.html")] {
+            let sink_tag = doc
+                .find(r#"<script src="wb-desk-sink.js"></script>"#)
+                .unwrap_or_else(|| panic!("{name} must load wb-desk-sink.js (#346)"));
+            let console_tag = doc
+                .find(r#"<script src="wb-console.js"></script>"#)
+                .unwrap_or_else(|| panic!("{name} must load wb-console.js (#346)"));
+            assert!(
+                sink_tag < console_tag,
+                "{name}: wb-desk-sink.js must be script-tagged BEFORE wb-console.js (#346)"
             );
         }
     }
