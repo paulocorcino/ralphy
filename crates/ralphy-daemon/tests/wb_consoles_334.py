@@ -55,6 +55,13 @@ def check(name, ok, detail=""):
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def say_yes(page):
+    """Answer the console plane's confirmation. Tiling a fence, removing one and
+    closing a console all ask first now, so a click alone is a no-op."""
+    page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
+
+
+
 def wait_listening(base, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -773,6 +780,7 @@ def main():
                 page_c.locator(".session-window").nth(parked_idx[0]).locator(
                     ".session-close"
                 ).click()
+                say_yes(page_c)
                 page_c.wait_for_timeout(2500)
 
             live_ids = [s["id"] for s in json.loads(http("GET", "api/sessions")[1])]

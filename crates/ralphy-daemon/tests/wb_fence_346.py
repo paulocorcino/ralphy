@@ -117,6 +117,13 @@ def check(name, ok, detail=""):
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def say_yes(page):
+    """Answer the console plane's confirmation. Tiling a fence, removing one and
+    closing a console all ask first now, so a click alone is a no-op."""
+    page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
+
+
+
 def wait_listening(base, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -1183,6 +1190,7 @@ def main():
                 " if (!w) throw new Error('no live console in the popup');"
                 " const id = w._deskId; w.querySelector('.session-close').click(); return id; }"
             )
+            say_yes(popup5)
             popup5.wait_for_function(
                 "(n) => document.querySelectorAll('.session-window').length === n",
                 arg=in_popup - 1,

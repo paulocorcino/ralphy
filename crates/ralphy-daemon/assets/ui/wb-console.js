@@ -48,6 +48,87 @@ window.WBConsole = (function () {
     document.dispatchEvent(new CustomEvent("workbench:consoles-changed", { detail: { count: wins.size } }));
   }
 
+  // Ask before a click that cannot be taken back. Three of them sit one pixel
+  // from something harmless: tiling moves every console in a fence, removing a
+  // fence takes the region out from under them, and a console's × ends a live
+  // session — all reachable by a slip of the mouse on the same title bar.
+  //
+  // Built here rather than borrowed from the shell's Alpine dialog, because
+  // this module also runs in the detached-fence popup, which carries no Alpine
+  // and no modal markup: the same click must ask the same question in both
+  // windows. It borrows the shell's CLASSES instead (styles.css is loaded in
+  // both), so it is the same dialog to look at. `window.confirm` was the other
+  // candidate and is worse than either: it blocks the thread, and an automated
+  // browser dismisses it by default, which would silently turn every guarded
+  // click into a cancelled one.
+  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false }) {
+    const scrim = document.createElement("div");
+    scrim.className = "modal-scrim wb-confirm";
+    const modal = document.createElement("div");
+    modal.className = "modal confirm-modal";
+    modal.setAttribute("role", "alertdialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-label", title);
+    const head = document.createElement("div");
+    head.className = "modal-head";
+    head.innerHTML =
+      `<i class="bi ${danger ? "bi-exclamation-triangle" : "bi-question-circle"}"` +
+      `${danger ? ' style="color: var(--danger)"' : ""}></i>`;
+    const heading = document.createElement("span");
+    heading.className = "modal-title";
+    heading.textContent = title;
+    head.append(heading);
+    const body = document.createElement("p");
+    body.className = "confirm-body";
+    body.textContent = message;
+    const foot = document.createElement("div");
+    foot.className = "modal-foot";
+    const cancel = document.createElement("button");
+    cancel.className = "btn";
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    const go = document.createElement("button");
+    go.className = danger ? "btn danger" : "btn accent";
+    go.type = "button";
+    go.textContent = confirmLabel;
+    foot.append(cancel, go);
+    modal.append(head, body, foot);
+    scrim.append(modal);
+    document.body.append(scrim);
+    // CANCEL is what the keyboard lands on. The dialog exists because a click
+    // went somewhere it did not mean to; opening it with the destructive button
+    // under a stray Enter would reproduce the defect one keystroke later.
+    cancel.focus();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKey, true);
+        scrim.remove();
+        resolve(ok);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          done(false);
+        } else if (e.key === "Enter" && document.activeElement === go) {
+          e.stopPropagation();
+          done(true);
+        }
+      };
+      // CAPTURE: a console's terminal swallows keystrokes, and Escape is one it
+      // forwards to the child — the dialog must hear it first.
+      document.addEventListener("keydown", onKey, true);
+      scrim.addEventListener("mousedown", (e) => {
+        if (e.target === scrim) done(false);
+      });
+      cancel.addEventListener("click", () => done(false));
+      go.addEventListener("click", () => done(true));
+    });
+  }
+
   // ---- the desk layout ---------------------------------------------------------
   // What was open, not merely where a session sat: each window contributes a
   // record keyed by a STABLE client-side id, carrying repo, agent, session kind,
@@ -1086,13 +1167,36 @@ window.WBConsole = (function () {
     tile.type = "button";
     tile.title = "tile this fence's consoles";
     tile.textContent = "⊞";
-    tile.addEventListener("click", () => arrangeFence(f.id));
+    tile.addEventListener("click", async () => {
+      // Same rule as the drop button below: a detached fence has nothing here
+      // to tile and `arrangeFence` bails saying so, which is not a decision the
+      // operator gets to make — so it is not put to them as one.
+      if (detached.includes(f.id)) return arrangeFence(f.id);
+      const ok = await askConfirm({
+        title: "Tile this fence?",
+        message: `Every console in ${f.name || "this fence"} moves to a new place in the grid. The sessions keep running.`,
+        confirmLabel: "Tile",
+      });
+      if (ok) arrangeFence(f.id);
+    });
     const drop = document.createElement("button");
     drop.className = "fence-drop";
     drop.type = "button";
     drop.title = "remove this fence";
     drop.textContent = "×";
-    drop.addEventListener("click", () => removeFence(f.id));
+    drop.addEventListener("click", async () => {
+      // A DETACHED fence refuses removal outright and says why. Asking first
+      // and refusing after would put a question before an answer that was
+      // never in the operator's hands.
+      if (detached.includes(f.id)) return removeFence(f.id);
+      const ok = await askConfirm({
+        title: "Remove this fence?",
+        message: `${f.name || "This fence"} goes away. The consoles inside it stay open, where they are.`,
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (ok) removeFence(f.id);
+    });
     const detach = document.createElement("button");
     detach.className = "fence-detach";
     detach.type = "button";
@@ -2947,8 +3051,19 @@ window.WBConsole = (function () {
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;
 
-    closeBtn.onclick = () => {
+    closeBtn.onclick = async () => {
       const id = t.sessionId;
+      // A watcher's × closes only its own window, so the question is about a
+      // window; the writer's ends the daemon's session and everything in it.
+      const ok = await askConfirm({
+        title: "Close this console?",
+        message: t.watching
+          ? `This window closes. ${label} keeps running for whoever holds it.`
+          : `The ${label} session ends and its scrollback goes with it.`,
+        confirmLabel: "Close",
+        danger: true,
+      });
+      if (!ok) return;
       const finish = () => {
         // A window closed mid-pulse must not leave `nudgeTimer` pending against
         // DOM nodes this call is about to remove.
@@ -3026,7 +3141,17 @@ window.WBConsole = (function () {
       // and maximized state, so the relaunched console lands where it stood.
       spawnWindow({ repo: record.repo, agent: record.agent }, record.agent, record.repo, carry);
     });
-    closeBtn.onclick = () => {
+    closeBtn.onclick = async () => {
+      // Nothing is running here, so nothing is lost but the place it was
+      // keeping — and the question says exactly that rather than borrowing the
+      // live console's warning, which would be a lie about the stakes.
+      const ok = await askConfirm({
+        title: "Close this console?",
+        message: `The ${record.agent} console is not running. Closing it drops the box it was keeping on the plane.`,
+        confirmLabel: "Close",
+        danger: true,
+      });
+      if (!ok) return;
       forgetRecord(win._deskId);
       drop();
       WB.emit("console-close", { repo: record.repo || null, agent: record.agent });

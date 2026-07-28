@@ -90,6 +90,13 @@ def check(name, ok, detail=""):
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def say_yes(page):
+    """Answer the console plane's confirmation. Tiling a fence, removing one and
+    closing a console all ask first now, so a click alone is a no-op."""
+    page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
+
+
+
 def wait_listening(base, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -901,6 +908,7 @@ def main():
             )
             close_menus(page)
             page.locator(f"[data-fence-id='{new_fence}'] .fence-drop").click()
+            say_yes(page)
             page.wait_for_timeout(500)
             rows = open_fence_list(page)
             check(

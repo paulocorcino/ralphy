@@ -88,6 +88,20 @@ def check(name, ok, detail=""):
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def say_yes(page):
+    """Answer the console plane's confirmation. Tiling a fence, removing one and
+    closing a console all ask first now, so a click alone is a no-op."""
+    page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
+
+
+def say_no(page):
+    """Cancel the confirmation instead of answering it. `Cancel` is the first
+    button in the foot, and the one the dialog opens focused on."""
+    page.locator(".wb-confirm .btn").first.click()
+
+
+
+
 def wait_listening(base, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -475,9 +489,32 @@ def main():
                 f"count={fence_buttons}",
             )
 
+            # ===== scenario 2b: the tile confirmation is a real gate ==========
+            # It exists to survive a misplaced click, so what matters is the
+            # CANCEL path: the dialog opens, nothing moves, and it goes away
+            # again. Every other arrange in this file answers `yes`, which would
+            # pass just as well against a dialog that did nothing at all.
+            before_cancel = by_id(boxes(page))
+            page.locator(".fence[data-fence-id='f-alpha'] .fence-arrange").click()
+            page.wait_for_selector(".wb-confirm", timeout=4000)
+            say_no(page)
+            page.wait_for_timeout(800)
+            check(
+                "cancelling the tile dialog leaves every box where it stood",
+                by_id(boxes(page)) == before_cancel,
+                f"before={[before_cancel[i]['box'] for i in member_ids]}"
+                f" after={[by_id(boxes(page))[i]['box'] for i in member_ids]}",
+            )
+            check(
+                "…and the dialog is gone, not merely hidden",
+                page.locator(".wb-confirm").count() == 0,
+                f"scrims={page.locator('.wb-confirm').count()}",
+            )
+
             # ===== scenario 3: arranging the fence tiles ITS members ==========
             outside_before = by_id(boxes(page))["w-outside"]
             page.locator(".fence[data-fence-id='f-alpha'] .fence-arrange").click()
+            say_yes(page)
             page.wait_for_timeout(900)  # past the 0.24s tiling transition
             tiled = by_id(boxes(page))
             check(
@@ -683,6 +720,7 @@ def main():
             page.evaluate("() => { document.getElementById('workspace').scrollLeft = 200; }")
             page.wait_for_timeout(200)
             page.locator(".fence[data-fence-id='f-alpha'] .fence-arrange").click()
+            say_yes(page)
             page.wait_for_timeout(900)
             scrolled = by_id(boxes(page))
             check(
@@ -697,6 +735,7 @@ def main():
             before_empty = by_id(boxes(page))
             errors_before_empty = len(errors)
             page.locator(".fence[data-fence-id='f-beta'] .fence-arrange").click()
+            say_yes(page)
             page.wait_for_timeout(900)
             quiet(desk_file)
             after_empty = by_id(boxes(page))
@@ -786,6 +825,7 @@ def main():
             )
             page.wait_for_timeout(200)
             page.locator(".fence[data-fence-id='f-alpha'] .fence-arrange").click()
+            say_yes(page)
             page.wait_for_timeout(900)
             tight = by_id(boxes(page))
             inside_small = [i for i in member_ids if inside_fence(tight[i]["box"], small, slack=1.0)]
@@ -812,7 +852,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 39
+    ok = all(results) and len(results) == 41
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ARRANGE MOVES INTO THE FENCE")

@@ -87,6 +87,13 @@ def check(name, ok, detail=""):
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def say_yes(page):
+    """Answer the console plane's confirmation. Tiling a fence, removing one and
+    closing a console all ask first now, so a click alone is a no-op."""
+    page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
+
+
+
 def wait_listening(base, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -698,6 +705,7 @@ def main():
             # a REAL click: window 0 is the maximized full-bleed and therefore the
             # one whose close button is on top.
             page.locator(".session-window").nth(0).locator(".session-close").click()
+            say_yes(page)
             page.wait_for_function(
                 "() => document.querySelectorAll('.session-window').length === 1",
                 timeout=10000,

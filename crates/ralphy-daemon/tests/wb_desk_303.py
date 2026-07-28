@@ -68,6 +68,20 @@ def check(name, ok, detail=""):
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def say_yes(page):
+    """Answer the console plane's confirmation. Tiling a fence, removing one and
+    closing a console all ask first now, so a click alone is a no-op."""
+    page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
+
+
+def say_no(page):
+    """Cancel the confirmation instead of answering it. `Cancel` is the first
+    button in the foot, and the one the dialog opens focused on."""
+    page.locator(".wb-confirm .btn").first.click()
+
+
+
+
 def wait_listening(base, timeout=25):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -694,9 +708,30 @@ def main():
                 f"{[r['id'] for r in records]} -> {[r['id'] for r in after_recs]}",
             )
 
+            # A close asks first, and cancelling must cost nothing: the window
+            # stays, its session stays, and the desk record stays. Answering
+            # `yes` everywhere else would pass against an inert dialog too.
+            page.locator(".session-window").nth(1).locator(".session-close").click()
+            page.wait_for_selector(".wb-confirm", timeout=4000)
+            say_no(page)
+            page.wait_for_timeout(600)
+            check(
+                "cancelling a console's close keeps the window and its record",
+                page.locator(".session-window").count() == 2
+                and [r["id"] for r in desk_records(page)] == [r["id"] for r in after_recs],
+                f"windows={page.locator('.session-window').count()}"
+                f" records={[r['id'] for r in desk_records(page)]}",
+            )
+            check(
+                "…and the daemon's session list is untouched",
+                len(page.request.get(BASE + "api/sessions").json()) == 2,
+                f"sessions={page.request.get(BASE + 'api/sessions').json()}",
+            )
+
             # Closing a window forgets its record — the desk cannot accrete.
             gone = after_recs[1]["id"]
             page.locator(".session-window").nth(1).locator(".session-close").click()
+            say_yes(page)
             page.wait_for_timeout(900)
             left_recs = desk_records(page)
             check(
@@ -951,7 +986,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 112
+    ok = all(results) and len(results) >= 114
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")

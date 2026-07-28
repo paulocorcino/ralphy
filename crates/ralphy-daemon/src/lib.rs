@@ -5644,6 +5644,51 @@ mod tests {
         );
     }
 
+    /// The three clicks that ask first. Tiling a fence moves every console in
+    /// it, removing a fence takes the region out from under them, and a
+    /// console's × ends a live session — all one pixel from something harmless
+    /// on the same title bar. The dialog is built in `wb-console.js` rather
+    /// than borrowed from the shell's Alpine one, because the module also runs
+    /// in the detached-fence popup, which has neither; `window.confirm` is
+    /// pinned OUT because an automated browser dismisses it by default, which
+    /// would turn every guarded click into a silently cancelled one.
+    #[test]
+    fn the_destructive_console_clicks_confirm_first() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        assert!(
+            js.contains("function askConfirm({"),
+            "wb-console.js must own a confirmation dialog of its own"
+        );
+        assert!(
+            !js.contains("window.confirm("),
+            "the native confirm is not the seam — an automated browser dismisses it"
+        );
+        // The three call sites, each awaiting the answer before acting.
+        for pin in [
+            r#"title: "Tile this fence?""#,
+            r#"title: "Remove this fence?""#,
+            r#"title: "Close this console?""#,
+        ] {
+            assert!(js.contains(pin), "wb-console.js must keep the pin {pin}");
+        }
+        // The EXPORTED verbs stay unguarded: a caller that names `arrangeFence`
+        // has already decided, and the dialog belongs to the accidental click.
+        let verb = js
+            .split_once("\n  function removeFence(id) {")
+            .expect("wb-console.js must keep removeFence")
+            .1;
+        assert!(
+            !verb[..verb.find("\n  }").expect("removeFence must close")].contains("askConfirm"),
+            "the verb must not ask — only the button does"
+        );
+        // The dialog wears the shell's own modal classes, so the popup (which
+        // loads the same stylesheet and no Alpine) shows the same dialog.
+        assert!(
+            js.contains(r#"scrim.className = "modal-scrim wb-confirm""#),
+            "the dialog must reuse the shared modal chrome"
+        );
+    }
+
     /// The standing authorization to relaunch agent consoles on load. It is a
     /// spending decision — one vendor CLI per saved agent console, on every page
     /// load — so what this pins is that it stays OFF unless the operator turned
