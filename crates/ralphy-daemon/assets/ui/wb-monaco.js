@@ -13,11 +13,15 @@
 --------------------------------------------------------------------------- */
 (function () {
   // ADR-0035's warm-dark palette, as literal hex — Monaco's theme API takes no
-  // CSS variables, so these mirror :root in styles.css (the ground `--log-bg`
-  // #2a2521 is what the browser acceptance asserts). Keep them in lockstep with
-  // the stylesheet: a drift here shows up as an editor that is a different
+  // CSS variables, so these mirror :root in styles.css. Keep them in lockstep
+  // with the stylesheet: a drift here shows up as chrome that is a different
   // shade from the pane it sits in.
+  //
+  // `editorBg` is the ONE deliberate exception: the code surface itself is
+  // always pure black, not `--log-bg`. Everything around it (widgets, inputs,
+  // the pane) stays warm-dark, so the text field reads as its own plane.
   const TOKENS = {
+    editorBg: "#000000",
     logBg: "#2a2521",
     surface: "#342d27",
     surfaceHi: "#423a31",
@@ -32,13 +36,16 @@
       base: "vs-dark",
       inherit: true,
       colors: {
-        "editor.background": TOKENS.logBg,
+        "editor.background": TOKENS.editorBg,
         "editor.foreground": TOKENS.text,
-        "editorGutter.background": TOKENS.logBg,
+        "editorGutter.background": TOKENS.editorBg,
+        "minimap.background": TOKENS.editorBg,
         "editorLineNumber.foreground": TOKENS.textMuted,
         "editorCursor.foreground": TOKENS.text,
         "editor.selectionBackground": TOKENS.surfaceHi,
-        "editor.lineHighlightBackground": "#332d28",
+        // On black the warm surface tone is too loud for a "current line" hint,
+        // so the highlight is a near-black lift rather than `--surface`.
+        "editor.lineHighlightBackground": "#141210",
         "editorWidget.background": TOKENS.surface,
         "editorWidget.border": TOKENS.border,
         "input.background": TOKENS.logBg,

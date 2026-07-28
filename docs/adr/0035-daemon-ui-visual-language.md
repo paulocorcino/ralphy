@@ -52,8 +52,9 @@ ground, and is the backstop against that pair drifting apart.
 | `chrome`       | `#2b2620` | Topbar / rail / sidebar, a step above the ground  |
 | `surface`      | `#342d27` | Tiles, title bars, buttons                        |
 | `surface-hi`   | `#423a31` | Tile / button hover                               |
-| `log-bg`       | `#2a2521` | Command-log + editor pane ground                   |
-| `window-bg`    | `#000000` | Session-window body (true black behind xterm)     |
+| `log-bg`       | `#2a2521` | Command-log pane ground                           |
+| `window-bg`    | `#000000` | True black: session-window body (behind xterm)    |
+|                |           | and the Monaco code surface                       |
 | `border`       | `#4c4239` | Default hairline (tiles, windows, divider)        |
 | `border-focus` | `#7a6d5f` | Focused window border + resize grip               |
 | `text`         | `#d4ccc0` | Primary text (warm off-white)                     |

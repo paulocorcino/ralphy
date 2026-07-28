@@ -49,8 +49,8 @@ impl ProtocolReport {
 ///   - every `## Steps` checkbox is resolved — no `- [ ]` left (`- [x]`
 ///     checked and `- [!]` noticed both count as resolved);
 ///   - every `- [!]` noticed step carries its reason inline on the step line
-///     (`— blocked: <text>` or `— noticed: <text>`) — a bare `- [!]` would be
-///     a silent tick in disguise;
+///     (`— blocked: <text>` or `— noticed: <text>`, any dash spelling) — a bare
+///     `- [!]` would be a silent tick in disguise;
 ///   - `## Handoff` and `## Plan friction` sections present and non-blank;
 ///   - `## Acceptance ledger` present and parses to at least one verdict line
 ///     (#312) — an absent, blank, or prose-only section fails this check;
@@ -73,8 +73,11 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
     // A noticed step resolves the open-step check, but only with its reason
     // inline on the same line — the attempted verification's literal blocker
     // (or the surprise). Shape only: any non-empty text after the tag passes.
-    let reason_re =
-        Regex::new(r"(?i)(?:\u{2014}|--)\s*(?:blocked|noticed):\s*\S").expect("valid regex");
+    // Every dash spelling is accepted: an executor whose write path normalizes
+    // U+2014 to `-` or `–` was losing a whole attempt to the glyph, not the
+    // reason, and the reason is the only thing this check is about.
+    let reason_re = Regex::new(r"(?i)(?:\u{2014}|\u{2013}|-{1,2})\s*(?:blocked|noticed):\s*\S")
+        .expect("valid regex");
     let bare_noticed = steps
         .lines()
         .filter(|l| l.trim_start().starts_with("- [!]"))
@@ -231,14 +234,14 @@ pub fn failure_brief(stamp: &str, report: &ProtocolReport, done_signal: &str) ->
          - Tick a step `- [x]` ONLY when its work is genuinely done and committed; if \
            work remains, finish it (or split the step and finish the rest) first.\n\
          - A `- [!]` noticed step must end with its reason on the SAME line \
-           (`\u{2014} blocked: <the literal error>` or `\u{2014} noticed: <the surprise>`), \
-           backed by an attempt recorded under `## Notes & decisions` \u{2014} never use \
-           `- [!]` to dodge work a command could still verify.\n\
+           (`-- blocked: <the literal error>` or `-- noticed: <the surprise>`; an em \
+           dash works too), backed by an attempt recorded under `## Notes & decisions` \
+           \u{2014} never use `- [!]` to dodge work a command could still verify.\n\
          - Write any missing `## Handoff` / `## Plan friction` / `## Self-review \
            findings` section with real content, as the charter specifies — not filler.\n\
          - A missing `## Acceptance ledger` must be WRITTEN: one ledger line per \
            issue acceptance criterion, in the `- [verified|review-only] <criterion> \
-           \u{2014} evidence: <backing>` shape.\n\
+           -- evidence: <backing>` shape (an em dash works too).\n\
          - Replace planner placeholder `evidence:` text in the `## Acceptance ledger` \
            with the real commit hash, test name, or captured command output backing \
            that criterion.\n\n\
@@ -380,13 +383,17 @@ mod tests {
             .unwrap()
             .contains("1 `- [!]` step(s)"));
 
-        // Both tags and both dash spellings pass; the reason text itself is
-        // never judged (shape only).
+        // Both tags and EVERY dash spelling pass — a write path that normalizes
+        // the em dash must not cost an attempt. The reason text itself is never
+        // judged (shape only).
         for reason in [
             "\u{2014} blocked: no interactive terminal in this harness",
             "\u{2014} noticed: width table says 1, conhost renders 2",
             "-- blocked: docker daemon unreachable",
             "-- Noticed: flaky only on Windows",
+            "- blocked: ASCII hyphen, the shape that used to bounce",
+            "- noticed: ASCII hyphen, the shape that used to bounce",
+            "\u{2013} blocked: en dash, the other normalization",
         ] {
             let ok = CLEAN_PLAN.replace(
                 "\u{2014} blocked: headless harness, no terminal window",
@@ -401,6 +408,17 @@ mod tests {
             "\u{2014} blocked:",
         );
         assert!(!lint(&empty).passed(), "empty reason must fail");
+
+        // The step's own `- ` bullet must not satisfy the separator now that a
+        // single hyphen counts: the tag has to follow a dash of its own.
+        let prefix_only = CLEAN_PLAN.replace(
+            "manual scrollback check \u{2014} blocked: headless harness, no terminal window",
+            "noticed: the bullet dash is not the separator",
+        );
+        assert!(
+            !lint(&prefix_only).passed(),
+            "the `- [!]` bullet's own dash must not pass as the reason separator"
+        );
     }
 
     #[test]

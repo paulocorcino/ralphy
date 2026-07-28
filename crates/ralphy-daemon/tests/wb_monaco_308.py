@@ -9,7 +9,7 @@ Scenario 2  the rendered lines carry >= 3 distinct `mtk*` token classes
 Scenario 3  the Find button opens Monaco's own find widget
 Scenario 4  typing + Save writes the edited bytes to the real file on disk
 Scenario 5  window.CodeMirror is undefined and its vendor path 404s
-Scenario 6  the editor ground is ADR-0035's --log-bg (rgb(42, 37, 33))
+Scenario 6  the editor ground is black (rgb(0, 0, 0))
 Scenario 7  Cargo.toml resolves to the `ini` language
 Scenario 8  the file:// demo mounts Monaco OR degrades to .code-fallback
 Scenario 9  a .json tab is tokenized (its tokenizer is a mode-config provider,
@@ -278,12 +278,12 @@ def main():
                 f"got={kw!r}",
             )
 
-            # --- scenario 6: ADR-0035's ground colour -------------------------
+            # --- scenario 6: the code surface is always black ------------------
             bg = page.evaluate(
                 "() => getComputedStyle(document.querySelector"
                 "('.code-viewer .monaco-editor .monaco-editor-background')).backgroundColor"
             )
-            check("the editor ground is ADR-0035's --log-bg", bg == "rgb(42, 37, 33)", f"got={bg!r}")
+            check("the editor ground is black", bg == "rgb(0, 0, 0)", f"got={bg!r}")
             # Assert the sheet is REACHABLE first: a swallowed cssRules error (or
             # a styles.css that failed to load) would otherwise read as "the rule
             # is gone" and pass against a page with no styles at all.

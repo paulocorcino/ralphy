@@ -117,9 +117,10 @@ issue with the failure report published for the human reviewer.
      decisions` — the same bar as a `[review-only]` downgrade. A step marked
      `- [!]` with no recorded attempt is a silent tick in disguise, and the
      shape is enforced: the completion lint REJECTS a bare `- [!]` — the step
-     line itself must end with the reason, `— blocked: <the literal blocker>`
-     or `— noticed: <the surprise>`, and a malformed one costs you the
-     protocol bounce.
+     line itself must end with the reason, `-- blocked: <the literal blocker>`
+     or `-- noticed: <the surprise>`, and a malformed one costs you the
+     protocol bounce. Any dash spells the separator (`--`, `-`, `—`, `–`); the
+     `blocked:`/`noticed:` key and the reason after it are what the lint reads.
    - BATCH tightly-coupled steps: when 2–3 consecutive steps change the same
      functions, or one produces exactly what the next consumes (add variant →
      map it → wire it), implement the group and pay ONE format+test cycle and
