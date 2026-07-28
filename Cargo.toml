@@ -67,6 +67,21 @@ strip = true
 lto = "thin"
 codegen-units = 1
 
+# The gate's profile: `release` optimization without `release` link cost.
+#
+# `lto`/`codegen-units = 1` above are a *ship* cost, paid once for the one
+# binary `release.yml` builds. The test job compiles the whole workspace's ~50
+# test binaries, and `ralphy-cli`'s integration tests each link the entire CLI —
+# under thin LTO with a single codegen unit that crate alone took ~20 minutes,
+# which is what wedged the test job into its `timeout-minutes` bound on both
+# runners. Optimization is what the tests actually need (the daemon's PBKDF2
+# path, see the note below), so keep opt-level and drop only the link-time work.
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
+strip = false
+
 # Build *dependencies* optimized even in dev/test, while the workspace crates
 # stay at opt-level 0 so our own edit-compile loop stays fast. Dependencies are
 # compiled once and cached, so this costs one rebuild and nothing after.
