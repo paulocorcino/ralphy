@@ -933,7 +933,7 @@
         <div class="modal-head">
           <i data-lucide="settings"></i>
           <span class="modal-title">Settings</span>
-          <span class="modal-sub">daemon settings are machine-wide · everything below is saved per project</span>
+          <span class="modal-sub">each section says where it is saved</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeSettings()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -1044,7 +1044,6 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Daemon and project settings persist via the daemon (<code>config.set</code>/<code>config.unset</code>); workbench settings stay in this browser.</span>
           <button class="btn" @click="closeSettings()">Done</button>
         </div>
       </div>

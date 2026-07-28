@@ -3258,7 +3258,8 @@ body.runs-open .runs {
    card joined them when its note went: the note is what a `flex: 1` was pushing
    `Done` to the right with, and without one the button drifted left. */
 .confirm-modal .modal-foot,
-.about-modal .modal-foot {
+.about-modal .modal-foot,
+.settings-modal .modal-foot {
   justify-content: flex-end;
 }
 

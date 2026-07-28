@@ -53,7 +53,7 @@ window.WB_SETTINGS = [
         label: "Relaunch agent consoles on load",
         type: "toggle",
         default: false,
-        help: "A saved console whose session is gone (after a daemon restart, say) normally comes back as a placeholder with a button. Turn this on to start them all as the page loads instead. Note it is a fresh launch, not a reconnect — the old session and its scrollback are gone either way — so every load spends whatever a vendor CLI costs, once per console. Plain shells always come back on their own and are not affected.",
+        help: "A fresh launch, not a reconnect: every load starts one vendor CLI per saved agent console. Plain shells come back on their own either way.",
       },
     ],
   },
