@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ralphy · detached fence</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="favicon.ico" sizes="any" />
+    <!-- same vendored styles as the shell, so the consoles look identical -->
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
+    <link rel="stylesheet" href="vendor/xterm.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* this window IS the plane — fill it */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+      }
+      #workspace {
+        position: fixed;
+        inset: 0;
+        overflow: auto;
+      }
+      .detached-empty {
+        color: var(--danger);
+        font-family: ui-monospace, monospace;
+        padding: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The very ids `wb-console.js` resolves for the viewport and the plane, so
+         this popup REUSES the consoles module rather than re-implementing it. -->
+    <div id="workspace"><div id="stage"></div></div>
+
+    <script src="wb-mode.js"></script>
+    <script src="wb-fail.js"></script>
+    <script src="vendor/xterm.js"></script>
+    <script src="vendor/xterm-addon-fit.js"></script>
+    <script src="vendor/xterm-addon-webgl.js"></script>
+    <script src="vendor/xterm-addon-web-links.js"></script>
+    <script src="wb-desk-sink.js"></script>
+    <script>
+      // Where this window will talk. `"*"` would broadcast this fence's contents
+      // to whatever opened us, so the concrete origin is both the
+      // confidentiality control and the authentication one: only the shell can
+      // hear us, and only the shell can answer.
+      const PEER = window.WBMode?.isDemo() ? "*" : window.location.origin;
+
+      // The backend seam lives in the opener; forward every intent there over
+      // postMessage, so a detached fence is indistinguishable from an in-shell one.
+      window.WB = {
+        emit(action, detail) {
+          if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
+          else console.log("[workbench:action]", { action, ...detail });
+        },
+      };
+
+      // THE FOUR CAPABILITIES THIS DOCUMENT DENIES ITSELF. This popup holds a
+      // FRAGMENT of the plane — one fence's members — so a desk write from here
+      // would replace the operator's whole layout with that fragment, and a view
+      // write would clobber the shell's stored viewport offset. Denying them by
+      // INJECTION rather than by a `detached` test at each call site is what
+      // makes the popup incapable rather than merely careful.
+      window.WBConsoleOpts = {
+        deskSink: window.WBDeskSink.none(),
+        viewStore: { read: () => null, patch: () => null },
+        autoBoot: false,
+        canLaunch: false,
+      };
+    </script>
+    <script src="wb-console.js"></script>
+    <script>
+      // Boot: ASK the shell for this fence and its members. They do not ride in
+      // the URL, because a URL is composed by whoever sends the link — a
+      // `detached-fence.html#<json>` hash would let anyone render content of
+      // their choosing on the daemon's own origin, and this page is served
+      // without a credential under every auth policy.
+      //
+      // The request goes to `window.opener` with a concrete `targetOrigin`, so a
+      // page on any other origin never receives it and can never answer it. No
+      // opener, or a foreign one, means no fence — and we say so rather than
+      // rendering anything.
+      (function () {
+        let mounted = false;
+        let fenceId = null;
+        const empty = (why) => {
+          document.getElementById("stage").innerHTML =
+            '<p class="detached-empty">nothing to show — ' + why + ".</p>";
+        };
+        if (!window.opener) {
+          empty("detach a fence from the workbench");
+          return;
+        }
+        window.addEventListener("message", (e) => {
+          if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+          if (e.source !== window.opener) return;
+          const m = e.data;
+          if (!m || m.type !== "wb-fence-open" || !m.fence) return;
+          if (mounted) return;
+          mounted = true;
+          fenceId = m.fence.id;
+          document.title = (m.fence.name || "fence") + " · ralphy";
+          WBConsole.mountDetached(m.fence, m.members || []);
+        });
+        window.opener.postMessage({ type: "wb-fence-ready" }, PEER);
+        // A shell that never answers (a foreign opener, or one that closed
+        // mid-handover) leaves the plane empty rather than pending forever.
+        setTimeout(() => {
+          if (!mounted) empty("the workbench did not hand over a fence");
+        }, 3000);
+        // Re-attach: closing this window sends the consoles home. The opener
+        // also polls `handle.closed`, because a force-closed popup fires no
+        // unload — and its fold makes the doubled signal a no-op.
+        window.addEventListener("beforeunload", () => {
+          if (window.opener && fenceId) {
+            window.opener.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

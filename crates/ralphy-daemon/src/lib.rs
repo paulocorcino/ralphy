@@ -3969,7 +3969,7 @@ mod tests {
             resp.headers().get(header::CONTENT_TYPE).unwrap(),
             "image/svg+xml"
         );
-        for page in ["/index.html", "/detached.html"] {
+        for page in ["/index.html", "/detached.html", "/detached-fence.html"] {
             let html = body_string(get_local(page).await).await;
             assert!(
                 html.contains("favicon.svg") && html.contains("favicon.ico"),
@@ -3983,9 +3983,11 @@ mod tests {
         const FILES: &[&str] = &[
             "/index.html",
             "/detached.html",
+            "/detached-fence.html",
             "/app.js",
             "/styles.css",
             "/wb-console.js",
+            "/wb-desk-sink.js",
             "/wb-daemon.js",
             "/wb-fail.js",
             "/wb-kanban.js",
@@ -4999,6 +5001,162 @@ mod tests {
             css.contains("--console-text:"),
             "the focus ring's colour token must exist — an undefined one voids the whole shorthand (#343)"
         );
+    }
+
+    /// A fence detaches into its own window, and comes home (#346). Neither the
+    /// node table nor the Playwright suite runs in CI, so a deletion fails HERE
+    /// or nowhere. Every pin is an EXPRESSION, not a bare noun: #342 measured
+    /// that a function's own explanatory comment satisfies a noun pin, leaving
+    /// it green over deleted code.
+    #[test]
+    fn shell_detaches_a_fence() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function detachFold(",
+            "const DETACH_MAX = 4",
+            "function detachFence(",
+            "function reattachFence(",
+            "function mountDetached(",
+            "fence-detach",
+            "fence-detached",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #346 pin {pin}"
+            );
+        }
+        let body = |name: &str| -> String {
+            let after = js
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+        // THE SINK SEAM. The persistence call sites must reach the desk through
+        // the injected sink and carry NO `detached` branch of their own —
+        // "incapable of writing", not "careful not to".
+        assert!(
+            body("function flushDesk(").contains("deskSink.put(body)"),
+            "flushDesk must write through the injected sink (#346)"
+        );
+        assert!(
+            !body("function flushDesk(").contains("detach"),
+            "flushDesk must carry no detached branch — the sink is the seam (#346)"
+        );
+        assert!(
+            js.contains("deskSink.putSync("),
+            "the pagehide flush must write through the injected sink (#346)"
+        );
+        // The PUT literal now lives in exactly one file. The second half is the
+        // NEGATIVE CONTROL: deleting the write wholesale would satisfy the first
+        // assertion alone.
+        assert!(
+            !js.contains(r#""/api/desk", {"#),
+            "the desk PUT must live only in wb-desk-sink.js (#346)"
+        );
+        let sink = include_str!("../assets/ui/wb-desk-sink.js");
+        assert!(
+            sink.contains(r#""/api/desk", {"#),
+            "wb-desk-sink.js must still perform the desk PUT (#346)"
+        );
+        assert!(
+            sink.contains("keepalive: true"),
+            "the sink's putSync must outlive the closing document (#346)"
+        );
+        // Arrange is a no-op on a detached fence (ADR-0051 §7a): its consoles are
+        // in another window, and tiling the empty box would rewrite the very
+        // rects the re-attach restores from.
+        assert!(
+            body("function arrangeFence(").contains("if (detached.includes(id)) return;"),
+            "arrangeFence must bail on a detached fence (#346, §7a)"
+        );
+        // The cap is the fold's, not a caller's: a second copy of the rule would
+        // satisfy a bare-noun pin while the fold's own check was deleted.
+        assert!(
+            body("function detachFold(").contains("reg.length >= DETACH_MAX"),
+            "the four-popup cap must be enforced inside the fold (#346)"
+        );
+        // The INVARIANT: either the popup exists and the members are torn down,
+        // or neither. `window.open` must therefore be reached before a single
+        // window is touched, and a null handle must bail.
+        let detach = body("function detachFence(");
+        assert!(
+            detach.contains("window.open(\"detached-fence.html\""),
+            "detachFence must open the popup document (#346)"
+        );
+        assert!(
+            detach.contains("if (!handle)"),
+            "a blocked popup must bail BEFORE anything is torn down (#346)"
+        );
+        assert!(
+            detach.find("window.open(").expect("detachFence must open a popup")
+                < detach
+                    .find("tearDownMember(")
+                    .expect("detachFence must tear its members down"),
+            "the popup must be open before a member is torn down — the #346 invariant"
+        );
+        // A member leaves the plane WITHOUT losing its desk record and WITHOUT
+        // closing its daemon session: the record is shared state a second client
+        // still renders, and the socket close is the writer-slot release (§9).
+        let teardown = body("function tearDownMember(");
+        assert!(
+            teardown.contains("win._term?.dispose()") && teardown.contains("wins.delete(win)"),
+            "tearDownMember must dispose the terminal and drop the window (#346, §9)"
+        );
+        assert!(
+            !teardown.contains("forgetRecord") && !teardown.contains("sessions/close"),
+            "a detached member must keep its desk record and its daemon session (#346)"
+        );
+        // THE POPUP'S DENIED CAPABILITIES. Each is what stops a window holding a
+        // FRAGMENT of the plane from writing the whole desk or the shell's view.
+        let html = include_str!("../assets/ui/detached-fence.html");
+        for pin in [
+            "window.WBDeskSink.none()",
+            "autoBoot: false",
+            "canLaunch: false",
+            "read: () => null",
+            "WBConsole.mountDetached(",
+            "wb-fence-ready",
+            "wb-fence-reattach",
+        ] {
+            assert!(
+                html.contains(pin),
+                "detached-fence.html must keep the #346 pin {pin}"
+            );
+        }
+        assert!(
+            !html.contains("WBConsole.open("),
+            "the popup must expose no way to open a new console (#346)"
+        );
+        // The handshake's confidentiality control: a concrete targetOrigin, so a
+        // page on any other origin never receives this fence's members.
+        assert!(
+            html.contains("window.location.origin"),
+            "the popup must post to a concrete origin, never \"*\" (#346)"
+        );
+        // The tree-wide sweep in `shell_stores_only_the_view_in_the_browser`
+        // scans .html too; keep this document out of the browser's stores.
+        assert!(
+            !html.contains("localStorage") && !html.contains("sessionStorage"),
+            "the popup must store nothing in the browser (#346)"
+        );
+        // `.fence-tools` and `.fence` are transparent to pointer events, so a
+        // control that does not opt back IN is drawn and unclickable — while
+        // every source-text pin above stays green. Measured in #342.
+        let css = include_str!("../assets/ui/styles.css");
+        let rule = |head: &str| -> String {
+            let after = css
+                .split_once(head)
+                .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
+                .1;
+            after[..after.find('}').expect("the rule must close")].to_string()
+        };
+        for head in ["\n.fence-detach {", "\n.fence-detached {"] {
+            assert!(
+                rule(head).contains("pointer-events: auto"),
+                "{head} must take pointer events, or the control is inert (#346)"
+            );
+        }
     }
 
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright

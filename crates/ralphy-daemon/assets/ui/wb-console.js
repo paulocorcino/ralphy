@@ -1040,7 +1040,12 @@ window.WBConsole = (function () {
     count.className = "fence-count";
     const repos = document.createElement("span");
     repos.className = "fence-repos";
-    head.append(grab, name, count, repos);
+    // A fence verb's refusal belongs on the fence: `WB.emit` alone only reaches
+    // the console, which tells the operator nothing, and the workbench has no
+    // toast surface to reuse. Filled and cleared by `fenceNotice`.
+    const notice = document.createElement("span");
+    notice.className = "fence-notice";
+    head.append(grab, name, count, repos, notice);
     // Arrange and close leave the head band and take the fence's TOP-RIGHT
     // corner, where every other closable surface in this workbench puts them —
     // a console window's own × included. Trailing the head made their position
@@ -1060,7 +1065,26 @@ window.WBConsole = (function () {
     drop.title = "remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", () => removeFence(f.id));
-    tools.append(tile, drop);
+    const detach = document.createElement("button");
+    detach.className = "fence-detach";
+    detach.type = "button";
+    detach.title = "detach this fence into its own window";
+    detach.textContent = "⧉";
+    detach.addEventListener("click", () => detachFence(f.id));
+    // BETWEEN arrange and close, never after: close stays the OUTERMOST control
+    // (wb_fence_342.py asserts exactly that), which is where every closable
+    // surface in this workbench puts it.
+    tools.append(tile, detach, drop);
+    // What tells an EMPTIED fence from an empty one (ADR-0051 §7a): while the
+    // consoles are in their own window the fence keeps its name, rect and place
+    // in the list, and carries this glyph in its middle. Clicking it brings them
+    // home — or raises the popup, if it is merely buried.
+    const away = document.createElement("div");
+    away.className = "fence-detached";
+    away.title = "bring this fence's consoles home";
+    away.textContent = "⧉";
+    away.hidden = true;
+    away.addEventListener("click", () => glyphClick(f.id));
     // Every edge and corner resizes (issue: the borders are the handle). The SE
     // one keeps the `.fence-grip` class AND its visible affordance: it is the
     // one handle that advertises itself, the other seven are invisible bands
@@ -1077,7 +1101,7 @@ window.WBConsole = (function () {
     // pixels the head and the tools occupy, and all of them opt into pointer
     // events. Later siblings win, so the two interactive clusters go last —
     // otherwise the north band would eat the name field and the close button.
-    el.append(...handles, head, tools);
+    el.append(...handles, head, tools, away);
     stage()?.append(el);
     return el;
   }
@@ -1425,6 +1449,211 @@ window.WBConsole = (function () {
         return { registry: reg.slice(), effects: [] };
     }
   }
+
+  // ---- detaching a fence into its own window (issue #346) ----------------------
+  // The registry the fold folds over, and the live popups behind it. Both are
+  // IN-MEMORY and belong to this tab only: a reload of the origin tab loses the
+  // detach, which is deliberate — reload survival (session-scoped storage, the
+  // broadcast channel, the heartbeat) is a separate slice of PRD #344.
+  let detached = [];
+  const fencePopups = new Map(); // fenceId -> { handle, members, poll }
+
+  function isDetached(id) {
+    return detached.includes(id);
+  }
+
+  // A refused fence verb, said ON the fence. Cleared on a timer so a stale
+  // refusal cannot outlive the gesture that caused it.
+  function fenceNotice(id, text) {
+    const el = fenceEl(id)?.querySelector(".fence-notice");
+    if (!el) return;
+    el.textContent = text;
+    clearTimeout(el._noticeTimer);
+    el._noticeTimer = setTimeout(() => {
+      el.textContent = "";
+    }, 2600);
+  }
+
+  function showDetachGlyph(id, on) {
+    const away = fenceEl(id)?.querySelector(".fence-detached");
+    if (away) away.hidden = !on;
+  }
+
+  // What the popup is handed: one record per member, in the SAME shape
+  // `buildChrome` restores from, plus the live session id. The rects are the
+  // ones measured HERE, untranslated — the popup translates them for its own
+  // small viewport and never sends them back, which is what makes re-attach
+  // return every console to the box it was detached from no matter what the
+  // operator did inside the popup.
+  function fenceSnapshot(id) {
+    const st = stage();
+    if (!st) return [];
+    const all = [...st.querySelectorAll(".session-window")];
+    const byId = new Map(all.map((w) => [w._deskId, w]));
+    const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];
+    return ids
+      .map((wid) => byId.get(wid))
+      .filter(Boolean)
+      .map((win) => ({
+        ...deskOf(win),
+        session: win._term?.sessionId ?? win._wantsSession ?? null,
+      }));
+  }
+
+  // Take a member off the plane WITHOUT forgetting its desk record and WITHOUT
+  // closing its daemon session: the record is shared state a second client still
+  // renders, and `dispose()` closing the socket is exactly the writer-slot
+  // release the popup then re-acquires (ADR-0051 §9).
+  function tearDownMember(win) {
+    win._term?.dispose();
+    win.remove();
+    wins.delete(win);
+    changed();
+  }
+
+  function stopPoll(entry) {
+    if (entry?.poll) clearInterval(entry.poll);
+  }
+
+  function detachFence(id) {
+    const out = detachFold(detached, { type: "detach", fenceId: id });
+    for (const effect of out.effects) {
+      if (effect.type === "focus") {
+        fencePopups.get(id)?.handle?.focus();
+        WB.emit("fence-focus", { fence: id });
+        return;
+      }
+      if (effect.type === "refuse") {
+        fenceNotice(id, `at most ${DETACH_MAX} detached fences`);
+        WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
+        return; // the registry is NOT committed
+      }
+    }
+    if (!out.effects.some((e) => e.type === "open")) return;
+
+    const st = stage();
+    const members = fenceSnapshot(id);
+    const fence = st ? readFenceRects(st).find((f) => f.id === id) : null;
+    // INVARIANT: either the popup exists AND the members are torn down, or
+    // neither. `window.open` therefore runs BEFORE a single window is touched —
+    // a blocked popup must leave the fence exactly as it was.
+    const handle = window.open("detached-fence.html", "", "popup,width=900,height=700");
+    if (!handle) {
+      fenceNotice(id, "the browser blocked the popup");
+      WB.emit("fence-detach-blocked", { fence: id });
+      return; // the registry is NOT committed, nothing was torn down
+    }
+
+    detached = out.registry;
+    const entry = { handle, members, fence: fence || { id, name: "", rect: null }, poll: null };
+    fencePopups.set(id, entry);
+    for (const m of members) {
+      const win = [...wins].find((w) => w._deskId === m.id);
+      if (win) tearDownMember(win);
+    }
+    showDetachGlyph(id, true);
+    applyExtent();
+    refreshFenceChrome();
+    WB.emit("fence-detach", { fence: id });
+    // A force-closed popup fires no `beforeunload`, so the unload message alone
+    // would strand the consoles. The fold is idempotent on a re-attach, so the
+    // doubled signal costs nothing.
+    entry.poll = setInterval(() => {
+      if (entry.handle.closed) reattachFence(id);
+    }, 500);
+  }
+
+  function reattachFence(id) {
+    const out = detachFold(detached, { type: "reattach", fenceId: id });
+    if (!out.effects.some((e) => e.type === "close")) return;
+    const entry = fencePopups.get(id);
+    stopPoll(entry);
+    fencePopups.delete(id);
+    detached = out.registry;
+    try {
+      if (entry?.handle && !entry.handle.closed) entry.handle.close();
+    } catch {}
+    // The ORIGINAL records, so `buildChrome` restores each rect and `max` — the
+    // popup's own layout is discarded by never having been read.
+    for (const m of entry?.members || []) {
+      if (m.session != null) {
+        spawnWindow({ id: m.session }, m.agent || "console", m.repo, m);
+      } else {
+        spawnPlaceholder(m);
+      }
+    }
+    showDetachGlyph(id, false);
+    applyExtent();
+    refreshFenceChrome();
+    WB.emit("fence-reattach", { fence: id });
+  }
+
+  // The glyph has two intents, told apart by whether the popup is still alive:
+  // raise a window buried behind others, or bring the consoles home.
+  function glyphClick(id) {
+    const entry = fencePopups.get(id);
+    if (entry?.handle && !entry.handle.closed) {
+      const out = detachFold(detached, { type: "focus", fenceId: id });
+      for (const effect of out.effects) {
+        if (effect.type === "focus") {
+          entry.handle.focus();
+          WB.emit("fence-focus", { fence: id });
+        }
+      }
+      return;
+    }
+    reattachFence(id);
+  }
+
+  // The POPUP's side: render the members its opener handed over. Their rects are
+  // stage coordinates from a plane far larger than a 900x700 popup, so they are
+  // translated by the fence origin to sit near this window's top-left. The
+  // untranslated snapshot stays in the OPENER — nothing measured here ever goes
+  // back, which is why a drag inside the popup is discarded on re-attach.
+  function mountDetached(fence, members) {
+    const originLeft = fence?.rect?.left || 0;
+    const originTop = fence?.rect?.top || 0;
+    for (const m of members || []) {
+      const record = {
+        ...m,
+        rect: {
+          ...m.rect,
+          left: (m.rect?.left || 0) - originLeft + 12,
+          top: (m.rect?.top || 0) - originTop + 12,
+        },
+      };
+      if (m.session != null) {
+        spawnWindow({ id: m.session }, m.agent || "console", m.repo, record);
+      } else {
+        spawnPlaceholder(record);
+      }
+    }
+    applyExtent();
+  }
+
+  // The opener's half of the handshake, guarded exactly as `app.js` guards the
+  // detached FILE viewer's: a message is answered only when it comes from this
+  // very origin AND from a window this tab itself opened. A page on any other
+  // origin therefore never receives the members, and can never ask for them.
+  window.addEventListener("message", (e) => {
+    if (!window.WBMode?.isDemo() && e.origin !== location.origin) return;
+    let owner = null;
+    for (const [id, entry] of fencePopups) if (entry.handle === e.source) owner = id;
+    if (owner == null) return;
+    const m = e.data;
+    if (!m) return;
+    if (m.type === "wb-fence-ready") {
+      const entry = fencePopups.get(owner);
+      e.source.postMessage(
+        { type: "wb-fence-open", fence: entry.fence, members: entry.members },
+        location.origin,
+      );
+    } else if (m.type === "wb-emit") {
+      WB.emit(m.action, m.detail);
+    } else if (m.type === "wb-fence-reattach") {
+      reattachFence(m.fenceId ?? owner);
+    }
+  });
 
   // The verb the shortcut calls: walk one step and jump. Returns the id landed
   // on, or null when the plane carries no fence — the shell needs that to leave
@@ -2780,6 +3009,10 @@ window.WBConsole = (function () {
   // members are still strictly inside the fence rect.
   const FENCE_GRIP = 14;
   function arrangeFence(id) {
+    // Its consoles are in another window; there is nothing here to tile, and
+    // tiling the empty box would rewrite the rects the popup will restore from
+    // (ADR-0051 §7a: arrange is a no-op on a detached fence).
+    if (detached.includes(id)) return;
     const st = stage();
     const el = fenceEl(id);
     if (!st || !el) return;
@@ -2919,6 +3152,10 @@ window.WBConsole = (function () {
     fenceCycle,
     detachFold,
     DETACH_MAX,
+    detachFence,
+    reattachFence,
+    isDetached,
+    mountDetached,
     stepFence,
     jumpToFence,
     focusedFence: focusedFenceId,

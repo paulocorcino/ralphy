@@ -2291,6 +2291,63 @@ body.runs-open .runs {
   border-color: var(--border-focus);
   color: var(--text);
 }
+/* Detach, between arrange and close. `pointer-events: auto` is LOAD-BEARING:
+   `.fence-tools` is transparent to them (it would punch an inert hole in the
+   floor's pan otherwise), so without this the button draws and never clicks —
+   and every source-text pin stays green while it does. */
+.fence-detach {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-detach:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* The emptied fence's mark, centred in its box: this fence's consoles are alive
+   in their own window (ADR-0051 §7a). Same `pointer-events` note as above — the
+   `.fence` box itself is inert so the floor pans over it. */
+.fence-detached {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px dashed var(--border-focus);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.fence-detached:hover {
+  border-style: solid;
+  color: var(--text);
+}
+/* A refused fence verb, said on the fence itself. Empty (and therefore
+   invisible) at rest; `fenceNotice` fills it and clears it after 2600 ms. */
+.fence-notice {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--danger);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Refused: the fence overlaps another one and this drop will be reverted. A
    solid `--danger` border against the resting dashed one, so the feedback reads
    at a glance mid-gesture. */
