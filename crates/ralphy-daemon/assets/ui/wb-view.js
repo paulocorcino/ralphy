@@ -1,5 +1,5 @@
-// The PER-CLIENT view (issue #339, ADR-0051 §8): the viewport offset and the
-// open file tabs, in this browser profile only.
+// The PER-CLIENT view (issue #339, ADR-0051 §8): the viewport offset, the open
+// file tabs, and the restore preference, in this browser profile only.
 //
 // This is the ONE module in the workbench allowed to touch `localStorage`, and
 // it holds ONE key. ADR-0050 §3 dropped the browser desk store — that rejection
@@ -10,9 +10,15 @@
 // per profile, and NOTHING about the layout may join it — `wb_desk_327.py`
 // scenario 5 and `shell_stores_only_the_view_in_the_browser` assert exactly that.
 //
-// Two writers share the key (the console's offset, the shell's tabs), which is
-// why `patch` is read-modify-write: either half writing the whole record would
-// clobber the other's.
+// `relaunch` joins them for the same reason and NOT as an exception: it is a
+// preference about what THIS browser is allowed to start, not a record of what
+// the desk holds. Per-client is also the only lifetime that is safe — daemon-
+// wide, every tab pointed at the same desk would relaunch the same consoles,
+// and two tabs would spend the quota twice.
+//
+// Three writers share the key (the console's offset, the shell's tabs, the
+// settings toggle), which is why `patch` is read-modify-write: any one of them
+// writing the whole record would clobber the others'.
 window.WBView = (function () {
   const KEY = "wb.view.v1";
 
@@ -34,6 +40,10 @@ window.WBView = (function () {
       return {
         ...parsed,
         tabs: Array.isArray(parsed.tabs) ? parsed.tabs : [],
+        // Read STRICTLY: anything that is not a stored `true` means "do not
+        // launch". A truthy coercion here would turn a corrupt or half-written
+        // record into permission to spawn a vendor CLI per saved console.
+        relaunch: parsed.relaunch === true,
         off:
           parsed.off && typeof parsed.off === "object" && !Array.isArray(parsed.off)
             ? parsed.off

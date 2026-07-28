@@ -939,6 +939,18 @@
         </div>
         <div class="settings-body">
           <nav class="settings-nav">
+            <!-- client group: this browser profile's own, held in the view
+                 store (wb-view.js) and never sent to the daemon -->
+            <div class="settings-navgroup"><i class="bi bi-window-stack"></i> Workbench · this browser</div>
+            <template x-for="sec in SETTINGS.filter((s) => s.scope === 'client')" :key="sec.id">
+              <button
+                class="settings-navitem"
+                :class="{ active: settingsSection === sec.id }"
+                @click="settingsSection = sec.id"
+              >
+                <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
+              </button>
+            </template>
             <!-- daemon group: machine-wide, one for every project -->
             <div class="settings-navgroup"><i class="bi bi-hdd-network"></i> Daemon · this machine</div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'daemon')" :key="sec.id">
@@ -974,7 +986,9 @@
                 <div class="settings-h2row">
                   <h2 class="settings-h2" x-text="sec.title"></h2>
                   <span class="scope-chip" :class="sec.scope"
-                        x-text="sec.scope === 'daemon' ? 'daemon · all projects' : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
+                        x-text="sec.scope === 'client' ? 'this browser only'
+                                : sec.scope === 'daemon' ? 'daemon · all projects'
+                                : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
@@ -983,7 +997,7 @@
                   <code>&lt;repo&gt;/.ralphy/settings.json</code>.
                 </p>
                 <template x-for="it in sec.items" :key="it.key">
-                  <div class="set-row" x-show="sec.scope === 'daemon' || openSlug">
+                  <div class="set-row" x-show="sec.scope !== 'project' || openSlug">
                     <div class="set-main">
                       <label class="set-label" x-text="it.label"></label>
                       <!-- control, chosen by type -->
@@ -1009,6 +1023,14 @@
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
+                      <!-- a plain checkbox: the value is a real boolean, so it
+                           never goes through the string coercion the config
+                           inputs above need -->
+                      <template x-if="it.type === 'toggle'">
+                        <input class="set-check" type="checkbox"
+                               :checked="settings[it.key] === true"
+                               @change="saveSetting(it.key, $event.target.checked)" />
+                      </template>
                       <template x-if="it.type === 'number'">
                         <input class="set-input set-num" type="number" :min="it.min" :max="it.max"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
@@ -1022,7 +1044,7 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Settings persist via the daemon (<code>config.set</code>/<code>config.unset</code>).</span>
+          <span class="foot-note">Daemon and project settings persist via the daemon (<code>config.set</code>/<code>config.unset</code>); workbench settings stay in this browser.</span>
           <button class="btn" @click="closeSettings()">Done</button>
         </div>
       </div>

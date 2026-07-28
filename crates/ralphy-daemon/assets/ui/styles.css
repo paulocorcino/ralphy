@@ -3517,6 +3517,9 @@ body.runs-open .runs {
   color: var(--console-text);
   border-color: var(--console-border);
 }
+.scope-chip.client {
+  color: var(--text);
+}
 .settings-noproject {
   color: var(--text-muted);
   font-size: 0.82rem;
@@ -3573,6 +3576,15 @@ body.runs-open .runs {
 .set-input.set-num {
   min-width: 100px;
   width: 100px;
+}
+/* A boolean knob. Sized like the other controls' hit area rather than left at
+   the 13px the UA draws, which reads as an afterthought beside them. */
+.set-check {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--console-text);
+  cursor: pointer;
 }
 .set-input.mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

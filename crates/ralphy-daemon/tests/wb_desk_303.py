@@ -23,6 +23,9 @@ Scenario 8   one click on the placeholder opens `/ws/session?repo=…&agent=gemi
              and reuses the record's id and rectangle
 Scenario 9   a REFUSED `/api/sessions` (500, then aborted) restores nothing, opens
              no socket, and leaves the saved desk intact
+Scenario 10  the relaunch-on-load opt-in, flipped through the real Settings modal:
+             off it parks, on it launches the agent console at load, and off again
+             parks it once more — with the preference in this browser, not the desk
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -303,6 +306,34 @@ def reconcile_table(page):
         "reconcileDesk pairs the record with the session it actually matched",
         paired == [["attach", 2, "w1"], ["adopt", 1, None]],
         f"got={paired}",
+    )
+    # The per-client opt-in (Settings → Consoles): one layout, folded three ways.
+    # `absent` is the control that matters — an omitted option must read as "do
+    # not launch", because the caller that forgets it is the one that would
+    # spend a vendor CLI per saved console on every page load.
+    opt = page.evaluate(
+        "() => { const layout = ["
+        " { id: 'w1', repo: 'fix', agent: 'gemini', kind: 'agent', sessionId: 9, ts: 1 },"
+        " { id: 'w2', repo: 'fix', agent: 'console', kind: 'console', sessionId: 9, ts: 1 }];"
+        " const fold = (o) => window.WBConsole.reconcileDesk(o).map((e) => e.action);"
+        " return { off: fold({ layout, sessions: [], relaunchAgents: false }),"
+        "          on: fold({ layout, sessions: [], relaunchAgents: true }),"
+        "          absent: fold({ layout, sessions: [] }) }; }"
+    )
+    check(
+        "relaunchAgents off: the agent waits, the shell comes back",
+        opt["off"] == ["placeholder", "relaunch"],
+        f"got={opt['off']}",
+    )
+    check(
+        "relaunchAgents on: the agent relaunches too",
+        opt["on"] == ["relaunch", "relaunch"],
+        f"got={opt['on']}",
+    )
+    check(
+        "…and omitting the option is the same as off, never as on",
+        opt["absent"] == ["placeholder", "relaunch"],
+        f"got={opt['absent']}",
     )
 
 
@@ -829,6 +860,90 @@ def main():
                 )
                 page.unroute("**/api/sessions")
 
+            # --- scenario 10: the relaunch-on-load opt-in ---------------------
+            # Seed a desk of ONE agent record whose session id no live session
+            # can claim, so the verdict is unambiguous: a placeholder with the
+            # toggle off, a real launch with it on. Gemini has no configuration
+            # root in this fixture, so that launch is refused by the daemon
+            # before any spawn — the SOCKET is the evidence, and nothing is
+            # spent proving it.
+            page.request.put(
+                BASE + "api/desk",
+                data={
+                    "windows": [
+                        {
+                            "id": "w-optin-gemini",
+                            "repo": slug,
+                            "agent": "gemini",
+                            "kind": "agent",
+                            "rect": {"left": 60, "top": 60, "width": 480, "height": 320},
+                            "max": False,
+                            "sessionId": 4242,
+                            "ts": 9,
+                        }
+                    ],
+                    "fences": [],
+                },
+            )
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_timeout(1500)
+            check(
+                "with the opt-in untouched the agent console still parks",
+                page.locator(".session-window.placeholder").count() == 1,
+                f"got={page.locator('.session-window').count()} windows",
+            )
+
+            # Flipped through the REAL modal, not by writing the store: the
+            # wiring from the knob to the restore fold is the thing under test.
+            page.locator('button[title="Settings"]').click()
+            page.locator(".settings-navitem", has_text="Consoles").click()
+            page.locator(".settings-content .set-check").click()
+            stored = page.evaluate("() => window.WBView.read().relaunch")
+            check("the toggle lands in the per-client view store", stored is True, f"got={stored}")
+            check(
+                "…and nowhere else — the desk carries no preference",
+                "relaunch" not in page.request.get(BASE + "api/desk").text(),
+                "",
+            )
+            page.locator(".settings-modal .modal-x").click()
+
+            mark = [u for u in sockets if "/ws/session" in u]
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_timeout(2000)
+            launched = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            check(
+                "with the opt-in on, loading the page launches the agent console",
+                any("agent=gemini" in u for u in launched),
+                f"new={launched}",
+            )
+            check(
+                "…so no placeholder is left waiting for a click",
+                page.locator(".session-window.placeholder").count() == 0,
+                f"got={page.locator('.session-window.placeholder').count()}",
+            )
+
+            # It is a TOGGLE, not a one-way door: turning it back off must park
+            # the console again, or the operator cannot undo the spending.
+            page.locator('button[title="Settings"]').click()
+            page.locator(".settings-navitem", has_text="Consoles").click()
+            page.locator(".settings-content .set-check").click()
+            page.locator(".settings-modal .modal-x").click()
+            mark = [u for u in sockets if "/ws/session" in u]
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_timeout(1500)
+            # Scoped to AGENT sockets: a live shell session is attached on every
+            # load, so "no session socket at all" would be a false red here.
+            after = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            check(
+                "turning it back off parks the agent console again",
+                page.locator(".session-window.placeholder").count() == 1
+                and not any("agent=" in u for u in after),
+                f"new={after}",
+            )
+
             ctx.close()
             browser.close()
     finally:
@@ -836,7 +951,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 102
+    ok = all(results) and len(results) >= 112
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")

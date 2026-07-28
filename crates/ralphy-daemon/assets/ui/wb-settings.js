@@ -36,8 +36,27 @@ const TRISTATE = ["unset", "on", "off"];
 
 // `scope` groups the nav: "daemon" settings belong to this machine's background
 // service (shared across every project); "project" settings are persisted per
-// repo in <repo>/.ralphy/settings.json, so they follow whichever project is open.
+// repo in <repo>/.ralphy/settings.json, so they follow whichever project is
+// open; "client" settings are this BROWSER profile's own, held in the view
+// store (wb-view.js) and never sent to the daemon.
 window.WB_SETTINGS = [
+  {
+    id: "consoles",
+    title: "Consoles",
+    icon: "bi-window-stack",
+    scope: "client",
+    blurb:
+      "How the console plane comes back when you open this page. Stored in this browser profile — another browser, or another machine, decides for itself.",
+    items: [
+      {
+        key: "consoles.relaunch_on_load",
+        label: "Relaunch agent consoles on load",
+        type: "toggle",
+        default: false,
+        help: "A saved console whose session is gone (after a daemon restart, say) normally comes back as a placeholder with a button. Turn this on to start them all as the page loads instead. Note it is a fresh launch, not a reconnect — the old session and its scrollback are gone either way — so every load spends whatever a vendor CLI costs, once per console. Plain shells always come back on their own and are not affected.",
+      },
+    ],
+  },
   {
     id: "daemon",
     title: "Daemon",
@@ -295,6 +314,17 @@ window.WB_SETTINGS = [
 ];
 
 window.WB_TRISTATE = TRISTATE;
+
+// The keys this BROWSER owns. Derived from the schema rather than listed, so a
+// new client-scoped item cannot be added and then routed to `config.set` by an
+// edit that forgot about it.
+window.wbClientKeys = function () {
+  const out = new Set();
+  for (const sec of window.WB_SETTINGS) {
+    if (sec.scope === "client") for (const it of sec.items) out.add(it.key);
+  }
+  return out;
+};
 
 // Seed a flat {key: default} map the Alpine component keeps its live values in.
 window.wbSettingsDefaults = function () {

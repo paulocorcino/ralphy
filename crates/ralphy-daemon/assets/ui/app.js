@@ -1694,9 +1694,17 @@ function shell() {
     settingsSection: "daemon",
     settings: window.wbSettingsDefaults(),
 
+    // The keys held in this browser profile's view store, not in any ralphy
+    // config (wb-settings.js `scope: "client"`).
+    CLIENT_KEYS: window.wbClientKeys(),
+
     openSettings() {
       this.settingsOpen = true;
       this.avatarMenu = false;
+      // The client-scoped keys come from the view store — they never travelled
+      // to the daemon, so `config.get` below would answer nothing for them.
+      const view = window.WBView.read() || {};
+      this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
       // Load the open repo's REAL resolved config via the daemon Query verb
       // (config.get). Merge each non-null key over the schema defaults so the
       // panel shows reality; with no repo open the project groups are disabled
@@ -1816,6 +1824,14 @@ function shell() {
 
     async saveSetting(key, value) {
       this.settings[key] = value;
+      // A client-scoped key stops here: it is this browser's preference, so it
+      // goes to the view store and never to `config.set` — which would put a
+      // per-browser choice in a repo's settings.json for every client to obey.
+      if (this.CLIENT_KEYS.has(key)) {
+        if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
+        WB.emit("setting-change", { project: null, key, value });
+        return;
+      }
       // Persist through the run-lock-aware config Mutate verbs (config.set /
       // config.unset). An empty/"unset" value clears the key. Only fired for the
       // open repo — a config verb runs in that repo's cwd. `observe` (not

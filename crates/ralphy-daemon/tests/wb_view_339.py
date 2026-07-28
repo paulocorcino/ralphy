@@ -581,8 +581,12 @@ def main():
             raw = stored_raw(page)
             stored = json.loads(raw)
             check(
-                "…whose shape carries only the view: v, off, tabs, active",
-                set(stored.keys()) <= {"v", "off", "tabs", "active"},
+                # `relaunch` is the restore PREFERENCE, not a record of what the
+                # desk holds — the rule ADR-0050 §3 laid down is "no desk in
+                # browser storage", not "no fourth key". The two checks below
+                # are what actually enforce it: no desk vocabulary, no desk ids.
+                "…whose shape carries only the view: v, off, tabs, active, relaunch",
+                set(stored.keys()) <= {"v", "off", "tabs", "active", "relaunch"},
                 f"got={sorted(stored.keys())}",
             )
             leaked = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw]

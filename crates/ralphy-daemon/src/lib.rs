@@ -5640,6 +5640,74 @@ mod tests {
         );
     }
 
+    /// The standing authorization to relaunch agent consoles on load. It is a
+    /// spending decision — one vendor CLI per saved agent console, on every page
+    /// load — so what this pins is that it stays OFF unless the operator turned
+    /// it on, and that it stays in the BROWSER: daemon-wide, every tab pointed
+    /// at the same desk would relaunch the same consoles and spend the quota
+    /// once per tab. Playwright proves the fold (`wb_desk_303.py` scenario 2);
+    /// this is the gate CI can see.
+    #[test]
+    fn relaunching_agent_consoles_on_load_is_opt_in() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        assert!(
+            js.contains(
+                "record.kind === \"console\" || relaunchAgents ? \"relaunch\" : \"placeholder\""
+            ),
+            "the restore fold must relaunch an agent console ONLY under the opt-in"
+        );
+        // The DEFAULT is the whole guard: a caller that omits the option — the
+        // fold's own tests, a later call site — must get the parked placeholder.
+        assert!(
+            js.contains("relaunchAgents = false }"),
+            "an omitted `relaunchAgents` must default to false, never to launching"
+        );
+        // The relaunch verdict must ask for the record's OWN kind. `{ console:
+        // true }` is the shell request, and reaching an agent record with it —
+        // which the opt-in made possible — opened a plain shell in the agent's
+        // box (measured in `wb_desk_303.py` scenario 10 before this line).
+        assert!(
+            js.contains(
+                r#"record.kind === "agent" ? { repo, agent: record.agent } : { console: true, repo }"#
+            ),
+            "a relaunched agent console must be requested by its vendor, not as a shell"
+        );
+        // The popup holds a fragment of the plane and authors no session; its
+        // injected `viewStore` reads nothing, and `canLaunch` refuses besides.
+        assert!(
+            js.contains("OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true"),
+            "the opt-in must be read through the injected view store, and never in the popup"
+        );
+
+        // The knob, and the store it writes to. `config.set` would put a
+        // per-browser choice in a repo's settings.json for every client to obey.
+        let settings = include_str!("../assets/ui/wb-settings.js");
+        for pin in [
+            r#"scope: "client""#,
+            r#"key: "consoles.relaunch_on_load""#,
+            r#"type: "toggle""#,
+        ] {
+            assert!(
+                settings.contains(pin),
+                "wb-settings.js must keep the pin {pin}"
+            );
+        }
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            app.contains("window.WBView.patch({ relaunch: value === true })"),
+            "app.js must persist the toggle through the view store"
+        );
+        assert!(
+            app.contains("if (this.CLIENT_KEYS.has(key)) {"),
+            "a client-scoped key must return before the config.set path"
+        );
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains(r#"it.type === 'toggle'"#),
+            "index.html must render the toggle control"
+        );
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.

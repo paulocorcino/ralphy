@@ -307,7 +307,11 @@ window.WBConsole = (function () {
   // in layout order), because a restarted daemon reuses ids and two stale records
   // could otherwise both claim id 1 — hence the full `sessionId`+`repo`+`agent`+
   // `kind` tuple rather than a bare id match.
-  function reconcileDesk({ layout, sessions }) {
+  //
+  // `relaunchAgents` is the operator's per-client opt-in (Settings → Consoles).
+  // Default OFF and passed in rather than read here, so the fold stays pure and
+  // the popup — whose `viewStore` reads nothing — can never turn it on.
+  function reconcileDesk({ layout, sessions, relaunchAgents = false }) {
     const live = sessions || [];
     const used = new Set();
     const out = [];
@@ -325,12 +329,18 @@ window.WBConsole = (function () {
         out.push({ record, session: live[i], action: "attach" });
       } else {
         // A shell is free and idempotent, so it comes back by itself; an agent
-        // console waits for one deliberate click (loading a page must never spawn
-        // a vendor CLI and spend quota nobody authorized).
+        // console waits for one deliberate click, because loading a page must
+        // never spawn a vendor CLI and spend quota nobody authorized. The
+        // operator may authorize it standingly — that is what `relaunchAgents`
+        // is — and nothing else lifts this.
+        //
+        // Note what the placeholder's button really does: the old PTY is gone,
+        // so this is a LAUNCH, not a reconnect. There is no scrollback to come
+        // back to either way.
         out.push({
           record,
           session: null,
-          action: record.kind === "console" ? "relaunch" : "placeholder",
+          action: record.kind === "console" || relaunchAgents ? "relaunch" : "placeholder",
         });
       }
     }
@@ -3104,6 +3114,11 @@ window.WBConsole = (function () {
         for (const { record, session, action } of reconcileDesk({
           layout: loadDesk(),
           sessions,
+          // Read at restore time, not at module load: the operator may have
+          // flipped the toggle in a previous visit and this is the first read
+          // of it. `canLaunch === false` (the detached popup) refuses too — it
+          // is the document that must never author a session.
+          relaunchAgents: OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true,
         })) {
           // `adopt` carries NO record — it is a live session no record claims —
           // so every read below must be guarded. Reaching `record.id` here
@@ -3127,7 +3142,13 @@ window.WBConsole = (function () {
             // The daemon labels a repo-less console "~"; passing that back as a
             // slug would hit `unknown repo`, so it relaunches with no repo at all.
             const repo = record.repo === "~" ? undefined : record.repo;
-            spawnWindow({ console: true, repo }, record.agent, record.repo, record);
+            // An AGENT record asks for its vendor by name, exactly as the
+            // placeholder's own button does. `{ console: true }` is the shell
+            // request — reaching an agent record with it (which the opt-in made
+            // possible) opened a plain shell in the agent's box.
+            const req =
+              record.kind === "agent" ? { repo, agent: record.agent } : { console: true, repo };
+            spawnWindow(req, record.agent, record.repo, record);
           } else if (action === "placeholder") {
             spawnPlaceholder(record);
           } else {
