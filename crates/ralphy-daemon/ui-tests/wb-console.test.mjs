@@ -13,6 +13,11 @@ const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
 // the browser — so the harness runs the REAL sink source first, mirroring
 // index.html's script order. A stub here would hide a broken script tag.
 const SINK_SRC = readFileSync(join(UI, "wb-desk-sink.js"), "utf8");
+// Same reasoning for the detach link: `wb-console.js` reads
+// `window.WBDetachLink.link()` at load, so the harness runs the REAL source in
+// the same script order both documents use. It touches neither `sessionStorage`
+// nor `BroadcastChannel` at load, so neither needs to exist here.
+const LINK_SRC = readFileSync(join(UI, "wb-detach-link.js"), "utf8");
 
 function load() {
   // The three globals the module touches at LOAD time: `window.addEventListener`
@@ -26,6 +31,7 @@ function load() {
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   new Function("window", SINK_SRC)(window);
+  new Function("window", LINK_SRC)(window);
   new Function("window", "document", "location", SRC)(window, document, location);
   return window.WBConsole;
 }
@@ -1265,4 +1271,85 @@ test("detachFold: an unknown event is inert, so a stray message cannot detach", 
   const out = WB.detachFold(["f-a"], { type: "heartbeat", fenceId: "f-a" });
   assert.deepStrictEqual(out.effects, []);
   assert.deepStrictEqual(out.registry, ["f-a"]);
+});
+
+// ---- peerFold: the heartbeat and the peer-lost transition (issue #347) -------
+// The window is passed in, so these run in microseconds rather than six real
+// seconds — which is the whole reason the rule is a pure fold and not a timer.
+const WINDOW_MS = 6000;
+const SEEN = 100000;
+
+test("peerFold: silence past the window loses the peer, exactly once", () => {
+  const WB = load();
+  const lost = WB.peerFold({ seen: SEEN, lost: false }, { type: "tick", at: SEEN + WINDOW_MS + 1 }, WINDOW_MS);
+  assert.deepStrictEqual(lost.effects, [{ type: "peer-lost" }]);
+  assert.equal(lost.state.lost, true);
+  // The effect turns into a `window.close()`, so a SECOND tick must be silent.
+  const again = WB.peerFold(lost.state, { type: "tick", at: SEEN + WINDOW_MS + 5000 }, WINDOW_MS);
+  assert.deepStrictEqual(again.effects, []);
+  assert.equal(again.state.lost, true);
+});
+
+// THE NEGATIVE CONTROL for the whole rule: inverting the comparison, or dropping
+// the beat's `seen` update, makes this row red while the one above stays green.
+test("peerFold: a beat inside the window does not expire — an F5 costs no popup", () => {
+  const WB = load();
+  const beaten = WB.peerFold({ seen: SEEN, lost: false }, { type: "beat", at: SEEN + 5000 }, WINDOW_MS);
+  assert.deepStrictEqual(beaten.effects, []);
+  assert.equal(beaten.state.seen, SEEN + 5000);
+  const tick = WB.peerFold(beaten.state, { type: "tick", at: SEEN + 6001 }, WINDOW_MS);
+  assert.deepStrictEqual(tick.effects, [], "1001 ms of silence is well inside a 6000 ms window");
+  assert.equal(tick.state.lost, false);
+});
+
+test("peerFold: the boundary is strict — a tick exactly at the window is still alive", () => {
+  const WB = load();
+  const out = WB.peerFold({ seen: SEEN, lost: false }, { type: "tick", at: SEEN + WINDOW_MS }, WINDOW_MS);
+  assert.deepStrictEqual(out.effects, []);
+  assert.equal(out.state.lost, false);
+});
+
+test("peerFold: a peer never heard from does not expire — the boot-adoption grace", () => {
+  const WB = load();
+  const out = WB.peerFold({ seen: null, lost: false }, { type: "tick", at: SEEN + 999999 }, WINDOW_MS);
+  assert.deepStrictEqual(out.effects, []);
+  assert.equal(out.state.lost, false);
+});
+
+test("peerFold: loss is terminal — a beat after the loss does not resurrect the peer", () => {
+  const WB = load();
+  const out = WB.peerFold({ seen: SEEN, lost: true }, { type: "beat", at: SEEN + 1 }, WINDOW_MS);
+  assert.deepStrictEqual(out.effects, []);
+  assert.equal(out.state.lost, true);
+  assert.equal(out.state.seen, SEEN, "a lost peer's clock stops with it");
+});
+
+test("peerFold: an announced departure loses the peer without waiting the window out", () => {
+  const WB = load();
+  const out = WB.peerFold({ seen: SEEN, lost: false }, { type: "gone" }, WINDOW_MS);
+  assert.deepStrictEqual(out.effects, [{ type: "peer-lost" }]);
+  assert.equal(out.state.lost, true);
+});
+
+test("peerFold: an unknown event is inert, so a stray channel message cannot lose a peer", () => {
+  const WB = load();
+  const out = WB.peerFold({ seen: SEEN, lost: false }, { type: "origin-ping" }, WINDOW_MS);
+  assert.deepStrictEqual(out.effects, []);
+  assert.deepStrictEqual(out.state, { seen: SEEN, lost: false });
+  const undef = WB.peerFold(undefined, { type: "tick", at: SEEN }, WINDOW_MS);
+  assert.deepStrictEqual(undef.effects, []);
+  assert.deepStrictEqual(undef.state, { seen: null, lost: false });
+});
+
+test("peerFold: the input state is never mutated", () => {
+  const WB = load();
+  const state = { seen: SEEN, lost: false };
+  for (const event of [
+    { type: "beat", at: SEEN + 10 },
+    { type: "tick", at: SEEN + WINDOW_MS + 1 },
+    { type: "gone" },
+  ]) {
+    WB.peerFold(state, event, WINDOW_MS);
+    assert.deepStrictEqual(state, { seen: SEEN, lost: false });
+  }
 });

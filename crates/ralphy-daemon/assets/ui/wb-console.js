@@ -1466,13 +1466,49 @@ window.WBConsole = (function () {
     }
   }
 
-  // ---- detaching a fence into its own window (issue #346) ----------------------
-  // The registry the fold folds over, and the live popups behind it. Both are
-  // IN-MEMORY and belong to this tab only: a reload of the origin tab loses the
-  // detach, which is deliberate — reload survival (session-scoped storage, the
-  // broadcast channel, the heartbeat) is a separate slice of PRD #344.
+  // A PEER's liveness, as a rule rather than a timer: (state, event, windowMs)
+  // -> { state, effects }. Pure — no clock of its own, no DOM — so the same
+  // function decides both directions of the link (the origin watching a popup,
+  // the popup watching its origin) and the node table drives the boundary
+  // directly. `windowMs` is the THIRD ARGUMENT, never a global, which is what
+  // keeps it drivable without waiting six real seconds.
+  //
+  // Loss is TERMINAL: a beat arriving after `lost` does not resurrect the peer,
+  // because the caller turns the effect into a `window.close()` (the popup) or a
+  // `reattachFence` (the origin) and neither is undoable. Loss is also STRICT
+  // (`> windowMs`), so the boundary tick itself is still alive.
+  function peerFold(state, event, windowMs) {
+    const seen = typeof state?.seen === "number" ? state.seen : null;
+    const lost = !!state?.lost;
+    const same = { seen, lost };
+    if (lost) return { state: same, effects: [] };
+    switch (event?.type) {
+      case "beat":
+        return { state: { seen: typeof event.at === "number" ? event.at : seen, lost: false }, effects: [] };
+      case "tick":
+        // `seen: null` — never heard from — expires nothing: the origin seeds
+        // every entry with `Date.now()` at creation AND at boot-restore, so one
+        // rule governs the post-reload adoption grace and steady state alike.
+        if (seen == null || typeof event.at !== "number") return { state: same, effects: [] };
+        if (event.at - seen > windowMs)
+          return { state: { seen, lost: true }, effects: [{ type: "peer-lost" }] };
+        return { state: same, effects: [] };
+      case "gone":
+        // An announced departure: the same effect, without waiting the window out.
+        return { state: { seen, lost: true }, effects: [{ type: "peer-lost" }] };
+      default:
+        return { state: same, effects: [] };
+    }
+  }
+
+  // ---- detaching a fence into its own window (issues #346, #347) ---------------
+  // The registry the fold folds over, and the live popups behind it. `detached`
+  // is the in-memory mirror; its DURABLE copy lives in this tab's session-scoped
+  // storage behind `link` (ADR-0051 §8), which is what carries a detach across
+  // an F5 and kills it with the tab. Every transition goes through
+  // `commitDetached` so the two can never disagree.
   let detached = [];
-  const fencePopups = new Map(); // fenceId -> { handle, members, poll }
+  const fencePopups = new Map(); // fenceId -> { handle, members, fence, poll, peer }
 
   function isDetached(id) {
     return detached.includes(id);
@@ -3209,6 +3245,7 @@ window.WBConsole = (function () {
     fenceList,
     fenceCycle,
     detachFold,
+    peerFold,
     DETACH_MAX,
     detachFence,
     reattachFence,
