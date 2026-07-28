@@ -21,6 +21,15 @@ window.WBConsole = (function () {
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
     (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
+  // The host document's injection point, read ONCE at load. `index.html` sets
+  // nothing, so every default below IS the shell's behaviour and the shell is
+  // unchanged by construction; `detached-fence.html` (the popup that renders one
+  // detached fence) overrides all four. Injecting is what makes the popup
+  // INCAPABLE of authoring the desk or the viewport, rather than each call site
+  // carrying a `detached` test a later edit can forget.
+  const OPTS = window.WBConsoleOpts || {};
+  const deskSink = OPTS.deskSink || window.WBDeskSink.daemon();
+  const viewStore = OPTS.viewStore || window.WBView;
   const wins = new Set();
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
   // ceiling the whole stack is renormalized back down (preserving order) so the
@@ -166,13 +175,10 @@ window.WBConsole = (function () {
   function deskBody() {
     return { windows: desk, fences };
   }
-  // The upload, debounced and fire-and-forget. INVARIANT: no drag, resize, close
-  // or `persistWin` path may await or throw on this — a refused PUT costs a stale
-  // position and the next mutation supersedes it (last write wins, no ETag).
-  // Chained on the previous flush so two mutations 250 ms apart cannot land out
-  // of order over a LAN or a dev tunnel.
+  // The upload, debounced and fire-and-forget. WHERE it goes is `deskSink`'s
+  // business (wb-desk-sink.js), which also owns the chaining that keeps two
+  // mutations 250 ms apart from landing out of order.
   let deskFlush = null;
-  let deskInFlight = Promise.resolve();
   function scheduleDeskFlush() {
     if (!window.WBMode?.isDaemon()) return;
     clearTimeout(deskFlush);
@@ -190,19 +196,11 @@ window.WBConsole = (function () {
     // operator's real layout with whatever this page happens to hold.
     if (!deskLoaded) return;
     const body = JSON.stringify(deskBody());
-    deskInFlight = deskInFlight
-      .catch(() => {})
-      .then(() =>
-        fetch("/api/desk", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body,
-        }).catch(() => {}),
-      );
+    deskSink.put(body);
   }
   // A mutation inside the last 250 ms before the tab closes would otherwise be
-  // dropped — the window would come back "open" on the next load. `keepalive`
-  // lets the request outlive the document.
+  // dropped — the window would come back "open" on the next load. The sink's
+  // `putSync` rides `keepalive`, which lets the request outlive the document.
   window.addEventListener("pagehide", () => {
     // The per-client view first, and BEFORE the desk guard below: `WBView`'s
     // store is synchronous (no `keepalive` dance needed) and `deskLoaded` has
@@ -216,14 +214,7 @@ window.WBConsole = (function () {
     if (!deskLoaded || !deskFlush) return;
     clearTimeout(deskFlush);
     deskFlush = null;
-    try {
-      fetch("/api/desk", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(deskBody()),
-        keepalive: true,
-      }).catch(() => {});
-    } catch {}
+    deskSink.putSync(JSON.stringify(deskBody()));
   });
   function newId(prefix) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
@@ -492,7 +483,7 @@ window.WBConsole = (function () {
       if (rects.length || deskSettled) landed = true;
       if (revealNow(wanted)) return;
     }
-    const stored = window.WBView?.read()?.off || null;
+    const stored = viewStore?.read()?.off || null;
     if (landed && !stored) return;
     const at = viewLanding(
       stored,
@@ -526,7 +517,7 @@ window.WBConsole = (function () {
     // real 1500,850 pan, ~470 ms after boot), and one that merely bailed would
     // silently drop the operator's last pan instead.
     if (!pendingOffset) return;
-    window.WBView?.patch({ off: pendingOffset });
+    viewStore?.patch({ off: pendingOffset });
     pendingOffset = null;
   }
   function saveOffset() {
@@ -638,7 +629,7 @@ window.WBConsole = (function () {
       pendingOffset = null;
       clearTimeout(offsetFlush);
       offsetFlush = null;
-      window.WBView?.patch({ off: { left: to.left, top: to.top } });
+      viewStore?.patch({ off: { left: to.left, top: to.top } });
     }
     return it;
   }
@@ -1655,7 +1646,7 @@ window.WBConsole = (function () {
       pendingOffset = null;
       clearTimeout(offsetFlush);
       offsetFlush = null;
-      window.WBView?.patch({ off: { left: to.left, top: to.top } });
+      viewStore?.patch({ off: { left: to.left, top: to.top } });
     }
     return el;
   }
@@ -2444,7 +2435,9 @@ window.WBConsole = (function () {
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "reconnect";
-    note.append(text, btn);
+    // Relaunching spawns a vendor CLI, which is a shell verb: the detached-fence
+    // popup renders a fence it was handed and offers no way to start anything.
+    note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
     body.append(note);
 
     const drop = () => {
@@ -2677,9 +2670,11 @@ window.WBConsole = (function () {
 
   // The gestures are wired in the static demo too, where `restoreDesk` returns
   // early: an empty plane still pans.
+  // `autoBoot: false` is the detached-fence popup: it renders the members its
+  // opener hands over, never the daemon's whole desk.
   function boot() {
     wireStage();
-    restoreDesk();
+    if (OPTS.autoBoot !== false) restoreDesk();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

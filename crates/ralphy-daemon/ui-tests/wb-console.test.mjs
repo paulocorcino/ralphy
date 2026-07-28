@@ -7,10 +7,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-console.js"),
-  "utf8",
-);
+const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
+const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
+// The module reads `window.WBDeskSink.daemon()` at load, exactly as it does in
+// the browser — so the harness runs the REAL sink source first, mirroring
+// index.html's script order. A stub here would hide a broken script tag.
+const SINK_SRC = readFileSync(join(UI, "wb-desk-sink.js"), "utf8");
 
 function load() {
   // The three globals the module touches at LOAD time: `window.addEventListener`
@@ -23,6 +25,7 @@ function load() {
   const window = { addEventListener() {} };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  new Function("window", SINK_SRC)(window);
   new Function("window", "document", "location", SRC)(window, document, location);
   return window.WBConsole;
 }
