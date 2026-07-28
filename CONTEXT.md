@@ -556,6 +556,28 @@ Decided in [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §7 (iss
 _Avoid_: selected fence, active fence, current fence (focus here means "where the
 next console is born", not a selection the operator can act on).
 
+**Detached fence**:
+A **fence** whose consoles are, for one operator, living in a separate browser
+popup window — the answer to "I have a second monitor", which the **stage**
+cannot give because there is no zoom. The fence itself never leaves the plane:
+same name, same rect, same row in the fence list, but rendering no member
+windows and carrying a **detach glyph** in its middle that is also the control
+(click to re-attach, or to focus the popup). The popup holds the membership
+**snapshot** taken at the instant of detach, opens no consoles of its own, and
+NEVER writes the **desk layout** — its internal arrangement is throwaway and the
+consoles come home to the rects they left. Detach is per-client AND per-tab
+(narrower than the **per-client view**): it survives that tab's reload over a
+same-origin broadcast channel, dies with the tab — a peer silent past the
+heartbeat closes the popup — and is invisible to the daemon and to every other
+browser, which see an ordinary fence with its consoles inside it. At most four
+popups, one per fence, a client-side ceiling. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§6, 7a, 8, 9, 10
+(issue #344).
+
+_Avoid_: popped-out / floating fence (every console window already floats);
+undocked (nothing was docked); mirrored fence (the consoles are in exactly one
+place at a time — that is the whole rule).
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs and which
