@@ -337,6 +337,46 @@ Distinct from the "fleet of Ralphys" in **Emitter identity**, which is about
 concurrent *run processes* telling themselves apart in the event stream.
 _Avoid_: cluster (no shared workload), farm.
 
+**Local fleet**:
+The **fleet** shape applied to the daemons of one machine, with no **control
+plane** in the path ([ADR-0052](docs/adr/0052-local-fleet-federation.md)). The
+daemon serving the browser is the **local daemon**; every other daemon on the
+machine is a **peer**. The local daemon dials each peer over loopback and
+proxies, so the browser speaks exactly one origin and both daemons stay bound to
+`127.0.0.1`. Every operation still runs on the daemon that **owns** the repo:
+federation changes who is *asked*, never who *executes*. A Windows host and its
+WSL distro are the case it exists for — and the reason the aggregate view is
+keyed by `daemon_id` + slug, since the same `owner/repo` can be registered on
+both sides.
+_Avoid_: remote daemon (a peer is local — same machine, different environment),
+master/slave or primary (local is a role per request, not a rank; each daemon is
+authoritative for its own repos), mount, share (nothing crosses the filesystem
+boundary).
+
+**Peer descriptor**:
+The file a **daemon** writes into a **peer**'s store at boot to announce itself
+(ADR-0052): the identity triple, the loopback port to dial, the environment
+label, its own access token, and the protocol version it speaks. It is the
+entire handshake — discovery, credential and version in one artifact, with no
+human step and no new cryptography. A descriptor is a **claim, not a fact**: a
+WSL daemon dies with its distro while the file remains, so the local daemon
+probes before trusting it and marks an unreachable peer rather than deleting it,
+exactly as the **repo registry** marks an unreachable repo. Each daemon
+announces *its own* token, never a shared one — revoking one peer must not shut
+the others.
+_Avoid_: enrollment (that is the control plane's one-time code exchange),
+service discovery (nothing broadcasts; one file at one known path), pairing.
+
+**Nudge**:
+A fire-and-forget request that an environment start its own **daemon** — for a
+WSL **peer**, a `wsl.exe -d <distro> -e …` asking the distro's systemd to start
+the unit. The nudging daemon does **not** parent, hold, or signal the process:
+supervision belongs to the systemd inside the distro. That is the whole
+distinction between a nudge and the cross-boundary spawn ADR-0032 rejects —
+*waking* a peer is a nudge; running work inside it never is, and a peer that
+died with a Windows parent would not be a peer.
+_Avoid_: spawn, launch (both imply a parent that owns the child), remote exec.
+
 **Forge**:
 The service hosting a repo's remotes, issues and labels — GitHub today, and
 GitHub only; the word exists so contracts that *could* one day face GitLab /
@@ -455,7 +495,10 @@ ADR-0008 project identity (`owner/repo` slug) with the path as a mutable
 attribute — a moved repo self-heals on its next run, and the key never
 breaks. Entries are never auto-deleted, only marked unreachable; removal is a
 human act (`ralphy daemon remove`). Explicit `ralphy daemon add` exists only
-to register a repo before its first run.
+to register a repo before its first run. The slug is unique *within* a registry,
+not across a machine — the same `owner/repo` can be registered by two daemons at
+two paths, which is why the **local fleet**'s aggregate view keys by `daemon_id`
++ slug.
 _Avoid_: workspace list, auto-discovery (nothing scans the disk).
 
 **Workbench session**:
@@ -613,8 +656,17 @@ The daemon's own enumeration of the **adapters** it can launch, served read-only
 onboarding a vendor ([ADR-0040](docs/adr/0040-agent-adapter-onboarding-contract.md))
 never touches the live workbench — only the `file://` demo keeps a seed copy of
 the roster, which drifts harmlessly. The roster reports what the daemon *can
-launch* — never whether the vendor CLI is installed or authenticated on this host.
-_Avoid_: agent list, capabilities (it advertises no capability, only identity).
+launch*; since [ADR-0052](docs/adr/0052-local-fleet-federation.md) each row also
+carries **availability** — whether that vendor CLI is present in *this daemon's*
+environment, resolved by the same locator the run preflight uses, so a **peer**
+reports its own environment truthfully with no cross-boundary probing. It stays
+**presence only**, never whether the CLI is authenticated (that is `ralphy
+init`'s job, and probing it would need the vendor crates the daemon must not
+link). And it is a **signal, not a gate**: a probe is a snapshot, an operator
+can install a CLI without restarting a daemon, and the spawn-time error remains
+the backstop — a wrong gate blocks work, a wrong signal is merely stale.
+_Avoid_: agent list, capabilities (availability is presence in one environment,
+not a capability model).
 
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the
