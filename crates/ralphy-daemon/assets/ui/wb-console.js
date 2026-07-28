@@ -1092,14 +1092,22 @@ window.WBConsole = (function () {
   // occupies. Indexing by `fences.length` instead would reuse a slot after a
   // removal — drop the middle of three and the next fence lands exactly on the
   // survivor, shipping the overlap ADR-0051 §6 does not yet enforce away.
-  // Bounded by the slots a free one can hide in; the fallback is the old rule.
+  //
+  // The scan runs PAST the fence count (issue: "new fence does nothing"). The
+  // grid rows march down the plane, so a viewport fully covered by one big
+  // fence has its first `taken.length + 1` slots all occupied and the old bound
+  // ran out while free plane sat just below — the operator clicked New fence and
+  // got a refusal flash instead of a fence. `-1` means genuinely nowhere, and
+  // the caller still refuses rather than nudging into a gap nobody chose.
+  const FENCE_SLOT_SCAN = 64;
   function nextFenceSlot(rects, offset, viewport) {
     const taken = rects || [];
-    for (let i = 0; i <= taken.length; i++) {
+    const cap = Math.max(taken.length, FENCE_SLOT_SCAN);
+    for (let i = 0; i <= cap; i++) {
       const candidate = fenceSpawnRect(offset, viewport, i);
       if (!taken.some((t) => rectsOverlap(candidate, t))) return i;
     }
-    return taken.length;
+    return -1;
   }
 
   // ---- the fence floor ---------------------------------------------------------
@@ -1140,8 +1148,11 @@ window.WBConsole = (function () {
     // input turns any of those slips into a rename. A double click is the
     // deliberate act; blur ends it, so the fence spends almost all its life
     // unwritable. `change` still commits — Enter blurs, which fires it.
+    // No `title` and no hover affordance (see `.fence-name` in styles.css): a
+    // read-only field that lights up and grows a tooltip under the pointer reads
+    // as an editable one, and the fence's own name is the last thing that should
+    // twitch while the operator sweeps the plane. Double-click still opens it.
     name.readOnly = true;
-    name.title = "double-click to rename this fence";
     name.addEventListener("dblclick", () => {
       name.readOnly = false;
       name.focus();
@@ -1307,6 +1318,13 @@ window.WBConsole = (function () {
       const carried = all.filter((m) => ids.has(m.id));
       const startX = e.clientX;
       const startY = e.clientY;
+      // The plane's origin AT MOUSEDOWN. Auto-pan (below) scrolls the viewport
+      // mid-gesture, which slides the stage under a stationary cursor: a delta
+      // measured from client coordinates alone would then stop tracking the
+      // pointer the instant the plane moved. Every delta is taken against the
+      // LIVE origin instead, so a scroll of N px reads as a drag of N px — the
+      // same trick `makeDraggable`'s `place` uses for a console.
+      const origin0 = st.getBoundingClientRect();
       let delta = { dx: 0, dy: 0 };
       let fits = true;
       let done = false;
@@ -1316,13 +1334,13 @@ window.WBConsole = (function () {
       // victim at the cap, for a gesture that changed nothing.
       let moved = false;
       clearFenceFlash();
-      const onMove = (ev) => {
-        if (ev.buttons === 0) {
-          onUp();
-          return;
-        }
+      const place = (pointer) => {
+        const origin = st.getBoundingClientRect();
         const d = fenceMoveDelta(
-          { dx: ev.clientX - startX, dy: ev.clientY - startY },
+          {
+            dx: pointer.x - startX + (origin0.left - origin.left),
+            dy: pointer.y - startY + (origin0.top - origin.top),
+          },
           start,
           carried.map((m) => m.rect),
         );
@@ -1343,9 +1361,55 @@ window.WBConsole = (function () {
         }
         applyExtent({ grow: true });
       };
+      // Auto-pan, the same gesture a console already has (`makeDraggable`):
+      // holding the fence against a viewport edge scrolls the plane under it, so
+      // moving a fence — and everything it carries — somewhere off-screen is ONE
+      // gesture instead of drop / scroll / pick up again. `place(last)` inside
+      // the tick is what keeps the drop correct in stage coordinates.
+      let panRaf = null;
+      let last = null;
+      // INVARIANT: an uncancelled loop pans the plane forever after the button is
+      // released, so this runs as the FIRST statement of `onUp`.
+      const stopPan = () => {
+        if (panRaf != null) cancelAnimationFrame(panRaf);
+        panRaf = null;
+      };
+      const nudge = () => {
+        const ws = workspace();
+        if (!ws || !last) return { dx: 0, dy: 0 };
+        return panNudge(last, ws.getBoundingClientRect(), PAN_BAND, PAN_STEP);
+      };
+      const tickPan = () => {
+        panRaf = null;
+        // The fence was re-rendered or removed mid-drag: `place` would write
+        // styles onto a detached node forever.
+        if (!el.isConnected) {
+          stopPan();
+          return;
+        }
+        const { dx, dy } = nudge();
+        if (!dx && !dy) return; // leaving the band ENDS the loop
+        const ws = workspace();
+        ws.scrollLeft += dx;
+        ws.scrollTop += dy;
+        place(last);
+        panRaf = requestAnimationFrame(tickPan);
+      };
+      const onMove = (ev) => {
+        if (ev.buttons === 0) {
+          onUp();
+          return;
+        }
+        last = { x: ev.clientX, y: ev.clientY };
+        place(last);
+        if (panRaf != null) return;
+        const { dx, dy } = nudge();
+        if (dx || dy) panRaf = requestAnimationFrame(tickPan);
+      };
       const onUp = () => {
         if (done) return;
         done = true;
+        stopPan();
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         window.removeEventListener("blur", onUp);
@@ -2182,12 +2246,12 @@ window.WBConsole = (function () {
       offset,
       viewport,
     );
-    const spawn = fenceSpawnRect(offset, viewport, slot);
-    // `nextFenceSlot` runs out of free slots eventually (and a moved fence can
-    // sit anywhere, not on the grid). REFUSE then — do not nudge the new fence
-    // into whatever gap is left, which is a position the operator never chose.
-    if (!fenceFits(fences, { id: null, rect: spawn })) {
-      const hit = fences.find((x) => rectsOverlap(spawn, x.rect || {}));
+    // `nextFenceSlot` scans well past the viewport, so this only fires when the
+    // whole scanned band is full. REFUSE then — do not nudge the new fence into
+    // whatever gap is left, which is a position the operator never chose.
+    if (slot < 0) {
+      const blocked = fenceSpawnRect(offset, viewport, 0);
+      const hit = fences.find((x) => rectsOverlap(blocked, x.rect || {}));
       const el = hit && fenceEl(hit.id);
       if (el) {
         clearFenceFlash();
@@ -2196,11 +2260,15 @@ window.WBConsole = (function () {
       }
       return;
     }
+    const spawn = fenceSpawnRect(offset, viewport, slot);
+    const id = newFenceId();
     saveFences(
       fences.concat([
         {
-          id: newFenceId(),
-          name: `Fence ${slot + 1}`,
+          id,
+          // Numbered by how many fences exist, not by the slot taken: a fence
+          // that had to land three rows down is still the operator's Nth.
+          name: `Fence ${fences.length + 1}`,
           rect: spawn,
           ts: Date.now(),
         },
@@ -2208,6 +2276,16 @@ window.WBConsole = (function () {
     );
     renderFences();
     applyExtent();
+    // A slot below the fold is still a fence the operator asked for, so travel
+    // to it — a creation the screen does not acknowledge reads as a no-op, which
+    // is exactly the bug the deeper scan was fixing. A fence that already fits
+    // on screen is left alone: no click should move the plane for nothing.
+    const onScreen =
+      spawn.left >= offset.left &&
+      spawn.top >= offset.top &&
+      spawn.left + spawn.width <= offset.left + viewport.width &&
+      spawn.top + spawn.height <= offset.top + viewport.height;
+    if (!onScreen) jumpToFence(id);
   }
 
   function renameFence(id, name) {
@@ -2979,10 +3057,23 @@ window.WBConsole = (function () {
         if (box.width < WIN_MIN_W) win.style.minWidth = box.width + "px";
         if (box.height < WIN_MIN_H) win.style.minHeight = box.height + "px";
       } else {
-        win.style.left = 30 + cascade * 24 + "px";
-        win.style.top = 20 + cascade * 24 + "px";
-        win.style.width = "min(560px, 62%)";
-        win.style.height = "min(340px, 60%)";
+        // The free cascade is anchored at the VIEWPORT's current offset, not at
+        // the plane's origin. A fixed `30,20` is only where the operator is
+        // looking while the plane sits unscrolled; one pan away it puts the new
+        // console somewhere off screen, and the operator's console "did not
+        // open". The percentage sizes went with it for the same reason — they
+        // were of the STAGE, which `applyExtent` grows well past the viewport,
+        // so `62%` of a wide plane opened a console bigger than the screen.
+        const ws = workspace();
+        const vw = ws?.clientWidth || 0;
+        const vh = ws?.clientHeight || 0;
+        win.style.left = Math.max(0, ws?.scrollLeft || 0) + 30 + cascade * 24 + "px";
+        win.style.top = Math.max(0, ws?.scrollTop || 0) + 20 + cascade * 24 + "px";
+        // An unmeasurable viewport is a tab still `display:none` (see the fence
+        // branch above); fall back to the plain caps rather than a 1px window.
+        win.style.width = (vw ? Math.max(WIN_MIN_W, Math.min(560, Math.round(vw * 0.62))) : 560) + "px";
+        win.style.height =
+          (vh ? Math.max(WIN_MIN_H, Math.min(340, Math.round(vh * 0.6))) : 340) + "px";
       }
     }
 

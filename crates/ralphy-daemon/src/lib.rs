@@ -342,6 +342,12 @@ pub fn router(
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
     let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
+    // The avatar the login card wears (and ONLY the avatar): captured here BEFORE
+    // `identity` moves into the `/api/identity` closure. `/api/session` is
+    // allowlisted pre-login, so anything added to it is readable by an
+    // unauthenticated caller — see [`SessionState::avatar`] for why one glyph
+    // from a fixed public pool is the whole of what this leg may carry.
+    let session_avatar = identity.as_ref().map(|i| i.avatar.clone());
     // The login and security routes need the runtime auth state: to read the
     // CURRENT policy (validate a code, sign a cookie), rebuild it after a mutation,
     // and bump the session epoch. Cloned (an `Arc`) BEFORE `auth` is moved into the
@@ -468,9 +474,11 @@ pub fn router(
             "/api/session",
             get({
                 let auth = login_auth.clone();
+                let avatar = session_avatar.clone();
                 move |headers: axum::http::HeaderMap| {
                     let auth = auth.clone();
-                    async move { session_state_route(auth, headers).await }
+                    let avatar = avatar.clone();
+                    async move { session_state_route(auth, avatar, headers).await }
                 }
             }),
         )
@@ -2024,6 +2032,18 @@ struct SessionState {
     authed: bool,
     password: bool,
     policy: &'static str,
+    /// The daemon's avatar, so the login card wears THIS daemon's face instead of
+    /// a generic robot — an operator with several daemons open has nothing else
+    /// on that screen to tell them apart by.
+    ///
+    /// The NAME is deliberately not here. This route is pre-login: everything on
+    /// it is readable without a cookie, and the login gate is meant to be opaque
+    /// (see [`require_auth`]). An avatar is one emoji drawn from the fixed,
+    /// source-visible pool in [`identity::AVATARS`] — it identifies nothing an
+    /// attacker did not already have (they are looking at the daemon), while a
+    /// name is the operator's own words about their machine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    avatar: Option<String>,
 }
 
 /// `GET /api/session`: report whether this request is authorized and whether a
@@ -2031,6 +2051,7 @@ struct SessionState {
 /// `Session` policy `authed` reflects a valid `Bearer` OR session cookie.
 async fn session_state_route(
     state: Arc<auth::AuthState>,
+    avatar: Option<String>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let auth = state.policy();
@@ -2050,6 +2071,7 @@ async fn session_state_route(
         authed,
         password,
         policy: auth.name(),
+        avatar,
     })
     .into_response()
 }
@@ -2882,8 +2904,12 @@ mod tests {
         );
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8_lossy(&body);
+        // Anchored on the document TITLE, not on chrome text. The old anchor was
+        // the login card's "ralphy daemon" brand, which made a copy edit on one
+        // screen look like a broken asset pipeline — and "daemon" left that
+        // brand naming the process rather than the thing being logged into.
         assert!(
-            body.contains("ralphy daemon"),
+            body.contains("<title>ralphy · workbench shell</title>"),
             "the page must identify the daemon; got: {body}"
         );
     }
@@ -2900,6 +2926,55 @@ mod tests {
         );
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         assert!(!body.is_empty(), "the embedded xterm.js must be non-empty");
+    }
+
+    /// `/api/session` is allowlisted pre-login, so what it carries is what an
+    /// UNAUTHENTICATED caller can read. It must carry the avatar (the login card
+    /// wears this daemon's face) and it must NOT carry the name — the gate stays
+    /// opaque about everything the operator wrote themselves.
+    #[tokio::test]
+    async fn api_session_carries_the_avatar_but_never_the_name() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_string(resp).await;
+        assert!(body.contains("🐙"), "must carry the avatar; got: {body}");
+        assert!(
+            !body.contains("anvil"),
+            "must NOT carry the name; got: {body}"
+        );
+    }
+
+    /// An un-baptized daemon has no avatar, and `skip_serializing_if` keeps the
+    /// key off the wire entirely — the SPA's `if (s.avatar)` then leaves the
+    /// fallback mark in place rather than painting an empty box.
+    #[tokio::test]
+    async fn api_session_omits_the_avatar_when_unbaptized() {
+        let body = body_string(get_local("/api/session").await).await;
+        assert!(
+            !body.contains("avatar"),
+            "no avatar key expected; got: {body}"
+        );
     }
 
     #[tokio::test]

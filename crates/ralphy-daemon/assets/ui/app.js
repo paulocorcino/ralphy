@@ -146,13 +146,21 @@ function shell() {
       // the listener/timer only names the trigger, so "board open? tab focused?
       // long enough ago?" lives in one testable place (wb-kanban.js).
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") this.maybeRefreshBoard("visible");
+        if (document.visibilityState !== "visible") return;
+        this.maybeRefreshBoard("visible");
+        // Coming back to the tab is the other moment the Changes panel is worth
+        // a read: its backstop below did nothing while the tab was hidden.
+        this.refreshChanges();
       });
       // Anchor the clock at page load: leaving `_boardLoadedAt` at 0 makes the
       // first tick see `sinceMs === Date.now()`, which clears the 120s floor
       // trivially and folds the board 30s after open for no reason.
       this._boardLoadedAt = Date.now();
       this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
+      // Registered once for the page's life, like the board's: the tick itself
+      // asks whether the panel is open and in front, so there is no arm/disarm
+      // state to keep in step with the rail.
+      this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
     },
 
     // The daemon's real identity (name + avatar), shown in the topbar brand. A
@@ -215,6 +223,11 @@ function shell() {
           this.authed = s.authed;
           this.login.passwordRequired = s.password;
           this.security.policy = s.policy;
+          // The login card's mark. `/api/identity` is gated, so this pre-login
+          // leg is the only way the gate can wear this daemon's face rather than
+          // a generic robot; `loadIdentity` still overwrites it (with the name
+          // too) once a cookie exists.
+          if (s.avatar) this.identityAvatar = s.avatar;
           // Gated on `authed`: a pre-login restore would have every tab refused
           // and closed, persisting the loss (issue #339). `rehydrateAfterAuth`
           // is the other end of this guard.
@@ -347,9 +360,34 @@ function shell() {
       }
       this.sideView = view;
       this.sideOpen = true;
+      // Opening Changes IS a read trigger (#307's list was open/refresh/nudge,
+      // and none of the three fires on the click that reveals the panel). The
+      // rows were last read when the project was opened, which can be hours of
+      // editing ago — the panel would show yesterday's tree until something else
+      // happened to poke it.
+      this.refreshChanges();
       // the incoming view's lucide icons live behind x-show and mount here
       this.$nextTick(() => window.lucide?.createIcons());
     },
+
+    // Re-read the working tree for the open project, but only when the Changes
+    // panel is actually on screen. Both reads are cheap and LOCAL — `changes
+    // list` is a `git status` and `sync status` makes no network call — but each
+    // is still a subprocess, so nothing here runs for a panel nobody is looking
+    // at. The `visible` gate is the same one the board's backstop uses.
+    refreshChanges() {
+      if (!window.WBMode.isDaemon()) return;
+      if (!this.sideOpen || this.sideView !== "changes" || !this.openSlug) return;
+      if (document.visibilityState !== "visible") return;
+      this.loadChanges(this.openSlug);
+      this.loadSync(this.openSlug);
+    },
+    // The slow backstop for the Changes panel. The `/ws/tree` nudge (#310) only
+    // reports what a RUN did; an operator editing in their own editor produces
+    // no event, and the panel would sit stale under their eyes. 50s is the
+    // measured cost/staleness trade: two git subprocesses per minute, charged
+    // only while the panel is open and the tab is in front.
+    CHANGES_POLL_MS: 50000,
 
     // The Projects-view change indicator for one row, delegated to the pure
     // fold. Only slugs whose count was actually READ render one — fanning out a
@@ -1330,6 +1368,9 @@ function shell() {
     // string, not a per-number map: exactly one drawer is open at a time, and an
     // empty drawer must never lie about an issue that has content.
     issueError: null,
+    // True while the open drawer's `issue.show` is on the wire. One flag for the
+    // same reason `issueError` is one string: exactly one drawer is open.
+    issueLoading: false,
     // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START, so
     // the min-gap measures spacing between fold STARTS: stamping on completion
     // would give a fold slower than the gap zero idle time, and a push arriving
@@ -1342,6 +1383,7 @@ function shell() {
     _boardLoadedAt: 0,
     _boardPending: false,
     _boardBackstop: null,
+    _changesBackstop: null,
     boardRefreshing: false,
     // A fold that never answers must not disable the board forever: the daemon
     // awaits the board CLI with no timeout of its own, so a wedged `gh` would
@@ -1564,6 +1606,11 @@ function shell() {
     async loadIssueDetail(number) {
       const slug = this.openSlug;
       this.issueError = null;
+      // The drawer's own in-flight flag. Set BEFORE the first await so the
+      // markup never paints one frame of `_(empty)_` for an issue whose body is
+      // still on the wire; cleared only by the NEWEST fetch (`stale()` below),
+      // so a superseded load cannot switch the spinner off under a live one.
+      this.issueLoading = true;
       // Cross-path invariant (#302): a reply — content OR error — is applied only
       // by the NEWEST fetch, and only while its own project+issue is still the
       // open drawer. The number alone is not enough on either axis: the board
@@ -1601,11 +1648,15 @@ function shell() {
         // Transport error: the board row keeps its empty body, but the drawer
         // says so rather than reading as an issue with nothing in it.
         fail("could not load issue detail");
+      } finally {
+        // Every return path above lands here, including the early ones.
+        if (!stale()) this.issueLoading = false;
       }
     },
     closeIssue() {
       this.kanbanSel = null;
       this.issueError = null;
+      this.issueLoading = false;
     },
     // The real GitHub URL of an issue on the OPEN project — the drawer's editing
     // door (read-only here; edits happen on GitHub). Rebuilt from the project's

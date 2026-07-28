@@ -177,6 +177,12 @@ body.side-collapsed {
 /* --- left icon rail -------------------------------------------------------- */
 .rail {
   grid-area: rail;
+  /* The rail asserts a stacking level of its own. Unpositioned it painted in the
+     background layer with `z-index: auto`, so ANY positioned neighbour — a
+     console that escapes `.canvas`'s clip, a detached fence popup — painted over
+     the navigation. The rail is chrome: nothing on the plane outranks it. */
+  position: relative;
+  z-index: 40;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -2142,7 +2148,10 @@ body.runs-open .runs {
   color: var(--text-muted);
   font: inherit;
 }
-.fence-name:hover,
+/* FOCUS only, never hover: the name sits in a band the operator sweeps to reach
+   the grab handle and the windows behind it, and a border that lights up under
+   the pointer offers an edit the click does not perform. The field announces
+   itself once it IS editable — which is the double-click. */
 .fence-name:focus {
   border-color: var(--border-focus);
   color: var(--text);
@@ -3787,8 +3796,18 @@ body.locked .runs {
   align-items: center;
   gap: 0.45rem;
 }
-.login-brand [data-lucide] {
-  color: var(--console-text);
+/* The avatar emoji, sized like `.about-mark`'s: a font size, not an icon box. */
+.login-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  font-size: 15px;
+  line-height: 1;
 }
 .login-label {
   display: flex;
@@ -4125,6 +4144,11 @@ body.locked .runs {
   opacity: 0.45;
   cursor: default;
 }
+/* Reuses the sidebar's keyframes rather than minting a second spin: the two
+   controls do the same thing and must not drift into two speeds. */
+.kanban-refresh.spinning [data-lucide] {
+  animation: side-refresh-spin 0.8s linear infinite;
+}
 .kanban-close {
   display: inline-flex;
   align-items: center;
@@ -4145,6 +4169,37 @@ body.locked .runs {
   padding: 2rem;
   color: var(--text-muted);
   text-align: center;
+}
+/* The board's and the drawer's in-flight states, and the one ring both spin. */
+.kanban-loading,
+.kd-loading {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+.kd-loading {
+  padding: 1rem 0;
+  justify-content: flex-start;
+}
+.kanban-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+/* An operator who asked the OS for less motion gets a still ring, not a blank:
+   the element is the "something is happening" mark either way. */
+@media (prefers-reduced-motion: reduce) {
+  .kanban-spinner,
+  .kanban-refresh.spinning [data-lucide] {
+    animation: none;
+  }
 }
 .kanban-error {
   padding: 2rem;

@@ -549,6 +549,29 @@ for (const row of SLOTS) {
   });
 }
 
+// The scan runs PAST the fence count. Bounding it at `taken.length` made a
+// viewport covered by ONE big fence unbuildable: slots 0..1 both land inside it,
+// the loop ran out, and the operator's New-fence click produced a refusal flash
+// instead of a fence — with free plane sitting one row below. The row below is
+// that bug's oracle: the old bound answered `1` (a slot INSIDE the blocker).
+test("nextFenceSlot: a fence covering the whole viewport spills below it, not onto it", () => {
+  const wb = load();
+  const blocker = { left: 0, top: 0, width: 2000, height: 1200 };
+  const slot = wb.nextFenceSlot([blocker], ORIGIN, FENCE_VIEW);
+  assert.ok(slot > 0, `expected a slot below the blocker, got ${slot}`);
+  const born = wb.fenceSpawnRect(ORIGIN, FENCE_VIEW, slot);
+  assert.ok(born.top >= blocker.top + blocker.height, "the new fence still lands on the blocker");
+});
+
+// …and `-1` is the honest "nowhere", so the caller can refuse rather than nudge
+// the fence into a gap nobody chose. A single rect covering the whole scanned
+// band is the only way to reach it.
+test("nextFenceSlot: a plane with no free slot in the scanned band answers -1", () => {
+  const wb = load();
+  const wall = { left: 0, top: 0, width: 100000, height: 100000 };
+  assert.equal(wb.nextFenceSlot([wall], ORIGIN, FENCE_VIEW), -1);
+});
+
 test("nextFenceSlot: the slot it picks never overlaps an existing fence", () => {
   const wb = load();
   // Three fences with a HOLE at slot 1 — the shape a removal leaves behind.

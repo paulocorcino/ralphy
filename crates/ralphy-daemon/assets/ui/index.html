@@ -577,14 +577,23 @@
           </select>
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
                never polled, so the operator keeps a manual door -->
-          <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing" title="refresh board">
+          <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing"
+                  :class="{ spinning: boardRefreshing }" title="refresh board">
             <i data-lucide="rotate-cw"></i>
           </button>
           <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
 
         <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
-        <div class="kanban-empty" x-show="openSlug && !boardError[openSlug] && projectIssues().length === 0">
+        <!-- A whole-tracker fold is several `gh` calls; until it lands there are
+             no rows, and the empty state below would otherwise assert "no issues"
+             about a board nobody has read yet. The spinner outranks it. -->
+        <div class="kanban-loading" x-show="openSlug && boardRefreshing && projectIssues().length === 0">
+          <span class="kanban-spinner" aria-hidden="true"></span>
+          Loading the board for <b x-text="openSlug"></b>…
+        </div>
+        <div class="kanban-empty"
+             x-show="openSlug && !boardRefreshing && !boardError[openSlug] && projectIssues().length === 0">
           No issues in <b x-text="openSlug"></b>.
         </div>
         <div class="kanban-error" x-show="openSlug && boardError[openSlug]">
@@ -730,8 +739,15 @@
                 <span x-text="issueError"></span>
               </div>
 
-              <!-- body -->
-              <div class="kd-body md" x-html="renderIssueMd(selectedIssue().body)"></div>
+              <!-- body. The board fold carries `body: ""`, so between the click
+                   and `issue.show` landing there is genuinely nothing to render —
+                   and `_(empty)_` would state, wrongly, that the issue HAS no
+                   body. Say "loading" for exactly that window. -->
+              <div class="kd-loading" x-show="issueLoading && !selectedIssue().body">
+                <span class="kanban-spinner" aria-hidden="true"></span> Loading issue…
+              </div>
+              <div class="kd-body md" x-show="!(issueLoading && !selectedIssue().body)"
+                   x-html="renderIssueMd(selectedIssue().body)"></div>
 
               <!-- comments -->
               <div class="kd-comments" x-show="(selectedIssue().comments || []).length">
@@ -1538,7 +1554,12 @@
     ==================================================================== -->
     <div class="login-gate" x-show="!authed" x-cloak>
       <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
-        <div class="login-brand"><i data-lucide="bot"></i> ralphy daemon</div>
+        <!-- The mark is `identityMark()`, the same accessor the topbar, the
+             account menu and the About card use (#204) — the daemon wears ONE
+             face everywhere, and the login card is where telling two daemons
+             apart matters most. "daemon" is dropped: the word named the process,
+             not the thing being logged into. -->
+        <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> ralphy</div>
         <label class="login-label">
           Authenticator code
           <!-- one-time-code: tells the browser this is an OTP, not a username, so
