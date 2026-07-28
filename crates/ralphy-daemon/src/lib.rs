@@ -26,6 +26,7 @@ pub mod cookie;
 pub mod desk;
 pub mod dispatch;
 pub mod epoch;
+pub mod fleet;
 pub mod fswrite;
 pub mod identity;
 pub mod password;
