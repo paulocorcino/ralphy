@@ -5245,8 +5245,14 @@ mod tests {
             !js.contains("sessionStorage"),
             "wb-console.js must reach the registry only through the injected link (#347)"
         );
+        // The CALLS, not the bare nouns: this file's own prose names
+        // `sessionStorage` three times, so a noun pin stays green over
+        // no-op'd `readRecord`/`writeRecord` bodies — the exact defect the
+        // doc comment above warns about.
         assert!(
-            link.contains("sessionStorage") && link.contains("new BroadcastChannel("),
+            link.contains("sessionStorage.getItem(KEY)")
+                && link.contains("sessionStorage.setItem(KEY,")
+                && link.contains("new BroadcastChannel(CHANNEL)"),
             "wb-detach-link.js IS the registry and the channel — deleting it is not how #347 stays green"
         );
         assert!(
@@ -5258,13 +5264,30 @@ mod tests {
         // never have its members put back on the plane, for ANY verdict —
         // `relaunch` would spawn a SECOND PTY against a console the popup drives.
         assert!(
-            body("function restoreDesk(").contains("away.has(record.id)"),
+            body("function restoreDesk(").contains("record && away.has(record.id)"),
             "restoreDesk must skip a detached fence's members (#347)"
+        );
+        // `reconcileDesk` emits `record: null` on the `adopt` verdict, and the
+        // skip runs BEFORE the dispatch — an unguarded read threw into the
+        // swallowing `.catch`, costing every fence and every glyph on any boot
+        // carrying a live session no record claims.
+        assert!(
+            js.contains(r#"out.push({ record: null, session: s, action: "adopt" })"#),
+            "the adopt verdict's null record is what the guard above exists for (#347)"
+        );
+        // The registry carries the MEMBER IDS, not just the fence ids: a
+        // detached fence may still be moved on the plane (§7a), after which a
+        // geometry-derived membership answers "no members" and every one of
+        // them comes back under a live popup.
+        assert!(
+            link.contains("readMembers()") && js.contains("link.readMembers()"),
+            "the registry must carry each detached fence's member ids (#347)"
         );
         // The registry mirror and the store change in ONE place, so no return
         // path can leave them disagreeing.
         assert!(
-            body("function commitDetached(").contains("link.writeRegistry(detached)"),
+            body("function commitDetached(")
+                .contains("link.writeRegistry(detached, detachedMembers())"),
             "every detach transition must go through commitDetached (#347)"
         );
         assert!(
@@ -5285,9 +5308,16 @@ mod tests {
         // THE POPUP'S FIFTH DENIED CAPABILITY and its half of the lifecycle.
         for pin in [
             "detachLink: window.WBDetachLink.none()",
+            // The channel-only factory: this document must reach no store, not
+            // even to read the copy `window.open` handed it.
+            "window.WBDetachLink.channel()",
             "\"popup-here\"",
             "\"popup-gone\"",
-            "detached-lost",
+            // The BEHAVIOUR, not the class name: `detached-lost` alone is
+            // satisfied by the CSS rule in this file's own <style> block, so
+            // deleting `lost()` outright would keep a bare-noun pin green.
+            r#"'<p class="detached-lost">"#,
+            "window.close()",
             "WBConsole.peerFold(",
         ] {
             assert!(

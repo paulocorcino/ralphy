@@ -145,7 +145,11 @@
         // how the two documents re-find each other — and how this one learns
         // that its opener is gone for good.
         function openLink() {
-          const LINK = window.WBDetachLink.link();
+          // `channel()`, not `link()`: this document reaches the lifecycle
+          // channel and NO store at all. `window.open` handed it a COPY of its
+          // opener's session storage, so every registry answer it could give is
+          // a ghost that drifts the moment the real tab writes.
+          const LINK = window.WBDetachLink.channel();
           let peer = { seen: Date.now(), lost: false };
           let closing = false;
           // Only `popup-here` carries the snapshot: it is the re-adoption
@@ -170,6 +174,19 @@
             setTimeout(() => window.close(), 1500);
           };
 
+          // The origin has taken these consoles back. Go NOW and say nothing:
+          // the members are already home, and after a reload the origin holds no
+          // handle to this window, so its own `handle.close()` is inert — this
+          // message is the only thing that can evict a popup post-F5, and
+          // without it a false peer-loss would leave two windows driving one
+          // session for good.
+          const evicted = () => {
+            if (closing) return;
+            closing = true;
+            clearInterval(timer);
+            window.close();
+          };
+
           LINK.onMessage((m) => {
             if (!m || typeof m.type !== "string") return;
             if (TAB == null || m.tab !== TAB) return;
@@ -183,6 +200,8 @@
               peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
             } else if (m.type === "origin-focus" && m.fenceId === fenceId) {
               window.focus();
+            } else if (m.type === "origin-close" && m.fenceId === fenceId) {
+              evicted();
             }
           });
 

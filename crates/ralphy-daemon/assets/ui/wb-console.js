@@ -1521,13 +1521,41 @@ window.WBConsole = (function () {
     return detached.includes(id);
   }
 
+  // A popup entry with no popup behind it yet — the shape both the boot restore
+  // and an unheralded `popup-here` start from.
+  function newPopupEntry(memberIds) {
+    return {
+      handle: null,
+      members: [],
+      memberIds: memberIds || [],
+      fence: null,
+      poll: null,
+      greeted: false,
+      rescue: null,
+      peer: { seen: Date.now(), lost: false },
+    };
+  }
+
   // THE ONE PLACE `detached` CHANGES. INVARIANT on every return path — including
   // the refuse/blocked early returns, which simply never reach here — the mirror
   // and the stored registry hold the same ids, and no heartbeat timer runs while
   // nothing is detached.
+  // The member ids each detached fence holds, for the registry. Prefers the
+  // live snapshot and falls back to the ids restored from the last write, so a
+  // fence whose popup has not answered yet does not lose them on a re-commit.
+  function detachedMembers() {
+    const out = {};
+    for (const id of detached) {
+      const entry = fencePopups.get(id);
+      const live = (entry?.members || []).map((m) => m.id).filter(Boolean);
+      out[id] = live.length ? live : (entry?.memberIds || []).slice();
+    }
+    return out;
+  }
+
   function commitDetached(next) {
     detached = next;
-    link.writeRegistry(detached);
+    link.writeRegistry(detached, detachedMembers());
     if (detached.length) startBeat();
     else stopBeat();
   }
@@ -1570,22 +1598,29 @@ window.WBConsole = (function () {
       // holds. Adopted only when the RESTORED registry already says that fence
       // is detached — the payload alone must never be able to detach one.
       if (!isDetached(id)) return;
-      const prev = fencePopups.get(id);
+      // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares the entry
+      // it captured with the one in the map, and a fresh object literal here
+      // would make that comparison fail for the very reply it is waiting on —
+      // the focus intent would then be unreachable after every reload.
+      const entry = fencePopups.get(id) || newPopupEntry();
       const st = stage();
-      fencePopups.set(id, {
-        handle: prev?.handle || null,
-        // The popup hands back the UNTRANSLATED snapshot it was given, which is
-        // what lets a re-attach put every console back where it was detached
-        // from even though this document never saw the detach.
-        members: Array.isArray(m.members) && m.members.length ? m.members : prev?.members || [],
-        fence:
-          prev?.fence ||
-          (st ? readFenceRects(st).find((f) => f.id === id) : null) || { id, name: "", rect: null },
-        poll: prev?.poll || null,
-        greeted: true,
-        rescue: prev?.rescue || null,
-        peer: { seen: Date.now(), lost: false },
-      });
+      entry.greeted = true;
+      // The popup hands back the UNTRANSLATED snapshot it was given, which is
+      // what lets a re-attach put every console back where it was detached from
+      // even though this document never saw the detach.
+      if (Array.isArray(m.members) && m.members.length) entry.members = m.members;
+      if (!entry.fence) {
+        entry.fence = (st ? readFenceRects(st).find((f) => f.id === id) : null) || {
+          id,
+          name: "",
+          rect: null,
+        };
+      }
+      entry.peer = { seen: Date.now(), lost: false };
+      fencePopups.set(id, entry);
+      // Re-persist: the snapshot the popup just handed back is a better member
+      // list than the ids this tab restored, and the NEXT reload reads it.
+      commitDetached(detached);
       showDetachGlyph(id, true);
     } else if (m.type === "popup-beat") {
       const entry = fencePopups.get(id);
@@ -1681,10 +1716,10 @@ window.WBConsole = (function () {
       return; // the registry is NOT committed, nothing was torn down
     }
 
-    commitDetached(out.registry);
     const entry = {
       handle,
       members,
+      memberIds: members.map((m) => m.id).filter(Boolean),
       fence: fence || { id, name: "", rect: null },
       poll: null,
       greeted: false,
@@ -1694,7 +1729,10 @@ window.WBConsole = (function () {
       // is exactly the allowance one rule already gives every other entry.
       peer: { seen: Date.now(), lost: false },
     };
+    // The entry lands BEFORE the commit, so `detachedMembers()` has the ids to
+    // persist. Still nothing is torn down yet — the invariant above holds.
     fencePopups.set(id, entry);
+    commitDetached(out.registry);
     // Armed BEFORE the teardown and the chrome updates: a throw in any of them
     // would otherwise leave the entry registered with no watcher, and a
     // force-closed popup fires no `beforeunload` — the consoles would be
@@ -1730,6 +1768,11 @@ window.WBConsole = (function () {
     try {
       if (entry?.handle && !entry.handle.closed) entry.handle.close();
     } catch {}
+    // After a reload the handle above is null — it died with the document — so
+    // `close()` is inert and only the channel can evict the popup. Without this
+    // a false peer-loss would leave the popup driving the very sessions being
+    // re-spawned here: two windows, one session, forever.
+    link.post({ type: "origin-close", tab: link.tab, fenceId: id });
     // The ORIGINAL records, so `buildChrome` restores each rect and `max` — the
     // popup's own layout is discarded by never having been read.
     for (const m of entry?.members || []) {
@@ -1760,8 +1803,10 @@ window.WBConsole = (function () {
         const now = fencePopups.get(id);
         if (!now || now !== entry) return;
         // `popup-here`/`popup-beat` both refresh `peer.seen`, so a `seen` that
-        // predates the ping means nothing answered it.
-        if (!(now.peer?.seen > entry.pinged)) {
+        // predates the ping means nothing answered it. `>=`, not `>`: a reply
+        // landing in the same millisecond the ping was stamped is an ANSWER,
+        // and a strict compare would re-attach a live popup.
+        if (!(now.peer?.seen >= entry.pinged)) {
           reattachFence(id);
         } else {
           link.post({ type: "origin-focus", tab: link.tab, fenceId: id });
@@ -2993,19 +3038,33 @@ window.WBConsole = (function () {
         // one frame — and `relaunch` would be worse than a flash: a SECOND PTY
         // against a console the popup already drives. So every verdict is
         // skipped, not just the spawning ones (issue #347).
-        // Computed from the DESK records, not the plane: no window is on the
-        // stage yet, and the records carry the very rects the membership fold
-        // reads.
+        // The ids each detached fence holds, from the REGISTRY first and the
+        // membership fold second. The fold alone is not enough: a detached
+        // fence may still be moved on the plane (§7a) while its members keep
+        // the records they were detached at, so after the move the fold answers
+        // "no members" and every one of them would come back under a live popup.
         const membership = fenceMembership(fences, loadDesk());
         const away = new Map(); // window id -> the detached fence holding it
         for (const id of detached) {
+          const entry = fencePopups.get(id);
+          for (const wid of entry?.memberIds || []) away.set(wid, id);
+          for (const m of entry?.members || []) if (m.id) away.set(m.id, id);
           for (const wid of membership[id] || []) away.set(wid, id);
         }
+        // A record already on the plane is not restored twice: `reattachFence`
+        // can run while this fetch is still in flight (a `popup-gone` mid-boot),
+        // and it spawns the very members this loop is about to consider.
+        const onPlane = new Set([...wins].map((w) => w._deskId));
         for (const { record, session, action } of reconcileDesk({
           layout: loadDesk(),
           sessions,
         })) {
-          if (away.has(record.id)) {
+          // `adopt` carries NO record — it is a live session no record claims —
+          // so every read below must be guarded. Reaching `record.id` here
+          // threw, and the catch below swallowed it: the fences and the glyphs
+          // never rendered.
+          if (record && onPlane.has(record.id)) continue;
+          if (record && away.has(record.id)) {
             // The fallback snapshot: a popup that never answers still has
             // somewhere to come home to, in the box it was detached from. The
             // popup's own `popup-here` supersedes this, and the id guard is
@@ -3039,6 +3098,9 @@ window.WBConsole = (function () {
         // window is not a resize, so nothing else would fire. The fences must be
         // on the stage BEFORE that fold, or the plane will not have grown to
         // hold one that sits past the last window.
+        // Re-persist the member ids the fallback just seeded, so a fence whose
+        // popup never answers still skips its members on the NEXT reload too.
+        if (detached.length) commitDetached(detached);
         renderFences();
         // The glyph is DOM the fences own, so it can only be lit once they are
         // on the stage — `restoreDetached` ran long before this.
@@ -3050,6 +3112,10 @@ window.WBConsole = (function () {
       .catch(() => {
         // A refused/unreachable desk restores nothing, but the operator can
         // still open consoles by hand — same reasoning as the demo above.
+        // The glyph is lit ANYWAY: a live popup with no way home in the shell is
+        // worse than an unreachable daemon, and the fences may already be on the
+        // stage from the desk GET that did land.
+        for (const id of detached) showDetachGlyph(id, true);
         deskSettled = true;
         applyLanding();
       });
@@ -3177,21 +3243,13 @@ window.WBConsole = (function () {
   function restoreDetached() {
     const saved = link.readRegistry();
     if (!saved.length) return;
-    const seen = Date.now();
+    const savedMembers = link.readMembers();
     for (const id of saved) {
-      // No handle (it died with the document) and no members yet: the popup
-      // hands its snapshot back in `popup-here`, and `restoreDesk` seeds a
-      // fallback from the records it skips, so a popup that never answers can
-      // still come home.
-      fencePopups.set(id, {
-        handle: null,
-        members: [],
-        fence: null,
-        poll: null,
-        greeted: false,
-        rescue: null,
-        peer: { seen, lost: false },
-      });
+      // No handle (it died with the document) and no member RECORDS yet — only
+      // their ids. The popup hands its snapshot back in `popup-here`, and
+      // `restoreDesk` seeds a fallback from the records it skips, so a popup
+      // that never answers can still come home.
+      fencePopups.set(id, newPopupEntry(savedMembers[id] || []));
     }
     commitDetached(saved);
     link.post({ type: "origin-here", tab: link.tab });

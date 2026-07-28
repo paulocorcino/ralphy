@@ -51,10 +51,15 @@ window.WBDetachLink = (function () {
       if (!raw) return null;
       const rec = JSON.parse(raw);
       if (!rec || rec.v !== 1) return null;
+      const members = {};
+      for (const [id, ids] of Object.entries(rec.members || {})) {
+        if (Array.isArray(ids)) members[id] = ids.filter((w) => typeof w === "string");
+      }
       return {
         v: 1,
         tab: typeof rec.tab === "string" ? rec.tab : null,
         fences: Array.isArray(rec.fences) ? rec.fences.filter((f) => typeof f === "string") : [],
+        members,
       };
     } catch {
       return null;
@@ -73,19 +78,13 @@ window.WBDetachLink = (function () {
     return "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   }
 
-  function link() {
-    const rec = readRecord();
-    // The id is minted ONCE per tab and persisted BESIDE the registry, by
-    // `writeRegistry` — never at load. A tab that detaches nothing must leave
-    // the store untouched: the key's very presence is the fact "this tab has a
-    // detach", and a boot-time write would make every tab claim one.
-    const tab = rec?.tab || newTabId();
-
-    // `undefined` = not yet asked, `null` = asked and unavailable. Created on
-    // first use so the module load stays free of browser facilities.
+  // The channel half, alone. `undefined` = not yet asked, `null` = asked and
+  // unavailable — created on FIRST USE so the module load stays free of every
+  // browser facility.
+  function makeChannel() {
     let chan;
     const listeners = [];
-    function channel() {
+    function open() {
       if (chan !== undefined) return chan;
       chan = null;
       if (typeof BroadcastChannel !== "undefined") {
@@ -104,22 +103,9 @@ window.WBDetachLink = (function () {
       }
       return chan;
     }
-
     return {
-      tab,
-      HEARTBEAT_MS,
-      PEER_WINDOW_MS,
-      // Read through to storage every time rather than from a cached array: a
-      // second document of the same tab (the popup's copy) must never be able
-      // to hand this one a stale registry.
-      readRegistry() {
-        return readRecord()?.fences || [];
-      },
-      writeRegistry(ids) {
-        writeRecord({ v: 1, tab, fences: Array.isArray(ids) ? ids.slice() : [] });
-      },
       post(msg) {
-        const c = channel();
+        const c = open();
         if (!c) return;
         try {
           c.postMessage(msg);
@@ -128,7 +114,7 @@ window.WBDetachLink = (function () {
       onMessage(fn) {
         if (typeof fn !== "function") return;
         listeners.push(fn);
-        channel();
+        open();
       },
       close() {
         listeners.length = 0;
@@ -138,6 +124,54 @@ window.WBDetachLink = (function () {
           } catch {}
         }
         chan = null;
+      },
+    };
+  }
+
+  // The popup's link: the lifecycle channel and NOTHING else. It carries no
+  // registry at all — not even a read — because `window.open` handed that
+  // document a COPY of its opener's store, so every answer it could give is a
+  // ghost. Its `tab` is null: the popup is told its opener's id in the handover.
+  function channel() {
+    return { tab: null, HEARTBEAT_MS, PEER_WINDOW_MS, ...makeChannel() };
+  }
+
+  function link() {
+    const rec = readRecord();
+    // The id is minted ONCE per tab and persisted BESIDE the registry, by
+    // `writeRegistry` — never at load. A tab that detaches nothing must leave
+    // the store untouched: the key's very presence is the fact "this tab has a
+    // detach", and a boot-time write would make every tab claim one.
+    const tab = rec?.tab || newTabId();
+    const chan = makeChannel();
+
+    return {
+      tab,
+      HEARTBEAT_MS,
+      PEER_WINDOW_MS,
+      ...chan,
+      // Read through to storage every time rather than from a cached array: a
+      // second document of the same tab (the popup's copy) must never be able
+      // to hand this one a stale registry.
+      readRegistry() {
+        return readRecord()?.fences || [];
+      },
+      // The member ids each detached fence held, `{ fenceId: [windowId] }`.
+      // Stored rather than re-derived from geometry at boot: a detached fence
+      // may still be MOVED on the plane (#346, ADR-0051 §7a) while its members'
+      // records keep the rects they were detached at, so a membership fold run
+      // after a reload would answer "no members" and put them back on the plane
+      // under a live popup.
+      readMembers() {
+        return readRecord()?.members || {};
+      },
+      writeRegistry(ids, members) {
+        writeRecord({
+          v: 1,
+          tab,
+          fences: Array.isArray(ids) ? ids.slice() : [],
+          members: members && typeof members === "object" ? members : {},
+        });
       },
     };
   }
@@ -152,6 +186,9 @@ window.WBDetachLink = (function () {
       readRegistry() {
         return [];
       },
+      readMembers() {
+        return {};
+      },
       writeRegistry() {},
       post() {},
       onMessage() {},
@@ -159,5 +196,5 @@ window.WBDetachLink = (function () {
     };
   }
 
-  return { link, none, KEY, CHANNEL, HEARTBEAT_MS, PEER_WINDOW_MS };
+  return { link, channel, none, KEY, CHANNEL, HEARTBEAT_MS, PEER_WINDOW_MS };
 })();

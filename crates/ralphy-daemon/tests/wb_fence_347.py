@@ -25,6 +25,12 @@ Scenario 4  re-attach by CLOSING the popup, after the reload — every console
 Scenario 5  re-attach by the GLYPH, after a reload and an abrupt popup close
             (no unload): home within 2000 ms — well inside the 6 s peer expiry,
             which is what tells the two paths apart
+Scenario 5b a MOVED detached fence still keeps its members off the plane across
+            a reload. The registry carries the member IDS for exactly this: a
+            detached fence is still movable (§7a), and a membership fold run
+            after the reload compares its NEW rect with the members' ORIGINAL
+            records — answering "no members", and putting every one of them back
+            under the live popup. Found by the self-review, not by this suite.
 Scenario 6  force-killing the origin tab (no unload fires): the popup tells the
             operator its peer is gone, then closes itself
 Scenario 7  closing the origin tab cleanly closes its popups too
@@ -86,9 +92,22 @@ MEM_3 = {"left": 60, "top": 280, "width": 260, "height": 160}
 # Sampled from DOCUMENT START, because "nothing ever appeared" cannot be read
 # after the page settles — the plane would already have put back and removed the
 # windows by then (KNOWLEDGE, #334/#339).
+#
+# It counts `addedNodes`, NOT a re-query of the document: observer callbacks are
+# batched at the microtask checkpoint, so an insert-then-remove inside one
+# checkpoint — exactly the shape of a naive "spawn, then re-attach" regression —
+# would score 0 against a re-query and pass vacuously.
 FLASH_ORACLE = (
-    "window.__flash = { peak: 0 };"
-    " new MutationObserver(() => {"
+    "window.__flash = { peak: 0, added: 0 };"
+    " new MutationObserver((records) => {"
+    "   for (const r of records) {"
+    "     for (const n of r.addedNodes) {"
+    "       if (n.nodeType !== 1) continue;"
+    "       if (n.classList && n.classList.contains('session-window')) window.__flash.added++;"
+    "       if (n.querySelectorAll)"
+    "         window.__flash.added += n.querySelectorAll('.session-window').length;"
+    "     }"
+    "   }"
     "   window.__flash.peak = Math.max(window.__flash.peak,"
     "     document.querySelectorAll('.session-window').length); })"
     "  .observe(document, { childList: true, subtree: true });"
@@ -474,6 +493,32 @@ def lost_notice_within(popup, ms):
     return None
 
 
+def served_fence(fid):
+    for f in json.loads(http("GET", "api/desk")[1]).get("fences", []):
+        if f.get("id") == fid:
+            return f.get("rect")
+    return None
+
+
+def centre_of(page, sel):
+    return page.evaluate(
+        "(s) => { const e = document.querySelector(s); if (!e) return null;"
+        " const r = e.getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
+        sel,
+    )
+
+
+def drag(page, start, dx, dy):
+    page.mouse.move(start["x"], start["y"])
+    page.mouse.down()
+    page.mouse.move(start["x"] + dx / 3, start["y"] + dy / 3, steps=5)
+    page.mouse.move(start["x"] + dx * 2 / 3, start["y"] + dy * 2 / 3, steps=5)
+    page.mouse.move(start["x"] + dx, start["y"] + dy, steps=5)
+    page.mouse.up()
+    page.wait_for_timeout(600)
+
+
 def desk_shape():
     """The daemon's desk, reduced to what a UI-only change must never move."""
     desk = json.loads(http("GET", "api/desk")[1])
@@ -595,11 +640,11 @@ def main():
                 and reg_after.get("tab") == reg_detached.get("tab"),
                 f"before={reg_detached!r} after={reg_after!r}",
             )
-            peak = page.evaluate("() => window.__flash.peak")
+            flash = page.evaluate("() => window.__flash")
             check(
                 "NO FLASH: not one console was ever inserted on the plane after the reload",
-                peak == 0,
-                f"peak-session-windows={peak}",
+                flash["peak"] == 0 and flash["added"] == 0,
+                f"peak={flash['peak']} inserted={flash['added']}",
             )
             fence_count = page.evaluate("() => document.querySelectorAll('.fence').length")
             check(
@@ -639,6 +684,16 @@ def main():
                 registry_of(page_b) is None,
                 f"registry={registry_of(page_b)!r}",
             )
+            # THE ANTI-VACUITY CONTROL for scenario 1's `inserted == 0`: the same
+            # init script, on the same kind of document, over a page that really
+            # does put three consoles on the plane. Without this, an observer
+            # that never fired at all would satisfy the no-flash assertion.
+            flash_b = page_b.evaluate("() => window.__flash")
+            check(
+                "…and the flash counter really counts — this tab's own reads 3, same oracle",
+                flash_b["added"] == 3,
+                f"inserted-here={flash_b['added']} (scenario 1 read 0 on the reloaded tab)",
+            )
             check(
                 "…while tab one's popup is untouched, still holding its live consoles",
                 (not popup.is_closed())
@@ -667,7 +722,10 @@ def main():
             )
             check(
                 "…and NOT ONE PUT /api/desk was issued from a popup context",
-                all(r["page"] is not popup for r in puts)
+                # `len(puts) > 0` is the anti-vacuity leg: an `all()` over an
+                # empty list passes with the request listener mis-wired.
+                len(puts) > 0
+                and all(r["page"] is not popup for r in puts)
                 and all(r["url"] is not None for r in puts),
                 f"puts-from-popup={sum(1 for r in puts if r['page'] is popup)}"
                 f" unattributable={sum(1 for r in puts if r['url'] is None)} total={len(puts)}",
@@ -739,6 +797,79 @@ def main():
                 "",
             )
 
+            # ---- scenario 5b: a MOVED detached fence still skips its members --
+            # The registry must carry the member IDS, not a geometry the drag
+            # invalidates: a detached fence is still movable (#346 §7a), and a
+            # membership fold run after the reload compares the fence's NEW rect
+            # with the members' ORIGINAL records — answering "no members", and
+            # putting every one of them back under the live popup.
+            popup2b = detach(page, "f-alpha")
+            popup_windows(popup2b, 3)
+            rect_before = served_fence("f-alpha")
+            # A REAL titlebar drag, through `.fence-grab`: writing inline styles
+            # bypasses the persist path and `/api/desk` would keep the old rect,
+            # making the whole scenario vacuous (KNOWLEDGE, #336/#337).
+            # +120/+320 keeps alpha (40,40 600x460) clear of beta (800,40 320x300)
+            # on the X axis: a drop that overlaps a sibling is REFUSED and
+            # silently reverted, which reads exactly like a dead handle (#346).
+            drag(page, centre_of(page, "[data-fence-id='f-alpha'] .fence-grab"), 120, 320)
+            quiet(desk_file)
+            rect_moved = served_fence("f-alpha")
+            check(
+                "a detached fence really MOVED on the plane, and the daemon stored the new rect",
+                rect_moved is not None
+                and rect_before is not None
+                and (
+                    round(rect_moved["left"] - rect_before["left"]),
+                    round(rect_moved["top"] - rect_before["top"]),
+                )
+                == (120, 320),
+                f"before={rect_before} moved={rect_moved}",
+            )
+            page.reload()
+            activate_consoles(page)
+            page.wait_for_timeout(3000)
+            moved_flash = page.evaluate("() => window.__flash")
+            on_plane = page.evaluate("() => document.querySelectorAll('.session-window').length")
+            check(
+                "…and after a reload its members STAY off the plane —"
+                " the registry carries their ids, not a geometry the drag invalidated",
+                moved_flash["added"] == 0 and on_plane == 0,
+                f"inserted={moved_flash['added']} on-plane={on_plane}",
+            )
+            check(
+                "…and its popup is untouched, still driving the same live consoles",
+                (not popup2b.is_closed())
+                and popup2b.evaluate(
+                    "() => [...document.querySelectorAll('.session-window')]"
+                    "  .filter((w) => w.querySelector('.xterm-screen')).length"
+                )
+                == 2,
+                f"closed={popup2b.is_closed()}",
+            )
+            # Put the fence back WHILE IT IS STILL DETACHED. Once the members are
+            # home they sit at their ORIGINAL rects — MEM_3 covers the moved
+            # fence's 14 px NW `.fence-grab`, and a member parked on a handle
+            # makes the fence ungrabbable from a script AND for an operator
+            # (KNOWLEDGE, #341). Detached, the plane is clear.
+            drag(page, centre_of(page, "[data-fence-id='f-alpha'] .fence-grab"), -120, -320)
+            quiet(desk_file)
+            rect_home = served_fence("f-alpha")
+            check(
+                "…and the fence drags back to where it started, so the plane is at baseline again",
+                rect_home == rect_before,
+                f"start={rect_before} back={rect_home}",
+            )
+            popup2b.close(run_before_unload=True)
+            home_within(page, 3, 3000)
+            settle_windows(page, 3)
+            page.wait_for_timeout(400)
+            check(
+                "…and the members come home INSIDE the restored fence",
+                members_of(page, "f-alpha") == 3,
+                f"members={members_of(page, 'f-alpha')}",
+            )
+
             # ---- scenario 6: FORCE-KILLING the origin tab --------------------
             popup3 = detach(page, "f-alpha")
             popup_windows(popup3, 3)
@@ -797,7 +928,8 @@ def main():
             )
             check(
                 "no popup context EVER issued a PUT /api/desk across the whole pass",
-                all(r["url"] is not None for r in puts)
+                len(puts) > 0
+                and all(r["url"] is not None for r in puts)
                 and not any("detached-fence.html" in r["url"] for r in puts),
                 f"puts={len(puts)} urls={sorted({r['url'] for r in puts})}",
             )
@@ -810,7 +942,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 31
+    ok = all(results) and len(results) == 42
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE DETACH SURVIVES AN F5, AND DIES WITH THE TAB")

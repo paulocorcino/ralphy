@@ -218,6 +218,71 @@ test("none() is inert: no tab identity, an empty registry, and writes that go no
   });
 });
 
+// The member ids ride the registry so the boot skip never depends on geometry:
+// a detached fence may still be MOVED on the plane, after which a membership
+// fold comparing its new rect with the members' original records answers "no
+// members" and puts every one of them back under a live popup.
+test("the registry carries each detached fence's member ids, and they survive a reload", () => {
+  const store = fakeStorage();
+  withGlobals({ sessionStorage: store }, () => {
+    const link = load().link();
+    assert.deepEqual(link.readMembers(), {});
+    link.writeRegistry(["f-alpha"], { "f-alpha": ["w-m1", "w-m2"] });
+    assert.deepEqual(link.readMembers(), { "f-alpha": ["w-m1", "w-m2"] });
+  });
+  withGlobals({ sessionStorage: store }, () => {
+    assert.deepEqual(load().link().readMembers(), { "f-alpha": ["w-m1", "w-m2"] });
+  });
+});
+
+test("a registry written with no members reads back an empty map, never undefined", () => {
+  withGlobals({ sessionStorage: fakeStorage() }, () => {
+    const link = load().link();
+    link.writeRegistry(["f-alpha"]);
+    assert.deepEqual(link.readMembers(), {});
+    assert.deepEqual(link.readRegistry(), ["f-alpha"]);
+  });
+});
+
+// The popup's factory: the channel and NOTHING else. `window.open` hands that
+// document a COPY of its opener's store, so it must not even READ one.
+test("channel() reaches the channel and no store at all", () => {
+  const store = fakeStorage();
+  store.setItem(
+    "wb.detach.v1",
+    JSON.stringify({ v: 1, tab: "t-opener", fences: ["f-alpha"], members: {} }),
+  );
+  let got = null;
+  const buses = new Map();
+  class FakeBroadcastChannel {
+    constructor(name) {
+      this.name = name;
+      this.onmessage = null;
+      if (!buses.has(name)) buses.set(name, new Set());
+      buses.get(name).add(this);
+    }
+    postMessage(data) {
+      for (const peer of buses.get(this.name)) if (peer !== this && peer.onmessage) peer.onmessage({ data });
+    }
+    close() {
+      buses.get(this.name).delete(this);
+    }
+  }
+  withGlobals({ sessionStorage: store, BroadcastChannel: FakeBroadcastChannel }, () => {
+    const mod = load();
+    const popup = mod.channel();
+    assert.equal(popup.tab, null, "the popup is TOLD its opener's id, never derived one");
+    assert.equal(popup.readRegistry, undefined, "channel() exposes no registry surface at all");
+    assert.equal(popup.writeRegistry, undefined);
+    assert.equal(popup.readMembers, undefined);
+    // …but the channel itself works: the origin hears it.
+    const origin = mod.link();
+    origin.onMessage((m) => (got = m));
+    popup.post({ type: "popup-here", tab: "t-opener", fenceId: "f-alpha" });
+    assert.deepEqual(got, { type: "popup-here", tab: "t-opener", fenceId: "f-alpha" });
+  });
+});
+
 test("the heartbeat constants are the ones the callers read off the module", () => {
   const mod = load();
   assert.equal(mod.HEARTBEAT_MS, 1000);
